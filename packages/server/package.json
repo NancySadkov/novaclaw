@@ -8,7 +8,7 @@
     "./*": "./src/*.ts"
   },
   "scripts": {
-    "typecheck": "tsgo -b && tsgo -p tsconfig.test.json",
+    "typecheck": "bun ../../script/tsgo.ts -b && bun ../../script/tsgo.ts -p tsconfig.test.json",
     "test": "bun test src --only-failures"
   },
   "dependencies": {

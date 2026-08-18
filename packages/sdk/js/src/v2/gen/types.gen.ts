@@ -83,6 +83,7 @@ export type Event =
   | EventMessengerBindingUpdated
   | EventTodoUpdated
   | EventSessionTagsUpdated
+  | EventSessionPresenceUpdated
   | EventPermissionAsked
   | EventPermissionReplied
   | EventMcpToolsChanged
@@ -197,6 +198,30 @@ export type Todo = {
    * Priority level of the task: high, medium, low
    */
   priority: string
+}
+
+export type SessionPresenceViewer = {
+  viewerID: string
+  kind: "human" | "agent" | "peer"
+  label: string
+  attachedAt: number
+  writing: boolean
+}
+
+export type SessionPresenceHandoff = {
+  fromViewerID?: string
+  fromLabel?: string
+  toViewerID: string
+  toLabel: string
+  at: number
+  reason: "claimed" | "succession"
+}
+
+export type SessionPresenceSnapshot = {
+  state: "unattended" | "solo" | "watched" | "contended"
+  viewers: Array<SessionPresenceViewer>
+  control?: string
+  handoff?: SessionPresenceHandoff
 }
 
 export type SessionStatus =
@@ -1142,6 +1167,14 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "session.presence.updated"
+        properties: {
+          sessionID: string
+          presence: SessionPresenceSnapshot
+        }
+      }
+    | {
+        id: string
         type: "permission.asked"
         properties: {
           id: string
@@ -2074,6 +2107,7 @@ export type V2Event =
   | MessengerBindingUpdated
   | TodoUpdated
   | SessionTagsUpdated
+  | SessionPresenceUpdated
   | PermissionAsked
   | PermissionReplied
   | McpToolsChanged
@@ -4370,6 +4404,11 @@ export type ConfigInfo = {
     }
   }
   skills?: Array<string>
+  skill_invocation?: {
+    [key: string]: {
+      show?: boolean
+    }
+  }
   commands?: {
     [key: string]: ConfigV2Command
   }
@@ -5953,6 +5992,39 @@ export type RecipeInfo = {
   updatedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
 }
 
+export type RecipeNeedCheck = {
+  fact: string
+  status: "present" | "absent" | "unknown"
+  looked: Array<string>
+  found?: string
+}
+
+export type RecipeSource = {
+  slug: string
+  name: string
+  markdown: string
+  needs: Array<RecipeNeedCheck>
+  produces: Array<string>
+  collection: {
+    id: "examples" | "mine"
+    title: string
+    note: string
+  }
+}
+
+export type RecipeImportInput = {
+  markdown: string
+  slug?: string
+}
+
+export type RecipeUpdateInput = {
+  name?: string
+  description?: string | null
+  prompt?: string
+  needs?: Array<string>
+  produces?: Array<string>
+}
+
 export type RecipeSaveInput = {
   slug?: string
   name: string
@@ -6650,6 +6722,24 @@ export type SessionTagsUpdated = {
   data: {
     sessionID: string
     tags: Array<string>
+  }
+}
+
+export type SessionPresenceUpdated = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.presence.updated"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    presence: SessionPresenceSnapshot
   }
 }
 
@@ -7898,6 +7988,15 @@ export type EventSessionTagsUpdated = {
   properties: {
     sessionID: string
     tags: Array<string>
+  }
+}
+
+export type EventSessionPresenceUpdated = {
+  id: string
+  type: "session.presence.updated"
+  properties: {
+    sessionID: string
+    presence: SessionPresenceSnapshot
   }
 }
 
@@ -13374,6 +13473,82 @@ export type V2SessionTagsAllResponses = {
 
 export type V2SessionTagsAllResponse = V2SessionTagsAllResponses[keyof V2SessionTagsAllResponses]
 
+export type V2SessionPresenceReportData = {
+  body: {
+    viewerID: string
+    kind: "human" | "agent" | "peer"
+    label: string
+    writing?: boolean
+    action: "report" | "claim" | "detach"
+  }
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/presence"
+}
+
+export type V2SessionPresenceReportErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError | SessionNotFoundError
+}
+
+export type V2SessionPresenceReportError = V2SessionPresenceReportErrors[keyof V2SessionPresenceReportErrors]
+
+export type V2SessionPresenceReportResponses = {
+  /**
+   * Success
+   */
+  200: {
+    data: SessionPresenceSnapshot
+  }
+}
+
+export type V2SessionPresenceReportResponse = V2SessionPresenceReportResponses[keyof V2SessionPresenceReportResponses]
+
+export type V2SessionPresenceAllData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/presence"
+}
+
+export type V2SessionPresenceAllErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2SessionPresenceAllError = V2SessionPresenceAllErrors[keyof V2SessionPresenceAllErrors]
+
+export type V2SessionPresenceAllResponses = {
+  /**
+   * Success
+   */
+  200: {
+    data: {
+      [key: string]: unknown
+    }
+  }
+}
+
+export type V2SessionPresenceAllResponse = V2SessionPresenceAllResponses[keyof V2SessionPresenceAllResponses]
+
 export type V2SessionActiveData = {
   body?: never
   path?: never
@@ -16348,6 +16523,37 @@ export type V2RecipeGetResponses = {
 
 export type V2RecipeGetResponse = V2RecipeGetResponses[keyof V2RecipeGetResponses]
 
+export type V2RecipeUpdateData = {
+  body: RecipeUpdateInput
+  path: {
+    slug: string
+  }
+  query?: never
+  url: "/api/recipe/{slug}"
+}
+
+export type V2RecipeUpdateErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError | InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2RecipeUpdateError = V2RecipeUpdateErrors[keyof V2RecipeUpdateErrors]
+
+export type V2RecipeUpdateResponses = {
+  /**
+   * Recipe.Info
+   */
+  200: RecipeInfo
+}
+
+export type V2RecipeUpdateResponse = V2RecipeUpdateResponses[keyof V2RecipeUpdateResponses]
+
 export type V2RecipeRemoveData = {
   body?: never
   path: {
@@ -16378,6 +16584,66 @@ export type V2RecipeRemoveResponses = {
 }
 
 export type V2RecipeRemoveResponse = V2RecipeRemoveResponses[keyof V2RecipeRemoveResponses]
+
+export type V2RecipeSourceData = {
+  body?: never
+  path: {
+    slug: string
+  }
+  query?: never
+  url: "/api/recipe/{slug}/source"
+}
+
+export type V2RecipeSourceErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError | InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2RecipeSourceError = V2RecipeSourceErrors[keyof V2RecipeSourceErrors]
+
+export type V2RecipeSourceResponses = {
+  /**
+   * Recipe.Source
+   */
+  200: RecipeSource
+}
+
+export type V2RecipeSourceResponse = V2RecipeSourceResponses[keyof V2RecipeSourceResponses]
+
+export type V2RecipeImportData = {
+  body: RecipeImportInput
+  path?: never
+  query?: never
+  url: "/api/recipe/import"
+}
+
+export type V2RecipeImportErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError | InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2RecipeImportError = V2RecipeImportErrors[keyof V2RecipeImportErrors]
+
+export type V2RecipeImportResponses = {
+  /**
+   * Recipe.Info
+   */
+  200: RecipeInfo
+}
+
+export type V2RecipeImportResponse = V2RecipeImportResponses[keyof V2RecipeImportResponses]
 
 export type V2RecipeDuplicateData = {
   body: {

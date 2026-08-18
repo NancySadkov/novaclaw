@@ -25,6 +25,43 @@ export interface SaveRecipeInput {
   readonly prompt: string
 }
 
+/** One `needs:` fact, probed against THIS machine. `unknown` is not `absent` — see `apps/recipes.ts`. */
+export interface RecipeNeedCheck {
+  readonly fact: string
+  readonly status: "present" | "absent" | "unknown"
+  readonly looked: readonly string[]
+  readonly found?: string
+}
+
+/**
+ * A recipe as its author wrote it (`GET /api/recipe/:slug/source`).
+ *
+ * ⚠️ `markdown` is the FILE'S OWN BYTES. The `Recipe` record above carries the prompt BODY only, so this
+ * is the only thing on this API that can hand a user their file back — which is what makes export a copy
+ * of the author's recipe rather than a two-field reconstruction of it.
+ */
+export interface RecipeSource {
+  readonly slug: string
+  readonly name: string
+  readonly markdown: string
+  readonly needs: readonly RecipeNeedCheck[]
+  readonly produces: readonly string[]
+  readonly collection: { readonly id: "examples" | "mine"; readonly title: string; readonly note: string }
+}
+
+/**
+ * A PARTIAL edit. Omit a field to leave it exactly as the author wrote it; `description: null` removes
+ * that line. Prefer this over `saveRecipe` whenever you are changing ONE thing: `save` takes a whole
+ * recipe, so it makes a caller resend prose it did not author.
+ */
+export interface UpdateRecipeInput {
+  readonly name?: string
+  readonly description?: string | null
+  readonly prompt?: string
+  readonly needs?: readonly string[]
+  readonly produces?: readonly string[]
+}
+
 export interface RunResult {
   readonly sessionID: string
   readonly directory: string
@@ -68,6 +105,16 @@ export const listRecipes = (server: ServerConnection.HttpBase) => call<Recipe[]>
 
 export const saveRecipe = (server: ServerConnection.HttpBase, input: SaveRecipeInput) =>
   call<Recipe>(server, "POST", "api/recipe", input)
+
+export const recipeSource = (server: ServerConnection.HttpBase, slug: string) =>
+  call<RecipeSource>(server, "GET", `api/recipe/${encodeURIComponent(slug)}/source`)
+
+export const updateRecipe = (server: ServerConnection.HttpBase, slug: string, patch: UpdateRecipeInput) =>
+  call<Recipe>(server, "PATCH", `api/recipe/${encodeURIComponent(slug)}`, patch)
+
+/** Store a `recipe.md` somebody else wrote, byte for byte, under a free slug. Never overwrites. */
+export const importRecipe = (server: ServerConnection.HttpBase, input: { markdown: string; slug?: string }) =>
+  call<Recipe>(server, "POST", "api/recipe/import", input)
 
 export const duplicateRecipe = (server: ServerConnection.HttpBase, slug: string) =>
   call<Recipe>(server, "POST", `api/recipe/${encodeURIComponent(slug)}/duplicate`, {})

@@ -18,7 +18,8 @@ import { WebSearchTool } from "@novaclaw/core/tool/websearch"
 import { Offline } from "@novaclaw/core/offline"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { it, testEffect } from "./lib/effect"
-import { toolIdentity, executeTool } from "./lib/tool"
+import { bypassedPolicyGate, toolIdentity, executeTool } from "./lib/tool"
+import { ToolPolicyGate } from "@novaclaw/core/tool-policy-gate"
 
 // Built-in web search (todo.md → "a fallback so it just works for lay users"). The test that lived
 // here covered the inherited Exa/Parallel product backends, which this replaced: paid APIs, branded
@@ -533,7 +534,7 @@ const gated = testEffect(
   AppNodeBuilder.build(LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, WebSearchTool.node]), [
     [PermissionV2.node, permissionMock],
     [WebSearch.node, searchMock],
-    [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
+    [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig], [ToolPolicyGate.node, bypassedPolicyGate],
   ]),
 )
 

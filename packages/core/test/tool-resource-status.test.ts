@@ -6,7 +6,7 @@ import { SessionMessage } from "@novaclaw/core/session/message"
 import { ResourceStatusTool } from "@novaclaw/core/tool/resource-status"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { Effect, Layer } from "effect"
-import { executeTool } from "./lib/tool"
+import { bypassedPolicyGate, executeTool } from "./lib/tool"
 
 const detail = [
   "Resource pressure: ok.",
@@ -24,6 +24,7 @@ const resourceLayer = Layer.succeed(
 const layer = ResourceStatusTool.layer.pipe(
   Layer.provideMerge(ToolRegistry.defaultLayer),
   Layer.provideMerge(resourceLayer),
+  Layer.provideMerge(bypassedPolicyGate),
 )
 
 describe("resource_status tool", () => {

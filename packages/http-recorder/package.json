@@ -27,7 +27,7 @@
   },
   "scripts": {
     "test": "bun test --timeout 30000 --only-failures",
-    "typecheck": "tsgo -b",
+    "typecheck": "bun ../../script/tsgo.ts -b",
     "build": "bun ./script/build.ts",
     "verify:package": "bun ./script/verify-package.ts"
   },

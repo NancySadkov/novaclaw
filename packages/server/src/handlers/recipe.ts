@@ -71,6 +71,85 @@ export const RecipeHandler = handlerLayer(
           }),
         )
         .handle(
+          "recipe.source",
+          // The reader's endpoint — everything the Recipes app needs to show a recipe HONESTLY before
+          // anyone presses Run, and the only place the author's own bytes leave the instance.
+          //
+          // ⚠️ Three separate reads rather than one, deliberately. `sourceOf` returning `undefined` means
+          // WE COULD NOT READ THE FILE; `produces: []` means THE RECIPE NAMES NOTHING. Folding the second
+          // into the first would let the app print "this recipe declares no artifacts" about a file
+          // nobody opened, which is the fault described falsely (ruling 2) at the top of the UI.
+          Effect.fn(function* (ctx) {
+            const recipe = yield* Effect.promise(() => Recipe.read(ctx.params.slug, builtins))
+            if (recipe === undefined)
+              return yield* new InvalidRequestError({ message: `No recipe named "${ctx.params.slug}"` })
+            const markdown = yield* Effect.promise(() => Recipe.sourceOf(recipe.slug))
+            if (markdown === undefined)
+              return yield* new InvalidRequestError({
+                message: `I could not read “${recipe.name}”'s recipe.md — it may have been moved or locked while I looked.`,
+              })
+            // The SAME probe `recipe.run` refuses on, run early so the answer arrives before the cook
+            // rather than after it. It resolves names on PATH and stats paths; it never runs a candidate,
+            // and it can never install or grant anything (ruling 14).
+            const needs = Recipe.checkNeeds(yield* Effect.promise(() => Recipe.needsOf(recipe.slug)))
+            const produces = yield* Effect.promise(() => Recipe.producesOf(recipe.slug))
+            const collection = RecipeBuiltin.collectionInfo(RecipeBuiltin.collectionOf(recipe.slug))
+            return {
+              slug: recipe.slug,
+              name: recipe.name,
+              markdown,
+              needs: needs.map((check) => ({
+                fact: check.fact,
+                status: check.status,
+                looked: check.looked,
+                ...(check.found === undefined ? {} : { found: check.found }),
+              })),
+              produces,
+              collection: { id: collection.id, title: collection.title, note: collection.note },
+            }
+          }),
+        )
+        .handle(
+          "recipe.import",
+          Effect.fn(function* (ctx) {
+            return yield* Effect.tryPromise({
+              try: () =>
+                Recipe.importMarkdown(ctx.payload.markdown, {
+                  ...(ctx.payload.slug ? { slug: ctx.payload.slug } : {}),
+                }),
+              catch: badRequest,
+            })
+          }),
+        )
+        .handle(
+          "recipe.update",
+          // The PARTIAL edit — `Recipe.update`, which changes the lines it was asked about inside the
+          // author's own bytes and copies every other byte forward untouched by construction.
+          //
+          // ⚠️ `undefined` and `null` mean different things on `description` and the difference is the
+          // whole reason this endpoint is not `recipe.save`: absent = leave the author's line alone,
+          // `null` = remove it. Spreading the optional fields conditionally is what keeps that true — an
+          // unconditional `description: ctx.payload.description` would turn "did not mention it" into
+          // "clear it" for every caller that only wanted to rename something.
+          Effect.fn(function* (ctx) {
+            return yield* Effect.tryPromise({
+              try: () =>
+                Recipe.update(
+                  ctx.params.slug,
+                  {
+                    ...(ctx.payload.name === undefined ? {} : { name: ctx.payload.name }),
+                    ...(ctx.payload.description === undefined ? {} : { description: ctx.payload.description }),
+                    ...(ctx.payload.prompt === undefined ? {} : { prompt: ctx.payload.prompt }),
+                    ...(ctx.payload.needs === undefined ? {} : { needs: ctx.payload.needs }),
+                    ...(ctx.payload.produces === undefined ? {} : { produces: ctx.payload.produces }),
+                  },
+                  builtins,
+                ),
+              catch: badRequest,
+            })
+          }),
+        )
+        .handle(
           "recipe.save",
           Effect.fn(function* (ctx) {
             return yield* Effect.tryPromise({

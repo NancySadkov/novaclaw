@@ -14173,6 +14173,181 @@
         ]
       }
     },
+    "/api/session/{sessionID}/presence": {
+      "post": {
+        "tags": ["sessions"],
+        "operationId": "v2.session.presence.report",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/SessionPresenceSnapshot"
+                    }
+                  },
+                  "required": ["data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SessionNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SessionNotFoundError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SessionNotFoundError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Attach a viewer, say 'still here', take over control, or detach. Returns the session's whole presence snapshot; every attached surface also receives it as `session.presence.updated`.",
+        "summary": "Report presence on a session",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "viewerID": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": ["human", "agent", "peer"]
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "writing": {
+                    "type": "boolean"
+                  },
+                  "action": {
+                    "type": "string",
+                    "enum": ["report", "claim", "detach"]
+                  }
+                },
+                "required": ["viewerID", "kind", "label", "action"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.session.presence.report({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/presence": {
+      "get": {
+        "tags": ["sessions"],
+        "operationId": "v2.session.presence.all",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "patternProperties": {
+                        "^ses": {
+                          "$ref": "#/components/schemas/SessionPresenceSnapshot"
+                        }
+                      }
+                    }
+                  },
+                  "required": ["data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Sessions with someone attached right now: session id → presence. The client store's bootstrap source; sessions absent from the result are unattended. This instance answers only for its OWN sessions — it is not a directory of who is online.",
+        "summary": "List session presence",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.session.presence.all({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/session/active": {
       "get": {
         "tags": ["sessions"],
@@ -21871,6 +22046,78 @@
           }
         ]
       },
+      "patch": {
+        "tags": ["recipe"],
+        "operationId": "v2.recipe.update",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Recipe.Info",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipeInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Edits the requested lines inside the author's own bytes: line endings, a BOM, unknown frontmatter keys, key order and the trailing newline all survive. Use this rather than a save when you are changing one field — a save takes the whole recipe.",
+        "summary": "Change some of a recipe's fields and nothing else",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecipeUpdateInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.recipe.update({\n  ...\n})"
+          }
+        ]
+      },
       "delete": {
         "tags": ["recipe"],
         "operationId": "v2.recipe.remove",
@@ -21915,6 +22162,135 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.recipe.remove({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/recipe/{slug}/source": {
+      "get": {
+        "tags": ["recipe"],
+        "operationId": "v2.recipe.source",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Recipe.Source",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipeSource"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "The bytes of recipe.md exactly as they are on disk — the unit a person shares — plus the host-capability facts it declares checked against THIS machine, the artifacts a finished cook should leave, and the shelf it is on. Read-only: the capability probe resolves names on PATH and stats paths, and never runs a candidate.",
+        "summary": "Read a recipe's file, and what it needs and produces",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.recipe.source({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/recipe/import": {
+      "post": {
+        "tags": ["recipe"],
+        "operationId": "v2.recipe.import",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Recipe.Info",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipeInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Writes the supplied file byte for byte under a free slug — never overwriting an existing recipe. Assets are not carried: this is the recipe.md, which is the part a person can read.",
+        "summary": "Store a recipe.md from somewhere else",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecipeImportInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.recipe.import({\n  ...\n})"
           }
         ]
       }
@@ -25586,6 +25962,9 @@
             "$ref": "#/components/schemas/EventSessionTagsUpdated"
           },
           {
+            "$ref": "#/components/schemas/EventSessionPresenceUpdated"
+          },
+          {
             "$ref": "#/components/schemas/EventPermissionAsked"
           },
           {
@@ -25912,6 +26291,80 @@
           }
         },
         "required": ["content", "status", "priority"],
+        "additionalProperties": false
+      },
+      "SessionPresenceViewer": {
+        "type": "object",
+        "properties": {
+          "viewerID": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["human", "agent", "peer"]
+          },
+          "label": {
+            "type": "string"
+          },
+          "attachedAt": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "writing": {
+            "type": "boolean"
+          }
+        },
+        "required": ["viewerID", "kind", "label", "attachedAt", "writing"],
+        "additionalProperties": false
+      },
+      "SessionPresenceHandoff": {
+        "type": "object",
+        "properties": {
+          "fromViewerID": {
+            "type": "string"
+          },
+          "fromLabel": {
+            "type": "string"
+          },
+          "toViewerID": {
+            "type": "string"
+          },
+          "toLabel": {
+            "type": "string"
+          },
+          "at": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "reason": {
+            "type": "string",
+            "enum": ["claimed", "succession"]
+          }
+        },
+        "required": ["toViewerID", "toLabel", "at", "reason"],
+        "additionalProperties": false
+      },
+      "SessionPresenceSnapshot": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": ["unattended", "solo", "watched", "contended"]
+          },
+          "viewers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionPresenceViewer"
+            }
+          },
+          "control": {
+            "type": "string"
+          },
+          "handoff": {
+            "$ref": "#/components/schemas/SessionPresenceHandoff"
+          }
+        },
+        "required": ["state", "viewers"],
         "additionalProperties": false
       },
       "SessionStatus": {
@@ -29190,6 +29643,35 @@
                   },
                   "type": {
                     "type": "string",
+                    "enum": ["session.presence.updated"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "sessionID": {
+                        "type": "string",
+                        "pattern": "^ses"
+                      },
+                      "presence": {
+                        "$ref": "#/components/schemas/SessionPresenceSnapshot"
+                      }
+                    },
+                    "required": ["sessionID", "presence"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
                     "enum": ["permission.asked"]
                   },
                   "properties": {
@@ -32190,6 +32672,9 @@
           },
           {
             "$ref": "#/components/schemas/SessionTagsUpdated"
+          },
+          {
+            "$ref": "#/components/schemas/SessionPresenceUpdated"
           },
           {
             "$ref": "#/components/schemas/PermissionAsked"
@@ -39367,6 +39852,18 @@
               "type": "string"
             }
           },
+          "skill_invocation": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "show": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
           "commands": {
             "type": "object",
             "additionalProperties": {
@@ -45351,6 +45848,121 @@
         "required": ["slug", "name", "prompt", "assets", "builtin", "updatedAt"],
         "additionalProperties": false
       },
+      "RecipeNeedCheck": {
+        "type": "object",
+        "properties": {
+          "fact": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["present", "absent", "unknown"]
+          },
+          "looked": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "found": {
+            "type": "string"
+          }
+        },
+        "required": ["fact", "status", "looked"],
+        "additionalProperties": false
+      },
+      "RecipeSource": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "markdown": {
+            "type": "string"
+          },
+          "needs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecipeNeedCheck"
+            }
+          },
+          "produces": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "collection": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "enum": ["examples", "mine"]
+              },
+              "title": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "title", "note"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["slug", "name", "markdown", "needs", "produces", "collection"],
+        "additionalProperties": false
+      },
+      "RecipeImportInput": {
+        "type": "object",
+        "properties": {
+          "markdown": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": ["markdown"],
+        "additionalProperties": false
+      },
+      "RecipeUpdateInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "needs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "produces": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "RecipeSaveInput": {
         "type": "object",
         "properties": {
@@ -47395,6 +48007,57 @@
               }
             },
             "required": ["sessionID", "tags"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
+      "SessionPresenceUpdated": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.presence.updated"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "presence": {
+                "$ref": "#/components/schemas/SessionPresenceSnapshot"
+              }
+            },
+            "required": ["sessionID", "presence"],
             "additionalProperties": false
           }
         },
@@ -51270,6 +51933,35 @@
               }
             },
             "required": ["sessionID", "tags"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventSessionPresenceUpdated": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.presence.updated"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "presence": {
+                "$ref": "#/components/schemas/SessionPresenceSnapshot"
+              }
+            },
+            "required": ["sessionID", "presence"],
             "additionalProperties": false
           }
         },

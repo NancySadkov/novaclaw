@@ -3650,6 +3650,61 @@ class ApiV2SessionTags extends NovaClawApiClient {
   }
 }
 
+class ApiV2SessionPresence extends NovaClawApiClient {
+  /**
+   * Report presence on a session
+   *
+   * Attach a viewer, say 'still here', take over control, or detach. Returns the session's whole presence snapshot; every attached surface also receives it as `session.presence.updated`.
+   */
+  public report<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      viewerID: string
+      kind: "human" | "agent" | "peer"
+      label: string
+      writing?: boolean
+      action: "report" | "claim" | "detach"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    const body = {
+      viewerID: parameters?.["viewerID"],
+      kind: parameters?.["kind"],
+      label: parameters?.["label"],
+      writing: parameters?.["writing"],
+      action: parameters?.["action"],
+    }
+    return (options?.client ?? this.client).post<
+      T.V2SessionPresenceReportResponses,
+      T.V2SessionPresenceReportErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/presence",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * List session presence
+   *
+   * Sessions with someone attached right now: session id → presence. The client store's bootstrap source; sessions absent from the result are unattended. This instance answers only for its OWN sessions — it is not a directory of who is online.
+   */
+  public all<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      T.V2SessionPresenceAllResponses,
+      T.V2SessionPresenceAllErrors,
+      ThrowOnError
+    >({
+      url: "/api/presence",
+      ...options,
+    })
+  }
+}
+
 class ApiV2SessionExecution extends NovaClawApiClient {
   /**
    * Inspect durable session execution
@@ -4829,6 +4884,11 @@ class ApiV2Session extends NovaClawApiClient {
     return (this._tags ??= new ApiV2SessionTags({ client: this.client }))
   }
 
+  private _presence?: ApiV2SessionPresence
+  get presence(): ApiV2SessionPresence {
+    return (this._presence ??= new ApiV2SessionPresence({ client: this.client }))
+  }
+
   private _execution?: ApiV2SessionExecution
   get execution(): ApiV2SessionExecution {
     return (this._execution ??= new ApiV2SessionExecution({ client: this.client }))
@@ -5910,6 +5970,29 @@ class ApiV2Recipe extends NovaClawApiClient {
   }
 
   /**
+   * Change some of a recipe's fields and nothing else
+   *
+   * Edits the requested lines inside the author's own bytes: line endings, a BOM, unknown frontmatter keys, key order and the trailing newline all survive. Use this rather than a save when you are changing one field — a save takes the whole recipe.
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      slug: string
+      recipeUpdateInput: T.RecipeUpdateInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { slug: parameters?.["slug"] }
+    const body = parameters?.["recipeUpdateInput"]
+    return (options?.client ?? this.client).patch<T.V2RecipeUpdateResponses, T.V2RecipeUpdateErrors, ThrowOnError>({
+      url: "/api/recipe/{slug}",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
    * Delete a recipe and its assets
    */
   public remove<ThrowOnError extends boolean = false>(
@@ -5923,6 +6006,45 @@ class ApiV2Recipe extends NovaClawApiClient {
       url: "/api/recipe/{slug}",
       ...options,
       path,
+    })
+  }
+
+  /**
+   * Read a recipe's file, and what it needs and produces
+   *
+   * The bytes of recipe.md exactly as they are on disk — the unit a person shares — plus the host-capability facts it declares checked against THIS machine, the artifacts a finished cook should leave, and the shelf it is on. Read-only: the capability probe resolves names on PATH and stats paths, and never runs a candidate.
+   */
+  public source<ThrowOnError extends boolean = false>(
+    parameters: {
+      slug: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { slug: parameters?.["slug"] }
+    return (options?.client ?? this.client).get<T.V2RecipeSourceResponses, T.V2RecipeSourceErrors, ThrowOnError>({
+      url: "/api/recipe/{slug}/source",
+      ...options,
+      path,
+    })
+  }
+
+  /**
+   * Store a recipe.md from somewhere else
+   *
+   * Writes the supplied file byte for byte under a free slug — never overwriting an existing recipe. Assets are not carried: this is the recipe.md, which is the part a person can read.
+   */
+  public import<ThrowOnError extends boolean = false>(
+    parameters: {
+      recipeImportInput: T.RecipeImportInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = parameters?.["recipeImportInput"]
+    return (options?.client ?? this.client).post<T.V2RecipeImportResponses, T.V2RecipeImportErrors, ThrowOnError>({
+      url: "/api/recipe/import",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
     })
   }
 

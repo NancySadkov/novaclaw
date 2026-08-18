@@ -161,7 +161,17 @@ const GENERATE_TIMEOUT_MS = 60_000
 // Three existing schemas also changed SHAPE, which this fingerprint does not cover and the spec
 // check below does: `ProjectState` gained the permission rules and the `.gitignore` proposal,
 // `ProjectWriteInput` gained `clear`, `ProjectWriteResult` gained `cleared` + `refusedPermissions`.
-const SCHEMA_NAME_FINGERPRINT = "aa1a9041e2c2f2ee4da45e7ce94e169040babba4b60ff91ee091009fc24729dc"
+// ── 2026-08-19: presence + the recipes surface, NINE additions and no removals ──────────────────
+//   `SessionPresenceSnapshot` / `SessionPresenceViewer` / `SessionPresenceHandoff` /
+//   `SessionPresenceUpdated` / `EventSessionPresenceUpdated`  (per-session presence: who is
+//                                                  attached, who is driving, and the handoff notice)
+//   `RecipeSource` / `RecipeNeedCheck`              (a recipe's own bytes, and its `needs:` facts
+//                                                  probed against THIS machine)
+//   `RecipeUpdateInput` / `RecipeImportInput`       (the partial update verb, and import)
+// ⚠️ The criterion for updating this line is that the diff is ADDITIVE: `git diff openapi.json` shows
+// nine added top-level schema names and ZERO removed, so nothing was renamed and nothing collided
+// into a suffix. A removal beside an addition is a rename and must be read before re-pinning.
+const SCHEMA_NAME_FINGERPRINT = "6764261b097a855b43b6505891542d518e39221aa004e2cf147ebeea7fe77761"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

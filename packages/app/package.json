@@ -12,7 +12,7 @@
     "./index.css": "./src/index.css"
   },
   "scripts": {
-    "typecheck": "tsgo -b",
+    "typecheck": "bun ../../script/tsgo.ts -b",
     "start": "vite",
     "dev": "vite",
     "build": "vite build",

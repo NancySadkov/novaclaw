@@ -1,5 +1,5 @@
 import { useNavigate } from "@solidjs/router"
-import { createMemo, createResource, createSignal, For, Show } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, For, Show } from "solid-js"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { GoldGlyph } from "@/components/gold-glyph"
@@ -8,11 +8,59 @@ import { useServer } from "@/context/server"
 import { useServerSDK } from "@/context/server-sdk"
 import { showToast } from "@/utils/toast"
 import { sessionHref } from "@/utils/session-route"
-import { duplicateRecipe, listRecipes, removeRecipe, runRecipe, saveRecipe, type Recipe } from "@/utils/recipe-api"
+import {
+  duplicateRecipe,
+  importRecipe,
+  listRecipes,
+  recipeSource,
+  removeRecipe,
+  runRecipe,
+  saveRecipe,
+  updateRecipe,
+  verifyRecipe,
+  type Recipe,
+  type RecipeSource,
+  type VerifyResult,
+} from "@/utils/recipe-api"
+import {
+  describeDeclared,
+  describeExport,
+  describeNeeds,
+  describeVerdict,
+  exportFilename,
+  filterViews,
+  forgetCook,
+  groupViews,
+  lastCook,
+  previewImport,
+  rememberCook,
+  REPRODUCIBILITY,
+  sortViews,
+  toView,
+  type RecipeView,
+  type VerdictView,
+} from "@/apps/recipes"
 import { AppPage } from "@/components/app-page"
 
 // The Recipes app (AGENTS.md → *Recipes are source code for the AI era*). A recipe is a folder of prompt +
-// assets; this page is where a normal person reads, edits, copies and COOKS one.
+// assets; this page is where a normal person reads, runs, copies, edits, shares and CHECKS one.
+//
+// ⚠️ **This surface has a teaching obligation, not just a functional one** (principle 8 — teach, don't
+// gatekeep). A recipe buys DURABILITY and pays in EXACT REPRODUCIBILITY, and somebody pressing Run has to
+// be able to learn in one sentence why they may get a different-but-working result each time. That copy
+// sits BESIDE the Run button, not behind a help link, and it names who should keep real source instead.
+//
+// ⚠️ **The four verdicts may never collapse.** `not-available` (the MODEL cannot do this) rendered as
+// `not-working` (your install is broken) would blame a user's machine for a model limit — the distinction
+// is load-bearing in `core/src/recipe-verify.ts` and it is load-bearing here. `describeVerdict` carries
+// the label, the sentence and the subject; the styling below never carries meaning the words do not.
+//
+// ⚠️ **A recipe is untrusted content.** An imported one was written by a stranger, so its name,
+// description and prompt are attacker-controlled: everything read-only goes through `authorText`/
+// `authorBody` in `@/apps/recipes` first, and this file builds NO markup from any of it (pinned by
+// `apps/recipes.test.ts` → "recipes.tsx never assigns innerHTML"). The EDITOR binds to the raw prompt on
+// purpose — flattening a string for display and then saving it back would delete characters from the
+// author's file on every round trip.
 //
 // Cooking never mutates the recipe: the server copies its assets into a work dir and starts a session
 // there. That is also why there is no "migrate" button — "Run in…" already lets you cook straight into a
@@ -25,6 +73,27 @@ const PRIMARY =
 const CARD = "rounded-lg border border-v2-border-border-base bg-v2-background-bg-layer-01 p-3"
 const FIELD =
   "rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2.5 py-1.5 text-sm text-v2-text-text-base outline-none focus:border-v2-border-border-focus"
+const LABEL = "text-xs font-semibold uppercase tracking-wide text-v2-text-text-faint"
+
+/**
+ * Colour per verdict — and colour ONLY. Every word a reader needs is in `describeVerdict`'s `label`,
+ * `meaning` and `subject`, because a red badge and an amber badge are the same badge to a colour-blind
+ * reader and to anything reading the page aloud.
+ */
+const TONE: Record<VerdictView["tone"], string> = {
+  good: "border-v2-state-border-success bg-v2-state-bg-success text-v2-state-fg-success",
+  bad: "border-v2-state-border-danger bg-v2-state-bg-danger text-v2-state-fg-danger",
+  unsure: "border-v2-state-border-warning bg-v2-state-bg-warning text-v2-state-fg-warning",
+  // ⚠️ NOT a danger colour. "The model cannot do this" is not a fault in the user's install, and a red
+  // badge would say it was regardless of the sentence beside it.
+  neutral: "border-v2-border-border-strong bg-v2-background-bg-layer-03 text-v2-text-text-muted",
+}
+
+const OUTCOME_WORD: Record<string, string> = {
+  met: "found",
+  unmet: "not found",
+  unknown: "not checked",
+}
 
 export function RecipesPage() {
   const sdk = useServerSDK()
@@ -47,6 +116,7 @@ export function RecipesPage() {
   )
 
   const [selected, setSelected] = createSignal<string | undefined>()
+  const [query, setQuery] = createSignal("")
   const [draftName, setDraftName] = createSignal("")
   const [draftDescription, setDraftDescription] = createSignal("")
   const [draftPrompt, setDraftPrompt] = createSignal("")
@@ -55,20 +125,85 @@ export function RecipesPage() {
   /** Per-cook Strict opt-in (off = inherit Settings → Strict mode). */
   const [strictCook, setStrictCook] = createSignal(false)
   const [creating, setCreating] = createSignal(false)
+  const [importing, setImporting] = createSignal(false)
+  const [importText, setImportText] = createSignal("")
+  const [receipt, setReceipt] = createSignal<VerifyResult | undefined>()
+  const [checking, setChecking] = createSignal(false)
+  const [producesDraft, setProducesDraft] = createSignal("")
+  const [producesDirty, setProducesDirty] = createSignal(false)
 
-  const current = createMemo(() => recipes().find((recipe) => recipe.slug === selected()))
+  const views = createMemo(() => sortViews(recipes().map(toView)))
+  const shown = createMemo(() => filterViews(views(), query()))
+  const groups = createMemo(() => groupViews(shown()))
+  const current = createMemo(() => views().find((view) => view.key === selected()))
 
-  const open = (recipe: Recipe) => {
+  /**
+   * The author's own file, plus what it needs and produces. A SEPARATE read from the list on purpose: the
+   * list record carries the prompt BODY only, so `needs:` / `produces:` and the exportable bytes live
+   * nowhere else. A failure here stays `undefined`, which every describe* function below reports as
+   * *"I could not read this recipe's file"* rather than as *"it declares nothing"*.
+   */
+  const [source] = createResource(
+    () => {
+      const base = httpBase()
+      const slug = current()?.key
+      return base && slug ? ([base, slug] as const) : undefined
+    },
+    async ([base, slug]) => {
+      try {
+        return await recipeSource(base, slug)
+      } catch {
+        return undefined
+      }
+    },
+  )
+
+  const needs = createMemo(() => describeNeeds(source()))
+  const declared = createMemo(() => describeDeclared(source()))
+  const verdict = createMemo(() => {
+    const result = receipt()
+    return result ? describeVerdict(result) : undefined
+  })
+  /** The last cook of the SELECTED recipe, recomputed when the selection changes (see `rememberCook`). */
+  const cooked = createMemo(() => {
+    const key = current()?.key
+    return key ? lastCook(key) : undefined
+  })
+
+  /**
+   * ⚠️ **This is the "on settle" wiring.** Until now nothing ever called `verify`: the receipt existed and
+   * was purely on demand, so the health check AGENTS.md promises *in one click* took a click nobody knew
+   * to make. Pressing Run navigates to the cook's chat, so the moment this app can act on is the user
+   * coming BACK to a recipe that cooked in this session — and at that moment the answer is free.
+   *
+   * Safe to fire without asking: `verify` runs nothing, writes nothing, and is a pure function of the
+   * folder, so the worst case is one stat per declared file. It fires once per selection (`receipt()`
+   * being set is the latch) and never overwrites a receipt the user asked for explicitly.
+   */
+  createEffect(() => {
+    const recipe = current()
+    const last = cooked()
+    if (!recipe || !last || receipt() !== undefined || checking()) return
+    void check(recipe, last.directory)
+  })
+
+  const open = (recipe: RecipeView) => {
     setCreating(false)
-    setSelected(recipe.slug)
-    setDraftName(recipe.name)
-    setDraftDescription(recipe.description ?? "")
-    setDraftPrompt(recipe.prompt)
+    setImporting(false)
+    setSelected(recipe.key)
+    setDraftName(recipe.rawName)
+    setDraftDescription(recipe.description)
+    // ⚠️ The RAW prompt, never the flattened one — see the header.
+    setDraftPrompt(recipe.rawPrompt)
     setDirty(false)
+    setProducesDirty(false)
+    setReceipt(undefined)
+    setChecking(false)
   }
 
   const startNew = () => {
     setCreating(true)
+    setImporting(false)
     setSelected(undefined)
     setDraftName("")
     setDraftDescription("")
@@ -96,7 +231,7 @@ export function RecipesPage() {
         prompt: draftPrompt(),
       })
       await refetch()
-      open(saved)
+      open(toView(saved))
       showToast({ title: `Saved “${saved.name}”` })
     } catch (error) {
       fail(error)
@@ -105,14 +240,47 @@ export function RecipesPage() {
     }
   }
 
-  async function copy(recipe: Recipe) {
+  /**
+   * Change ONLY the `produces:` line — `Recipe.update`, the partial verb.
+   *
+   * ⚠️ Not `save`. A save takes the whole recipe, so adding one line would mean resending the prompt from
+   * a textarea, and a caller that retypes prose it did not author is the lossy rewrite `Recipe.edit`
+   * exists to prevent. This route edits that one line inside the author's own bytes and leaves every other
+   * byte — their key order, their line endings, a BOM, unknown keys — exactly as it found them.
+   */
+  async function saveProduces() {
+    const base = httpBase()
+    const slug = current()?.key
+    if (!base || !slug) return
+    setBusy(true)
+    try {
+      const files = producesDraft()
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter((entry) => entry !== "")
+      await updateRecipe(base, slug, { produces: files })
+      await refetch()
+      setProducesDirty(false)
+      showToast({
+        title: files.length ? "NovaClaw will check those files from now on" : "Cleared — nothing will be checked",
+      })
+      setSelected(undefined)
+      setSelected(slug)
+    } catch (error) {
+      fail(error)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function copy(recipe: RecipeView) {
     const base = httpBase()
     if (!base) return
     setBusy(true)
     try {
-      const made = await duplicateRecipe(base, recipe.slug)
+      const made = await duplicateRecipe(base, recipe.key)
       await refetch()
-      open(made)
+      open(toView(made))
       showToast({ title: `Copied to “${made.name}”`, description: "Edit it freely — the original is untouched." })
     } catch (error) {
       fail(error)
@@ -121,17 +289,58 @@ export function RecipesPage() {
     }
   }
 
-  async function remove(recipe: Recipe) {
+  async function remove(recipe: RecipeView) {
     const base = httpBase()
     if (!base) return
     setBusy(true)
     try {
-      await removeRecipe(base, recipe.slug)
+      await removeRecipe(base, recipe.key)
+      forgetCook(recipe.key)
       await refetch()
-      if (selected() === recipe.slug) setSelected(undefined)
+      if (selected() === recipe.key) setSelected(undefined)
       showToast({
         title: `Deleted “${recipe.name}”`,
-        ...(recipe.builtin ? { description: "It ships with NovaClaw, so it will return on next start." } : {}),
+        ...(recipe.shipped ? { description: "It ships with NovaClaw, so it will return on next start." } : {}),
+      })
+    } catch (error) {
+      fail(error)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /**
+   * Hand the user their recipe as a FILE — the author's own bytes, straight from disk.
+   *
+   * The unit a person shares is `recipe.md`, and it is prose: they can read it, change it in any text
+   * editor, mail it to somebody, and import it back. That is the anti-elitist claim made operational; a
+   * proprietary export format would be the opposite of it.
+   */
+  function exportRecipe(recipe: RecipeView, file: RecipeSource) {
+    const blob = new Blob([file.markdown], { type: "text/markdown;charset=utf-8" })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = exportFilename(recipe.key)
+    link.click()
+    URL.revokeObjectURL(url)
+    showToast({ title: `Saved ${exportFilename(recipe.key)}`, description: describeExport(recipe) })
+  }
+
+  async function doImport() {
+    const base = httpBase()
+    const preview = previewImport(importText())
+    if (!base || !preview.ok) return
+    setBusy(true)
+    try {
+      const made = await importRecipe(base, { markdown: importText() })
+      await refetch()
+      setImportText("")
+      setImporting(false)
+      open(toView(made))
+      showToast({
+        title: `Imported “${made.name}”`,
+        description: "Stored exactly as it was written. Read it before you run it — somebody else wrote it.",
       })
     } catch (error) {
       fail(error)
@@ -141,12 +350,12 @@ export function RecipesPage() {
   }
 
   /** Cook it. `directory` unset = a fresh folder in the scratch workspace. */
-  async function cook(recipe: Recipe, directory?: string) {
+  async function cook(recipe: RecipeView, directory?: string) {
     const base = httpBase()
     if (!base) return
     setBusy(true)
     try {
-      const result = await runRecipe(base, recipe.slug, {
+      const result = await runRecipe(base, recipe.key, {
         ...(directory ? { directory } : {}),
         // Per-cook Strict, the same switch the composer offers a chat. It has to ride the run call:
         // the cook's prompt is queued by that same request, so flipping a per-session override
@@ -154,7 +363,15 @@ export function RecipesPage() {
         // was to turn the instance-global setting on first.
         ...(strictCook() ? { strict: { enabled: true } } : {}),
       })
-      showToast({ title: `Cooking “${recipe.name}”`, description: result.directory })
+      // Remember WHERE, so coming back to this app can offer the receipt instead of asking the user to
+      // remember a path. Nothing else records it: a cook is not a property of a recipe.
+      rememberCook({ slug: recipe.key, directory: result.directory, sessionID: result.sessionID, at: Date.now() })
+      showToast({
+        title: `Cooking “${recipe.name}”`,
+        description: result.produces.length
+          ? `${result.directory} — when it finishes, come back here and I will check for ${result.produces.join(", ")}.`
+          : `${result.directory} — this recipe names no files, so I will not be able to tell you whether it worked.`,
+      })
       navigate(sessionHref(server.key, result.sessionID))
     } catch (error) {
       fail(error)
@@ -163,7 +380,7 @@ export function RecipesPage() {
     }
   }
 
-  const cookElsewhere = (recipe: Recipe) => {
+  const cookElsewhere = (recipe: RecipeView) => {
     const c = conn()
     if (!c) return
     pickDirectory({
@@ -176,7 +393,39 @@ export function RecipesPage() {
     })
   }
 
+  /**
+   * The receipt: read the work folder and answer from the FILESYSTEM, so the verdict does not depend on
+   * what the model said about its own work. Read-only, runs nothing, and idempotent — pressing it twice
+   * costs nothing and can never be the thing that broke the cook.
+   */
+  async function check(recipe: RecipeView, directory: string) {
+    const base = httpBase()
+    if (!base) return
+    setChecking(true)
+    try {
+      setReceipt(await verifyRecipe(base, recipe.key, { directory }))
+    } catch (error) {
+      fail(error)
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  const checkElsewhere = (recipe: RecipeView) => {
+    const c = conn()
+    if (!c) return
+    pickDirectory({
+      server: c,
+      title: `Which folder did “${recipe.name}” run in?`,
+      onSelect: (result) => {
+        const directory = Array.isArray(result) ? result[0] : result
+        if (directory) void check(recipe, directory)
+      },
+    })
+  }
+
   const canSave = createMemo(() => draftName().trim().length > 0 && draftPrompt().trim().length > 0 && dirty())
+  const preview = createMemo(() => previewImport(importText()))
 
   return (
     <AppPage class="flex flex-col overflow-hidden">
@@ -186,150 +435,511 @@ export function RecipesPage() {
         <span class="min-w-0 flex-1 truncate text-xs text-v2-text-text-faint">
           Ready-made prompts an agent cooks for you. Source code rots; a good recipe stays fresh.
         </span>
-        <button class={BTN} onClick={startNew}>
+        <button class={BTN} data-action="recipe-import-open" onClick={() => setImporting(true)}>
+          Import…
+        </button>
+        <button class={BTN} data-action="recipe-new" onClick={startNew}>
           New recipe
         </button>
       </div>
 
       <div class="flex min-h-0 flex-1 overflow-hidden">
-        {/* The list */}
-        <div class="w-72 shrink-0 overflow-auto border-r border-v2-border-border-base p-2">
-          <Show
-            when={recipes().length}
-            fallback={<div class="p-2 text-sm text-v2-text-text-muted">No recipes yet — make one.</div>}
-          >
-            <For each={recipes()}>
-              {(recipe) => (
-                <button
-                  class="mb-1.5 block w-full rounded-md border px-2.5 py-2 text-left transition-colors"
-                  classList={{
-                    "border-v2-border-border-focus bg-v2-background-bg-layer-02": selected() === recipe.slug,
-                    "border-transparent hover:bg-v2-background-bg-layer-01": selected() !== recipe.slug,
-                  }}
-                  onClick={() => open(recipe)}
-                >
-                  <div class="flex items-center gap-1.5">
-                    <span class="min-w-0 flex-1 truncate text-sm font-medium">{recipe.name}</span>
-                    <Show when={recipe.builtin}>
-                      <span class="rounded bg-v2-background-bg-layer-03 px-1.5 py-0.5 text-[10px] text-v2-text-text-faint">
-                        shipped
-                      </span>
-                    </Show>
+        {/* ── The list, on its shelves ─────────────────────────────────────────────────────────── */}
+        <div class="flex w-72 shrink-0 flex-col border-r border-v2-border-border-base">
+          <div class="p-2">
+            <TextInputV2
+              type="text"
+              class="w-full"
+              placeholder="Search recipes"
+              value={query()}
+              onInput={(event) => setQuery(event.currentTarget.value)}
+            />
+          </div>
+          <div class="min-h-0 flex-1 overflow-auto px-2 pb-2">
+            <Show
+              when={groups().length}
+              fallback={
+                <div class="p-2 text-sm text-v2-text-text-muted" data-slot="recipes-empty">
+                  {recipes().length === 0 ? "No recipes yet — make one, or import one." : "Nothing matches that."}
+                </div>
+              }
+            >
+              <For each={groups()}>
+                {(group) => (
+                  <div class="mb-3">
+                    {/* A shelf, not a profile: a title and a line about what lives here, no settings.
+                        Membership is decided by the build — a recipe cannot declare its own shelf. */}
+                    <div class={LABEL} data-slot="recipe-shelf">
+                      {group.collection.title}
+                    </div>
+                    <div class="mt-0.5 mb-1.5 text-[11px] text-v2-text-text-faint">{group.collection.note}</div>
+                    <For each={group.recipes}>
+                      {(recipe) => (
+                        <button
+                          class="mb-1.5 block w-full rounded-md border px-2.5 py-2 text-left transition-colors"
+                          classList={{
+                            "border-v2-border-border-focus bg-v2-background-bg-layer-02": selected() === recipe.key,
+                            "border-transparent hover:bg-v2-background-bg-layer-01": selected() !== recipe.key,
+                          }}
+                          data-slot="recipe-row"
+                          onClick={() => open(recipe)}
+                        >
+                          <div class="flex items-center gap-1.5">
+                            <span class="min-w-0 flex-1 truncate text-sm font-medium">{recipe.name}</span>
+                            <Show when={recipe.assets.length}>
+                              <span class="shrink-0 rounded bg-v2-background-bg-layer-03 px-1.5 py-0.5 text-[10px] text-v2-text-text-faint">
+                                {recipe.assets.length} file{recipe.assets.length === 1 ? "" : "s"}
+                              </span>
+                            </Show>
+                          </div>
+                          <Show when={recipe.hasDescription}>
+                            <div class="mt-0.5 line-clamp-2 text-xs text-v2-text-text-muted">{recipe.description}</div>
+                          </Show>
+                        </button>
+                      )}
+                    </For>
                   </div>
-                  <Show when={recipe.description}>
-                    <div class="mt-0.5 line-clamp-2 text-xs text-v2-text-text-muted">{recipe.description}</div>
-                  </Show>
-                  <Show when={recipe.assets.length}>
-                    <div class="mt-0.5 text-[11px] text-v2-text-text-faint">{recipe.assets.length} asset(s)</div>
-                  </Show>
-                </button>
-              )}
-            </For>
-          </Show>
+                )}
+              </For>
+            </Show>
+          </div>
         </div>
 
-        {/* The detail / editor */}
+        {/* ── The detail ───────────────────────────────────────────────────────────────────────── */}
         <div class="min-w-0 flex-1 overflow-auto p-4">
-          <Show
-            when={creating() || current()}
-            fallback={
-              <div class="text-sm text-v2-text-text-muted">
-                Pick a recipe on the left, or make a new one. Running a recipe copies it into a work folder and starts a
-                chat there — the recipe itself is never changed, so you can cook it again any time.
-              </div>
-            }
-          >
-            <div class="flex flex-col gap-3">
-              <div class="flex flex-wrap items-center gap-2">
-                <TextInputV2
-                  type="text"
-                  appearance="large"
-                  class="!min-w-[240px] flex-1"
-                  placeholder="Recipe name"
-                  value={draftName()}
-                  onInput={(event) => {
-                    setDraftName(event.currentTarget.value)
-                    setDirty(true)
-                  }}
-                />
+          <Show when={importing()}>
+            <div class="max-w-2xl">
+              <ImportPanel
+                text={importText()}
+                onText={setImportText}
+                preview={preview()}
+                busy={busy()}
+                onCancel={() => setImporting(false)}
+                onImport={() => void doImport()}
+              />
+            </div>
+          </Show>
+
+          <Show when={!importing()}>
+            <Show
+              when={creating() || current()}
+              fallback={
+                <div class="max-w-2xl text-sm text-v2-text-text-muted" data-slot="recipes-intro">
+                  <p>Pick a recipe on the left, make a new one, or import one somebody sent you.</p>
+                  <p class="mt-2">{REPRODUCIBILITY.headline}</p>
+                  <p class="mt-2">{REPRODUCIBILITY.gain}</p>
+                  <p class="mt-2">{REPRODUCIBILITY.reassurance}</p>
+                </div>
+              }
+            >
+              <div class="flex max-w-3xl flex-col gap-3">
+                <div class="flex flex-wrap items-center gap-2">
+                  <TextInputV2
+                    type="text"
+                    appearance="large"
+                    class="!min-w-[240px] flex-1"
+                    placeholder="Recipe name"
+                    value={draftName()}
+                    onInput={(event) => {
+                      setDraftName(event.currentTarget.value)
+                      setDirty(true)
+                    }}
+                  />
+                  <Show when={current()}>
+                    {(recipe) => (
+                      <>
+                        <button
+                          class={PRIMARY}
+                          data-action="recipe-run"
+                          disabled={busy()}
+                          onClick={() => void cook(recipe())}
+                        >
+                          Run
+                        </button>
+                        <button class={BTN} disabled={busy() || !conn()} onClick={() => cookElsewhere(recipe())}>
+                          Run in…
+                        </button>
+                        {/* Anti-obscurantist: a VISIBLE switch next to the button it changes, not a
+                            hidden menu — the same Strict lever the composer gives a chat. */}
+                        <button
+                          class={BTN}
+                          aria-pressed={strictCook()}
+                          data-action="recipe-strict-toggle"
+                          title="Cook under the Strict harness: the run is decomposed into small steps, each verified before the next. Slower, and it can race several attempts."
+                          onClick={() => setStrictCook((on) => !on)}
+                        >
+                          {strictCook() ? "🛡️ Strict on" : "Strict off"}
+                        </button>
+                        <button class={BTN} disabled={busy()} onClick={() => void copy(recipe())}>
+                          Copy
+                        </button>
+                        <button
+                          class={BTN}
+                          data-action="recipe-export"
+                          disabled={busy() || !source()}
+                          title={describeExport(recipe())}
+                          onClick={() => {
+                            const file = source()
+                            if (file) exportRecipe(recipe(), file)
+                          }}
+                        >
+                          Export
+                        </button>
+                        <button
+                          class={BTN}
+                          disabled={busy()}
+                          onClick={() => void remove(recipe())}
+                          title="Delete recipe"
+                        >
+                          <Icon name="trash" size="normal" />
+                        </button>
+                      </>
+                    )}
+                  </Show>
+                </div>
+
+                {/* ── 1. The trade, beside the button it is about. ─────────────────────────────── */}
+                <section
+                  class="rounded-lg border border-v2-border-border-focus bg-v2-background-bg-layer-02 p-3"
+                  data-slot="recipe-reproducibility"
+                >
+                  <h2 class="text-xs font-semibold tracking-wide text-v2-text-text-accent uppercase">
+                    What running this actually does
+                  </h2>
+                  <p class="mt-1.5 text-sm text-v2-text-text-base">{REPRODUCIBILITY.headline}</p>
+                  <p class="mt-1.5 text-sm text-v2-text-text-base">{REPRODUCIBILITY.gain}</p>
+                  <p class="mt-1.5 text-sm text-v2-text-text-muted" data-slot="recipe-reproducibility-price">
+                    {REPRODUCIBILITY.price}
+                  </p>
+                  <p class="mt-1.5 text-xs text-v2-text-text-faint">{REPRODUCIBILITY.reassurance}</p>
+                </section>
+
+                {/* ── 2. Before you run: what this machine has. OUR observation. ───────────────── */}
+                <Show when={current()}>
+                  <section class={CARD} data-slot="recipe-needs">
+                    <h2 class={LABEL}>Before you run</h2>
+                    <p
+                      class="mt-1.5 text-sm"
+                      classList={{
+                        "text-v2-state-fg-danger": needs().blocksRun,
+                        "text-v2-text-text-base": !needs().blocksRun,
+                      }}
+                      data-slot="recipe-needs-sentence"
+                    >
+                      {needs().sentence}
+                    </p>
+                    <Show when={needs().looked.length}>
+                      <p class="mt-1 text-[11px] break-all text-v2-text-text-faint">
+                        {`I looked for: ${needs().looked.join(", ")}. If it is installed somewhere I did not look, delete this recipe's “needs:” line and run it anyway — the recipe is yours.`}
+                      </p>
+                    </Show>
+                  </section>
+                </Show>
+
+                {/* ── 3. What a finished run should leave behind, and how to say so. ───────────── */}
                 <Show when={current()}>
                   {(recipe) => (
-                    <>
-                      <button class={PRIMARY} disabled={busy()} onClick={() => void cook(recipe())}>
-                        Run
-                      </button>
-                      <button class={BTN} disabled={busy() || !conn()} onClick={() => cookElsewhere(recipe())}>
-                        Run in…
-                      </button>
-                      {/* Anti-obscurantist: a VISIBLE switch next to the button it changes, not a
-                          hidden menu — the same Strict lever the composer gives a chat. */}
-                      <button
-                        class={BTN}
-                        aria-pressed={strictCook()}
-                        data-action="recipe-strict-toggle"
-                        title="Cook under the Strict harness: the run is decomposed into small steps, each verified before the next. Slower, and it can race several attempts."
-                        onClick={() => setStrictCook((on) => !on)}
-                      >
-                        {strictCook() ? "🛡️ Strict on" : "Strict off"}
-                      </button>
-                      <button class={BTN} disabled={busy()} onClick={() => void copy(recipe())}>
-                        Copy
-                      </button>
-                      <button class={BTN} disabled={busy()} onClick={() => void remove(recipe())} title="Delete recipe">
-                        <Icon name="trash" size="normal" />
-                      </button>
-                    </>
+                    <section class={CARD} data-slot="recipe-produces">
+                      <h2 class={LABEL}>What a finished run should leave behind</h2>
+                      <p class="mt-1.5 text-sm text-v2-text-text-base" data-slot="recipe-produces-sentence">
+                        {declared().sentence}
+                      </p>
+                      <Show when={declared().advice}>
+                        <p class="mt-1 text-xs text-v2-text-text-muted">{declared().advice}</p>
+                      </Show>
+                      <Show when={declared().state !== "unreadable"}>
+                        <div class="mt-2 flex flex-wrap items-center gap-2">
+                          <input
+                            class={`${FIELD} min-w-[260px] flex-1 font-mono text-[12px]`}
+                            placeholder="report.md, chart.html"
+                            data-slot="recipe-produces-input"
+                            value={producesDirty() ? producesDraft() : declared().files.join(", ")}
+                            onInput={(event) => {
+                              setProducesDraft(event.currentTarget.value)
+                              setProducesDirty(true)
+                            }}
+                          />
+                          <button
+                            class={BTN}
+                            data-action="recipe-produces-save"
+                            disabled={busy() || !producesDirty()}
+                            onClick={() => void saveProduces()}
+                          >
+                            Save file names
+                          </button>
+                        </div>
+                        <p class="mt-1 text-[11px] text-v2-text-text-faint">
+                          Just file names, separated by commas — no commands. Saving this changes one line
+                          of the recipe and nothing else in the file.
+                        </p>
+                      </Show>
+                    </section>
                   )}
                 </Show>
-              </div>
 
-              <input
-                class={`${FIELD} w-full`}
-                placeholder="One-line description (optional)"
-                value={draftDescription()}
-                onInput={(event) => {
-                  setDraftDescription(event.currentTarget.value)
-                  setDirty(true)
-                }}
-              />
+                {/* ── 4. The receipt. Four verdicts, kept apart. ───────────────────────────────── */}
+                <Show when={current()}>
+                  {(recipe) => (
+                    <section class={CARD} data-slot="recipe-receipt">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <h2 class={`${LABEL} flex-1`}>Did it work?</h2>
+                        <Show when={cooked()}>
+                          {(last) => (
+                            <button
+                              class={BTN}
+                              data-action="recipe-check"
+                              disabled={checking()}
+                              onClick={() => void check(recipe(), last().directory)}
+                            >
+                              {checking() ? "Checking…" : "Check the last run again"}
+                            </button>
+                          )}
+                        </Show>
+                        <button
+                          class={BTN}
+                          data-action="recipe-check-elsewhere"
+                          disabled={checking() || !conn()}
+                          onClick={() => checkElsewhere(recipe())}
+                        >
+                          Check a folder…
+                        </button>
+                      </div>
 
-              <textarea
-                class={`${FIELD} min-h-[320px] w-full font-mono text-[13px] leading-relaxed`}
-                placeholder="The prompt. This IS the recipe — describe what you want cooked, precisely enough that an agent can do it without you."
-                value={draftPrompt()}
-                onInput={(event) => {
-                  setDraftPrompt(event.currentTarget.value)
-                  setDirty(true)
-                }}
-              />
-
-              <div class="flex flex-wrap items-center gap-3">
-                <button class={BTN} disabled={!canSave() || busy()} onClick={() => void save()}>
-                  {creating() ? "Create recipe" : "Save changes"}
-                </button>
-                <Show when={dirty() && !creating()}>
-                  <span class="text-xs text-v2-text-text-accent">Unsaved changes</span>
+                      <Show
+                        when={verdict()}
+                        fallback={
+                          <p class="mt-1.5 text-sm text-v2-text-text-muted" data-slot="recipe-receipt-none">
+                            {cooked()
+                              ? "This ran in this session — checking the work folder now."
+                              : "Run it, then come back here. NovaClaw looks in the work folder itself and tells you what it found — it does not take the model's word for it."}
+                          </p>
+                        }
+                      >
+                        {(view) => (
+                          <div class="mt-2">
+                            <div class="flex flex-wrap items-center gap-2">
+                              <span
+                                class={`rounded border px-2 py-0.5 text-xs font-semibold ${TONE[view().tone]}`}
+                                data-slot="recipe-verdict-label"
+                              >
+                                {view().label}
+                              </span>
+                              <span class="text-xs text-v2-text-text-faint" data-slot="recipe-verdict-subject">
+                                {`about: ${view().subject}`}
+                              </span>
+                            </div>
+                            <p class="mt-1.5 text-sm text-v2-text-text-base" data-slot="recipe-verdict-meaning">
+                              {view().meaning}
+                            </p>
+                            <p class="mt-1 text-sm text-v2-text-text-muted" data-slot="recipe-verdict-advice">
+                              {view().advice}
+                            </p>
+                            <Show when={view().rows.length}>
+                              <ul class="mt-2 flex flex-col gap-1" data-slot="recipe-verdict-rows">
+                                <For each={view().rows}>
+                                  {(row) => (
+                                    <li class="text-xs text-v2-text-text-muted">
+                                      {/* The separator is real TEXT, not margin: read aloud or copied, a
+                                          bare margin makes this "pi.txtnot found". */}
+                                      <span class="font-mono text-v2-text-text-base">
+                                        {row.path || row.declared}
+                                      </span>
+                                      <span>{" — "}</span>
+                                      <span>{OUTCOME_WORD[row.outcome] ?? row.outcome}</span>
+                                      <span>{": "}</span>
+                                      <span>{row.checked}</span>
+                                      <Show when={row.size}>
+                                        <span>{` (${row.size})`}</span>
+                                      </Show>
+                                    </li>
+                                  )}
+                                </For>
+                              </ul>
+                            </Show>
+                            <p class="mt-2 text-[11px] break-all text-v2-text-text-faint">
+                              {`Checked ${view().directory}`}
+                            </p>
+                            <p class="mt-1 text-[11px] text-v2-text-text-faint" data-slot="recipe-verdict-summary">
+                              {view().summary}
+                            </p>
+                          </div>
+                        )}
+                      </Show>
+                    </section>
+                  )}
                 </Show>
-                <Show when={current()?.builtin}>
-                  <span class="text-xs text-v2-text-text-faint">
-                    Shipped with NovaClaw — edit freely, your version is kept on upgrade.
-                  </span>
-                </Show>
-              </div>
 
-              <Show when={current()?.assets.length}>
-                <div class={CARD}>
-                  <div class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-faint">Assets</div>
-                  <div class="mt-1 text-sm text-v2-text-text-muted">{current()!.assets.join(", ")}</div>
-                  <div class="mt-1 text-[11px] text-v2-text-text-faint">
-                    Copied into the work folder alongside the prompt when you run it.
+                {/* ── 5. The recipe itself — the author's words, and the editor. ───────────────── */}
+                <div class="flex flex-col gap-2">
+                  <h2 class={LABEL}>The recipe</h2>
+                  <Show when={current()?.shipped}>
+                    <p class="text-xs text-v2-text-text-faint">
+                      This one shipped with NovaClaw. Edit it freely — your version is kept on upgrade, and
+                      deleting it brings the original back on next start.
+                    </p>
+                  </Show>
+                  <Show when={current() && !current()!.shipped}>
+                    <p class="text-xs text-v2-text-text-faint" data-slot="recipe-authorship">
+                      The text below is whoever wrote this recipe speaking, not NovaClaw. If somebody sent it
+                      to you, read it before you run it.
+                    </p>
+                  </Show>
+                  {/* ⚠️ The boxes below hold the RAW text, because whatever is in them is what Save writes
+                      back — flattening here would delete characters from the file on every round trip. So
+                      the surface says out loud that the text is not what it looks like. */}
+                  <Show when={current()?.hiddenCharacters}>
+                    <p class="text-xs text-v2-state-fg-warning" data-slot="recipe-hidden-characters">
+                      Careful: this recipe's own text contains invisible characters — the kind that can make a
+                      name or a filename read differently than it really is. The boxes below show it exactly as
+                      it is stored, so what you see here may not match what you saw in the list.
+                    </p>
+                  </Show>
+                  <input
+                    class={`${FIELD} w-full`}
+                    placeholder="One-line description (optional)"
+                    value={draftDescription()}
+                    onInput={(event) => {
+                      setDraftDescription(event.currentTarget.value)
+                      setDirty(true)
+                    }}
+                  />
+                  <textarea
+                    class={`${FIELD} min-h-[320px] w-full font-mono text-[13px] leading-relaxed`}
+                    placeholder="The prompt. This IS the recipe — describe what you want cooked, precisely enough that an agent can do it without you."
+                    data-slot="recipe-prompt"
+                    value={draftPrompt()}
+                    onInput={(event) => {
+                      setDraftPrompt(event.currentTarget.value)
+                      setDirty(true)
+                    }}
+                  />
+                  <div class="flex flex-wrap items-center gap-3">
+                    <button class={BTN} disabled={!canSave() || busy()} onClick={() => void save()}>
+                      {creating() ? "Create recipe" : "Save changes"}
+                    </button>
+                    <Show when={dirty() && !creating()}>
+                      <span class="text-xs text-v2-text-text-accent">Unsaved changes</span>
+                    </Show>
                   </div>
                 </div>
-              </Show>
-            </div>
+
+                <Show when={current()?.assets.length}>
+                  <div class={CARD}>
+                    <div class={LABEL}>Files that travel with it</div>
+                    <div class="mt-1 text-sm break-all text-v2-text-text-muted">{current()!.assets.join(", ")}</div>
+                    <div class="mt-1 text-[11px] text-v2-text-text-faint">
+                      Copied into the work folder alongside the prompt when you run it. Export saves the
+                      recipe's own file only — send the whole folder to share these too.
+                    </div>
+                  </div>
+                </Show>
+              </div>
+            </Show>
           </Show>
         </div>
       </div>
     </AppPage>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Paste a `recipe.md` somebody sent you and see what it actually says BEFORE it lands on disk.
+ *
+ * ⚠️ Everything shown here is a stranger's text, labelled as such. The parse is a PREVIEW, not the
+ * authority: the server reads the file again and stores the BYTES, so a disagreement between the two can
+ * only ever mislabel this panel — it can never write something other than what was pasted.
+ */
+function ImportPanel(props: {
+  text: string
+  onText: (value: string) => void
+  preview: ReturnType<typeof previewImport>
+  busy: boolean
+  onCancel: () => void
+  onImport: () => void
+}) {
+  return (
+    <div class="flex flex-col gap-3" data-component="recipe-import">
+      <div>
+        <h1 class="text-lg font-semibold">Import a recipe</h1>
+        <p class="mt-1 text-sm text-v2-text-text-muted">
+          A recipe is a plain text file. Paste one here — from an email, a message, a folder somebody shared
+          — and it is stored exactly as it was written.
+        </p>
+      </div>
+
+      <textarea
+        class={`${FIELD} min-h-[220px] w-full font-mono text-[12px] leading-relaxed`}
+        placeholder={"---\nname: Their recipe\nproduces: report.md\n---\n\nWhat they want cooked…"}
+        data-slot="recipe-import-text"
+        value={props.text}
+        onInput={(event) => props.onText(event.currentTarget.value)}
+      />
+
+      <Show when={props.text.trim() !== ""}>
+        <section class={CARD} data-slot="recipe-import-preview">
+          <h2 class={LABEL}>What this file says</h2>
+          <Show
+            when={props.preview.ok}
+            fallback={
+              <p class="mt-1.5 text-sm text-v2-state-fg-danger" data-slot="recipe-import-problem">
+                {props.preview.problem}
+              </p>
+            }
+          >
+            <p class="mt-1.5 text-sm text-v2-text-text-base">
+              <span class="text-v2-text-text-faint">{"It calls itself: "}</span>
+              {props.preview.name || "(no name — it will be filed as “imported-recipe”)"}
+            </p>
+            <Show when={props.preview.description}>
+              <p class="mt-1 text-sm text-v2-text-text-muted">
+                <span class="text-v2-text-text-faint">{"Its own description: "}</span>
+                {props.preview.description}
+              </p>
+            </Show>
+            <Show when={props.preview.needs.length}>
+              <p class="mt-1 text-sm text-v2-text-text-muted">
+                {`It says it needs: ${props.preview.needs.join(", ")}. NovaClaw checks that itself before it runs.`}
+              </p>
+            </Show>
+            <Show when={props.preview.produces.length}>
+              <p class="mt-1 text-sm text-v2-text-text-muted">
+                {`It says a finished run leaves: ${props.preview.produces.join(", ")}.`}
+              </p>
+            </Show>
+            <Show when={props.preview.unmodelled.length}>
+              <p class="mt-1 text-xs text-v2-text-text-faint" data-slot="recipe-import-unmodelled">
+                {`It also carries lines NovaClaw does not use: ${props.preview.unmodelled.join(" · ")}. They are kept in the file exactly as written.`}
+              </p>
+            </Show>
+            <p class="mt-2 text-[11px] text-v2-text-text-faint">
+              Somebody else wrote this. Nothing in the file can grant it any permission — the prompt below is
+              all it is. Read it before you run it.
+            </p>
+            <pre class="mt-1.5 max-h-[240px] overflow-auto rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-02 p-2.5 font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-v2-text-text-muted">
+              {props.preview.body}
+            </pre>
+          </Show>
+        </section>
+      </Show>
+
+      <div class="flex flex-wrap items-center gap-3">
+        <button
+          class={PRIMARY}
+          data-action="recipe-import-confirm"
+          disabled={props.busy || !props.preview.ok || props.text.trim() === ""}
+          onClick={() => props.onImport()}
+        >
+          Import it
+        </button>
+        <button class={BTN} onClick={() => props.onCancel()}>
+          Cancel
+        </button>
+        <span class="text-xs text-v2-text-text-faint">
+          Importing never replaces a recipe you already have — a name that is taken gets the next free one.
+        </span>
+      </div>
+    </div>
   )
 }

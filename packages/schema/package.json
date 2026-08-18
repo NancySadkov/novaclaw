@@ -9,7 +9,7 @@
     "./*": "./src/*.ts"
   },
   "scripts": {
-    "typecheck": "tsgo -b"
+    "typecheck": "bun ../../script/tsgo.ts -b"
   },
   "dependencies": {
     "effect": "catalog:"

@@ -819,6 +819,24 @@ export async function producesOf(slug: string, options?: Options): Promise<strin
   return declarationsOf(slug, parseProduces, options)
 }
 
+/**
+ * The bytes of a recipe's `recipe.md`, exactly as they are on disk, or `undefined` when there is no
+ * readable file there.
+ *
+ * ⚠️ **`undefined` means WE COULD NOT READ IT, and it is not the same answer as an empty declaration.**
+ * A caller showing a recipe's `produces:` must be able to tell "this recipe names no artifact" apart from
+ * "I could not open the file", because the first is a fact about the recipe and the second is a fact
+ * about us — collapsing them shows a user a confident sentence about a file nobody read.
+ *
+ * Exists because the wire record carries the PROMPT (the body) and not the file: a person exporting a
+ * recipe to send to somebody must get the author's own bytes — frontmatter, key order, line endings and
+ * all — and not a re-rendering of the two fields this build happens to model.
+ */
+export async function sourceOf(slug: string, options?: Options): Promise<string | undefined> {
+  if (!isValidSlug(slug)) return undefined
+  return fs.readFile(path.join(recipesRoot(options), slug, RECIPE_FILE), "utf8").catch(() => undefined)
+}
+
 const declarationsOf = async (
   slug: string,
   read: (frontmatter: readonly string[]) => string[],
@@ -875,6 +893,62 @@ export async function save(input: SaveInput, options?: Options): Promise<RecipeR
   const saved = await readOne(root, slug, input.builtin ? new Set([slug]) : new Set())
   if (!saved) throw new Error(`Recipe "${slug}" could not be read back after saving`)
   return saved
+}
+
+/**
+ * The most a single pasted/dropped `recipe.md` may be. A recipe is prose a person wrote; a megabyte is
+ * already a book, and the cap is here so an import cannot be the thing that fills a disk.
+ */
+export const IMPORT_CAP = 1024 * 1024
+
+/**
+ * Store a `recipe.md` that came from somewhere else — a colleague's message, a shared folder, a zip off
+ * the internet — **byte for byte**.
+ *
+ * ⭐ Verbatim is the whole point, and it is `materialize`'s decision one path over: re-rendering an
+ * imported file would hand the user a two-field reconstruction of a stranger's prose, silently dropping
+ * every frontmatter line this build does not model (`produces:`, a `level:` the schema batch has not
+ * landed yet, the author's comments). *Source rots, intent doesn't* — the intent is the bytes.
+ *
+ * ⚠️ **An imported recipe is untrusted input, and nothing here trusts it.** The bytes only ever become a
+ * file on the user's own disk; the two machine-read lines inside are contained where they are READ
+ * (`checkNeed` only selects rows from a compiled table, `recipe-verify.relativeInside` refuses anything
+ * that is not a plain relative name), and the slug — the one part that becomes a PATH — is derived
+ * through {@link slugify} and re-checked against {@link isValidSlug} rather than taken from the file.
+ *
+ * Never overwrites: an import that collides takes the next free `<slug>-2`, `-3`, … exactly as
+ * {@link duplicate} does, so importing the same recipe twice cannot destroy the first copy or a recipe of
+ * the user's own that happens to share a name.
+ */
+export async function importMarkdown(markdown: string, options?: Options & { slug?: string }): Promise<RecipeRecord> {
+  if (markdown.length > IMPORT_CAP)
+    throw new Error(`That file is too big to be a recipe (over ${Math.round(IMPORT_CAP / 1024)} KB)`)
+  const parsed = parse(markdown)
+  if (parsed.prompt === "")
+    throw new Error("That file has no prompt — the prompt IS the recipe, so there would be nothing to cook")
+  const wanted = options?.slug?.trim() || slugify(parsed.name ?? "") || "imported-recipe"
+  if (!isValidSlug(wanted)) throw new Error(`Invalid recipe id: ${wanted}`)
+  const root = recipesRoot(options)
+  await fs.mkdir(root, { recursive: true })
+  let target = ""
+  for (let index = 1; index < 100; index++) {
+    const candidate = index === 1 ? wanted : `${wanted}-${index}`.slice(0, 64)
+    // `mkdir` without `recursive` IS the claim: it fails when the folder exists, so two imports racing
+    // each other cannot both decide the same name is free.
+    const claimed = await fs.mkdir(path.join(root, candidate)).then(
+      () => true,
+      () => false,
+    )
+    if (claimed) {
+      target = candidate
+      break
+    }
+  }
+  if (!target) throw new Error(`Too many recipes named like "${wanted}"`)
+  await fs.writeFile(path.join(root, target, RECIPE_FILE), markdown, "utf8")
+  const imported = await readOne(root, target, new Set())
+  if (!imported) throw new Error(`Imported recipe "${target}" could not be read back`)
+  return imported
 }
 
 /** Remove a recipe folder and its assets. Returns whether it existed. */

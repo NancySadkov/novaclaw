@@ -28,7 +28,8 @@ import { SessionTool } from "@novaclaw/core/tool/session"
 import { WebSearch } from "@novaclaw/core/websearch/service"
 import { location } from "./fixture/location"
 import { testEffect } from "./lib/effect"
-import { executeTool, toolIdentity } from "./lib/tool"
+import { bypassedPolicyGate, executeTool, toolIdentity } from "./lib/tool"
+import { ToolPolicyGate } from "@novaclaw/core/tool-policy-gate"
 
 /**
  * **The prompt-injection frame covered ONE source out of several.**
@@ -239,7 +240,7 @@ const websearch = testEffect(
   AppNodeBuilder.build(LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, WebSearchTool.node]), [
     [PermissionV2.node, permissionMock],
     [WebSearch.node, searchMock],
-    [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
+    [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig], [ToolPolicyGate.node, bypassedPolicyGate],
   ]),
 )
 
@@ -323,7 +324,7 @@ const chatInfo = (title: string, access: Messenger.SourceLabel) =>
 
 const messenger = testEffect(
   AppNodeBuilder.build(LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, MessengerTool.node]), [
-    [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
+    [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig], [ToolPolicyGate.node, bypassedPolicyGate],
     [PermissionV2.node, permissionMock],
     [
       Location.node,

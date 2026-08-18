@@ -8,7 +8,7 @@
     "db": "bun drizzle-kit",
     "migration": "bun run script/migration.ts",
     "test": "bun test --only-failures",
-    "typecheck": "tsgo -b && tsgo -p tsconfig.smoke.json"
+    "typecheck": "bun ../../script/tsgo.ts -b && bun ../../script/tsgo.ts -p tsconfig.smoke.json"
   },
   "exports": {
     "./effect/layer-node": "./src/effect/layer-node.ts",

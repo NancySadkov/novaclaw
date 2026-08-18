@@ -112,6 +112,34 @@ export const dict = {
   "nav.chats": "Chats",
   "processes.status.working": "Working…",
 
+  // Session presence — who else is looking at this chat, who is driving, and what to do when two
+  // surfaces reach for it at once. Every line here has to read as an explanation, not a fault:
+  // two people in one chat is a normal thing that happens, and the UI teaches it (principle 8).
+  "presence.you": "you",
+  "presence.viewer.browser": "a browser window",
+  "presence.viewer.desktop": "the desktop app",
+  "presence.viewer.peer": "another NovaClaw",
+  "presence.viewer.agent": "an agent",
+  "presence.attached": "{{count}} attached",
+  "presence.attached.title": "Attached right now: {{list}}",
+  "presence.watching": "{{driver}} is driving this chat. You're watching along — you can still type.",
+  "presence.driving": "{{others}} is here too, watching along. You're driving.",
+  // These three name who is ACTUALLY writing. A room is contended as soon as anyone who is not
+  // driving has a draft, so a single "you and X are both writing" line told the driver they were
+  // writing when they were not — found by opening two windows, not by a test.
+  "presence.contended.driving": "{{writers}} is writing here too. You're driving — whoever sends first goes first.",
+  "presence.contended.youWriting":
+    "You're writing while {{driver}} drives this chat. Whoever sends first goes first.",
+  "presence.contended.otherWriting":
+    "{{writers}} is writing here, and {{driver}} is driving. Whoever sends first goes first.",
+  "presence.takeOver": "Take over",
+  // Short on purpose: the line beside this one already says who is driving, so a handoff notice
+  // that repeats it reads as a stutter ("You're driving. You're driving now.") — seen in the app.
+  "presence.handoff.youTookOver": "You took over.",
+  "presence.handoff.otherTookOver": "{{who}} took over.",
+  "presence.handoff.youInherited": "{{who}} left, so you're driving now.",
+  "presence.handoff.otherInherited": "{{who}} is driving now.",
+
   // Expertise levels — progressive disclosure with consent (uix.md §6).
   "settings.expertise.title": "Experience level",
   "settings.expertise.description": "Choose how much of NovaClaw you want to see. You can change this anytime.",
@@ -2606,8 +2634,56 @@ export const dict = {
     "Your agents disagree: {{deny}} refuse this skill, {{ask}} would ask you first, {{allow}} can open it without asking.",
   "skills.enablement.blocked": "Every one of your agents refuses this skill. It is loaded, but none of them will open it.",
   "skills.enablement.unknown": "NovaClaw could not read your agent list, so it cannot say who may open this skill.",
+  // ⚠️ This line used to read "There is no on/off switch for a single skill." That was true until
+  // the two invocation switches below it landed, and AGENTS.md principle 12's own lesson is that
+  // copy has to move WITH the control — a fixed control under a sentence describing the old one
+  // leaves the reader following an instruction the product no longer needs.
   "skills.enablement.noSwitch":
-    "There is no on/off switch for a single skill. A skill is here because its folder is on the list of places NovaClaw looks — take the folder off that list and the skill goes with it.",
+    "This is the whole permission picture. The switch below changes one part of it — whether your agents are offered this skill at all. Removing the skill entirely is still a matter of taking its folder off the list of places NovaClaw looks.",
+
+  "skills.invocation.title": "How it gets used",
+  // AGENTS.md principle 12(d): say what is in force RIGHT NOW, before any control.
+  "skills.invocation.inForce.everywhere":
+    "Right now: Nova may pick this skill by itself, and it is in your slash menu for you to run.",
+  "skills.invocation.inForce.onlyWhenIChoose":
+    "Right now: only when you choose it. Nova will never pick this skill by itself; it stays in your slash menu for you.",
+  "skills.invocation.inForce.onlyNova":
+    "Right now: Nova may pick this skill by itself, and it is kept out of your slash menu.",
+  "skills.invocation.inForce.nowhere":
+    "Right now: neither. Nova will not pick it and it is not in your slash menu. It stays installed, and you can still read it here.",
+  "skills.invocation.independent":
+    "Two separate switches, not one setting with three positions. Keep a skill for yourself, keep it for Nova, or keep it for both — whichever you leave alone stays where it is.",
+  "skills.invocation.nova.label": "Nova may choose this",
+  "skills.invocation.nova.help":
+    "On, your agents are told this skill exists and may open it when a task matches. Off writes one permission rule: the skill is no longer mentioned to them at all, and it is refused if an agent names it anyway.",
+  "skills.invocation.me.label": "Show it for me to run",
+  "skills.invocation.me.help":
+    "On, it appears in the slash menu in the message box. Off, it does not. This is your own menu rather than a lock — if you type its exact name it still runs.",
+  "skills.invocation.preset.onlyWhenIChoose": "Only when I choose it",
+  "skills.invocation.preset.help":
+    "A shortcut that sets both switches at once: “Nova may choose this” off, “Show it for me to run” on.",
+  "skills.invocation.preset.applied": "Both switches are already set that way.",
+  "skills.invocation.blockedElsewhere":
+    "Careful: another permission rule of yours already refuses this skill, so leaving this switch on changes nothing until that rule does. “Who can use it” above shows what your agents actually do.",
+  "skills.invocation.locked.title": "These switches are unavailable for this skill",
+  "skills.invocation.locked.empty":
+    "This skill's name is empty once the invisible characters are removed, so there is no name to save a choice against. Ask whoever wrote it for a real name.",
+  "skills.invocation.locked.tooLong":
+    "This skill's name is too long to save a choice against ({{max}} characters at most). Shortening it in the skill's own file makes these switches work.",
+  "skills.invocation.locked.invisible":
+    "This skill's name contains characters you cannot see — the kind that make a name read as something other than what it is. NovaClaw will not save a setting against a name it cannot show you truthfully.",
+  "skills.invocation.locked.wildcard":
+    "This skill's name contains * or ?, which are the “match anything” characters in a permission rule. A rule written for this name would also cover other skills, so NovaClaw refuses to write one.",
+  "skills.invocation.locked.unnormalized":
+    "This skill's name is spelled with combining accents rather than the ordinary single letters, so two names that look identical would be saved as two different ones. NovaClaw refuses rather than guess which you meant.",
+  "skills.invocation.unknowns":
+    "These switches decide when the skill is offered — they are not a safety verdict. NovaClaw cannot tell you what a skill is allowed to do, whether it fits this version, or who really wrote it: the skill format has nowhere to say any of it. What is above — where the file came from, what it says about itself, and the words in its instructions — is everything NovaClaw actually knows.",
+  "skills.invocation.orphans.title": "Saved choices for skills that are not here",
+  "skills.invocation.orphans.text":
+    "You decided something about these, and NovaClaw no longer finds a skill by that name. They are kept in case the skill comes back — a source can be offline, or a folder temporarily moved.",
+  "skills.invocation.orphans.forget": "Forget",
+  "skills.invocation.error":
+    "That change could not be saved. Nothing was altered — your agents and your menu are as they were.",
 
   "skills.instructions.title": "The instructions themselves",
   "skills.instructions.note": "This is the text your agent is given, word for word, when it opens this skill.",
@@ -2616,6 +2692,10 @@ export const dict = {
   "skills.sources.title": "Where NovaClaw looks",
   "skills.sources.none":
     "You have added no extra places. NovaClaw still reads its own skills folder and the project you have open.",
+  // ⚠️ Moved with the control too: this used to end "…not a per-skill switch", which stopped being
+  // true the day one shipped. The distinction it was reaching for is still real, so it is stated
+  // instead of implied — this list decides which skills EXIST, the per-skill switches decide when
+  // an existing one is offered.
   "skills.sources.note":
-    "Folders and web addresses you added. Changing this list is a settings change, not a per-skill switch.",
+    "Folders and web addresses you added. This list decides which skills exist at all; each skill's own switches decide when it is offered.",
 }

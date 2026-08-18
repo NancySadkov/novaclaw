@@ -20,7 +20,7 @@
     "./v2/*": "./src/v2/components/*.tsx"
   },
   "scripts": {
-    "typecheck": "tsgo -b",
+    "typecheck": "bun ../../script/tsgo.ts -b",
     "test": "bun test src --only-failures"
   },
   "devDependencies": {

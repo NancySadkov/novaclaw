@@ -13,7 +13,8 @@ import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
 import { tmpdir } from "./fixture/tmpdir"
 import { it } from "./lib/effect"
-import { toolIdentity, executeTool, settleTool, toolDefinitions } from "./lib/tool"
+import { bypassedPolicyGate, toolIdentity, executeTool, settleTool, toolDefinitions } from "./lib/tool"
+import { ToolPolicyGate } from "@novaclaw/core/tool-policy-gate"
 
 const sessionID = SessionV2.ID.make("ses_skill_tool_test")
 
@@ -70,7 +71,7 @@ describe("SkillTool", () => {
             [
               [PermissionV2.node, permission],
               [SkillV2.node, skills],
-              [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
+              [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig], [ToolPolicyGate.node, bypassedPolicyGate],
             ],
           )
 

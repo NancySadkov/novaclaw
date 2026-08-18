@@ -9,7 +9,8 @@ import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { QuestionTool } from "@novaclaw/core/tool/question"
 import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
 import { testEffect } from "./lib/effect"
-import { toolIdentity, executeTool, settleTool, toolDefinitions } from "./lib/tool"
+import { bypassedPolicyGate, toolIdentity, executeTool, settleTool, toolDefinitions } from "./lib/tool"
+import { ToolPolicyGate } from "@novaclaw/core/tool-policy-gate"
 
 const sessionID = SessionV2.ID.make("ses_question_tool_test")
 const assertions: PermissionV2.AssertInput[] = []
@@ -58,7 +59,7 @@ const it = testEffect(
   AppNodeBuilder.build(LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, QuestionTool.node]), [
     [PermissionV2.node, permission],
     [QuestionV2.node, question],
-    [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
+    [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig], [ToolPolicyGate.node, bypassedPolicyGate],
   ]),
 )
 

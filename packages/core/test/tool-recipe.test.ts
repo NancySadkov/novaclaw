@@ -14,7 +14,8 @@ import { RecipeTool } from "@novaclaw/core/tool/recipe"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { tmpdir } from "./fixture/tmpdir"
 import { it } from "./lib/effect"
-import { executeTool, toolIdentity } from "./lib/tool"
+import { bypassedPolicyGate, executeTool, toolIdentity } from "./lib/tool"
+import { ToolPolicyGate } from "@novaclaw/core/tool-policy-gate"
 
 /**
  * The `recipe` tool — an agent authoring the artifact AGENTS.md calls *source code for the AI era*.
@@ -85,7 +86,7 @@ const withTool = <A, E, R>(
         Effect.provide(
           AppNodeBuilder.build(LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, RecipeTool.node]), [
             [Global.node, Global.layerWith({ data: tmp.path })],
-            [ToolOutputStore.node, outputStore],
+            [ToolOutputStore.node, outputStore], [ToolPolicyGate.node, bypassedPolicyGate],
             [PermissionV2.node, permission],
             [Config.node, configStub],
           ]),

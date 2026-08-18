@@ -232,7 +232,17 @@ describe("the door: recipe.run checks before it cooks", () => {
   const HANDLER = path.resolve(import.meta.dir, "..", "..", "server", "src", "handlers", "recipe.ts")
 
   test("unmetMessage is consulted, and its refusal is raised, before materialize and before create", async () => {
-    const source = await fs.readFile(HANDLER, "utf8")
+    const whole = await fs.readFile(HANDLER, "utf8")
+    // ⚠️ SCOPED to the `recipe.run` handler, not the file. This group gained sibling handlers in
+    // 2026-08-18 — `recipe.source` calls `Recipe.needsOf` too, to answer "can this machine run it?"
+    // before anyone presses Run — so a whole-file `indexOf` compares a line in one handler against a
+    // line in another and stops being an assertion about ordering inside the door at all. It failed
+    // exactly that way when the sibling landed, which is the useful kind of brittleness: it noticed.
+    const start = whole.indexOf(`"recipe.run"`)
+    expect({ found: start >= 0 }).toEqual({ found: true })
+    const next = whole.indexOf(".handle(", start)
+    const source = whole.slice(start, next === -1 ? undefined : next)
+    expect(source.length).toBeGreaterThan(500) // the slice is the handler, not a sliver of it
     const at = (needle: string) => {
       const index = source.indexOf(needle)
       expect({ needle, found: index >= 0 }).toEqual({ needle, found: true })

@@ -26,6 +26,70 @@ const SaveInput = Schema.Struct({
   prompt: Schema.String,
 }).annotate({ identifier: "Recipe.SaveInput" })
 
+/**
+ * One host-capability fact a recipe declares, and what this machine actually said when we looked
+ * (`core/src/recipe.ts` → the `needs` section).
+ *
+ * ⚠️ Three-valued, and `unknown` is not `absent`. There is no probe for most facts a person can write, so
+ * a check that could not verify a claim says *"I could not check this"* — reporting it as missing would be
+ * a fault described falsely, and it never blocks a cook.
+ */
+const NeedCheck = Schema.Struct({
+  /** The author's own words, unchanged. */
+  fact: Schema.String,
+  status: Schema.Literals(["present", "absent", "unknown"]),
+  /** Every candidate actually tried, in order, so the claim is checkable by hand. */
+  looked: Schema.Array(Schema.String),
+  /** What resolved, when the fact is met. */
+  found: Schema.optional(Schema.String),
+}).annotate({ identifier: "Recipe.NeedCheck" })
+
+/**
+ * A recipe as its author wrote it, plus the two things a reader needs before pressing Run: whether this
+ * machine has what the recipe says it needs, and what a finished cook will be judged on.
+ *
+ * ⚠️ `markdown` is the FILE'S OWN BYTES, not a re-rendering — that is what makes "export" a copy of the
+ * author's recipe rather than a two-field reconstruction of it (`Recipe.sourceOf`). The wire `Recipe`
+ * record carries the prompt body only, so nothing else on this API can hand a user their file back.
+ */
+const Source = Schema.Struct({
+  slug: Schema.String,
+  name: Schema.String,
+  markdown: Schema.String,
+  needs: Schema.Array(NeedCheck),
+  /** The `produces:` entries, in the order the author wrote them. Empty = nothing to check afterwards. */
+  produces: Schema.Array(Schema.String),
+  /** Which shelf it is on — decided by the BUILD (`RecipeBuiltin.collectionOf`), never by the file. */
+  collection: Schema.Struct({
+    id: Schema.Literals(["examples", "mine"]),
+    title: Schema.String,
+    note: Schema.String,
+  }),
+}).annotate({ identifier: "Recipe.Source" })
+
+/**
+ * A PARTIAL edit. Omit a field to leave it exactly as the author wrote it; `description: null` removes
+ * that line; `needs: []` / `produces: []` clear theirs.
+ *
+ * ⚠️ Distinct from `SaveInput` on purpose. `save` takes a WHOLE recipe, so a caller that wants to add one
+ * `produces:` line has to resend the prompt — and a caller retyping prose it did not author is exactly
+ * the lossy rewrite `Recipe.edit` exists to prevent, arriving through the front door.
+ */
+const UpdateInput = Schema.Struct({
+  name: Schema.optional(Schema.String),
+  description: Schema.optional(Schema.NullOr(Schema.String)),
+  prompt: Schema.optional(Schema.String),
+  needs: Schema.optional(Schema.Array(Schema.String)),
+  produces: Schema.optional(Schema.Array(Schema.String)),
+}).annotate({ identifier: "Recipe.UpdateInput" })
+
+/** A `recipe.md` from somewhere else, stored byte for byte. */
+const ImportInput = Schema.Struct({
+  markdown: Schema.String,
+  /** Preferred folder name. Omitted, it is derived from the file's own `name:`; taken, the next free one. */
+  slug: Schema.optional(Schema.String),
+}).annotate({ identifier: "Recipe.ImportInput" })
+
 const RunResult = Schema.Struct({
   sessionID: Schema.String,
   /** Where it is cooking — the scratch folder by default, or whatever the caller chose. */
@@ -88,6 +152,55 @@ export const RecipeGroup = HttpApiGroup.make("server.recipe")
       success: Recipe,
       error: InvalidRequestError,
     }).annotateMerge(OpenApi.annotations({ identifier: "v2.recipe.get", summary: "Read one recipe" })),
+  )
+  .add(
+    HttpApiEndpoint.get("recipe.source", "/api/recipe/:slug/source", {
+      params: { slug: Schema.String },
+      success: Source,
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.recipe.source",
+        summary: "Read a recipe's file, and what it needs and produces",
+        description:
+          "The bytes of recipe.md exactly as they are on disk — the unit a person shares — plus the " +
+          "host-capability facts it declares checked against THIS machine, the artifacts a finished cook " +
+          "should leave, and the shelf it is on. Read-only: the capability probe resolves names on PATH " +
+          "and stats paths, and never runs a candidate.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("recipe.import", "/api/recipe/import", {
+      payload: ImportInput,
+      success: Recipe,
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.recipe.import",
+        summary: "Store a recipe.md from somewhere else",
+        description:
+          "Writes the supplied file byte for byte under a free slug — never overwriting an existing " +
+          "recipe. Assets are not carried: this is the recipe.md, which is the part a person can read.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.patch("recipe.update", "/api/recipe/:slug", {
+      params: { slug: Schema.String },
+      payload: UpdateInput,
+      success: Recipe,
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.recipe.update",
+        summary: "Change some of a recipe's fields and nothing else",
+        description:
+          "Edits the requested lines inside the author's own bytes: line endings, a BOM, unknown " +
+          "frontmatter keys, key order and the trailing newline all survive. Use this rather than a save " +
+          "when you are changing one field — a save takes the whole recipe.",
+      }),
+    ),
   )
   .add(
     HttpApiEndpoint.post("recipe.save", "/api/recipe", {

@@ -19,7 +19,8 @@ import { SessionTool } from "@novaclaw/core/tool/session"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
 import { SystemContext } from "@novaclaw/core/system-context"
-import { executeTool, toolIdentity } from "./lib/tool"
+import { bypassedPolicyGate, executeTool, toolIdentity } from "./lib/tool"
+import { ToolPolicyGate } from "@novaclaw/core/tool-policy-gate"
 
 const outputStore = Layer.mock(ToolOutputStore.Service, {
   bound: (input) => Effect.succeed({ output: input.output, outputPaths: [] }),
@@ -78,7 +79,7 @@ const withTool = <A, E, R>(
           EventV2.node,
         ]),
         [
-          [ToolOutputStore.node, outputStore],
+          [ToolOutputStore.node, outputStore], [ToolPolicyGate.node, bypassedPolicyGate],
           [PermissionV2.node, permissionLayer],
         ],
       ),

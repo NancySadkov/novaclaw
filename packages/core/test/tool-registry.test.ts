@@ -11,7 +11,8 @@ import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
 import { ToolRuntime } from "@novaclaw/llm"
 import { Effect, Layer, Schema } from "effect"
 import { testEffect } from "./lib/effect"
-import { settleTool } from "./lib/tool"
+import { bypassedPolicyGate, settleTool } from "./lib/tool"
+import { ToolPolicyGate } from "@novaclaw/core/tool-policy-gate"
 
 // The unknown-tool horizon (ported from github.com/NancySadkov/novaclaw PR #4, @DassaultFalconKing).
 //
@@ -27,7 +28,7 @@ import { settleTool } from "./lib/tool"
 const outputStore = Layer.mock(ToolOutputStore.Service, {
   bound: (input) => Effect.succeed({ output: input.output, outputPaths: [] }),
 })
-const it = testEffect(AppNodeBuilder.build(ToolRegistry.node, [[ToolOutputStore.node, outputStore]]))
+const it = testEffect(AppNodeBuilder.build(ToolRegistry.node, [[ToolOutputStore.node, outputStore], [ToolPolicyGate.node, bypassedPolicyGate]]))
 
 const sessionID = SessionV2.ID.make("ses_unknown_tool")
 const identity = { agent: AgentV2.ID.make("build"), assistantMessageID: SessionMessage.ID.make("msg_unknown_tool") }
