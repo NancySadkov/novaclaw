@@ -67,6 +67,7 @@ import { preloadMarkdown } from "@novaclaw/session-ui/markdown-cache"
 import { archiveHomeSession } from "./home-session-archive"
 import { notifySessionTabsRemoved } from "@/components/titlebar-session-events"
 import { compactTokens, homeSessionTimeLabel, subtreeRows, tokenTotals } from "./home-session-meta"
+import { presenceBadge } from "./session/session-presence"
 import { Dialog, DialogBody, DialogHeader, DialogTitle } from "@novaclaw/ui/v2/dialog-v2"
 import { usePermission } from "@/context/permission"
 import { useChatsAttentionSets } from "@/apps/chats-attention"
@@ -1402,6 +1403,13 @@ function HomeSessionRow(props: {
   const live = createMemo(() =>
     working() ? serverSyncForChildren().session.data.session_live(props.record.session.id) : undefined,
   )
+  // Presence — a SEPARATE fact from `working()` above, and kept separate on purpose: an agent can
+  // be busy with nobody watching, and a person can be watching a chat that is doing nothing.
+  const presence = createMemo(() =>
+    props.activeServer
+      ? presenceBadge(serverSyncForChildren().session.data.session_presence[props.record.session.id])
+      : undefined,
+  )
   const confirmDelete = () => {
     void dialog.show(() => (
       <DialogDeleteSession name={title()} onConfirm={() => props.deleteSession(props.record.session)} />
@@ -1530,6 +1538,29 @@ function HomeSessionRow(props: {
                     class="size-1.5 rounded-full bg-v2-icon-icon-accent motion-safe:animate-pulse"
                   />
                   ~{compactTokens(stats().approxTokens)} · {stats().tps} t/s
+                </span>
+              )}
+            </Show>
+            {/*
+              Presence on the Chats row: how many surfaces are attached right now. It answers the
+              question a person actually has before opening a chat — "is someone else already in
+              there?" — and it is a plain count, not a warning, because usually the answer is
+              "yes, your other window".
+            */}
+            <Show when={presence()}>
+              {(badge) => (
+                <span
+                  data-slot="home-session-presence"
+                  data-presence-contended={badge().contended ? "true" : "false"}
+                  class="shrink-0 flex items-center gap-1 rounded-[4px] bg-v2-background-bg-layer-01 px-1.5 py-0.5 text-[11px] leading-none tabular-nums [font-weight:530]"
+                  classList={{
+                    "text-v2-text-text-accent": badge().contended,
+                    "text-v2-text-text-muted": !badge().contended,
+                  }}
+                  title={language.t("presence.attached.title", { list: badge().list })}
+                >
+                  <Icon name="user" size="normal" class="text-v2-icon-icon-muted" />
+                  {badge().count}
                 </span>
               )}
             </Show>

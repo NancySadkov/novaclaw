@@ -7,6 +7,7 @@ import { Database } from "@novaclaw/core/database/database"
 import { SessionComponentRegistry } from "@novaclaw/core/session/component-registry"
 import { SessionLocationRecovery } from "@novaclaw/core/session/location-recovery"
 import { SessionTags } from "@novaclaw/core/session/tags"
+import { SessionPresence } from "@novaclaw/core/session/presence"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { ModelV2 } from "@novaclaw/core/model"
 import { ProviderV2 } from "@novaclaw/core/provider"
@@ -43,6 +44,7 @@ const SessionCatalogHandler = handlerLayer(
       const tags = yield* SessionTags.Service
       const attempts = yield* SessionExecutionAttempt.Service
       const receipts = yield* SessionReceipt.Service
+      const presence = yield* SessionPresence.Service
       const execution = yield* SessionExecution.Service
       const effective = yield* SessionEffectiveConfig.Service
 
@@ -166,6 +168,30 @@ const SessionCatalogHandler = handlerLayer(
                   },
                 }),
               }
+            }),
+          )
+          .handle(
+            "session.presence.report",
+            Effect.fn(function* (ctx) {
+              const { viewerID, kind, label, writing, action } = ctx.payload
+              // The session's existence is already proven by `sessionLocationMiddleware` (404 before
+              // we get here), so an unknown id can never mint a presence room.
+              if (action === "claim") return { data: yield* presence.claim(ctx.params.sessionID, viewerID) }
+              if (action === "detach") return { data: yield* presence.detach(ctx.params.sessionID, viewerID) }
+              return {
+                data: yield* presence.report(ctx.params.sessionID, {
+                  viewerID,
+                  kind,
+                  label,
+                  ...(writing === undefined ? {} : { writing }),
+                }),
+              }
+            }),
+          )
+          .handle(
+            "session.presence.all",
+            Effect.fn(function* () {
+              return { data: yield* presence.all() }
             }),
           )
           .handle(

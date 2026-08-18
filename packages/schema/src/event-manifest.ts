@@ -21,6 +21,7 @@ import { Reference } from "./reference"
 import { ServerEvent } from "./server-event"
 import { SessionCompactionEvent } from "./session-compaction-event"
 import { SessionEvent } from "./session-event"
+import { SessionPresence } from "./session-presence"
 import { SessionStatusEvent } from "./session-status-event"
 import { SessionTags } from "./session-tags"
 import { SessionTodo } from "./session-todo"
@@ -60,6 +61,7 @@ export const ServerDefinitions = Event.inventory(
   ...featureDefinitions,
   ...SessionTodo.Event.Definitions,
   ...SessionTags.Event.Definitions,
+  ...SessionPresence.Event.Definitions,
 )
 
 export const Definitions = Event.inventory(
@@ -69,6 +71,7 @@ export const Definitions = Event.inventory(
   ...featureDefinitions,
   ...SessionTodo.Event.Definitions,
   ...SessionTags.Event.Definitions,
+  ...SessionPresence.Event.Definitions,
   ...PermissionRuleset.Event.Definitions,
   ...McpEvent.Definitions,
   ...SessionStatusEvent.Definitions,

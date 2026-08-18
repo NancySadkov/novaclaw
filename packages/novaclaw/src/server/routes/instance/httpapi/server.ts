@@ -92,6 +92,7 @@ import { SessionComponentRegistry } from "@novaclaw/core/session/component-regis
 import { ProviderCapabilityStore } from "@novaclaw/core/provider-capability-store"
 import { SessionEffectiveConfig } from "@novaclaw/core/session/effective-config"
 import { SessionTags } from "@novaclaw/core/session/tags"
+import { SessionPresence } from "@novaclaw/core/session/presence"
 import { lazy } from "@/util/lazy"
 import { CorsConfig, isAllowedCorsOrigin, type CorsOptions } from "@novaclaw/server/cors"
 import { serveUIEffect } from "@/server/shared/ui"
@@ -356,6 +357,10 @@ const app = LayerNode.group([
   // against — the folder's tune folded in — so the view cannot disagree with the runner.
   SessionEffectiveConfig.node,
   SessionTags.node,
+  // Same trap as the three above, and it bites harder here because presence is in memory: a
+  // missing node compiles green and answers 500 "Service not found" on every heartbeat, which a
+  // client would read as "nobody is attached" rather than as a fault.
+  SessionPresence.node,
   ProjectV2.node,
   PtyTicket.node,
 ])

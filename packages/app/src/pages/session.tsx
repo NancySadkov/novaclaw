@@ -71,6 +71,8 @@ import { diffs as list } from "@/utils/diffs"
 import { Persist, persisted } from "@/utils/persist"
 import { legacySessionHref, requireServerKey, sessionHref } from "@/utils/session-route"
 import { createSessionOwnership } from "./session/session-ownership"
+import { presenceHandoffNotice, presenceView } from "./session/session-presence"
+import { createSessionPresence } from "./session/session-presence-controller"
 import { createReviewController, resolveReviewSource, type ChangeMode } from "./session/review-source"
 import { visibleProviderRecovery } from "./session/composer/session-provider-recovery"
 
@@ -102,6 +104,33 @@ export default function Page() {
   const navigate = useNavigate()
   const { params, sessionKey, workspaceKey, tabs, view } = useSessionLayout()
   const sessionOwnership = createSessionOwnership(sessionKey)
+
+  // ── Presence ────────────────────────────────────────────────────────────────────────────────
+  // Who else is looking at this chat, who is driving, and what happens when two surfaces reach for
+  // it at once. The rules live in ./session/session-presence.ts (pure) and the instance owns the
+  // truth; this is the surface. Busy is NOT read from here — `session_working` stays the one
+  // answer to "is the agent working", so the two can never disagree.
+  const presence = createSessionPresence({
+    sessionID: () => params.id,
+    label: () =>
+      language.t(platform.platform === "desktop" ? "presence.viewer.desktop" : "presence.viewer.browser"),
+    writing: () => prompt.dirty(),
+    report: (report) => serverSync().session.reportPresence(report),
+  })
+  const presenceSnapshot = createMemo(() =>
+    params.id ? serverSync().session.data.session_presence[params.id] : undefined,
+  )
+  const presenceState = createMemo(() => presenceView(presenceSnapshot(), presence.viewerID))
+  // A handoff notice outlives the situation that produced it (the driver closing their tab leaves
+  // ONE person in the room who still needs telling), so it needs a clock of its own to fade out.
+  // Five seconds is coarse enough to cost nothing and fine enough that a 20-second notice does not
+  // visibly overstay.
+  const [presenceClock, setPresenceClock] = createSignal(Date.now())
+  const presenceTicker = setInterval(() => setPresenceClock(Date.now()), 5_000)
+  onCleanup(() => clearInterval(presenceTicker))
+  const presenceHandoff = createMemo(() =>
+    presenceHandoffNotice(presenceSnapshot(), presence.viewerID, presenceClock()),
+  )
 
   createEffect(() => {
     if (!prompt.ready()) return
@@ -1017,6 +1046,38 @@ export default function Page() {
             </div>
           </Show>
         )}
+      </Show>
+      {/*
+        Presence. Deliberately NOT styled as a warning: two people in one chat is an ordinary thing
+        that happens, and rendering it in the same red as a stalled execution would teach a normal
+        user that they had done something wrong. It sits BELOW the recovery banner because a fault
+        outranks company.
+      */}
+      <Show when={presenceState().line ?? presenceHandoff()}>
+        <div
+          data-slot="session-presence"
+          data-presence-state={presenceSnapshot()?.state ?? "unattended"}
+          data-presence-driving={presenceState().driving ? "true" : "false"}
+          class="mx-2 mt-2 flex select-text items-center gap-3 rounded-[10px] border border-v2-border-border-subtle bg-v2-background-bg-subtle px-3 py-2 text-xs text-v2-text-text-muted"
+        >
+          <span class="min-w-0 flex-1">
+            <Show when={presenceState().line}>
+              {(line) => <span data-slot="session-presence-line">{language.t(line().key, line().values)}</span>}
+            </Show>{" "}
+            <Show when={presenceHandoff()}>
+              {(line) => (
+                <span data-slot="session-presence-handoff" class="text-v2-text-text-strong">
+                  {language.t(line().key, line().values)}
+                </span>
+              )}
+            </Show>
+          </span>
+          <Show when={presenceState().canTakeOver}>
+            <ButtonV2 size="small" variant="neutral" onClick={() => presence.takeOver()}>
+              {language.t("presence.takeOver")}
+            </ButtonV2>
+          </Show>
+        </div>
       </Show>
       {/* `gap-2` but no padding: the gap separates two PANES, which is real information, while the
           padding only inset the whole chat from the window's own edge (owner, 2026-08-13). */}

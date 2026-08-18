@@ -25,6 +25,7 @@ import { SessionFeature } from "@novaclaw/schema/session-feature"
 import { SessionStrict } from "@novaclaw/schema/session-strict"
 import { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
 import { SessionTodo } from "@novaclaw/schema/session-todo"
+import { SessionPresence } from "@novaclaw/schema/session-presence"
 import { SessionExecution } from "@novaclaw/schema/session-execution"
 
 const SessionsQueryFields = {
@@ -383,6 +384,47 @@ export const makeSessionGroups = <
             identifier: "v2.session.tags.all",
             summary: "List all session tags",
             description: "The instance-wide tag map: session id → tags. The client store's bootstrap source.",
+          }),
+        ),
+      )
+      .add(
+        // Presence component: one idempotent call carries attach, heartbeat, take-over and goodbye.
+        // Splitting them into four endpoints would make the client decide which state it is in —
+        // exactly the bookkeeping a surface gets wrong after a reconnect.
+        HttpApiEndpoint.post("session.presence.report", "/api/session/:sessionID/presence", {
+          params: { sessionID: Session.ID },
+          payload: Schema.Struct({
+            viewerID: Schema.NonEmptyString,
+            kind: SessionPresence.ViewerKind,
+            label: Schema.NonEmptyString,
+            writing: Schema.Boolean.pipe(Schema.optional),
+            action: Schema.Literals(["report", "claim", "detach"]),
+          }),
+          success: Schema.Struct({ data: SessionPresence.Snapshot }),
+          error: SessionNotFoundError,
+        })
+          // Not for the location services — for the 404. This middleware already proves the session
+          // exists before the handler runs, which is what keeps an in-memory presence map from
+          // growing a room for a session id that was never real.
+          .middleware(sessionLocationMiddleware)
+          .annotateMerge(
+            OpenApi.annotations({
+              identifier: "v2.session.presence.report",
+              summary: "Report presence on a session",
+              description:
+                "Attach a viewer, say 'still here', take over control, or detach. Returns the session's whole presence snapshot; every attached surface also receives it as `session.presence.updated`.",
+            }),
+          ),
+      )
+      .add(
+        HttpApiEndpoint.get("session.presence.all", "/api/presence", {
+          success: Schema.Struct({ data: Schema.Record(Session.ID, SessionPresence.Snapshot) }),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.presence.all",
+            summary: "List session presence",
+            description:
+              "Sessions with someone attached right now: session id → presence. The client store's bootstrap source; sessions absent from the result are unattended. This instance answers only for its OWN sessions — it is not a directory of who is online.",
           }),
         ),
       )

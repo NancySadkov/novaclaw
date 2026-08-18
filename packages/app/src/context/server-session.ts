@@ -5,6 +5,7 @@ import type {
   QuestionRequest,
   SessionV2Info as Session,
   SessionStatus,
+  SessionPresenceSnapshot,
   SessionChangeDiff,
   Todo,
 } from "@novaclaw/sdk/v2/client"
@@ -74,6 +75,12 @@ export function createServerSession(
     // The tags component (notes/entities.md T0): sessionID → tags, fed by `session.tags.updated`
     // events + the /api/tag bootstrap. Organization over chats — replaces project grouping.
     tag: {} as Record<string, string[]>,
+    // The presence component: sessionID → who is attached, who is driving, and whether two
+    // surfaces are reaching for the chat at once. Fed by `session.presence.updated` + the
+    // /api/presence bootstrap. A session absent from this map has nobody attached.
+    // ⚠️ Presence deliberately does NOT carry a busy flag — `session_working` below is the one
+    // answer to "is it working", and a second one that could disagree is the defect this avoids.
+    session_presence: {} as Record<string, SessionPresenceSnapshot | undefined>,
     session_working(id: string) {
       return isSessionWorking(this.session_status[id])
     },
@@ -340,6 +347,20 @@ export function createServerSession(
         setData("tag", props.sessionID, [...props.tags])
         return
       }
+      case "session.presence.updated": {
+        const props = event.properties as { sessionID: string; presence: SessionPresenceSnapshot }
+        // `unattended` is the absence of presence, not a value worth storing — dropping the key
+        // keeps "is anyone here?" a single question instead of two that can disagree.
+        if (props.presence.state === "unattended") {
+          setData(
+            "session_presence",
+            produce((draft) => void delete draft[props.sessionID]),
+          )
+          return
+        }
+        setData("session_presence", props.sessionID, reconcile(props.presence))
+        return
+      }
       case "session.diff": {
         const props = event.properties as { sessionID: string; diff: SessionChangeDiff[] }
         setData("session_diff", props.sessionID, reconcile(cleanDiffs(props.diff), { key: "file" }))
@@ -429,9 +450,58 @@ export function createServerSession(
       })
       .catch(() => undefined)
 
+  // Bootstrap who is attached where (live updates arrive via `session.presence.updated`).
+  const loadPresence = () =>
+    retryRequest(() => client.v2.session.presence.all())
+      .then((result) => {
+        setData("session_presence", reconcile((result.data?.data ?? {}) as Record<string, SessionPresenceSnapshot>))
+      })
+      .catch(() => undefined)
+
+  /**
+   * Attach / heartbeat / take over / detach, in one idempotent call.
+   *
+   * The response IS the fresh snapshot, so the surface that called never waits for its own event
+   * to come back round the bus — which is what makes a take-over feel immediate to the person who
+   * pressed it and still calm on every other screen.
+   */
+  const reportPresence = (input: {
+    sessionID: string
+    viewerID: string
+    label: string
+    kind?: "human" | "agent" | "peer"
+    writing?: boolean
+    action?: "report" | "claim" | "detach"
+  }) =>
+    client.v2.session.presence
+      .report({
+        sessionID: input.sessionID,
+        viewerID: input.viewerID,
+        kind: input.kind ?? "human",
+        label: input.label,
+        ...(input.writing === undefined ? {} : { writing: input.writing }),
+        action: input.action ?? "report",
+      })
+      .then((result) => {
+        const snapshot = result.data?.data
+        if (!snapshot) return undefined
+        if (snapshot.state === "unattended") {
+          setData(
+            "session_presence",
+            produce((draft) => void delete draft[input.sessionID]),
+          )
+          return snapshot
+        }
+        setData("session_presence", input.sessionID, reconcile(snapshot))
+        return snapshot
+      })
+      .catch(() => undefined)
+
   return {
     data,
     set: setData,
+    loadPresence,
+    reportPresence,
     get: (sessionID: string) => data.info[sessionID],
     peek: (sessionID: string) => data.info[sessionID],
     remember,

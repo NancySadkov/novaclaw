@@ -175,6 +175,10 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
   const session = createServerSession(serverSDK.client)
   // Tags component bootstrap (notes/entities.md T0) — instance-wide, once per server connection.
   void session.loadTags()
+  // Presence component bootstrap — who is attached to what, right now. Once per server connection;
+  // everything after that arrives as `session.presence.updated`. This read doubles as the
+  // instance's sweep for rooms whose last viewer vanished without saying goodbye.
+  void session.loadPresence()
   const nativeMessages = createNativeMessageStore(serverSDK.client)
 
   const children = createChildStoreManager({
