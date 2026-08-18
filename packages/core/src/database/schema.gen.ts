@@ -105,6 +105,19 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`session_policy_decision\` (
+          \`id\` text PRIMARY KEY,
+          \`session_id\` text NOT NULL,
+          \`tool_call_id\` text NOT NULL,
+          \`tool\` text NOT NULL,
+          \`decision\` text NOT NULL,
+          \`detail\` text NOT NULL,
+          \`providers\` text NOT NULL,
+          \`patched\` text,
+          \`time_created\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`bash_job\` (
           \`id\` text PRIMARY KEY,
           \`owner\` text NOT NULL,
@@ -673,6 +686,12 @@ export default {
       )
       yield* tx.run(
         `CREATE INDEX \`session_quality_check_session_idx\` ON \`session_quality_check\` (\`session_id\`,\`time_created\`);`,
+      )
+      yield* tx.run(
+        `CREATE INDEX \`session_policy_decision_session_idx\` ON \`session_policy_decision\` (\`session_id\`,\`time_created\`);`,
+      )
+      yield* tx.run(
+        `CREATE INDEX \`session_policy_decision_call_idx\` ON \`session_policy_decision\` (\`tool_call_id\`);`,
       )
       yield* tx.run(`CREATE INDEX \`bash_job_owner_idx\` ON \`bash_job\` (\`owner\`);`)
       yield* tx.run(`CREATE INDEX \`community_answered_at_idx\` ON \`community_answered\` (\`at\`);`)

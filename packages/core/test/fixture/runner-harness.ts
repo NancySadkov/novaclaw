@@ -23,6 +23,8 @@ import * as SessionRunnerLLM from "@novaclaw/core/session/runner/llm"
 import { SessionMaintenance } from "@novaclaw/core/session/runner/maintenance"
 import { SessionRunnerModel } from "@novaclaw/core/session/runner/model"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
+import { ToolPolicy } from "@novaclaw/core/tool-policy"
+import { ToolPolicyGate } from "@novaclaw/core/tool-policy-gate"
 import { ApplicationTools } from "@novaclaw/core/tool/application-tools"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { Config } from "@novaclaw/core/config"
@@ -114,6 +116,14 @@ export interface RunnerScript {
    * Absent keeps the historical noop snapshot layer used by every normal-drain claim.
    */
   snapshotFiles?: readonly string[]
+  /**
+   * Pre-action policies to install for this drain (`tool-policy.ts`).
+   *
+   * The gate is built here either way — `ToolRegistry.node` depends on it — so this only decides
+   * whether anything is INSTALLED. Absent means the gate consults nothing, which is what every other
+   * claim in this suite wants and is also the shipped default for a folder that names no policy.
+   */
+  policies?: readonly ToolPolicy.Provider[]
 }
 
 /**
@@ -479,6 +489,19 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
   )
   const echoNode = makeLocationNode({ name: "test/runner-harness-tools", layer: echo, deps: [ToolRegistry.node] })
 
+  const policies = Layer.effectDiscard(
+    Effect.gen(function* () {
+      if (!script.policies?.length) return
+      const gate = yield* ToolPolicyGate.Service
+      yield* gate.install(script.policies).pipe(Effect.orDie)
+    }),
+  )
+  const policyNode = makeLocationNode({
+    name: "test/runner-harness-policies",
+    layer: policies,
+    deps: [ToolPolicyGate.node],
+  })
+
   const models = SessionRunnerModel.layerWith((session) =>
     Effect.gen(function* () {
       const hook = controls.modelResolveHook
@@ -637,6 +660,7 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
       ToolRegistry.node,
       ToolRegistry.toolsNode,
       echoNode,
+      policyNode,
       SessionRunnerModel.node,
       SystemContextRegistry.node,
       SkillGuidance.node,

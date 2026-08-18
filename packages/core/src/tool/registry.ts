@@ -15,6 +15,7 @@ import { SessionMessage } from "../session/message"
 import { SessionSchema } from "../session/schema"
 import { ToolOutputStore } from "../tool-output-store"
 import { ToolCatalogue } from "../tool-catalogue"
+import { ToolPolicyGate } from "../tool-policy-gate"
 import { Wildcard } from "../util/wildcard"
 import { ApplicationTools } from "./application-tools"
 import { ExternalToolSource } from "./external-tool-source"
@@ -67,6 +68,14 @@ export interface Settlement {
   readonly result: ToolResultValue
   readonly output?: ToolOutput
   readonly outputPaths?: ReadonlyArray<string>
+  /**
+   * A pre-action policy returned `halt`: the call did not run AND the drain must stop.
+   *
+   * ⚠️ Distinct from an ordinary refused call, which is just an error result the model routes
+   * around. `session/runner/llm.ts` reads this and breaks the drain loop; `tool-policy.ts` carries
+   * why `halt` outranks `deny` in composition.
+   */
+  readonly halted?: boolean
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/ToolRegistry") {}
@@ -137,14 +146,29 @@ const registryLayer = Layer.effect(
     const applications = yield* ApplicationTools.Service
     const external = yield* ExternalToolSource.Service
     const resources = yield* ToolOutputStore.Service
+    const policies = yield* ToolPolicyGate.Service
     type Registration = { readonly identity: object; readonly tool: AnyTool }
     const local = new Map<string, Array<{ readonly token: object; readonly registration: Registration }>>()
 
+    /**
+     * ── THE PRE-ACTION POLICY SEAM ────────────────────────────────────────────────────────────
+     *
+     * 🔴 HERE, and deliberately in `settleRaw` rather than in `settleWith`. Every tool call reaches
+     * this function — core tools, application tools, MCP/plugin tools, AND the deferred dispatcher's
+     * nested invocations, which call `settleRaw` directly and would walk past a gate placed one
+     * level up. Same argument `project-exclusion.ts` makes for `LocationMutation.resolve`: a guard
+     * below all the tools is inherited by a tool added later, and a guard sprinkled per-tool is a
+     * checklist somebody eventually forgets. `tool-policy.ts` carries the composition rules.
+     *
+     * ⚠️ It runs AFTER the stale-registration check, so a policy is never consulted about a call
+     * that was never going to run, and BEFORE `settle`, which is the whole point of "pre-action".
+     */
     const settleRaw = Effect.fn("ToolRegistry.settleRaw")(function* (
       input: ExecuteInput,
       advertised: object,
       deferredTools: ReadonlyArray<ToolCatalogue.Source>,
       invokeDeferred?: ToolContext["invokeDeferred"],
+      halt?: { halted: boolean },
     ) {
       const registration =
         local.get(input.call.name)?.at(-1)?.registration ??
@@ -152,17 +176,36 @@ const registryLayer = Layer.effect(
         (yield* external.entries()).get(input.call.name)
       if (!registration || registration.identity !== advertised)
         return yield* new ToolFailure({ message: `Stale tool call: ${input.call.name}` })
-      const output = yield* settle(registration.tool, input.call, {
+      const screened = yield* policies.screen({
         sessionID: input.sessionID,
         agent: input.agent,
-        assistantMessageID: input.assistantMessageID,
+        tool: input.call.name,
         toolCallID: input.call.id,
-        ...(input.timing === undefined ? {} : { timing: input.timing }),
-        attachmentPaths: input.attachmentPaths ?? new Set(),
-        ...(deferredTools.length === 0 ? {} : { deferredTools }),
-        ...(invokeDeferred === undefined || !deferredDispatchers.has(registration.tool) ? {} : { invokeDeferred }),
+        input: input.call.input,
       })
-      return { output, tool: registration.tool }
+      if (screened.kind === "refuse") {
+        // The halt latch is set on the shared holder rather than carried in the error, because a
+        // refusal travels as an ordinary `ToolFailure` — the type every tool absorber already
+        // lowers into a model-visible error result — and adding a second failure type here would
+        // make every existing `catchTag("LLM.ToolFailure")` in the tree incomplete.
+        if (screened.halt && halt) halt.halted = true
+        return yield* new ToolFailure({ message: screened.message })
+      }
+      const output = yield* settle(
+        registration.tool,
+        screened.input === input.call.input ? input.call : { ...input.call, input: screened.input },
+        {
+          sessionID: input.sessionID,
+          agent: input.agent,
+          assistantMessageID: input.assistantMessageID,
+          toolCallID: input.call.id,
+          ...(input.timing === undefined ? {} : { timing: input.timing }),
+          attachmentPaths: input.attachmentPaths ?? new Set(),
+          ...(deferredTools.length === 0 ? {} : { deferredTools }),
+          ...(invokeDeferred === undefined || !deferredDispatchers.has(registration.tool) ? {} : { invokeDeferred }),
+        },
+      )
+      return { output: screened.note === undefined ? output : withPolicyNote(output, screened.note), tool: registration.tool }
     })
 
     // `advertised` is the identity materialization handed to the model, and it is always supplied: the only
@@ -174,13 +217,15 @@ const registryLayer = Layer.effect(
       advertised: object,
       deferredTools: ReadonlyArray<ToolCatalogue.Source>,
       invokeDeferred?: ToolContext["invokeDeferred"],
+      halt?: { halted: boolean },
     ) {
-      const pending = yield* settleRaw(input, advertised, deferredTools, invokeDeferred).pipe(
+      const pending = yield* settleRaw(input, advertised, deferredTools, invokeDeferred, halt).pipe(
         Effect.catchTag("LLM.ToolFailure", (failure) =>
           Effect.succeed({ result: { type: "error" as const, value: failure.message } }),
         ),
       )
-      if ("result" in pending) return pending
+      if ("result" in pending)
+        return halt?.halted === true ? { ...pending, halted: true as const } : pending
       const output = pending.output
       const bounded = yield* resources.bound({
         sessionID: input.sessionID,
@@ -189,11 +234,16 @@ const registryLayer = Layer.effect(
         preview: outputPreview(pending.tool),
       })
       const result = ToolOutput.toResultValue(bounded.output)
+      // A nested deferred invocation can halt while the OUTER tool still returns normally, so the
+      // latch is read here too rather than only on the refusal path.
+      const halted = halt?.halted === true ? ({ halted: true } as const) : {}
       if (result.type === "error")
-        return bounded.outputPaths.length > 0 ? { result, outputPaths: bounded.outputPaths } : { result }
+        return bounded.outputPaths.length > 0
+          ? { result, outputPaths: bounded.outputPaths, ...halted }
+          : { result, ...halted }
       return bounded.outputPaths.length > 0
-        ? { result, output: bounded.output, outputPaths: bounded.outputPaths }
-        : { result, output: bounded.output }
+        ? { result, output: bounded.output, outputPaths: bounded.outputPaths, ...halted }
+        : { result, output: bounded.output, ...halted }
     })
 
     return Service.of({
@@ -297,6 +347,11 @@ const registryLayer = Layer.effect(
           deferred,
           settle: (input) => {
             const registration = resident.get(input.call.name) ?? callableDeferred.get(input.call.name)
+            // One latch per model tool call, closed over by both the outer settlement and every
+            // nested deferred invocation it makes. A halt raised while `tool_call` dispatches an
+            // inner tool therefore still reaches the drain, instead of being flattened into the
+            // dispatcher's own error result.
+            const halt = { halted: false }
             const invokeDeferred: NonNullable<ToolContext["invokeDeferred"]> = (name, targetInput) => {
               const target = callableDeferred.get(name)
               if (!target) {
@@ -320,9 +375,11 @@ const registryLayer = Layer.effect(
                 { ...input, call: { type: "tool-call", id: input.call.id, name, input: targetInput } },
                 target.identity,
                 deferred,
+                undefined,
+                halt,
               ).pipe(Effect.map((settled) => settled.output))
             }
-            if (registration) return settleWith(input, registration.identity, deferred, invokeDeferred)
+            if (registration) return settleWith(input, registration.identity, deferred, invokeDeferred, halt)
             if (deferredByName.has(input.call.name))
               return Effect.succeed({
                 result: {
@@ -347,6 +404,39 @@ export const layer = Layer.effect(
   Service.use((registry) => Effect.succeed(Tools.Service.of({ register: registry.register }))),
 ).pipe(Layer.provideMerge(registryLayer))
 
+/**
+ * Put a policy's sentence in front of the tool's own result.
+ *
+ * 🔴 The MODEL half of "bind every intervention to a receipt". The durable half is
+ * `session_policy_decision`; this is the half that stops the model from being lied to — a rewritten
+ * `bash` command whose output does not match what the model typed is otherwise indistinguishable
+ * from a broken tool, and the model will spend the rest of the turn debugging the wrong thing.
+ *
+ * ⚠️ The empty-`content` branch is not cosmetic. `ToolOutput.toResultValue` prefers `content` when
+ * it is non-empty, so appending a note to a structured-only output would replace the structured
+ * value the model was supposed to receive with the note alone. Serialising `structured` alongside
+ * keeps the result complete; `structured` itself is untouched, so the durable record and the UI see
+ * exactly what the tool returned.
+ */
+function withPolicyNote(output: ToolOutput, note: string): ToolOutput {
+  const text = { type: "text" as const, text: note }
+  if (output.content.length === 0)
+    return {
+      structured: output.structured,
+      content: [text, { type: "text" as const, text: stringifyStructured(output.structured) }],
+    }
+  return { structured: output.structured, content: [text, ...output.content] }
+}
+
+function stringifyStructured(value: unknown) {
+  if (typeof value === "string") return value
+  try {
+    return JSON.stringify(value) ?? String(value)
+  } catch {
+    return String(value)
+  }
+}
+
 function whollyDisabled(action: string, rules: PermissionV2.Ruleset) {
   const rule = rules.findLast((rule) => Wildcard.match(action, rule.action))
   return rule?.resource === "*" && rule.effect === "deny"
@@ -361,11 +451,11 @@ export const defaultLayer = layer.pipe(
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [ApplicationTools.node, ExternalToolSource.node, ToolOutputStore.node],
+  deps: [ApplicationTools.node, ExternalToolSource.node, ToolOutputStore.node, ToolPolicyGate.node],
 })
 
 export const toolsNode = makeLocationNode({
   service: Tools.Service,
   layer,
-  deps: [ApplicationTools.node, ExternalToolSource.node, ToolOutputStore.node],
+  deps: [ApplicationTools.node, ExternalToolSource.node, ToolOutputStore.node, ToolPolicyGate.node],
 })

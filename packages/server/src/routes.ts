@@ -13,6 +13,7 @@ import { SessionTags } from "@novaclaw/core/session/tags"
 import { SessionExecution } from "@novaclaw/core/session/execution"
 import { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
 import { SessionReceipt } from "@novaclaw/core/session/receipt"
+import { SessionPresence } from "@novaclaw/core/session/presence"
 import { LocationServiceMap } from "@novaclaw/core/location-service-map"
 import { MessengerDrivers } from "@novaclaw/core/messenger/drivers"
 import { MessengerGateway } from "@novaclaw/core/messenger/gateway"
@@ -45,6 +46,10 @@ const applicationServices = LayerNode.group([
   SessionEffectiveConfig.node,
   SessionExecutionAttempt.node,
   SessionReceipt.node,
+  // Global, so it belongs in the app group a route handler can reach. `handlers/session.ts` acquires
+  // it for `session.presence.*`; without it here the requirement leaks out of `makeRoutes` and this
+  // package stops typechecking, while `packages/novaclaw` — which already registers it — stays green.
+  SessionPresence.node,
   SessionExecution.node,
   PermissionSaved.node,
   PtyTicket.node,

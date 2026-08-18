@@ -7,7 +7,8 @@ import { SessionV2 } from "@novaclaw/core/session"
 import { SessionMessage } from "@novaclaw/core/session/message"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
-import { executeTool, settleTool, toolDefinitions } from "./lib/tool"
+import { bypassedPolicyGate, executeTool, settleTool, toolDefinitions } from "./lib/tool"
+import { ToolPolicyGate } from "@novaclaw/core/tool-policy-gate"
 import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
 import { Tools } from "@novaclaw/core/tool/tools"
 import { Deferred, Effect, Exit, Fiber, Schema, Scope } from "effect"
@@ -15,7 +16,7 @@ import { testEffect } from "./lib/effect"
 
 const it = testEffect(
   AppNodeBuilder.build(LayerNode.group([ApplicationTools.node, ToolRegistry.node, ToolRegistry.toolsNode]), [
-    [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
+    [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig], [ToolPolicyGate.node, bypassedPolicyGate],
   ]),
 )
 

@@ -17,7 +17,8 @@ import { ToolManualTool } from "@novaclaw/core/tool/tool-manual"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { tmpdir } from "./fixture/tmpdir"
 import { it } from "./lib/effect"
-import { executeTool, toolIdentity } from "./lib/tool"
+import { bypassedPolicyGate, executeTool, toolIdentity } from "./lib/tool"
+import { ToolPolicyGate } from "@novaclaw/core/tool-policy-gate"
 
 /**
  * **ONE resolution path to the ad-hoc session store's root.**
@@ -90,7 +91,7 @@ const withBoth = <A, E, R>(
             ]),
             [
               [Global.node, Global.layerWith({ data: tmp.path })],
-              [ToolOutputStore.node, outputStore],
+              [ToolOutputStore.node, outputStore], [ToolPolicyGate.node, bypassedPolicyGate],
               [PermissionV2.node, permission],
               [Config.node, Layer.succeed(Config.Service, Config.Service.of({ entries: () => Effect.succeed([]) }))],
             ],

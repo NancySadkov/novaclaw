@@ -43,6 +43,8 @@ import { BuiltInTools } from "./tool/builtins"
 import { ExternalToolSource } from "./tool/external-tool-source"
 import { ReadToolFileSystem } from "./tool/read-filesystem"
 import { ToolRegistry } from "./tool/registry"
+import { ToolPolicyGate } from "./tool-policy-gate"
+import { ToolPolicyBuiltin } from "./tool-policy-builtin"
 import { ToolOutputStore } from "./tool-output-store"
 import { ToolCatalogueGuidance } from "./tool-catalogue-guidance"
 import { Log } from "@novaclaw/schema/log"
@@ -78,6 +80,8 @@ export const locationServices = LayerNode.group([
   PermissionV2.node,
   ToolOutputStore.node,
   ExternalToolSource.node,
+  ToolPolicyGate.node,
+  ToolPolicyBuiltin.node,
   ToolRegistry.node,
   ToolRegistry.toolsNode,
   ToolCatalogueGuidance.node,

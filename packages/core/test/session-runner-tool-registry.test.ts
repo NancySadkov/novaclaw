@@ -9,7 +9,8 @@ import { SessionMessage } from "@novaclaw/core/session/message"
 import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import type { ToolTruncation } from "@novaclaw/core/tool/truncation"
-import { executeTool, settleTool, toolDefinitions } from "./lib/tool"
+import { bypassedPolicyGate, executeTool, settleTool, toolDefinitions } from "./lib/tool"
+import { ToolPolicyGate } from "@novaclaw/core/tool-policy-gate"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, Option, Schema, SchemaGetter, SchemaIssue, Scope } from "effect"
 import { testEffect } from "./lib/effect"
 
@@ -30,11 +31,11 @@ const outputStore = Layer.mock(ToolOutputStore.Service, {
     )
   },
 })
-const registryLayer = AppNodeBuilder.build(ToolRegistry.node, [[ToolOutputStore.node, outputStore]])
+const registryLayer = AppNodeBuilder.build(ToolRegistry.node, [[ToolOutputStore.node, outputStore], [ToolPolicyGate.node, bypassedPolicyGate]])
 const it = testEffect(registryLayer)
 const integrated = testEffect(
   AppNodeBuilder.build(LayerNode.group([ApplicationTools.node, ToolRegistry.node]), [
-    [ToolOutputStore.node, outputStore],
+    [ToolOutputStore.node, outputStore], [ToolPolicyGate.node, bypassedPolicyGate],
   ]),
 )
 const identity = {

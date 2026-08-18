@@ -18,6 +18,7 @@ import { Config } from "@novaclaw/core/config"
 import { Location } from "@novaclaw/core/location"
 import { Project } from "@novaclaw/core/project"
 import { PermissionV2 } from "@novaclaw/core/permission"
+import { ToolPolicyGate } from "@novaclaw/core/tool-policy-gate"
 // Value import, not `import type`: this file asserts model-facing bytes, and an MCP answer now
 // carries the untrusted-content frame. Referencing `McpExternal.FRAME` keeps the wording defined
 // once (`packages/core/src/tool/mcp-external.ts`) instead of copied into a second package's test.
@@ -87,11 +88,33 @@ const testBase = (
   )
 
 /** The real aggregate layer (`AggregateExternalToolSource.layer`) behind a real `ToolRegistry`. */
+/**
+ * The pre-action policy gate, stubbed to pass everything through.
+ *
+ * ⚠️ Named `bypassed…` on purpose — a reader must not mistake it for coverage. It mirrors
+ * `packages/core/test/lib/tool.ts`'s stub of the same name; it is duplicated rather than imported
+ * because core does not export its test directory. There is deliberately no production twin.
+ */
+const bypassedPolicyGate = Layer.succeed(
+  ToolPolicyGate.Service,
+  ToolPolicyGate.Service.of({
+    install: () => Effect.void,
+    installed: () => Effect.succeed([]),
+    screen: (input) => Effect.succeed({ kind: "run", input: input.input }),
+  }),
+)
+
 const registryOver = (base: ReturnType<typeof testBase>) =>
   ToolRegistry.layer.pipe(
     Layer.provide(AggregateExternalToolSource.layer.pipe(Layer.provide(base))),
     Layer.provide(ApplicationTools.layer),
     Layer.provide(ToolOutputStore.defaultLayer),
+    // ⚠️ `settleRaw` now consults the pre-action policy gate, so the registry carries that
+    // requirement wherever it is built. This suite is about EXTERNAL TOOL SOURCES — which file gets
+    // imported, and when — so it wants the gate out of the way rather than exercised; the
+    // `tool-policy*` suites build the real node. Named `bypassed…` on purpose: a reader must not
+    // mistake this for coverage, and it is test-only with no production twin.
+    Layer.provide(bypassedPolicyGate),
     Layer.provide(base),
   )
 

@@ -74,13 +74,26 @@ export interface Entry {
    * half by its old privacy list and half by its new one is the worst of both.
    */
   readonly exclude: readonly string[]
+  /**
+   * The pre-action policy ids this folder asks for, verbatim, or empty when it names none.
+   *
+   * Consumed by `tool-policy-gate.ts` underneath every tool call. Read HERE for the third time for
+   * the reason at the top of this module: a folder governed half by its old policy list and half by
+   * its new one is the worst of both, and a fourth reader of the same file is a fourth chance for
+   * them to disagree across an edit.
+   *
+   * ⚠️ Each id already satisfies `ProjectFile.POLICY_ID_PATTERN` — a file whose `policies` entry does
+   * not is refused by `parse` and never reaches this cache, which is what makes *"never a command"* a
+   * property of the type rather than of every consumer.
+   */
+  readonly policies: readonly string[]
   /** The directory holding the file, when one was found. */
   readonly root?: string
   /** The file itself, when one was found. */
   readonly file?: string
 }
 
-export const EMPTY: Entry = { rules: [], tune: undefined, exclude: [] }
+export const EMPTY: Entry = { rules: [], tune: undefined, exclude: [], policies: [] }
 
 export interface Interface {
   /**
@@ -136,6 +149,7 @@ export const layer = Layer.effect(
                     rules: resolution.info.permissions ?? [],
                     tune: resolution.info.tune,
                     exclude: resolution.info.exclude ?? [],
+                    policies: resolution.info.policies ?? [],
                     root: resolution.root,
                     file: resolution.file,
                   }

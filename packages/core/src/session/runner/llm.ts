@@ -837,6 +837,8 @@ export const layer = Layer.effect(
       const { session, config, agent, system, modelSession, model, entries } = prepared
       const toolFibers = yield* FiberSet.make<void, ToolOutputStore.Error>()
       let needsContinuation = false
+      /** A pre-action policy returned `halt` for one of this turn's tool calls. See `tool-policy.ts`. */
+      let policyHalted = false
       // A promoted user message restarts the step allowance: what the agent is answering changed.
       let currentStep = prepared.promoted > 0 ? 1 : step
       const maxProviderAttempts = ProviderRetry.maxAttempts(yield* models.retryAttempts(modelSession))
@@ -1298,6 +1300,10 @@ export const layer = Layer.effect(
               ).pipe(
                 Effect.flatMap((settlement) =>
                   Effect.gen(function* () {
+                    // A pre-action policy halted. The call did not run; the refusal is already the
+                    // tool result the model sees, and this latch is the half a `deny` does not have —
+                    // it ends the drain rather than letting the model route around the refusal.
+                    if (settlement.halted === true) policyHalted = true
                     // A missing file is authoritative negative evidence. If recalled memory led this
                     // exact step to that path, invalidate the claim before the next step recalls again.
                     // Re-stat instead of parsing the generic tool error: permission, binary, size, and
@@ -1597,6 +1603,11 @@ export const layer = Layer.effect(
           // stashes `step-finish`'s reason; `finish-recovery.ts` pins the literal to the schema.
           return {
             needsContinuation: !publisher.hasProviderError() && needsContinuation,
+            // ⚠️ REPORTED, never acted on here. A turn states the fact; the drain loop below is the
+            // one place that decides what a halt does, because the decision has three parts (stop
+            // continuing, skip the turn-end machinery, and do not restart from the queue or the
+            // self-drive) and splitting them across two scopes is how one of them gets forgotten.
+            policyHalted,
             step: currentStep,
             finish: stepSettlement?.finish,
             brokenResponse,
@@ -1666,6 +1677,8 @@ export const layer = Layer.effect(
     ) => Effect.Effect<
       {
         readonly needsContinuation: boolean
+        /** A pre-action policy returned `halt`: end the whole drain, not just this turn. */
+        readonly policyHalted: boolean
         readonly step: number
         readonly finish: string | undefined
         readonly brokenResponse: boolean
@@ -1903,6 +1916,16 @@ export const layer = Layer.effect(
       // clears). One steer back to the cutoff, then the drain stops honestly.
       const finishRecovery = FinishRecovery.initialState()
       let truncationHalted = false
+      /**
+       * A pre-action policy returned `halt` during this drain.
+       *
+       * Drain-level for `truncationHalted`'s reason: ending only the inner step loop would let the
+       * queue promotion or the self-drive continuation below start the model straight back up, and a
+       * halt that the next continuation undoes is not a halt. New input still wakes a FRESH drain
+       * through the coordinator, where the policy is consulted again — a halt stops this run, it does
+       * not disable the session.
+       */
+      let policyHalted = false
       const quality = Quality.initialState()
       // Self-drive state (architecture.md "run until exit()"): per-DRAIN round/wall counters —
       // a fresh drain (any new message) re-arms a cap-paused autonomous session.
@@ -1944,6 +1967,11 @@ export const layer = Layer.effect(
             !ShortChat.enabled(handoff.shortChat) && (handoff.introspection ?? harness.introspection.enabled)
           const result = yield* runTurn(input.sessionID, harness, promotion, step)
           needsContinuation = result.needsContinuation
+          if (result.policyHalted) {
+            policyHalted = true
+            needsContinuation = false
+            break
+          }
           step = result.step + 1
           promotion = "steer"
           // exit(result) landed during this turn → stop the run NOW: no tool-call continuation,
@@ -2199,7 +2227,7 @@ export const layer = Layer.effect(
         // queue promotion or the self-drive continuation below would immediately steer the same
         // starved model straight back into the same wall, and the two-strike bound would be
         // decorative. Pending input is safe for the same reason it is safe on the exit path.
-        if (exitedMidDrain || truncationHalted) break
+        if (exitedMidDrain || truncationHalted || policyHalted) break
         shouldRun = yield* SessionInput.hasPending(db, input.sessionID, "queue")
         promotion = shouldRun ? "queue" : undefined
         if (!shouldRun) {

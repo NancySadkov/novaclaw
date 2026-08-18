@@ -7,6 +7,7 @@ import { makeGlobalNode } from "../effect/app-node"
 import type { SessionSchema } from "./schema"
 import { decodeServingIdentities, SessionExecutionTable, SessionTable, TodoSnapshotTable } from "./sql"
 import { SessionQualityCheckTable } from "./quality-check.sql"
+import { SessionPolicyDecisionTable } from "../tool-policy.sql"
 
 /**
  * "What Nova checked" — the task receipt, composed from durable sources.
@@ -39,6 +40,32 @@ export interface Check {
   readonly at: number
 }
 
+/**
+ * One tool call a pre-action policy INTERVENED on. Never one per tool call.
+ *
+ * `todo/projects.md` → *Typed pre-action policies*: *"bind every intervention to a receipt."* This is
+ * that binding, surfaced through the receipt that already exists rather than through a second
+ * document — the question *"what did Nova actually do, and what stopped it"* has one answer here or
+ * it has two answers that can disagree.
+ *
+ * ⚠️ Rows exist only where something happened (`tool-policy.sql.ts` carries why), so an empty list
+ * is a positive statement: every installed policy allowed every call in this attempt, in time.
+ */
+export interface PolicyDecision {
+  /** The provider-assigned id of the tool call this governed. */
+  readonly toolCallID: string
+  readonly tool: string
+  /** `context` | `patch` | `approve` | `deny` | `halt` — and `allow` only when a policy went silent. */
+  readonly decision: string
+  /** One sentence, in the words the model was given. */
+  readonly detail: string
+  /** Every consulted policy and what it answered, in policy-id order. */
+  readonly providers: ReadonlyArray<{ readonly id: string; readonly outcome: string; readonly detail?: string }>
+  /** The tool-input fields as REPLACED, or `undefined` when nothing was rewritten. Never a diff. */
+  readonly patched?: Record<string, unknown>
+  readonly at: number
+}
+
 export interface PlanItem {
   readonly content: string
   readonly status: string
@@ -55,6 +82,8 @@ export interface Receipt {
   /** The plan as DECLARED, frozen when the attempt opened — never the live list. */
   readonly declaredPlan: readonly PlanItem[]
   readonly checks: readonly Check[]
+  /** Pre-action policy interventions inside this attempt's window. See {@link PolicyDecision}. */
+  readonly policies: readonly PolicyDecision[]
   /**
    * WHICH serving processes answered this attempt's turns, in first-seen order.
    *
@@ -156,6 +185,33 @@ export const layer = Layer.effect(
         .all()
         .pipe(Effect.orDie)
 
+      /**
+       * ⚠️ Bracketed by time, exactly as `checks` is above, and for the same reason: a policy
+       * decides inside the drain loop, which does not carry the attempt in scope. The soundness
+       * argument is the one stated there — attempts are SERIAL per session — and it fails in the
+       * same place if that ever stops being true.
+       */
+      const policies = yield* db
+        .select({
+          toolCallID: SessionPolicyDecisionTable.tool_call_id,
+          tool: SessionPolicyDecisionTable.tool,
+          decision: SessionPolicyDecisionTable.decision,
+          detail: SessionPolicyDecisionTable.detail,
+          providers: SessionPolicyDecisionTable.providers,
+          patched: SessionPolicyDecisionTable.patched,
+          at: SessionPolicyDecisionTable.time_created,
+        })
+        .from(SessionPolicyDecisionTable)
+        .where(
+          and(
+            eq(SessionPolicyDecisionTable.session_id, sessionID),
+            gte(SessionPolicyDecisionTable.time_created, attempt.startedAt),
+          ),
+        )
+        .orderBy(asc(SessionPolicyDecisionTable.time_created))
+        .all()
+        .pipe(Effect.orDie)
+
       // Ordinary sessions with this one as parent — the `session_parent_idx` the inventory names.
       const children = yield* db
         .select({ id: SessionTable.id })
@@ -172,6 +228,17 @@ export const layer = Layer.effect(
         startedAt: attempt.startedAt,
         declaredPlan,
         checks: checks.map((row) => ({ ...row, timedOut: Boolean(row.timedOut) })),
+        policies: policies.map((row) => ({
+          toolCallID: row.toolCallID,
+          tool: row.tool,
+          decision: row.decision,
+          detail: row.detail,
+          providers: row.providers,
+          // `null` in the column means "nothing was rewritten"; the interface says that with
+          // `undefined`, so the two spellings of absence do not both reach a reader.
+          ...(row.patched === null ? {} : { patched: row.patched }),
+          at: row.at,
+        })),
         servedBy: decodeServingIdentities(attempt.servedBy),
         children: children.map((row) => row.id),
       } satisfies Receipt

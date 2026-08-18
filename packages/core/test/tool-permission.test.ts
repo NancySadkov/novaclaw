@@ -16,7 +16,8 @@ import { PermissionTool } from "@novaclaw/core/tool/permission"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
 import { testEffect } from "./lib/effect"
-import { toolIdentity, executeTool } from "./lib/tool"
+import { bypassedPolicyGate, toolIdentity, executeTool } from "./lib/tool"
+import { ToolPolicyGate } from "@novaclaw/core/tool-policy-gate"
 
 // Auto mode's TOOL. The ceiling algebra is pinned by `auto-mode-algebra.test.ts` and the live
 // evaluator by `permission-auto-mode.test.ts`; this file proves the tool gathers the right state,
@@ -57,7 +58,7 @@ const it = testEffect(
     ]),
     [
       [PermissionV2.node, permission],
-      [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
+      [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig], [ToolPolicyGate.node, bypassedPolicyGate],
     ],
   ),
 )

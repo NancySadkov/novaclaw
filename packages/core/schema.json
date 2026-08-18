@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "0825e5d6-67ac-4da7-9a52-30929db7bd49",
+  "id": "c62e3625-b915-44ab-a89b-3203fa4cc229",
   "prevIds": [
-    "c3a69c0f-1c19-4a68-925d-ec222bdf2564"
+    "0825e5d6-67ac-4da7-9a52-30929db7bd49"
   ],
   "ddl": [
     {
@@ -40,6 +40,10 @@
     },
     {
       "name": "session_quality_check",
+      "entityType": "tables"
+    },
+    {
+      "name": "session_policy_decision",
       "entityType": "tables"
     },
     {
@@ -869,6 +873,96 @@
       "name": "time_created",
       "entityType": "columns",
       "table": "session_quality_check"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "session_policy_decision"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "session_id",
+      "entityType": "columns",
+      "table": "session_policy_decision"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "tool_call_id",
+      "entityType": "columns",
+      "table": "session_policy_decision"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "tool",
+      "entityType": "columns",
+      "table": "session_policy_decision"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "decision",
+      "entityType": "columns",
+      "table": "session_policy_decision"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "detail",
+      "entityType": "columns",
+      "table": "session_policy_decision"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "providers",
+      "entityType": "columns",
+      "table": "session_policy_decision"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "patched",
+      "entityType": "columns",
+      "table": "session_policy_decision"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_created",
+      "entityType": "columns",
+      "table": "session_policy_decision"
     },
     {
       "type": "text",
@@ -4682,6 +4776,15 @@
         "id"
       ],
       "nameExplicit": false,
+      "name": "session_policy_decision_pk",
+      "table": "session_policy_decision",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
       "name": "bash_job_pk",
       "table": "bash_job",
       "entityType": "pks"
@@ -5099,6 +5202,38 @@
       "name": "session_quality_check_session_idx",
       "entityType": "indexes",
       "table": "session_quality_check"
+    },
+    {
+      "columns": [
+        {
+          "value": "session_id",
+          "isExpression": false
+        },
+        {
+          "value": "time_created",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "session_policy_decision_session_idx",
+      "entityType": "indexes",
+      "table": "session_policy_decision"
+    },
+    {
+      "columns": [
+        {
+          "value": "tool_call_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "session_policy_decision_call_idx",
+      "entityType": "indexes",
+      "table": "session_policy_decision"
     },
     {
       "columns": [

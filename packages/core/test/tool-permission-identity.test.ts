@@ -8,7 +8,8 @@ import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { Tool } from "@novaclaw/core/tool/tool"
 import { Cause, Effect, Exit, JsonSchema, Layer, Option, Schema } from "effect"
 import { testEffect } from "./lib/effect"
-import { toolDefinitions } from "./lib/tool"
+import { bypassedPolicyGate, toolDefinitions } from "./lib/tool"
+import { ToolPolicyGate } from "@novaclaw/core/tool-policy-gate"
 
 /**
  * `Tool.withPermission(tool, <its own registered name>)` is a LITERAL NO-OP, and nine tools shipped
@@ -54,7 +55,7 @@ import { toolDefinitions } from "./lib/tool"
 const outputStore = Layer.mock(ToolOutputStore.Service, {
   bound: (input) => Effect.succeed({ output: input.output, outputPaths: [] }),
 })
-const it = testEffect(AppNodeBuilder.build(ToolRegistry.node, [[ToolOutputStore.node, outputStore]]))
+const it = testEffect(AppNodeBuilder.build(ToolRegistry.node, [[ToolOutputStore.node, outputStore], [ToolPolicyGate.node, bypassedPolicyGate]]))
 // `ToolRegistry.node` PROVIDES `ApplicationTools` rather than exporting it, so the second
 // registration seam is unreachable from the graph above and needs its own build. Measured, not
 // assumed: reaching for it through the registry's context fails "Service not found:
