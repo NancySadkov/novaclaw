@@ -1486,7 +1486,7 @@ export const dict = {
   "settings.project.rulesValue": "From this folder. They can only narrow your settings, never widen them.",
   "settings.project.fileDetail": "The file that makes this folder a Project.",
   "settings.project.excludeDetail":
-    "Nova will refuse to open these, and says so instead of pretending they are missing. Two reasons to use it: privacy — keys, credentials and personal files never reach the model — and focus, since skipping bulky folders leaves more room in Nova's context and makes searches quicker. This is separate from what the file watcher and your build ignore; those are about speed, this is about permission.",
+    "Nova will refuse to open these, and says so instead of pretending they are missing. Two reasons to use it: privacy — keys, credentials and personal files stay out of the model — and focus, since skipping bulky folders leaves more room in Nova's context and makes searches quicker. This is separate from what the file watcher and your build ignore; those are about speed, this is about permission. It matches on paths, so a file that is also reachable under a second name it does not list can still be opened; for a folder you do not trust, use a sandbox rather than this list.",
   "settings.project.rulesNone": "None — this file changes no permissions",
   "settings.project.excludeNone":
     "Nothing — Nova may read any file in this folder. Add an `exclude` list to novaclaw.json to keep keys, credentials or bulky folders out of its reach.",
