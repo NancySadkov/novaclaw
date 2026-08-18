@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron"
-import type { ElectronAPI, WslServersEvent } from "./types"
+import type { ElectronAPI, SuperviseStatus, WslServersEvent } from "./types"
 import type { UpdaterState } from "@novaclaw/app/updater"
 
 const updaterCallbacks = new Set<(state: UpdaterState) => void>()
@@ -12,6 +12,20 @@ const updaterHandler = (_: unknown, state: UpdaterState) => {
 
 const api: ElectronAPI = {
   killSidecar: () => ipcRenderer.invoke("kill-sidecar"),
+  supervisor: {
+    getState: () => ipcRenderer.invoke("supervisor-get-state"),
+    subscribe: (cb) => {
+      const handler = (_: unknown, state: SuperviseStatus) => cb(state)
+      ipcRenderer.on("supervisor-state", handler)
+      // `supervisor-subscribe` answers with the CURRENT phase before any transition, so a window
+      // that opened after the outage began still learns about it.
+      void ipcRenderer.invoke("supervisor-subscribe")
+      return () => {
+        ipcRenderer.removeListener("supervisor-state", handler)
+        void ipcRenderer.invoke("supervisor-unsubscribe")
+      }
+    },
+  },
   installCli: () => ipcRenderer.invoke("install-cli"),
   awaitInitialization: () => ipcRenderer.invoke("await-initialization"),
   wslServers: {

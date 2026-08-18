@@ -175,6 +175,11 @@ const createPlatform = (): Platform => {
       window.api.relaunch()
     },
 
+    supervisor: {
+      getState: () => window.api.supervisor.getState(),
+      subscribe: (cb) => window.api.supervisor.subscribe(cb),
+    },
+
     notify: async (title, description, href) => {
       const focused = await window.api.getWindowFocused().catch(() => document.hasFocus())
       if (focused) return

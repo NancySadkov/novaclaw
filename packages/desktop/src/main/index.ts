@@ -37,6 +37,7 @@ import {
   superviseLocalServer,
   type SidecarListener,
 } from "./server"
+import type { SuperviseStatus } from "@novaclaw/script/supervise"
 import { setupAutoUpdater, showUpdaterDialog } from "./updater"
 import {
   createMainWindow,
@@ -126,6 +127,28 @@ app.on("will-quit", () => {
 
 let mainWindow: BrowserWindow | null = null
 let server: SidecarListener | null = null
+
+/**
+ * The sidecar supervisor's phase, held HERE because the renderer cannot ask the instance about it.
+ *
+ * The whole point of the terminal `gave-up` phase is that the server is gone and is not coming back
+ * on its own — so the only process that can still answer is this one. Starts as `running` because
+ * every reader of it is created after the first sidecar has passed its health gate; a boot that
+ * never gets there fails through `forwardInitializationFailure` instead.
+ */
+let supervisorState: SuperviseStatus = { phase: "running" }
+const supervisorListeners = new Set<(state: SuperviseStatus) => void>()
+const setSupervisorState = (state: SuperviseStatus) => {
+  supervisorState = state
+  for (const listener of supervisorListeners) {
+    try {
+      listener(state)
+    } catch (error) {
+      // One dead window must not stop the others from hearing that the instance is down.
+      writeLog("utility", "supervisor state listener failed", { error: String(error) }, "warn")
+    }
+  }
+}
 // P6: set once the sidecar is up — lets the updater guard read the machine's offline status.
 let sidecarOfflineProbe: (() => Promise<boolean>) | undefined
 
@@ -382,6 +405,11 @@ const main = Effect.gen(function* () {
   const updater = setupAutoUpdater(stopSidecars)
   registerIpcHandlers({
     killSidecar: () => killSidecar(),
+    supervisorState: () => supervisorState,
+    subscribeSupervisorState: (listener) => {
+      supervisorListeners.add(listener)
+      return () => supervisorListeners.delete(listener)
+    },
     relaunch,
     awaitInitialization: Effect.fnUntraced(
       function* () {
@@ -542,6 +570,10 @@ const main = Effect.gen(function* () {
             onStdout: (message) => writeLog("server", "stdout", { message }),
             onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
             onExit: (code) => writeLog("utility", "sidecar exited", { code }, "warn"),
+            onState: (state) => {
+              writeLog("utility", "supervisor state", { ...state }, state.phase === "gave-up" ? "error" : "info")
+              setSupervisorState(state)
+            },
           }),
         catch: (cause) => cause,
       })

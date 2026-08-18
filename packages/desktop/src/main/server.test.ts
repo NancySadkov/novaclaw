@@ -25,10 +25,23 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 // `bun test src` runs shell-env.test.ts in the same process against this same module.
 const realShellEnv = { ...(await import("./shell-env")) }
 
+// ⚠️ Must stay EQUIVALENT to the stub in supervise-faults.test.ts, which mocks the same specifier in
+// the same process. Bun module mocks are process-global and the last registration wins, so if these
+// two disagreed the winner would be decided by test-file ordering — i.e. by whatever filename
+// someone adds next. Neither file uses `app`/`utilityProcess` from here directly: the fork defers to
+// a `globalThis` slot that only the fault-injection file ever fills.
+const FORK_SLOT = Symbol.for("novaclaw.desktop.test.sidecar-fork")
+const forkSlot = globalThis as unknown as Record<symbol, (() => unknown) | undefined>
 void mock.module("electron", () => ({
   default: {},
-  app: {},
-  utilityProcess: {},
+  app: { on: () => {}, off: () => {}, isPackaged: false },
+  utilityProcess: {
+    fork: () => {
+      const hook = forkSlot[FORK_SLOT]
+      if (!hook) throw new Error("no sidecar fork hook installed for this test")
+      return hook()
+    },
+  },
 }))
 void mock.module("./logging", () => ({
   getLogger: () => ({ log: () => {} }),

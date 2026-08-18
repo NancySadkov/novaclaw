@@ -26,6 +26,44 @@ export type LivenessDecision = {
   readonly failures: number
 }
 
+/**
+ * Why a supervised child is gone — carried, never inferred from the exit code afterwards.
+ *
+ * 🔴 The distinction that matters is `intentional` vs everything else, and an exit code cannot
+ * express it: our own sidecar exits **0** when the parent asks it to stop AND a buggy build can exit
+ * 0 on a real fault, while a tree-kill of a healthy child on Windows reports a non-zero code for a
+ * perfectly deliberate shutdown. Both supervisors therefore latch the intent at the moment they
+ * decide to stop (`stopping`) and rewrite the code they hand {@link superviseDecision}. This union
+ * is the same fact made reportable, so the UI can tell "we stopped it" from "it died" without
+ * re-deriving the heuristic that does not work.
+ */
+export type StopReason = "intentional" | "crash" | "unresponsive" | "start-failed"
+
+/**
+ * What the supervisor is doing right now, in the terms a person needs.
+ *
+ * `gave-up` is a TERMINAL state and the reason this type exists: the restart ladder is bounded, so
+ * something has to say when it has run out, or a UI that shows "reconnecting…" keeps promising a
+ * recovery that nobody is attempting any more. `attempts` and `nextAttemptInMs` make the bounded
+ * ladder legible while it is still climbing.
+ */
+export type SuperviseStatus =
+  | { readonly phase: "running" }
+  /** A deliberate stop — quit, relaunch, update. Never a fault, never counted, never telemetry. */
+  | { readonly phase: "stopped" }
+  | {
+      readonly phase: "restarting"
+      readonly reason: Exclude<StopReason, "intentional">
+      /** 1 = the first retry after the first fault. */
+      readonly attempt: number
+      readonly nextAttemptInMs: number
+    }
+  | {
+      readonly phase: "gave-up"
+      readonly reason: Exclude<StopReason, "intentional">
+      readonly attempts: number
+    }
+
 /** Consecutive probe failures only: one transient miss is not an outage, while a successful probe
  *  fully re-arms the monitor. The monitor plumbing owns intervals and process termination; keeping
  *  this decision pure makes desktop/headless parity mechanical. */

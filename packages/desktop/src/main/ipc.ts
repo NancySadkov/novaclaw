@@ -5,6 +5,7 @@ import { basename } from "node:path"
 import { app, BrowserWindow, Notification, clipboard, dialog, ipcMain, shell } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 
+import type { SuperviseStatus } from "@novaclaw/script/supervise"
 import type { FatalRendererError, ServerReadyData, TitlebarTheme } from "../preload/types"
 import { assertAttachmentBudget, createPickedFileAuthorizations } from "./attachment-picker"
 import { getStore } from "./store"
@@ -21,6 +22,15 @@ const pickedFiles = createPickedFileAuthorizations()
 
 type Deps = {
   killSidecar: () => Promise<void> | void
+  /**
+   * The sidecar supervisor's live phase, and a push subscription for its transitions.
+   *
+   * ⚠️ Read on demand rather than cached in the renderer: the state that matters most (`gave-up`)
+   * is reached while the server is DOWN, so it cannot travel over the instance's own HTTP surface
+   * and a renderer that reloaded after the outage would otherwise start with no idea it happened.
+   */
+  supervisorState: () => SuperviseStatus
+  subscribeSupervisorState: (listener: (state: SuperviseStatus) => void) => () => void
   relaunch: () => void
   awaitInitialization: () => Promise<ServerReadyData>
   consumeInitialDeepLinks: () => Promise<string[]> | string[]
@@ -45,9 +55,27 @@ type Deps = {
 
 export function registerIpcHandlers(deps: Deps) {
   const updaterSubscriptions = createUpdaterSubscriptions()
+  const supervisorSubscriptions = createUpdaterSubscriptions()
   app.once("will-quit", updaterSubscriptions.clear)
+  app.once("will-quit", supervisorSubscriptions.clear)
 
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
+  ipcMain.handle("supervisor-get-state", () => deps.supervisorState())
+  ipcMain.handle("supervisor-subscribe", (event) => {
+    const id = event.sender.id
+    supervisorSubscriptions.set(
+      id,
+      deps.subscribeSupervisorState((state) => {
+        if (event.sender.isDestroyed()) return supervisorSubscriptions.delete(id)
+        event.sender.send("supervisor-state", state)
+      }),
+    )
+    event.sender.once("destroyed", () => supervisorSubscriptions.delete(id))
+    // The current phase, immediately: a window that opens mid-outage must not wait for the next
+    // transition to learn there is one — and after `gave-up` there is no next transition at all.
+    event.sender.send("supervisor-state", deps.supervisorState())
+  })
+  ipcMain.handle("supervisor-unsubscribe", (event) => supervisorSubscriptions.delete(event.sender.id))
   ipcMain.handle("await-initialization", () => deps.awaitInitialization())
   ipcMain.handle("consume-initial-deep-links", () => deps.consumeInitialDeepLinks())
   ipcMain.handle("get-default-server-url", () => deps.getDefaultServerUrl())

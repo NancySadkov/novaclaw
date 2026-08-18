@@ -111,6 +111,28 @@ type PlatformBase = {
 
   /** Record a fatal renderer error in platform logs (desktop only) */
   recordFatalRendererError?(error: FatalRendererErrorLog): Promise<void>
+
+  /**
+   * The local instance supervisor's phase (desktop only).
+   *
+   * Optional because only a platform that OWNS the instance process has one: on the web, and when
+   * the desktop shell is driving a remote instance, nobody local is restarting anything and the
+   * honest answer is "no supervisor", not a fabricated phase. The banner degrades to its
+   * time-based behaviour when this is absent.
+   */
+  supervisor?: SupervisorPlatform
+}
+
+/** What the shell needs to say whether a local instance is coming back — and when it is not. */
+export type SupervisorPhase =
+  | { phase: "running" }
+  | { phase: "stopped" }
+  | { phase: "restarting"; reason: string; attempt: number; nextAttemptInMs: number }
+  | { phase: "gave-up"; reason: string; attempts: number }
+
+export type SupervisorPlatform = {
+  getState(): Promise<SupervisorPhase>
+  subscribe(cb: (state: SupervisorPhase) => void): () => void
 }
 
 export type Platform = PlatformBase &

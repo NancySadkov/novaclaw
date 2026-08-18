@@ -12,6 +12,8 @@ import {
   superviseDecision,
   FAST_CRASH_GIVEUP,
   LIVENESS_FAILURE_LIMIT,
+  type StopReason,
+  type SuperviseStatus,
 } from "@novaclaw/script/supervise"
 
 export type HealthCheck = { wait: Promise<void> }
@@ -32,6 +34,19 @@ type SpawnLocalServerOptions = {
   onStdout?: (message: string) => void
   onStderr?: (message: string) => void
   onExit?: (code: number) => void
+}
+
+type SuperviseLocalServerOptions = SpawnLocalServerOptions & {
+  /**
+   * Every supervisor state transition, for the surfaces a person actually looks at.
+   *
+   * ⚠️ Log lines are NOT this. `note()` writes `[supervise] …` into server.log, which is where the
+   * give-up used to end its life: the renderer's banner went on saying *"Still trying. Your work is
+   * safe; this clears by itself once the instance is back"* while the ladder had permanently
+   * stopped, so the one message the user could see was false exactly when it mattered. A bounded
+   * policy needs a reported terminal state or the bound is invisible.
+   */
+  onState?: (state: SuperviseStatus) => void
 }
 
 export function getDefaultServerUrl(): string | null {
@@ -250,7 +265,7 @@ export async function superviseLocalServer(
   hostname: string,
   port: number,
   password: string,
-  options: SpawnLocalServerOptions,
+  options: SuperviseLocalServerOptions,
 ): Promise<{ listener: SidecarListener; health: HealthCheck }> {
   let stopping = false
   let state = initialSuperviseState
@@ -261,7 +276,20 @@ export async function superviseLocalServer(
   let monitorEpoch = 0
   let livenessFailures = 0
   let unresponsive = false
+  let attempts = 0
+  // The reason the CURRENT child is going away, latched where the decision is made rather than read
+  // off an exit code afterwards — see StopReason. `stopping` remains the authority on intent; this
+  // only says which flavour of fault an unintended stop was, for the message the user reads.
+  let reason: Exclude<StopReason, "intentional"> = "crash"
   const note = (message: string) => options.onStderr?.(`[supervise] ${message}`)
+  const report = (next: SuperviseStatus) => {
+    try {
+      options.onState?.(next)
+    } catch {
+      // A reporting surface must never be able to break recovery. Losing one status update is a
+      // stale banner; throwing here would abandon the restart itself.
+    }
+  }
 
   const stopMonitor = () => {
     monitorEpoch++
@@ -280,6 +308,7 @@ export async function superviseLocalServer(
       livenessFailures = decision.failures
       if (decision.action === "restart") {
         unresponsive = true
+        reason = "unresponsive"
         stopMonitor()
         note(`sidecar missed ${LIVENESS_FAILURE_LIMIT} health checks — terminating the hung process`)
         handle.listener.terminate()
@@ -298,6 +327,7 @@ export async function superviseLocalServer(
   const spawnOnce = async () => {
     let readySeen = false
     unresponsive = false
+    reason = "crash"
     startedAt = Date.now()
     const handle = await spawnLocalServer(hostname, port, password, {
       ...options,
@@ -319,15 +349,19 @@ export async function superviseLocalServer(
     const decision = superviseDecision(state, { code, aliveMs: Date.now() - startedAt })
     if (decision.action === "stop-clean") {
       note("sidecar exited cleanly — not restarting")
+      report({ phase: "stopped" })
       return
     }
     if (decision.action === "giveup") {
       note(
         `crash loop: ${FAST_CRASH_GIVEUP} consecutive fast exits — giving up; the connection banner will show the outage`,
       )
+      report({ phase: "gave-up", reason, attempts })
       return
     }
+    attempts++
     note(`sidecar exited (code ${code}) — restarting in ${decision.delayMs / 1000}s`)
+    report({ phase: "restarting", reason, attempt: attempts, nextAttemptInMs: decision.delayMs })
     state = decision.next
     respawnTimer = setTimeout(() => void respawn(), decision.delayMs)
   }
@@ -336,25 +370,39 @@ export async function superviseLocalServer(
     if (stopping) return
     try {
       current = await spawnOnce()
+      // ⚠️ The intent latch can flip DURING the await above (a quit racing a respawn). Without this
+      // the supervisor would announce a healthy server nobody is going to stop and leave the UI
+      // reporting "running" through a shutdown.
+      if (stopping) {
+        await current.listener.stop().catch(() => undefined)
+        report({ phase: "stopped" })
+        return
+      }
       note("sidecar respawned")
+      report({ phase: "running" })
       startMonitor(current)
       // Respawned children aren't awaited by boot code — surface a failed health gate in the log.
       current.health.wait.catch((error: unknown) => note(`respawned sidecar health check failed: ${String(error)}`))
     } catch (error) {
       if (stopping) return
       note(`respawn failed before ready: ${error instanceof Error ? error.message : String(error)}`)
+      reason = "start-failed"
       onChildGone(1)
     }
   }
 
   current = await spawnOnce() // first boot failures throw to the caller, exactly as before
   startMonitor(current)
+  report({ phase: "running" })
   return {
     listener: {
       stop: () => {
+        // The intent latch, and the ONLY place it is set. Everything downstream reads it rather
+        // than guessing from an exit code.
         stopping = true
         stopMonitor()
         if (respawnTimer) clearTimeout(respawnTimer)
+        report({ phase: "stopped" })
         return current ? current.listener.stop() : Promise.resolve()
       },
     },

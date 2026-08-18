@@ -560,6 +560,13 @@ export const dict = {
   "app.connection.reconnecting": "Connection lost — reconnecting…",
   "app.connection.stillTrying": "Still trying. Your work is safe; this clears by itself once the instance is back.",
   "app.connection.restored": "Reconnected",
+  // The BOUNDED end of the restart ladder. Says the three things the old "still trying" line could
+  // not: it stopped, why it is safe to wait no longer, and what the one button will do.
+  "app.connection.stopped.title": "This instance stopped and could not restart itself",
+  "app.connection.stopped.description":
+    "NovaClaw tried several times and has stopped trying. Your work is saved. Restarting the app usually fixes it.",
+  "app.connection.stopped.restart": "Restart NovaClaw",
+  "app.connection.stopped.restarting": "Restarting…",
 
   "dialog.server.title": "Servers",
   "dialog.server.search.placeholder": "Search servers",

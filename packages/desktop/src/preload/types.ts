@@ -1,5 +1,7 @@
 import type { WslServersPlatform } from "@novaclaw/app/wsl/types"
 import type { UpdaterState } from "@novaclaw/app/updater"
+import type { SuperviseStatus } from "@novaclaw/script/supervise"
+export type { SuperviseStatus }
 export type {
   WslDistroProbe,
   WslInstalledDistro,
@@ -27,6 +29,18 @@ export type UpdaterAPI = {
   install: () => Promise<void>
 }
 
+/**
+ * The sidecar supervisor, as the renderer sees it.
+ *
+ * Only two operations, because only two are honest: read the phase, and be told when it changes.
+ * There is deliberately no "retry once more" call — the ladder is the policy, and the repair a user
+ * is offered in the terminal state is the app's existing full restart.
+ */
+export type SupervisorAPI = {
+  getState: () => Promise<SuperviseStatus>
+  subscribe: (cb: (state: SuperviseStatus) => void) => () => void
+}
+
 export type LinuxDisplayBackend = "wayland" | "auto"
 export type TitlebarTheme = {
   mode: "light" | "dark"
@@ -41,6 +55,7 @@ export type FatalRendererError = {
 
 export type ElectronAPI = {
   killSidecar: () => Promise<void>
+  supervisor: SupervisorAPI
   installCli: () => Promise<string>
   awaitInitialization: () => Promise<ServerReadyData>
   wslServers: WslServersAPI

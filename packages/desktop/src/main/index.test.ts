@@ -157,6 +157,23 @@ describe("desktop boot order", () => {
    * answered with a force-kill, which loses strictly more. Both bounds are asserted, because either
    * one alone is insufficient — a timeout that does not exit, or an exit that can be skipped.
    */
+  /**
+   * The supervisor's state has to REACH somebody, or the bound is invisible again.
+   *
+   * `supervise-faults.test.ts` proves `superviseLocalServer` reports `restarting`/`stopped`/`gave-up`.
+   * It cannot prove that `index.ts` subscribes, nor that the subscription is handed to the IPC layer
+   * the renderer reads — and that gap is precisely how a feature ends up built, tested and never
+   * called. The terminal `gave-up` state is the one that matters: it fires exactly once, while the
+   * server is down, so nothing downstream can re-derive it later from the instance itself.
+   */
+  test("the supervisor's state is subscribed and forwarded to the renderer's IPC surface", () => {
+    expect(source, "superviseLocalServer must be given an onState reporter").toMatch(
+      /superviseLocalServer\([\s\S]{0,600}onState:/,
+    )
+    expect(source).toMatch(/registerIpcHandlers\(\{[\s\S]{0,400}supervisorState:/)
+    expect(source).toMatch(/registerIpcHandlers\(\{[\s\S]{0,600}subscribeSupervisorState:/)
+  })
+
   test("the quit path is bounded and always exits", () => {
     expect(source, "a stuck sidecar must not hold the window open").toMatch(
       /before-quit[\s\S]{0,900}QUIT_DEADLINE_MS/,
