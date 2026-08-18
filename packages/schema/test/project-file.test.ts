@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { Schema } from "effect"
 import { ProjectFile } from "@novaclaw/schema/project-file"
 
 /**
@@ -243,5 +244,102 @@ describe("what a write may record", () => {
     const read = ProjectFile.narrowTune(written.tune, baseline)
     expect(read.refused).toEqual([])
     expect(read.features).toEqual(written.tune?.features ?? {})
+  })
+})
+
+/**
+ * The permissions half of the same story — `writablePermissions`.
+ *
+ * 🔴 **The claim under it is a proof, not a preference**, and that is why it belongs beside
+ * `narrowTune`'s tests rather than in a comment. `PermissionV2.evaluateNarrowed` folds a project's
+ * ruleset in as a CONSTRAINT: it replaces the base verdict only with something strictly more
+ * restrictive, and `allow` is the least restrictive effect there is. So an `allow` rule in a
+ * `novaclaw.json` is read, matched, and provably ignored — writing one would put a grant in the
+ * user's own file that the product does not honour.
+ *
+ * ⚠️ The kernel-side half of that proof lives in `core/test/project-file-write.test.ts`, which drives
+ * `evaluateNarrowed` itself. This package cannot import core, so the two halves are named in each
+ * other's prose rather than shared.
+ */
+describe("novaclaw.json writable permissions", () => {
+  test("🔴 an `allow` rule is refused; `ask` and `deny` are written", () => {
+    const result = ProjectFile.writablePermissions([
+      { action: "bash", resource: "*", effect: "deny" },
+      { action: "read", resource: "secrets/*", effect: "allow" },
+      { action: "edit", resource: "*", effect: "ask" },
+    ])
+    expect(result.permissions).toEqual([
+      { action: "bash", resource: "*", effect: "deny" },
+      { action: "edit", resource: "*", effect: "ask" },
+    ])
+    expect(result.refused).toEqual([{ action: "read", resource: "secrets/*", effect: "allow" }])
+  })
+
+  test("an empty ruleset is a SUPPLIED empty section, not an absent one", () => {
+    // Same choice `writableTune` makes about an empty `features`: the caller asked for the section,
+    // and the receipt has to stay honest about which sections a write touched. Removing the section
+    // is a different request with its own spelling (`ProjectFileWrite.Changes.clear`).
+    expect(ProjectFile.writablePermissions([])).toEqual({ permissions: [], refused: [] })
+  })
+
+  test("no permissions at all is not a permissions section", () => {
+    expect(ProjectFile.writablePermissions(undefined)).toEqual({ permissions: undefined, refused: [] })
+  })
+
+  test("order is preserved on both sides — within one ruleset the LAST match wins", () => {
+    const result = ProjectFile.writablePermissions([
+      { action: "read", resource: "*", effect: "deny" },
+      { action: "read", resource: "docs/*", effect: "ask" },
+    ])
+    expect(result.permissions).toEqual([
+      { action: "read", resource: "*", effect: "deny" },
+      { action: "read", resource: "docs/*", effect: "ask" },
+    ])
+  })
+})
+
+/**
+ * `SECTIONS` — the list a write may replace or CLEAR.
+ *
+ * ⚠️ The compile-time tie in `project-file.ts` already fails if `Info` and `SECTIONS` disagree. This
+ * is the half a type cannot state: that `version` stays OUT. A caller able to name it could delete
+ * it, and a file with no `version` does not parse — through a route whose whole promise is that it
+ * never writes one this build cannot read.
+ */
+describe("the sections an edit may name", () => {
+  test("🔴 `version` is not one of them", () => {
+    expect((ProjectFile.SECTIONS as readonly string[]).includes("version")).toBe(false)
+  })
+
+  test("every section is a real key of a project file, and the list is complete", () => {
+    const parsed = ProjectFile.parse(
+      write({
+        version: 1,
+        name: "Acme",
+        permissions: [{ action: "bash", resource: "*", effect: "deny" }],
+        tune: { features: { memory: true } },
+        exclude: ["a/**"],
+        policies: ["policy.review"],
+      }),
+    )
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    for (const section of ProjectFile.SECTIONS) expect(section in parsed.raw).toBe(true)
+    // …and nothing a file can carry is missing from the list, `version` aside.
+    // Widened to string[] deliberately: `SECTIONS` is a readonly union tuple, so comparing it
+    // directly against `Object.keys` (plain string[]) makes tsgo pick an overload that rejects the
+    // argument. The comparison we want is between two lists of names, not between two types.
+    const declared: string[] = [...ProjectFile.SECTIONS]
+    expect(declared.sort()).toEqual(
+      Object.keys(parsed.raw)
+        .filter((key) => key !== "version")
+        .sort(),
+    )
+  })
+
+  test("the Section schema accepts exactly the list and nothing else", () => {
+    const decode = Schema.decodeUnknownResult(ProjectFile.Section)
+    for (const section of ProjectFile.SECTIONS) expect(decode(section)._tag).toBe("Success")
+    for (const bogus of ["version", "futureSection", ""]) expect(decode(bogus)._tag).toBe("Failure")
   })
 })

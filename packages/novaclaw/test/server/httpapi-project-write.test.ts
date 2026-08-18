@@ -129,6 +129,130 @@ describe("POST /api/project", () => {
     }),
   )
 
+  it.effect("🔴 a permissions edit writes ONLY that section, over the wire", () =>
+    Effect.gen(function* () {
+      const directory = tmp("permissions")
+      const before = {
+        $schema: "https://novaclaw.app/schema/project.json",
+        version: 1,
+        name: "Acme",
+        tune: { features: { memory: true } },
+        exclude: ["secrets/**"],
+        futureSection: { anything: [1, 2] },
+      }
+      fs.writeFileSync(at(directory), `${JSON.stringify(before, null, 2)}\n`)
+
+      const response = yield* post(directory, {
+        permissions: [{ action: "bash", resource: "rm *", effect: "deny" }],
+      })
+      const body: Record<string, unknown> = JSON.parse(yield* response.text)
+      expect(body["ok"]).toBe(true)
+      expect(body["sections"]).toEqual(["permissions"])
+      expect(body["cleared"]).toEqual([])
+
+      const after = JSON.parse(fs.readFileSync(at(directory), "utf8")) as Record<string, unknown>
+      expect(after["permissions"]).toEqual([{ action: "bash", resource: "rm *", effect: "deny" }])
+      // The whole document differs in exactly one key — a field-by-field check would pass for a
+      // write that quietly ADDED something.
+      const changed = Object.keys({ ...before, ...after }).filter(
+        (key) => JSON.stringify(after[key]) !== JSON.stringify((before as Record<string, unknown>)[key]),
+      )
+      expect(changed).toEqual(["permissions"])
+    }),
+  )
+
+  it.effect("🔴 an `allow` rule cannot be persisted over the wire either, and is reported", () =>
+    Effect.gen(function* () {
+      // The permissions twin of the supervision-switch case above: a project ruleset is a NARROWING
+      // constraint, so an `allow` is read, matched, and provably ignored. Writing one would put a
+      // grant in the user's own file that the product does not honour.
+      const directory = tmp("widen")
+      const response = yield* post(directory, {
+        permissions: [
+          { action: "read", resource: "*", effect: "allow" },
+          { action: "bash", resource: "*", effect: "deny" },
+        ],
+      })
+      const body: Record<string, unknown> = JSON.parse(yield* response.text)
+      expect(body["ok"]).toBe(true)
+      expect(body["refusedPermissions"]).toEqual([{ action: "read", resource: "*", effect: "allow" }])
+      const after = JSON.parse(fs.readFileSync(at(directory), "utf8")) as Record<string, unknown>
+      expect(after["permissions"]).toEqual([{ action: "bash", resource: "*", effect: "deny" }])
+    }),
+  )
+
+  it.effect("🔴 `clear` removes a section — the spelling that did not exist before", () =>
+    Effect.gen(function* () {
+      const directory = tmp("clear")
+      const before = {
+        version: 1,
+        name: "Acme",
+        permissions: [{ action: "bash", resource: "*", effect: "deny" }],
+        futureSection: { anything: 1 },
+      }
+      fs.writeFileSync(at(directory), `${JSON.stringify(before, null, 2)}\n`)
+
+      const response = yield* post(directory, { clear: ["permissions"] })
+      const body: Record<string, unknown> = JSON.parse(yield* response.text)
+      expect(body["ok"]).toBe(true)
+      expect(body["cleared"]).toEqual(["permissions"])
+      expect(body["sections"]).toEqual([])
+
+      const after = JSON.parse(fs.readFileSync(at(directory), "utf8")) as Record<string, unknown>
+      // Gone, not present-and-empty. `[]` and absent read the same to the kernel, and the user asked
+      // for the sentence to leave their file.
+      expect("permissions" in after).toBe(false)
+      expect(after["name"]).toBe("Acme")
+      expect(after["futureSection"]).toEqual(before.futureSection)
+
+      // And the read side agrees: the folder is still a Project, with no rules.
+      const read = yield* requestInDirectory(ExperimentalPaths.project, directory)
+      const state: Record<string, unknown> = JSON.parse(yield* read.text)
+      expect(state["kind"]).toBe("project")
+      expect(state["permissionRules"]).toBe(0)
+      expect(state["permissions"]).toEqual([])
+    }),
+  )
+
+  it.effect("asking to both set and clear one section is refused at 200, with nothing written", () =>
+    Effect.gen(function* () {
+      const directory = tmp("contradiction")
+      const original = `${JSON.stringify({ version: 1, name: "Acme" }, null, 2)}\n`
+      fs.writeFileSync(at(directory), original)
+      const response = yield* post(directory, { clear: ["name"], name: "Other" })
+      expect(response.status).toBe(200)
+      const body: Record<string, unknown> = JSON.parse(yield* response.text)
+      expect(body["ok"]).toBe(false)
+      // Its own reason, spelled apart from the file-is-broken ones: the fault is in the REQUEST, and
+      // telling the user to fix a file that is fine is the wrong pointer.
+      expect(body["reason"]).toBe("contradictory")
+      expect(fs.readFileSync(at(directory), "utf8")).toBe(original)
+    }),
+  )
+
+  it.effect("a confirmed .gitignore import is an ordinary exclude write", () =>
+    Effect.gen(function* () {
+      const directory = tmp("gitignore")
+      fs.writeFileSync(at(directory), `${JSON.stringify({ version: 1, exclude: ["secrets/**"] }, null, 2)}\n`)
+      fs.writeFileSync(path.join(directory, ".gitignore"), "node_modules\n/dist\n")
+
+      // What the read side proposes …
+      const read = yield* requestInDirectory(ExperimentalPaths.project, directory)
+      const state: Record<string, unknown> = JSON.parse(yield* read.text)
+      const proposal = state["gitignore"] as { add: string[] }
+      expect(proposal.add).toEqual(["node_modules", "/dist"])
+
+      // … is written by the ordinary write path, appended AFTER the user's own lines, because the
+      // last matching pattern wins and their list must keep its precedence.
+      const response = yield* post(directory, { exclude: ["secrets/**", ...proposal.add] })
+      const body: Record<string, unknown> = JSON.parse(yield* response.text)
+      expect(body["ok"]).toBe(true)
+      expect(body["sections"]).toEqual(["exclude"])
+      const after = JSON.parse(fs.readFileSync(at(directory), "utf8")) as Record<string, unknown>
+      expect(after["exclude"]).toEqual(["secrets/**", "node_modules", "/dist"])
+    }),
+  )
+
   it.effect("what was written reads back through GET /api/project", () =>
     Effect.gen(function* () {
       const directory = tmp("roundtrip")

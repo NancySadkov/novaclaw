@@ -643,6 +643,8 @@ export const dict = {
   "home.app.help.subtitle": "NovaClaw でできることの簡単な案内",
   "home.app.settings.name": "設定",
   "home.app.settings.subtitle": "プロバイダー、モデル、サーバー、復旧",
+  "home.app.skills.name": "スキル",
+  "home.app.skills.subtitle": "エージェントが従える追加の手順書と、それを書いた人",
   "command.session.previous.unseen": "前の未読セッション",
   "command.session.next.unseen": "次の未読セッション",
 } satisfies Partial<Record<Keys, string>>

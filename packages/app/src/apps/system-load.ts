@@ -66,7 +66,17 @@ export function useSystemLoad(): () => SystemLoad {
   const server = useServer()
   const global = useGlobal()
   const connection = createMemo(() => server.current ?? global.servers.list()[0])
-  const [usage, actions] = createResource(connection, (value) => instanceResources(value.http))
+  // 🔴 `.catch`, and it is the whole difference between a degraded tile and a dead app. This
+  // resource polls the INSTANCE, so it fails exactly when the instance is down — and a rejected
+  // resource read inside the memo below throws out of the memo into the app's ErrorBoundary, which
+  // replaces the entire UI with "Something went wrong" while the supervisor is calmly restarting
+  // the sidecar underneath. Measured 2026-08-18 in dev Electron: the error page appeared ~2 s after
+  // the sidecar was killed, BEFORE the connection banner's 2 s anti-flicker gate could show it, and
+  // it never cleared when the sidecar came back. An unreachable host is the "cannot be measured"
+  // case this file already documents — so it degrades to `undefined` and the tile reads "—".
+  const [usage, actions] = createResource(connection, (value) =>
+    instanceResources(value.http).catch(() => undefined),
+  )
 
   let timer: ReturnType<typeof setInterval> | undefined
   onMount(() => {

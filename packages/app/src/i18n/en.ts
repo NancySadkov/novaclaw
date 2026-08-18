@@ -1460,6 +1460,100 @@ export const dict = {
   "settings.project.invalidFuture":
     "It was written by a newer NovaClaw. Update NovaClaw to use it — the file itself is probably fine.",
   "settings.project.invalidBroken": "The file could not be read: {{detail}}",
+
+  // ── Settings → Project → the folder's permission rules, and where the OTHER rules come from ──
+  //
+  // 🔴 The sentences here carry the one thing a person needs when a tool call was refused: WHICH of
+  // the three sources did it, because the three are fixed in three different places. A single merged
+  // list would send two thirds of its readers somewhere that cannot help them.
+  "settings.permissions.project.title": "Rules this folder adds",
+  "settings.permissions.project.description":
+    "A folder can carry its own permission rules in its novaclaw.json, so a checkout can be stricter than the rest of your machine. Anyone you got the folder from wrote them, so they are only ever allowed to take capability away.",
+  "settings.permissions.project.inForce.none":
+    "Right now: no project file governs this folder, so it adds no rules. Saving one below creates novaclaw.json here.",
+  "settings.permissions.project.inForce.here": "Right now: {{file}} governs this folder, and saving updates it.",
+  "settings.permissions.project.inForce.ancestor":
+    "Right now: {{file}} governs this folder from a folder above it. Saving here creates a separate novaclaw.json for THIS folder — the file above is not modified, but it stops applying here, because the nearest one wins.",
+  "settings.permissions.project.inForce.ancestorEdit":
+    "So a rule you save here replaces everything that file was contributing to this folder, not just its permissions. Edit {{file}} itself if you meant to change the whole checkout.",
+  "settings.project.exclude.elsewhere":
+    "This list comes from {{file}}, in a folder above this one. Editing it here would not extend that list — it would create a second novaclaw.json for this folder that takes over from it completely. Open that file to change the list, or use the Permissions section above if you really do want this folder to have its own declaration.",
+  "settings.project.exclude.import.elsewhere":
+    "Not offered here: this folder's settings come from {{file}}, one or more folders up. Importing would create a second novaclaw.json here that replaces it rather than adding to it.",
+  "settings.permissions.project.origin.project": "This folder",
+  "settings.permissions.project.origin.projectDetail":
+    "From novaclaw.json in the folder. Edit them here, or in the file — it is plain text and meant to be committed.",
+  "settings.permissions.project.origin.personal": "Your saved answers",
+  "settings.permissions.project.origin.personalDetail":
+    "What you chose when Nova asked — every \"always allow\" and \"always refuse\" you gave on this machine. Remove one and Nova will ask again next time.",
+  "settings.permissions.project.origin.session": "The chat itself",
+  "settings.permissions.project.origin.sessionDetail":
+    "Each chat adds rules of its own from its Mode (Analyze, Build, YOLO) and its Tuning switches. They belong to that chat and are changed below its message box, not here.",
+  "settings.permissions.project.narrowing":
+    "A folder can only ever make things stricter. \"Refuse\" and \"ask me first\" work; \"allow\" does not, because a folder is never allowed to hand out access your own settings withhold.",
+  "settings.permissions.project.empty": "This folder adds no rules of its own.",
+  "settings.permissions.project.personalEmpty": "You have not saved any answers on this machine yet.",
+  "settings.permissions.project.remove": "Remove",
+  "settings.permissions.project.add": "Add rule",
+  "settings.permissions.project.addAction": "What the agent wants to do",
+  "settings.permissions.project.addResource": "Which files or commands (use * for all)",
+  "settings.permissions.project.omitted":
+    "{{list}} will not be saved: a folder cannot grant access, only withhold it.",
+  "settings.permissions.project.save": "Save to this folder",
+  "settings.permissions.project.saving": "Saving…",
+  "settings.permissions.project.preview": "Will be written: {{list}}",
+  "settings.permissions.project.previewClear":
+    "Will be written: nothing — the permissions section is removed from the file, and everything else in it stays.",
+  "settings.permissions.project.receipt.created": "Created {{file}}",
+  "settings.permissions.project.receipt.updated": "Updated {{file}}",
+  "settings.permissions.project.receipt.cleared": "The permissions section was removed.",
+  "settings.permissions.project.receipt.preserved":
+    "Only the permissions section changed. Everything else in the file — including anything a newer NovaClaw put there — is exactly as it was.",
+  "settings.permissions.project.receipt.refused": "Not saved, because a folder cannot grant access: {{list}}",
+  "settings.permissions.project.receipt.refusedBroken":
+    "Nothing was written: {{file}} could not be read ({{detail}}).",
+  "settings.permissions.project.receipt.refusedFuture":
+    "Nothing was written: {{file}} was made by a newer NovaClaw. Update NovaClaw — the file is probably fine.",
+  "settings.permissions.project.receipt.untouched": "Your file is exactly as you left it.",
+  "settings.permissions.project.receipt.failed": "Could not save: {{detail}}",
+
+  // ── Settings → Project → editing the "Never read" list ──────────────────────────────────────
+  //
+  // ⚠️ Removal exists as well as adding, on purpose. An import-only control is a one-way door: a
+  // person who imported a .gitignore and found Nova unable to read something it should could only fix
+  // it by hand-editing JSON, which is the c64-poke this product refuses (principle 12).
+  "settings.project.exclude.editTitle": "Edit what Nova must never read",
+  "settings.project.exclude.editDescription":
+    "One pattern per line, the same way .gitignore reads: a bare name matches anywhere (secrets), a slash anchors it to this folder (/build), a trailing slash means folders only (logs/), and a leading ! puts something back in reach. The last line that matches wins.",
+  "settings.project.exclude.addPattern": "A file, folder or pattern",
+  "settings.project.exclude.add": "Add",
+  "settings.project.exclude.remove": "Remove",
+  "settings.project.exclude.preview": "Will be written: {{list}}",
+  "settings.project.exclude.previewClear":
+    "Will be written: nothing — the exclude list is removed from the file, so Nova may read any file here again. Everything else in the file stays.",
+  "settings.project.exclude.save": "Save the list",
+  "settings.project.exclude.saving": "Saving…",
+
+  // ── Settings → Project → importing a .gitignore into the "Never read" list ───────────────────
+  //
+  // 🔴 `todo/projects.md`: read eligibility stays DISTINCT from watcher/build ignores. The copy has
+  // to say that out loud, because the two lists look interchangeable and are not.
+  "settings.project.exclude.import.title": "Start from .gitignore",
+  "settings.project.exclude.import.distinct":
+    "A .gitignore says what should not be committed. This list says what Nova must never open. They overlap — a .env belongs on both — but they are not the same: build output is fine to read, and a secret that IS committed will not be in .gitignore at all. So this copies nothing on its own; look at the list and decide.",
+  "settings.project.exclude.import.noFile": "There is no .gitignore next to this project's novaclaw.json.",
+  "settings.project.exclude.import.nothingNew":
+    "Everything in {{file}} is already on this list ({{count}} patterns). Nothing to add.",
+  "settings.project.exclude.import.preview": "Would add {{count}} from {{file}}: {{list}}",
+  "settings.project.exclude.import.already": "Already on the list: {{list}}",
+  "settings.project.exclude.import.dropped":
+    "Skipped, because NovaClaw cannot read them the way git does: {{list}}",
+  "settings.project.exclude.import.reincludes":
+    "Careful — these lines put files BACK in reach, and they are added at the end, so they win over anything above them: {{list}}",
+  "settings.project.exclude.import.action": "Add these to Never read",
+  "settings.project.exclude.import.saving": "Adding…",
+  "settings.project.exclude.import.done": "Added {{count}} to Never read in {{file}}",
+
   "settings.confinement.section": "Confinement",
   "settings.confinement.title": "Sandbox for the agent's shell",
   "settings.confinement.meanwhile":
@@ -2295,6 +2389,8 @@ export const dict = {
   "home.app.help.subtitle": "A short tour of what NovaClaw can do",
   "home.app.settings.name": "Settings",
   "home.app.settings.subtitle": "Providers, models, servers, recovery",
+  "home.app.skills.name": "Skills",
+  "home.app.skills.subtitle": "Extra instructions your agents can follow, and who wrote each one",
   "command.session.previous.unseen": "Previous unread chat",
   "command.session.next.unseen": "Next unread chat",
   // ── Community: the consent screen ────────────────────────────────────────────────────────────
@@ -2421,4 +2517,98 @@ export const dict = {
   "community.channels.hiddenByFilters.other": "{{count}} messages hidden by your words below.",
   "community.channels.archivedEntry.one": "{{name}} — {{count}} message",
   "community.channels.archivedEntry.other": "{{name}} — {{count}} messages",
+
+  // ─── The Skills app (`pages/skills.tsx`, logic in `apps/skills.ts`) ───────────────────────────
+  // ⚠️ The wording here IS the safety surface, so read the rules before editing a line:
+  //   · "Where it came from" is the only section stating something NovaClaw looked at. Every other
+  //     section is the skill describing itself, and `skills.what.authorship` says so out loud.
+  //   · `skills.capabilities.undeclared` and `skills.compatibility.undeclared` say the FORMAT has no
+  //     such field. They must never shorten to "none declared", which a reader hears as "harmless".
+  //   · `skills.mentions.*` describes a word search. It must never be phrased as a finding about
+  //     what the skill does — in either direction, which is why the empty case says so too.
+  "skills.title": "Skills",
+  "skills.tagline": "Instructions someone wrote for your agents. Read one before you let it be followed.",
+  "skills.action.refresh": "Refresh",
+  "skills.search.placeholder": "Search skills",
+  "skills.empty.none": "No skills yet. NovaClaw looks for them in the places listed below.",
+  "skills.empty.filtered": "No skill matches that search.",
+  "skills.intro.pick": "Pick a skill on the left to see who wrote it and what it tells your agent to do.",
+  "skills.badge.slash": "Slash command",
+
+  "skills.what.title": "What this changes",
+  "skills.what.mechanism":
+    "A skill is a page of instructions someone wrote. Your agent is shown every skill's name and one-line summary while it works; when it decides one fits the job, it reads the whole page and follows it.",
+  "skills.what.powers":
+    "Following a skill does not hand your agent new powers — but it changes what your agent decides to do with the powers it already has, and the instructions may tell it to run programs, change your files, or go online. A skill's folder can also hold scripts it may run.",
+  "skills.what.authorship":
+    "Everything on this page except “Where it came from” was written by whoever made the skill. NovaClaw has not checked any of it, and a skill can claim anything about itself.",
+
+  "skills.origin.title": "Where it came from",
+  "skills.origin.downloaded.badge": "Downloaded",
+  "skills.origin.downloaded.text":
+    "NovaClaw downloaded this skill from the web and keeps its copy in the download folder. Someone outside this computer wrote it.",
+  "skills.origin.downloaded.candidates": "It came from one of the web addresses on your list:",
+  "skills.origin.downloaded.noCandidates":
+    "No web address is on your list any more, so this is a leftover copy from a source you have since removed.",
+  "skills.origin.instance.badge": "NovaClaw's folder",
+  "skills.origin.instance.text":
+    "This skill sits in NovaClaw's own skills folder on this computer. Anything placed in that folder is picked up, so being here is not a sign that you wrote it.",
+  "skills.origin.configured.badge": "Added folder",
+  "skills.origin.configured.text": "This skill sits in a folder you added to the places NovaClaw looks.",
+  "skills.origin.configured.source": "The folder you added: {{source}}",
+  "skills.origin.local.badge": "On this computer",
+  "skills.origin.local.text":
+    "This skill sits in a folder on this computer that is not on your list — usually a skills folder inside the project you have open.",
+  "skills.origin.folder": "Its folder",
+  "skills.origin.folderNote": "Open this folder to read the file yourself and see anything shipped beside it.",
+
+  "skills.description.title": "What it says about itself",
+  "skills.description.none":
+    "This skill does not describe itself. Your agent is given only its name, so it has to guess from that when to use it.",
+  "skills.description.none.short": "No description",
+  "skills.description.note": "The author wrote this line, and NovaClaw shows it to your agents on every message.",
+
+  "skills.capabilities.title": "What it is allowed to do",
+  "skills.capabilities.undeclared":
+    "Skills have no way to declare what they can do, so there is no list here to check and nothing to hold the author to. The instructions below are the only description of this skill's behaviour, which is why they are shown in full.",
+
+  "skills.mentions.title": "Words found in the instructions",
+  "skills.mentions.none":
+    "None of the words we look for appear. That is not a sign the skill is limited — it can do any of these things without naming them.",
+  "skills.mentions.caveat":
+    "This is a plain search for a fixed list of words in the text below. It is not a check of what the skill does: a skill can do any of these without mentioning them, and mentioning one is not proof that it does it.",
+  "skills.mentions.topic.run": "Running programs",
+  "skills.mentions.topic.modify": "Changing or deleting things",
+  "skills.mentions.topic.install": "Installing software",
+  "skills.mentions.topic.network": "Going online",
+  "skills.mentions.topic.secrets": "Passwords and keys",
+
+  "skills.compatibility.title": "Does it fit this NovaClaw?",
+  "skills.compatibility.undeclared":
+    "Unknown. Skills carry no version and no list of what they need, so there is nothing to check in advance. If a skill does not fit, you find out when your agent tries to follow it.",
+
+  "skills.enablement.title": "Who can use it",
+  "skills.enablement.open": "All {{allow}} of your agents can open this skill without asking you first.",
+  // ⚠️ `asks` and `mixed` name all three counts on purpose. Measured live 2026-08-18: a stock
+  // instance has 4 visible agents, three at "ask" and `explore` carrying a catch-all deny — so the
+  // shorter wording ("the rest may open it") was reporting an ask as an open door on the very first
+  // instance anyone will look at.
+  "skills.enablement.asks":
+    "No agent of yours refuses this skill. {{ask}} will ask you before opening it; {{allow}} can open it without asking.",
+  "skills.enablement.mixed":
+    "Your agents disagree: {{deny}} refuse this skill, {{ask}} would ask you first, {{allow}} can open it without asking.",
+  "skills.enablement.blocked": "Every one of your agents refuses this skill. It is loaded, but none of them will open it.",
+  "skills.enablement.unknown": "NovaClaw could not read your agent list, so it cannot say who may open this skill.",
+  "skills.enablement.noSwitch":
+    "There is no on/off switch for a single skill. A skill is here because its folder is on the list of places NovaClaw looks — take the folder off that list and the skill goes with it.",
+
+  "skills.instructions.title": "The instructions themselves",
+  "skills.instructions.note": "This is the text your agent is given, word for word, when it opens this skill.",
+  "skills.instructions.empty": "(this skill's instructions are empty)",
+
+  "skills.sources.title": "Where NovaClaw looks",
+  "skills.sources.none":
+    "You have added no extra places. NovaClaw still reads its own skills folder and the project you have open.",
+  "skills.sources.note":
+    "Folders and web addresses you added. Changing this list is a settings change, not a per-skill switch.",
 }

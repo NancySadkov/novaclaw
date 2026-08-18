@@ -4,6 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { Effect } from "effect"
 import { FSUtil } from "@novaclaw/core/fs-util"
+import { PermissionV2 } from "@novaclaw/core/permission"
 import { ProjectFileResolve } from "@novaclaw/core/project-file"
 import { ProjectFileWrite } from "@novaclaw/core/project-file-write"
 import { testEffect } from "./lib/effect"
@@ -251,6 +252,174 @@ describe("writing novaclaw.json", () => {
       expect(resolved.file).toBe(at(dir))
       expect(resolved.info.name).toBe("Round")
       expect(resolved.info.tune).toEqual({ mode: "interactive", features: { memory: true, safeMode: true, affective: false } })
+    }),
+  )
+
+  // ── PERMISSIONS: the section the Permissions surface writes back ─────────────────────────────
+  //
+  // 🔴 The failure mode this block exists for is a control that appears to work. A project ruleset
+  // is folded in by `PermissionV2.evaluateNarrowed` as a CONSTRAINT — it can only raise
+  // restrictiveness — so an `allow` rule saved into `novaclaw.json` is read, matched, and then
+  // provably ignored. Writing one produces a cheerful receipt, a file that says the folder grants
+  // something, and a product that does the opposite. Same shape as the supervision-switch rule
+  // above, on the half that started the narrowing story.
+
+  it.effect("🔴 writes ONLY the permissions section — tune, exclude and unknown fields are untouched", () =>
+    Effect.gen(function* () {
+      const dir = tmp("permissions-only")
+      const original = `${JSON.stringify(RICH, null, 2)}\n`
+      fs.writeFileSync(at(dir), original)
+
+      const result = yield* ProjectFileWrite.write(dir, {
+        permissions: [{ action: "read", resource: "secrets/*", effect: "deny" }],
+      })
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.sections).toEqual(["permissions"])
+      expect(result.cleared).toEqual([])
+      expect(result.refusedPermissions).toEqual([])
+
+      const after = json(dir)
+      expect(after["permissions"]).toEqual([{ action: "read", resource: "secrets/*", effect: "deny" }])
+      // Every other key, compared as a set of changed keys rather than one assertion per field: a
+      // field-by-field check passes for a write that ADDS something nobody asked for.
+      const changed = Object.keys({ ...RICH, ...after }).filter(
+        (key) => JSON.stringify(after[key]) !== JSON.stringify((RICH as Record<string, unknown>)[key]),
+      )
+      expect(changed).toEqual(["permissions"])
+    }),
+  )
+
+  it.effect("🔴 an `allow` rule is NEVER recorded — it is dropped and reported, never silently kept", () =>
+    Effect.gen(function* () {
+      const dir = tmp("permissions-allow")
+      const result = yield* ProjectFileWrite.write(dir, {
+        permissions: [
+          { action: "bash", resource: "*", effect: "deny" },
+          { action: "read", resource: "*", effect: "allow" },
+          { action: "edit", resource: "*", effect: "ask" },
+        ],
+      })
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      // Reported, in the caller's own order, so a surface can name exactly what it refused.
+      expect(result.refusedPermissions).toEqual([{ action: "read", resource: "*", effect: "allow" }])
+      // `deny` and `ask` both narrow, so both land.
+      expect(json(dir)["permissions"]).toEqual([
+        { action: "bash", resource: "*", effect: "deny" },
+        { action: "edit", resource: "*", effect: "ask" },
+      ])
+    }),
+  )
+
+  it.effect("🔴 the dropped `allow` really was inert: the evaluator would have ignored it anyway", () =>
+    Effect.gen(function* () {
+      // The claim the refusal rests on, checked against the evaluator itself rather than restated.
+      // `evaluateNarrowed` keeps the base verdict unless the constraint is STRICTLY more restrictive.
+      const base: PermissionV2.Ruleset = [{ action: "bash", resource: "*", effect: "deny" }]
+      const widen: PermissionV2.Ruleset = [{ action: "bash", resource: "*", effect: "allow" }]
+      expect(PermissionV2.evaluateNarrowed("bash", "rm -rf /", [base], [widen]).effect).toBe("deny")
+      // And with an `allow` base, an `allow` constraint changes nothing either — it is inert in
+      // both directions, which is why it is never worth writing.
+      const permissive: PermissionV2.Ruleset = [{ action: "bash", resource: "*", effect: "allow" }]
+      expect(PermissionV2.evaluateNarrowed("bash", "ls", [permissive], [widen]).effect).toBe("allow")
+      // The one a project file CAN do.
+      const narrow: PermissionV2.Ruleset = [{ action: "bash", resource: "*", effect: "deny" }]
+      expect(PermissionV2.evaluateNarrowed("bash", "ls", [permissive], [narrow]).effect).toBe("deny")
+      yield* Effect.void
+    }),
+  )
+
+  // ── CLEARING A SECTION — the item `todo/projects.md` recorded as needing a decision ───────────
+  //
+  // Decided per principle 10: an explicit `clear` list. `Schema.optional` cannot tell "absent" from
+  // "cleared", so `undefined` was unreachable from a client and "remove all of this folder's
+  // permission rules" was not expressible at all.
+
+  it.effect("🔴 `clear` REMOVES a section, and removes only that one", () =>
+    Effect.gen(function* () {
+      const dir = tmp("clear")
+      fs.writeFileSync(at(dir), `${JSON.stringify(RICH, null, 2)}\n`)
+
+      const result = yield* ProjectFileWrite.write(dir, { clear: ["permissions"] })
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.cleared).toEqual(["permissions"])
+      expect(result.sections).toEqual([])
+
+      const after = json(dir)
+      // GONE, not present-and-empty: `[]` and absent mean the same thing to the reader, and the
+      // user asked for the sentence to be removed from their file.
+      expect("permissions" in after).toBe(false)
+      expect(after["tune"]).toEqual(RICH.tune)
+      expect(after["exclude"]).toEqual(RICH.exclude)
+      expect(after["futureSection"]).toEqual(RICH.futureSection)
+      expect(after["version"]).toBe(1)
+    }),
+  )
+
+  it.effect("clearing a section that was never there is a no-op that still reports honestly", () =>
+    Effect.gen(function* () {
+      const dir = tmp("clear-absent")
+      fs.writeFileSync(at(dir), `${JSON.stringify({ version: 1, name: "n" }, null, 2)}\n`)
+      const result = yield* ProjectFileWrite.write(dir, { clear: ["exclude"] })
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.cleared).toEqual(["exclude"])
+      expect(json(dir)).toEqual({ version: 1, name: "n" })
+    }),
+  )
+
+  it.effect("clearing and replacing in one call: two different sections, both applied", () =>
+    Effect.gen(function* () {
+      const dir = tmp("clear-and-set")
+      fs.writeFileSync(at(dir), `${JSON.stringify(RICH, null, 2)}\n`)
+      const result = yield* ProjectFileWrite.write(dir, {
+        clear: ["permissions"],
+        exclude: ["secrets/**", "*.pem"],
+      })
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.cleared).toEqual(["permissions"])
+      expect(result.sections).toEqual(["exclude"])
+      const after = json(dir)
+      expect("permissions" in after).toBe(false)
+      expect(after["exclude"]).toEqual(["secrets/**", "*.pem"])
+    }),
+  )
+
+  it.effect("🔴 asking to both replace and remove one section is REFUSED without writing", () =>
+    Effect.gen(function* () {
+      const dir = tmp("contradiction")
+      const original = `${JSON.stringify(RICH, null, 2)}\n`
+      fs.writeFileSync(at(dir), original)
+      const result = yield* ProjectFileWrite.write(dir, {
+        clear: ["exclude"],
+        exclude: ["something"],
+      })
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      // Its own reason: the fault is in the REQUEST, and calling it a broken file would send the
+      // user to fix a file that is fine.
+      expect(result.reason).toBe("contradictory")
+      expect(result.detail).toContain("exclude")
+      expect(read(dir)).toBe(original)
+    }),
+  )
+
+  it.effect("a cleared file still reads back as a valid Project", () =>
+    Effect.gen(function* () {
+      const dir = tmp("clear-roundtrip")
+      yield* ProjectFileWrite.write(dir, {
+        name: "Acme",
+        permissions: [{ action: "bash", resource: "*", effect: "deny" }],
+      })
+      yield* ProjectFileWrite.write(dir, { clear: ["permissions"] })
+      const resolved = yield* ProjectFileResolve.resolve(dir, dir)
+      expect(resolved.kind).toBe("project")
+      if (resolved.kind !== "project") return
+      expect(resolved.info.name).toBe("Acme")
+      expect(resolved.info.permissions).toBeUndefined()
     }),
   )
 

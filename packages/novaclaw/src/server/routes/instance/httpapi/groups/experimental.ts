@@ -97,9 +97,40 @@ export const ProjectState = Schema.Union([
     root: Schema.String,
     file: Schema.String,
     name: Schema.optional(Schema.String),
-    /** How many permission rules the file contributes. The rules themselves are a separate surface. */
+    /** How many permission rules the file contributes. Kept beside `permissions` for the chip-sized surfaces. */
     permissionRules: Schema.Number,
+    /**
+     * The rules themselves, verbatim and in file order.
+     *
+     * ⚠️ This used to be a COUNT and nothing else, on the reasoning that "the permission surface
+     * already renders rules". It did not — nothing anywhere rendered a project's rules, so a user
+     * whose tool call was refused by their folder's file could see only that N rules existed. The
+     * count stays because the chat/Files chips genuinely only want a number; the rules are here
+     * because Settings → Project is the surface that has to name the one that refused them.
+     */
+    permissions: Permission.Ruleset,
     exclude: Schema.Array(Schema.String),
+    /**
+     * What importing the project root's `.gitignore` WOULD add — a suggestion, never a sync.
+     *
+     * Absent when there is no `.gitignore` beside the project file, or when it is too large to be a
+     * hand-maintained list. Nothing here is applied; the client shows it and the user confirms, and
+     * confirming is an ordinary `exclude` write.
+     */
+    gitignore: Schema.optional(
+      Schema.Struct({
+        /** The file it was read from, so the suggestion can name its source. */
+        file: Schema.String,
+        /** Patterns not already present, in file order. */
+        add: Schema.Array(Schema.String),
+        /** Lines already in `exclude` — why an import can offer nothing and still be working. */
+        already: Schema.Array(Schema.String),
+        /** Lines this build cannot honour, reported rather than silently skipped. */
+        dropped: Schema.Array(Schema.Struct({ source: Schema.String, reason: Schema.String })),
+        /** The `!` lines among `add`: appending one can UNDO an exclusion the user wrote. */
+        reincludes: Schema.Array(Schema.String),
+      }),
+    ),
   }),
   /** Found and unusable. `reason` separates "your build is old" from "your file is broken". */
   Schema.Struct({
@@ -129,6 +160,23 @@ export const ProjectWriteInput = Schema.Struct({
   exclude: Schema.optional(Schema.Array(Schema.String)),
   /** ⛔ IDs of installed policies only — never a command, and never anything the server runs. */
   policies: Schema.optional(Schema.Array(Schema.String)),
+  /**
+   * Sections to REMOVE from the file. The other half of "replacing only the sections supplied".
+   *
+   * 🔴 This is the decision the doc above used to record as deferred. `Schema.optional` makes
+   * "absent" and "sent as undefined" the same bytes, so `ProjectFile.merge`'s delete-on-undefined
+   * was unreachable from any client and *"remove all of this folder's permission rules"* could not
+   * be said at all. A named list says it once, unambiguously, for every section — where a per-field
+   * `null` would have turned each one into a three-state union every future reader has to decode,
+   * and an overloaded empty value would have cost the file the ability to declare an empty section.
+   *
+   * ⚠️ `version` is not a member: the list is `ProjectFile.SECTIONS`, and a caller that could
+   * delete `version` could brick its own file through a route that promises never to write one this
+   * build cannot read.
+   *
+   * ⚠️ Naming a section here AND supplying it above is refused, without writing, as `contradictory`.
+   */
+  clear: Schema.optional(Schema.Array(ProjectFile.Section)),
 }).annotate({ identifier: "ProjectWriteInput" })
 
 /**
@@ -149,6 +197,8 @@ export const ProjectWriteResult = Schema.Union([
     created: Schema.Boolean,
     /** The sections this write replaced. Everything else in the file is unchanged. */
     sections: Schema.Array(Schema.String),
+    /** The sections this write REMOVED. Disjoint from `sections` — asking for both is refused. */
+    cleared: Schema.Array(Schema.String),
     /**
      * Supervision switches the caller asked to record as OFF, which were dropped instead.
      *
@@ -156,11 +206,25 @@ export const ProjectWriteResult = Schema.Union([
      * the surface can say so rather than silently writing something different from what was asked.
      */
     refusedTune: Schema.Array(Schema.String),
+    /**
+     * Permission rules the caller asked to record, which were dropped instead.
+     *
+     * A project ruleset is folded in as a NARROWING constraint, so an `allow` rule can never change
+     * a verdict — `evaluateNarrowed` replaces the base only with something strictly stricter.
+     * Writing one would put a grant in the user's own file that the reader provably ignores, so it
+     * is refused and reported in the same shape `refusedTune` uses for the supervision switches.
+     */
+    refusedPermissions: Permission.Ruleset,
   }),
   Schema.Struct({
     ok: Schema.Literal(false),
     file: Schema.String,
-    /** `unreadable` · `not-an-object` · `future-version` · `would-not-parse` · `unwritable`. */
+    /**
+     * `unreadable` · `not-an-object` · `future-version` · `would-not-parse` · `unwritable` ·
+     * `contradictory` (a section was both supplied and named in `clear` — a fault in the REQUEST,
+     * spelled differently from the file-is-broken reasons so a surface never tells the user to go
+     * fix a file that is fine).
+     */
     reason: Schema.String,
     detail: Schema.String,
   }),

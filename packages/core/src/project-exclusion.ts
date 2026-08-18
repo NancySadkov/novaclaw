@@ -117,6 +117,16 @@ export const caseInsensitiveHere = () => process.platform === "win32" || process
 
 const toPosix = (value: string) => value.replaceAll("\\", "/")
 
+/**
+ * Would this module honour `line`, and as what?
+ *
+ * Exported for the `.gitignore` importer (`project-gitignore.ts`), which must not carry a second
+ * copy of the semantics documented above — a suggestion listing patterns this module silently
+ * discards is the same class of lie as an `exclude` section nothing enforced. `undefined` means the
+ * line contributes nothing.
+ */
+export const ruleFor = (line: string): Rule | undefined => toRule(line)
+
 function toRule(line: string): Rule | undefined {
   const raw = line.trim()
   if (raw.length === 0 || raw.startsWith("#")) return undefined

@@ -637,6 +637,8 @@ export const dict = {
   "home.app.help.subtitle": "NovaClaw로 할 수 있는 일 간단히 둘러보기",
   "home.app.settings.name": "설정",
   "home.app.settings.subtitle": "공급자, 모델, 서버, 복구",
+  "home.app.skills.name": "스킬",
+  "home.app.skills.subtitle": "에이전트가 따를 수 있는 추가 지침과 각각을 작성한 사람",
   "command.session.previous.unseen": "이전 읽지 않은 세션",
   "command.session.next.unseen": "다음 읽지 않은 세션",
 } satisfies Partial<Record<Keys, string>>

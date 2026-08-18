@@ -703,6 +703,8 @@ export const dict = {
   "home.app.help.subtitle": "快速了解 NovaClaw 能做什麼",
   "home.app.settings.name": "設定",
   "home.app.settings.subtitle": "供應商、模型、伺服器、復原",
+  "home.app.skills.name": "技能",
+  "home.app.skills.subtitle": "你的智慧代理可以遵循的額外指示，以及每項指示的作者",
   "command.session.previous.unseen": "上一個未讀會話",
   "command.session.next.unseen": "下一個未讀會話",
 } satisfies Partial<Record<Keys, string>>

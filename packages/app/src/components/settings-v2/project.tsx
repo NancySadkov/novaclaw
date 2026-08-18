@@ -1,12 +1,14 @@
 import { For, Show, Switch, Match, createMemo, createResource, type Component, type JSX } from "solid-js"
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
+import { useSDK } from "@/context/sdk"
 import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
-import type { ProjectState } from "@/utils/project-api"
+import type { ProjectPermissionRule, ProjectState } from "@/utils/project-api"
 import { projectState } from "@/utils/project-api"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
+import { ProjectExcludeSection, ProjectGitignoreImport, ProjectPermissionsSection } from "./project-permissions-section"
 
 /**
  * Which `novaclaw.json` governs this folder.
@@ -17,9 +19,10 @@ import { SettingsRowV2 } from "./parts/row"
  * where it does — it answers the question the safety rows above it raise: what else is deciding what
  * the agent may do here.
  *
- * ⚠️ Reports the rule COUNT and where the file is, never the rules themselves. The permission surface
- * renders those, and a second place that formats them is a second place for the two to disagree
- * about what is in force.
+ * ⚠️ The fact rows report the rule COUNT and where the file is. The RULES themselves — and the two
+ * other places rules come from — live in `ProjectPermissionsSection` below them, which is the
+ * surface `todo/projects.md` asked for. Until 2026-08-18 the comment here said the permission
+ * surface rendered them; no such surface existed, so the count was the only thing anyone could see.
  */
 
 /** The right-hand value slot. Muted, because every row here is a FACT rather than a control. */
@@ -39,7 +42,39 @@ export const SettingsProjectSection: Component = () => {
     const dir = directory()
     return http && dir ? { http, dir } : undefined
   })
-  const [state] = createResource(source, (value) => projectState(value.http, value.dir))
+  const [state, { refetch }] = createResource(source, (value) => projectState(value.http, value.dir))
+  const http = createMemo(() => connection()?.http)
+
+  /**
+   * The user's own saved answers — the SECOND of the three origins.
+   *
+   * ⚠️ Degrades to `undefined` rather than throwing. A throw inside a `createResource` read reaches
+   * the ROOT ErrorBoundary and replaces the whole application (review 1.15), and a permission list
+   * that failed to load must never cost someone their chats. `undefined` renders nothing, which is
+   * honest: the block has not been told, so it claims nothing.
+   */
+  const sdk = useSDK()
+  const [savedRules] = createResource(
+    () => directory(),
+    async (): Promise<readonly ProjectPermissionRule[] | undefined> => {
+      try {
+        const answer = await sdk().client.v2.permission.saved.list()
+        const rows = (answer as { data?: { data?: readonly { action: string; resource: string; effect?: string }[] } })
+          .data?.data
+        if (!rows) return undefined
+        // ⚠️ A legacy row carries no `effect` and means "allow" — the schema says so
+        // (`PermissionSaved.Info`), and defaulting it to anything else would misreport an old
+        // grant as a refusal on the one screen a user consults after being refused.
+        return rows.map((row) => ({
+          action: row.action,
+          resource: row.resource,
+          effect: (row.effect ?? "allow") as ProjectPermissionRule["effect"],
+        }))
+      } catch {
+        return undefined
+      }
+    },
+  )
 
   const invalid = createMemo(() => {
     const value = state()
@@ -135,6 +170,32 @@ export const SettingsProjectSection: Component = () => {
               </Match>
             </Switch>
           </SettingsListV2>
+
+          {/* ⚠️ OUTSIDE the Switch, so it renders for a folder with no project file too. That is the
+              whole point of principle 12(a): a setting is an override, not a doorway, and a person
+              who wants to give this folder its own rules must not first have to know that a file
+              called novaclaw.json is the way to ask. Saving here creates it. */}
+          <ProjectPermissionsSection
+            state={state}
+            connection={http}
+            directory={directory}
+            saved={savedRules}
+            refresh={refetch}
+          />
+          <ProjectExcludeSection
+            state={state}
+            connection={http}
+            directory={directory}
+            saved={savedRules}
+            refresh={refetch}
+          />
+          <ProjectGitignoreImport
+            state={state}
+            connection={http}
+            directory={directory}
+            saved={savedRules}
+            refresh={refetch}
+          />
         </div>
       )}
     </Show>

@@ -96,6 +96,21 @@ export function useBuiltinApps(): () => HomeApp[] {
       open: () => navigate("/recipes"),
     },
     {
+      id: "skills",
+      title: name("skills"),
+      // No UI-kit artwork exists for this tile yet, so it takes the sanctioned gradient fallback
+      // (uix.md §4): a cool hue + a v2 sprite glyph. `brain` is the knowledge glyph and is used by
+      // no other built-in — an unknown v2 name would silently render a "plus".
+      icon: "brain",
+      accent: "#06b6d4",
+      subtitle: sub("skills"),
+      source: "builtin",
+      // NORMAL level, on purpose. A skill is instructions from someone else that change what your
+      // agent does; the people most likely to ask "what did I just install?" are exactly the ones an
+      // expertise gate would stop from looking (the same argument that put Memory at Normal).
+      open: () => navigate("/skills"),
+    },
+    {
       id: "files",
       title: name("files"),
       icon: "folder",

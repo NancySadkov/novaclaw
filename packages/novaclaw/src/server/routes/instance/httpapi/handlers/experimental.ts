@@ -6,6 +6,9 @@ import { ServerLocationServiceMap } from "@/location-service-map"
 import { Location } from "@novaclaw/core/location"
 import { ProjectFileResolve } from "@novaclaw/core/project-file"
 import { ProjectFileWrite } from "@novaclaw/core/project-file-write"
+import { ProjectGitignore } from "@novaclaw/core/project-gitignore"
+import { FSUtil } from "@novaclaw/core/fs-util"
+import nodePath from "node:path"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { Worktree } from "@/worktree"
 import { Effect, Layer } from "effect"
@@ -99,26 +102,72 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
     })
 
     /**
+     * What importing the project root's `.gitignore` would ADD to its `exclude` list.
+     *
+     * 🔴 A SUGGESTION, computed on read and applied by nobody. `todo/projects.md` keeps model read
+     * eligibility distinct from watcher/build ignores, and this is where that distinction is either
+     * respected or quietly lost: a `.gitignore` says what should not be COMMITTED, `exclude` says
+     * what must never reach a model, and the two lists genuinely disagree (`dist/` is fine to read;
+     * a committed secrets folder is not in the `.gitignore` at all). So nothing is copied without a
+     * person confirming it, and the surface says which file it came from.
+     *
+     * ⚠️ Only the file beside the `novaclaw.json`. Patterns are relative to the folder that declared
+     * them, so a nested `.gitignore` would have to be re-anchored line by line — and a re-anchored
+     * line is no longer one the user can recognise in their own file.
+     *
+     * ⚠️ Absent, never an empty proposal, when there is no `.gitignore` or it is too big to be a
+     * hand-maintained list. "There is nothing to import" and "there is no file" are different
+     * sentences and the client renders them differently.
+     */
+    const gitignoreProposal = Effect.fn("ExperimentalHttpApi.gitignoreProposal")(function* (
+      root: string,
+      exclude: readonly string[],
+    ) {
+      const fs = yield* FSUtil.Service
+      const file = nodePath.join(root, ".gitignore")
+      const text = yield* fs.readFileStringSafe(file).pipe(Effect.orElseSucceed(() => undefined))
+      if (text === undefined) return undefined
+      // Bytes, not characters: the cap is about "is this a file a person maintains by hand".
+      if (Buffer.byteLength(text, "utf8") > ProjectGitignore.MAX_BYTES) return undefined
+      const proposal = ProjectGitignore.propose(text, exclude)
+      return {
+        file,
+        add: proposal.add,
+        already: proposal.already,
+        dropped: proposal.dropped.map((item) => ({ source: item.source, reason: item.reason })),
+        reincludes: proposal.reincludes,
+      }
+    })
+
+    /**
      * The `novaclaw.json` governing the routed location.
      *
-     * Reports what the file CONTRIBUTES rather than echoing it: a rule COUNT, not the rules. The
-     * permission surface already renders rules, and a second place that formats them is a second
-     * place for the two to disagree about what is in force.
+     * ⚠️ It carries the permission RULES, not only their count — corrected 2026-08-18. The count
+     * shipped with a comment claiming *"the permission surface already renders rules"*, and no such
+     * surface existed: a user refused by their folder's file could see that N rules governed them
+     * and never which one. The count stays for the chat/Files chips, which really do want a number.
      */
     const project = Effect.fn("ExperimentalHttpApi.project")(function* () {
       const directory = (yield* InstanceState.context).directory
       const resolution = yield* ProjectFileResolve.resolve(directory).pipe(
         Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))),
       )
-      if (resolution.kind === "project")
+      if (resolution.kind === "project") {
+        const exclude = resolution.info.exclude ?? []
+        const gitignore = yield* gitignoreProposal(resolution.root, exclude).pipe(
+          Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))),
+        )
         return {
           kind: "project" as const,
           root: resolution.root,
           file: resolution.file,
           ...(resolution.info.name === undefined ? {} : { name: resolution.info.name }),
           permissionRules: resolution.info.permissions?.length ?? 0,
-          exclude: resolution.info.exclude ?? [],
+          permissions: resolution.info.permissions ?? [],
+          exclude,
+          ...(gitignore === undefined ? {} : { gitignore }),
         }
+      }
       // ⚠️ `invalid` is reported, never swallowed into `none`. "There is no project here" and "your
       // project file is broken" are the two answers a user acts on differently, and collapsing them
       // is how a typo becomes an afternoon.
@@ -158,7 +207,9 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
             file: result.file,
             created: result.created,
             sections: result.sections,
+            cleared: result.cleared,
             refusedTune: result.refusedTune,
+            refusedPermissions: result.refusedPermissions,
           }
         : { ok: false as const, file: result.file, reason: result.reason, detail: result.detail }
     }, Effect.orDie)

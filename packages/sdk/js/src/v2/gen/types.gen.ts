@@ -1388,7 +1388,18 @@ export type ProjectState =
       file: string
       name?: string
       permissionRules: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      permissions: PermissionV2Ruleset
       exclude: Array<string>
+      gitignore?: {
+        file: string
+        add: Array<string>
+        already: Array<string>
+        dropped: Array<{
+          source: string
+          reason: string
+        }>
+        reincludes: Array<string>
+      }
     }
   | {
       kind: "invalid"
@@ -1406,6 +1417,7 @@ export type ProjectWriteInput = {
   tune?: ProjectTune
   exclude?: Array<string>
   policies?: Array<string>
+  clear?: Array<ProjectSection>
 }
 
 export type ProjectWriteResult =
@@ -1414,7 +1426,9 @@ export type ProjectWriteResult =
       file: string
       created: boolean
       sections: Array<string>
+      cleared: Array<string>
       refusedTune: Array<string>
+      refusedPermissions: PermissionV2Ruleset
     }
   | {
       ok: false
@@ -4501,6 +4515,8 @@ export type ProjectTune = {
     affective?: boolean
   }
 }
+
+export type ProjectSection = "name" | "permissions" | "tune" | "exclude" | "policies"
 
 export type DbRegistryTableSummary = {
   name: string

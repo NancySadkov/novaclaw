@@ -28,6 +28,7 @@ const project = (over: Partial<Extract<ProjectState, { kind: "project" }>> = {})
   root: "C:/work/app",
   file: "C:/work/app/novaclaw.json",
   permissionRules: 0,
+  permissions: [],
   exclude: [],
   ...over,
 })

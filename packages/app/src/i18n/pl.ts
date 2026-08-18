@@ -644,6 +644,8 @@ export const dict = {
   "home.app.help.subtitle": "Krótka wycieczka po możliwościach NovaClaw",
   "home.app.settings.name": "Ustawienia",
   "home.app.settings.subtitle": "Dostawcy, modele, serwery, odzyskiwanie",
+  "home.app.skills.name": "Umiejętności",
+  "home.app.skills.subtitle": "Dodatkowe instrukcje, którymi mogą kierować się Twoi agenci, i kto je napisał",
   "command.session.previous.unseen": "Poprzednia nieprzeczytana sesja",
   "command.session.next.unseen": "Następna nieprzeczytana sesja",
 } satisfies Partial<Record<Keys, string>>

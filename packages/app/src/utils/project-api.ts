@@ -14,9 +14,24 @@ export type ProjectState =
       readonly root: string
       readonly file: string
       readonly name?: string
-      /** How many permission rules the file contributes; the rules themselves live on that surface. */
+      /** How many permission rules the file contributes. For the chips, which want a number. */
       readonly permissionRules: number
+      /**
+       * The rules themselves, verbatim and in file order.
+       *
+       * ⚠️ The route used to carry only the count, on the reasoning that another surface rendered
+       * the rules. None did. Settings → Project is that surface now, and it needs to be able to
+       * point at the ONE rule that refused a tool call rather than at a total.
+       */
+      readonly permissions: readonly ProjectPermissionRule[]
       readonly exclude: readonly string[]
+      /**
+       * What importing the project root's `.gitignore` WOULD add. A suggestion, never a sync.
+       *
+       * ⚠️ Absent when there is no `.gitignore` beside the project file. "Nothing to import" and
+       * "no file to import from" are different sentences, and this is what tells them apart.
+       */
+      readonly gitignore?: ProjectGitignoreProposal
     }
   /**
    * Found and unusable. ⚠️ Carried through rather than collapsed into `none`: "there is no project
@@ -25,6 +40,33 @@ export type ProjectState =
    */
   | { readonly kind: "invalid"; readonly file: string; readonly reason: string; readonly detail: string }
   | { readonly kind: "none" }
+
+/** One ordered permission rule as a `novaclaw.json` carries it. */
+export interface ProjectPermissionRule {
+  readonly action: string
+  readonly resource: string
+  readonly effect: "allow" | "deny" | "ask"
+}
+
+/**
+ * What a `.gitignore` import would contribute, already screened by the matcher that enforces it.
+ *
+ * 🔴 The product distinction this type exists to keep visible: a `.gitignore` says what should not
+ * be COMMITTED; `exclude` says what a model must never READ. They overlap and they disagree, so
+ * this is a proposal a person confirms — not a list that syncs.
+ */
+export interface ProjectGitignoreProposal {
+  /** The file it was read from, so the suggestion names its source. */
+  readonly file: string
+  /** Patterns not already present, in file order. */
+  readonly add: readonly string[]
+  /** Lines already in `exclude` — why an import can offer nothing and still be working. */
+  readonly already: readonly string[]
+  /** Lines this build cannot honour, with the reason, reported rather than skipped in silence. */
+  readonly dropped: readonly { readonly source: string; readonly reason: string }[]
+  /** The `!` lines among `add`. Appending one can UNDO an exclusion the user wrote by hand. */
+  readonly reincludes: readonly string[]
+}
 
 export function projectState(server: ServerConnection.HttpBase, directory: string, signal?: AbortSignal) {
   // The header channel, because that is the one this route was verified through end to end
@@ -50,10 +92,30 @@ export type ProjectTuneFeatures = Partial<
  */
 export interface ProjectWriteInput {
   readonly name?: string
+  /**
+   * The folder's ordered permission rules, replacing the section whole.
+   *
+   * ⚠️ An `allow` rule is DROPPED by the server and reported in `refusedPermissions`. A project's
+   * ruleset is applied as a narrowing constraint, so an `allow` can never change a verdict — saving
+   * one would write a grant into the user's file that the reader provably ignores. Same shape as
+   * `refusedTune` on the Tune half.
+   */
+  readonly permissions?: readonly ProjectPermissionRule[]
   readonly tune?: { readonly mode?: "interactive"; readonly features?: ProjectTuneFeatures }
   readonly exclude?: readonly string[]
   readonly policies?: readonly string[]
+  /**
+   * Sections to REMOVE from the file — the other half of "an absent section is left alone".
+   *
+   * Without this there is no way to say *"this folder declares no permission rules any more"*: an
+   * absent key means "leave it", and an empty array means "declare an empty list", which is not the
+   * same statement. Naming a section here AND supplying it above is refused as `contradictory`.
+   */
+  readonly clear?: readonly ProjectSection[]
 }
+
+/** The top-level sections of a `novaclaw.json` that a write may replace or clear. */
+export type ProjectSection = "name" | "permissions" | "tune" | "exclude" | "policies"
 
 /**
  * The receipt, or the refusal.
@@ -71,11 +133,18 @@ export type ProjectWriteResult =
       readonly created: boolean
       /** The sections this write replaced. */
       readonly sections: readonly string[]
+      /** The sections this write REMOVED. Disjoint from `sections`; asking for both is refused. */
+      readonly cleared: readonly string[]
       /**
        * Supervision switches asked for as OFF and dropped instead: a folder may raise a safety rail,
        * never lower one. Absent in the file means inherit, which is what those switches now do.
        */
       readonly refusedTune: readonly string[]
+      /**
+       * Permission rules asked for and dropped instead: a folder may only ever NARROW, and an
+       * `allow` rule can never narrow anything. Reported so the surface says it out loud.
+       */
+      readonly refusedPermissions: readonly ProjectPermissionRule[]
     }
   | { readonly ok: false; readonly file: string; readonly reason: string; readonly detail: string }
 

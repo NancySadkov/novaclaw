@@ -30009,14 +30009,61 @@
                   }
                 ]
               },
+              "permissions": {
+                "$ref": "#/components/schemas/PermissionV2Ruleset"
+              },
               "exclude": {
                 "type": "array",
                 "items": {
                   "type": "string"
                 }
+              },
+              "gitignore": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string"
+                  },
+                  "add": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "already": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "dropped": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "source": {
+                          "type": "string"
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["source", "reason"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "reincludes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": ["file", "add", "already", "dropped", "reincludes"],
+                "additionalProperties": false
               }
             },
-            "required": ["kind", "root", "file", "permissionRules", "exclude"],
+            "required": ["kind", "root", "file", "permissionRules", "permissions", "exclude"],
             "additionalProperties": false
           },
           {
@@ -30075,6 +30122,12 @@
             "items": {
               "type": "string"
             }
+          },
+          "clear": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProjectSection"
+            }
           }
         },
         "additionalProperties": false
@@ -30100,14 +30153,23 @@
                   "type": "string"
                 }
               },
+              "cleared": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
               "refusedTune": {
                 "type": "array",
                 "items": {
                   "type": "string"
                 }
+              },
+              "refusedPermissions": {
+                "$ref": "#/components/schemas/PermissionV2Ruleset"
               }
             },
-            "required": ["ok", "file", "created", "sections", "refusedTune"],
+            "required": ["ok", "file", "created", "sections", "cleared", "refusedTune", "refusedPermissions"],
             "additionalProperties": false
           },
           {
@@ -39748,6 +39810,10 @@
           }
         },
         "additionalProperties": false
+      },
+      "ProjectSection": {
+        "type": "string",
+        "enum": ["name", "permissions", "tune", "exclude", "policies"]
       },
       "DbRegistryTableSummary": {
         "type": "object",

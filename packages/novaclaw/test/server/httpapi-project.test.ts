@@ -56,10 +56,44 @@ describe("GET /api/project", () => {
       expect(body["root"]).toBe(directory)
       expect(body["file"]).toBe(path.join(directory, "novaclaw.json"))
       expect(body["name"]).toBe("Acme")
-      // A COUNT, not the rules: the permission surface already renders those, and a second place
-      // that formats them is a second place for the two to disagree about what is in force.
       expect(body["permissionRules"]).toBe(1)
+      // 🔴 And the RULES, not only their count. The count shipped alone with a comment claiming the
+      // permission surface rendered them; none did, so a user refused by their folder's file could
+      // see that one rule governed them and never which one.
+      expect(body["permissions"]).toEqual([{ action: "bash", resource: "*", effect: "deny" }])
       expect(body["exclude"]).toEqual(["secrets/**"])
+      // No `.gitignore` beside the file, so no proposal — ABSENT, not an empty one. "Nothing to
+      // import" and "no file to import from" are different sentences on screen.
+      expect("gitignore" in body).toBe(false)
+    }),
+  )
+
+  it.effect("🔴 offers what a .gitignore beside the project file WOULD add, and applies none of it", () =>
+    Effect.gen(function* () {
+      const directory = tmp("gitignore")
+      fs.writeFileSync(
+        path.join(directory, "novaclaw.json"),
+        JSON.stringify({ version: 1, exclude: ["node_modules"] }),
+      )
+      fs.writeFileSync(
+        path.join(directory, ".gitignore"),
+        ["# deps", "node_modules", "", "/dist", "*.env", "!.env.example", String.raw`weird\ name`].join("\n"),
+      )
+      const response = yield* requestInDirectory(ExperimentalPaths.project, directory)
+      const body: Record<string, unknown> = JSON.parse(yield* response.text)
+      const proposal = body["gitignore"] as Record<string, unknown>
+      expect(proposal["file"]).toBe(path.join(directory, ".gitignore"))
+      expect(proposal["add"]).toEqual(["/dist", "*.env", "!.env.example"])
+      expect(proposal["already"]).toEqual(["node_modules"])
+      expect(proposal["reincludes"]).toEqual(["!.env.example"])
+      // A line with a backslash cannot be honoured (escape vs path separator) and is REPORTED.
+      expect(proposal["dropped"]).toEqual([{ source: String.raw`weird\ name`, reason: "escape" }])
+      // 🔴 A SUGGESTION: the file on disk is untouched, and so is `exclude`.
+      expect(body["exclude"]).toEqual(["node_modules"])
+      expect(JSON.parse(fs.readFileSync(path.join(directory, "novaclaw.json"), "utf8"))).toEqual({
+        version: 1,
+        exclude: ["node_modules"],
+      })
     }),
   )
 

@@ -2,6 +2,7 @@ export * as ProjectFileWrite from "./project-file-write"
 
 import path from "node:path"
 import { Effect } from "effect"
+import { Permission } from "@novaclaw/schema/permission"
 import { ProjectFile } from "@novaclaw/schema/project-file"
 import { FSUtil } from "./fs-util"
 import { FILENAME } from "./project-file"
@@ -40,11 +41,35 @@ export interface Changes {
   readonly tune?: ProjectFile.Tune
   readonly exclude?: readonly string[]
   readonly policies?: readonly string[]
+  /**
+   * Sections to REMOVE from the file entirely.
+   *
+   * 🔴 **Why an explicit list and not `undefined`.** `ProjectFile.merge` already deletes a key whose
+   * value is `undefined`, and that is the whole mechanism — but nothing could reach it from a
+   * client, because `Schema.optional` makes "absent" and "sent as undefined" the same bytes on the
+   * wire. So *"remove all of this folder's permission rules"* was not expressible at all, and the
+   * two plausible spellings are both worse than this one: overloading `permissions: []` would mean
+   * a folder could never declare an empty-but-present section, and a `null` per section would make
+   * every field a three-state union that every future reader has to think about.
+   *
+   * A separate list keeps "replace" and "remove" as two different sentences, which is what they are.
+   *
+   * ⚠️ Naming a section here AND supplying it is a CONTRADICTION and is refused without writing —
+   * see {@link plan}. Silently letting one win would make a client bug land as a file the user did
+   * not ask for, and the two orders ("clear then set" / "set then clear") give opposite results.
+   */
+  readonly clear?: readonly Section[]
 }
 
-/** Which top-level sections a write is allowed to name, in the order a receipt should list them. */
-export const SECTIONS = ["name", "permissions", "tune", "exclude", "policies"] as const
-export type Section = (typeof SECTIONS)[number]
+/**
+ * Which top-level sections a write is allowed to name, in the order a receipt should list them.
+ *
+ * ⚠️ Re-exported from `@novaclaw/schema/project-file` rather than declared here. The HTTP payload
+ * needs the same list as a `Schema.Literals`, and a second copy in this file is exactly the drift a
+ * `clear` list cannot afford: a section missing from one of them would be silently unremovable.
+ */
+export const SECTIONS = ProjectFile.SECTIONS
+export type Section = ProjectFile.Section
 
 export type Result =
   | {
@@ -55,12 +80,25 @@ export type Result =
       /** The sections this write replaced. Everything else in the file is byte-identical in meaning. */
       readonly sections: readonly Section[]
       /**
+       * The sections this write REMOVED. Disjoint from `sections` by construction — supplying and
+       * clearing the same section is refused rather than resolved.
+       */
+      readonly cleared: readonly Section[]
+      /**
        * Supervision switches the caller asked to record as `false` and which were NOT written.
        *
        * See `ProjectFile.writableTune`: absent means inherit, which is the honest encoding of "this
        * folder takes no position", and the read side would refuse the `false` anyway.
        */
       readonly refusedTune: readonly ProjectFile.TuneFeature[]
+      /**
+       * Permission rules the caller asked to record and which were NOT written.
+       *
+       * See `ProjectFile.writablePermissions`: a project ruleset is folded in as a NARROWING
+       * constraint, so an `allow` rule can never change a verdict. Writing one would put a sentence
+       * in the user's file that the reader provably ignores.
+       */
+      readonly refusedPermissions: Permission.Ruleset
     }
   | {
       readonly ok: false
@@ -71,7 +109,14 @@ export type Result =
        * file is corrupt", and a write that invented a fourth vocabulary for the identical condition
        * would make the two screens disagree about the same file.
        */
-      readonly reason: "unreadable" | "not-an-object" | "future-version" | "would-not-parse" | "unwritable"
+      readonly reason:
+        | "unreadable"
+        | "not-an-object"
+        | "future-version"
+        | "would-not-parse"
+        | "unwritable"
+        /** A section was both supplied and named in `clear`. See {@link Changes.clear}. */
+        | "contradictory"
       readonly detail: string
     }
 
@@ -87,8 +132,29 @@ export function plan(
   existing: string | undefined,
   changes: Changes,
 ):
-  | { readonly ok: true; readonly text: string; readonly created: boolean; readonly sections: readonly Section[]; readonly refusedTune: readonly ProjectFile.TuneFeature[] }
+  | {
+      readonly ok: true
+      readonly text: string
+      readonly created: boolean
+      readonly sections: readonly Section[]
+      readonly cleared: readonly Section[]
+      readonly refusedTune: readonly ProjectFile.TuneFeature[]
+      readonly refusedPermissions: Permission.Ruleset
+    }
   | (Result & { readonly ok: false }) {
+  // ⚠️ Checked BEFORE the file is even read, because a contradiction is a fault in the REQUEST and
+  // says nothing about the file. Reporting "your novaclaw.json is broken" for a caller that asked
+  // to both set and clear one section would point the user at the wrong thing entirely.
+  const clear = changes.clear ?? []
+  const contradictory = clear.filter((section) => section in changes && changes[section] !== undefined)
+  if (contradictory.length > 0)
+    return {
+      ok: false,
+      file,
+      reason: "contradictory",
+      detail: `asked to both replace and remove: ${contradictory.join(", ")}`,
+    }
+
   let raw: Record<string, unknown>
   const created = existing === undefined
   if (existing === undefined) {
@@ -102,11 +168,21 @@ export function plan(
   }
 
   const { tune, refused } = ProjectFile.writableTune(changes.tune)
+  const { permissions, refused: refusedPermissions } = ProjectFile.writablePermissions(changes.permissions)
   // Mutable, because `ProjectFile.Info`'s properties are `readonly` (Effect schema types are) and
   // this is the one place that assembles a change set key by key.
   const applied: { -readonly [K in keyof ProjectFile.Info]?: ProjectFile.Info[K] } = {}
   const sections: Section[] = []
+  const cleared: Section[] = []
   for (const section of SECTIONS) {
+    // A removal is an `undefined` value in the change set — `ProjectFile.merge` deletes the key
+    // rather than writing `undefined`, which is not valid JSON. The two loops are ONE loop so the
+    // receipt's ordering matches `SECTIONS` for both lists.
+    if (clear.includes(section)) {
+      cleared.push(section)
+      applied[section] = undefined
+      continue
+    }
     if (!(section in changes)) continue
     if (changes[section] === undefined) continue
     sections.push(section)
@@ -115,7 +191,7 @@ export function plan(
         applied.name = changes.name
         break
       case "permissions":
-        applied.permissions = changes.permissions
+        applied.permissions = permissions
         break
       case "tune":
         applied.tune = tune
@@ -144,7 +220,7 @@ export function plan(
       reason: "would-not-parse",
       detail: `the merged file would not read back (${verify.reason}: ${verify.detail})`,
     }
-  return { ok: true, text, created, sections, refusedTune: refused }
+  return { ok: true, text, created, sections, cleared, refusedTune: refused, refusedPermissions }
 }
 
 /**
@@ -192,6 +268,8 @@ export const write = Effect.fn("ProjectFileWrite.write")(function* (directory: s
     file,
     created: planned.created,
     sections: planned.sections,
+    cleared: planned.cleared,
     refusedTune: planned.refusedTune,
+    refusedPermissions: planned.refusedPermissions,
   } satisfies Result
 })

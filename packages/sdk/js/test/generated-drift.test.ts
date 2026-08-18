@@ -154,7 +154,14 @@ const GENERATE_TIMEOUT_MS = 60_000
 //                                                  success artifact for a cook, todo/recipes.md)
 //   `UnknownReason`                               (`@novaclaw/schema`'s shared "why is this blank"
 //                                                  vocabulary, first reaching the wire through it)
-const SCHEMA_NAME_FINGERPRINT = "6b80e529304b9f9d5e096cb2715a7c03cb29ceb30ca0a04477fb86016c72094f"
+// Updated 2026-08-18, mapping diff reviewed — ONE addition, mapping to itself, nothing removed:
+//   `ProjectSection`                              (`Project.Section`, the dot collapsed as usual —
+//                                                  the sections a `POST /api/project` may replace or
+//                                                  CLEAR; the `clear` list is what reaches the wire)
+// Three existing schemas also changed SHAPE, which this fingerprint does not cover and the spec
+// check below does: `ProjectState` gained the permission rules and the `.gitignore` proposal,
+// `ProjectWriteInput` gained `clear`, `ProjectWriteResult` gained `cleared` + `refusedPermissions`.
+const SCHEMA_NAME_FINGERPRINT = "aa1a9041e2c2f2ee4da45e7ce94e169040babba4b60ff91ee091009fc24729dc"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

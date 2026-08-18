@@ -560,8 +560,26 @@ const QUALIFIED_FETCH = /\b(?:globalThis|window|self)\.fetch\s*\(/
  */
 const withoutComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(?<!:)\/\/[^\n]*/g, " ")
 
+/**
+ * ⚠️ **A string is data, and a ledger that fires on data gets deleted rather than obeyed** — the same
+ * lesson as `withoutComments` above, one input class over. Caught 2026-08-18: `apps/skills.ts` scans a
+ * skill's instructions for network-ish words, and one of its scan terms is the literal `"fetch("`, so
+ * this detector reported a file that makes no request at all.
+ *
+ * Only the BODY is blanked, and only for quoted strings — the quotes stay, so a real
+ * `fetch("http://host/x")` still matches `BARE_FETCH`. The identifier of a genuine call is always
+ * OUTSIDE the quotes, so no true positive can hide inside its own argument. The `\\.` alternative is
+ * what stops an escaped quote from ending the literal early and re-exposing the rest as code.
+ *
+ * 🔴 **Template literals are deliberately NOT blanked.** `${fetch(url)}` is a real call, and blanking
+ * template bodies would hide it — trading a false positive for a false negative, which is the wrong
+ * direction for a guard to move.
+ */
+const withoutStringBodies = (source: string) =>
+  source.replace(/"(?:[^"\\\n]|\\.)*"/g, '""').replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
+
 const callsFetch = (input: string) => {
-  const source = withoutComments(input)
+  const source = withoutStringBodies(withoutComments(input))
   return BARE_FETCH.test(source) || QUALIFIED_FETCH.test(source)
 }
 
@@ -686,6 +704,15 @@ describe("the sweep can actually see the tree", () => {
     expect(callsFetch("// mentions fetch(\nconst res = await fetch(url)")).toBe(true)
     // …and a URL in a string must not swallow the rest of the line (AGENTS.md pitfall #6).
     expect(callsFetch('const res = await fetch("http://host/x")')).toBe(true)
+    // A scan term in a DATA array is not a call. `apps/skills.ts` really does contain this one.
+    expect(callsFetch('const NETWORK = ["http://", "curl", "fetch(", "upload"]')).toBe(false)
+    expect(callsFetch("const terms = ['fetch(']")).toBe(false)
+    // …but a string must not HIDE a real call sitting next to it on the same line.
+    expect(callsFetch('const a = "fetch("; const res = await fetch(url)')).toBe(true)
+    // An escaped quote must not end the literal early and re-expose the rest as code.
+    expect(callsFetch('const a = "he said \\"fetch(\\" loudly"')).toBe(false)
+    // A template literal still exposes a real call in an interpolation.
+    expect(callsFetch("const res = await `${fetch(url)}`")).toBe(true)
   })
 })
 

@@ -139,6 +139,31 @@ export const Info = Schema.Struct({
 }).annotate({ identifier: "Project.File" })
 export type Info = typeof Info.Type
 
+/**
+ * The top-level sections an edit may name, in the order a receipt should list them.
+ *
+ * ⚠️ `version` is deliberately absent, and its absence is load-bearing rather than an oversight:
+ * this list is what a write may REPLACE and what a write may CLEAR, and a file without a `version`
+ * does not parse. A caller able to name `version` could delete it and brick its own project file
+ * through a route whose whole promise is that it never produces a file this build cannot read.
+ */
+export const SECTIONS = ["name", "permissions", "tune", "exclude", "policies"] as const
+export const Section = Schema.Literals(SECTIONS).annotate({ identifier: "Project.Section" })
+export type Section = (typeof SECTIONS)[number]
+
+/**
+ * The tie, in the same shape `TUNE_FEATURES` uses: a section added to `Info` and not here — or a
+ * name here that `Info` does not carry — is a type error naming the offender rather than a list
+ * that silently answers for the wrong set.
+ */
+type SectionsMatchInfo = [Section] extends [Exclude<keyof Info, "version">]
+  ? [Exclude<keyof Info, "version">] extends [Section]
+    ? true
+    : ["SECTIONS is missing", Exclude<Exclude<keyof Info, "version">, Section>]
+  : ["SECTIONS names something Info does not have", Exclude<Section, keyof Info>]
+const _sectionsMatchInfo: SectionsMatchInfo = true
+void _sectionsMatchInfo
+
 export type ParseResult =
   | { readonly ok: true; readonly info: Info; readonly raw: Record<string, unknown> }
   /**
@@ -311,3 +336,41 @@ export type TuneFeature = keyof NonNullable<Tune["features"]>
 /** Whether a switch is supervision (raise-only) rather than preference (either way). */
 export const isSupervisionFeature = (feature: TuneFeature): boolean =>
   (SUPERVISION_FEATURES as readonly string[]).includes(feature)
+
+/**
+ * The permission rules a WRITE may record — {@link writableTune}'s twin on the permissions half.
+ *
+ * 🔴 **An `allow` rule in a `novaclaw.json` is PROVABLY inert, and writing one would be a lie the
+ * product tells in the user's own file.** The read side folds a project's ruleset in as a
+ * *constraint*, never as part of the appended chain: `PermissionV2.evaluateNarrowed` keeps the
+ * base verdict and replaces it only when the project's matching rule is strictly MORE restrictive
+ * (`allow` 0 < `ask` 1 < `deny` 2). An `allow` can never be greater than anything, so it can never
+ * change a verdict — measured against the one consumer that exists (`ProjectFileCache.Entry.rules`
+ * is read in exactly one place, `permission.ts`'s `projectPermissions`).
+ *
+ * So a control offering to save one would be a control that silently does nothing — the same defect
+ * `writableTune` exists to prevent for supervision switches, restated for the half that started the
+ * whole narrowing story. The refused rules come back so the surface can SAY it rather than write a
+ * sentence into the user's file that the reader is guaranteed to ignore.
+ *
+ * ⚠️ `ask` and `deny` are written normally. `ask` narrows an `allow` (it withholds the action until
+ * a human says otherwise) and is a no-op against a stricter base, which is a rule that *can* bite.
+ *
+ * ⚠️ This is NOT the enforcement, for the same reason `writableTune` is not: an attacker's
+ * `novaclaw.json` never goes through our writer. `evaluateNarrowed` holds the line on every read,
+ * including for files that arrived in a clone. This is a truthfulness rule for our own output.
+ */
+export function writablePermissions(rules: Permission.Ruleset | undefined): {
+  readonly permissions: Permission.Ruleset | undefined
+  readonly refused: Permission.Ruleset
+} {
+  if (!rules) return { permissions: undefined, refused: [] }
+  const permissions: Permission.Rule[] = []
+  const refused: Permission.Rule[] = []
+  for (const rule of rules) (rule.effect === "allow" ? refused : permissions).push(rule)
+  // An empty ruleset is written as `[]` rather than dropped, exactly as `writableTune` writes an
+  // empty `features`: the caller SUPPLIED the section, and the receipt has to stay honest about
+  // which sections the write touched. Clearing a section is a different request with its own
+  // spelling — see `ProjectFileWrite.Changes.clear`.
+  return { permissions, refused }
+}
