@@ -705,10 +705,15 @@ export const layer = Layer.effect(
          * is a name anybody can write, so the share we consume would be charged to whoever we
          * claimed to be — and the dealing they record on answering would name them, not us.
          */
+        /**
+         * ⚠️ `to` is inside the signature, so this ask is worthless to anyone who captures it: it
+         * verifies at THIS peer and nowhere else. Before that, one captured question could be
+         * replayed across the network to burn our share — and now our standing — at every instance.
+         */
         const signature = yield* identity.sign(
-          CommunityAnswer.askBytes({ asker: self.networkID, question, at }),
+          CommunityAnswer.askBytes({ to, asker: self.networkID, question, at }),
         )
-        const payload = { asker: self.networkID, question, at, signature: signature.toString("base64url") }
+        const payload = { to, asker: self.networkID, question, at, signature: signature.toString("base64url") }
 
         /**
          * ⚠️ ONE deadline for the whole call, not one per address. Each attempt gets whatever is

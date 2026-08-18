@@ -240,13 +240,42 @@ export const verify = (answer: Signed): boolean => {
  * write "answered nid_victim" about a third party it had never met: **exactly the bad-mouthing the
  * observation store's engagement bound exists to prevent, walked in through the front door.**
  *
- * ⚠️ Replay is bounded rather than prevented: a captured ask can be re-sent, and what it costs is
- * that ASKER's share of the day and nothing else. A freshness window would need a clock policy this
- * protocol does not otherwise have, and the bound already sits on the attacker's path.
+ * ⚠️ **This paragraph used to say replay was "bounded rather than prevented" because it costs the
+ * asker's own share, and that reasoning was WRONG in the direction that matters** (review §2, unit 7).
+ * The signature bound no RECIPIENT, so any instance Bob asked could replay his ask verbatim at every
+ * other instance in the network and burn Bob's per-asker share at each of them. The cost does not
+ * land on the attacker at all — it lands on an innocent third party, at N instances, for one captured
+ * message. And since answering became trust-aware, what is being spent may be Bob's STANDING as
+ * somebody's doorman rather than a stranger's slice.
+ *
+ * 🔴 So the ask names who it is FOR, inside the signature. An ask addressed to A does not verify at
+ * B, which closes the cross-instance replay with arithmetic rather than a clock. This is a WIRE
+ * BREAK, taken deliberately: participation is off until a user consents and nobody has published a
+ * reachable address yet, so the cost of the break is zero today and rises every day it is deferred
+ * (principle 1 — migrate rather than wrap).
  */
-const ASK_DOMAIN = "novaclaw.community.ask.v1"
+const ASK_DOMAIN = "novaclaw.community.ask.v2"
+
+/**
+ * 🔴 How far out of date a question may be — the freshness half, and deliberately GENEROUS.
+ *
+ * Recipient binding does the real work; this only stops a captured ask being replayed at the SAME
+ * instance weeks later. So the window is wide enough that no honest peer trips it: these are home
+ * machines with no NTP guarantee, and a tight window would refuse real questions from somebody whose
+ * clock is a few minutes off — breaking the feature for an ordinary user to inconvenience an
+ * attacker whose replay the per-peer budget already bounds.
+ */
+export const MAX_ASK_AGE_MS = 24 * 60 * 60 * 1000
 
 export interface UnsignedAsk {
+  /**
+   * 🔴 WHO THIS IS FOR. Signed, and checked against our own identity at the door.
+   *
+   * ⚠️ Not a routing field — the transport already knows where it dialled. It exists so that the
+   * signature says "Bob asked THIS INSTANCE", which is what a replayed copy cannot claim anywhere
+   * else.
+   */
+  readonly to: string
   readonly asker: string
   readonly question: string
   readonly at: number
@@ -265,6 +294,7 @@ export const askBytes = (input: UnsignedAsk): Uint8Array => {
     parts.push(length, bytes)
   }
   push(ASK_DOMAIN)
+  push(input.to)
   push(input.asker)
   push(input.question)
   const at = new Uint8Array(8)
@@ -280,11 +310,23 @@ export const askBytes = (input: UnsignedAsk): Uint8Array => {
   return out
 }
 
-/** True only if `asker` really sent this question. Everything downstream depends on it. */
-export const verifyAsk = (ask: SignedAsk): boolean => {
+/**
+ * True only if `asker` really sent this question TO US, recently enough to be a question.
+ *
+ * ⚠️ `self` is required rather than optional. An optional recipient check is one nobody at a call
+ * site has to think about, and the whole defect was a check nobody had to think about.
+ */
+export const verifyAsk = (ask: SignedAsk, self: string): boolean => {
   if (typeof ask.signature !== "string" || ask.signature.length === 0) return false
   if (typeof ask.asker !== "string" || typeof ask.question !== "string") return false
-  if (!Number.isFinite(ask.at)) return false
+  if (typeof ask.to !== "string" || ask.to !== self) return false
+  /**
+   * ⚠️ `isSafeInteger`, not `isFinite` — the succession door's own lesson (review 1.12): a
+   * `BigInt(-1)` reaching `writeBigUInt64BE` throws, and an anonymous door that can be made to throw
+   * is a 500 generator with a stack trace in the owner's log.
+   */
+  if (!Number.isSafeInteger(ask.at) || ask.at < 0) return false
+  if (Math.abs(Date.now() - ask.at) > MAX_ASK_AGE_MS) return false
   const signature = Buffer.from(ask.signature, "base64url")
   if (signature.length !== 64) return false
   return InstanceIdentityStore.verifySignature(ask.asker, askBytes(ask), signature)

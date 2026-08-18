@@ -1,3 +1,4 @@
+import crypto, { generateKeyPairSync, sign as nodeSign } from "node:crypto"
 import { describe, expect } from "bun:test"
 import { Effect } from "effect"
 import { CommunityAnswer } from "@novaclaw/core/community/answer"
@@ -193,6 +194,63 @@ describe("what a question may WEIGH (Codex P1)", () => {
       expect(CommunityAnswer.questionTooLarge("x".repeat(CommunityAnswer.MAX_QUESTION_BYTES + 1))).toBe(true)
       // BYTES, not characters: a question of CJK weighs three times what a character count claims.
       expect(CommunityAnswer.questionTooLarge("好".repeat(CommunityAnswer.MAX_QUESTION_BYTES / 2))).toBe(true)
+    }),
+  )
+})
+
+describe("a question names who it is FOR (review §2)", () => {
+  const sign = (input: { to: string; asker: string; question: string; at: number }, key: crypto.KeyObject) => ({
+    ...input,
+    signature: nodeSign(null, Buffer.from(CommunityAnswer.askBytes(input)), key).toString("base64url"),
+  })
+
+  it.effect("🔴 an ask addressed to one instance does not verify at another", () =>
+    Effect.gen(function* () {
+      /**
+       * The replay the old envelope allowed: any instance Bob asked could re-send his question
+       * verbatim to every other instance and burn Bob's per-asker share at each of them. The comment
+       * that used to sit above `ASK_DOMAIN` called this "bounded rather than prevented" because it
+       * costs the asker's own budget — which is exactly backwards. The cost lands on Bob, at N
+       * instances, for one captured message, and Bob is not the attacker.
+       */
+      const { publicKey, privateKey } = generateKeyPairSync("ed25519")
+      const raw = (publicKey.export({ type: "spki", format: "der" }) as Buffer).subarray(12)
+      const asker = `nid_${raw.toString("base64url")}`
+      const alice = mintIdentity().networkID
+      const bob = mintIdentity().networkID
+
+      const forAlice = sign({ to: alice, asker, question: "what happened today?", at: Date.now() }, privateKey)
+      expect(CommunityAnswer.verifyAsk(forAlice, alice), "it verifies at the instance it names").toBe(true)
+      expect(CommunityAnswer.verifyAsk(forAlice, bob), "and nowhere else").toBe(false)
+
+      // ⚠️ Not merely a field comparison: rewriting `to` breaks the signature, so a replayer cannot
+      // simply re-address the captured question.
+      expect(CommunityAnswer.verifyAsk({ ...forAlice, to: bob }, bob)).toBe(false)
+    }),
+  )
+
+  it.effect("🔴 a question from long ago, or from a broken clock, is not a question", () =>
+    Effect.gen(function* () {
+      const { publicKey, privateKey } = generateKeyPairSync("ed25519")
+      const raw = (publicKey.export({ type: "spki", format: "der" }) as Buffer).subarray(12)
+      const asker = `nid_${raw.toString("base64url")}`
+      const self = mintIdentity().networkID
+      const at = (when: number) => sign({ to: self, asker, question: "hello?", at: when }, privateKey)
+
+      expect(CommunityAnswer.verifyAsk(at(Date.now()), self)).toBe(true)
+      // Generous on purpose — these are home machines without an NTP guarantee, and refusing an
+      // honest peer whose clock is minutes off would break the feature to inconvenience nobody.
+      expect(CommunityAnswer.verifyAsk(at(Date.now() - 60_000), self)).toBe(true)
+      expect(CommunityAnswer.verifyAsk(at(Date.now() - CommunityAnswer.MAX_ASK_AGE_MS - 1_000), self)).toBe(false)
+      expect(CommunityAnswer.verifyAsk(at(Date.now() + CommunityAnswer.MAX_ASK_AGE_MS + 1_000), self)).toBe(false)
+
+      /**
+       * ⚠️ And the value that THROWS rather than merely lying — review 1.12's lesson one door over:
+       * `BigInt(-1)` reaching `writeBigUInt64BE` raises, and an anonymous door that can be made to
+       * raise is a 500 generator writing stack traces into the owner's log.
+       */
+      expect(CommunityAnswer.verifyAsk(at(-1), self)).toBe(false)
+      expect(CommunityAnswer.verifyAsk(at(Number.MAX_SAFE_INTEGER + 2), self)).toBe(false)
     }),
   )
 })

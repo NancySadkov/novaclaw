@@ -834,6 +834,15 @@ export const CommunityPeerApi = HttpApi.make("communityPeer").add(
            * answering names whoever the sender felt like naming.
            */
           asker: Schema.String,
+          /**
+           * 🔴 WHO THIS IS FOR — inside the signature, and checked against this instance's own key.
+           *
+           * Without it, any instance that received a question could replay it verbatim at every
+           * other instance and spend its author's per-asker share — and now their standing — at each
+           * one. The cost lands entirely on an innocent third party, which is why "replay only costs
+           * the asker their own budget" was the wrong way round.
+           */
+          to: Schema.String,
           question: Schema.String,
           at: Schema.Number,
           signature: Schema.String,

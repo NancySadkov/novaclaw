@@ -663,7 +663,14 @@ const TURN_TIMED_OUT = { timedOut: true } as const
            */
           if (CommunityAnswer.questionTooLarge(ctx.payload.question)) return { refused: "not-answering" as const }
 
-          if (!CommunityAnswer.verifyAsk(ctx.payload)) return { refused: "unsigned" as const }
+          /**
+           * ⚠️ Verified against OUR OWN identity, because the signature now names who the question is
+           * for. An ask addressed to another instance does not verify here, so a captured question
+           * cannot be replayed across the network to burn its author's share — and, since answering
+           * became trust-aware, their standing — at every instance that receives it.
+           */
+          const me = (yield* selfIdentity.identity()).networkID
+          if (!CommunityAnswer.verifyAsk(ctx.payload, me)) return { refused: "unsigned" as const }
 
           /**
            * 🔴 BLOCKING applies here too — the checklist's inbound rule 4, *"check blocking if the

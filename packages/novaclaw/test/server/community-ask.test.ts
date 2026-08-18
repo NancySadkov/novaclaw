@@ -58,14 +58,33 @@ const asker = () => {
   const networkID = `nid_${raw.toString("base64url")}`
   return {
     networkID,
-    ask: (question: string, at = Date.now()) => {
-      const body = { asker: networkID, question, at }
+    /**
+     * ⚠️ `to` is signed now, so a question names the instance it is for. A test that omitted it
+     * would be signing an ask for nobody and asserting on the refusal that produces.
+     */
+    ask: (question: string, at = Date.now(), to = networkID) => {
+      const body = { to, asker: networkID, question, at }
       return {
         ...body,
         signature: nodeSign(null, Buffer.from(CommunityAnswer.askBytes(body)), privateKey).toString("base64url"),
       }
     },
   }
+}
+
+/**
+ * This instance's own `nid_`, read through its peer identity door.
+ *
+ * ⚠️ Needed because a question now names WHO IT IS FOR inside the signature, so a fixture that signs
+ * for the wrong recipient is testing the refusal rather than the rule. That is not a nuisance — it is
+ * the property: a captured ask is worthless at any instance but the one it names.
+ */
+const selfID = async (handler: ReturnType<typeof app>, directory: string): Promise<string> => {
+  const response = await handler(
+    new Request("http://localhost/api/community/identity", { headers: { "x-novaclaw-directory": directory } }),
+    HttpApiApp.context,
+  )
+  return ((await response.json()) as { networkID: string }).networkID
 }
 
 describe("what a stranger can make this instance spend", () => {
@@ -272,7 +291,11 @@ describe("asking this instance a question", () => {
     )
     expect(blocking.status, "the fixture must actually block somebody").toBe(200)
 
-    const response = await ask(handler, tmp.path, stranger.ask("what happened today?"))
+    const response = await ask(
+      handler,
+      tmp.path,
+      stranger.ask("what happened today?", Date.now(), await selfID(handler, tmp.path)),
+    )
     const body = (await response.json()) as { answer?: string; refused?: string }
 
     expect(body.answer, "a blocked peer must not be answered").toBeUndefined()

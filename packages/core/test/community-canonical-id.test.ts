@@ -169,15 +169,17 @@ describe("a nid_ is a KEY, not a spelling (p2p 1.2)", () => {
 
   test("🔴 `verifyAsk`: six spellings of one asker are not six askers", () => {
     const key = strangerKey()
+    // ⚠️ `to` is inside the signature now: an ask verifies at the instance it names and nowhere else.
+    const self = `nid_${Buffer.alloc(32, 7).toString("base64url")}`
     const ask = (asker: string) => {
-      const unsigned = { asker, question: "what happened in the world today?", at: Date.now() }
+      const unsigned = { to: self, asker, question: "what happened in the world today?", at: Date.now() }
       const signature = nodeSign(null, Buffer.from(CommunityAnswer.askBytes(unsigned)), key.privateKey)
       return { ...unsigned, signature: signature.toString("base64url") }
     }
 
-    expect(CommunityAnswer.verifyAsk(ask(key.canonical))).toBe(true)
+    expect(CommunityAnswer.verifyAsk(ask(key.canonical), self)).toBe(true)
     // Each alias that verified was a fresh `asker` string to `answers.allowed` and to the spend row,
     // so `perPeerPerDay` collapsed to `perDay` and a blocked peer was answered as a stranger.
-    for (const alias of realAliases(key)) expect(CommunityAnswer.verifyAsk(ask(alias))).toBe(false)
+    for (const alias of realAliases(key)) expect(CommunityAnswer.verifyAsk(ask(alias), self)).toBe(false)
   })
 })
