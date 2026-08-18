@@ -17,6 +17,7 @@ import { Watcher } from "./filesystem/watcher"
 import { ModelPrune } from "./catalog/model-prune"
 import { MergePatch } from "./merge-patch"
 import { CommunityConsent } from "./community/consent"
+import { CommunityDht } from "./community/dht"
 import { Offline } from "./offline"
 import { PluginConfigSeed } from "./plugin-config-seed"
 import { PluginConfigStore } from "./plugin-config-store"
@@ -903,10 +904,25 @@ export const apply = (patch: Config.Info) =>
     // ⚠️ Community consent follows the SAME post-commit path as the airgap, and must: accepting the
     // warning has to take effect on the next call, not the next boot. It is passed the live offline
     // policy rather than importing it, so the two conditions stay independent.
-    if (consumed.has("community")) {
+    if (consumed.has("community") || consumed.has("offline")) {
       // The value as just committed, not a re-read: see `CommunityConsent.applied`.
       const stored = (yield* (yield* SettingsConfigStore.Service).all())["community"]
-      yield* Effect.sync(() => CommunityConsent.applied(stored, Offline.currentPolicy()))
+      const gate = yield* Effect.sync(() => CommunityConsent.applied(stored, Offline.currentPolicy()))
+      /**
+       * 🔴 And the DHT sidecar is brought into line HERE, on the same post-commit path, because
+       * "the community is off" was a fact only the settings knew: the Kademlia node kept running and
+       * kept republishing this instance's provider record every 12 hours. Switching the feature off,
+       * engaging the airgap and clearing the published address are three ways to say the same thing
+       * to the commons, and none of them reached the process that was talking to it.
+       *
+       * ⚠️ `offline` is in the condition as well as `community` — the airgap forces the gate shut
+       * without any `community` key being written, which is exactly the path that left a node
+       * advertising from a machine its owner believed was sealed.
+       */
+      yield* CommunityDht.reconcile({
+        participates: CommunityConsent.participates(gate),
+        ...announceOf(stored),
+      })
     }
     if (consumed.has("watcher")) yield* Watcher.reload()
     // Ruling 2 BEFORE the reloads, not after: the reloads can die ("committed, not live"), and a key
@@ -920,6 +936,17 @@ export const apply = (patch: Config.Info) =>
     yield* refreshDomains(staleDomains(consumed))
     return consumed
   })
+
+/**
+ * The address the user asked us to publish, if any.
+ *
+ * ⚠️ Read from the value just committed rather than from a schema import: this module is the write
+ * path for every store, and pulling the community config's type in here would couple the two.
+ */
+const announceOf = (stored: unknown): { announce?: string } => {
+  const announce = (stored as { announce?: unknown } | undefined)?.announce
+  return typeof announce === "string" && announce.trim() !== "" ? { announce } : {}
+}
 
 const policyKey = (policy: Offline.Policy) => `${policy.enabled}:${[...policy.allowedHosts].sort().join(",")}`
 

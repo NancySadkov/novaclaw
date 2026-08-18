@@ -14,6 +14,7 @@
 //! Protocol — one JSON object per line in, one per line out. Every request gets exactly one reply.
 //!   → {"op":"status"}                       ← {"table":152,"mode":"client"}
 //!   → {"op":"announce","addr":"1.2.3.4:4096"} ← {"announced":true}
+//!   → {"op":"withdraw"}                     ← {"announced":false}
 //!   → {"op":"find"}                         ← {"peers":["1.2.3.4:4096", …]}
 
 use anyhow::Result;
@@ -103,6 +104,7 @@ struct Behaviour {
 enum Request {
     Find,
     Announce { addr: String },
+    Withdraw,
     Status,
 }
 
@@ -224,6 +226,7 @@ async fn main() -> Result<()> {
                             ..Default::default()
                         },
                         Ok(Request::Announce { addr }) => announce(&mut swarm, &addr).await,
+                        Ok(Request::Withdraw) => withdraw(&mut swarm),
                         Ok(Request::Find) => find(&mut swarm).await,
                         // ⚠️ A malformed line is ANSWERED, not fatal: the parent is entitled to one
                         // reply per line, or it waits forever for one that never comes.
@@ -342,6 +345,23 @@ async fn announce(swarm: &mut libp2p::Swarm<Behaviour>, addr: &str) -> Reply {
             }
         }
     }
+}
+
+/// Stop being a provider for the room.
+///
+/// 🔴 **This is the most a Kademlia node can truthfully do, and the caller must not claim more.**
+/// There is no unpublish in Kademlia: records already replicated onto other nodes live until their
+/// TTL expires. What `stop_providing` does is local and real — this node stops republishing on kad's
+/// 12-hour schedule and stops answering as a provider — so the record decays instead of being
+/// renewed forever. The honest sentence for a user is "we stop advertising, and the copies out
+/// there expire", never "withdrawn".
+///
+/// ⚠️ Synchronous and unconditional: there is no query to await and nothing that can fail, which is
+/// why it answers immediately rather than taking a budget. A user turning the community off is
+/// entitled to have that take effect before the process is asked to exit.
+fn withdraw(swarm: &mut libp2p::Swarm<Behaviour>) -> Reply {
+    swarm.behaviour_mut().kad.stop_providing(&room_key());
+    Reply { announced: Some(false), ..Default::default() }
 }
 
 /// One bounded discovery: ask who provides the room and keep the `/http` endpoints their records

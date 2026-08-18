@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Effect, Layer } from "effect"
+import { Effect, Fiber, Layer } from "effect"
 import { CommunityDht } from "@novaclaw/core/community/dht"
 
 /**
@@ -386,5 +386,99 @@ describe("the layer", () => {
     // It resolves the binary path lazily, so merely constructing it must not touch the filesystem
     // in a way that can fail on a machine with no sidecar.
     expect(Layer.isLayer(CommunityDht.layer)).toBe(true)
+  })
+})
+
+/**
+ * 🔴 Review 1.7 — the sidecar's LIFETIME against the user's settings, and its own stale children.
+ *
+ * Three of the four defects that finding names are here (the fourth is packaging). Each is a case
+ * where the node outlived the thing that authorised it, or where a dead node spoke for a live one.
+ */
+describe("the sidecar obeys the gate", () => {
+  test("🔴 switching the community OFF withdraws and stops a living node", async () => {
+    const sidecar = scripted([peers(["1.2.3.4:4096"]), JSON.stringify({ announced: false })])
+    await run(
+      Effect.gen(function* () {
+        const dht = yield* CommunityDht.Service
+        yield* dht.find()
+        expect(sidecar.state.starts).toBe(1)
+
+        // What a settings write does, through the same module-level seam `config-store-write` uses.
+        yield* CommunityDht.reconcile({ participates: false })
+        expect(sidecar.state.stopped, "a node nobody authorised must not keep republishing").toBe(1)
+        // ⚠️ WITHDRAWN, not merely killed: there is no unpublish in Kademlia, so the one thing we can
+        // do is stop being a provider before we go.
+        expect(sidecar.state.written.at(-1)).toBe(JSON.stringify({ op: "withdraw" }))
+      }),
+      { start: sidecar.start, timeoutMs: 200 },
+    )
+  })
+
+  test("⚠️ and the control: a gate that is still open leaves the node alone", async () => {
+    const sidecar = scripted([peers([]), peers([])])
+    await run(
+      Effect.gen(function* () {
+        const dht = yield* CommunityDht.Service
+        yield* dht.find()
+        yield* CommunityDht.reconcile({ participates: true })
+        expect(sidecar.state.stopped, "a settings write that changed nothing must not cost a respawn").toBe(0)
+        yield* dht.find()
+        expect(sidecar.state.starts, "the same node answers the next lookup").toBe(1)
+      }),
+      { start: sidecar.start, timeoutMs: 200 },
+    )
+  })
+
+  test("🔴 changing the published address stops the node advertising the old one", async () => {
+    const sidecar = scripted([JSON.stringify({ announced: true }), peers([]), JSON.stringify({ announced: false })])
+    await run(
+      Effect.gen(function* () {
+        const dht = yield* CommunityDht.Service
+        yield* dht.find({ announce: "1.2.3.4:4096" })
+        expect(sidecar.state.stopped).toBe(0)
+
+        // identify carries the OLD address to everyone the node meets, so a changed setting that
+        // left it running would advertise an address the user has already replaced.
+        yield* CommunityDht.reconcile({ participates: true, announce: "5.6.7.8:4096" })
+        expect(sidecar.state.stopped).toBe(1)
+        expect(sidecar.state.written.at(-1)).toBe(JSON.stringify({ op: "withdraw" }))
+      }),
+      { start: sidecar.start, timeoutMs: 200 },
+    )
+  })
+
+  test("🔴 a REPLACED node's late death does not settle the live node's request", async () => {
+    /**
+     * The handlers used to close over the layer's state alone, so a predecessor's `'close'` —
+     * arriving after its successor had been spawned — set `alive = false` on the living node and
+     * answered its pending request with nothing. Measured on the real seam: after one wedge-kill,
+     * that discovery and the next two lookups returned `[]`, and only a lookup 800 ms later found a
+     * peer.
+     */
+    const first = scripted([undefined])
+    const second = scripted([peers(["9.9.9.9:4096"])])
+    let started = 0
+    const start = () => {
+      started += 1
+      return started === 1 ? first.start() : second.start()
+    }
+    await run(
+      Effect.gen(function* () {
+        const dht = yield* CommunityDht.Service
+        // The first node never answers: it is killed as wedged, and the layer spawns a replacement.
+        expect(yield* dht.find()).toEqual([])
+
+        const late = first.state.kill
+        // The successor is spawned by this lookup; the predecessor's `'close'` lands while it waits.
+        const found = yield* dht.find().pipe(Effect.forkChild)
+        yield* Effect.yieldNow
+        yield* Effect.sync(() => late?.())
+        expect(yield* Fiber.join(found), "a dead node's goodbye is not the live node's answer").toEqual([
+          "9.9.9.9:4096",
+        ])
+      }),
+      { start, timeoutMs: 500 },
+    )
   })
 })

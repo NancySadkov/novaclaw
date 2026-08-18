@@ -196,9 +196,54 @@ export interface Interface {
    * network — and an announcement genuinely fails when there is no routing table to publish into.
    */
   readonly announced: () => Effect.Effect<{ readonly address: string; readonly published: boolean } | undefined>
+  /**
+   * Stop advertising this instance and stop the node.
+   *
+   * ⚠️ Named `withdraw` rather than `stop` because the network-facing half is the point: a stopped
+   * process that never withdrew leaves its provider record to be found until it expires.
+   */
+  readonly withdraw: () => Effect.Effect<void>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/CommunityDht") {}
+
+/**
+ * 🔴 **The live node, module-level — so a settings write can reach it** (review 1.7, unit 5 F3; Codex P1).
+ *
+ * The child was stopped only by scope close or a wedge-kill, which meant turning the community OFF,
+ * engaging the AIRGAP, or clearing the published address all left a Kademlia node running: kad
+ * republishes the provider record every 12 hours for as long as it lives, so an instance went on
+ * advertising itself to the commons after its owner had switched the feature off. The consent screen
+ * promises the opposite, and a promise a subsystem does not keep is worse than one never made.
+ *
+ * ⚠️ Module-level for the reason `offline.ts` and `consent.ts` both give at length: the caller is
+ * the post-commit config path, which has no service in context and must not build one — building a
+ * layer from a parameter mints a fresh memo key and gives you a SECOND DHT node, which is two
+ * Kademlia participants announcing the same address.
+ */
+let live: { readonly settle: (input: Gate) => Effect.Effect<void> } | undefined
+
+/** What the community's settings say right now, as far as the DHT is concerned. */
+export interface Gate {
+  /** Whether this instance takes part at all — consent AND the switch AND the airgap. */
+  readonly participates: boolean
+  /** The address the user asks us to publish, when they have set one. */
+  readonly announce?: string
+}
+
+/**
+ * Bring the sidecar into line with the settings that were just committed.
+ *
+ * 🔴 **Withdraw, THEN stop** — and in that order, because stopping alone is not withdrawing. There
+ * is no unpublish in Kademlia: `withdraw` makes this node stop republishing and stop answering as a
+ * provider, and the copies already replicated elsewhere expire at their TTL. Killing the child
+ * without withdrawing leaves those copies to be found for the rest of their life while we are not
+ * even running — the same outcome, minus the one thing we could actually do about it.
+ *
+ * ⚠️ A no-op with no I/O when no node was ever started, which is the ordinary case: most machines
+ * have no sidecar binary, and a user who never opened the community has never spawned one.
+ */
+export const reconcile = (input: Gate): Effect.Effect<void> => live?.settle(input) ?? Effect.void
 
 export const layerWith = (options: Options = {}): Layer.Layer<Service> =>
   Layer.effect(
@@ -229,13 +274,31 @@ export const layerWith = (options: Options = {}): Layer.Layer<Service> =>
         announced = undefined
         const started = start(binary)
         if (started === undefined) return undefined
+        /**
+         * 🔴 Assigned BEFORE the handlers are attached, because the handlers below compare against
+         * it — a child that dies during its own registration must be recognised as the live one.
+         */
+        node = started
         alive = true
+        /**
+         * 🔴 **Every handler is bound to the node that raised it** (review 1.7, unit 5 F4).
+         *
+         * They used to close over the layer's mutable state alone, so a replaced child's late
+         * `'close'` — arriving after `stop()` had already spawned its successor — set `alive = false`
+         * on the LIVING node and settled the pending request belonging to it. Measured: after one
+         * wedge-kill, that discovery's find and the next two lookups all returned `[]`, and only a
+         * lookup 800 ms later found a peer. A predecessor's death says nothing about the node that
+         * replaced it, and a stale `'data'` line is somebody else's answer to somebody else's
+         * question.
+         */
         started.onLine((line) => {
+          if (node !== started) return
           const settle = pending
           pending = undefined
           settle?.(line)
         })
         started.onExit(() => {
+          if (node !== started) return
           alive = false
           const settle = pending
           pending = undefined
@@ -243,7 +306,6 @@ export const layerWith = (options: Options = {}): Layer.Layer<Service> =>
           // caller is a user waiting on a button, and we already know the answer is "nothing".
           settle?.(undefined)
         })
-        node = started
         return started
       }
 
@@ -338,7 +400,36 @@ export const layerWith = (options: Options = {}): Layer.Layer<Service> =>
           }),
         )
 
-      return Service.of({ find, announced: () => Effect.sync(() => lastAnnounce) })
+      /**
+       * Stop advertising, then stop the node — the whole of what a settings change can enforce.
+       *
+       * ⚠️ Under the SAME semaphore as `find`, because the protocol is one reply per line with
+       * nothing to match a reply to its request: a withdraw written beside a lookup would leave each
+       * reading the other's answer, which is the desynchronisation that made a replaced sidecar
+       * report no peers three lookups running.
+       */
+      const withdrawAndStop = gate.withPermits(1)(
+        Effect.gen(function* () {
+          if (!alive || node === undefined) return
+          yield* ask(JSON.stringify({ op: "withdraw" }))
+          yield* Effect.sync(stop)
+          lastAnnounce = undefined
+        }),
+      )
+
+      const settle = (input: Gate) =>
+        !input.participates || (input.announce ?? "").trim() !== (announced ?? "")
+          ? withdrawAndStop
+          : Effect.void
+
+      live = { settle }
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          live = undefined
+        }),
+      )
+
+      return Service.of({ find, announced: () => Effect.sync(() => lastAnnounce), withdraw: () => withdrawAndStop })
     }),
   )
 
@@ -365,6 +456,19 @@ const startNode = (binary: string): Node | undefined => {
     let onExit: (() => void) | undefined
     child.on("error", () => onExit?.())
     child.on("close", () => onExit?.())
+    /**
+     * 🔴 **Writing to a dead child raises `EPIPE` on the STREAM, and an unhandled stream error kills
+     * the whole process** (review 1.7, unit 5 F2). Reproduced against a stub that answers one
+     * request and exits, under both bun and node 24: `UNCAUGHT EXCEPTION: EPIPE` — the instance
+     * server died because a Kademlia helper it did not need had gone away. The `try` around
+     * `stdin.write` cannot catch it: the write returns, and the error arrives later as an EVENT.
+     *
+     * ⚠️ Treated as a death rather than swallowed. A pipe we cannot write to is a node we cannot
+     * ask, so the waiter is settled and the next lookup starts a fresh child — the same path a
+     * `'close'` takes, which is what it actually is.
+     */
+    child.stdin.on("error", () => onExit?.())
+    child.stdout.on("error", () => onExit?.())
     child.stdout.on("data", (chunk: Buffer) => {
       const lines = readLines(state, chunk.toString())
       if (lines === undefined) {
