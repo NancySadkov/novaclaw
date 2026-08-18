@@ -6,6 +6,7 @@ import { AgentV2 } from "../agent"
 import { PermissionV2 } from "../permission"
 import { SkillV2 } from "../skill"
 import { SystemContext } from "../system-context/index"
+import { XmlText } from "../util/xml-text"
 
 const Summary = Schema.Struct({
   name: Schema.String,
@@ -42,8 +43,10 @@ export const render = (skills: ReadonlyArray<Summary>) =>
           "<available_skills>",
           ...skills.flatMap((skill) => [
             "  <skill>",
-            `    <name>${skill.name}</name>`,
-            `    <description>${skill.description}</description>`,
+            // ESCAPED, because a skill's metadata is the least-trusted input in this document.
+            // Unescaped, one skill forged a second <skill> entry naming itself whatever it liked.
+            `    <name>${XmlText.escape(skill.name)}</name>`,
+            `    <description>${XmlText.escape(skill.description ?? "")}</description>`,
             "  </skill>",
           ]),
           "</available_skills>",

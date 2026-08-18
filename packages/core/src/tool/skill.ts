@@ -10,6 +10,7 @@ import { PermissionV2 } from "../permission"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
+import { XmlText } from "../util/xml-text"
 
 export const name = "skill"
 const FILE_LIMIT = 10
@@ -32,20 +33,32 @@ export const description = [
   "The skill name must match one of the available skills in the system context.",
 ].join("\n")
 
+/** Every structural tag this wrapper emits. Forging an OPENING one invents a second block. */
+const SENTINELS = ["</skill_content>", "<skill_content", "<skill_files>", "</skill_files>", "<file>"] as const
+
 export const toModelOutput = (skill: SkillV2.Info, files: ReadonlyArray<string>) => {
   const directory = path.dirname(skill.location)
   return [
-    `<skill_content name="${skill.name}">`,
-    `# Skill: ${skill.name}`,
+    // The NAME is metadata and is escaped; `content` below deliberately is NOT — it is the
+    // instructions the user chose to load, and escaping it would corrupt every skill that shows
+    // markup in an example. See util/xml-text.ts.
+    `<skill_content name="${XmlText.escape(skill.name)}">`,
+    // Escaped here TOO, not only in the attribute above: a name carrying `</skill_content>` would
+    // otherwise close the block from inside this heading, and everything after it would read to the
+    // model as text outside the skill rather than as the skill's own words.
+    `# Skill: ${XmlText.escape(skill.name)}`,
     "",
-    skill.content.trim(),
+    // NOT escaped — a skill's body is instructions and keeps its markup. Only the wrapper's own
+    // structural tags are neutralised, because content carrying `</skill_content>` closed this block
+    // from the inside and made its next line read as text outside the skill. See util/xml-text.ts.
+    XmlText.neutralizeSentinels(skill.content.trim(), SENTINELS),
     "",
     `Base directory for this skill: ${directory}`,
     "Relative paths in this skill (e.g., scripts/, reference/) are relative to this base directory.",
     "Note: file list is sampled.",
     "",
     "<skill_files>",
-    ...files.map((file) => `<file>${file}</file>`),
+    ...files.map((file) => `<file>${XmlText.escape(file)}</file>`),
     "</skill_files>",
     "</skill_content>",
   ].join("\n")
