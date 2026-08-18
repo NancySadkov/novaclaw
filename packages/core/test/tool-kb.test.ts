@@ -202,6 +202,36 @@ describe("KbTool (memory)", () => {
     }),
   )
 
+  it.effect("🔴 ingest: a project exclusion refuses in the SAME words every other tool uses", () =>
+    Effect.gen(function* () {
+      // `todo/projects.md`: *"`kb.ts` inherits enforcement but not the legible refusal message."*
+      // It inherited the ENFORCEMENT for free — the gate is in `LocationMutation.resolve` — but its
+      // own absorber flattened the refusal to `Couldn't ingest "x" — ProjectExclusion.ExcludedError:
+      // …`, i.e. an internal tag in front of the sentence, and it was the ONE path-taking tool that
+      // did not route through `PermissionV2.denialMessage`. A refusal a user authored has to read
+      // the same everywhere, or the model learns that `kb` is where the rules are different.
+      //
+      // The project file is NESTED on purpose: the declaration is looked up from the TARGET's
+      // directory, so `vault/` governs itself and the suite's shared `workdir` stays project-free.
+      const registry = yield* ToolRegistry.Service
+      const vault = nodePath.join(workdir, "vault")
+      fs.mkdirSync(vault, { recursive: true })
+      fs.writeFileSync(
+        nodePath.join(vault, "novaclaw.json"),
+        JSON.stringify({ version: 1, exclude: ["*.env"] }, null, 2),
+      )
+      fs.writeFileSync(nodePath.join(vault, "prod.env"), "TOKEN=super-secret")
+
+      const message = text(yield* executeTool(registry, call({ op: "ingest", path: "vault/prod.env" })))
+      // The three things the shared refusal says, and the thing it must never do.
+      expect(message).toContain("project exclusion")
+      expect(message).toContain("`*.env`")
+      expect(message).toContain("Never read")
+      expect(message).not.toContain("ExcludedError")
+      expect(message).not.toContain("super-secret")
+    }),
+  )
+
   it.effect("schema-invalid input is the one error-typed result class", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service

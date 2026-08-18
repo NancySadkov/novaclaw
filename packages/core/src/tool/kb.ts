@@ -342,8 +342,20 @@ export const layer = Layer.effectDiscard(
                       } satisfies Output
                     }).pipe(
                       Effect.catch((error) => {
-                        // Name the failure class — "PathError: outside the location" is actionable;
-                        // a bare empty message is not.
+                        // 🔴 A refusal the USER authored — a `novaclaw.json` exclusion, or a
+                        // permission denial — already has its own finished sentence, and it is taken
+                        // FIRST. `denialMessage` is the absorber every other path-taking tool routes
+                        // through (`project-exclusion.test.ts` holds that ledger); `kb` was the one
+                        // exception, and the cost was measurable rather than theoretical: it emitted
+                        // `Couldn't ingest "vault/prod.env" — ProjectExclusion.ExcludedError: Refused
+                        // by a project exclusion: …`, i.e. an internal tag wedged in front of the
+                        // user's own words. A refusal that reads differently in one tool teaches the
+                        // model that this tool is where the rules are different, which is exactly the
+                        // retry-forever behaviour the legible refusal exists to stop.
+                        const denial = PermissionV2.denialMessage(error)
+                        if (denial) return Effect.succeed({ ok: false, message: denial } satisfies Output)
+                        // Everything else: name the failure class — "PathError: outside the location"
+                        // is actionable; a bare empty message is not.
                         const e = error as { _tag?: string; message?: string; reason?: string }
                         const detail = [e._tag, e.message || e.reason].filter(Boolean).join(": ") || String(error)
                         return Effect.succeed({

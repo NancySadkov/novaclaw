@@ -286,7 +286,99 @@ describe("project exclusions — path aliases cannot spell their way around it",
       }).pipe(provide(directory)),
     ),
   )
+
+  /**
+   * 🔴 **The `subst`/mapped-drive vector, and it was OPEN.** Measured 2026-08-18 through this exact
+   * seam: with `exclude: ["secrets/"]` and `Y:` mapped at `<root>\secrets`, resolving `Y:\key.txt`
+   * returned a target and `ReadToolFileSystem.read` handed back `"SUPER SECRET"`.
+   *
+   * ⚠️ The bypass is not in the matching — it is that the walk-up never *finds* the declaration.
+   * `resolve` canonicalises with node's JS `realpath`, which keeps `Y:\key.txt` as `Y:\key.txt`
+   * (`realpath.native` collapses it to the real volume path; both measured). Walking up from `Y:\`
+   * meets the root of a drive that holds no `novaclaw.json`, so `exclusionsFor` answers `undefined`
+   * and there is nothing to screen against. That is why `project-exclusion.ts`'s {@link unalias}
+   * cannot be the fix site: it runs only AFTER a declaration was found, and its `~\d` gate — which
+   * exists so `screenAll` does not pay a stat per grep row — never fires for a drive-letter path
+   * anyway. The fold belongs where a RESOLVE happens, and that is `location-mutation.ts`.
+   *
+   * The two mappings are not the same case, which is the whole reason this needs its own vector:
+   * mapped at the project ROOT the exclusion always bit, because the walk-up finds `Y:\novaclaw.json`
+   * without leaving the mapped volume. Only a mapping BELOW the declaring file hides it.
+   */
+  it.live("refuses an excluded directory reached through a `subst` drive mapped AT it", () =>
+    withTmp((directory) =>
+      Effect.gen(function* () {
+        if (process.platform !== "win32") return
+        yield* project(directory, ["secrets/"])
+        yield* write(path.join(directory, "secrets", "key.txt"), "SUPER SECRET")
+        const drive = yield* substituted(path.join(directory, "secrets"))
+        // No free letter, or no `subst` on this host: SAY SO rather than pass vacuously.
+        if (drive === undefined) {
+          console.log("[subst] no drive letter could be mapped — vector not exercised here")
+          return
+        }
+        console.log(`[subst] exercising ${drive}\\ mapped at the EXCLUDED directory`)
+        expect(yield* verdictOf({ path: `${drive}\\key.txt` })).toBe("excluded")
+      }).pipe(provide(directory)),
+    ),
+  )
+
+  it.live("a `subst` drive mapped at the project ROOT still screens, and still allows the rest", () =>
+    withTmp((directory) =>
+      Effect.gen(function* () {
+        if (process.platform !== "win32") return
+        yield* project(directory, ["secrets/"])
+        yield* write(path.join(directory, "secrets", "key.txt"), "SUPER SECRET")
+        yield* write(path.join(directory, "README.md"), "hello")
+        const drive = yield* substituted(directory)
+        if (drive === undefined) {
+          console.log("[subst] no drive letter could be mapped — vector not exercised here")
+          return
+        }
+        expect(yield* verdictOf({ path: `${drive}\\secrets\\key.txt` })).toBe("excluded")
+        // The other half of the claim: folding the mapping must not turn the drive into a blanket
+        // refusal. A non-excluded file reached the same way still resolves.
+        expect(yield* verdictOf({ path: `${drive}\\README.md` })).toBe("allowed")
+      }).pipe(provide(directory)),
+    ),
+  )
 })
+
+/**
+ * A `subst` drive letter pointing at `target`, released with the surrounding scope.
+ *
+ * Yields `undefined` when no letter could be mapped (all taken, or `subst` unavailable) so the
+ * caller can report a non-exercised vector instead of a vacuous pass. The letter is VERIFIED to
+ * exist after the call rather than trusted from an exit code, and the release is
+ * `Effect.acquireRelease`'s, so an assertion failure still unmaps it — leaving a phantom drive on
+ * the machine that ran the suite is not an acceptable failure mode.
+ */
+const substituted = (target: string) =>
+  Effect.acquireRelease(
+    Effect.sync(() => {
+      if (process.platform !== "win32") return undefined
+      for (const letter of ["Y", "X", "W", "V", "U", "T", "R", "Q", "P", "N"]) {
+        const drive = `${letter}:`
+        if (fsSync.existsSync(`${drive}\\`)) continue
+        try {
+          const spawned = Bun.spawnSync(["subst", drive, target])
+          if (spawned.exitCode === 0 && fsSync.existsSync(`${drive}\\`)) return drive
+        } catch {
+          return undefined // no `subst` on this host at all
+        }
+      }
+      return undefined
+    }),
+    (drive) =>
+      Effect.sync(() => {
+        if (drive === undefined) return
+        try {
+          Bun.spawnSync(["subst", drive, "/d"])
+        } catch {
+          /* nothing left to undo */
+        }
+      }),
+  )
 
 /**
  * The 8.3 alias of `name` inside `parent`, or `undefined` when the volume generates none.
@@ -394,18 +486,61 @@ describe("project exclusions — the refusal is legible", () => {
     expect(PermissionV2.denialMessage(new Error("something else"))).toBeUndefined()
   })
 
-  test("every path-taking tool routes its errors through that absorber", () => {
-    // The structural half: legibility is inherited only for tools that use the shared absorber, so
-    // a new one that does not is caught HERE rather than by a user reading "Unable to read x".
+  /**
+   * CODE ONLY. This sweep read the raw file until 2026-08-18, so a tool that merely MENTIONED
+   * `denialMessage` in a comment — including a comment explaining that it does NOT use it — passed
+   * the guard. That matters more now that the ledger is empty and this test is the only thing
+   * standing. `//` must not eat the `//` in a URL.
+   */
+  const stripComments = (source: string): string =>
+    source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
+
+  /** Every `src/tool/*.ts` that resolves a caller-supplied path, and whether it absorbs legibly. */
+  const sweepTools = (): { readonly scanned: string[]; readonly offenders: string[] } => {
     const dir = path.join(import.meta.dir, "..", "src", "tool")
+    const scanned: string[] = []
     const offenders: string[] = []
     for (const entry of fsSync.readdirSync(dir)) {
       if (!entry.endsWith(".ts") || entry.endsWith(".test.ts")) continue
-      const text = fsSync.readFileSync(path.join(dir, entry), "utf8")
+      const text = stripComments(fsSync.readFileSync(path.join(dir, entry), "utf8"))
       if (!text.includes("mutation.resolve")) continue
+      scanned.push(entry)
       if (!text.includes("denialMessage")) offenders.push(entry)
     }
-    expect(offenders).toEqual(["kb.ts"])
+    return { scanned, offenders }
+  }
+
+  test("every path-taking tool routes its errors through that absorber", () => {
+    // The structural half: legibility is inherited only for tools that use the shared absorber, so
+    // a new one that does not is caught HERE rather than by a user reading "Unable to read x".
+    //
+    // 🔴 **The ledger is EMPTY, and `kb.ts` was its last entry** (closed 2026-08-18, `todo/
+    // projects.md`). It had inherited the ENFORCEMENT for free — the gate is one seam down, in
+    // `LocationMutation.resolve` — while its own absorber emitted `Couldn't ingest "vault/prod.env"
+    // — ProjectExclusion.ExcludedError: Refused by a project exclusion: …`, i.e. an internal tag
+    // wedged in front of the user's own sentence. Measured, then fixed, and pinned from the other
+    // side by the exclusion case in `tool-kb.test.ts`. A new entry here is a REGRESSION, not a
+    // ledger row: the fix is three lines in the offending tool's `mapError`.
+    const { scanned, offenders } = sweepTools()
+    // The sweep has to have looked at something, or `toEqual([])` is a tautology that a renamed
+    // directory would satisfy forever.
+    expect(scanned.length).toBeGreaterThan(5)
+    expect(scanned).toContain("kb.ts")
+    expect(offenders).toEqual([])
+  })
+
+  test("the sweep can still SEE an offender (negative control)", () => {
+    // The assertion above is an empty list, which alone cannot show a non-empty one is reachable.
+    const probe = (source: string) => {
+      const text = stripComments(source)
+      return text.includes("mutation.resolve") && !text.includes("denialMessage")
+    }
+    expect(probe("const t = yield* mutation.resolve({ path })")).toBe(true)
+    expect(probe("const t = yield* mutation.resolve({ path })\nPermissionV2.denialMessage(e)")).toBe(false)
+    // …and the drift this strip exists for: a tool that only TALKS about the absorber is an offender.
+    expect(probe("const t = yield* mutation.resolve({ path })\n// we do not call denialMessage here")).toBe(true)
+    // A tool that touches no caller path is not in scope at all.
+    expect(probe("const x = 1")).toBe(false)
   })
 })
 

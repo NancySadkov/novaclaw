@@ -379,6 +379,9 @@ const REPAIRED: ReadonlyArray<readonly [string, string]> = [
   ["packages/core/src/tool/kb.ts", "\\x00"],
   ["packages/llm/src/protocols/utils/tool-recovery.ts", "\\x00"],
   ["packages/app/src/constants/links.test.ts", "\\x00"],
+  // The exclusion matcher cache keys on its patterns joined by NUL. Same separator, same reason:
+  // without it `["a","bc"]` and `["ab","c"]` collide and a folder gets another folder's rules.
+  ["packages/core/src/project-exclusion.ts", "\\x00"],
   // The homoglyph carrier: the docstring must name the parameter the signature actually declares.
   ["packages/core/src/messenger/pace.ts", "perCall"],
 ]

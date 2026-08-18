@@ -159,7 +159,16 @@ const COMPILE_CACHE_MAX = 64
 
 export function compile(patterns: readonly string[]): Matcher {
   const caseInsensitive = caseInsensitiveHere()
-  const key = `${caseInsensitive ? "i" : "s"}\u0000${patterns.join("\u0000")}`
+  // 🔴 The `\x00` below is a SEPARATOR, and it must stay an ESCAPE rather than a literal byte. It
+  // shipped as two raw NULs on 2026-08-18: a raw NUL takes the whole file out of ripgrep and
+  // `git diff`, which is why `invisible-characters.test.ts` can never sanction one with a ledger row.
+  //
+  // ⚠️ Deleting it instead would pass that sweep and silently break this cache: with no separator
+  // `["a","bc"]` and `["ab","c"]` join to the same key, so the second folder would be filtered by the
+  // first folder's rules — a privacy guard applying the wrong list. Spelled `\x00` to match
+  // `tool/kb.ts` and `llm/.../tool-recovery.ts`, which solve the same problem the same way; this file
+  // now joins them in that suite's REPAIRED ratchet, so removing the separator fails a test.
+  const key = `${caseInsensitive ? "i" : "s"}\x00${patterns.join("\x00")}`
   const held = compiled.get(key)
   if (held) return held
   const rules = patterns.map(toRule).filter((rule): rule is Rule => rule !== undefined)

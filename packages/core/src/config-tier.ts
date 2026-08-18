@@ -261,6 +261,21 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   // Paths or URLs skills are discovered from — a skill is instructions the model reads, and a URL
   // entry fetches them from a third party.
   skills: "privileged",
+  // Which skills appear in the USER'S OWN slash list.
+  //
+  // Deliberately NOT privileged, and the contrast with `skills` above is the whole point: that one
+  // adds a source the model reads from, this one only decides what the human sees in their own menu.
+  // It grants the agent nothing — whether the agent may CHOOSE a skill is the `skill` permission
+  // action, which is gated under `permissions` and stays gated there.
+  //
+  // ⚠️ It is CONSEQUENTIAL rather than operational, and the line is the one this table's header
+  // draws: operational is "neither", consequential is "the instance behaves differently afterwards
+  // in a way the user should get to see". An agent that writes this makes a skill vanish from its
+  // OWNER'S menu with no card — structurally the same thing `watcher` does ("a write here can make
+  // the agent's own edits invisible in the user's live view") and `snapshots` does ("nothing runs,
+  // nothing leaves, but a guard the user relies on is gone"), both of which are priced here. One
+  // savable `configure` card is the whole cost.
+  skill_invocation: "consequential",
   // A consent flag for outbound reporting. Flipping a user's consent on their behalf is theirs to do.
   telemetry: "privileged",
   // Free text the `profile` tool hands to the model on demand (`tool/profile.ts`).

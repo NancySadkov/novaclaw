@@ -194,10 +194,37 @@ export const layer = Layer.effect(
       // The declaration is looked up from the TARGET's directory, so a nested project, an absolute
       // path into this project from outside it, and a path into a different project all get the
       // answer the file's own owner wrote. See `project-exclusion.ts`.
+      //
+      // ⚠️ …with ONE thing `realPath` does not do, folded in here: a **mapped / `subst` drive**.
+      // Node's JS `realpath` keeps `Y:\key.txt` as `Y:\key.txt`; `realpath.native` collapses it to
+      // the real volume path (both measured 2026-08-18). That difference was a live bypass, and the
+      // reason it is a bypass is NOT matching — it is the WALK-UP. `exclusionsFor` climbs from the
+      // target's directory looking for a `novaclaw.json`, so with `Y:` mapped at `<root>\secrets`
+      // the climb from `Y:\` hits the root of a drive that holds no project file, answers
+      // `undefined`, and there is nothing left to screen: `Y:\key.txt` returned the excluded file's
+      // BYTES end to end. Mapped at the project root instead, the same climb finds
+      // `Y:\novaclaw.json` without leaving the mapped volume and the exclusion bit normally — which
+      // is exactly why the open half needed its own test rather than being assumed covered.
+      //
+      // 🔴 Both operands are folded, and both are load-bearing: the DIRECTORY so the declaration is
+      // found at all, and the CANONICAL path so `screen` measures it relative to that declaration's
+      // real root. Folding only the first finds the rules and then fails to match a `Y:\…` string
+      // against a `C:\…` root.
+      //
+      // ⚠️ Deliberately NOT in `project-exclusion.ts`. Its `unalias` runs only AFTER a declaration
+      // has been found — never reached in this vector — and its `~\d` gate exists precisely so
+      // `screenAll` does not pay a sync `realpath.native` per row of a thousand-match grep. This
+      // costs one such call per RESOLVE, on the read path only (a `readsContent: false` write pays
+      // nothing), and none at all off win32, where `normalizePath` is the identity. The screened
+      // strings stay LOCAL to this block: `canonical` and `resource` below are the permission
+      // resources that stored user verdicts are keyed on, and re-spelling those to fix a matching
+      // bug would invalidate them.
       if (input.readsContent !== false) {
-        const declaration = yield* exclusionsFor(resolved.directory)
+        const screenDirectory = FSUtil.normalizePath(resolved.directory)
+        const screenCanonical = path.resolve(screenDirectory, path.relative(resolved.directory, resolved.canonical))
+        const declaration = yield* exclusionsFor(screenDirectory)
         if (declaration) {
-          const verdict = ProjectExclusion.screen(declaration, resolved.canonical, resolved.type === "Directory")
+          const verdict = ProjectExclusion.screen(declaration, screenCanonical, resolved.type === "Directory")
           if (verdict.excluded && verdict.pattern !== undefined)
             return yield* new ProjectExclusion.ExcludedError({
               resource: input.path,

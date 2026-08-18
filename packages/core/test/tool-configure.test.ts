@@ -16,7 +16,8 @@ import { ConfigureTool } from "@novaclaw/core/tool/configure"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
 import { it } from "./lib/effect"
-import { executeTool, toolIdentity } from "./lib/tool"
+import { bypassedPolicyGate, executeTool, toolIdentity } from "./lib/tool"
+import { ToolPolicyGate } from "@novaclaw/core/tool-policy-gate"
 
 /**
  * The `configure` tool — todo.md ruling 4's privilege tiers, and AGENTS.md's self-healing law made
@@ -120,7 +121,7 @@ const withTool = <A, E, R>(
           CatalogStore.node,
         ]),
         [
-          [ToolOutputStore.node, outputStore],
+          [ToolOutputStore.node, outputStore], [ToolPolicyGate.node, bypassedPolicyGate],
           [PermissionV2.node, permission],
           [Config.node, configStub],
           [CapabilityRegistry.node, capabilityLayer],
@@ -198,6 +199,13 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       "provider_capability",
       "provider_presets",
       "resource_pressure",
+      // Which skills appear in the USER'S OWN slash list. Consequential rather than operational for
+      // the reason `watcher` and `snapshots` are: nothing runs, nothing leaves, no text reaches a
+      // prompt — but an agent that writes it makes a skill disappear from its owner's own menu, and
+      // "the instance behaves differently afterwards in a way the user should get to see" is exactly
+      // what this tier is. Not privileged: whether the AGENT may choose a skill is the `skill`
+      // permission action, which is gated under `permissions` and stays gated there.
+      "skill_invocation",
       "snapshots",
       "strict",
       "tool_routing",

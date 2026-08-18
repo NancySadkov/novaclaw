@@ -83,6 +83,13 @@ export const SETTINGS_KEYS = [
   // store like every other operational key, which is what lets a still-working model repair a stale
   // verdict over HTTP — and what stops an undeclared key crash-looping the instance at boot.
   "provider_capability",
+  // Per-skill invocation choices (`todo/projects.md` → skill invocation controls). A settings key
+  // rather than a per-subsystem store: it is a sparse map of user DECISIONS, not a resource the
+  // skill loader materialises, and `command/list.ts` reads it through `config.entries()` on every
+  // list — so it needs no reload trigger, unlike `skills` (the discovery sources) next to it.
+  // ⚠️ It MUST be listed here. An undeclared settings key is accepted by the write, stored, and
+  // then bricks the next boot when the synthetic document fails to decode.
+  "skill_invocation",
   "experimental",
 ] as const satisfies readonly (keyof Config.Info)[]
 

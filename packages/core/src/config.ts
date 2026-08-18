@@ -522,6 +522,31 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   skills: Schema.String.pipe(Schema.Array, Schema.optional).annotate({
     description: "Additional paths or URLs to discover skills from",
   }),
+  /**
+   * Per-skill invocation choices — the HUMAN half of `todo/projects.md`'s two switches.
+   *
+   * ⚠️ **Only `show` lives here, and the other switch's absence is deliberate.** "Nova may choose
+   * this" is the `skill` PERMISSION action and is written into `permissions` above, because that
+   * one rule already does both halves of refusing it (drops the skill from `<available_skills>`
+   * AND refuses the `skill` tool). A second copy of that decision here would be a gate that can
+   * disagree with the gate. See `core/src/skill/invocation.ts` for the whole argument.
+   *
+   * Keyed by `SkillInvocation.identify`'s id — the skill's own name, verbatim, and only when the
+   * name is well-formed enough to be written down. Sparse: an absent entry means the default (on).
+   */
+  skill_invocation: Schema.Record(
+    Schema.String,
+    Schema.Struct({
+      show: Schema.Boolean.pipe(Schema.optional).annotate({
+        description: "Whether this skill appears in your own slash-command list. Absent = yes.",
+      }),
+    }),
+  )
+    .pipe(Schema.optional)
+    .annotate({
+      description:
+        "Per-skill invocation choices, keyed by skill name. Only covers YOUR slash list; whether the agent may choose a skill is the `skill` permission action.",
+    }),
   commands: Schema.Record(Schema.String, ConfigCommand.Info).pipe(Schema.optional).annotate({
     description: "Named slash command definitions",
   }),

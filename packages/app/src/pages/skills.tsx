@@ -1,15 +1,18 @@
 import { createMemo, createResource, createSignal, For, Show } from "solid-js"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
+import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { GoldGlyph } from "@/components/gold-glyph"
 import { useLanguage, type TranslationKey, type Translator } from "@/context/language"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { AppPage } from "@/components/app-page"
 import {
+  authorText,
   filterViews,
   sortViews,
   toView,
   type AgentLike,
+  type PermissionRule,
   type Enablement,
   type MentionTopic,
   type Origin,
@@ -17,6 +20,15 @@ import {
   type SkillInfo,
   type SkillView,
 } from "@/apps/skills"
+import {
+  forgetPath,
+  invocationOf,
+  invocationWrite,
+  ONLY_WHEN_I_CHOOSE,
+  orphanedChoices,
+  type InvocationView,
+} from "@/apps/skill-invocation"
+import { SkillInvocation } from "@novaclaw/core/skill/invocation"
 
 // The Skills app — the browsable half of the Skills programme (`todo/skills.md`).
 //
@@ -71,6 +83,23 @@ const TOPIC_LABEL = {
   secrets: "skills.mentions.topic.secrets",
 } as const satisfies Record<MentionTopic, TranslationKey>
 
+// Same narrowing discipline as the four tables above: a literal per union member, so a missing or
+// misspelled key is a compile error rather than a runtime blank.
+const IN_FORCE_TEXT = {
+  everywhere: "skills.invocation.inForce.everywhere",
+  "only-when-i-choose": "skills.invocation.inForce.onlyWhenIChoose",
+  "only-nova": "skills.invocation.inForce.onlyNova",
+  nowhere: "skills.invocation.inForce.nowhere",
+} as const satisfies Record<SkillInvocation.Preset, TranslationKey>
+
+const LOCKED_TEXT = {
+  empty: "skills.invocation.locked.empty",
+  "too-long": "skills.invocation.locked.tooLong",
+  invisible: "skills.invocation.locked.invisible",
+  wildcard: "skills.invocation.locked.wildcard",
+  unnormalized: "skills.invocation.locked.unnormalized",
+} as const satisfies Record<SkillInvocation.UnaddressableReason, TranslationKey>
+
 const ENABLEMENT_TEXT = {
   unknown: "skills.enablement.unknown",
   open: "skills.enablement.open",
@@ -87,7 +116,15 @@ const ENABLEMENT_TEXT = {
  * reaches the DOM as text. Every string that came from the skill arrives here already flattened by
  * `authorText`/`authorBody`; Solid escapes it, and this component never builds markup from it.
  */
-export function SkillDetail(props: { view: SkillView; t: Translator }) {
+export function SkillDetail(props: {
+  view: SkillView
+  t: Translator
+  /** Absent while the config has not loaded — the section is then not drawn at all rather than
+   *  drawn with a guessed position, because a switch showing the wrong state is worse than none. */
+  invocation?: InvocationView
+  onInvocation?: (next: { nova: boolean; me: boolean }) => void
+  saveFailed?: boolean
+}) {
   const t: Translator = (key, params) => props.t(key, params)
   const view = () => props.view
 
@@ -246,6 +283,101 @@ export function SkillDetail(props: { view: SkillView; t: Translator }) {
         <p class="mt-1.5 text-xs text-v2-text-text-muted">{t("skills.enablement.noSwitch")}</p>
       </section>
 
+      {/* ── 6b. The two switches. AFTER provenance, self-description, capabilities and permission,
+              deliberately: the question "when should this be offered?" is only answerable once the
+              reader knows where it came from and what NovaClaw cannot tell them about it, and
+              `skills.invocation.unknowns` restates that at the bottom of the section rather than
+              letting a pair of switches imply the page has vetted anything. ── */}
+      <Show when={props.invocation}>
+        {(invocation) => (
+          <section
+            class="rounded-lg border border-v2-border-border-focus bg-v2-background-bg-layer-02 p-3"
+            data-slot="skill-invocation"
+          >
+            <h2 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-accent">
+              {t("skills.invocation.title")}
+            </h2>
+
+            {/* Principle 12(d): what is in force RIGHT NOW, before any control. */}
+            <p class="mt-1.5 text-sm text-v2-text-text-base" data-slot="skill-invocation-inforce">
+              {t(IN_FORCE_TEXT[invocation().preset])}
+            </p>
+
+            <Show when={invocation().blockedElsewhere}>
+              <p class="mt-1.5 text-sm text-v2-text-text-accent" data-slot="skill-invocation-blocked-elsewhere">
+                {t("skills.invocation.blockedElsewhere")}
+              </p>
+            </Show>
+
+            <Show
+              when={invocation().locked === undefined}
+              fallback={
+                <div class="mt-2 rounded-md border border-v2-border-border-base p-2" data-slot="skill-invocation-locked">
+                  <p class="text-xs font-semibold text-v2-text-text-base">{t("skills.invocation.locked.title")}</p>
+                  <p class="mt-1 text-sm text-v2-text-text-muted" data-slot="skill-invocation-locked-reason">
+                    {t(LOCKED_TEXT[invocation().locked!], { max: SkillInvocation.MAX_ID_LENGTH })}
+                  </p>
+                </div>
+              }
+            >
+              <div class="mt-3 flex flex-col gap-3">
+                <div data-slot="skill-invocation-nova">
+                  <Switch
+                    checked={invocation().nova}
+                    onChange={(checked) => props.onInvocation?.({ nova: checked, me: invocation().me })}
+                  >
+                    {t("skills.invocation.nova.label")}
+                  </Switch>
+                  <p class="mt-1 text-xs text-v2-text-text-muted">{t("skills.invocation.nova.help")}</p>
+                </div>
+
+                <div data-slot="skill-invocation-me">
+                  <Switch
+                    checked={invocation().me}
+                    onChange={(checked) => props.onInvocation?.({ nova: invocation().nova, me: checked })}
+                  >
+                    {t("skills.invocation.me.label")}
+                  </Switch>
+                  <p class="mt-1 text-xs text-v2-text-text-muted">{t("skills.invocation.me.help")}</p>
+                </div>
+
+                {/* The preset is a WRITE of both switches. It is a button rather than a third
+                    radio option precisely so the pair above stays the state of record. */}
+                <div>
+                  <button
+                    class="rounded-md border border-v2-border-border-strong bg-v2-background-bg-layer-01 px-3 py-1.5 text-sm font-medium hover:bg-v2-background-bg-layer-03 disabled:opacity-50"
+                    data-slot="skill-invocation-preset"
+                    disabled={invocation().isOnlyWhenIChoose}
+                    onClick={() => props.onInvocation?.({ ...ONLY_WHEN_I_CHOOSE })}
+                  >
+                    {t("skills.invocation.preset.onlyWhenIChoose")}
+                  </button>
+                  <p class="mt-1 text-xs text-v2-text-text-muted">
+                    {invocation().isOnlyWhenIChoose
+                      ? t("skills.invocation.preset.applied")
+                      : t("skills.invocation.preset.help")}
+                  </p>
+                </div>
+
+                <p class="text-xs text-v2-text-text-faint" data-slot="skill-invocation-independent">
+                  {t("skills.invocation.independent")}
+                </p>
+              </div>
+            </Show>
+
+            <Show when={props.saveFailed}>
+              <p class="mt-2 text-sm text-v2-text-text-accent" data-slot="skill-invocation-error">
+                {t("skills.invocation.error")}
+              </p>
+            </Show>
+
+            <p class="mt-3 text-[11px] text-v2-text-text-faint" data-slot="skill-invocation-unknowns">
+              {t("skills.invocation.unknowns")}
+            </p>
+          </section>
+        )}
+      </Show>
+
       {/* ── 7. The instructions themselves. Last because it is the long thing, not the least. ── */}
       <section class={CARD} data-slot="skill-instructions">
         <h2 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-faint">
@@ -289,7 +421,7 @@ export function SkillsPage() {
   // Enablement is the `skill` permission action evaluated per AGENT (core/src/skill.ts →
   // `available`). Failure is answered with `undefined`, which `describeEnablement` reports as
   // "unknown" — a guess here would be a guess about a safety gate.
-  const [agents] = createResource(
+  const [agents, { refetch: refetchAgents }] = createResource(
     () => sdk(),
     async (client) => {
       try {
@@ -303,10 +435,86 @@ export function SkillsPage() {
 
   const [query, setQuery] = createSignal("")
   const [selected, setSelected] = createSignal<string | undefined>()
+  const [saveFailed, setSaveFailed] = createSignal(false)
+
+  // The two halves of the invocation state, read from the SAME config document the write patches.
+  // The generated `Config` type lags both fields, so the same cast the rest of this page uses
+  // applies. `permissions` is the instance ruleset `config/plugin/agent.ts` folds into every agent.
+  const config = createMemo(
+    () =>
+      (sync().data.config ?? {}) as {
+        permissions?: PermissionRule[]
+        skill_invocation?: SkillInvocation.Store
+      },
+  )
+  const rules = createMemo(() => config().permissions ?? [])
+  const choices = createMemo(() => config().skill_invocation)
 
   const views = createMemo(() => sortViews(skills().map((skill) => toView(skill, context(), agents()))))
   const shown = createMemo(() => filterViews(views(), query()))
   const current = createMemo(() => views().find((view) => view.key === selected()))
+
+  const invocation = createMemo(() => {
+    const view = current()
+    if (!view) return undefined
+    return invocationOf({
+      name: view.rawName,
+      rules: rules(),
+      store: choices(),
+      enablement: view.enablement,
+    })
+  })
+
+  // Saved choices naming a skill this instance no longer has. Computed over the RAW names, because
+  // that is what an id is — see `@novaclaw/core/skill/invocation`.
+  const orphans = createMemo(() => orphanedChoices(choices(), views().map((view) => view.rawName)))
+
+  // `POST /api/config/remove` — the deletion verb. `PATCH /config` merges and can never delete
+  // (v0.2.0 item 4.3), so clearing a saved choice cannot ride the patch.
+  const removeConfig = async (paths: readonly (readonly string[])[]) => {
+    const client = sdk()
+    if (!client) throw new Error("no server connection")
+    await client.client.v2.config.remove({ configRemoveRequest: { paths: paths as string[][] } })
+  }
+
+  // ⚠️ Both switches ride ONE patch. A clear needs the second verb, and it is sent AFTER — so a
+  // failure there leaves the permission half applied and the menu half where it was, which the
+  // banner reports and the re-read shows. There is no way to make the pair atomic across two
+  // routes; what is avoidable is a SILENT half-application, and that is what the banner covers.
+  const write = (patch: Record<string, unknown>, remove: readonly (readonly string[])[] = []) => {
+    setSaveFailed(false)
+    void (async () => {
+      await (sync().updateConfig(patch as never) as Promise<unknown>)
+      // ⚠️ "Who can use it" is computed from `/api/agent`, and the instance ruleset is folded into
+      // every agent at materialisation time — so a `permissions` write changes that answer and
+      // nothing here was re-reading it. Measured live 2026-08-18: turning "Nova may choose this"
+      // back ON left the section still reading "Every one of your agents refuses this skill", which
+      // is ruling 2's *a fault is never described falsely* on the very sentence the switch moves.
+      void refetchAgents()
+      if (remove.length === 0) return
+      await removeConfig(remove)
+      // ⚠️ `updateConfig` refetches on success; the REMOVE verb is a different route and nothing
+      // watches it. Without this the switch stays where it was while the server has already moved —
+      // measured live 2026-08-18: the preset cleared the row, `/config` agreed, and the page still
+      // read "Right now: neither". `refetchConfig` exists for exactly this ("something OTHER than
+      // updateConfig wrote it").
+      await (sync().refetchConfig() as Promise<unknown>)
+    })().catch(() => setSaveFailed(true))
+  }
+
+  const applyInvocation = (next: { nova: boolean; me: boolean }) => {
+    const view = current()
+    if (!view) return
+    const plan = invocationWrite({ name: view.rawName, rules: rules(), store: choices(), next })
+    // `undefined` means the name has no stable id. The switches are not drawn in that case, so this
+    // is unreachable from the UI — it is here because "silently do nothing" is the one outcome a
+    // control may never have.
+    if (!plan) {
+      setSaveFailed(true)
+      return
+    }
+    write(plan.patch, plan.remove)
+  }
 
   return (
     <AppPage class="flex flex-col overflow-hidden">
@@ -382,6 +590,38 @@ export function SkillsPage() {
               </ul>
             </Show>
             <div class="mt-1 text-[11px] text-v2-text-text-faint">{t("skills.sources.note")}</div>
+
+            {/* A saved choice whose skill is gone. Shown here rather than on a detail pane because
+                there is no skill to open — and KEPT rather than swept, since a source being offline
+                is the worst moment to forget what the user decided. */}
+            <Show when={orphans().length}>
+              <div class="mt-2 border-t border-v2-border-border-base pt-2" data-slot="skill-invocation-orphans">
+                <div class="text-[11px] font-semibold uppercase tracking-wide text-v2-text-text-faint">
+                  {t("skills.invocation.orphans.title")}
+                </div>
+                <div class="mt-0.5 text-[11px] text-v2-text-text-muted">{t("skills.invocation.orphans.text")}</div>
+                <ul class="mt-1 flex flex-col gap-1">
+                  <For each={orphans()}>
+                    {(id) => (
+                      <li class="flex items-center gap-2">
+                        {/* The id came out of a config file, so it reaches the screen through the
+                            same flattening every other author-controlled string does. */}
+                        <span class="min-w-0 flex-1 truncate text-[11px] text-v2-text-text-muted">
+                          {authorText(id, 80) || id}
+                        </span>
+                        <button
+                          class="shrink-0 rounded border border-v2-border-border-base px-1.5 py-0.5 text-[11px] hover:bg-v2-background-bg-layer-03"
+                          data-slot="skill-invocation-orphan-forget"
+                          onClick={() => write({}, [forgetPath(id)])}
+                        >
+                          {t("skills.invocation.orphans.forget")}
+                        </button>
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </div>
+            </Show>
           </div>
         </div>
 
@@ -398,7 +638,13 @@ export function SkillsPage() {
           >
             {(view) => (
               <div class="max-w-2xl">
-                <SkillDetail view={view()} t={t} />
+                <SkillDetail
+                  view={view()}
+                  t={t}
+                  invocation={invocation()}
+                  onInvocation={applyInvocation}
+                  saveFailed={saveFailed()}
+                />
               </div>
             )}
           </Show>
