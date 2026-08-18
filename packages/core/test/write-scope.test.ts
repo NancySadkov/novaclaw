@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { mkdirSync, readdirSync, existsSync } from "node:fs"
-import path, { parse } from "node:path"
+import { homedir } from "node:os"
+import path, { join, parse } from "node:path"
 import { Global } from "@novaclaw/core/global"
 import { Scratch } from "@novaclaw/core/scratch"
 import { SCRATCH_ROOT, scratchHome } from "@novaclaw/core/kb-graph/wasm-engine"
@@ -49,6 +50,47 @@ describe("design principle 11: we do not write outside the home", () => {
     }
     const ours = entries.filter((n) => /^(kbmem_|novaclaw-kbmem)/i.test(n))
     expect(ours).toEqual([])
+  })
+
+  test("nothing of ours is left loose at the TOP LEVEL of the home directory", () => {
+    // 🔴 The third instance of this class, and the third one a HUMAN found rather than a test (owner,
+    // 2026-08-18): `C:\Users\nangl\nc-verify-ok\` and `nc-verify-bad\` — an agent's recipe-verify
+    // fixtures, cooked straight into the owner's home instead of `tmp/`. Before this, the sweep looked
+    // at the drive root and at nullish segments; the home's own top level was the gap, which is
+    // unfortunate because it is the likeliest landing spot: `os.homedir()` is the easiest absolute
+    // path to reach for, and on Windows `C:\Users\<user>` looks harmlessly like "somewhere temporary".
+    //
+    // ⚠️ Principle 11 permits the home — but it permits the INSTANCE DIRS in it (`$XDG_*`,
+    // `%APPDATA%\novaclaw*`, `~/.cache/novaclaw`, `NOVACLAW_HOME`), every one of them nested under a
+    // dot-directory or AppData. A bare working folder sitting beside the user's Documents is not one
+    // of the three permitted places, and there is explicitly no "just a scratch file" exemption.
+    //
+    // ⚠️ Scoped to OUR OWN naming shapes, deliberately, for the same reason the drive-root sweep is: a
+    // whitelist of "normal" home contents is machine-specific and unbounded (this one holds Calibre,
+    // VirtualBox, a dozen tool dot-dirs), so a sweep that failed on anything unrecognised would be red
+    // everywhere and get deleted rather than obeyed. The honest limit is stated rather than hidden:
+    // this catches the names WE reach for, and cannot catch an agent inventing an unrelated one.
+    let entries: string[]
+    try {
+      entries = readdirSync(homedir())
+    } catch {
+      return // unreadable home — nothing to assert
+    }
+    const ours = entries.filter((name) =>
+      // `nc-*` and `novaclaw*`: an instance home belongs at `~/.local/share/novaclaw`, never at `~/novaclaw`.
+      // `undefined`/`null`: the stringified-path bug, so its residue is caught here too.
+      /^(nc-|novaclaw|kbmem_|novaclaw-kbmem)/i.test(name) || /^(undefined|null)$/i.test(name),
+    )
+    expect(
+      ours,
+      [
+        "Loose NovaClaw-shaped entries at the top level of the home directory:",
+        ...ours.map((name) => `  ${join(homedir(), name)}`),
+        "",
+        "  Scratch belongs in the repo's `tmp/`; instance state belongs in an XDG/AppData directory.",
+        "  See AGENTS.md principle 11 — there is no fourth location and no scratch-file exemption.",
+      ].join("\n"),
+    ).toEqual([])
   })
 })
 
