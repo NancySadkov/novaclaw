@@ -361,3 +361,97 @@ describe("HttpApi UI fallback", () => {
     }),
   )
 })
+
+/**
+ * ─── the embedded UI must be CACHEABLE, and index.html must not be ───────────────────────────────
+ *
+ * 🔴 Until 2026-08-18 the only header on a served asset was `content-type` — no `Cache-Control`, no
+ * validator. A response with neither gives the browser nothing to revalidate against and no freshness
+ * to trust, so returning to a screen re-requested its images and the server re-read each one from disk
+ * with a fresh `fs.readFile`. `public/assets` is 3.5 MB, 476 KB of it home-screen tiles, on the one
+ * surface a user navigates back to constantly.
+ *
+ * ⚠️ The tiers are the whole point, and the HTML one would be a BUG to get wrong: the document names
+ * the build-hashed chunks, so a cached shell after an upgrade points at filenames that no longer
+ * exist. `no-cache` means "always ask", not "do not store" — the ETag still turns that ask into a 304.
+ */
+describe("embedded UI caching", () => {
+  const serve = (path: string, file: string, body: string, ifNoneMatch?: string) =>
+    Effect.gen(function* () {
+      const fs = yield* FSUtil.Service
+      return yield* serveEmbeddedUIEffect(
+        path,
+        { ...fs, readFile: () => Effect.succeed(new TextEncoder().encode(body)) },
+        { [path.replace(/^\//, "")]: file },
+        ifNoneMatch,
+      ).pipe(Effect.map(HttpServerResponse.toWeb))
+    })
+
+  it.live("a build-hashed asset is immutable — its name IS its version", () =>
+    Effect.gen(function* () {
+      const response = yield* serve("/assets/index-a1b2c3d4e5.js", "/$bunfs/root/assets/index-a1b2c3d4e5.js", "x=1")
+      expect(response.headers.get("cache-control")).toBe("public, max-age=31536000, immutable")
+      expect(response.headers.get("etag")).toBeTruthy()
+    }),
+  )
+
+  it.live("🔴 a STABLE-named asset is cacheable but never immutable", () =>
+    Effect.gen(function* () {
+      // The home-screen tiles ship under stable names. `immutable` would pin a stale image in every
+      // client's cache for a year with no way to push a correction.
+      const response = yield* serve("/assets/skin/tiles/notes.png", "/$bunfs/root/assets/skin/tiles/notes.png", "png")
+      const cacheControl = response.headers.get("cache-control")
+      expect(cacheControl).toContain("max-age=3600")
+      expect(cacheControl).not.toContain("immutable")
+    }),
+  )
+
+  it.live("🔴 index.html is NEVER cached — a stale shell names chunks that no longer exist", () =>
+    Effect.gen(function* () {
+      const response = yield* serve("/", "/$bunfs/root/index.html", "<!doctype html><title>x</title>")
+      expect(response.headers.get("cache-control")).toBe("no-cache")
+      // …but it still carries a validator, so the always-ask costs a 304 rather than a full body.
+      expect(response.headers.get("etag")).toBeTruthy()
+      expect(response.headers.get("content-security-policy")).toBeTruthy()
+    }),
+  )
+
+  it.live("a matching If-None-Match is answered 304 with no body", () =>
+    Effect.gen(function* () {
+      const first = yield* serve("/assets/skin/tiles/notes.png", "/$bunfs/root/assets/skin/tiles/notes.png", "png")
+      const etag = first.headers.get("etag")!
+      const second = yield* serve(
+        "/assets/skin/tiles/notes.png",
+        "/$bunfs/root/assets/skin/tiles/notes.png",
+        "png",
+        etag,
+      )
+      expect(second.status).toBe(304)
+      expect(yield* responseText(second)).toBe("")
+      expect(second.headers.get("etag")).toBe(etag)
+    }),
+  )
+
+  it.live("a STALE If-None-Match still gets the body — the validator is over the bytes", () =>
+    Effect.gen(function* () {
+      const response = yield* serve(
+        "/assets/skin/tiles/notes.png",
+        "/$bunfs/root/assets/skin/tiles/notes.png",
+        "different bytes",
+        '"not-the-right-etag"',
+      )
+      expect(response.status).toBe(200)
+      expect(yield* responseText(response)).toBe("different bytes")
+    }),
+  )
+
+  it.live("the ETag follows the CONTENT, not the filename", () =>
+    Effect.gen(function* () {
+      // Hashing the body rather than stat'ing the file is deliberate: the UI is baked into the binary,
+      // so mtime describes the install, and two installs of one build must agree.
+      const a = yield* serve("/assets/skin/tiles/notes.png", "/$bunfs/root/assets/skin/tiles/notes.png", "one")
+      const b = yield* serve("/assets/skin/tiles/notes.png", "/$bunfs/root/assets/skin/tiles/notes.png", "two")
+      expect(a.headers.get("etag")).not.toBe(b.headers.get("etag"))
+    }),
+  )
+})

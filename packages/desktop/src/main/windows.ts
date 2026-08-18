@@ -365,8 +365,30 @@ function wireWindowRecovery(win: BrowserWindow, name: string) {
 // renderer document that silently loses its policy is exactly the failure this ships to prevent.
 // Both write the same constant, and `upsertKeyValue` REPLACES rather than appends, so a request
 // that passes through both carries one policy, not two intersecting ones.
+/**
+ * A build-hashed filename — the hash IS the version, so the URL changes when the bytes do.
+ * Stable-named assets (the skin tiles, `Inter.ttf`) must never be `immutable`: that would pin a stale
+ * image in the cache for a year with no way to correct it.
+ */
+const HASHED_ASSET = /-[A-Za-z0-9_-]{8,}\.[a-z0-9]+$/
+
 function addHtmlDocumentHeaders(response: Response, file: string) {
-  if (!file.toLowerCase().endsWith(".html")) return response
+  if (!file.toLowerCase().endsWith(".html")) {
+    // 🔴 A `file:` fetch carries NO caching headers, and this handler used to pass non-HTML straight
+    // through — so every navigation back to a screen re-read its images off disk and re-decoded them.
+    // The home screen is the worst case: ~14 tile PNGs, 476 KB, on a surface the user returns to
+    // constantly. The renderer bundle lives inside the app, so it cannot go stale behind our back;
+    // what it CAN do is be re-read needlessly.
+    //
+    // ⚠️ HTML deliberately keeps falling through to the branch below with NO cache-control, because an
+    // upgraded app must not serve a cached shell naming chunk files that no longer exist.
+    const headers = new Headers(response.headers)
+    headers.set(
+      "cache-control",
+      HASHED_ASSET.test(file) ? "public, max-age=31536000, immutable" : "public, max-age=3600",
+    )
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
+  }
   const headers = new Headers(response.headers)
   headers.set(documentPolicyHeader, jsCallStacksDocumentPolicy)
   headers.set(CSP_HEADER, RENDERER_CSP)

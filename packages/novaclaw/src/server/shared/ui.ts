@@ -57,9 +57,53 @@ function notFound() {
   return HttpServerResponse.jsonUnsafe({ error: "Not Found" }, { status: 404 })
 }
 
-function embeddedUIResponse(file: string, body: Uint8Array) {
+/**
+ * A build-hashed filename, e.g. `KaTeX_AMS-Regular-BQhdFMY1.woff2` or `index-a1b2c3d4.js`.
+ *
+ * Only these may be `immutable`: the hash IS the version, so the URL changes when the bytes do. The
+ * skin tiles (`assets/skin/tiles/notes.png`), `Inter.ttf` and friends ship under STABLE names, and
+ * marking one of those immutable would pin a stale image in every client's cache for a year with no
+ * way to push a correction. `dist/assets` genuinely contains both kinds — that is why this is a
+ * predicate and not a directory rule.
+ */
+const HASHED_ASSET = /-[A-Za-z0-9_-]{8,}\.[a-z0-9]+$/
+
+/**
+ * Caching for the embedded UI, in three tiers.
+ *
+ * 🔴 **Before this, the only header was `content-type`** — no `Cache-Control`, no validator. A response
+ * with neither gives the browser nothing to revalidate against and no freshness to trust, so repeat
+ * navigations re-request 3.5 MB of `public/assets` (476 KB of it home-screen tiles) and the server
+ * re-reads every one from disk with a fresh `fs.readFile`. Switching back to a screen you already
+ * visited paid full price.
+ *
+ * ⚠️ **HTML must stay revalidated, and this is the tier that would be a bug to get wrong.** The
+ * document names the hashed chunks; caching it means an upgraded instance serves a shell pointing at
+ * chunk filenames that no longer exist, and the app dead-ends on a screen nobody can clear. `no-cache`
+ * here does not mean "do not store" — it means "always ask" — so the ETag below still turns the ask
+ * into a 304 with no body.
+ */
+function cacheControlFor(file: string, mime: string) {
+  if (mime.startsWith("text/html")) return "no-cache"
+  if (HASHED_ASSET.test(file)) return "public, max-age=31536000, immutable"
+  // Stable-named static assets: let the client hold them for a session, then revalidate against the
+  // ETag. A tile that changes in an upgrade is corrected within the hour rather than within a year.
+  return "public, max-age=3600, must-revalidate"
+}
+
+function embeddedUIResponse(file: string, body: Uint8Array, ifNoneMatch?: string) {
   const mime = FSUtil.mimeType(file)
-  const headers = new Headers({ "content-type": mime })
+  // A STRONG validator over the bytes we already hold in memory. Hashing the body rather than stat'ing
+  // the file is deliberate: the embedded UI is baked into the binary, so mtime is a property of the
+  // install rather than of the content, and two installs of the same build must agree.
+  const etag = `"${createHash("sha256").update(body).digest("base64url").slice(0, 27)}"`
+  if (ifNoneMatch && ifNoneMatch.split(",").some((candidate) => candidate.trim() === etag)) {
+    return HttpServerResponse.empty({
+      status: 304,
+      headers: new Headers({ etag, "cache-control": cacheControlFor(file, mime) }),
+    })
+  }
+  const headers = new Headers({ "content-type": mime, etag, "cache-control": cacheControlFor(file, mime) })
   if (mime.startsWith("text/html")) {
     headers.set("content-security-policy", cspForHtml(new TextDecoder().decode(body)))
   }
@@ -70,12 +114,13 @@ export function serveEmbeddedUIEffect(
   requestPath: string,
   fs: FSUtil.Interface,
   embeddedWebUI: Record<string, string>,
+  ifNoneMatch?: string,
 ) {
   const file = embeddedWebUI[requestPath.replace(/^\//, "")] ?? embeddedWebUI["index.html"] ?? null
   if (!file) return Effect.succeed(notFound())
 
   return fs.readFile(file).pipe(
-    Effect.map((body) => embeddedUIResponse(file, body)),
+    Effect.map((body) => embeddedUIResponse(file, body, ifNoneMatch)),
     Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(notFound())),
   )
 }
@@ -102,6 +147,7 @@ export function serveUIEffect(
     // the root with a page that says what this is and where the app actually lives. Any other path keeps
     // the JSON 404: only `/` is ambiguous enough to be worth explaining.
     if (!embeddedWebUI) return path === "/" ? apiRootPage() : notFound()
-    return yield* serveEmbeddedUIEffect(path, services.fs, embeddedWebUI)
+    // Threaded through so a repeat visit can be answered 304 with no body at all.
+    return yield* serveEmbeddedUIEffect(path, services.fs, embeddedWebUI, request.headers["if-none-match"])
   })
 }
