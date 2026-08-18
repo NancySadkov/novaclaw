@@ -5,6 +5,7 @@ import { existsSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { Context, Effect, Layer, Semaphore } from "effect"
+import { CommunityConsent } from "./consent"
 import { makeGlobalNode } from "../effect/app-node"
 
 /**
@@ -120,7 +121,39 @@ export const parse = (line: string): ReadonlyArray<string> => {
  * ⚠️ This says the address is well FORMED, never that it is reachable. Nothing on this machine can
  * know that, which is why the setting exists for a person to answer.
  */
-export const isAnnounceable = (address: string): boolean => /^[A-Za-z0-9._\-[\]]+:\d{1,5}$/.test(address.trim())
+export const isAnnounceable = (address: string): boolean => splitAnnounce(address) !== undefined
+
+/**
+ * `host:port`, PARSED — the host and the port, or `undefined` if it is neither.
+ *
+ * 🔴 This was a regex, and it was wrong in both directions (Codex review P3). It accepted any one to
+ * five digits, so `example.com:99999` passed validation, reached the sidecar, failed to convert to a
+ * multiaddr, and the room was announced anyway with no address attached — the UI reporting a
+ * successful publish of a door nobody can open. And it rejected `[2001:db8::1]:4096`, so an
+ * IPv6-only instance could not publish at all, while the address parser on the other side of the
+ * pipe has understood IPv6 the whole time.
+ *
+ * ⚠️ Parse rather than match, because the bound that matters is arithmetic (1..65535) and a regex
+ * cannot state it. The bracket form is required for IPv6 for the reason it exists at all: without
+ * brackets the last colon is ambiguous, and guessing which colon is the port separator is how a
+ * validator ends up disagreeing with the parser it feeds.
+ */
+export const splitAnnounce = (address: string): { host: string; port: number } | undefined => {
+  const trimmed = address.trim()
+  if (trimmed === "") return undefined
+
+  const bracketed = /^\[([0-9A-Fa-f:.]+)\]:(\d{1,5})$/.exec(trimmed)
+  const plain = /^([A-Za-z0-9._-]+):(\d{1,5})$/.exec(trimmed)
+  const match = bracketed ?? plain
+  if (match === null) return undefined
+
+  const host = match[1]!
+  const port = Number(match[2]!)
+  // ⚠️ The whole point of parsing: a port is a 16-bit number, and 0 is not a port anyone answers on.
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) return undefined
+  if (bracketed !== null && !host.includes(":")) return undefined
+  return { host, port }
+}
 
 /**
  * The most bytes an unterminated reply may occupy before the sidecar is treated as broken.
@@ -195,7 +228,7 @@ export interface Options {
    */
   readonly timeoutMs?: number
   /** Injected in tests. Returning `undefined` is "no sidecar here", the ordinary case. */
-  readonly start?: (binary: string) => Node | undefined
+  readonly start?: (binary: string, bootstrap?: ReadonlyArray<string>) => Node | undefined
 }
 
 export interface Interface {
@@ -248,6 +281,14 @@ export interface Gate {
   readonly participates: boolean
   /** The address the user asks us to publish, when they have set one. */
   readonly announce?: string
+  /**
+   * Where the DHT should start from, when the user has overridden it.
+   *
+   * ⚠️ Part of the GATE because changing it must take effect without restarting the instance — the
+   * self-healing law's own requirement. A node already dialled into the old set is stopped, and the
+   * next lookup starts one that reads the new list.
+   */
+  readonly bootstrap?: ReadonlyArray<string>
 }
 
 /**
@@ -263,6 +304,21 @@ export interface Gate {
  * have no sidecar binary, and a user who never opened the community has never spawned one.
  */
 export const reconcile = (input: Gate): Effect.Effect<void> => live?.settle(input) ?? Effect.void
+
+/**
+ * The bootstrap list from the settings store, or the empty array meaning "whatever shipped".
+ *
+ * ⚠️ Read LIVE from the same process-wide config the consent gate uses, not captured at layer build:
+ * the whole point of moving this out of the binary is that an agent can repair it while the instance
+ * runs, and a snapshot would make that true only until the next boot.
+ */
+const bootstrapNow = (): ReadonlyArray<string> => {
+  const stored = CommunityConsent.storedConfig() as
+    | { community?: { dht?: { bootstrap?: unknown } } }
+    | undefined
+  const list = stored?.community?.dht?.bootstrap
+  return Array.isArray(list) ? list.filter((entry): entry is string => typeof entry === "string") : []
+}
 
 export const layerWith = (options: Options = {}): Layer.Layer<Service> =>
   Layer.effect(
@@ -281,6 +337,8 @@ export const layerWith = (options: Options = {}): Layer.Layer<Service> =>
 
       let node: Node | undefined
       let alive = false
+      /** The bootstrap list the LIVING node was started with, so a changed one restarts it. */
+      let dialledWith: ReadonlyArray<string> = []
       /** The address last successfully announced, so a reconnect re-announces and a repeat does not. */
       let announced: string | undefined
       /** What the last announcement attempt claimed, so a caller can stop asserting something nobody confirmed. */
@@ -291,7 +349,8 @@ export const layerWith = (options: Options = {}): Layer.Layer<Service> =>
         if (alive && node !== undefined) return node
         node = undefined
         announced = undefined
-        const started = start(binary)
+        dialledWith = bootstrapNow()
+        const started = start(binary, dialledWith)
         if (started === undefined) return undefined
         /**
          * 🔴 Assigned BEFORE the handlers are attached, because the handlers below compare against
@@ -437,7 +496,9 @@ export const layerWith = (options: Options = {}): Layer.Layer<Service> =>
       )
 
       const settle = (input: Gate) =>
-        !input.participates || (input.announce ?? "").trim() !== (announced ?? "")
+        !input.participates ||
+        (input.announce ?? "").trim() !== (announced ?? "") ||
+        (input.bootstrap ?? bootstrapNow()).join(" ") !== dialledWith.join(" ")
           ? withdrawAndStop
           : Effect.void
 
@@ -467,9 +528,19 @@ export const node = makeGlobalNode({ service: Service, layer, deps: [] })
  * ⚠️ `stdin` stays OPEN for the life of the node — closing it is what stops the child, so it is the
  * shutdown path and never part of a request.
  */
-const startNode = (binary: string): Node | undefined => {
+const startNode = (binary: string, bootstrap?: ReadonlyArray<string>): Node | undefined => {
   try {
-    const child = spawn(binary, [], { stdio: ["pipe", "pipe", "ignore"] })
+    /**
+     * ⚠️ The override travels as an ENV VAR, and it is only set when the store says something: an
+     * unset variable means "use the addresses compiled into this build", while an empty one means
+     * "dial nobody automatically". Those are different instructions and the sidecar tells them
+     * apart, so passing `""` for "no preference" would silently disable bootstrap entirely.
+     */
+    const env =
+      bootstrap === undefined || bootstrap.length === 0
+        ? process.env
+        : { ...process.env, NOVACLAW_DHT_BOOTSTRAP: bootstrap.join(" ") }
+    const child = spawn(binary, [], { stdio: ["pipe", "pipe", "ignore"], env })
     const state = { buffer: "" }
     let onLine: ((line: string) => void) | undefined
     let onExit: (() => void) | undefined

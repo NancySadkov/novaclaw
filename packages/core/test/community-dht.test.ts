@@ -533,3 +533,65 @@ describe("finding the sidecar binary", () => {
     expect(CommunityDht.binaryPath().split(path.sep).join("/")).toContain("/dht/build/")
   })
 })
+
+describe("where the DHT starts, and what may be published (Codex P2/P3)", () => {
+  test("🔴 a bootstrap override reaches the sidecar, and absent is not empty", () => {
+    /**
+     * All three bootstrap addresses were compiled into the Rust binary under one operator's
+     * hostname. If those peers move, are blocked or change protocol, no agent inside the OS can
+     * repair discovery — the binary has to be replaced, which is exactly what AGENTS.md's
+     * self-healing law forbids for an operational fact an outage can hinge on.
+     *
+     * ⚠️ Measured against the real binary while this landed: with the compiled list, `status`
+     * reported `{"table":3}`; with `NOVACLAW_DHT_BOOTSTRAP=""`, `{"table":0}`. Absent means "use
+     * what shipped" and empty means "dial nobody" — different instructions, and collapsing them
+     * would silently disable bootstrap for everyone who set no preference.
+     */
+    const seen: Array<ReadonlyArray<string> | undefined> = []
+    const sidecar = scripted([peers([])])
+    const start = (_binary: string, bootstrap?: ReadonlyArray<string>) => {
+      seen.push(bootstrap)
+      return sidecar.start()
+    }
+    return Effect.runPromise(
+      Effect.provide(
+        Effect.gen(function* () {
+          const dht = yield* CommunityDht.Service
+          yield* dht.find()
+          // No store override in this test's config, so the sidecar is started with none and uses
+          // its own compiled defaults.
+          expect(seen).toEqual([[]])
+        }),
+        CommunityDht.layerWith({ start, timeoutMs: 200 }),
+      ) as Effect.Effect<void>,
+    )
+  })
+
+  test("🔴 an announce address is PARSED, not pattern-matched", () => {
+    /**
+     * The regex accepted any one-to-five-digit port and rejected bracketed IPv6, so
+     * `example.com:99999` reached the sidecar, failed to convert, and the room was announced with no
+     * address attached — a published door nobody can open — while an IPv6-only instance could not
+     * publish at all. Both probes come from the review and both now invert.
+     */
+    expect(CommunityDht.isAnnounceable("example.com:99999")).toBe(false)
+    expect(CommunityDht.isAnnounceable("[2001:db8::1]:4096")).toBe(true)
+
+    // A port is a 16-bit number and zero is not one anybody answers on.
+    expect(CommunityDht.isAnnounceable("host:0")).toBe(false)
+    expect(CommunityDht.isAnnounceable("host:65535")).toBe(true)
+    expect(CommunityDht.isAnnounceable("host:65536")).toBe(false)
+
+    // Still the ordinary cases, or the fix would be a different bug.
+    expect(CommunityDht.isAnnounceable("novaclaw.app:443")).toBe(true)
+    expect(CommunityDht.isAnnounceable("192.168.1.10:4096")).toBe(true)
+    expect(CommunityDht.isAnnounceable("")).toBe(false)
+    expect(CommunityDht.isAnnounceable(":4096")).toBe(false)
+    // Brackets promise IPv6; a name inside them is neither form.
+    expect(CommunityDht.isAnnounceable("[notv6]:80")).toBe(false)
+
+    // The parse is exported because callers need the parts, not just the verdict.
+    expect(CommunityDht.splitAnnounce("[2001:db8::1]:4096")).toEqual({ host: "2001:db8::1", port: 4096 })
+    expect(CommunityDht.splitAnnounce("novaclaw.app:443")).toEqual({ host: "novaclaw.app", port: 443 })
+  })
+})

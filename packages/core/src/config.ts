@@ -320,6 +320,39 @@ export class Info extends Schema.Class<Info>("Config.Info")({
       description:
         "The address other instances can knock on, as host:port, published to the public DHT so strangers can find this one. Absent (the default) means this instance looks for peers but never advertises itself. Set it only if this address really reaches you from the internet — a wrong one publishes a door nobody can open.",
     }),
+    /**
+     * 🔴 WHERE THE DHT STARTS — runtime-editable, because the self-healing law says so.
+     *
+     * All three bootstrap addresses were compiled into the Rust sidecar under one operator's
+     * hostname (Codex review P2). If those peers move, are blocked or change protocol, no agent
+     * inside the OS can repair the instance: the binary has to be replaced. AGENTS.md's rule is
+     * explicit — *every operational fact an outage could hinge on (provider endpoint URLs, model
+     * entries, presets, instance settings) must live in runtime-editable stores behind the HTTP
+     * config surface* — and a bootstrap list is exactly such a fact. It also made "we borrow a
+     * commons rather than becoming one" less true of the boot path than of the design.
+     *
+     * ⚠️ Defaults still ship in code, and a store override WINS. That is the shape the law asks
+     * for: a lay user whose bootstrap operator vanished asks any working model to point the
+     * instance somewhere else, and it takes effect on the sidecar's next start — no rebuild, no
+     * reinstall.
+     *
+     * ⚠️ Setting it to an EMPTY LIST is meaningful and allowed: it means "do not dial anyone
+     * automatically", which is the airgap-adjacent choice for somebody who wants the DHT to work
+     * only from peers they name. Absent means "use the shipped defaults".
+     */
+    dht: Schema.Struct({
+      bootstrap: Schema.Array(Schema.String)
+        .pipe(Schema.optional)
+        .annotate({
+          description:
+            "libp2p multiaddrs the DHT sidecar dials at startup, e.g. /dnsaddr/bootstrap.libp2p.io/p2p/Qm… . Absent uses the addresses shipped with this build; an empty list dials nobody automatically. Point it at operators you trust if the defaults stop working — no reinstall needed.",
+        }),
+    })
+      .pipe(Schema.optional)
+      .annotate({
+        description:
+          "Public-DHT operations. The bootstrap list is here so an agent can repair discovery through PATCH /config instead of the binary being replaced.",
+      }),
   })
     .pipe(Schema.optional)
     .annotate({

@@ -922,6 +922,7 @@ export const apply = (patch: Config.Info) =>
       yield* CommunityDht.reconcile({
         participates: CommunityConsent.participates(gate),
         ...announceOf(stored),
+        ...bootstrapOf(stored),
       })
     }
     if (consumed.has("watcher")) yield* Watcher.reload()
@@ -943,6 +944,17 @@ export const apply = (patch: Config.Info) =>
  * ⚠️ Read from the value just committed rather than from a schema import: this module is the write
  * path for every store, and pulling the community config's type in here would couple the two.
  */
+/**
+ * The bootstrap override the user just committed, if any.
+ *
+ * ⚠️ Absent and empty are different instructions all the way down: absent means "use what shipped",
+ * empty means "dial nobody". This preserves that distinction rather than collapsing both to `[]`.
+ */
+const bootstrapOf = (stored: unknown): { bootstrap?: ReadonlyArray<string> } => {
+  const list = (stored as { dht?: { bootstrap?: unknown } } | undefined)?.dht?.bootstrap
+  return Array.isArray(list) ? { bootstrap: list.filter((entry): entry is string => typeof entry === "string") } : {}
+}
+
 const announceOf = (stored: unknown): { announce?: string } => {
   const announce = (stored as { announce?: unknown } | undefined)?.announce
   return typeof announce === "string" && announce.trim() !== "" ? { announce } : {}

@@ -41,6 +41,18 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 /// stranding old instances silently: they keep meeting each other in the old room.
 const ROOM: &str = "novaclaw/community/1";
 
+/// The env var a parent process uses to REPLACE the compiled list, space or comma separated.
+///
+/// 🔴 Because a bootstrap list is an operational fact an outage can hinge on, and AGENTS.md's
+/// self-healing law says those live in runtime-editable stores rather than in a binary (Codex review
+/// P2). The instance reads `community.dht.bootstrap` from its settings store and passes it here, so a
+/// user whose bootstrap operator vanished asks any working model to point them elsewhere instead of
+/// waiting for a new release.
+///
+/// ⚠️ An EMPTY value is meaningful and is not the same as absent: it means dial nobody
+/// automatically. Absent means use what shipped.
+const BOOTSTRAP_ENV: &str = "NOVACLAW_DHT_BOOTSTRAP";
+
 /// Public bootstrap, which is the point: we borrow a commons rather than becoming one.
 const BOOTSTRAP: &[&str] = &[
     "/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
@@ -146,11 +158,27 @@ fn room_key() -> kad::RecordKey {
 /// 🔴 The HTTP endpoint travels as a MULTIADDR, which is the whole reason no custom record type is
 /// needed: multiaddrs already express `/http`, and identify already propagates external addresses.
 fn http_multiaddr(addr: &str) -> Option<Multiaddr> {
-    let (host, port) = addr.rsplit_once(':')?;
+    // ⚠️ BRACKETED IPv6 first, because `rsplit_once(':')` on `[2001:db8::1]:4096` would otherwise
+    // split inside the address itself. An IPv6-only instance could not publish at all until this
+    // existed (Codex review P3), while the inverse parser below has read IPv6 the whole time.
+    let (host, port) = match addr.strip_prefix('[') {
+        Some(rest) => {
+            let (inner, tail) = rest.split_once(']')?;
+            (inner, tail.strip_prefix(':')?)
+        }
+        None => addr.rsplit_once(':')?,
+    };
     let port: u16 = port.parse().ok()?;
+    // A port is 1..=65535; zero is not a port anyone answers on, and `u16` alone would accept it.
+    if port == 0 {
+        return None;
+    }
     let base = match host.parse::<std::net::Ipv4Addr>() {
         Ok(ip) => Multiaddr::empty().with(Protocol::Ip4(ip)),
-        Err(_) => Multiaddr::empty().with(Protocol::Dns4(host.into())),
+        Err(_) => match host.parse::<std::net::Ipv6Addr>() {
+            Ok(ip) => Multiaddr::empty().with(Protocol::Ip6(ip)),
+            Err(_) => Multiaddr::empty().with(Protocol::Dns4(host.into())),
+        },
     };
     Some(base.with(Protocol::Tcp(port)).with(Protocol::Http))
 }
@@ -200,7 +228,7 @@ async fn main() -> Result<()> {
 
     // ⚠️ DIALLED, not merely added. `add_address` seeds the table with a peer we have never spoken
     // to; only a connection proves the address and identify confirms who answered.
-    for addr in BOOTSTRAP {
+    for addr in bootstrap_list() {
         if let Ok(ma) = addr.parse::<Multiaddr>() {
             if let Some(Protocol::P2p(id)) = ma.iter().last() {
                 swarm.behaviour_mut().kad.add_address(&id, ma.clone());
@@ -240,6 +268,22 @@ async fn main() -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// The addresses to dial at startup: the parent's list if it supplied one, else what shipped.
+///
+/// ⚠️ Set-but-empty is honoured as "dial nobody", which is why this distinguishes `Err` from an
+/// empty string rather than treating both as "use the defaults".
+fn bootstrap_list() -> Vec<String> {
+    match std::env::var(BOOTSTRAP_ENV) {
+        Err(_) => BOOTSTRAP.iter().map(|addr| addr.to_string()).collect(),
+        Ok(raw) => raw
+            .split([',', ' ', '\n', '\t'])
+            .map(str::trim)
+            .filter(|entry| !entry.is_empty())
+            .map(str::to_string)
+            .collect(),
+    }
 }
 
 /// The `/http` endpoints kad already knows for a peer.
@@ -313,9 +357,16 @@ async fn announce(swarm: &mut libp2p::Swarm<Behaviour>, addr: &str) -> Reply {
      * The address the INSTANCE believes peers can knock on, advertised as an external multiaddr so
      * identify carries it to whoever finds us.
      */
-    if let Some(ma) = http_multiaddr(addr) {
-        swarm.add_external_address(ma);
-    }
+    // 🔴 REFUSED when the address cannot become a multiaddr, rather than announced without one.
+    //
+    // The old code attached the endpoint when it could and announced the room either way, so an
+    // impossible address published a provider record naming nobody — and the UI reported a
+    // successful publish of a door that cannot be opened (Codex review P3). The parent validates
+    // too; this is the half that makes the acknowledgement honest whatever reaches it.
+    let Some(ma) = http_multiaddr(addr) else {
+        return Reply { announced: Some(false), ..Default::default() };
+    };
+    swarm.add_external_address(ma);
 
     let deadline = tokio::time::Instant::now() + ANNOUNCE_BUDGET;
 
