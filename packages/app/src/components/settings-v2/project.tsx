@@ -113,16 +113,23 @@ export const SettingsProjectSection: Component = () => {
                     >
                       <Value>{String(info().permissionRules)}</Value>
                     </SettingsRowV2>
-                    <Show when={info().exclude.length > 0}>
-                      <SettingsRowV2
-                        title={language.t("settings.project.excludeLabel")}
-                        description={language.t("settings.project.excludeDetail")}
-                      >
-                        <Value>
-                          <For each={info().exclude}>{(pattern) => <div>{pattern}</div>}</For>
-                        </Value>
-                      </SettingsRowV2>
-                    </Show>
+                    {/* Shown even when the list is EMPTY, like the permission-rules row above it.
+                        A capability that only appears once you already use it teaches nobody it
+                        exists (AGENTS.md principle 12d — say what is in force right now), and this
+                        row is now the only place the product explains that "Never read" is
+                        enforced rather than advisory. */}
+                    <SettingsRowV2
+                      title={language.t("settings.project.excludeLabel")}
+                      description={
+                        info().exclude.length === 0
+                          ? language.t("settings.project.excludeNone")
+                          : language.t("settings.project.excludeDetail")
+                      }
+                    >
+                      <Value>
+                        <For each={info().exclude}>{(pattern) => <div>{pattern}</div>}</For>
+                      </Value>
+                    </SettingsRowV2>
                   </>
                 )}
               </Match>

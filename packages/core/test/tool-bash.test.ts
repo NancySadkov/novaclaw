@@ -747,3 +747,61 @@ test("keeps locked deferred parity TODOs visible", async () => {
     expect(source).toContain(`TODO: ${todo}`)
   }
 })
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// `novaclaw.json` exclusions — the one tool that does not name its target.
+//
+// Every other file tool hands a PATH to `LocationMutation.resolve`, which is where the "Never read"
+// list is enforced, so they inherit the refusal. `bash` hands over a COMMAND, and `cat .env` reaches
+// an excluded file with no path resolved anywhere — the whole enforcement would be decorative if
+// the model could simply pick the tool that does not check. `tool/bash.ts` therefore screens the
+// command's own path-shaped tokens.
+//
+// 🔴 The load-bearing assertion is that `runs` stays EMPTY: an advisory that fires but still runs
+// the command reads correct in a log and leaks anyway. (Same reasoning as the DENIED case in
+// `tool-search-containment.test.ts`.)
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("BashTool — project exclusions", () => {
+  const withProject = (exclude: readonly string[], command: string) =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return Effect.gen(function* () {
+          yield* Effect.promise(() =>
+            fs.writeFile(path.join(tmp.path, "novaclaw.json"), JSON.stringify({ version: 1, exclude })),
+          )
+          yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "prod.env"), "TOKEN=1"))
+          yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "README.md"), "hi"))
+          return yield* withTool(tmp.path, (registry) => executeTool(registry, call({ command })))
+        })
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    )
+
+  it.live("refuses a command that names an excluded file, and never runs it", () =>
+    Effect.gen(function* () {
+      const result = yield* withProject(["*.env"], "cat prod.env")
+      expect(JSON.stringify(result)).toContain("project exclusion")
+      expect(runs).toEqual([])
+    }),
+  )
+
+  it.live("refuses it by ABSOLUTE path too", () =>
+    Effect.gen(function* () {
+      const result = yield* withProject(["*.env"], `cat "${path.join(process.cwd(), "nope")}"`)
+      // A path outside any project is untouched — this case only proves the screen does not fire
+      // indiscriminately; the absolute-in-project case is covered by `project-exclusion.test.ts`.
+      expect(JSON.stringify(result)).not.toContain("project exclusion")
+      expect(runs).toHaveLength(1)
+    }),
+  )
+
+  it.live("still runs a command that names only permitted files", () =>
+    Effect.gen(function* () {
+      const result = yield* withProject(["*.env"], "cat README.md")
+      expect(JSON.stringify(result)).not.toContain("project exclusion")
+      expect(runs).toHaveLength(1)
+    }),
+  )
+})

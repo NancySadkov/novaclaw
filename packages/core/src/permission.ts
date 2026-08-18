@@ -11,6 +11,7 @@ import { Location } from "./location"
 import { AgentV2 } from "./agent"
 import { SessionV2 } from "./session"
 import { SessionStore } from "./session/store"
+import { ProjectExclusion } from "./project-exclusion"
 import { ProjectFileCache } from "./project-file-cache"
 import { SessionEffectiveConfig } from "./session/effective-config"
 import { Wildcard } from "./util/wildcard"
@@ -169,6 +170,14 @@ export type Error = DeniedError | RejectedError | CorrectedError
  * including the user's optional reject feedback — instead of collapsing into "Unable to <x>".
  */
 export function denialMessage(error: unknown): string | undefined {
+  // A `novaclaw.json` exclusion is a refusal of the same KIND — the user said no — and it arrives
+  // through the same `mapError` absorbers, so it is lowered here rather than by a line added to
+  // every tool. That is what makes the refusal legible in tools nobody edited: without it, `read`'s
+  // absorber would collapse it to "Unable to read <path>", which is a lie about a deliberate
+  // privacy choice and exactly the dead-end AGENTS.md forbids. Enforcement lives in
+  // `project-exclusion.ts`; this is only its voice.
+  const excluded = ProjectExclusion.refusalMessage(error)
+  if (excluded) return excluded
   if (error instanceof DeniedError) {
     const denied = error.rules.filter((rule) => rule.effect === "deny")
     const rules = denied.length ? denied : error.rules

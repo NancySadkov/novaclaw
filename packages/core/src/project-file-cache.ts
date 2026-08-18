@@ -49,13 +49,22 @@ export interface Entry {
   readonly rules: Permission.Ruleset
   /** The project's declared tune, or `undefined` when it declares none. */
   readonly tune: ProjectFile.Tune | undefined
+  /**
+   * The paths this project asks NOT to be read, verbatim, or empty when it names none.
+   *
+   * Enforced by `project-exclusion.ts` underneath every path-taking agentic tool. It is read HERE
+   * rather than by a third reader of the same file for the reason at the top of this module: two
+   * caches over one `novaclaw.json` can disagree across a mid-window edit, and a folder governed
+   * half by its old privacy list and half by its new one is the worst of both.
+   */
+  readonly exclude: readonly string[]
   /** The directory holding the file, when one was found. */
   readonly root?: string
   /** The file itself, when one was found. */
   readonly file?: string
 }
 
-export const EMPTY: Entry = { rules: [], tune: undefined }
+export const EMPTY: Entry = { rules: [], tune: undefined, exclude: [] }
 
 export interface Interface {
   /**
@@ -92,6 +101,7 @@ export const layer = Layer.effect(
                 ? {
                     rules: resolution.info.permissions ?? [],
                     tune: resolution.info.tune,
+                    exclude: resolution.info.exclude ?? [],
                     root: resolution.root,
                     file: resolution.file,
                   }

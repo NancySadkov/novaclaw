@@ -172,7 +172,11 @@ describe("LocationMutation", () => {
   )
 
   test("ignores unknown mutation input fields", () => {
-    expect(Object.keys(LocationMutation.ResolveInput.fields)).toEqual(["path", "kind"])
+    // `readsContent` joined the list when `novaclaw.json`'s `exclude` section became enforceable
+    // here (`project-exclusion.ts`). It is pinned rather than merely allowed because its DEFAULT is
+    // the security property: absent means "this operation shows the model the file", so a tool that
+    // never thinks about exclusions is refused rather than waved through.
+    expect(Object.keys(LocationMutation.ResolveInput.fields)).toEqual(["path", "kind", "readsContent"])
     expect(Schema.decodeUnknownSync(LocationMutation.ResolveInput)({ path: "README.md", reference: "docs" })).toEqual({
       path: "README.md",
     })

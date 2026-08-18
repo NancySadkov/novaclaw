@@ -572,11 +572,25 @@ export const layer = Layer.effectDiscard(
      * Messenger keeps its stricter posture deliberately: an external path is REFUSED outright rather than
      * raised as an ask. Sending a file to the outside world is not something to negotiate mid-turn.
      */
-    const containedPath = Effect.fn("MessengerTool.containedPath")(function* (raw: string) {
-      const target = yield* mutation.resolve({ path: raw, kind: "file" }).pipe(Effect.orElseSucceed(() => undefined))
-      if (target === undefined || target.externalDirectory !== undefined) return undefined
-      return target.canonical
-    })
+    type Contained = { readonly ok: true; readonly path: string } | { readonly ok: false; readonly message: string }
+    const containedPath = (raw: string, options: { readonly readsContent: boolean; readonly outside: string }) =>
+      mutation.resolve({ path: raw, kind: "file", readsContent: options.readsContent }).pipe(
+        Effect.map(
+          (target): Contained =>
+            target.externalDirectory !== undefined
+              ? { ok: false, message: options.outside }
+              : { ok: true, path: target.canonical },
+        ),
+        // ⚠️ A REFUSAL IS NOT AN ABSENCE. This used to collapse every failure to `undefined`, and
+        // the caller then said "that path is outside this session's workspace" — which, once
+        // `novaclaw.json`'s `exclude` list became enforceable, would report a deliberate privacy
+        // choice as a containment error. Two different refusals must not share one sentence, so the
+        // exclusion keeps its own (`PermissionV2.denialMessage` lowers it) and everything else
+        // still falls back to the containment wording.
+        Effect.catch((error) =>
+          Effect.succeed<Contained>({ ok: false, message: PermissionV2.denialMessage(error) ?? options.outside }),
+        ),
+      )
 
     yield* tools
       .register({
@@ -860,13 +874,14 @@ export const layer = Layer.effectDiscard(
                         message:
                           "This messenger can't carry files — paste the content as text or share a link instead.",
                       } satisfies Output
-                    const filePath = yield* containedPath(input.path.trim())
-                    if (filePath === undefined)
-                      return {
-                        outcome: "failed",
-                        message:
-                          "That path is outside this session's workspace — only workspace files can be uploaded.",
-                      } satisfies Output
+                    // `readsContent: true` (the default) — an upload READS the file and hands it to a
+                    // third party, which is the strongest reason an exclusion exists.
+                    const contained = yield* containedPath(input.path.trim(), {
+                      readsContent: true,
+                      outside: "That path is outside this session's workspace — only workspace files can be uploaded.",
+                    })
+                    if (!contained.ok) return { outcome: "failed", message: contained.message } satisfies Output
+                    const filePath = contained.path
                     const stat = yield* Effect.tryPromise(() => fs.stat(filePath)).pipe(
                       Effect.orElseSucceed(() => undefined),
                     )
@@ -936,12 +951,14 @@ export const layer = Layer.effectDiscard(
                     const relative = input.path?.trim().length
                       ? input.path.trim()
                       : path.join("downloads", outcome.name)
-                    const target = yield* containedPath(relative)
-                    if (target === undefined)
-                      return {
-                        outcome: "failed",
-                        message: "That save path is outside this session's workspace — pick one inside it.",
-                      } satisfies Output
+                    // `readsContent: false` — a download WRITES; it never shows the model what was
+                    // already there. See `location-mutation.ts`'s `readsContent`.
+                    const saved = yield* containedPath(relative, {
+                      readsContent: false,
+                      outside: "That save path is outside this session's workspace — pick one inside it.",
+                    })
+                    if (!saved.ok) return { outcome: "failed", message: saved.message } satisfies Output
+                    const target = saved.path
                     yield* Effect.tryPromise(async () => {
                       await fs.mkdir(path.dirname(target), { recursive: true })
                       await fs.writeFile(target, outcome.data)

@@ -146,7 +146,10 @@ const GENERATE_TIMEOUT_MS = 60_000
 // mapping to itself — no rename, no collision suffix, no acronym normalisation moved:
 //   `ProjectState`                                (GET /api/project)
 //   `SessionReceiptInfo` / `Check` / `PlanItem`   (GET /api/session/:id/receipt)
-const SCHEMA_NAME_FINGERPRINT = "bf75c699a6762828d9e4fda0861a3b0f53d1433c7ad60d566cdb567ed517e9ec"
+// Updated 2026-08-18, mapping diff reviewed — three additions, each mapping to itself:
+//   `ProjectWriteInput` / `ProjectWriteResult`    (POST /api/project — the project-file write path)
+//   `ProjectTune`                                 (`Project.Tune`, the dot collapsed as usual)
+const SCHEMA_NAME_FINGERPRINT = "856dedc0919f9b7a35d29b4c7eeb0d45fe11730a122d7befc859c11743bff52c"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

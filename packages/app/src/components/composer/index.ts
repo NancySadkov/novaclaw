@@ -9,6 +9,8 @@ export {
   type ComposerFeature,
   type ComposerFeatureOrigin,
   type ComposerFeaturesControlState,
+  type ComposerMakeDefaultReceipt,
+  type ComposerMakeDefaultState,
   type ComposerProjectLayer,
   type ComposerRemoteChatState,
   type ComposerRemoteTrust,

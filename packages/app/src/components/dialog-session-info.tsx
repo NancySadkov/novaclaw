@@ -11,6 +11,8 @@ import { useServerSync } from "@/context/server-sync"
 import { subtreeRows, tokenTotals } from "@/pages/home-session-meta"
 import { sessionTitle } from "@/utils/session-title"
 import { adhocDiscard, adhocList, adhocPromote, switchPromptOverride, type AdhocRecipe } from "@/utils/fs-api"
+import { ProjectDetail, useProjectSummary } from "@/components/project-indicator"
+import { PROJECT_DETAIL_LABELS } from "@/components/project-summary"
 
 // Chat details sheet (uix-improvement slice 5): everything a user may want to KNOW about a chat —
 // its working folder, agent + model, live status, file changes, timestamps, and token usage (this
@@ -58,6 +60,17 @@ export const DialogSessionInfo: Component<{ session: Session; projectName?: stri
 
   // Tags component (notes/entities.md T0): edit the chat's tag set inline. Writes replace the full
   // set (idempotent PUT); the store updates reactively via the `session.tags.updated` event.
+  // What governs this chat's folder (`todo/projects.md`). The sheet is where a user goes to find out
+  // what a chat actually is, and "which novaclaw.json is narrowing my permissions" is exactly that
+  // kind of question — the one a person asks after a tool call was refused. ⚠️ Reports only; the Tune
+  // panel and Settings own the editing, and a third editor is a third answer about one file.
+  const projectSource = createMemo(() => {
+    const http = server.current?.http
+    const directory = props.session.location.directory
+    return http && directory ? { http, directory } : undefined
+  })
+  const project = useProjectSummary(projectSource, "chat")
+
   const tags = createMemo(() => serverSync().session.data.tag[props.session.id] ?? [])
   const [draft, setDraft] = createSignal("")
   const saveTags = (next: string[]) => {
@@ -139,6 +152,18 @@ export const DialogSessionInfo: Component<{ session: Session; projectName?: stri
         </div>
         <div class="flex flex-col pt-1">
           <Row label={language.t("session.info.folder")} value={props.session.location.directory} mono />
+          <Show when={project()}>
+            {(summary) => (
+              <div data-component="session-info-project" class="flex items-baseline gap-3 py-1.5">
+                <span class="w-28 shrink-0 text-[12px] text-v2-text-text-faint [font-weight:470]">
+                  {language.t(PROJECT_DETAIL_LABELS.section)}
+                </span>
+                <div class="min-w-0 flex-1">
+                  <ProjectDetail summary={summary()} />
+                </div>
+              </div>
+            )}
+          </Show>
           <div class="flex items-baseline gap-3 py-1.5">
             <span class="w-28 shrink-0 text-[12px] text-v2-text-text-faint [font-weight:470]">
               {language.t("session.info.tags")}

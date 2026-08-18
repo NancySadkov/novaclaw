@@ -321,3 +321,65 @@ describe("InstructionContext", () => {
     }),
   )
 })
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// `novaclaw.json` exclusions reach the AMBIENT ingest too.
+//
+// 🔴 This is the one path that loads project file text into the model's context WITHOUT a tool, so
+// it does not inherit `LocationMutation.resolve`'s exclusion gate. Left alone it would have been the
+// loudest possible way for "Never read" to be false: honoured by every tool, and ignored by the
+// thing that pastes the file into the system prompt on every single turn.
+//
+// The instance's OWN AGENTS.md is deliberately NOT screenable — a folder must not be able to
+// silence the instance's instructions — and that asymmetry is asserted, not assumed.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("InstructionContext — project exclusions", () => {
+  it.live("drops a project AGENTS.md the project excluded, and keeps the instance's own", () =>
+    Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ).pipe(
+      Effect.flatMap((tmp) =>
+        Effect.gen(function* () {
+          const global = path.join(tmp.path, "global")
+          const project = path.join(tmp.path, "project")
+          const directory = path.join(project, "packages", "core")
+          yield* Effect.promise(async () => {
+            await fs.mkdir(global, { recursive: true })
+            await fs.mkdir(directory, { recursive: true })
+            await fs.writeFile(path.join(global, "AGENTS.md"), "global-instructions")
+            await fs.writeFile(path.join(project, "AGENTS.md"), "project-instructions")
+            await fs.writeFile(path.join(directory, "AGENTS.md"), "package-instructions")
+            await fs.writeFile(
+              path.join(project, "novaclaw.json"),
+              JSON.stringify({ version: 1, exclude: ["packages/core/AGENTS.md"] }),
+            )
+          })
+
+          const load = SystemContextRegistry.Service.pipe(
+            Effect.flatMap((service) => service.load()),
+            Effect.provide(
+              instructionLayer({
+                config: global,
+                locationServiceLayer: Layer.succeed(
+                  Location.Service,
+                  Location.Service.of(
+                    location(
+                      { directory: AbsolutePath.make(directory) },
+                      { projectDirectory: AbsolutePath.make(project) },
+                    ),
+                  ),
+                ),
+              }),
+            ),
+          )
+
+          const initialized = yield* SystemContext.initialize(yield* load)
+          expect(initialized.baseline).not.toContain("package-instructions")
+          expect(initialized.baseline).toContain("project-instructions")
+          expect(initialized.baseline).toContain("global-instructions")
+        }),
+      ),
+    ),
+  )
+})

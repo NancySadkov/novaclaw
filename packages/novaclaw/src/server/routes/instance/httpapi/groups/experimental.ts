@@ -14,6 +14,8 @@ import { described } from "./metadata"
 import { QueryBoolean } from "./query"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { ModelV2 } from "@novaclaw/core/model"
+import { Permission } from "@novaclaw/schema/permission"
+import { ProjectFile } from "@novaclaw/schema/project-file"
 
 const ToolIDs = Schema.Array(Schema.String).annotate({ identifier: "ToolIDs" })
 const ToolListItem = Schema.Struct({
@@ -109,6 +111,61 @@ export const ProjectState = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("none") }),
 ]).annotate({ identifier: "ProjectState" })
 
+/**
+ * What a write may supply. **Every section is optional and an absent one is LEFT ALONE.**
+ *
+ * `todo/projects.md`: *"create or update `novaclaw.json`, replacing only the sections supplied"*.
+ * The server merges onto the file's RAW object, so a section this build has no type for survives an
+ * edit untouched — which is why this schema names sections rather than accepting a whole document.
+ *
+ * ⚠️ There is deliberately no way to CLEAR a section here. An absent key and a cleared key would
+ * have to be different values on the wire, and the only client today never clears one; offering an
+ * ambiguous spelling of "delete my permissions" is worse than not offering it yet.
+ */
+export const ProjectWriteInput = Schema.Struct({
+  name: Schema.optional(Schema.String),
+  permissions: Schema.optional(Permission.Ruleset),
+  tune: Schema.optional(ProjectFile.Tune),
+  exclude: Schema.optional(Schema.Array(Schema.String)),
+  /** ⛔ IDs of installed policies only — never a command, and never anything the server runs. */
+  policies: Schema.optional(Schema.Array(Schema.String)),
+}).annotate({ identifier: "ProjectWriteInput" })
+
+/**
+ * The receipt, or the refusal — both at **200**.
+ *
+ * 🔴 A refusal is not an error, and giving it an HTTP error status would be the second time this
+ * feature made that mistake. `GET /api/project` already answers `200 {kind:"invalid"}` for a broken
+ * file because "your project file is broken" is a state the UI renders calmly, next to the file's
+ * path, with the detail the user needs to fix it. A write refused for the SAME reason, on the SAME
+ * path, must not arrive as a 4xx that the app's fetch layer turns into a thrown `Error` — that is
+ * how a calm explanation becomes a red toast saying "request failed".
+ */
+export const ProjectWriteResult = Schema.Union([
+  Schema.Struct({
+    ok: Schema.Literal(true),
+    file: Schema.String,
+    /** `true` when there was no file before — the receipt says "created" rather than "updated". */
+    created: Schema.Boolean,
+    /** The sections this write replaced. Everything else in the file is unchanged. */
+    sections: Schema.Array(Schema.String),
+    /**
+     * Supervision switches the caller asked to record as OFF, which were dropped instead.
+     *
+     * A project file may raise a safety rail, never lower one, and absent means inherit. Reported so
+     * the surface can say so rather than silently writing something different from what was asked.
+     */
+    refusedTune: Schema.Array(Schema.String),
+  }),
+  Schema.Struct({
+    ok: Schema.Literal(false),
+    file: Schema.String,
+    /** `unreadable` · `not-an-object` · `future-version` · `would-not-parse` · `unwritable`. */
+    reason: Schema.String,
+    detail: Schema.String,
+  }),
+]).annotate({ identifier: "ProjectWriteResult" })
+
 export const ExperimentalPaths = {
   // ⚠️ `/api/`, not `/experimental/`, and the ledger is what says so. `legacy-path-ledger.test.ts`
   // pins the non-`/api/*` set as SHRINK-ONLY (ruling 11: one contract, one generated artifact), so a
@@ -138,6 +195,27 @@ export const ExperimentalApi = HttpApi.make("experimental")
             description:
               "The `novaclaw.json` governing this location: its root, validity and what it contributes. " +
               "A folder without one answers `none` and is perfectly usable.",
+          }),
+        ),
+      )
+      .add(
+        // ⚠️ POST on the SAME path as the GET above, not a new `/experimental/*` sibling.
+        // `legacy-path-ledger.test.ts` pins the non-`/api/*` set as shrink-only (ruling 11), so a
+        // route added beside the `/experimental/…` neighbours in this file is red — it typechecks,
+        // it works, and it reviews as consistent with the file it sits in.
+        HttpApiEndpoint.post("projectWrite", ExperimentalPaths.project, {
+          query: WorkspaceRoutingQuery,
+          payload: ProjectWriteInput,
+          success: described(ProjectWriteResult, "The receipt, or the refusal"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "project.write",
+            title: "Write the project file",
+            description:
+              "Create or update this location's `novaclaw.json`, replacing ONLY the sections supplied and " +
+              "preserving everything else — including sections this build does not understand. " +
+              "Refuses, without writing, when an existing file does not parse.",
           }),
         ),
       )

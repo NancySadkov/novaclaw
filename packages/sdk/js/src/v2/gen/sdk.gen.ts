@@ -1321,8 +1321,9 @@ class ApiCommunityPeerSuccession extends NovaClawApiClient {
     parameters: {
       predecessor: string
       successor: string
-      at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      at: number
       signature: string
+      successorSignature: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -1331,6 +1332,7 @@ class ApiCommunityPeerSuccession extends NovaClawApiClient {
       successor: parameters?.["successor"],
       at: parameters?.["at"],
       signature: parameters?.["signature"],
+      successorSignature: parameters?.["successorSignature"],
     }
     return (options?.client ?? this.client).post<
       T.CommunityPeerSuccessionTellResponses,
@@ -1516,6 +1518,7 @@ class ApiCommunityPeer extends NovaClawApiClient {
   public ask<ThrowOnError extends boolean = false>(
     parameters: {
       asker: string
+      to: string
       question: string
       at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
       signature: string
@@ -1524,6 +1527,7 @@ class ApiCommunityPeer extends NovaClawApiClient {
   ) {
     const body = {
       asker: parameters?.["asker"],
+      to: parameters?.["to"],
       question: parameters?.["question"],
       at: parameters?.["at"],
       signature: parameters?.["signature"],
@@ -1541,7 +1545,13 @@ class ApiCommunityPeer extends NovaClawApiClient {
    *
    * The first thing a peer asks, and the only thing an address must yield to become a peer. The signature over the sealing key matters: a key taken on trust is one anybody in the path can swap for their own, and the sender would encrypt to the attacker with everything looking correct.
    */
-  public identity<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+  public identity<ThrowOnError extends boolean = false>(
+    parameters?: {
+      challenge?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { challenge: parameters?.["challenge"] }
     return (options?.client ?? this.client).get<
       T.CommunityPeerIdentityResponses,
       T.CommunityPeerIdentityErrors,
@@ -1549,6 +1559,7 @@ class ApiCommunityPeer extends NovaClawApiClient {
     >({
       url: "/api/community/identity",
       ...options,
+      query,
     })
   }
 
@@ -1854,6 +1865,28 @@ class ApiProject extends NovaClawApiClient {
       url: "/api/project",
       ...options,
       query,
+    })
+  }
+
+  /**
+   * Create or update this location's `novaclaw.json`, replacing ONLY the sections supplied and preserving everything else — including sections this build does not understand. Refuses, without writing, when an existing file does not parse.
+   */
+  public write<ThrowOnError extends boolean = false>(
+    parameters: {
+      directory?: string
+      workspace?: string
+      projectWriteInput: T.ProjectWriteInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
+    const body = parameters?.["projectWriteInput"]
+    return (options?.client ?? this.client).post<T.ProjectWriteResponses, T.ProjectWriteErrors, ThrowOnError>({
+      url: "/api/project",
+      ...options,
+      query,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
     })
   }
 }

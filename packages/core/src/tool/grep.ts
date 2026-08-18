@@ -9,6 +9,7 @@ import { FSUtil } from "../fs-util"
 import { Location } from "../location"
 import { LocationMutation } from "../location-mutation"
 import { PermissionV2 } from "../permission"
+import { ProjectExclusion } from "../project-exclusion"
 import { Ripgrep } from "../ripgrep"
 import { RelativePath } from "../schema"
 import { ToolRegistry } from "./registry"
@@ -125,6 +126,11 @@ export const layer = Layer.effectDiscard(
                 })
                 const target = resolved.canonical
                 const info = yield* fs.stat(target).pipe(Effect.catch(() => Effect.succeed(undefined)))
+                const searchRoot = info?.type === "Directory" ? target : path.dirname(target)
+                // The SECOND exclusion seam — see the same block in `glob.ts`. It matters MORE
+                // here: grep returns matching LINES, so an unfiltered row is the excluded file's
+                // actual content arriving in the model's context.
+                const exclusions = yield* mutation.exclusionsFor(searchRoot)
                 return yield* ripgrep
                   .grep({
                     cwd: info?.type === "Directory" ? target : path.dirname(target),
@@ -135,19 +141,15 @@ export const layer = Layer.effectDiscard(
                   })
                   .pipe(
                     Effect.map((result) =>
-                      result.map((match) =>
+                      ProjectExclusion.screenAll(exclusions, result, (match) =>
+                        path.resolve(searchRoot, match.entry.path),
+                      ).kept.map((match) =>
                         FileSystem.Match.make({
                           ...match,
                           entry: FileSystem.Entry.make({
                             ...match.entry,
                             path: RelativePath.make(
-                              path.relative(
-                                location.directory,
-                                path.resolve(
-                                  info?.type === "Directory" ? target : path.dirname(target),
-                                  match.entry.path,
-                                ),
-                              ),
+                              path.relative(location.directory, path.resolve(searchRoot, match.entry.path)),
                             ),
                           }),
                         }),

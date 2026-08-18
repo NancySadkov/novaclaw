@@ -2,9 +2,10 @@ import { createQuery } from "@tanstack/solid-query"
 import { useSearchParams } from "@solidjs/router"
 import { type Accessor, createMemo, createResource, onCleanup, onMount } from "solid-js"
 import type { PromptInputControls } from "@/components/prompt-input"
-import type { ComposerRemoteChatState } from "@/components/composer"
+import type { ComposerMakeDefaultState, ComposerRemoteChatState } from "@/components/composer"
 import * as ConfigProvenance from "./config-provenance"
 import { useSettingsDialog } from "@/components/settings-dialog"
+import { projectWrite } from "@/utils/project-api"
 import {
   MessengerApiError,
   messengerAccountChats,
@@ -188,6 +189,51 @@ export function createPromptInputController(input: {
   const featureOrigins = createMemo(() => ConfigProvenance.featureOrigins(resolvedConfig.latest))
   const projectLayer = createMemo(() => ConfigProvenance.projectLayer(resolvedConfig.latest))
 
+  /**
+   * "Make Default for this Folder" — write this chat's declared stance into the folder's own
+   * `novaclaw.json` (`todo/projects.md`, Tune and Permissions).
+   *
+   * ⚠️ `undefined` rather than a disabled control when there is no folder or no server: a chip that
+   * exists but can never do anything is a worse answer than one that is not there.
+   *
+   * ⚠️ The panel decides WHICH switches travel (the chat's overrides, so the folder keeps tracking
+   * Settings for everything else) and this function only carries them. Splitting it the other way
+   * would put the rule in a place the surface explaining the rule cannot see.
+   */
+  const makeDefaultState = createMemo((): ComposerMakeDefaultState | undefined => {
+    const directory = sessionView.directory()
+    const conn = server.current
+    if (!directory || !conn) return undefined
+    return {
+      folder: directory,
+      governedBy: projectLayer(),
+      write: async (features) => {
+        try {
+          const result = await projectWrite(conn.http, directory, { tune: { features } })
+          // The kernel re-reads the file within its cache TTL, but the PANEL's provenance came from
+          // a response taken before the write. Without this refetch the section above would keep
+          // describing the folder as it was — the surface that explains where a value came from
+          // contradicting the receipt printed directly beneath it.
+          void resolvedConfigRes.refetch()
+          return result.ok
+            ? {
+                kind: "written" as const,
+                file: result.file,
+                created: result.created,
+                sections: result.sections,
+                refused: result.refusedTune,
+              }
+            : { kind: "refused" as const, file: result.file, reason: result.reason, detail: result.detail }
+        } catch (error) {
+          // ⚠️ A transport failure is NOT a refusal. "Your project file is broken" and "the request
+          // did not land" ask the user for opposite things, and this is the one place they could be
+          // flattened together.
+          return { kind: "failed" as const, detail: errorMessage(error, language.t("common.requestFailed")) }
+        }
+      },
+    }
+  })
+
   const [remoteDrivers] = createResource(() => messengerServer(), messengerDrivers, { initialValue: [] })
   const [remoteAccounts, remoteAccountsRes] = createResource(() => messengerServer(), messengerAccounts, {
     initialValue: [],
@@ -364,6 +410,7 @@ export function createPromptInputController(input: {
       override: featureState().overrides,
       origin: featureOrigins(),
       project: projectLayer(),
+      makeDefault: makeDefaultState(),
       set: (feature, enabled) => {
         // The draft signal is the instant UI truth (and the create-time payload); a live session
         // ALSO persists the stance server-side so the runner reads it on the next turn.

@@ -77,7 +77,8 @@ export const layer = Layer.effectDiscard(
                 })
                 if (bytes.length === 0)
                   return yield* new ToolFailure({ message: "No bytes to write — `data` parsed empty" })
-                const target = yield* mutation.resolve({ path: input.filename })
+                // `readsContent: false` — writes bytes, never returns them. See `write.ts`.
+                const target = yield* mutation.resolve({ path: input.filename, readsContent: false })
                 const external = target.externalDirectory
                 if (external)
                   yield* permission.assert({

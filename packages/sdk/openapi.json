@@ -3254,6 +3254,12 @@
                           "enum": ["Infinity", "-Infinity", "NaN"]
                         }
                       ]
+                    },
+                    "refused": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     }
                   },
                   "required": ["learned", "asked", "peers", "seedsAsked", "seedsFound"],
@@ -3863,6 +3869,9 @@
                     },
                     "announceConfirmed": {
                       "type": "boolean"
+                    },
+                    "announceReason": {
+                      "type": "string"
                     }
                   },
                   "required": ["participating", "consented", "enabled", "refusals", "answers"],
@@ -4942,6 +4951,35 @@
                     "received": {
                       "type": "boolean",
                       "enum": [true]
+                    },
+                    "by": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["NaN"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["-Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    },
+                    "signature": {
+                      "type": "string"
                     }
                   },
                   "required": ["received"],
@@ -5195,6 +5233,32 @@
                     "refused": {
                       "type": "string"
                     },
+                    "refusalAt": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["NaN"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["-Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    },
+                    "refusalSignature": {
+                      "type": "string"
+                    },
                     "author": {
                       "type": "string"
                     },
@@ -5253,6 +5317,9 @@
                   "asker": {
                     "type": "string"
                   },
+                  "to": {
+                    "type": "string"
+                  },
                   "question": {
                     "type": "string"
                   },
@@ -5283,7 +5350,7 @@
                     "type": "string"
                   }
                 },
-                "required": ["asker", "question", "at", "signature"],
+                "required": ["asker", "to", "question", "at", "signature"],
                 "additionalProperties": false
               }
             }
@@ -5315,6 +5382,35 @@
                     "received": {
                       "type": "boolean",
                       "enum": [true]
+                    },
+                    "by": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["NaN"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["-Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    },
+                    "signature": {
+                      "type": "string"
                     }
                   },
                   "required": ["received"],
@@ -5350,33 +5446,17 @@
                     "type": "string"
                   },
                   "at": {
-                    "anyOf": [
-                      {
-                        "type": "number"
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["NaN"]
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["Infinity"]
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["-Infinity"]
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["Infinity", "-Infinity", "NaN"]
-                      }
-                    ]
+                    "type": "integer",
+                    "minimum": 0
                   },
                   "signature": {
                     "type": "string"
+                  },
+                  "successorSignature": {
+                    "type": "string"
                   }
                 },
-                "required": ["predecessor", "successor", "at", "signature"],
+                "required": ["predecessor", "successor", "at", "signature", "successorSignature"],
                 "additionalProperties": false
               }
             }
@@ -5415,33 +5495,17 @@
                             "type": "string"
                           },
                           "at": {
-                            "anyOf": [
-                              {
-                                "type": "number"
-                              },
-                              {
-                                "type": "string",
-                                "enum": ["NaN"]
-                              },
-                              {
-                                "type": "string",
-                                "enum": ["Infinity"]
-                              },
-                              {
-                                "type": "string",
-                                "enum": ["-Infinity"]
-                              },
-                              {
-                                "type": "string",
-                                "enum": ["Infinity", "-Infinity", "NaN"]
-                              }
-                            ]
+                            "type": "integer",
+                            "minimum": 0
                           },
                           "signature": {
                             "type": "string"
+                          },
+                          "successorSignature": {
+                            "type": "string"
                           }
                         },
-                        "required": ["predecessor", "successor", "at", "signature"],
+                        "required": ["predecessor", "successor", "at", "signature", "successorSignature"],
                         "additionalProperties": false
                       }
                     }
@@ -5478,7 +5542,16 @@
       "get": {
         "tags": ["community-peer"],
         "operationId": "community.peer.identity",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "challenge",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
         "security": [],
         "responses": {
           "200": {
@@ -5495,6 +5568,9 @@
                       "type": "string"
                     },
                     "sealingSignature": {
+                      "type": "string"
+                    },
+                    "proof": {
                       "type": "string"
                     }
                   },
@@ -5750,6 +5826,35 @@
                     "received": {
                       "type": "boolean",
                       "enum": [true]
+                    },
+                    "by": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["NaN"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["-Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    },
+                    "signature": {
+                      "type": "string"
                     }
                   },
                   "required": ["received"],
@@ -6390,6 +6495,78 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.project.state({\n  ...\n})"
+          }
+        ]
+      },
+      "post": {
+        "tags": ["experimental"],
+        "operationId": "project.write",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The receipt, or the refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectWriteResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "description": "Create or update this location's `novaclaw.json`, replacing ONLY the sections supplied and preserving everything else — including sections this build does not understand. Refuses, without writing, when an existing file does not parse.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectWriteInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.project.write({\n  ...\n})"
           }
         ]
       }
@@ -29791,6 +29968,86 @@
           }
         ]
       },
+      "ProjectWriteInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "permissions": {
+            "$ref": "#/components/schemas/PermissionV2Ruleset"
+          },
+          "tune": {
+            "$ref": "#/components/schemas/ProjectTune"
+          },
+          "exclude": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "policies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "ProjectWriteResult": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "enum": [true]
+              },
+              "file": {
+                "type": "string"
+              },
+              "created": {
+                "type": "boolean"
+              },
+              "sections": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "refusedTune": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["ok", "file", "created", "sections", "refusedTune"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "enum": [false]
+              },
+              "file": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "string"
+              }
+            },
+            "required": ["ok", "file", "reason", "detail"],
+            "additionalProperties": false
+          }
+        ]
+      },
       "ToolListItem": {
         "type": "object",
         "properties": {
@@ -38830,6 +39087,18 @@
               },
               "announce": {
                 "type": "string"
+              },
+              "dht": {
+                "type": "object",
+                "properties": {
+                  "bootstrap": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false
               }
             },
             "additionalProperties": false
@@ -39350,6 +39619,46 @@
           "enabled",
           "limit"
         ],
+        "additionalProperties": false
+      },
+      "ProjectTune": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": ["interactive"]
+          },
+          "features": {
+            "type": "object",
+            "properties": {
+              "safeMode": {
+                "type": "boolean"
+              },
+              "askBeforeChanges": {
+                "type": "boolean"
+              },
+              "surgicalEdits": {
+                "type": "boolean"
+              },
+              "contextBudget": {
+                "type": "boolean"
+              },
+              "memory": {
+                "type": "boolean"
+              },
+              "introspection": {
+                "type": "boolean"
+              },
+              "quality": {
+                "type": "boolean"
+              },
+              "affective": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
         "additionalProperties": false
       },
       "DbRegistryTableSummary": {

@@ -256,6 +256,55 @@ export function narrowTune(
   return { features, refused }
 }
 
+/**
+ * The Tune a WRITE may record — {@link narrowTune}'s twin, on the other side of the file.
+ *
+ * 🔴 **Which side ENFORCES, and why there are two.** `narrowTune` is the enforcement: it runs on
+ * every read, so it holds for the files this build never wrote — a `novaclaw.json` that arrived in a
+ * clone, one a user hand-edited, one an agent generated. A write-side check can never be the
+ * security boundary, because the attacker's file does not go through our writer.
+ *
+ * This function is therefore not a second guard but a TRUTHFULNESS rule for our own output. "Make
+ * Default for this Folder" captures whatever stance the chat is in, and a chat may perfectly well
+ * have `safeMode: false`. Writing that down would put a sentence in the file that the reader is
+ * guaranteed to refuse the moment it matters (`narrowTune` drops a supervision `false` exactly when
+ * the baseline is `true` — i.e. exactly when it would have had an effect). The file would then
+ * *say* the folder disarms a rail while the product *does* the opposite, and the only way a user
+ * discovers the discrepancy is by being confused by it later.
+ *
+ * ⚠️ So a supervision `false` is OMITTED rather than written, and omission is the honest encoding:
+ * absent means INHERIT, which is precisely "this folder takes no position on your safety rails".
+ * The dropped switches come back as `refused` so the surface can say so out loud, in the same
+ * vocabulary the Tuning panel already uses for the read side.
+ *
+ * ⚠️ A supervision `true` is written normally — raising supervision is always allowed — and every
+ * non-supervision switch is written either way, because none of them lets an agent do something it
+ * could not already do.
+ */
+export function writableTune(tune: Tune | undefined): {
+  readonly tune: Tune | undefined
+  readonly refused: readonly TuneFeature[]
+} {
+  if (!tune) return { tune: undefined, refused: [] }
+  const declared = tune.features
+  if (!declared) return { tune, refused: [] }
+  const features: Partial<Record<TuneFeature, boolean>> = {}
+  const refused: TuneFeature[] = []
+  for (const [key, value] of Object.entries(declared)) {
+    const feature = key as TuneFeature
+    if (value === undefined) continue
+    if (isSupervisionFeature(feature) && value === false) {
+      refused.push(feature)
+      continue
+    }
+    features[feature] = value
+  }
+  // An empty `features` is written as an empty object rather than dropped: `{"tune":{}}` and no
+  // `tune` key at all mean the same thing to a reader, and preserving the caller's intent to have
+  // SUPPLIED the section keeps the receipt honest about which sections the write touched.
+  return { tune: { ...tune, features }, refused }
+}
+
 /** One switch on the composer's Tuning panel. */
 export type TuneFeature = keyof NonNullable<Tune["features"]>
 

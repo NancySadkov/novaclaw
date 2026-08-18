@@ -72,7 +72,11 @@ export const layer = Layer.effectDiscard(
                 messageID: context.assistantMessageID,
                 callID: context.toolCallID,
               }
-              const target = yield* mutation.resolve({ path: input.path, kind: "file" })
+              // `readsContent: false` — `write` never shows the model the old bytes (an existing file needs a
+              // freshness token from a prior `read`, which is where the exclusion bites). The "Never read"
+              // list is read eligibility, not a write ban: a user may exclude a `.env` and still ask Nova to
+              // create one. See `location-mutation.ts`'s `readsContent`.
+              const target = yield* mutation.resolve({ path: input.path, kind: "file", readsContent: false })
               const external = target.externalDirectory
               if (external)
                 yield* permission.assert({

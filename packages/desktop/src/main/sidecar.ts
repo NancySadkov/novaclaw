@@ -81,7 +81,14 @@ async function start(command: StartCommand) {
     useSystemCertificates()
     useEnvProxy()
     // Before the one big import, not after: the cache only helps the compile it precedes.
-    // Measured 681 -> 555 ms on the shipped bundle. Never fatal — see compile-cache.ts.
+    //
+    // ⚠️ The DURABLE fact is the delta, not the milliseconds: the cache saves ~18-20% of the one big
+    // import, and the absolute numbers track bundle size, so they rot every time the bundle moves.
+    // This comment used to read a bare "681 -> 555 ms" with no date, which is how a stale measurement
+    // ends up reading as current — the shipped bundle measured 818 -> 653 ms by the time anyone
+    // re-checked (roadmap `todo/startup.md`). Date any number you add here, or state the ratio.
+    // Measured 681 -> 555 ms (undated, pre-2026-08); re-measured 818 -> 653 ms, 2026-08-18.
+    // Never fatal — see compile-cache.ts.
     const cache = enableCompileCache()
     if (!cache.enabled) console.warn(`[novaclaw] compile cache off (${cache.reason}) — startup will be slower`)
     const serverURL = pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "chunks", "novaclaw-server.js")).href

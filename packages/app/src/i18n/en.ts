@@ -28,6 +28,62 @@ export const dict = {
   "files.restore": "Restore",
   "files.drives": "Drives",
   "files.restoreFailed": "Couldn’t restore",
+
+  // ─────────────────────────────────────────────────────────────────────────────────────────────
+  // The Project a folder's `novaclaw.json` declares, said in Chats and in Files.
+  //
+  // `todo/projects.md`: *"Never make a person infer project state from a hidden dotfile."* Settings
+  // → General and the composer's Tune panel already say it; these two blocks are the same facts
+  // written for the two surfaces a person is actually looking at when the question comes up.
+  // `components/project-summary.ts` is the only reader, and `project-summary.test.ts` pins that
+  // every key it can ask for is here.
+  //
+  // ⚠️ Two blocks rather than one shared prefix, because the sentences differ: Files is talking
+  // about the folder on screen, Chats about the folder a chat is running in. What they must NOT
+  // duplicate is a remedy — "update NovaClaw" versus "fix your file" comes from
+  // `settings.project.invalid*` in both, so the three surfaces can never disagree about which one
+  // a user should take.
+  //
+  // ⚠️ ENGLISH-ONLY on purpose, like the Settings → Project rows: the parity ratchet fails on an
+  // EXTRA key in a locale and only COUNTS a missing one, so pasting English into de.ts et al. would
+  // make the translation backlog read as done. Translate properly or leave the key out.
+  "files.project.label.project": "Project",
+  "files.project.label.plain": "Folder",
+  "files.project.label.invalid": "Project not applied",
+  "files.project.what":
+    "A Project is simply a folder with a novaclaw.json file in it. That one file gives every chat you start in the folder the same starting settings and the same limits on what the agent may do.",
+  "files.project.named": "This folder belongs to the Project “{{name}}”.",
+  "files.project.unnamed": "This folder belongs to a Project.",
+  "files.project.plain":
+    "This folder is not a Project. Chats you start here use your normal settings — that is a perfectly good way to work.",
+  "files.project.unusable":
+    "This folder has a novaclaw.json, and it could not be used — so nothing in it is in force and chats here are running on your normal settings.",
+  "files.project.rules":
+    "{{count}} permission rules come from this file. A Project can only narrow what the agent may do, never widen it.",
+  "files.project.rulesOne":
+    "One permission rule comes from this file. A Project can only narrow what the agent may do, never widen it.",
+  "files.project.rulesNone": "It changes no permissions.",
+  "files.project.exclude": "It asks Nova not to read: {{list}}",
+  "files.project.details": "What this folder's project file does",
+  "chat.project.label.project": "Project",
+  "chat.project.label.plain": "Folder",
+  "chat.project.label.invalid": "Project not applied",
+  "chat.project.what":
+    "A Project is simply a folder with a novaclaw.json file in it. That one file gives every chat in the folder the same starting settings and the same limits on what the agent may do.",
+  "chat.project.named": "This chat runs in the Project “{{name}}”.",
+  "chat.project.unnamed": "This chat runs in a Project folder.",
+  "chat.project.plain":
+    "This chat's folder is not a Project. It uses your normal settings — that is a perfectly good way to work.",
+  "chat.project.unusable":
+    "This chat's folder has a novaclaw.json, and it could not be used — so nothing in it is in force and this chat is running on your normal settings.",
+  "chat.project.rules":
+    "{{count}} permission rules come from this file. A Project can only narrow what the agent may do, never widen it.",
+  "chat.project.rulesOne":
+    "One permission rule comes from this file. A Project can only narrow what the agent may do, never widen it.",
+  "chat.project.rulesNone": "It changes no permissions.",
+  "chat.project.exclude": "It asks Nova not to read: {{list}}",
+  "chat.project.tune": "Tune, under the message box, lists the settings it handed to this chat.",
+  // ─────────────────────────────────────────────────────────────────────────────────────────────
   "notes.title": "Notes",
   "notes.hint": "Shared with your agents — any chat can read them or add to them.",
   "notes.new": "New note",
@@ -327,6 +383,37 @@ export const dict = {
   "prompt.project.applied": "It sets: {{list}}",
   "prompt.project.refused": "It asked for, and did not get: {{list}}. A project file can turn a safety control on, never off.",
   "prompt.project.none": "It sets none of these.",
+
+  "composer.tune.makeDefault.title": "Make Default for this Folder",
+  "composer.tune.makeDefault.description":
+    "Save the switches you changed in this chat into this folder's novaclaw.json, so every new chat here starts the same way. Anything you did not change keeps following your Settings.",
+  "composer.tune.makeDefault.inForce.none": "This folder has no project file yet. Saving creates one here.",
+  "composer.tune.makeDefault.inForce.here":
+    "This folder already has {{file}}. Saving replaces only its Tune section — its permissions and everything else stay exactly as they are.",
+  "composer.tune.makeDefault.inForce.ancestor":
+    "Right now this folder follows {{file}} in a folder above it. Saving gives this folder its own project file, which then takes over here.",
+  "composer.tune.makeDefault.nothing":
+    "You haven't changed any switch in this chat yet, so there is nothing to save. Flip one above and it will show up here.",
+  "composer.tune.makeDefault.preview": "Will save: {{list}}",
+  "composer.tune.makeDefault.omitted":
+    "Will not save: {{list}}. A folder's file can turn a safety control on, never off — leaving it out keeps your own setting in charge.",
+  "composer.tune.makeDefault.modeStays":
+    "This chat's mode stays with the chat. A folder may only start ordinary interactive chats, never ones that prompt themselves.",
+  "composer.tune.makeDefault.action": "Save as folder default",
+  "composer.tune.makeDefault.saving": "Saving...",
+  "composer.tune.makeDefault.receipt.created": "Created {{file}}",
+  "composer.tune.makeDefault.receipt.updated": "Updated {{file}}",
+  "composer.tune.makeDefault.receipt.sections": "Sections written: {{list}}",
+  "composer.tune.makeDefault.receipt.preserved": "Everything else in the file was left exactly as it was.",
+  "composer.tune.makeDefault.receipt.refused":
+    "Left out: {{list}}. A folder's file can turn a safety control on, never off.",
+  "composer.tune.makeDefault.receipt.refusedBroken":
+    "Nothing was saved. {{file}} could not be read: {{detail}}",
+  "composer.tune.makeDefault.receipt.refusedFuture":
+    "Nothing was saved. {{file}} was written by a newer NovaClaw, so this one cannot safely edit it. Update NovaClaw.",
+  "composer.tune.makeDefault.receipt.untouched": "Your file is untouched — fix it, or move it aside, and try again.",
+  "composer.tune.makeDefault.receipt.failed": "Nothing was saved: {{detail}}",
+
   "prompt.features.source.override": "This chat overrides Settings",
   "prompt.features.useDefault": "Use Settings default",
   "prompt.features.state.on": "On",
@@ -1356,8 +1443,11 @@ export const dict = {
   "settings.project.rulesLabel": "Permission rules",
   "settings.project.rulesValue": "From this folder. They can only narrow your settings, never widen them.",
   "settings.project.fileDetail": "The file that makes this folder a Project.",
-  "settings.project.excludeDetail": "Patterns this project asks Nova not to read.",
+  "settings.project.excludeDetail":
+    "Nova will refuse to open these, and says so instead of pretending they are missing. Two reasons to use it: privacy — keys, credentials and personal files never reach the model — and focus, since skipping bulky folders leaves more room in Nova's context and makes searches quicker. This is separate from what the file watcher and your build ignore; those are about speed, this is about permission.",
   "settings.project.rulesNone": "None — this file changes no permissions",
+  "settings.project.excludeNone":
+    "Nothing — Nova may read any file in this folder. Add an `exclude` list to novaclaw.json to keep keys, credentials or bulky folders out of its reach.",
   "settings.project.excludeLabel": "Never read",
   "settings.project.invalid": "This folder's novaclaw.json could not be used",
   "settings.project.invalidFuture":

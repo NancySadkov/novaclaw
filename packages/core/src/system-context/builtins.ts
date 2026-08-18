@@ -3,6 +3,7 @@ export * as SystemContextBuiltIns from "./builtins"
 import { makeLocationNode } from "../effect/app-node"
 import { DateTime, Effect, Layer, Schema } from "effect"
 import { Location } from "../location"
+import { ProjectFileCache } from "../project-file-cache"
 import { SystemContext } from "./index"
 import { InstructionContext } from "../instruction-context"
 import { SystemContextRegistry } from "./registry"
@@ -106,5 +107,7 @@ export const node = makeLocationNode({
     ResourcePressureContext.node,
     McpHealthContext.node,
     CapabilityRegistry.node,
+    // `InstructionContext` screens discovered AGENTS.md files against the project's `exclude` list.
+    ProjectFileCache.node,
   ],
 })

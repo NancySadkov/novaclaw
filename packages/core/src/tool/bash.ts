@@ -17,6 +17,7 @@ import { AppProcess } from "../process"
 import { BashJobs } from "./bash-jobs"
 import { MessengerStore } from "../messenger/store"
 import { PermissionV2 } from "../permission"
+import { ProjectExclusion } from "../project-exclusion"
 import { PositiveInt } from "../schema"
 import { attendedRoot, rootSessionType, stanceOf } from "../session/config-resolve"
 import type { SessionV2 } from "../session"
@@ -125,6 +126,37 @@ const externalCommandDirectories = (command: string, cwd: string) => {
   return [...directories]
 }
 
+/**
+ * Every token of a command that looks like a filesystem path, canonicalised against the working
+ * directory.
+ *
+ * 🔴 **Why bash needs its own screen at all, and what it can and cannot promise.** Every other file
+ * tool NAMES its target, so `LocationMutation.resolve` — the one seam where `novaclaw.json`'s
+ * `exclude` list is enforced — sees it. `bash` names a *command*, and `cat .env` reaches an excluded
+ * file without any path ever being resolved. Leaving that open would make the whole enforcement
+ * decorative: the model would simply use the tool that does not check.
+ *
+ * ⚠️ It is BEST-EFFORT and is documented as such rather than sold as a boundary. A shell can build a
+ * path from a variable, a glob, a subshell or a here-doc, and none of those are visible to a token
+ * scan — the same limitation the external-directory advisory above already carries, and the reason
+ * confinement is the OPERATOR's boundary (AGENTS.md, `todo/jail.md`) rather than ours. What it does
+ * buy is that the OBVIOUS reach is refused, loudly and with the reason, instead of quietly working.
+ */
+const commandPathTokens = (command: string, cwd: string) => {
+  const candidates = new Map<string, string>()
+  for (const token of shellTokens(command)) {
+    const value = unquote(token).replace(/^[<>]+/, "").replace(/[;,|&]+$/, "")
+    if (value.length === 0) continue
+    // A token is a path candidate when it is absolute, or relative-looking (has a separator or an
+    // extension). A bare word like `cat` or `--flag` is not worth a stat.
+    const looksLikePath = path.isAbsolute(value) || /[\\/]/.test(value) || /^[^-][^\s]*\.[A-Za-z0-9]+$/.test(value)
+    if (!looksLikePath) continue
+    if (value.startsWith("-")) continue
+    candidates.set(FSUtil.resolve(path.resolve(cwd, value)), value)
+  }
+  return candidates
+}
+
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
@@ -202,7 +234,9 @@ export const layer = Layer.effectDiscard(
                 messageID: context.assistantMessageID,
                 callID: context.toolCallID,
               }
-              const target = yield* mutation.resolve({ path: input.workdir ?? ".", kind: "directory" })
+              // `readsContent: false` — classifying a WORKING DIRECTORY reads nothing. Excluded paths named
+              // inside the command itself are screened separately below, on the parsed tokens.
+              const target = yield* mutation.resolve({ path: input.workdir ?? ".", kind: "directory", readsContent: false })
 
               // Agent Jail P0b/P1 (notes/agent-jail-plan.md §2.3): in an UNATTENDED chain (root
               // type auto-prompting / goal-oriented) raw host execution additionally requires a
@@ -283,6 +317,21 @@ export const layer = Layer.effectDiscard(
                   agent: context.agent,
                   source,
                 })
+              // The exclusion screen for the one tool that does not name its target. See
+              // `commandPathTokens` for what this buys and what it cannot. Run BEFORE the command
+              // approval so an excluded path is refused with its reason rather than asked about.
+              for (const [canonical, written] of commandPathTokens(commandText, target.canonical)) {
+                const declaration = yield* mutation.exclusionsFor(path.dirname(canonical))
+                if (!declaration) continue
+                const verdict = ProjectExclusion.screen(declaration, canonical, false)
+                if (verdict.excluded && verdict.pattern !== undefined)
+                  return yield* new ProjectExclusion.ExcludedError({
+                    resource: written,
+                    pattern: verdict.pattern,
+                    file: declaration.file,
+                  })
+              }
+
               const warnings = externalCommandDirectories(commandText, target.canonical).map(
                 (directory) =>
                   `Command argument references external directory ${path.join(directory, "*").replaceAll("\\", "/")}. Bash runs with host-user filesystem, process, and network authority; this scan is advisory only.`,
@@ -315,7 +364,9 @@ export const layer = Layer.effectDiscard(
                   const redirectPath = path.isAbsolute(redirect.target)
                     ? redirect.target
                     : path.resolve(target.canonical, redirect.target)
-                  const redirectTarget = yield* mutation.resolve({ path: redirectPath, kind: "file" })
+                  // `readsContent: false` — a redirect TARGET is written, not read. `<` input redirections are
+                  // not in `approval.redirects`; the token screen above covers them.
+                  const redirectTarget = yield* mutation.resolve({ path: redirectPath, kind: "file", readsContent: false })
                   if (redirectTarget.externalDirectory)
                     yield* permission.assert({
                       ...LocationMutation.externalDirectoryPermission(redirectTarget.externalDirectory, "write"),

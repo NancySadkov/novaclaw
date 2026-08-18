@@ -71,6 +71,9 @@ import { Dialog, DialogBody, DialogHeader, DialogTitle } from "@novaclaw/ui/v2/d
 import { usePermission } from "@/context/permission"
 import { useChatsAttentionSets } from "@/apps/chats-attention"
 import { DialogSessionInfo } from "@/components/dialog-session-info"
+import { ProjectChip, useProjectStates } from "@/components/project-indicator"
+import { projectSummary } from "@/components/project-summary"
+import type { ProjectState } from "@/utils/project-api"
 import { sessionPermissionRequest, sessionQuestionRequest } from "@/pages/session/composer/session-request-tree"
 import { showToast } from "@/utils/toast"
 import { exportSessionMarkdown } from "@/utils/fs-api"
@@ -293,6 +296,14 @@ export function NewHome() {
         : opened
     }
     return directories(project)
+  })
+  // Which of the folders on screen are Projects (`todo/projects.md`). ⚠️ Keyed on the page's FOLDER
+  // set, not on the rows: a per-row probe would be one request per chat, while the folder set is
+  // bounded by how many folders are open. One round of requests answers every row.
+  const projectAt = useProjectStates(() => {
+    const http = focusedServer()?.http
+    const directories = projectDirectories()
+    return http && directories.length > 0 ? { http, directories } : undefined
   })
   const sessionLoad = useQuery(() => ({
     queryKey: ["home", "sessions", selection().server, ...projectDirectories()] as const,
@@ -973,6 +984,7 @@ export function NewHome() {
                             <HomeSessionRow
                               record={record}
                               showProjectName={!selectedProject()}
+                              project={projectAt(record.session.location?.directory)}
                               server={selection().server}
                               activeServer={selection().server === server.key}
                               openSession={openSession}
@@ -1008,6 +1020,7 @@ export function NewHome() {
                             <HomeSessionRow
                               record={record}
                               showProjectName={!selectedProject()}
+                              project={projectAt(record.session.location?.directory)}
                               server={selection().server}
                               activeServer={selection().server === server.key}
                               openSession={openSession}
@@ -1044,6 +1057,7 @@ export function NewHome() {
                                 <HomeSessionRow
                                   record={record}
                                   showProjectName={!selectedProject()}
+                                  project={projectAt(record.session.location?.directory)}
                                   server={selection().server}
                                   activeServer={selection().server === server.key}
                                   openSession={openSession}
@@ -1308,11 +1322,21 @@ function HomeSessionRow(props: {
   onToggleSelect?: (session: Session) => void
   onSelectStart?: (session: Session) => void
   onSelectOver?: (session: Session) => void
+  /** What governs this chat's folder, when the page has been told. Absent = not answered yet. */
+  project?: ProjectState
 }) {
   const language = useLanguage()
   const dialog = useDialog()
   const title = createMemo(() => sessionTitle(props.record.session.title) || props.record.session.id)
   const showProjectName = () => props.showProjectName && props.record.projectName
+  // The Project marker (`todo/projects.md`). ⚠️ Rendered only when there is something to SAY: a plain
+  // working folder is the normal case, and a "Folder" chip on every row would be a column of noise
+  // that teaches nothing. The chat details sheet says it in words for every state, including that one.
+  const projectMark = createMemo(() => {
+    const state = props.project
+    if (!state || state.kind === "none") return undefined
+    return projectSummary(state, language.t, "chat")
+  })
   // Changes badge (Chat-UI slice d): a row whose agent has actual file changes in its folder shows
   // +add −del, sourced from Session.summary (populated in the list query). No badge when nothing changed.
   const changes = createMemo(() => {
@@ -1424,6 +1448,9 @@ function HomeSessionRow(props: {
               {props.record.projectName}
             </span>
           </Show>
+          {/* Beside the folder name, because "which folder" and "is that folder a Project" are one
+              question. The chip's title carries the sentence; the details sheet carries the file. */}
+          <Show when={projectMark()}>{(mark) => <ProjectChip summary={mark()} />}</Show>
           {/* The whole meta cluster (tags · attention · changes · tokens · time) yields to the
             hover-reveal action icons — hiding only the time left the icons drawn OVER the
             token/changes badges (owner-hit 2026-07-22). opacity keeps layout, so the title

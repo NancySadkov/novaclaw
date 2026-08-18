@@ -476,3 +476,72 @@ test("keeps the locked edit schema, semantics docstring, and deferred TODOs visi
     expect(source).toContain(`TODO: ${todo}`)
   }
 })
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// `novaclaw.json` exclusions — INHERITED, with no line of exclusion code in `tool/edit.ts`.
+//
+// 🔴 This is the evidence for the shape `todo/projects.md` asks for: *"enforce it below all agentic
+// file tools"*, so *"a new tool inherits it rather than having to remember it"*. `edit` was NOT
+// touched when exclusions were built — it simply calls `LocationMutation.resolve`, which is where
+// the list is enforced. If this test ever needs a change inside `edit.ts` to pass, the enforcement
+// has drifted back up into the tools and the whole design has regressed.
+//
+// `edit` reads before it writes, so it takes the default (`readsContent` absent = "this reads").
+// The write assertion is the sharp end: `writes` must stay EMPTY.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("EditTool — project exclusions are inherited", () => {
+  it.live("refuses to edit an excluded file, legibly, and writes nothing", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return Effect.promise(async () => {
+          await fs.writeFile(path.join(tmp.path, "novaclaw.json"), JSON.stringify({ version: 1, exclude: ["*.env"] }))
+          await fs.writeFile(path.join(tmp.path, "prod.env"), "TOKEN=old\n")
+        }).pipe(
+          Effect.andThen(
+            withTool(tmp.path, (registry) =>
+              Effect.gen(function* () {
+                const result = yield* executeTool(
+                  registry,
+                  call({ path: "prod.env", oldString: "TOKEN=old", newString: "TOKEN=new" }),
+                )
+                const text = JSON.stringify(result)
+                expect(text).toContain("project exclusion")
+                expect(text).toContain("*.env")
+                expect(writes).toEqual([])
+                expect(yield* Effect.promise(() => fs.readFile(path.join(tmp.path, "prod.env"), "utf8"))).toBe(
+                  "TOKEN=old\n",
+                )
+              }),
+            ),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("still edits a file the project did not exclude", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return Effect.promise(async () => {
+          await fs.writeFile(path.join(tmp.path, "novaclaw.json"), JSON.stringify({ version: 1, exclude: ["*.env"] }))
+          await fs.writeFile(path.join(tmp.path, "notes.md"), "before\n")
+        }).pipe(
+          Effect.andThen(
+            withTool(tmp.path, (registry) =>
+              Effect.gen(function* () {
+                yield* executeTool(registry, call({ path: "notes.md", oldString: "before", newString: "after" }))
+                expect(yield* Effect.promise(() => fs.readFile(path.join(tmp.path, "notes.md"), "utf8"))).toBe("after\n")
+              }),
+            ),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+})

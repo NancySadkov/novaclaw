@@ -10,6 +10,7 @@ import { fsTrashList, fsTrashRestore } from "@/utils/fs-api"
 import { useFilesystemOperations, type FilesystemTarget } from "@/components/filesystem-operations"
 import { filesystemShortcut, isEditableFilesystemTarget } from "@/components/filesystem-domain"
 import { AppPage } from "@/components/app-page"
+import { ProjectChip, ProjectDetail, useProjectSummary } from "@/components/project-indicator"
 
 // The Files app (B7 + the B8 Trash surface — plan.md M3/M4). Browses the SERVER host's filesystem
 // via the same V1 /file endpoints the directory picker uses (sdk.client.file.list / .read,
@@ -137,6 +138,25 @@ export function FilesPage() {
     setActive(undefined)
     setDir(target)
   }
+
+  // Whether the folder on screen is a Project (`todo/projects.md`). Files browses folders, so this is
+  // the one surface where a person can SEE which of their folders carry a `novaclaw.json` without
+  // turning on hidden files and reading it — and, when one is broken, that it is being ignored.
+  const projectSource = createMemo(() => {
+    const http = conn()?.http
+    const directory = dir()
+    return http && directory ? { http, directory } : undefined
+  })
+  const project = useProjectSummary(projectSource, "files")
+  // `undefined` = the user has not decided, so the state decides. An unusable file opens itself:
+  // it is the only state that needs acting on, and putting the remedy behind a click would make it
+  // something to discover rather than something to fix. A click still closes it.
+  const [projectOpen, setProjectOpen] = createSignal<boolean | undefined>(undefined)
+  const projectExpanded = createMemo(() => projectOpen() ?? project()?.kind === "invalid")
+  createEffect(() => {
+    dir()
+    setProjectOpen(undefined)
+  })
 
   const operations = useFilesystemOperations({
     server: () => conn()?.http,
@@ -340,6 +360,21 @@ export function FilesPage() {
           {language.t(isPinned(dir()) ? "dialog.directory.pinnedShort" : "dialog.directory.pinShort")}
         </button>
         <span class="min-w-0 flex-1 truncate font-mono text-xs text-v2-text-text-faint">{dir() || "…"}</span>
+        <Show when={project()}>
+          {(summary) => (
+            <button
+              type="button"
+              data-action="files-project"
+              class="flex shrink-0 items-center rounded-md transition-opacity hover:opacity-80"
+              aria-expanded={projectExpanded()}
+              aria-label={language.t("files.project.details")}
+              title={language.t("files.project.details")}
+              onClick={() => setProjectOpen(!projectExpanded())}
+            >
+              <ProjectChip summary={summary()} />
+            </button>
+          )}
+        </Show>
         <button
           type="button"
           class={btn}
@@ -362,6 +397,18 @@ export function FilesPage() {
           {language.t("files.askAiFolder")}
         </button>
       </div>
+
+      <Show when={projectExpanded() && project()}>
+        {(summary) => (
+          <div
+            data-component="files-project-detail"
+            class="border-b border-v2-border-border-base px-4 py-2.5"
+            classList={{ "bg-v2-state-bg-warning/10": summary().kind === "invalid" }}
+          >
+            <ProjectDetail summary={summary()} showChip={false} />
+          </div>
+        )}
+      </Show>
 
       <div class="flex min-h-0 flex-1">
         <div class="flex w-44 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-v2-border-border-base p-2">

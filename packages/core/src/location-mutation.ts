@@ -5,6 +5,8 @@ import path from "path"
 import { Context, Effect, Layer, Schema } from "effect"
 import { FSUtil } from "./fs-util"
 import { Location } from "./location"
+import { ProjectExclusion } from "./project-exclusion"
+import { ProjectFileCache } from "./project-file-cache"
 
 export const Kind = Schema.Literals(["file", "directory"])
 export type Kind = typeof Kind.Type
@@ -18,6 +20,22 @@ export const ResolveInput = Schema.Struct({
   path: Schema.String,
   /** Selects the external approval boundary; it does not validate the target type. */
   kind: Kind.pipe(Schema.optional),
+  /**
+   * Whether this operation will put the file's CONTENT in front of the model.
+   *
+   * 🔴 Defaults to `true`, and the default is the security property. `resolve` is the one place
+   * every path-taking agentic tool funnels caller input through, so it is where `novaclaw.json`'s
+   * `exclude` list is enforced (`project-exclusion.ts` carries the full reasoning and the pattern
+   * semantics). A tool added later that never thinks about exclusions gets the REFUSAL rather than
+   * the bypass — the inheritance the roadmap item asks for, in the fail-closed direction.
+   *
+   * Pass `false` only for an operation that writes without reading — `write`, `write_hex`, `trash`,
+   * a bash redirect target, a working-directory classification. `edit` and `apply_patch` read
+   * before they write and must take the default. The list is *"Never read"*, not *"never touch"*:
+   * `todo/projects.md` scopes this to **model read eligibility**, and refusing writes as well would
+   * be a second, unrequested promise that also breaks generating a file the user excluded on purpose.
+   */
+  readsContent: Schema.optional(Schema.Boolean),
 })
 export type ResolveInput = typeof ResolveInput.Type
 
@@ -72,7 +90,15 @@ export interface Interface {
    * stay inside the Location. Absolute paths outside it require separate
    * `external_directory` approval. This does not approve the mutation.
    */
-  readonly resolve: (input: ResolveInput) => Effect.Effect<Target, PathError | FSUtil.Error>
+  readonly resolve: (
+    input: ResolveInput,
+  ) => Effect.Effect<Target, PathError | FSUtil.Error | ProjectExclusion.ExcludedError>
+  /**
+   * The `novaclaw.json` exclusion list governing a canonical directory, for the two tools that
+   * ENUMERATE rather than name (`glob`, `grep`). `resolve` speaks for their search root; only they
+   * can speak for their rows. Everyone else should be using `resolve` and nothing else.
+   */
+  readonly exclusionsFor: (directory: string) => Effect.Effect<ProjectExclusion.Declaration | undefined>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/LocationMutation") {}
@@ -98,6 +124,12 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const fs = yield* FSUtil.Service
     const location = yield* Location.Service
+    // Captured at layer build and provided below, for the reason `project-file-cache.ts` states:
+    // leaving the requirement to be discharged at call time pushes it into this service's R, which
+    // must be `never`.
+    const projects = yield* ProjectFileCache.Service
+    const exclusionsFor = (directory: string) =>
+      ProjectExclusion.declarationFor(directory).pipe(Effect.provideService(ProjectFileCache.Service, projects))
     // Same boot tolerance as the FileSystem layer: a location whose directory was deleted
     // must still boot far enough to serve DB-only requests (e.g. deleting its sessions).
     const locationRoot = yield* fs
@@ -149,6 +181,32 @@ export const layer = Layer.effect(
         return yield* new PathError({ path: input.path, reason: "location_escape" })
       }
 
+      // ── The project exclusion gate ──────────────────────────────────────────────────────────
+      //
+      // 🔴 HERE, and deliberately after `resolvePath`. Everything above has already turned whatever
+      // the model typed into ONE canonical string: `path.resolve` collapsed `..` and normalised
+      // separators, `realPath` followed symlinks and (on Windows) folded the path to its true
+      // on-disk casing — measured: `…/SECRETS/key.txt` comes back as `…/Secrets/Key.TXT`. Screening
+      // the canonical path is therefore screening the FILE, not a spelling of it, which is what
+      // makes "prove exclusions cannot be bypassed through alternate tools or path aliases"
+      // (`todo/projects.md`) a property of this one call site rather than a checklist per tool.
+      //
+      // The declaration is looked up from the TARGET's directory, so a nested project, an absolute
+      // path into this project from outside it, and a path into a different project all get the
+      // answer the file's own owner wrote. See `project-exclusion.ts`.
+      if (input.readsContent !== false) {
+        const declaration = yield* exclusionsFor(resolved.directory)
+        if (declaration) {
+          const verdict = ProjectExclusion.screen(declaration, resolved.canonical, resolved.type === "Directory")
+          if (verdict.excluded && verdict.pattern !== undefined)
+            return yield* new ProjectExclusion.ExcludedError({
+              resource: input.path,
+              pattern: verdict.pattern,
+              file: declaration.file,
+            })
+        }
+      }
+
       const external = !lexicallyInternal
       const resource = external
         ? slash(resolved.canonical)
@@ -169,7 +227,7 @@ export const layer = Layer.effect(
       } satisfies Target
     })
 
-    return Service.of({ resolve })
+    return Service.of({ resolve, exclusionsFor })
   }),
 )
 
@@ -178,5 +236,5 @@ export const locationLayer = layer
 export const node = makeLocationNode({
   service: Service,
   layer: layer.pipe(Layer.orDie),
-  deps: [FSUtil.node, Location.node],
+  deps: [FSUtil.node, Location.node, ProjectFileCache.node],
 })

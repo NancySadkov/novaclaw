@@ -1400,6 +1400,29 @@ export type ProjectState =
       kind: "none"
     }
 
+export type ProjectWriteInput = {
+  name?: string
+  permissions?: PermissionV2Ruleset
+  tune?: ProjectTune
+  exclude?: Array<string>
+  policies?: Array<string>
+}
+
+export type ProjectWriteResult =
+  | {
+      ok: true
+      file: string
+      created: boolean
+      sections: Array<string>
+      refusedTune: Array<string>
+    }
+  | {
+      ok: false
+      file: string
+      reason: string
+      detail: string
+    }
+
 export type ToolListItem = {
   id: string
   description: string
@@ -4291,6 +4314,9 @@ export type ConfigInfo = {
       maxTokens?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     }
     announce?: string
+    dht?: {
+      bootstrap?: Array<string>
+    }
   }
   telemetry?: {
     enabled?: boolean
@@ -4457,6 +4483,20 @@ export type ModelV2Info = {
     context: number
     input?: number
     output: number
+  }
+}
+
+export type ProjectTune = {
+  mode?: "interactive"
+  features?: {
+    safeMode?: boolean
+    askBeforeChanges?: boolean
+    surgicalEdits?: boolean
+    contextBudget?: boolean
+    memory?: boolean
+    introspection?: boolean
+    quality?: boolean
+    affective?: boolean
   }
 }
 
@@ -9131,6 +9171,7 @@ export type CommunityDiscoverResponses = {
     peers: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     seedsAsked: boolean
     seedsFound: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    refused?: Array<string>
   }
 }
 
@@ -9422,6 +9463,7 @@ export type CommunityParticipationResponses = {
     }
     announce?: string
     announceConfirmed?: boolean
+    announceReason?: string
   }
 }
 
@@ -9860,6 +9902,9 @@ export type CommunityPeerDmResponses = {
    */
   200: {
     received: true
+    by?: string
+    at?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    signature?: string
   }
 }
 
@@ -9901,6 +9946,7 @@ export type CommunityPeerSearchResponse = CommunityPeerSearchResponses[keyof Com
 export type CommunityPeerAskData = {
   body: {
     asker: string
+    to: string
     question: string
     at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     signature: string
@@ -9926,6 +9972,8 @@ export type CommunityPeerAskResponses = {
   200: {
     answer?: string
     refused?: string
+    refusalAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    refusalSignature?: string
     author?: string
     at?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     signature?: string
@@ -9938,8 +9986,9 @@ export type CommunityPeerSuccessionTellData = {
   body: {
     predecessor: string
     successor: string
-    at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    at: number
     signature: string
+    successorSignature: string
   }
   path?: never
   query?: never
@@ -9962,6 +10011,9 @@ export type CommunityPeerSuccessionTellResponses = {
    */
   200: {
     received: true
+    by?: string
+    at?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    signature?: string
   }
 }
 
@@ -9993,8 +10045,9 @@ export type CommunityPeerSuccessionKnownResponses = {
     statements: Array<{
       predecessor: string
       successor: string
-      at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      at: number
       signature: string
+      successorSignature: string
     }>
   }
 }
@@ -10005,7 +10058,9 @@ export type CommunityPeerSuccessionKnownResponse =
 export type CommunityPeerIdentityData = {
   body?: never
   path?: never
-  query?: never
+  query?: {
+    challenge?: string
+  }
   url: "/api/community/identity"
 }
 
@@ -10026,6 +10081,7 @@ export type CommunityPeerIdentityResponses = {
     networkID: string
     sealingKey?: string
     sealingSignature?: string
+    proof?: string
   }
 }
 
@@ -10156,6 +10212,9 @@ export type CommunityPeerInboundResponses = {
    */
   200: {
     received: true
+    by?: string
+    at?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    signature?: string
   }
 }
 
@@ -10374,6 +10433,38 @@ export type ProjectStateResponses = {
 }
 
 export type ProjectStateResponse = ProjectStateResponses[keyof ProjectStateResponses]
+
+export type ProjectWriteData = {
+  body: ProjectWriteInput
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/api/project"
+}
+
+export type ProjectWriteErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type ProjectWriteError = ProjectWriteErrors[keyof ProjectWriteErrors]
+
+export type ProjectWriteResponses = {
+  /**
+   * The receipt, or the refusal
+   */
+  200: ProjectWriteResult
+}
+
+export type ProjectWriteResponse = ProjectWriteResponses[keyof ProjectWriteResponses]
 
 export type ToolListData = {
   body?: never

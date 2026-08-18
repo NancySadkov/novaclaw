@@ -1,10 +1,12 @@
-import { createSignal, For, Show, type JSX } from "solid-js"
+import { createSignal, For, Match, Show, Switch, type JSX } from "solid-js"
 import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { Switch as SwitchToggle } from "@novaclaw/ui/v2/switch-v2"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { useLanguage } from "@/context/language"
+import { pathKey } from "@/utils/path-key"
+import { makeDefaultPayload, planMakeDefault } from "./make-default"
 
 export type ComposerFeature =
   | "introspection"
@@ -99,6 +101,44 @@ export type ComposerRemoteChatState = {
   openSettings: () => void
 }
 
+/** What actually happened when the user pressed "Make Default for this Folder". */
+export type ComposerMakeDefaultReceipt =
+  | {
+      kind: "written"
+      file: string
+      /** `true` when there was no file before, so the receipt says "Created" rather than "Updated". */
+      created: boolean
+      /** The sections replaced. Everything else in the file — permissions included — is unchanged. */
+      sections: readonly string[]
+      /** Supervision switches left out, because a folder's file may raise a rail and never lower one. */
+      refused: readonly string[]
+    }
+  /** The folder has a `novaclaw.json` that does not parse. Nothing was written; their file is intact. */
+  | { kind: "refused"; file: string; reason: string; detail: string }
+  /** The request itself did not land. Distinct from a refusal: nothing is wrong with their file. */
+  | { kind: "failed"; detail: string }
+
+/**
+ * "Make Default for this Folder" — the Tune section of this folder's `novaclaw.json`.
+ *
+ * `undefined` when this composer has no folder to write into (no server, or a draft with no
+ * directory yet). The section is then simply absent rather than present-and-broken.
+ */
+export type ComposerMakeDefaultState = {
+  /** The folder that would receive the file. Named on screen: never make someone guess the target. */
+  folder: string
+  /**
+   * The project file that governs the folder TODAY, which may live in an ANCESTOR directory.
+   *
+   * ⚠️ The distinction is the whole reason this is a separate field from `folder`. Writing here when
+   * an ancestor governs does not edit the ancestor — it creates a nearer file that takes over — and
+   * a user who is not told that will read the receipt as having changed the file they were shown.
+   */
+  governedBy: ComposerProjectLayer | undefined
+  /** `false` while a write is in flight; the button disables itself rather than queueing a second. */
+  write: (features: Partial<Record<ComposerFeature, boolean>>) => Promise<ComposerMakeDefaultReceipt>
+}
+
 export type ComposerFeaturesControlState = {
   current: Record<ComposerFeature, boolean>
   override: Partial<Record<ComposerFeature, boolean>>
@@ -106,6 +146,8 @@ export type ComposerFeaturesControlState = {
   origin: Partial<Record<ComposerFeature, ComposerFeatureOrigin>>
   /** The `novaclaw.json` governing this chat's folder, when one does. */
   project: ComposerProjectLayer | undefined
+  /** Writing this chat's stance into the folder's own `novaclaw.json`. */
+  makeDefault: ComposerMakeDefaultState | undefined
   mode: ComposerMode
   remote: ComposerRemoteChatState
   style: JSX.CSSProperties | undefined
@@ -134,6 +176,7 @@ const COMPOSER_FEATURES: readonly ComposerFeature[] = [
   "affective",
 ]
 const COMPOSER_MODES: readonly ComposerMode[] = ["interactive", "auto-prompting", "goal-oriented"]
+
 const REMOTE_TRUSTS: readonly ComposerRemoteTrust[] = ["operator", "client", "audience"]
 
 const REMOTE_DOT: Record<string, string> = {
@@ -415,6 +458,187 @@ function RemoteChatSection(props: { remote: ComposerRemoteChatState }) {
 }
 
 /**
+ * **"Make Default for this Folder"** — `todo/projects.md`: *"It creates `novaclaw.json` when absent,
+ * or updates only its Tune section when present, preserving Permissions and unrelated fields; show
+ * the resulting change and a local receipt."*
+ *
+ * 🔴 **It saves what THIS CHAT DECLARED, not every switch on screen.** The obvious implementation —
+ * capture all eight effective values — writes a file that pins the folder against every later change
+ * to the user's own Settings, which is exactly what `ProjectFile.Tune`'s "absent means INHERIT, never
+ * off" discipline exists to prevent. So the payload is the chat's OVERRIDES: the switches the user
+ * actually moved. Everything they left alone stays absent, and the folder keeps tracking Settings.
+ * That is a surprising rule to meet in a receipt, so the section states it before the button and
+ * lists the exact values it will write.
+ *
+ * ⚠️ The mode is deliberately not written. A project file may only ever say `interactive` (a folder
+ * the user cloned five minutes ago must not start chats that prompt themselves), so a chat in an
+ * unattended mode is told its mode stays with the chat rather than being silently dropped.
+ */
+function MakeDefaultSection(props: {
+  state: ComposerMakeDefaultState
+  overrides: Partial<Record<ComposerFeature, boolean>>
+  mode: ComposerMode
+  featureTitle: (name: string) => string
+}) {
+  const language = useLanguage()
+  const [busy, setBusy] = createSignal(false)
+  const [receipt, setReceipt] = createSignal<ComposerMakeDefaultReceipt | undefined>(undefined)
+
+  /** What will be written, what will be dropped, and why — see `make-default.ts`. */
+  const plan = () => planMakeDefault(props.overrides)
+  const declared = () => plan().declared
+  const omitted = () => plan().omitted
+  const persisted = () => plan().persisted
+
+  const describe = (entry: { feature: ComposerFeature; value: boolean }) =>
+    `${props.featureTitle(entry.feature)} — ${language.t(`prompt.features.state.${entry.value ? "on" : "off"}`)}`
+
+  /** Where the folder's defaults come from TODAY. Principle 12(d): before the control, not after. */
+  const inForce = () => {
+    const governed = props.state.governedBy
+    if (!governed) return language.t("composer.tune.makeDefault.inForce.none")
+    // ⚠️ Through `pathKey`, not `===`. The two strings come from different places — the browser's
+    // session record and the server's own `path.resolve` — so they can differ in separator style or
+    // a trailing slash while naming one directory. A raw comparison then tells the user their edit
+    // will create a NEW file when it is going to update the one they are looking at.
+    if (pathKey(governed.root) === pathKey(props.state.folder))
+      return language.t("composer.tune.makeDefault.inForce.here", { file: governed.file })
+    return language.t("composer.tune.makeDefault.inForce.ancestor", { file: governed.file })
+  }
+
+  const run = () => {
+    if (busy() || persisted().length === 0) return
+    setBusy(true)
+    setReceipt(undefined)
+    void props.state
+      .write(makeDefaultPayload(plan()))
+      .then((result) => setReceipt(result))
+      .catch((error) =>
+        setReceipt({ kind: "failed", detail: error instanceof Error ? error.message : String(error) }),
+      )
+      .finally(() => setBusy(false))
+  }
+
+  return (
+    <div class="flex flex-col gap-1 border-t border-border-base pt-3" data-section="make-default">
+      <span class="text-[13px] font-[560] text-v2-text-text-base">{language.t("composer.tune.makeDefault.title")}</span>
+      <span class="text-[12px] leading-4 text-v2-text-text-faint">
+        {language.t("composer.tune.makeDefault.description")}
+      </span>
+      <span class="text-[11px] leading-4 break-all text-v2-text-text-faint" data-make-default-inforce>
+        {inForce()}
+      </span>
+
+      <Show
+        when={declared().length > 0}
+        fallback={
+          <span class="text-[11px] leading-4 text-v2-text-text-faint" data-make-default-empty>
+            {language.t("composer.tune.makeDefault.nothing")}
+          </span>
+        }
+      >
+        <Show when={persisted().length > 0}>
+          <span class="text-[11px] leading-4 text-v2-text-text-faint" data-make-default-preview>
+            {language.t("composer.tune.makeDefault.preview", { list: persisted().map(describe).join(", ") })}
+          </span>
+        </Show>
+        <Show when={omitted().length > 0}>
+          <span class="text-[11px] leading-4 text-v2-text-text-faint" data-make-default-omitted>
+            {language.t("composer.tune.makeDefault.omitted", {
+              list: omitted()
+                .map((entry) => props.featureTitle(entry.feature))
+                .join(", "),
+            })}
+          </span>
+        </Show>
+      </Show>
+
+      <Show when={props.mode !== "interactive"}>
+        <span class="text-[11px] leading-4 text-v2-text-text-faint" data-make-default-mode>
+          {language.t("composer.tune.makeDefault.modeStays")}
+        </span>
+      </Show>
+
+      <button
+        type="button"
+        data-action="make-default"
+        class="mt-1 self-start rounded-md border border-border-base px-2.5 py-1 text-[13px] text-v2-text-text-base hover:bg-v2-background-bg-subtle disabled:opacity-50"
+        disabled={busy() || persisted().length === 0}
+        onClick={run}
+      >
+        {language.t(busy() ? "composer.tune.makeDefault.saving" : "composer.tune.makeDefault.action")}
+      </button>
+
+      {/* THE LOCAL RECEIPT. It names the file that was written and the sections that changed, so the
+          user can go and read the result rather than take our word for it. */}
+      <Show when={receipt()}>
+        {(result) => (
+          <div class="flex flex-col gap-0.5 rounded-md border border-border-base px-2.5 py-1.5" data-make-default-receipt>
+            <Switch>
+              <Match when={result().kind === "written" ? (result() as Extract<ComposerMakeDefaultReceipt, { kind: "written" }>) : undefined}>
+                {(written) => (
+                  <>
+                    <span class="text-[12px] leading-4 break-all text-v2-text-text-base">
+                      {language.t(
+                        written().created
+                          ? "composer.tune.makeDefault.receipt.created"
+                          : "composer.tune.makeDefault.receipt.updated",
+                        { file: written().file },
+                      )}
+                    </span>
+                    <span class="text-[11px] leading-4 text-v2-text-text-faint">
+                      {language.t("composer.tune.makeDefault.receipt.sections", {
+                        list: written().sections.join(", "),
+                      })}
+                    </span>
+                    <span class="text-[11px] leading-4 text-v2-text-text-faint">
+                      {language.t("composer.tune.makeDefault.receipt.preserved")}
+                    </span>
+                    <Show when={written().refused.length > 0}>
+                      <span class="text-[11px] leading-4 text-v2-text-text-faint">
+                        {language.t("composer.tune.makeDefault.receipt.refused", {
+                          list: written().refused.map(props.featureTitle).join(", "),
+                        })}
+                      </span>
+                    </Show>
+                  </>
+                )}
+              </Match>
+              <Match when={result().kind === "refused" ? (result() as Extract<ComposerMakeDefaultReceipt, { kind: "refused" }>) : undefined}>
+                {(refused) => (
+                  <>
+                    {/* Two reasons, two opposite actions — "update NovaClaw" and "fix your file" —
+                        so they never share a sentence. Same split the Settings screen makes. */}
+                    <span class="text-[12px] leading-4 break-all text-v2-text-text-base">
+                      {language.t(
+                        refused().reason === "future-version"
+                          ? "composer.tune.makeDefault.receipt.refusedFuture"
+                          : "composer.tune.makeDefault.receipt.refusedBroken",
+                        { file: refused().file, detail: refused().detail },
+                      )}
+                    </span>
+                    <span class="text-[11px] leading-4 text-v2-text-text-faint">
+                      {language.t("composer.tune.makeDefault.receipt.untouched")}
+                    </span>
+                  </>
+                )}
+              </Match>
+              <Match when={result().kind === "failed" ? (result() as Extract<ComposerMakeDefaultReceipt, { kind: "failed" }>) : undefined}>
+                {(failed) => (
+                  <span class="text-[12px] leading-4 text-v2-text-text-base">
+                    {language.t("composer.tune.makeDefault.receipt.failed", { detail: failed().detail })}
+                  </span>
+                )}
+              </Match>
+            </Switch>
+          </div>
+        )}
+      </Show>
+    </div>
+  )
+}
+
+/**
  * The per-chat Tuning control (T1, Advanced+): the chat's Mode (kernel thread type — interactive
  * vs the unattended pair, architecture.md typed threads) plus one switch per harness helper —
  * the stuck detector (introspection), quality gates, and mood sampling (affective). Each control
@@ -670,6 +894,16 @@ function TuningPanel(props: { state: ComposerFeaturesControlState; onDismiss: ()
             </div>
           </div>
         ))}
+        <Show when={props.state.makeDefault}>
+          {(makeDefault) => (
+            <MakeDefaultSection
+              state={makeDefault()}
+              overrides={props.state.override}
+              mode={props.state.mode}
+              featureTitle={featureTitle}
+            />
+          )}
+        </Show>
       </div>
     </Dialog>
   )

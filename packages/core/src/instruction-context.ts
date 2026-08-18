@@ -1,11 +1,13 @@
 export * as InstructionContext from "./instruction-context"
 
 import { Array, Effect, Layer, Schema } from "effect"
-import { isAbsolute, join, relative, sep } from "path"
+import { dirname, isAbsolute, join, relative, sep } from "path"
 import { FSUtil } from "./fs-util"
 import { Flag } from "./flag/flag"
 import { Global } from "./global"
 import { Location } from "./location"
+import { ProjectExclusion } from "./project-exclusion"
+import { ProjectFileCache } from "./project-file-cache"
 import { AbsolutePath } from "./schema"
 import { SystemContext } from "./system-context/index"
 import { SystemContextRegistry } from "./system-context/registry"
@@ -25,6 +27,7 @@ export const layer = Layer.effectDiscard(
     const global = yield* Global.Service
     const location = yield* Location.Service
     const registry = yield* SystemContextRegistry.Service
+    const projects = yield* ProjectFileCache.Service
 
     const source = (value: ReadonlyArray<File> | SystemContext.Unavailable) =>
       SystemContext.make({
@@ -53,6 +56,31 @@ export const layer = Layer.effectDiscard(
             })
         ).map(FSUtil.resolve),
       )
+      // ⚠️ The one AMBIENT ingest of project file text, and it does not go through a tool — so it
+      // does not inherit `LocationMutation.resolve`'s exclusion gate and has to ask on its own.
+      // Without this, `exclude: ["AGENTS.md"]` would be honoured by every tool and quietly ignored
+      // by the path that loads the file into the system prompt on EVERY turn: the loudest possible
+      // way for "Never read" to be false.
+      //
+      // The instance's OWN `AGENTS.md` (under `global.config`) is never screened — it is not in the
+      // user's project, and a folder must not be able to silence the instance's own instructions.
+      const screened = yield* Effect.forEach(
+        [...discovered],
+        (candidate) =>
+          projects.read(dirname(candidate)).pipe(
+            Effect.map((entry) => {
+              if (entry.root === undefined || entry.exclude.length === 0) return candidate
+              const verdict = ProjectExclusion.evaluate(
+                ProjectExclusion.compile(entry.exclude),
+                ProjectExclusion.relativeWithin(entry.root, candidate) ?? "",
+                false,
+              )
+              return verdict.excluded ? undefined : candidate
+            }),
+          ),
+        { concurrency: "unbounded" },
+      )
+      for (const candidate of [...discovered]) if (!screened.includes(candidate)) discovered.delete(candidate)
       const paths = Array.dedupe([FSUtil.resolve(join(global.config, "AGENTS.md")), ...discovered])
       const files = yield* Effect.forEach(
         paths,
@@ -91,7 +119,7 @@ export const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "instruction-context",
   layer,
-  deps: [FSUtil.node, Global.node, Location.node, SystemContextRegistry.node],
+  deps: [FSUtil.node, Global.node, Location.node, SystemContextRegistry.node, ProjectFileCache.node],
 })
 
 function render(files: ReadonlyArray<File>) {

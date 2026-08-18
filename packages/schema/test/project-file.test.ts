@@ -195,3 +195,53 @@ describe("novaclaw.json tune", () => {
     expect((merged["tune"] as { features: Record<string, boolean> }).features.memory).toBe(false)
   })
 })
+
+/**
+ * `narrowTune`'s twin on the WRITE side. The read side is the enforcement — it is the only one an
+ * attacker's file goes through — so what is asserted here is TRUTHFULNESS: our own writer never puts
+ * a sentence in a file that the reader is guaranteed to refuse the moment it would matter.
+ */
+describe("what a write may record", () => {
+  test("🔴 a supervision switch is never recorded as OFF — it is omitted, and reported", () => {
+    const result = ProjectFile.writableTune({ features: { safeMode: false, askBeforeChanges: false } })
+    // Absent means INHERIT, which is exactly "this folder takes no position on your safety rails" —
+    // and it is the only encoding of that. Writing `false` would say something else entirely.
+    expect(result.tune?.features).toEqual({})
+    expect(result.refused).toEqual(["safeMode", "askBeforeChanges"])
+  })
+
+  test("raising supervision is written normally", () => {
+    const result = ProjectFile.writableTune({ features: { safeMode: true, askBeforeChanges: true } })
+    expect(result.tune?.features).toEqual({ safeMode: true, askBeforeChanges: true })
+    expect(result.refused).toEqual([])
+  })
+
+  test("a PREFERENCE switch is written either way — none of them widens what an agent may do", () => {
+    const result = ProjectFile.writableTune({
+      features: { memory: false, quality: false, affective: true, surgicalEdits: false },
+    })
+    expect(result.tune?.features).toEqual({ memory: false, quality: false, affective: true, surgicalEdits: false })
+    expect(result.refused).toEqual([])
+  })
+
+  test("the mode survives, and `interactive` is the only one the type admits", () => {
+    const result = ProjectFile.writableTune({ mode: "interactive", features: { memory: true } })
+    expect(result.tune?.mode).toBe("interactive")
+  })
+
+  test("no tune at all is not a tune section", () => {
+    expect(ProjectFile.writableTune(undefined)).toEqual({ tune: undefined, refused: [] })
+  })
+
+  test("🔴 whatever a write records, the read side then accepts unchanged", () => {
+    // The join: run every switch through the writer at its most permissive setting, then read it
+    // back against the most hostile baseline (every rail already ON). A writable tune that the
+    // reader still refuses would mean the file says one thing and the product does another.
+    const asked = Object.fromEntries(ProjectFile.TUNE_FEATURES.map((feature) => [feature, false]))
+    const written = ProjectFile.writableTune({ features: asked })
+    const baseline = Object.fromEntries(ProjectFile.SUPERVISION_FEATURES.map((feature) => [feature, true]))
+    const read = ProjectFile.narrowTune(written.tune, baseline)
+    expect(read.refused).toEqual([])
+    expect(read.features).toEqual(written.tune?.features ?? {})
+  })
+})

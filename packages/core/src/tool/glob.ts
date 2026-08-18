@@ -10,6 +10,7 @@ import { LocationMutation } from "../location-mutation"
 import { Ripgrep } from "../ripgrep"
 import { RelativePath } from "../schema"
 import { PermissionV2 } from "../permission"
+import { ProjectExclusion } from "../project-exclusion"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -113,6 +114,12 @@ export const layer = Layer.effectDiscard(
                   source,
                 })
                 const cwd = target.canonical
+                // The SECOND exclusion seam, and the only one besides `LocationMutation.resolve`.
+                // `resolve` above spoke for the search ROOT; it cannot speak for rows this tool
+                // never named. Without this, `exclude: ["secrets"]` would still list every path
+                // under `secrets/` — a directory listing IS a read of what the folder contains, and
+                // it is the cheapest way to learn what a user was trying to hide.
+                const exclusions = yield* mutation.exclusionsFor(cwd)
                 return yield* ripgrep
                   .glob({
                     cwd,
@@ -121,11 +128,12 @@ export const layer = Layer.effectDiscard(
                   })
                   .pipe(
                     Effect.map((result) =>
-                      result.map((entry) =>
-                        FileSystem.Entry.make({
-                          ...entry,
-                          path: RelativePath.make(path.relative(location.directory, path.resolve(cwd, entry.path))),
-                        }),
+                      ProjectExclusion.screenAll(exclusions, result, (entry) => path.resolve(cwd, entry.path)).kept.map(
+                        (entry) =>
+                          FileSystem.Entry.make({
+                            ...entry,
+                            path: RelativePath.make(path.relative(location.directory, path.resolve(cwd, entry.path))),
+                          }),
                       ),
                     ),
                   )

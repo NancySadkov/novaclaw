@@ -113,7 +113,7 @@ export type PromptInputControls = {
   // builds this object — the narrowness is load-bearing, only the duplicated key union was not.
   features: Pick<
     ComposerFeaturesControlState,
-    "current" | "override" | "origin" | "project" | "set" | "inherit"
+    "current" | "override" | "origin" | "project" | "makeDefault" | "set" | "inherit"
   >
 
   // The per-chat Mode control (kernel thread type): interactive, or the unattended pair
@@ -816,6 +816,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     override: props.controls.features.override,
     origin: props.controls.features.origin,
     project: props.controls.features.project,
+    makeDefault: props.controls.features.makeDefault,
     mode: props.controls.mode.current,
     remote: props.controls.remote,
     style: control(),

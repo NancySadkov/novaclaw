@@ -5,12 +5,19 @@ import { LocationServiceMap } from "@novaclaw/core/location-services"
 import { ServerLocationServiceMap } from "@/location-service-map"
 import { Location } from "@novaclaw/core/location"
 import { ProjectFileResolve } from "@novaclaw/core/project-file"
+import { ProjectFileWrite } from "@novaclaw/core/project-file-write"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { Worktree } from "@/worktree"
 import { Effect, Layer } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
-import { SessionListQuery, ToolListQuery, WorktreeApiError, WorktreeDirtyApiError } from "../groups/experimental"
+import {
+  ProjectWriteInput,
+  SessionListQuery,
+  ToolListQuery,
+  WorktreeApiError,
+  WorktreeDirtyApiError,
+} from "../groups/experimental"
 
 function mapWorktreeError<A, R>(self: Effect.Effect<A, Worktree.Error, R>) {
   return self.pipe(
@@ -124,8 +131,41 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       // the caller to fix a request that was fine.
     }, Effect.orDie)
 
+    /**
+     * Create or update the routed folder's `novaclaw.json`.
+     *
+     * ⚠️ The target is the ROUTED DIRECTORY's own file, never the ancestor `GET /api/project`
+     * resolves to. "Make Default for this Folder" means this folder: writing into a grandparent
+     * because that is where an existing file happened to live would silently change the defaults of
+     * every sibling checkout under it.
+     *
+     * ⚠️ Write scope (AGENTS.md principle 11c): the session's working folder is one of the three
+     * places NovaClaw may write, and `ProjectFileWrite.write` appends a constant filename to it, so
+     * no caller-supplied path component reaches the filesystem.
+     */
+    const projectWrite = Effect.fn("ExperimentalHttpApi.projectWrite")(function* (ctx: {
+      payload: typeof ProjectWriteInput.Type
+    }) {
+      const directory = (yield* InstanceState.context).directory
+      const result = yield* ProjectFileWrite.write(directory, ctx.payload).pipe(
+        Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))),
+      )
+      // A refusal travels as a 200 body, deliberately — see `ProjectWriteResult`. `orDie` therefore
+      // covers only defects: every condition a user can cause is already in the union.
+      return result.ok
+        ? {
+            ok: true as const,
+            file: result.file,
+            created: result.created,
+            sections: result.sections,
+            refusedTune: result.refusedTune,
+          }
+        : { ok: false as const, file: result.file, reason: result.reason, detail: result.detail }
+    }, Effect.orDie)
+
     return handlers
       .handle("project", project)
+      .handle("projectWrite", projectWrite)
       .handle("tool", tool)
       .handle("toolIDs", toolIDs)
       .handle("worktree", worktree)
