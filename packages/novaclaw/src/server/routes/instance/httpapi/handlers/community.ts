@@ -319,6 +319,28 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
           yield* sync.learnFrom(seeds, "dns")
           yield* sync.learnFrom(supplied, "manual")
           const exchange = yield* sync.discover()
+
+          /**
+           * 🔴 **PULL successions too, because the push is not enough** (found by re-running the
+           * two-instance journey after this session's changes, 2026-08-18).
+           *
+           * A rotation propagates by `sync.successions(statement)` at the moment it happens, to
+           * whoever is reachable right then — so anyone offline at that instant, met afterwards, or
+           * BLOCKED by the rotating instance never learns, and goes on attributing that peer's
+           * history to a key they abandoned. The journey caught it once blocking and rotation were
+           * exercised in the same run: B blocked A, rotated, and correctly told nobody; A had no way
+           * to find out.
+           *
+           * ⚠️ Withholding the PUSH from a blocked peer is right and stays — publishing to somebody
+           * whose messages you refuse tells them you are online. Pulling is the other side of that:
+           * `GET /succession` is an anonymous door by design, precisely because a statement is
+           * self-verifying and about the sender's OWN key, so refusing to serve it would only leave
+           * the reader misattributing old messages.
+           *
+           * ⚠️ No announce argument: this pulls and never pushes. Discovery must not become a second
+           * place that broadcasts our own rotation.
+           */
+          yield* sync.successions(undefined)
           return {
             learned: exchange.learned,
             asked: exchange.asked,
