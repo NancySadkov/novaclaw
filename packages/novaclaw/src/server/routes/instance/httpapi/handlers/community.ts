@@ -696,6 +696,32 @@ const TURN_TIMED_OUT = { timedOut: true } as const
           const refusal = yield* answers.allowed(ctx.payload.asker)
           if (refusal !== undefined) return { refused: refusal }
 
+          /**
+           * 🔴 The evidence packet, gathered BEFORE the permit is taken.
+           *
+           * ⚠️ Outside the semaphore deliberately: this is database work, and holding the one
+           * answering permit while doing it would let a question that never reaches a model block
+           * the peer who asked next. The permit is for the MODEL, which is the scarce thing.
+           *
+           * ⚠️ Joined rooms only, and each is read as a bounded page. Every message here is one the
+           * peer surface hands to any stranger through `/sync/messages`, which is what makes
+           * answering from them a saving of a round trip rather than a disclosure.
+           */
+          const mineID = (yield* selfIdentity.identity()).networkID
+          const rooms = yield* channels.channels()
+          const claims: CommunityAnswer.Evidence[] = []
+          for (const room of rooms.slice(0, CommunityAnswer.MAX_EVIDENCE_ROOMS))
+            for (const message of yield* channels.history(room.name, CommunityAnswer.MAX_EVIDENCE_SCANNED))
+              claims.push({
+                channel: message.channel,
+                author: message.author,
+                at: message.at,
+                body: message.body,
+                // The only thing this instance genuinely witnessed is what its own user said.
+                saw: message.author === mineID,
+              })
+          const evidence = CommunityAnswer.selectEvidence(ctx.payload.question, claims)
+
           const answer = yield* turn
             .withPermitsIfAvailable(1)(
               Effect.gen(function* () {
@@ -749,7 +775,23 @@ const TURN_TIMED_OUT = { timedOut: true } as const
                       // 🔴 FRAMED. The question is a stranger's words entering a model's context, and
                       // this one is more dangerous than a channel body because the model is SUPPOSED
                       // to act on it.
-                      messages: [Message.user(CommunityAnswer.framedQuestion(ctx.payload.question))],
+                      /**
+                       * 🔴 EVIDENCE, then the question (Codex review P2).
+                       *
+                       * The turn used to carry the system prompt and the question alone, so "what
+                       * this instance knows" was the base model's pretrained weights — and the
+                       * motivating flow of the whole feature is one Nova asking another what
+                       * happened TODAY. Without this the instance signs a year-old guess with its
+                       * user's identity and spends their standing on it.
+                       *
+                       * ⚠️ Assembled ABOVE, outside the model call, from messages the peer surface
+                       * already serves to any stranger who asks — so it discloses nothing a peer
+                       * could not fetch directly.
+                       */
+                      messages: [
+                        Message.user(CommunityAnswer.evidencePacket(evidence)),
+                        Message.user(CommunityAnswer.framedQuestion(ctx.payload.question)),
+                      ],
                       // 🔴 NO TOOLS. An instance that answers strangers with a full agent is a remote
                       // shell with extra steps; what it may use is what it would say aloud in a room.
                       tools: [],
