@@ -330,6 +330,18 @@ export function NewHome() {
     })
   })
   const records = createMemo(() => allRecords().slice(0, HOME_SESSION_LIMIT))
+  /**
+   * Is there anything already worth rendering, independent of whether a load is in flight?
+   *
+   * ⚠️ Reads the SAME three lists the pane's own emptiness check below uses, `?.`-guarded for the same
+   * reason: a faulted or HMR-disposed memo reads as `undefined`, and `.length` of undefined once
+   * crashed the whole sessions pane. Anything less than all three would leave a real case — a folder
+   * with only attention rows, say — still flashing a skeleton over content it already had.
+   */
+  const hasSessionsToShow = createMemo(
+    () =>
+      (groups()?.length ?? 0) > 0 || (attentionRecords()?.length ?? 0) > 0 || (flatSorted()?.length ?? 0) > 0,
+  )
   // Tags component (notes/entities.md T0): the tag filter over chat processes. The universe is the
   // tags of the currently listed roots; picking one narrows the list (attention cluster included).
   const [selectedTag, setSelectedTag] = createSignal<string | undefined>()
@@ -956,7 +968,21 @@ export function NewHome() {
             onScroll={(event) => sessionHeaderOpacity.update(event.currentTarget.scrollTop)}
           >
             <Show
-              when={!sessionLoad.isLoading}
+              // 🔴 A skeleton is for having NOTHING to show, never merely for a fetch being in
+              // flight. Gating on `isLoading` alone made returning to Home flash "Loading" for about
+              // a second EVERY time, including when the sessions were already on hand — the owner's
+              // report, 2026-08-18.
+              //
+              // Two facts make that a pure regression rather than a necessary wait. The rows come
+              // from `focusedSync()`, NOT from this query — `queryFn` returns `null` and exists only
+              // to trigger the load — and that sync survives the navigation. And `sessionLoad`'s key
+              // spreads `projectDirectories()`, which starts empty on each mount and then populates,
+              // so the key CHANGES and TanStack sees a brand-new query with no cached data: `isLoading`
+              // goes true again on every single return, however warm the data underneath is.
+              //
+              // So: show what we have and let the refresh land behind it. The skeleton still covers
+              // the genuinely empty first load, which is the case it was written for.
+              when={!sessionLoad.isLoading || hasSessionsToShow()}
               fallback={
                 <div class="pt-3">
                   <HomeSessionSkeleton label={language.t("common.loading")} />
