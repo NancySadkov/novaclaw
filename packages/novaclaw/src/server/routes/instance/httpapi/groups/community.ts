@@ -271,6 +271,20 @@ export const CommunityApi = HttpApi.make("community").add(
              */
             seedsAsked: Schema.Boolean,
             seedsFound: Schema.Number,
+            /**
+             * 🔴 Why nothing was looked for — present only when discovery REFUSED to run.
+             *
+             * A refusal that answered zeroes would be indistinguishable from a network with nobody
+             * on it, and the two are fixed by opposite actions: one by pasting an address, the
+             * other by turning the feature back on. The same argument the transport's `off` reason
+             * makes, and an ARRAY for the same reason `CommunityConsent.refusals` returns one —
+             * airgapped AND never-consented is a real state, and reporting one of them would send
+             * someone to fix a thing that would not help.
+             *
+             * ⚠️ Declared here because an undeclared field is silently dropped by the response
+             * schema and looks exactly like a backend that never sent it.
+             */
+            refused: Schema.optional(Schema.Array(Schema.String)),
           }),
           "How many peers were learned, how many are now known, and whether the seed door answered",
         ),

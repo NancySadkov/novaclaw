@@ -203,6 +203,35 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
         "communityDiscover",
         Effect.fn("CommunityHttpApi.communityDiscover")(function* (ctx) {
           /**
+           * 🔴 **THE GATE, before any source opens a socket** (Codex review P2).
+           *
+           * `MDNS.browse()` opens an mDNS browser and the seed lookup calls the system TXT
+           * resolver, and both ran unconditionally — only the DHT branch below asked. So a direct
+           * call to this endpoint emitted LAN multicast and a DNS query after the user had switched
+           * Community off or sealed the machine in airgap. The panel hides the button in those
+           * states, which lowers the incidence and is not enforcement; principle 4's "nothing goes
+           * in or out" is not a statement about which buttons are visible.
+           *
+           * ⚠️ Named, not silent. Zeroes would read as "the network is empty", and that is fixed by
+           * pasting an address while this is fixed by turning the feature on — sending someone to
+           * the wrong repair is the failure mode `refusals` returning an ARRAY exists to prevent.
+           *
+           * ⚠️ Resolved ONCE here rather than per source: three sources each asking the live gate is
+           * three chances for the next source to be added without asking, which is exactly how the
+           * DHT ended up the only guarded one.
+           */
+          const refusals = CommunityConsent.refusals(CommunityConsent.currentGate())
+          if (refusals.length > 0)
+            return {
+              learned: 0,
+              asked: 0,
+              peers: (yield* peersStore.list()).length,
+              seedsAsked: false,
+              seedsFound: 0,
+              refused: refusals,
+            }
+
+          /**
            * 🔴 Every source at once, because plurality IS the anti-shutdown property. The spec: if
            * everyone ships the same three seeds and they die, new users cannot join a network that is
            * perfectly alive. LAN costs nothing and needs no seed at all.
@@ -263,8 +292,8 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
            * interrupted the moment the response is written, which for a ten-second lookup means it
            * never finishes once.
            */
-          if (CommunityConsent.participates(CommunityConsent.currentGate()))
-            bridge.fork(
+          // ⚠️ No gate check here any more: the ONE resolved above already refused every path.
+          bridge.fork(
               Effect.gen(function* () {
                 const viaDht = yield* dht.find(announce === undefined ? {} : { announce })
                 if (viaDht.length > 0) yield* sync.learnFrom(viaDht, "dht")
