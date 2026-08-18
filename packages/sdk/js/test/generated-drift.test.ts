@@ -149,7 +149,12 @@ const GENERATE_TIMEOUT_MS = 60_000
 // Updated 2026-08-18, mapping diff reviewed — three additions, each mapping to itself:
 //   `ProjectWriteInput` / `ProjectWriteResult`    (POST /api/project — the project-file write path)
 //   `ProjectTune`                                 (`Project.Tune`, the dot collapsed as usual)
-const SCHEMA_NAME_FINGERPRINT = "856dedc0919f9b7a35d29b4c7eeb0d45fe11730a122d7befc859c11743bff52c"
+// Updated 2026-08-18, mapping diff reviewed — three additions, each mapping to itself, nothing removed:
+//   `RecipeVerifyCheck` / `RecipeVerifyResult`    (POST /api/recipe/:slug/verify — the deterministic
+//                                                  success artifact for a cook, todo/recipes.md)
+//   `UnknownReason`                               (`@novaclaw/schema`'s shared "why is this blank"
+//                                                  vocabulary, first reaching the wire through it)
+const SCHEMA_NAME_FINGERPRINT = "6b80e529304b9f9d5e096cb2715a7c03cb29ceb30ca0a04477fb86016c72094f"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

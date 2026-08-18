@@ -1900,6 +1900,8 @@ export type ProviderNotFoundError = {
   message: string
 }
 
+export type UnknownReason = "not-applicable" | "not-measured" | "measurement-failed" | "incomplete"
+
 export type PermissionNotFoundError = {
   _tag: "PermissionNotFoundError"
   requestID: string
@@ -5946,6 +5948,26 @@ export type RecipeRunResult = {
   sessionID: string
   directory: string
   assets: Array<string>
+  produces: Array<string>
+}
+
+export type RecipeVerifyCheck = {
+  declared: string
+  outcome: "met" | "unmet" | "unknown"
+  reason?: UnknownReason
+  path?: string
+  checked: string
+  bytes?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type RecipeVerifyResult = {
+  slug: string
+  name: string
+  directory: string
+  verdict: "working" | "not-working" | "not-available" | "unknown"
+  checks: Array<RecipeVerifyCheck>
+  summary: string
+  at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
 }
 
 export type PermissionV2Request = {
@@ -16409,6 +16431,40 @@ export type V2RecipeRunResponses = {
 }
 
 export type V2RecipeRunResponse = V2RecipeRunResponses[keyof V2RecipeRunResponses]
+
+export type V2RecipeVerifyData = {
+  body: {
+    directory: string
+    model?: string
+  }
+  path: {
+    slug: string
+  }
+  query?: never
+  url: "/api/recipe/{slug}/verify"
+}
+
+export type V2RecipeVerifyErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError | InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2RecipeVerifyError = V2RecipeVerifyErrors[keyof V2RecipeVerifyErrors]
+
+export type V2RecipeVerifyResponses = {
+  /**
+   * Recipe.VerifyResult
+   */
+  200: RecipeVerifyResult
+}
+
+export type V2RecipeVerifyResponse = V2RecipeVerifyResponses[keyof V2RecipeVerifyResponses]
 
 export type V2AppRemoveData = {
   body?: never

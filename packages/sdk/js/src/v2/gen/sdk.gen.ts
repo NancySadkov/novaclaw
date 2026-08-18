@@ -5983,6 +5983,30 @@ class ApiV2Recipe extends NovaClawApiClient {
       headers: { "Content-Type": "application/json", ...options?.headers },
     })
   }
+
+  /**
+   * Check what a cook actually produced
+   *
+   * Reads the work directory and reports, per artifact the recipe declares, whether it is there and whether it is the shape its name implies. Deterministic and read-only: the harness looks at the filesystem, so the verdict does not depend on what the model said about its own work. Runs nothing and writes nothing, and may be called as often as you like.
+   */
+  public verify<ThrowOnError extends boolean = false>(
+    parameters: {
+      slug: string
+      directory: string
+      model?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { slug: parameters?.["slug"] }
+    const body = { directory: parameters?.["directory"], model: parameters?.["model"] }
+    return (options?.client ?? this.client).post<T.V2RecipeVerifyResponses, T.V2RecipeVerifyErrors, ThrowOnError>({
+      url: "/api/recipe/{slug}/verify",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
 }
 
 class ApiV2App extends NovaClawApiClient {

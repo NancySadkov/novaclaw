@@ -22083,6 +22083,90 @@
         ]
       }
     },
+    "/api/recipe/{slug}/verify": {
+      "post": {
+        "tags": ["recipe"],
+        "operationId": "v2.recipe.verify",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Recipe.VerifyResult",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipeVerifyResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Reads the work directory and reports, per artifact the recipe declares, whether it is there and whether it is the shape its name implies. Deterministic and read-only: the harness looks at the filesystem, so the verdict does not depend on what the model said about its own work. Runs nothing and writes nothing, and may be called as often as you like.",
+        "summary": "Check what a cook actually produced",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "directory": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "string"
+                  }
+                },
+                "required": ["directory"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.recipe.verify({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/app/{id}": {
       "delete": {
         "tags": ["novaclaw HttpApi"],
@@ -31575,6 +31659,10 @@
         },
         "required": ["_tag", "providerID", "message"],
         "additionalProperties": false
+      },
+      "UnknownReason": {
+        "type": "string",
+        "enum": ["not-applicable", "not-measured", "measurement-failed", "incomplete"]
       },
       "PermissionNotFoundError": {
         "type": "object",
@@ -45230,9 +45318,113 @@
             "items": {
               "type": "string"
             }
+          },
+          "produces": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
-        "required": ["sessionID", "directory", "assets"],
+        "required": ["sessionID", "directory", "assets", "produces"],
+        "additionalProperties": false
+      },
+      "RecipeVerifyCheck": {
+        "type": "object",
+        "properties": {
+          "declared": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": ["met", "unmet", "unknown"]
+          },
+          "reason": {
+            "$ref": "#/components/schemas/UnknownReason"
+          },
+          "path": {
+            "type": "string"
+          },
+          "checked": {
+            "type": "string"
+          },
+          "bytes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          }
+        },
+        "required": ["declared", "outcome", "checked"],
+        "additionalProperties": false
+      },
+      "RecipeVerifyResult": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "directory": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string",
+            "enum": ["working", "not-working", "not-available", "unknown"]
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecipeVerifyCheck"
+            }
+          },
+          "summary": {
+            "type": "string"
+          },
+          "at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          }
+        },
+        "required": ["slug", "name", "directory", "verdict", "checks", "summary", "at"],
         "additionalProperties": false
       },
       "PermissionV2Request": {

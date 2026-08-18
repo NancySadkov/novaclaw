@@ -1,9 +1,13 @@
 import path from "node:path"
 import { AgentV2 } from "@novaclaw/core/agent"
+import { Catalog } from "@novaclaw/core/catalog"
+import { Location } from "@novaclaw/core/location"
+import { LocationServiceMap } from "@novaclaw/core/location-services"
 import { ModelV2 } from "@novaclaw/core/model"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { Recipe } from "@novaclaw/core/recipe"
 import { RecipeBuiltin } from "@novaclaw/core/recipe-builtin"
+import { RecipeVerify } from "@novaclaw/core/recipe-verify"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { Scratch } from "@novaclaw/core/scratch"
 import { SessionV2 } from "@novaclaw/core/session"
@@ -29,10 +33,27 @@ const builtins = { builtinSlugs: RecipeBuiltin.BUILTIN_SLUGS }
 const badRequest = (error: unknown) =>
   new InvalidRequestError({ message: error instanceof Error ? error.message : String(error) })
 
+/** `"provider/model"` → a ref, or `undefined` when the caller said nothing usable. */
+const modelRef = (spec: string | undefined): ModelV2.Ref | undefined => {
+  if (!spec) return undefined
+  const [providerID, ...rest] = spec.split("/")
+  const modelID = rest.join("/")
+  if (!providerID || !modelID) return undefined
+  return ModelV2.Ref.make({ id: ModelV2.ID.make(modelID), providerID: ProviderV2.ID.make(providerID) })
+}
+
 export const RecipeHandler = handlerLayer(
   HttpApiBuilder.group(RecipeApi, "server.recipe", (handlers) =>
     Effect.gen(function* () {
       const sessions = yield* SessionV2.Service
+      // ⚠️ Recipes are INSTANCE-GLOBAL (no `LocationMiddleware` on this group — see `handler-api.ts`),
+      // but a model's capabilities live in the LOCATION-scoped catalog, so `yield* Catalog.Service` here
+      // dies at runtime with "Service not found" while typechecking clean. Measured live 2026-08-18.
+      // `pty-instance.ts` has the same shape and the same fix: hold the ONE server-wide map and provide
+      // the location explicitly. The right location is the work directory itself — that is the location
+      // the cook's own session was created at, so the capability read comes from the same catalog the
+      // cook resolved its model through, rather than from some other location's view of it.
+      const locations = yield* LocationServiceMap.Service
       return handlers
         .handle(
           "recipe.list",
@@ -125,13 +146,7 @@ export const RecipeHandler = handlerLayer(
               catch: badRequest,
             })
 
-            let model: ModelV2.Ref | undefined
-            if (ctx.payload.model) {
-              const [providerID, ...rest] = ctx.payload.model.split("/")
-              const modelID = rest.join("/")
-              if (providerID && modelID)
-                model = ModelV2.Ref.make({ id: ModelV2.ID.make(modelID), providerID: ProviderV2.ID.make(providerID) })
-            }
+            const model = modelRef(ctx.payload.model)
 
             const session = yield* sessions.create({
               location: { directory: AbsolutePath.make(directory) },
@@ -173,7 +188,67 @@ export const RecipeHandler = handlerLayer(
                 ),
               ),
             )
-            return { sessionID: session.id, directory, assets }
+            // What `recipe.verify` will judge this cook on, handed back with the session so a caller never
+            // has to re-read the recipe to know what to check — and so a recipe that declares NOTHING is
+            // visibly unjudgeable at the moment the cook starts, rather than looking like a pass later.
+            const produces = yield* Effect.promise(() => Recipe.producesOf(recipe.slug))
+            return { sessionID: session.id, directory, assets, produces }
+          }),
+        )
+        .handle(
+          "recipe.verify",
+          Effect.fn(function* (ctx) {
+            // ── THE DETERMINISTIC SUCCESS ARTIFACT ────────────────────────────────────────────────────
+            //
+            // A cook's verdict was PROSE, so nothing mechanical could read its outcome (`todo/recipes.md`)
+            // — and AGENTS.md's promise is that a user can tell *in one click* whether their NovaClaw
+            // works. This reads the work dir and answers from the filesystem, so the answer does not
+            // depend on what the model said about its own work. It runs nothing, writes nothing and is a
+            // pure function of (folder, declarations, model): calling it twice gives the same receipt, and
+            // calling it can never be the thing that broke the cook.
+            const recipe = yield* Effect.promise(() => Recipe.read(ctx.params.slug, builtins))
+            if (recipe === undefined)
+              return yield* new InvalidRequestError({ message: `No recipe named "${ctx.params.slug}"` })
+            const directory = ctx.payload.directory.trim()
+            if (directory === "")
+              return yield* new InvalidRequestError({ message: "Which folder did it cook in?" })
+
+            // ⚠️ A model we cannot resolve stays `undefined`, which makes the checks run normally and any
+            // gap read as `not-measured`. Answering `not-applicable` here would claim "there was nothing
+            // to measure" on the strength of a lookup miss — and `not-applicable` is the one reason that
+            // tells a reader to STOP ASKING (`UnknownReason.STOPS_THE_READER`), so it has to be earned.
+            const ref = modelRef(ctx.payload.model)
+            const info = ref
+              ? yield* Catalog.Service.use((catalog) => catalog.model.get(ref.providerID, ref.id)).pipe(
+                  Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))),
+                )
+              : undefined
+
+            const declares = yield* Effect.promise(() => Recipe.producesOf(recipe.slug))
+            const receipt = yield* Effect.promise(() =>
+              RecipeVerify.verify({
+                recipeName: recipe.name,
+                directory,
+                declares,
+                ...(info ? { model: { label: info.name || info.id, tools: info.capabilities.tools } } : {}),
+              }),
+            )
+            return {
+              slug: recipe.slug,
+              name: recipe.name,
+              directory: receipt.directory,
+              verdict: receipt.verdict,
+              checks: receipt.checks.map((check) => ({
+                declared: check.declared,
+                outcome: check.outcome,
+                ...(check.reason ? { reason: check.reason } : {}),
+                ...(check.looked ? { path: check.looked } : {}),
+                checked: check.checked,
+                ...(check.bytes === undefined ? {} : { bytes: check.bytes }),
+              })),
+              summary: RecipeVerify.summary(receipt),
+              at: receipt.at,
+            }
           }),
         )
     }),

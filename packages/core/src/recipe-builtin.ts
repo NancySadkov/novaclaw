@@ -39,6 +39,27 @@ import { Recipe } from "./recipe"
  * A declaration must be a fact a normal person could verify by hand — never a package list, which is the
  * dependency manifest ruling 14 forbids under the name "configuration".
  *
+ * ⚠️ **`produces` is the OTHER machine-read field, and it is why these prompts NAME their output files.**
+ * A cook's verdict was prose until now, so nothing could mechanically read whether it worked
+ * (`todo/recipes.md`); `recipe-verify.ts` fixes that by checking, after the cook, that the artifacts a
+ * recipe declares are actually on disk and actually the shape their name implies. That only works if the
+ * prompt asks for a FIXED filename, so four of the seven gained one word ("save it as `pi.txt`") — a
+ * postcondition naming a file the prompt never requested would be a guaranteed false NOT WORKING, which
+ * ruling 2 rules out. `test/recipe-produces.test.ts` enforces exactly that: every declared artifact must
+ * appear in its own recipe's prompt.
+ *
+ * ⚠️ **Two deliberate absences, for the same reason `needs` has two.**
+ *
+ *  · **`install-health-check` declares only `health.txt`, not the PNG from its IMAGE row.** Writing image
+ *    bytes depends on what the model and the host happen to have (a python, a base64), so an absent
+ *    `health.png` is not evidence that the install is broken — and a check that reports NOT WORKING when
+ *    it does not know is exactly the fault-described-falsely ruling 2 forbids. The image row stays prose,
+ *    where its own NOT WORKING / NOT AVAILABLE wording already keeps the instance apart from the model.
+ *  · **No compiled binary is ever declared.** `gcc -o hello` yields `hello` on Linux and `hello.exe` under
+ *    MinGW, so a fixed name would fail on one platform for a reason that has nothing to do with the
+ *    install. The two C recipes declare the program's captured OUTPUT instead, which proves compile AND
+ *    run happened and is spelled the same everywhere.
+ *
  * ⚠️ Seeding is non-destructive, so adding `needs` to a builtin only reaches installs that have not
  * seeded that slug yet. Existing users keep their copy — they own it once it is on their disk — which is
  * correct, and is why nothing here should be understood as a migration.
@@ -58,6 +79,7 @@ export const BUILTINS: readonly Builtin[] = [
     // everything and tell the user what is missing; a prerequisite gate here would refuse the diagnostic
     // precisely when it is the thing to run. It is also where the refusal on the OTHER recipes sends
     // people, so it has to be reachable from a broken install by definition.
+    produces: ["health.txt"],
     prompt: `Check whether this NovaClaw installation is working, then report a short verdict table.
 
 Test each capability once, in this order, and keep it quick — no deep work:
@@ -86,6 +108,7 @@ install anything; just report.`,
     // a way to FAIL the task. Stating it here means the answer arrives in milliseconds, with the search
     // set named, instead of after a cook that could only ever end there.
     needs: ["a C compiler"],
+    produces: ["hello.c", "hello.out.txt"],
     prompt: `Write, compile and run a C99 "hello world" program in this folder.
 
 Steps, in this order:
@@ -107,7 +130,9 @@ Steps, in this order:
      \`cannot execute 'as'\` — gcc finds its own assembler and linker through PATH.
    - **Prepending** instead of appending shadows the shell's \`ls\`/\`head\`/\`cat\` with the toolchain's
      BusyBox versions, and your later commands start failing for unrelated-looking reasons.
-4. Run the binary and show its actual output.
+4. Run the binary, show its actual output, and **save that output to \`hello.out.txt\`** in this folder
+   (\`./hello > hello.out.txt\` — or whatever you named the binary — then \`cat hello.out.txt\`). That file
+   is how NovaClaw checks afterwards that the program really compiled and really ran.
 
 Finish by stating the compiler used, the exact build command, and the program's output.
 
@@ -132,7 +157,11 @@ Three ways to fail this task that are worth naming, because they are the common 
     // discover late: this recipe is deliberately long-horizon, so "no compiler" found at the end costs a
     // lot more model time than "no compiler" found at the door.
     needs: ["a C compiler"],
+    produces: ["pi.c", "pi.txt"],
     prompt: `Write a C99 program that prints the first 100 decimal digits of π, then verify it.
+
+Write the program as \`pi.c\` in this folder, and save the digits it prints to \`pi.txt\` — that file is how
+NovaClaw checks afterwards that the program really compiled and really ran.
 
 Requirements:
 - Use a **Machin-like arctangent formula** (e.g. π/4 = 4·arctan(1/5) − arctan(1/239)).
@@ -162,7 +191,10 @@ question if you stop to ask one.`,
     slug: "browser-os",
     name: "Browser OS",
     description: "A desktop environment in a single HTML file — the big front-end generation test.",
+    produces: ["os.html"],
     prompt: `Using HTML, CSS and JavaScript, build a "browser OS" — a desktop environment that runs in a browser.
+
+Write it to \`os.html\` in this folder.
 
 Requirements:
 - At least **5 applications**, each in its own window (draggable, focusable, closable).
@@ -180,10 +212,12 @@ anything is a stub rather than working, say which — an honest list beats a cla
     slug: "dungeon-crawler",
     name: "Procedural dungeon with fog of war",
     description: "Single-file HTML game: procedural generation, 2D graphics math, and visibility.",
+    produces: ["dungeon.html"],
     prompt: `Act as an expert game engineer specialising in retro rogue-like mechanics and 2D graphics math.
 
 Build a complete, self-contained **procedural dungeon generator with dynamic fog of war** in a single,
-beautifully styled HTML file. Vanilla HTML, CSS and JavaScript — no external libraries.
+beautifully styled HTML file called \`dungeon.html\`, in this folder. Vanilla HTML, CSS and JavaScript — no
+external libraries.
 
 Requirements:
 - **Generation:** rooms connected by corridors, guaranteed reachable — no sealed-off areas. A new seed
@@ -200,6 +234,7 @@ you left out.`,
     slug: "osint-brief",
     name: "OSINT research brief",
     description: "Evidence-disciplined web research with labelled confidence and cited sources.",
+    produces: ["brief.md"],
     prompt: `Research a subject of my choosing on the open web and produce an evidence-backed brief.
 
 **Ask me what to research before you start** if I have not told you — one line is enough.
@@ -227,6 +262,7 @@ inaccessible and move on. Name public figures and organisations; describe privat
     slug: "csv-insight",
     name: "Data file to insight",
     description: "Takes a messy CSV and returns a cleaned dataset plus a chart and honest caveats.",
+    produces: ["clean.csv", "chart.html"],
     prompt: `Turn a data file into something I can actually use.
 
 If there is a \`.csv\`, \`.tsv\` or \`.json\` data file in this folder, use it. If there is not, **generate a

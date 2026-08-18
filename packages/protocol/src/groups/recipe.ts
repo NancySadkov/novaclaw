@@ -1,6 +1,7 @@
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
 import { SessionStrict } from "@novaclaw/schema/session-strict"
+import { UnknownReason } from "@novaclaw/schema/unknown-reason"
 import { InvalidRequestError } from "../errors"
 
 // Recipes — "source code for the AI era" (AGENTS.md). A recipe is a FOLDER on disk (recipe.md + assets);
@@ -30,7 +31,46 @@ const RunResult = Schema.Struct({
   /** Where it is cooking — the scratch folder by default, or whatever the caller chose. */
   directory: Schema.String,
   assets: Schema.Array(Schema.String),
+  /**
+   * The artifacts this recipe says a finished cook leaves behind — what `recipe.verify` will check in
+   * `directory` afterwards. Empty means the recipe declares no postcondition, so the only possible verdict
+   * is "I cannot tell": a caller should say that rather than showing a success it did not earn.
+   */
+  produces: Schema.Array(Schema.String),
 }).annotate({ identifier: "Recipe.RunResult" })
+
+/**
+ * One declared artifact, and what the HARNESS found when it looked — the deterministic success artifact
+ * (`todo/recipes.md`). `outcome` is three-valued on purpose: `unknown` is not a failure, and `reason` says
+ * which kind of not-knowing it is, in `@novaclaw/schema`'s shared vocabulary.
+ */
+const VerifyCheck = Schema.Struct({
+  /** The recipe author's own words. */
+  declared: Schema.String,
+  outcome: Schema.Literals(["met", "unmet", "unknown"]),
+  /** Present exactly when `outcome` is `unknown`. `not-applicable` is the NOT AVAILABLE arm. */
+  reason: Schema.optional(UnknownReason.Reason),
+  /** The path actually inspected, relative to the work dir. Absent means we did not look. */
+  path: Schema.optional(Schema.String),
+  /** What was ACTUALLY verified, in words — a weak claim must be readable as a weak claim. */
+  checked: Schema.String,
+  bytes: Schema.optional(Schema.Number),
+}).annotate({ identifier: "Recipe.VerifyCheck" })
+
+const VerifyResult = Schema.Struct({
+  slug: Schema.String,
+  name: Schema.String,
+  directory: Schema.String,
+  /**
+   * `working` · `not-working` (the instance) · `not-available` (the model could not, so this is not a
+   * fault in the install) · `unknown` (we could not check — never a success).
+   */
+  verdict: Schema.Literals(["working", "not-working", "not-available", "unknown"]),
+  checks: Schema.Array(VerifyCheck),
+  /** The same receipt in one sentence, house style, safe to show a normal person. */
+  summary: Schema.String,
+  at: Schema.Number,
+}).annotate({ identifier: "Recipe.VerifyResult" })
 
 export const RecipeGroup = HttpApiGroup.make("server.recipe")
   .add(
@@ -107,6 +147,35 @@ export const RecipeGroup = HttpApiGroup.make("server.recipe")
         summary: "Cook a recipe",
         description:
           "Copies the recipe's assets into a work directory and starts a session there with the recipe as its prompt. The recipe itself is never modified, so it stays re-runnable.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("recipe.verify", "/api/recipe/:slug/verify", {
+      params: { slug: Schema.String },
+      payload: Schema.Struct({
+        /** The work dir a cook ran in — `recipe.run`'s `directory`. */
+        directory: Schema.String,
+        /**
+         * The model that cooked, as `providerID/modelID`. Supply it and a model that cannot call tools
+         * yields NOT AVAILABLE instead of NOT WORKING, because a model that cannot write a file has not
+         * demonstrated anything about this install. Omit it and the files are simply checked — an
+         * unresolvable model is `not-measured`, NEVER `not-applicable`, which would tell the reader to
+         * stop asking a question that is still open.
+         */
+        model: Schema.optional(Schema.String),
+      }),
+      success: VerifyResult,
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.recipe.verify",
+        summary: "Check what a cook actually produced",
+        description:
+          "Reads the work directory and reports, per artifact the recipe declares, whether it is there and " +
+          "whether it is the shape its name implies. Deterministic and read-only: the harness looks at the " +
+          "filesystem, so the verdict does not depend on what the model said about its own work. Runs " +
+          "nothing and writes nothing, and may be called as often as you like.",
       }),
     ),
   )

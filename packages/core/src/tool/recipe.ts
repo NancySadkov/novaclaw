@@ -18,12 +18,20 @@
  * state what it gets. Rules out `permissionMode`/`type`/`model`/`strict` in frontmatter.*
  *
  * The input schema below IS that enforcement, not a description of it: `save` accepts `name`,
- * `description`, `prompt`, `needs` and `slug` and nothing else, so no posture, permission, model or
- * strictness field can reach a recipe THROUGH this tool at all — there is no field to put it in and no
- * free-form frontmatter channel. (The roadmap item that opened this work asked for "a posture/permission/
- * model field on Recipe.Info". Ruling 14 forbids exactly those four; the real gap was the missing tool.)
- * The one seam where a model's bytes still become a frontmatter LINE is `needs`, and `Recipe.needsLine`
- * collapses control characters so an entry can never open a second key. Pinned in `test/tool-recipe.test.ts`.
+ * `description`, `prompt`, `needs`, `produces` and `slug` and nothing else, so no posture, permission,
+ * model or strictness field can reach a recipe THROUGH this tool at all — there is no field to put it in
+ * and no free-form frontmatter channel. (The roadmap item that opened this work asked for "a posture/
+ * permission/model field on Recipe.Info". Ruling 14 forbids exactly those four; the real gap was the
+ * missing tool.) The two seams where a model's bytes become a frontmatter LINE are `needs` and
+ * `produces`, and both go through the one control-character collapse in `Recipe.carriedLine`, so an entry
+ * can never open a second key. Pinned in `test/tool-recipe.test.ts`.
+ *
+ * ⚠️ **`produces` is the SECOND machine-read field and it does not re-open ruling 14** — the full argument
+ * is in `recipe-verify.ts`'s header, and the owner already applied its test when admitting `collection`:
+ * *what the recipe IS* is fine, *what the recipe is GRANTED* is not. It states the artifacts a finished
+ * cook leaves behind, which is how a cook stops being judged by prose (`todo/recipes.md`). It grants
+ * nothing and cannot: an entry is a plain relative file name, and declaring one you do not produce marks
+ * your OWN recipe NOT WORKING.
  *
  * ⚠️ **No `level` and no `collection` either.** Both are designed but unlanded (`todo/recipes.md`), and
  * both are *instance* decisions rather than artifact ones: a shared recipe's self-declared expertise level
@@ -106,6 +114,16 @@ const SaveOp = Schema.Struct({
         'Host capabilities this recipe needs, each a short fact a person can check: ["a C compiler", "python3"]. ' +
         "This is the ONLY structured field a recipe may carry — it states what the recipe NEEDS, never what it gets.",
     }),
+  produces: Schema.Array(Schema.String)
+    .pipe(Schema.optional)
+    .annotate({
+      description:
+        'The files a FINISHED cook leaves in the folder: ["clean.csv", "chart.html"]. NovaClaw checks them ' +
+        "itself after the cook and reports WORKING or NOT WORKING, so a recipe that declares them has an " +
+        "outcome a machine can read instead of an opinion. Plain file names only — no paths outside the " +
+        "folder, no commands. Only name files your PROMPT actually asks for, or every healthy run will be " +
+        "reported as broken.",
+    }),
   slug: Schema.String.pipe(Schema.optional).annotate({
     description: "Folder name of an EXISTING recipe to replace. Omit it to create a new recipe.",
   }),
@@ -126,8 +144,8 @@ export const description =
   "not code and never carries settings. Ops: " +
   '{"op":"list"} — every recipe on this install · ' +
   '{"op":"read","slug":"hello-c"} — one recipe\'s full text · ' +
-  '{"op":"save","name":"…","prompt":"…","description":"…","needs":["a C compiler"]} — write a new one ' +
-  "(add slug to replace an existing one instead). " +
+  '{"op":"save","name":"…","prompt":"…","description":"…","needs":["a C compiler"],' +
+  '"produces":["hello.c"]} — write a new one (add slug to replace an existing one instead). ' +
   "Saving returns the recipe's folder — put any assets it needs there with the write tool. " +
   "Saving asks the user first, because a recipe becomes a future session's prompt."
 
@@ -277,6 +295,7 @@ export const layer = Layer.effectDiscard(
                             name: title,
                             ...(input.description ? { description: input.description } : {}),
                             ...(input.needs ? { needs: input.needs } : {}),
+                            ...(input.produces ? { produces: input.produces } : {}),
                             prompt: input.prompt,
                           },
                           options,

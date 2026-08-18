@@ -215,7 +215,7 @@ describe("ruling 14: a recipe states what it NEEDS and never what it GETS", () =
     return into
   }
 
-  it.live("the tool offers NO field for posture, permission, model or strictness — only `needs`", () =>
+  it.live("the tool offers NO field for posture, permission, model or strictness — only `needs`/`produces`", () =>
     withTool(recording([]), ({ registry }) =>
       Effect.gen(function* () {
         const definition = (yield* registry.catalogue())
@@ -227,7 +227,14 @@ describe("ruling 14: a recipe states what it NEEDS and never what it GETS", () =
         // The negative control on the extraction itself: if it silently returned nothing, the loop
         // below would pass forever. This also pins the whole authoring surface — a field added here
         // has to be argued against ruling 14 before this test goes green again.
-        expect(fields).toEqual(["description", "name", "needs", "op", "prompt", "slug"])
+        //
+        // ⚠️ `produces` was added on 2026-08-18 and that argument is on the record: it is the recipe
+        // declaring the artifacts a finished cook leaves behind (the deterministic success artifact,
+        // `todo/recipes.md`), so it says what the recipe IS, never what it GETS — the same test the
+        // owner applied when admitting `collection` to ruling 14. It grants nothing, reaches no
+        // `SessionConfig`, and its entries are plain relative file names. Full reasoning:
+        // `recipe-verify.ts`'s header.
+        expect(fields).toEqual(["description", "name", "needs", "op", "produces", "prompt", "slug"])
 
         // The enforcement is STRUCTURAL. A model cannot write a field the schema does not offer, so
         // ruling 14 holds for this seam without any runtime stripping to keep in sync.

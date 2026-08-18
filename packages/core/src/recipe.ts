@@ -50,8 +50,8 @@ export interface SaveInput {
    * The host capabilities this recipe needs ("a C compiler", "python3"), written into frontmatter as a
    * single `needs:` line.
    *
-   * ⚠️ **This is the ONE machine-read field todo.md ruling 14 permits, and as of 2026-07-31 it IS read**
-   * — see the `needs` section below (`parseNeeds` / `checkNeeds` / `unmetMessage`), consumed by
+   * ⚠️ **This was ruling 14's ONE machine-read field, and as of 2026-07-31 it IS read** — see the
+   * `needs` section below (`parseNeeds` / `checkNeeds` / `unmetMessage`), consumed by
    * `recipe.run` before a cook starts. Ruling 14: frontmatter may carry `needs` — host-capability facts a
    * normal person can verify — and *no configuration or grant token*, because an artifact designed to
    * travel between strangers is untrusted input the moment it lands. So `needs` may say what a recipe
@@ -63,6 +63,25 @@ export interface SaveInput {
    * `undefined` leaves whatever the author already wrote alone; `[]` clears the line.
    */
   readonly needs?: readonly string[]
+  /**
+   * The artifacts a SUCCESSFUL cook leaves in the work dir ("clean.csv", "chart.html"), written as a
+   * single `produces:` line. The deterministic success artifact: `recipe-verify.ts` reads them after a
+   * cook and returns a receipt a machine can act on, because a cook's verdict was prose until then and
+   * nothing could mechanically read its outcome (`todo/recipes.md`).
+   *
+   * ⚠️ **The second machine-read field, and it obeys the same ruling-14 shape as `needs` for the same
+   * reason.** It states what the recipe PRODUCES — an observable fact about the author's own artifact,
+   * verifiable by a normal person with a file manager — and never what it GETS. Each entry is a plain
+   * relative file name and nothing else: no command, no pattern, no threshold. The full argument, and
+   * why an open check vocabulary would be an escalation wearing a different hat, is in
+   * `recipe-verify.ts`'s header — including the reconciliation with ruling 14's *"exactly one machine-read
+   * field"* headline, which the owner's own `collection` precedent already settled: the test is *what the
+   * recipe IS* versus *what the recipe is GRANTED*. Like `needs` it is a carried frontmatter LINE and NOT
+   * a `RESERVED` key, so `parse`/`render` stay the untouched inverse pair (see the block comment below).
+   *
+   * `undefined` leaves whatever the author already wrote alone; `[]` clears the line.
+   */
+  readonly produces?: readonly string[]
 }
 
 /** Injectable seams for tests (temp root, fake clock). */
@@ -181,6 +200,8 @@ export const render = (input: {
 
 /** A carried frontmatter line that states a `needs:`, in any casing/spacing an author might write. */
 const NEEDS_LINE = /^\s*needs\s*:/i
+/** The same, for `produces:` — the artifacts a finished cook leaves behind. */
+const PRODUCES_LINE = /^\s*produces\s*:/i
 
 /**
  * The single `needs:` line for a set of capability facts, or `undefined` when there is nothing to say.
@@ -192,8 +213,8 @@ const NEEDS_LINE = /^\s*needs\s*:/i
  * a `needs` entry can only ever produce ONE line. Pinned, with the injection attempt as the fixture, in
  * `test/tool-recipe.test.ts`.
  */
-export const needsLine = (needs: readonly string[]): string | undefined => {
-  const facts = needs
+const carriedLine = (key: string, values: readonly string[]): string | undefined => {
+  const facts = values
     .map((entry) =>
       entry
         // ONE expression, deliberately: two overlapping strips would each be individually
@@ -206,20 +227,41 @@ export const needsLine = (needs: readonly string[]): string | undefined => {
         .trim(),
     )
     .filter((entry) => entry.length > 0)
-  return facts.length === 0 ? undefined : `needs: ${facts.join(", ")}`
+  return facts.length === 0 ? undefined : `${key}: ${facts.join(", ")}`
 }
 
-/** Replace the author's `needs:` line when a new one is stated; leave everything else exactly as written. */
-const withNeeds = (carried: readonly string[], needs: readonly string[] | undefined): readonly string[] => {
-  if (needs === undefined) return carried
-  const rest = carried.filter((line) => !NEEDS_LINE.test(line))
-  const line = needsLine(needs)
+export const needsLine = (needs: readonly string[]): string | undefined => carriedLine("needs", needs)
+
+/**
+ * The single `produces:` line for a set of declared artifacts. Shares `carriedLine` with `needsLine`
+ * deliberately: the control-character collapse above is a containment boundary (one entry may never open
+ * a second frontmatter key), and a second field that re-implemented it would eventually re-implement it
+ * WRONG. One expression, both fields, one negative-controlled test.
+ */
+export const producesLine = (produces: readonly string[]): string | undefined => carriedLine("produces", produces)
+
+/** Replace the author's own line for one key when a new one is stated; leave every other line as written. */
+const withCarried = (
+  carried: readonly string[],
+  key: string,
+  pattern: RegExp,
+  values: readonly string[] | undefined,
+): readonly string[] => {
+  if (values === undefined) return carried
+  const rest = carried.filter((line) => !pattern.test(line))
+  const line = carriedLine(key, values)
   return line === undefined ? rest : [line, ...rest]
 }
 
 // =============================================================================
-// `needs` — ruling 14's ONE machine-read field, finally READ
+// `needs` — ruling 14's FIRST machine-read field, finally READ
 // =============================================================================
+//
+// ⚠️ It is no longer the only one: `produces` (the deterministic success artifact — `recipe-verify.ts`)
+// shares every mechanism below, deliberately. Both are carried LINES rather than `RESERVED` keys, both
+// go through the same control-character collapse, and both are read at the point of use. Everything this
+// block says about why that shape was chosen applies verbatim to the second field; what does NOT
+// generalise is the vocabulary, which is per-field and closed in both cases.
 //
 // Until 2026-07-31 `needs` was written, carried and preserved by everything above and read by NOTHING,
 // so a recipe declaring `needs: a C compiler` stated a prerequisite the product never checked. That is
@@ -341,11 +383,11 @@ const resolveCommand: ResolveCommand = (candidate) =>
  * a declaration that silently does nothing — the same defect this whole section exists to close, one
  * layer down.
  */
-export const parseNeeds = (frontmatter: readonly string[]): string[] => {
+const parseCarried = (frontmatter: readonly string[], pattern: RegExp): string[] => {
   const facts: string[] = []
   let inBlock = false
   for (const line of frontmatter) {
-    if (NEEDS_LINE.test(line)) {
+    if (pattern.test(line)) {
       // NEEDS_LINE anchors at the start, so the FIRST colon is the key separator; a colon inside the
       // value (`needs: a compiler: gcc`) stays in the value.
       const inline = line.slice(line.indexOf(":") + 1)
@@ -361,6 +403,15 @@ export const parseNeeds = (frontmatter: readonly string[]): string[] => {
   }
   return facts.map((fact) => fact.trim()).filter((fact) => fact.length > 0)
 }
+
+export const parseNeeds = (frontmatter: readonly string[]): string[] => parseCarried(frontmatter, NEEDS_LINE)
+
+/**
+ * The artifacts a recipe declares it produces, in the order the author wrote them — the read half of the
+ * deterministic success artifact (`recipe-verify.ts`). Same two accepted shapes as `needs`, for the same
+ * reason: a person who writes the YAML block form must not get a declaration that silently does nothing.
+ */
+export const parseProduces = (frontmatter: readonly string[]): string[] => parseCarried(frontmatter, PRODUCES_LINE)
 
 /** Probe one stated fact against this host. Pure given `resolve`. */
 export const checkNeed = (fact: string, resolve: ResolveCommand = resolveCommand): NeedCheck => {
@@ -485,10 +536,27 @@ export async function read(slug: string, options?: Options & { builtinSlugs?: Re
  * (cook it) instead of inventing a prerequisite the author never wrote.
  */
 export async function needsOf(slug: string, options?: Options): Promise<string[]> {
+  return declarationsOf(slug, parseNeeds, options)
+}
+
+/**
+ * The artifacts a recipe declares a finished cook leaves behind — the read half of the deterministic
+ * success artifact. Same shape and same degradation as {@link needsOf}: an unreadable folder declares
+ * NOTHING, which produces a receipt that says *"I cannot tell"* rather than one that invents a failure.
+ */
+export async function producesOf(slug: string, options?: Options): Promise<string[]> {
+  return declarationsOf(slug, parseProduces, options)
+}
+
+const declarationsOf = async (
+  slug: string,
+  read: (frontmatter: readonly string[]) => string[],
+  options?: Options,
+): Promise<string[]> => {
   if (!isValidSlug(slug)) return []
   const file = path.join(recipesRoot(options), slug, RECIPE_FILE)
   const raw = await fs.readFile(file, "utf8").catch(() => undefined)
-  return raw === undefined ? [] : parseNeeds(parse(raw).frontmatter)
+  return raw === undefined ? [] : read(parse(raw).frontmatter)
 }
 
 /** Validate + write. Returns the persisted recipe; throws with a user-legible message on bad input. */
@@ -510,7 +578,12 @@ export async function save(input: SaveInput, options?: Options): Promise<RecipeR
     render({
       name: input.name.trim(),
       ...(input.description ? { description: input.description.trim() } : {}),
-      frontmatter: withNeeds(existing === undefined ? [] : parse(existing).frontmatter, input.needs),
+      frontmatter: withCarried(
+        withCarried(existing === undefined ? [] : parse(existing).frontmatter, "needs", NEEDS_LINE, input.needs),
+        "produces",
+        PRODUCES_LINE,
+        input.produces,
+      ),
       prompt: input.prompt,
     }),
     "utf8",
