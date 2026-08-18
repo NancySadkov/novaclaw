@@ -2,12 +2,14 @@ import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { Effect } from "effect"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
+import { CommunityObservation } from "@novaclaw/core/community/observation"
 import { CommunityPeers } from "@novaclaw/core/community/peers"
 import { CommunitySync } from "@novaclaw/core/community/sync"
 import { Database } from "@novaclaw/core/database/database"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { testEffect } from "./lib/effect"
+import { mintIdentity } from "./lib/community"
 
 /**
  * Community P0 — the routing table peer exchange fills (`todo/community-p2p.md`).
@@ -19,7 +21,13 @@ import { testEffect } from "./lib/effect"
 
 const it = testEffect(
   LayerNode.compile(
-    LayerNode.group([Database.node, InstanceIdentityStore.node, CommunityContacts.node, CommunityPeers.node]),
+    LayerNode.group([
+      Database.node,
+      InstanceIdentityStore.node,
+      CommunityContacts.node,
+      CommunityObservation.node,
+      CommunityPeers.node,
+    ]),
   ),
 )
 
@@ -220,4 +228,47 @@ describe("CommunityPeers", () => {
     }),
   )
 
+})
+
+describe("the introduction edge survives housekeeping (honesty-ledger (y)/(dd))", () => {
+  /**
+   * 🔴 (y) says a record of what a peer did must not live on the peer row, because this table's
+   * housekeeping deletes rows for the system's convenience. §4c item 3 put the introduction edge
+   * there anyway — the one signal AGENTS.md calls the difference between a cluster and a consensus.
+   *
+   * The route-uniqueness door was shut for hearsay in 2026-08-17. This is the other one: `evict()`
+   * dropped the edge the moment a peer went quiet, which is (y)'s predicted harm exactly.
+   */
+  it.effect("🔴 a peer we have DEALT WITH outlives strangers when the table is full", () =>
+    Effect.gen(function* () {
+      const peers = yield* CommunityPeers.Service
+      const ledger = yield* CommunityObservation.Service
+      const doorman = mintIdentity().networkID
+
+      // Somebody we actually dealt with, introduced by our doorman — the row whose loss (y) warns of.
+      const engaged = mintIdentity().networkID
+      yield* peers.learn(engaged, ["http://203.0.113.9:4096"], "px", doorman)
+      yield* ledger.recordFirstHand({
+        subject: engaged,
+        at: Date.now(),
+        context: "asked",
+        outcome: CommunityObservation.Outcome.ANSWERED,
+      })
+
+      // …then fill the table past its bound with strangers, every one of them seen MORE recently.
+      for (let n = 0; n < CommunityPeers.MAX_PEERS + 20; n++) {
+        const stranger = mintIdentity().networkID
+        yield* peers.learn(stranger, [`http://203.0.113.${(n % 200) + 10}:${4100 + n}`], "px", doorman)
+        yield* peers.seen(stranger)
+      }
+
+      const rows = yield* peers.list()
+      // ⚠️ The bound is still ABSOLUTE — a priority within the cap, never an exemption from it, or
+      // this would be the disk-fill attack the cap exists to stop.
+      expect(rows.length, "the table stays under its bound").toBeLessThanOrEqual(CommunityPeers.MAX_PEERS)
+      const kept = rows.find((row) => row.networkID === engaged)
+      expect(kept, "a peer we dealt with is not dropped for going quiet").toBeDefined()
+      expect(kept?.introducedBy, "and its introduction edge comes with it").toBe(doorman)
+    }),
+  )
 })

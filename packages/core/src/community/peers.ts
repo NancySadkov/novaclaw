@@ -126,13 +126,38 @@ export const layer = Layer.effect(
      * log learned: a burst of invented peers all arrive with `last_seen_at` null, so a cutoff would
      * match everything or nothing while the table grew past its "bound".
      */
+    /**
+     * Keep the table under its bound, evicting least-recently-seen first — but a peer we have
+     * DEALT WITH is the last to go.
+     *
+     * 🔴 **This is the open half of the (y)/(dd) tension** (`honesty-ledger.md` §1(y) and §4c item 3;
+     * p2p review 1.5). (y) says a record of what a peer did must not live on this row, because this
+     * table's housekeeping deletes rows for the system's convenience — and §4c item 3 then put the
+     * introduction edge here anyway. The route-uniqueness door was shut for hearsay in 2026-08-17;
+     * this was the other one, silently dropping the edge that AGENTS.md calls the difference between
+     * a cluster and a consensus, the moment a peer went quiet.
+     *
+     * ⚠️ **A PRIORITY WITHIN THE CAP, never an exemption from it**, and the distinction is the whole
+     * design. Exempting rows outright would unbound the table — the disk-fill attack the cap exists
+     * for. Sorting engaged peers to the front of the survivors keeps `MAX_PEERS` absolute while
+     * making them the last thing dropped.
+     *
+     * ⚠️ Engagement is OUR OWN dealings, not "has an introducer". An introducer is attacker-supplied
+     * — the table is filled by strangers describing strangers, so pinning on it would let anyone
+     * reserve rows by naming peers. Nobody can make us deal with them, and what dealings a stranger
+     * CAN provoke (asking a question we answer) is already bounded by the daily budget and the
+     * newcomer share.
+     */
     const evict = () =>
       db
         .delete(CommunityPeerTable)
         .where(
           sql`${CommunityPeerTable.network_id} NOT IN (
             SELECT network_id FROM ${CommunityPeerTable}
-            ORDER BY coalesce(last_seen_at, 0) DESC, rowid DESC
+            ORDER BY
+              CASE WHEN network_id IN (SELECT subject FROM community_observation) THEN 0 ELSE 1 END,
+              coalesce(last_seen_at, 0) DESC,
+              rowid DESC
             LIMIT ${MAX_PEERS}
           )`,
         )
