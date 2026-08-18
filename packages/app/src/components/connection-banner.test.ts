@@ -1,3 +1,5 @@
+import fs from "fs"
+import path from "path"
 import { describe, expect, test } from "bun:test"
 import { dict as en } from "@/i18n/en"
 import { bannerMode } from "./connection-banner"
@@ -50,5 +52,39 @@ describe("connection banner mode", () => {
     expect(en["app.connection.stopped.description"]).not.toContain("clears by itself")
     expect(en["app.connection.stopped.description"]).toContain("stopped trying")
     expect(en["app.connection.stopped.restart"]).toBeTruthy()
+  })
+})
+
+/**
+ * ─── the two SOURCE guards ──────────────────────────────────────────────────────────────────────
+ *
+ * `packages/app` has no Solid render harness (`jsx: preserve`, no `@solidjs/testing-library`), so
+ * neither of these can be asserted against a DOM here. Both were MEASURED in the packaged app on
+ * 2026-08-18 and are pinned at the source level so the fix cannot be quietly undone; the DOM proof
+ * lives in `notes/reports/electron-render-gates-2026-08-18.md`.
+ *
+ * ⚠️ A source assertion is the weakest kind of test in this repo and is used here only because the
+ * stronger kind does not exist yet. If a render harness ever lands, replace these.
+ */
+describe("the terminal panel's reachability is pinned in source", () => {
+  const banner = fs.readFileSync(path.join(import.meta.dir, "connection-banner.tsx"), "utf8")
+  const app = fs.readFileSync(path.join(import.meta.dir, "..", "app.tsx"), "utf8")
+
+  test("the panel sets pointer-events EXPLICITLY, because the property inherits", () => {
+    // The Welcome tour sets inline `pointer-events: none` on <body>. Removing `pointer-events-none`
+    // yields "inherit" — still none — so the Restart button was dead on a first run.
+    expect(banner).toContain('"pointer-events-auto": mode() === "stopped"')
+  })
+
+  test("ConnectionError reads the supervisor phase, so a mid-outage reload stops promising a rescue", () => {
+    // The banner lives behind the health gate this screen IS the failure of, so it cannot help here.
+    expect(app).toContain("useSupervisorPhase")
+    expect(app).toContain("supervisorGaveUp()")
+  })
+
+  test("both surfaces read ONE source, so they cannot disagree about what is in force", () => {
+    // A second subscription would be a second authority. The hook exists for exactly this.
+    expect(banner).toContain('from "@/hooks/use-supervisor-phase"')
+    expect(banner).not.toContain("platform.supervisor")
   })
 })

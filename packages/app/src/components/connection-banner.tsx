@@ -1,7 +1,8 @@
 import { Show, createEffect, createMemo, createSignal, on, onCleanup, onMount } from "solid-js"
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
-import { usePlatform, type SupervisorPhase } from "@/context/platform"
+import { usePlatform } from "@/context/platform"
+import { useSupervisorPhase } from "@/hooks/use-supervisor-phase"
 import { useServer } from "@/context/server"
 import type { ServerStreamStatus } from "@/context/server-sdk"
 
@@ -75,7 +76,8 @@ export function ConnectionBanner() {
   const [visible, setVisible] = createSignal(false)
   const [longOutage, setLongOutage] = createSignal(false)
   const [restored, setRestored] = createSignal(false)
-  const [supervisor, setSupervisor] = createSignal<SupervisorPhase | undefined>()
+  // ONE source for the supervisor phase, shared with ConnectionError — see the hook for why.
+  const { gaveUp } = useSupervisorPhase()
   const [repairing, setRepairing] = createSignal(false)
   let showTimer: ReturnType<typeof setTimeout> | undefined
   let escalateTimer: ReturnType<typeof setTimeout> | undefined
@@ -87,21 +89,6 @@ export function ConnectionBanner() {
     escalateTimer = undefined
   }
 
-  onMount(() => {
-    const api = platform.supervisor
-    if (!api) return
-    // Subscribe FIRST, then read: the reverse order can drop a transition that lands between the
-    // two, and the one it would drop is the terminal one that never repeats.
-    const unsubscribe = api.subscribe((state) => setSupervisor(state))
-    void api.getState().then(
-      (state) => setSupervisor((current) => current ?? state),
-      () => undefined, // a supervisor that cannot answer is reported by its absence, never a fake phase
-    )
-    onCleanup(unsubscribe)
-  })
-
-  /** The only phase that ends the retry story. Everything else is "still working on it". */
-  const gaveUp = createMemo(() => supervisor()?.phase === "gave-up")
   const mode = createMemo(() =>
     bannerMode({
       stream: status(),
@@ -165,7 +152,17 @@ export function ConnectionBanner() {
     <Show when={mode() !== "hidden"}>
       <div
         class="fixed top-3 left-1/2 -translate-x-1/2 z-100 select-none"
-        classList={{ "pointer-events-none": mode() !== "stopped" }}
+        // 🔴 `pointer-events-auto` is EXPLICIT and not redundant, because `pointer-events` INHERITS.
+        // Measured in the packaged app 2026-08-18: on a first run the Welcome tour dialog sets inline
+        // `pointer-events: none` on `<body>`, so this container computed `none` with a clean class
+        // list — removing `pointer-events-none` yields "inherit from parent", never "auto". The
+        // Restart button was dead in exactly the situation a new user meets it, and because an
+        // element with `pointer-events: none` is transparent to hit-testing,
+        // `document.elementFromPoint` at the button's centre returned the element BEHIND it.
+        classList={{
+          "pointer-events-none": mode() !== "stopped",
+          "pointer-events-auto": mode() === "stopped",
+        }}
       >
         <div class="flex flex-col items-center gap-0.5 px-4 py-2 rounded-lg bg-surface-base shadow-lg border border-border-weak-base text-center">
           <Show when={mode() === "stopped"}>

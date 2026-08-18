@@ -39,6 +39,8 @@ import { LayoutProvider } from "@/context/layout"
 import { ModelsProvider } from "@/context/models"
 import { NotificationProvider, useNotification } from "@/context/notification"
 import { PermissionProvider } from "@/context/permission"
+import { usePlatform } from "@/context/platform"
+import { useSupervisorPhase } from "@/hooks/use-supervisor-phase"
 import { PromptProvider } from "@/context/prompt"
 import { ServerConnection, ServerProvider, serverName, useServer } from "@/context/server"
 import { SettingsProvider } from "@/context/settings"
@@ -583,6 +585,9 @@ function ClientErrorLogDrain() {
 function ConnectionError(props: { onRetry?: () => void; onServerSelected?: (key: ServerConnection.Key) => void }) {
   const language = useLanguage()
   const server = useServer()
+  const platform = usePlatform()
+  const { gaveUp: supervisorGaveUp } = useSupervisorPhase()
+  const [repairing, setRepairing] = createSignal(false)
   const others = () => server.list.filter((s) => ServerConnection.key(s) !== server.key)
   const name = createMemo(() => server.name || server.key)
   const serverToken = "\u0000server\u0000"
@@ -614,9 +619,38 @@ function ConnectionError(props: { onRetry?: () => void; onServerSelected?: (key:
             {unreachable()[1]}
           </p>
         </Show>
-        <p class="mt-1 text-12-regular text-text-weak">
-          {server.current ? language.t("app.server.retrying") : language.t("app.server.noneHint")}
-        </p>
+        {/* 🔴 "Retrying automatically..." is a PROMISE, and it was false whenever the supervisor's
+            bounded ladder had already stopped. Measured in the packaged app 2026-08-18: reloading
+            mid-outage with the phase at `gave-up` showed this screen still promising a rescue nobody
+            was attempting — the terminal panel could not help, because it lives behind the health
+            gate this screen IS the failure of, so the phase replay reached an unmounted component.
+            The phase comes from the same shared hook ConnectionBanner uses, so the two surfaces
+            cannot disagree about whether the instance is coming back (they never co-render: the gate
+            picks one). An absent supervisor stays `undefined` and keeps the calm copy. */}
+        <Show
+          when={supervisorGaveUp() && server.current}
+          fallback={
+            <p class="mt-1 text-12-regular text-text-weak">
+              {server.current ? language.t("app.server.retrying") : language.t("app.server.noneHint")}
+            </p>
+          }
+        >
+          <p class="mt-1 text-12-regular text-text-weak max-w-80">
+            {language.t("app.connection.stopped.description")}
+          </p>
+          <button
+            type="button"
+            class="mt-3 px-3 py-1 rounded-md text-12-regular bg-surface-strong text-text-strong border border-border-weak-base hover:bg-surface-hover disabled:opacity-60"
+            disabled={repairing()}
+            onClick={() => {
+              if (repairing()) return
+              setRepairing(true)
+              void platform.restart().catch(() => setRepairing(false))
+            }}
+          >
+            {language.t(repairing() ? "app.connection.stopped.restarting" : "app.connection.stopped.restart")}
+          </button>
+        </Show>
       </div>
       <Show when={others().length > 0}>
         <div class="flex flex-col gap-2 w-full max-w-sm">
