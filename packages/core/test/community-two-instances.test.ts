@@ -1204,7 +1204,14 @@ describe("two instances", () => {
       )
 
       expect(result.fetched).toBe(0)
-      expect(idsRequests).toBe(1)
+      /**
+       * ⚠️ The id exchange is CHUNKED since the answerer's cap landed (Codex P1): a truncated answer
+       * does not converge, so the asker requests `BUCKETS_PER_REQUEST` buckets at a time. That gave
+       * a hostile answerer several chances to feed us ids where it had one, so the asker clamps each
+       * answer AND stops once it has as many ids as a room could legitimately hold — which is what
+       * this bound now measures.
+       */
+      expect(idsRequests).toBeLessThanOrEqual(Math.ceil(64 / CommunitySync.BUCKETS_PER_REQUEST))
       // 🔴 The chase is bounded by our own retention, not by what the peer claimed: at 256 ids a
       // request, a million would have been ~3,900 round trips.
       expect(messageRequests).toBeLessThanOrEqual(

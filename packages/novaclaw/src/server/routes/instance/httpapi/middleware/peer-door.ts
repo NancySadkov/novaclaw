@@ -1,6 +1,7 @@
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Option } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiMiddleware } from "effect/unstable/httpapi"
+import { CommunityAdmission } from "@novaclaw/core/community/admission"
 import { CommunityConsent } from "@novaclaw/core/community/consent"
 import { Offline } from "@novaclaw/core/offline"
 
@@ -93,7 +94,31 @@ export const peerDoorLayer = Layer.succeed(PeerDoor)(
       const request = yield* HttpServerRequest.HttpServerRequest
       if (refusesBody(request.method, request.headers["content-length"]))
         return HttpServerResponse.text("Payload Too Large", { status: 413 })
-      return yield* handler
+
+      /**
+       * 🔴 The ingress governor, BEFORE the handler and therefore before any database read (Codex
+       * P1). The read-shaped peer doors pay no proof-of-work — deliberately, since catching up must
+       * be cheap — and they amplify: ~335 KB from `/sync/ids` for a ~200-byte request, a 64-bucket
+       * digest recomputed over 5,000 ids on every `/sync/summary`. The body cap bounds one
+       * request's size and says nothing about their number.
+       *
+       * ⚠️ The SOURCE is the remote address, and its absence is treated as one shared bucket rather
+       * than as an exemption: an unknown origin must not be the cheapest way past the limiter.
+       */
+      const source = Option.getOrElse(request.remoteAddress ?? Option.none(), () => "unknown")
+      const state = CommunityAdmission.current()
+      const refusal = CommunityAdmission.admit(state, source, Date.now())
+      if (refusal !== undefined)
+        return HttpServerResponse.text(refusal === "busy" ? "Too many requests in flight" : "Too many requests", {
+          status: 429,
+          headers: { "retry-after": "60" },
+        })
+      /**
+       * ⚠️ `ensuring`, not a release after `handler`: an endpoint that fails, dies or is interrupted
+       * must still give its slot back, or the concurrency ceiling ratchets down to zero and the
+       * instance stops answering peers entirely — a self-inflicted outage wearing a limiter's hat.
+       */
+      return yield* handler.pipe(Effect.ensuring(Effect.sync(() => CommunityAdmission.release(state))))
     }),
   ),
 )

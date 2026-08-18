@@ -848,7 +848,17 @@ const TURN_TIMED_OUT = { timedOut: true } as const
       .handle(
         "communitySuccessionKnown",
         Effect.fn("CommunityHttpApi.communitySuccessionKnown")(function* () {
-          return { statements: yield* successions.known() }
+          /**
+           * 🔴 Bounded (Codex P1). This served the WHOLE table — up to 1,000 statements, ≈230 KB for
+           * an ~80-byte GET, about 2,900× — and that table is fillable by anyone with a keypair,
+           * since announcing a rotation costs no proof-of-work by design.
+           *
+           * ⚠️ The number is the one the ASKER already uses (`MAX_SUCCESSIONS_PER_ANSWER`), which is
+           * the point: every honest caller has been discarding everything past 64 since the day it
+           * was written, so serving more was pure amplification with no reader.
+           */
+          const statements = yield* successions.known()
+          return { statements: statements.slice(0, CommunitySync.MAX_SUCCESSIONS_PER_ANSWER) }
         }),
       )
       .handle(
@@ -921,7 +931,16 @@ const TURN_TIMED_OUT = { timedOut: true } as const
         Effect.fn("CommunityHttpApi.communitySyncIds")(function* (ctx) {
           const room = yield* roomFor(ctx.payload.topic)
           if (room === undefined) return { ids: [] }
-          return { ids: CommunityReconcile.idsIn(yield* channels.ids(room), ctx.payload.buckets) }
+          /**
+           * 🔴 Bounded on BOTH sides of the exchange (Codex P1). The caller's bucket list is
+           * attacker-chosen and was walked whole; the answer was every id in those buckets — ~335 KB
+           * for a ~200-byte request, from a door with no proof-of-work.
+           *
+           * ⚠️ Truncation is safe here and nowhere else in this protocol: the digests still differ
+           * after a partial answer, so the next round asks for the rest. Reconciliation converges
+           * more slowly; it does not lose anything.
+           */
+          return { ids: CommunityReconcile.answerIds(yield* channels.ids(room), ctx.payload.buckets) }
         }),
       )
       .handle(

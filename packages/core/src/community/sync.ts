@@ -163,6 +163,17 @@ export const MAX_SUCCESSIONS_PER_ANSWER = 64
 
 export const MAX_MESSAGES_PER_REQUEST = 256
 
+/**
+ * How many reconciliation buckets one `/sync/ids` request names.
+ *
+ * 🔴 It exists because the ANSWERER caps its reply (`CommunityReconcile.MAX_IDS_PER_ANSWER`), and a
+ * truncated reply is not self-correcting: re-asking for the same buckets returns the same first N
+ * ids forever. Chunking makes every answer COMPLETE for the buckets it covers, which is the only
+ * shape in which a cap and convergence coexist.
+ */
+export const BUCKETS_PER_REQUEST = 8
+
+
 export interface Result {
   /** Peers that answered, whether or not they had anything we lacked. */
   readonly peers: number
@@ -548,7 +559,6 @@ export const layer = Layer.effect(
       const merged = [route, ...known.routes.filter((entry) => entry !== route)].slice(0, MAX_CONTACT_ROUTES)
       yield* contacts.observe(networkID, merged)
     })
-
 
     /**
      * 🔴 Every address we may dial for ONE peer, with the user's BLOCK honoured — §5(i) of
@@ -999,8 +1009,41 @@ export const layer = Layer.effect(
           )
           if (disagree.length === 0) continue
 
-          const offered = yield* ask(route, SYNC_IDS_PATH, { topic, buckets: disagree }, Ids)
-          if (offered === undefined) continue
+          /**
+           * 🔴 Asked in CHUNKS, and this is what makes the answerer's cap safe (Codex P1).
+           *
+           * The door bounds one answer at `MAX_IDS_PER_ANSWER`, because it is anonymous and was
+           * returning ~335 KB for a ~200-byte request. A truncated answer does NOT converge on its
+           * own — measured while writing the test for it: asking for the same differing buckets
+           * again returns the same first N ids, so the exchange stalls exactly at the cap. What
+           * converges is asking for FEWER buckets, because then each answer is complete for the
+           * buckets it covers.
+           *
+           * ⚠️ EIGHT, and the number was measured rather than guessed. A room at its 5,000-message
+           * retention bound holds ~78 ids per bucket on average and more in its fullest, so sixteen
+           * buckets asked at once would answer ~1,260 — past the 1,024 ceiling, and the livelock
+           * returns through the back door. Eight keeps the worst realistic answer inside it with
+           * room to spare, at the cost of a few more small requests per catch-up.
+           */
+          const offeredIds: string[] = []
+          for (let index = 0; index < disagree.length; index += BUCKETS_PER_REQUEST) {
+            const chunk = disagree.slice(index, index + BUCKETS_PER_REQUEST)
+            const answered = yield* ask(route, SYNC_IDS_PATH, { topic, buckets: chunk }, Ids)
+            if (answered === undefined) break
+            /**
+             * 🔴 **Each answer is clamped, and the accumulation stops at our own retention.**
+             *
+             * `MAX_IDS_PER_ANSWER` is what WE serve; a hostile answerer is bound by nothing. Asking
+             * in chunks handed such a peer several chances to feed us ids where it previously had
+             * one — caught by the flood test, not by reading this. Both halves are bounded now: the
+             * per-answer slice, and the total, which cannot exceed what a room could legitimately
+             * hold anyway.
+             */
+            offeredIds.push(...answered.ids.slice(0, CommunityReconcile.MAX_IDS_PER_ANSWER))
+            if (offeredIds.length >= CommunityChannels.RETAIN_PER_CHANNEL) break
+          }
+          if (offeredIds.length === 0) continue
+          const offered = { ids: offeredIds }
 
           /**
            * What we do not hold. `missing` deliberately returns what to REQUEST, so nothing arrives

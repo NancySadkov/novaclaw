@@ -158,6 +158,12 @@ const EXPECTED_ORPHANS: Record<string, string> = {
    * Prose about what is NOT built belongs in the roadmap, which is pruned; a guard should describe
    * only what it is exempting, right now.
    */
+  "reconcile.ts#idsIn":
+    "internal helper: `answerIds` in this same file is what the wire calls — it applies the bucket and id ceilings the anonymous door needs (Codex P1), and a caller reaching past it would be reaching past the bound. Exported so the UNBOUNDED shape stays testable beside the bounded one",
+  "admission.ts#make":
+    "test-only constructor: the product uses the process-wide `current()`, exactly as `Offline` and `CommunityConsent` do — a per-request governor is a governor that resets every request, which is one that does nothing. Exported so the counters can be exercised without touching the live one",
+  "admission.ts#reset":
+    "test-only: forgets the process-wide counters so one file's flood cannot refuse the next file's first request. Its callers live in `packages/novaclaw`'s server tests, which this ledger does not scan",
   "contacts.ts#follow":
     "internal helper: followAll walks the chain link by link with it, and followAll IS the caller the network reaches — a bag of statements arrives unordered, so single-stepping is never the entry point",
   "search.ts#consider":

@@ -95,3 +95,33 @@ export const missing = (offered: readonly string[], mine: readonly string[]): st
   const held = new Set(mine)
   return offered.filter((id) => !held.has(id))
 }
+
+/**
+ * 🔴 **The most ids one `/sync/ids` answer may carry** — Codex review P1, the amplifier.
+ *
+ * That endpoint returned every id in the buckets a caller named: about **335 KB for a ~200-byte
+ * request**, from an anonymous door that pays no proof-of-work. The inbound 256 KB cap bounds one
+ * request's size and says nothing about what it makes us send back.
+ *
+ * ⚠️ Truncating is SAFE for reconciliation, which is what makes a cap the right answer rather than
+ * a cost: the bucket digests still differ after a partial answer, so the next round asks for what is
+ * left and the exchange simply converges over more rounds. An honest catch-up of a room at its
+ * 5,000-message retention bound now costs five rounds instead of one, and a hostile one gets a fifth
+ * of the amplification per request.
+ *
+ * ⚠️ Four times `CommunitySync.MAX_MESSAGES_PER_REQUEST`, so a caller still learns more ids per round
+ * than it can fetch messages for — otherwise the id exchange, the cheap half, would throttle the
+ * expensive one. Written as a literal rather than an import because this module is pure and knows
+ * nothing about the transport; `community-admission.test.ts` pins the relationship.
+ */
+export const MAX_IDS_PER_ANSWER = 1_024
+
+/**
+ * The bounded answer to one `/sync/ids` request — the exact bytes a peer receives.
+ *
+ * ⚠️ A function rather than two `slice`s at the call site, so the bound can be exercised over five
+ * thousand ids in a test that costs nothing. The handler is a thin caller of this, which is the only
+ * arrangement where "the door is bounded" is a claim a cheap test can make.
+ */
+export const answerIds = (held: readonly string[], asked: readonly number[]): string[] =>
+  idsIn(held, asked.slice(0, BUCKETS)).slice(0, MAX_IDS_PER_ANSWER)

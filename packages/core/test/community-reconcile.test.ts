@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { createHash } from "node:crypto"
 import { CommunityReconcile } from "@novaclaw/core/community/reconcile"
+import { CommunitySync } from "@novaclaw/core/community/sync"
 
 /**
  * Community P4 — log reconciliation (`todo/community-p2p.md`).
@@ -78,5 +79,81 @@ describe("CommunityReconcile", () => {
     const wanted = CommunityReconcile.missing(CommunityReconcile.idsIn(theirs, buckets), [])
     // The fresh-install case: a new instance joining a channel with history.
     expect(wanted.sort()).toEqual([...theirs].sort())
+  })
+})
+
+/**
+ * 🔴 Codex review 2026-08-17, P1 — **`/sync/ids` returned ~335 KB for a ~200-byte request.**
+ *
+ * The door pays no proof-of-work by design (catching up must be cheap) and answered every id in the
+ * buckets a caller named, from a table holding up to 5,000. The 256 KB inbound cap bounds one
+ * request's size and says nothing about what it makes us send back.
+ */
+describe("what one id answer may cost us (Codex P1)", () => {
+  test("🔴 the answer is bounded however many ids we hold and however many buckets are asked for", () => {
+    const held = ids(0, 5_000)
+    const everyBucket = Array.from({ length: CommunityReconcile.BUCKETS }, (_, i) => i)
+    expect(CommunityReconcile.idsIn(held, everyBucket).length, "unbounded, this is the whole table").toBe(5_000)
+    expect(CommunityReconcile.answerIds(held, everyBucket).length).toBe(CommunityReconcile.MAX_IDS_PER_ANSWER)
+
+    // A prober naming thousands of buckets that cannot exist gets no more work out of us.
+    const absurd = Array.from({ length: 5_000 }, (_, i) => i)
+    expect(CommunityReconcile.answerIds(held, absurd).length).toBe(CommunityReconcile.MAX_IDS_PER_ANSWER)
+  })
+
+  test("🔴 asking for the SAME buckets again is a livelock — why the asker chunks", () => {
+    /**
+     * 🔴 Found by writing this test, and it corrected the fix: a truncated answer is NOT
+     * self-correcting. Re-asking for the same differing buckets returns the same first N ids, so the
+     * exchange stalls exactly at the cap — 1,024 of 3,000, forever. The comment on the handler said
+     * otherwise ("the next round asks for the rest") and was wrong.
+     */
+    const theirs = ids(0, 3_000)
+    const mine: string[] = []
+    for (let round = 0; round < 3; round++) {
+      const differing = CommunityReconcile.differing(
+        CommunityReconcile.summarize(mine),
+        CommunityReconcile.summarize(theirs),
+      )
+      for (const id of CommunityReconcile.answerIds(theirs, differing)) if (!mine.includes(id)) mine.push(id)
+    }
+    expect(mine.length, "three rounds of the naive loop buy exactly one answer").toBe(
+      CommunityReconcile.MAX_IDS_PER_ANSWER,
+    )
+  })
+
+  test("🔴 chunking the buckets CONVERGES — the shape the asker actually uses", () => {
+    /**
+     * What makes a cap and convergence coexist is asking for FEWER BUCKETS, so each answer is
+     * complete for the buckets it covers. `CommunitySync.BUCKETS_PER_REQUEST` is that chunk, and
+     * this walks the real loop: summarise, diff, ask in chunks, repeat.
+     */
+    const theirs = ids(0, 3_000)
+    const mine: string[] = []
+    for (let round = 0; round < 20 && mine.length < theirs.length; round++) {
+      const differing = CommunityReconcile.differing(
+        CommunityReconcile.summarize(mine),
+        CommunityReconcile.summarize(theirs),
+      )
+      const before = mine.length
+      for (let i = 0; i < differing.length; i += CommunitySync.BUCKETS_PER_REQUEST) {
+        const chunk = differing.slice(i, i + CommunitySync.BUCKETS_PER_REQUEST)
+        for (const id of CommunityReconcile.answerIds(theirs, chunk)) if (!mine.includes(id)) mine.push(id)
+      }
+      expect(mine.length, "each round must make progress or the loop is a livelock").toBeGreaterThan(before)
+    }
+    expect(mine.length).toBe(theirs.length)
+
+    /**
+     * ⚠️ And the chunk must be small enough that a FULL room answers COMPLETELY, or the livelock
+     * above returns through the back door. Measured against the fullest bucket of a real 5,000-id
+     * set rather than the average, because ids do not distribute evenly and the average is the
+     * number that would let this pass while the product stalls.
+     */
+    const full = ids(0, 5_000)
+    const widest = Math.max(
+      ...Array.from({ length: CommunityReconcile.BUCKETS }, (_, bucket) => CommunityReconcile.idsIn(full, [bucket]).length),
+    )
+    expect(widest * CommunitySync.BUCKETS_PER_REQUEST).toBeLessThan(CommunityReconcile.MAX_IDS_PER_ANSWER)
   })
 })
