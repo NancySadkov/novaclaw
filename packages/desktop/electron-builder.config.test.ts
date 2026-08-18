@@ -71,7 +71,7 @@ test("🔴 ships the DHT sidecar, which the desktop package did not carry at all
   const config = module.default as Configuration
 
   /**
-   * Review 1.7. `extraResources` had no `dht` entry, `prebuild` never built it, and
+   * Review finding 1.7. `extraResources` had no `dht` entry, `prebuild` never built it, and
    * `community/dht.ts` had no `resourcesPath` candidate to find it with — so the DHT existed in the
    * dev tree and in the CLI build, and not on the product's primary face. A desktop user's discovery
    * fell back to the LAN and typed addresses, which is indistinguishable from a public DHT that

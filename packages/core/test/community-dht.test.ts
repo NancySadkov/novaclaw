@@ -394,7 +394,8 @@ describe("the layer", () => {
 })
 
 /**
- * 🔴 Review 1.7 — the sidecar's LIFETIME against the user's settings, and its own stale children.
+ * 🔴 Review finding 1.7 — the sidecar's LIFETIME against the user's settings, and its own stale
+ * children.
  *
  * Three of the four defects that finding names are here (the fourth is packaging). Each is a case
  * where the node outlived the thing that authorised it, or where a dead node spoke for a live one.
