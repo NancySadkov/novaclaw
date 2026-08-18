@@ -1,6 +1,7 @@
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { For, Show, createEffect, createMemo, createResource, createSignal, type Component } from "solid-js"
+import { CommunityDht } from "@novaclaw/core/community/dht"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useGlobal } from "@/context/global"
 import { useServerSync } from "@/context/server-sync"
@@ -165,6 +166,32 @@ export const CommunityNetwork: Component = () => {
     } finally {
       setSwitching(false)
     }
+  }
+
+  const [announceProblem, setAnnounceProblem] = createSignal("")
+
+  /**
+   * 🔴 A malformed address is REFUSED HERE, with a sentence, instead of vanishing (review 1.15).
+   *
+   * The config schema accepts any string, and `isAnnounceable` then drops what it cannot parse — so
+   * `http://my-box` or a bare hostname with no port was stored, never published, and the line
+   * underneath went on promising that it "will say whether the directory took it". A promise the
+   * panel had no way to keep, about a value nothing would ever use.
+   *
+   * ⚠️ The SAME rule as the sidecar's, imported rather than re-expressed: a second validator here
+   * would agree with the first only until one of them changed, which is the mistake the peer-door
+   * guard made with the router.
+   */
+  const publishAddress = async () => {
+    const typed = publishing().trim()
+    if (!CommunityDht.isAnnounceable(typed)) {
+      setAnnounceProblem(
+        `That is not an address this can publish. It needs a host and a port, like my-box:4096 or 203.0.113.5:4096 — no https:// and no path.`,
+      )
+      return
+    }
+    setAnnounceProblem("")
+    await setParticipation({ announce: typed })
   }
 
   const [myOffer, myOfferActions] = createResource(connection, (value) => communityMyOffer(value.http))
@@ -418,12 +445,27 @@ export const CommunityNetwork: Component = () => {
     }
   })
 
+  /**
+   * Why this room is empty, in the words of whatever is actually true right now.
+   *
+   * 🔴 **The last copy in the app that said the network "is still being built"** (review 1.15). It
+   * was removed from `say()` and from the status memo when the transport shipped; this third one
+   * survived, and it rendered directly under "Ready — add someone with an address". So a user who
+   * had joined successfully was told the feature did not exist yet, which is both false and the
+   * kind of false that makes somebody stop trying.
+   *
+   * ⚠️ Every branch now names a state the user can DO something about, which is what separates a
+   * reason from an apology.
+   */
   const emptyReason = createMemo(() => {
     const state = transport()
     if (state?.kind === "online") return "No messages yet."
     if (state?.kind === "off" && state.reason === "airgap")
       return "Offline mode is on, so nothing goes in or out. Your key and contacts are saved; turn it off in Settings to reach people."
-    return "Nothing here yet — the piece that carries messages between instances is still being built. Your key and your contacts are already saved, and this fills in when it lands."
+    if (state?.kind === "off" && state.reason === "not-joined")
+      return "You have not joined the community yet. Your key is already saved; turning it on above is all that is left."
+    // `no-peers`, and the honest sentence for it: the machinery works and has nobody to talk to.
+    return "Nothing here yet — this instance knows nobody to talk to. Add someone's address, or use Find to look on your network and in the public directory."
   })
 
   const [draft, setDraft] = createSignal("")
@@ -504,6 +546,20 @@ export const CommunityNetwork: Component = () => {
        * different sentence to a person than "this is not built yet", and it is one they can fix in a
        * minute.*
        */
+      /**
+       * 🔴 The gate can REFUSE a search, and saying nothing about it is a dead end (Codex P2). The
+       * endpoint answers `refused` with every reason rather than emitting LAN and DNS traffic from
+       * an instance that has not joined or is airgapped — so the panel has to render that, or a user
+       * clicks Find and watches nothing happen forever.
+       */
+      if (result.refused !== undefined && result.refused.length > 0) {
+        setFound(
+          result.refused.includes("airgap")
+            ? "Offline mode is on, so nothing was looked for. Turn it off in Settings to search."
+            : "Community is off on this instance, so nothing was looked for. Turn it on above to search.",
+        )
+        return
+      }
       setFound(
         result.peers > 0
           ? `${result.peers} ${result.peers === 1 ? "instance" : "instances"} reachable` +
@@ -514,7 +570,14 @@ export const CommunityNetwork: Component = () => {
               ? "Found nobody on this network, and no starting addresses were published. Paste someone's address above — one is enough to reach everyone they know."
               : `Found nobody yet: ${result.seedsFound} starting ${result.seedsFound === 1 ? "address" : "addresses"} were tried and none answered. Paste someone's address above if you have one.`,
       )
-      await Promise.all([contactActions.refetch(), nearbyActions.refetch()])
+      /**
+       * ⚠️ PARTICIPATION too, and it was the missing one (review 1.15): a Find is the moment an
+       * announcement is actually attempted, so the line that reports whether the directory took the
+       * address only ever changes here. Without this refetch it kept saying "this line will say
+       * whether the directory took it" — a promise the panel had no way to keep, including when the
+       * answer was yes.
+       */
+      await Promise.all([contactActions.refetch(), nearbyActions.refetch(), participationActions.refetch()])
     } catch (error) {
       setFound(error instanceof Error ? error.message : String(error))
     } finally {
@@ -701,7 +764,7 @@ export const CommunityNetwork: Component = () => {
           <Show when={neverAsked()}>
             <span class="text-[12px] leading-snug text-v2-text-text-muted">
               NovaClaw instances can talk to each other directly — yours and other people's. It is off until you
-              turn it on, and there are three things to know first.
+              turn it on, and there are four things to know first.
             </span>
             {/* Stated plainly and without euphemism. Both are consequences of the architecture, not
                 defects in it, and a person cannot consent to what they were not told. */}
@@ -716,20 +779,29 @@ export const CommunityNetwork: Component = () => {
                 connects directly to theirs — so anyone you talk to learns roughly where you are, in the way any
                 direct connection reveals.
               </li>
-              {/* 🔴 The THIRD thing, added when the DHT shipped, and it is a different sentence from
-                  the one above it. "The people you speak to know where you are" is the cost of a direct
-                  connection; "this software's users are a public list" is the cost of a public directory,
-                  and somebody in a country where the second one is dangerous deserves the second one.
+              {/* 🔴 The THIRD thing, and it is a different sentence from the one above it. "The people
+                  you speak to know where you are" is the cost of a direct connection; "your address
+                  travels onward through peer exchange" is the cost of a network with no directory
+                  server, and somebody in a country where that matters deserves to be told.
+
+                  ⚠️ **This bullet used to say instances "announce themselves in a shared public
+                  directory" and that was FALSE for the default install** (review 1.15). Nothing is
+                  published unless the user sets `community.announce` themselves — the config's own
+                  comment calls it the strongest of the four decisions and ships it off. So the screen
+                  was overstating a cost, which is its own kind of dishonesty: a person who declines
+                  over a consequence that was never going to happen was misled just as surely as one
+                  who accepts a consequence nobody mentioned.
 
                   ⚠️ The screen exists to state the architecture's costs, not to make them sound
-                  smaller. This is accepted as the price of a network nobody owns — the alternative is a
-                  server that knows who is online — and it is not a separate switch, because an instance
-                  nobody can find is an instance nobody can reach. */}
+                  smaller OR larger. What is true by default is that addresses travel through peer
+                  exchange; being listed for strangers who never spoke to you is the separate decision
+                  named in the same sentence. */}
               <li class="text-[12px] leading-snug text-v2-text-text-base">
-                <b>Being findable is public.</b> Instances announce themselves in a shared public directory so
-                strangers can find each other without anyone running a server. That means it is possible for
-                someone to list machines running NovaClaw without ever talking to them. There is no version of
-                this that is both serverless and private about who is here.
+                <b>Your address spreads to the people you meet.</b> Peers pass addresses to each other so
+                strangers can find the network without anyone running a server — so an address you use can reach
+                people you never spoke to. Listing yourself in the public directory, where anyone can find you
+                without ever talking to you, is a separate switch that stays off until you set an address
+                yourself.
               </li>
               {/* 🔴 The FOURTH thing, and the only one that is about the user's own machine rather
                   than about what leaves it. §5(k) of the honesty ledger requires this disclosure "by
@@ -930,11 +1002,19 @@ export const CommunityNetwork: Component = () => {
           </span>
         </Show>
         <div class="flex items-center gap-2">
+          {/* 🔴 ONE BOX, THREE READERS, and the placeholder named only one of them (review 1.15).
+              It said "Paste a key (nid_…)" while Find and "Add as doorman" both send the contents as
+              an ADDRESS — so following the placeholder produced "Nothing answered there. Check the
+              address" about a key the user had pasted exactly as instructed.
+
+              ⚠️ The address is the useful half and the placeholder now leads with it: an instance at
+              an address tells us its own key, so asking a person to type 47 characters of base64 is
+              the thing principle 12 exists to forbid. Both are accepted. */}
           <TextInputV2
             appearance="base"
             value={adding()}
             onInput={(event) => setAdding(event.currentTarget.value)}
-            placeholder="Paste a key (nid_…)"
+            placeholder="Address (my-box:4096) — or paste a key"
             spellcheck={false}
             autocapitalize="off"
             autocorrect="off"
@@ -1018,10 +1098,13 @@ export const CommunityNetwork: Component = () => {
                   variant="neutral"
                   size="small"
                   disabled={switching() || publishing().trim() === ""}
-                  onClick={() => void setParticipation({ announce: publishing().trim() })}
+                  onClick={() => void publishAddress()}
                 >
                   Publish this address
                 </ButtonV2>
+                <Show when={announceProblem()}>
+                  <span class="text-[11px] leading-snug text-v2-text-text-danger">{announceProblem()}</span>
+                </Show>
                 <span class="text-[11px] leading-snug text-v2-text-text-muted">
                   Off. Other instances find this one on your network, from addresses you type, and through
                   peers you already know. Publishing lets strangers find you directly — set it only if
@@ -1039,10 +1122,12 @@ export const CommunityNetwork: Component = () => {
                   claim about the network — and an announcement genuinely fails when there is no
                   routing table to publish into. Three states, because there are three. */}
               {participation()?.announceConfirmed === true
-                ? `Published as ${participation()?.announce}. Anyone reading the public directory can see it, and it stays there for a while after you stop.`
-                : participation()?.announceConfirmed === false
-                  ? `Not published yet — the network did not accept ${participation()?.announce} on the last try. It will be attempted again; if it keeps failing, check that this address really reaches you from the internet.`
-                  : `Set to ${participation()?.announce}. It is announced the next time this instance looks for peers, and this line will say whether the network took it.`}
+                ? `Published as ${participation()?.announce}. Anyone reading the public directory can see it, and it stays there for a while after you stop — we can stop renewing it, but nobody can recall the copies already out there.`
+                : participation()?.announceConfirmed === false && participation()?.announceReason === "no-sidecar"
+                  ? `Not published — this build has no directory helper, so nothing on this machine can publish to the public directory. Everything else works: people still find you on your network, from addresses you give them, and through peers you both know.`
+                  : participation()?.announceConfirmed === false
+                    ? `Not published yet — the directory did not accept ${participation()?.announce} on the last try. It will be attempted again; if it keeps failing, check that this address really reaches you from the internet.`
+                    : `Set to ${participation()?.announce}. It is announced the next time this instance looks for peers, and this line will say whether the directory took it.`}
             </span>
           </Show>
         </div>

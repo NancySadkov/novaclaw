@@ -412,7 +412,10 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
              */
             ...(announcedState === undefined || announcedState.address !== published
               ? {}
-              : { announceConfirmed: announcedState.published }),
+              : {
+                  announceConfirmed: announcedState.published,
+                  ...(announcedState.reason === undefined ? {} : { announceReason: announcedState.reason }),
+                }),
           }
         }),
       )

@@ -247,7 +247,15 @@ export interface Interface {
    * because the CONFIG said so, which is a statement about the user's intention rather than about the
    * network — and an announcement genuinely fails when there is no routing table to publish into.
    */
-  readonly announced: () => Effect.Effect<{ readonly address: string; readonly published: boolean } | undefined>
+  readonly announced: () => Effect.Effect<
+    | {
+        readonly address: string
+        readonly published: boolean
+        /** `no-sidecar` when this build has no directory helper; `refused` when one tried and failed. */
+        readonly reason?: string
+      }
+    | undefined
+  >
   /**
    * Stop advertising this instance and stop the node.
    *
@@ -342,7 +350,7 @@ export const layerWith = (options: Options = {}): Layer.Layer<Service> =>
       /** The address last successfully announced, so a reconnect re-announces and a repeat does not. */
       let announced: string | undefined
       /** What the last announcement attempt claimed, so a caller can stop asserting something nobody confirmed. */
-      let lastAnnounce: { readonly address: string; readonly published: boolean } | undefined
+      let lastAnnounce: { readonly address: string; readonly published: boolean; readonly reason?: string } | undefined
       let pending: ((line: string | undefined) => void) | undefined
 
       const ensure = (): Node | undefined => {
@@ -471,7 +479,19 @@ export const layerWith = (options: Options = {}): Layer.Layer<Service> =>
                */
               const published = reply !== undefined && announcedOk(reply)
               if (published) announced = advertise
-              lastAnnounce = { address: advertise, published }
+              /**
+               * 🔴 WHY it did not publish, because the panel was telling everybody the same wrong
+               * thing (review 1.15). "The network did not accept this address — check that it really
+               * reaches you from the internet" is sound advice for a refused announce and useless for
+               * a machine that has no sidecar at all, which is the ordinary case: the binary is Rust
+               * and most installs never built one. That sentence sent people to re-check a firewall
+               * rule when nothing on their machine could have published anything.
+               */
+              lastAnnounce = {
+                address: advertise,
+                published,
+                ...(published ? {} : { reason: node === undefined ? "no-sidecar" : "refused" }),
+              }
             }
             const reply = yield* ask(JSON.stringify({ op: "find" }))
             return reply === undefined ? [] : parse(reply)

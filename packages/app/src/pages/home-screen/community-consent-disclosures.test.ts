@@ -22,6 +22,17 @@ const source = readFileSync(new URL("./community-network.tsx", import.meta.url),
 const copy = source.replace(/\{\/\*[\s\S]*?\*\/\}/g, "").replace(/\/\*[\s\S]*?\*\//g, "")
 
 describe("the consent screen states every cost", () => {
+  test("🔴 the preamble COUNTS the bullets it introduces", () => {
+    /**
+     * It said "three things to know first" over four bullets for as long as the fourth existed
+     * (review 1.15). A miscount reads as carelessness on the one screen whose whole job is that a
+     * person can trust what it says, and it is the cheapest possible thing to get right.
+     */
+    expect(copy).toContain("four things to know first")
+    const bullets = copy.split("<li").length - 1
+    expect(bullets, "four bullets, and the preamble says four").toBe(4)
+  })
+
   test("🔴 nobody moderates it, and blocking is the only power anyone has", () => {
     expect(copy).toContain("Nobody moderates this")
     expect(copy).toContain("no one")
@@ -31,12 +42,25 @@ describe("the consent screen states every cost", () => {
     expect(copy).toContain("Other people will see your IP address")
   })
 
-  test("🔴 being findable is public — the price of a directory nobody runs", () => {
-    // Added when the DHT shipped. A different sentence from the IP one: "the people you speak to
-    // know where you are" is the cost of a direct connection; "this software's users are a public
-    // list" is the cost of a public directory, and somebody in a country where the second is
-    // dangerous deserves to be told the second.
-    expect(copy).toContain("Being findable is public")
+  test("🔴 an address travels onward, and being LISTED is a separate decision", () => {
+    /**
+     * A different sentence from the IP one: "the people you speak to know where you are" is the cost
+     * of a direct connection; "your address travels onward through peer exchange" is the cost of a
+     * network with no directory server.
+     *
+     * 🔴 **This used to assert the copy said instances "announce themselves in a shared public
+     * directory", which was FALSE for the default install** (review 1.15). Nothing is published
+     * unless the user sets an address; the config's own comment calls that the strongest of the four
+     * decisions and ships it off. Overstating a cost is its own dishonesty — somebody who declined
+     * over a consequence that was never going to happen was misled too.
+     */
+    expect(copy, "what is true by default: addresses spread through the peers you meet").toContain(
+      "address spreads to the people you meet",
+    )
+    expect(copy, "and what is not: being listed for strangers is the user's own switch").toContain("separate switch")
+    expect(copy, "…which is OFF until they set it").toContain("stays off")
+    // The old claim must not come back: it is the sentence the review measured as untrue.
+    expect(copy, "the default install announces nothing").not.toContain("Instances announce themselves")
   })
 
   test("🔴 the instance keeps AI-WRITTEN notes about identifiable people — §5(k)", () => {

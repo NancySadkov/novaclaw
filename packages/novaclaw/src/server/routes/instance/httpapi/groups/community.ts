@@ -453,6 +453,15 @@ export const CommunityApi = HttpApi.make("community").add(
              * after a restart and must not read as failure.
              */
             announceConfirmed: Schema.optional(Schema.Boolean),
+            /**
+             * WHY an announce has not published — `no-sidecar` or `refused`.
+             *
+             * 🔴 Declared because the panel told every unpublished user the same thing: "check that
+             * this address really reaches you from the internet", which is advice for a refused
+             * announce and useless on a machine with no directory helper at all (review 1.15). An
+             * undeclared field is dropped silently and looks exactly like a backend that never sent it.
+             */
+            announceReason: Schema.optional(Schema.String),
           }),
           "Whether this instance is on the network, and every reason it is not",
         ),
