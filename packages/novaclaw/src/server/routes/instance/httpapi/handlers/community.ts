@@ -6,6 +6,7 @@ import { CommunityConsent } from "@novaclaw/core/community/consent"
 import { CommunityObservation } from "@novaclaw/core/community/observation"
 import { CommunityOffer } from "@novaclaw/core/community/offer"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
+import { Scratch } from "@novaclaw/core/scratch"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
 import { CommunityPost } from "@novaclaw/core/community/post"
 import { CommunityPeers } from "@novaclaw/core/community/peers"
@@ -778,11 +779,26 @@ const TURN_TIMED_OUT = { timedOut: true } as const
                  * like a model problem. The memory handler records the mirror of this trap one file
                  * over: a location context alone does not satisfy the global client.
                  *
-                 * ⚠️ The instance's own working directory, because answering a stranger belongs to
-                 * no project. The turn reads nothing from the location — it has no tools and no
-                 * files — it is needed only to resolve which model this instance would use.
+                 * ⚠️ The app-managed SCRATCH directory, because answering a stranger belongs to no
+                 * project. The turn reads nothing from the location — it has no tools and no files —
+                 * it is needed only to resolve which model this instance would use.
+                 *
+                 * 🔴 This used to be `process.cwd()`, and that is the user's HOME on a desktop
+                 * launch (review §2, unit 6 F6): resolving a location boots a full location graph
+                 * including a RECURSIVE file watcher, so a stranger's question started a recursive
+                 * watch over everything the user owns. Principle 11 says the filesystem outside our
+                 * three places is read-only to us; a watcher is not a write, but walking a
+                 * stranger's whole home to answer a question they did not ask about it is the same
+                 * disregard for whose disk this is — and it is a cost no budget in this subsystem
+                 * could see.
+                 *
+                 * ⚠️ `Scratch.root()` rather than `ensure()`: resolving a model must not depend on
+                 * creating a directory, and the location graph does not require the path to exist.
+                 * The scratch root is provisioned on the `/path` route every client calls at boot.
                  */
-                Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(process.cwd()) }))),
+                Effect.provide(
+                  locations.get(Location.Ref.make({ directory: AbsolutePath.make(Scratch.root()) })),
+                ),
                 Effect.provide(AppNodeBuilder.build(llmClient)),
                 /**
                  * 🔴 A model we cannot reach is a REFUSAL, not a 500.

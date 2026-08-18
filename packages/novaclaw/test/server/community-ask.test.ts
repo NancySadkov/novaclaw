@@ -343,3 +343,40 @@ describe("asking this instance a question", () => {
     expect(response.status).toBe(400)
   })
 })
+
+test("🔴 answering a stranger does not boot a location graph over the user's HOME", () => {
+  /**
+   * Review §2 (unit 6 F6). The narrow answering turn resolved its model by taking a location on
+   * `process.cwd()` — which on a desktop launch is the user's home — and resolving a location boots
+   * the full location graph, including a RECURSIVE file watcher. So a stranger's question started a
+   * recursive watch over everything the user owns, and no budget in this subsystem could see it.
+   *
+   * ⚠️ A source pin rather than a behavioural one, and it says so: proving "no watcher was started
+   * over the home directory" needs the real graph and a real home, which no test here has. What it
+   * can prove is that the answering turn names an app-managed directory. The `Scratch` module's own
+   * documentation carries the property — "NOT the user's home dir (safe by construction)".
+   */
+  const source = readFileSync(
+    new URL("../../src/server/routes/instance/httpapi/handlers/community.ts", import.meta.url),
+    "utf8",
+  )
+  /**
+   * ⚠️ COMMENTS STRIPPED FIRST. The fix's own comment explains what it replaced and therefore
+   * contains the string this asserts against — a scan over raw source would fail on the prose that
+   * documents the fix, which is the "a regex over source counts prose" trap one directory over.
+   */
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")
+  const turn = code.slice(code.indexOf('"communityAsk"'))
+  /**
+   * ⚠️ The NEXT handler, verified to exist. The first version named a handler that sits earlier in
+   * the file, so `indexOf` returned -1 and the slice silently ran to the end — a scan far broader
+   * than the one the test claimed to be making.
+   */
+  const end = turn.indexOf('"communitySuccessionTell"')
+  expect(end, "the boundary handler must follow the answering turn").toBeGreaterThan(0)
+  const upToEnd = turn.slice(0, end)
+  expect(upToEnd, "the answering turn must not take a location on the process working directory").not.toContain(
+    "process.cwd()",
+  )
+  expect(upToEnd, "it answers from the app-managed scratch root").toContain("Scratch.root()")
+})
