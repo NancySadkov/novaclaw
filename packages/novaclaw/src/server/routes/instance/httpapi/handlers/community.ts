@@ -256,6 +256,7 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
           const stored = CommunityConsent.storedConfig() as
             | { community?: { seeds?: { enabled?: boolean; host?: string }; announce?: string } }
             | undefined
+          const seedHost = stored?.community?.seeds?.host ?? CommunitySeeds.DEFAULT_SEED_HOST
           const seeds = yield* CommunitySeeds.resolve({
             ...(stored?.community?.seeds === undefined ? {} : { settings: stored.community.seeds }),
           })
@@ -323,7 +324,15 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
             asked: exchange.asked,
             peers: (yield* peersStore.list()).length,
             // Declared alongside, in the same edit — a field returned but undeclared is dropped.
-            seedsAsked: stored?.community?.seeds?.enabled !== false,
+            /**
+             * 🔴 Whether a zone was ACTUALLY asked, not whether asking is switched on (review 1.16).
+             *
+             * This read `enabled !== false`, which is true on a default install — where there is no
+             * host to ask, because `DEFAULT_SEED_HOST` is `undefined` and the project runs no zone.
+             * So the panel said starting addresses were tried when nothing had been, and offered the
+             * user a repair for a door that does not exist.
+             */
+            seedsAsked: stored?.community?.seeds?.enabled !== false && seedHost !== undefined,
             seedsFound: seeds.length,
           }
         }),

@@ -217,7 +217,7 @@ export const CommunityNetwork: Component = () => {
     const current = connection()
     const directory = scratchDir()
     if (!current || !directory) {
-      setOfferNote("Open a project first — the check that this endpoint works runs against one.")
+      setOfferNote(language.t("community.offers.needProject"))
       return
     }
     void import("@/components/settings-v2/dialog-new-model").then((module) => {
@@ -244,7 +244,7 @@ export const CommunityNetwork: Component = () => {
         price: offerPrice().trim() === "" ? "free" : offerPrice().trim(),
         payTo: offerPayTo().trim(),
       })
-      setOfferNote("Offered. Peers see it next time they look.")
+      setOfferNote(language.t("community.offers.offered"))
       await Promise.all([offerActions.refetch(), myOfferActions.refetch()])
     } catch (error) {
       setOfferNote(error instanceof Error ? error.message : String(error))
@@ -255,7 +255,7 @@ export const CommunityNetwork: Component = () => {
     const current = connection()
     if (!current) return
     await communityWithdrawOffer(current.http)
-    setOfferNote("Withdrawn. Peers that already copied it keep theirs until they look again.")
+    setOfferNote(language.t("community.offers.withdrawn"))
     await Promise.all([offerActions.refetch(), myOfferActions.refetch()])
   }
 
@@ -305,8 +305,8 @@ export const CommunityNetwork: Component = () => {
         result.sent
           ? "Delivered."
           : result.reason === "no-route"
-            ? "Saved. You have no address for them yet — find them first, or ask them for one."
-            : "Saved to your copy. They could not be reached just now.",
+            ? language.t("community.contacts.savedNoAddress")
+            : language.t("community.contacts.savedUnreachable"),
       )
       await Promise.all([dmActions.refetch(), conversationActions.refetch()])
     } catch (error) {
@@ -555,8 +555,8 @@ export const CommunityNetwork: Component = () => {
       if (result.refused !== undefined && result.refused.length > 0) {
         setFound(
           result.refused.includes("airgap")
-            ? "Offline mode is on, so nothing was looked for. Turn it off in Settings to search."
-            : "Community is off on this instance, so nothing was looked for. Turn it on above to search.",
+            ? language.t("community.find.refusedAirgap")
+            : language.t("community.find.refusedOff"),
         )
         return
       }
@@ -565,9 +565,9 @@ export const CommunityNetwork: Component = () => {
           ? language.t(result.peers === 1 ? "community.find.reachable.one" : "community.find.reachable.other", { count: result.peers }) +
               (result.learned > 0 ? language.t("community.find.newlyDiscovered", { count: result.learned }) : "")
           : !result.seedsAsked
-            ? "Found nobody on this network. Starting addresses are turned off, so paste someone's address above to reach the wider network."
+            ? language.t("community.find.noSeeds")
             : result.seedsFound === 0
-              ? "Found nobody on this network, and no starting addresses were published. Paste someone's address above — one is enough to reach everyone they know."
+              ? language.t("community.find.seedsEmpty")
               : language.t(result.seedsFound === 1 ? "community.find.seedsTried.one" : "community.find.seedsTried.other", { count: result.seedsFound }),
       )
       /**
@@ -641,7 +641,7 @@ export const CommunityNetwork: Component = () => {
           : // ⚠️ Nothing answered, so there is nobody to trust. A rating is a statement about a
             // PERSON, and recording it against an address that answers nothing would attach the
             // user's sentence to whoever is given that address next.
-            "Nothing answered there, so nobody was added. Check the address and try again.",
+            language.t("community.contacts.nothingAnswered"),
       )
       if (result.found) {
         setAdding("")
@@ -728,7 +728,7 @@ export const CommunityNetwork: Component = () => {
       setSendNote(
         result.delivered
           ? "Sent."
-          : "Saved to your own copy — no peer was reachable just now, so it will go out when one is.",
+          : language.t("community.channels.savedLocally"),
       )
       await historyActions.refetch()
     } catch (error) {
@@ -1035,13 +1035,13 @@ export const CommunityNetwork: Component = () => {
               void setParticipation({ answers: { enabled: !(participation()?.answers.enabled ?? false) } })
             }
           >
-            {participation()?.answers.enabled ? "Stop answering peers" : "Answer peers' questions"}
+            {participation()?.answers.enabled ? language.t("community.answers.stop") : language.t("community.answers.start")}
           </ButtonV2>
           <span class="text-[11px] leading-snug text-v2-text-text-muted">
             <Show
               when={participation()?.answers.enabled}
               fallback={
-                "Off. Other instances can ask this one questions; answering spends your tokens, so it stays off until you say otherwise."
+                language.t("community.answers.off")
               }
             >
               {/* ⚠️ The COUNT, not just the switch: a budget you cannot see moving is one you cannot
@@ -1370,7 +1370,7 @@ export const CommunityNetwork: Component = () => {
                   size="small"
                   onClick={() => void setListed(entry().name, !entry().listed)}
                 >
-                  {entry().listed ? "Listed — others can find you here" : "Not listed"}
+                  {entry().listed ? language.t("community.channels.listed") : "Not listed"}
                 </ButtonV2>
                 {/* Leaving KEEPS the history — the store refuses to delete it, so this is a
                     subscription change and not a destructive act needing a confirmation. */}

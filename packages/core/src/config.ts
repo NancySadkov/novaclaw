@@ -255,11 +255,11 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     seeds: Schema.Struct({
       enabled: Schema.Boolean.pipe(Schema.optional).annotate({
         description:
-          "Ask DNS for a starting address when joining. On by default. Off means this instance finds peers only on the LAN, from addresses you type, and through peer exchange.",
+          "Ask DNS for a starting address when joining. Nothing is asked unless you set `host` below — NovaClaw ships no zone of its own. With it off, this instance finds peers on the LAN, from addresses you type, through peer exchange and through the public directory.",
       }),
       host: Schema.String.pipe(Schema.optional).annotate({
         description:
-          "The name whose TXT records list starting addresses. Point it at a zone you control to bootstrap from your own hosts instead of the project's.",
+          "The name whose TXT records list starting addresses. Absent by default and there is no project zone to fall back to: point it at a zone YOU control to bootstrap your own hosts. We run no seed list — that is the whole reason there is nothing to seize.",
       }),
     })
       .pipe(Schema.optional)
