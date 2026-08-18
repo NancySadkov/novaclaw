@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
+import { dict as en } from "@/i18n/en"
 
 /**
  * 🔴 **The always-on status line must claim only what it knows.**
@@ -20,8 +21,20 @@ import { readFileSync } from "node:fs"
 
 const source = readFileSync(new URL("./community-network.tsx", import.meta.url), "utf8")
 
-/** The rendered copy, comments stripped — a promise made in a comment is not a promise. */
-const copy = source.replace(/\{\/\*[\s\S]*?\*\/\}/g, "").replace(/\/\*[\s\S]*?\*\//g, "")
+/**
+ * The status line's copy, read from the DICTIONARY now that the panel is translatable.
+ *
+ * ⚠️ It used to be scraped from the TSX, which matches nothing once the strings are `t()` keys — and
+ * a ledger that quietly stops matching is worse than none. The dictionary is also the more honest
+ * source: it is what an English reader sees, and every other locale falls back to it key by key.
+ *
+ * ⚠️ The keys are gathered by PREFIX rather than named one by one, so a status string added later is
+ * covered without anybody remembering to add it here.
+ */
+const copy = Object.entries(en)
+  .filter(([key]) => key.startsWith("community."))
+  .map(([, value]) => value)
+  .join(String.fromCharCode(10))
 
 describe("the status line", () => {
   test("🔴 says peers are KNOWN, not connected", () => {
@@ -30,8 +43,9 @@ describe("the status line", () => {
      * "peers known" is never contiguous — it reads `${...} known`, and the first version of this
      * test failed on its own wording rather than on the code.
      */
-    expect(copy).toContain("Ready ·")
-    expect(copy, "the count is qualified as KNOWN, not as reached").toContain("known`")
+    expect(copy.length, "the community keys must exist, or every assertion here is vacuous").toBeGreaterThan(1000)
+    expect(copy).toContain("Ready —")
+    expect(copy, "the count is qualified as KNOWN, not as reached").toContain("peers known")
     /**
      * The specific claim that was wrong. A future edit reaching for the shorter word puts the lie
      * back, and this is the only thing standing between that and a user who believes it.
@@ -54,6 +68,7 @@ describe("the status line", () => {
     // Every assertion above would pass against the explanatory comments beside the markup, which is
     // the standing failure mode of a source-scanning test.
     expect(source, "the fixture must contain comments to strip").toContain("/*")
+    // The dictionary carries no commentary at all, which is the stronger version of the same rule.
     expect(copy).not.toContain("the sort of small lie this UI is not allowed to tell")
   })
 })

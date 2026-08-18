@@ -2227,4 +2227,86 @@ export const dict = {
   "community.off.turnOn": "Turn it back on",
   "community.airgap.body":
     "Offline mode is on, so the community is off regardless of this setting. Turn off offline mode in Settings to use it.",
+  // ── Community: the joined panel ──────────────────────────────────────────────────────────────
+  //
+  // The rest of review 1.15's i18n half. Same rule as the consent keys above: `en` is the source and
+  // every other locale falls back key by key, so these land untranslated and are counted as backlog
+  // rather than failing the parity ratchet.
+  "community.turnOff": "Turn off",
+  "community.key.title": "Your key",
+  "community.key.explain": "Share it so someone can add you. The address behind it can change; this cannot.",
+  "community.contacts.empty": "Nobody yet. Paste someone's key below — one person is enough to reach everyone they know.",
+  "community.contacts.message": "Message",
+  "community.contacts.forget": "Forget",
+  "community.contacts.addPlaceholder": "Address (my-box:4096) — or paste a key",
+  "community.contacts.namePlaceholder": "Name them (optional)",
+  "community.find.explain": "Looks on this network, then asks whoever answers who else they know.",
+  "community.announce.placeholder": "your-address:4096",
+  "community.announce.publish": "Publish this address",
+  "community.announce.stop": "Stop publishing",
+  "community.doorman.label": "Trust the address above:",
+  "community.offers.title": "Model servers",
+  "community.offers.empty": "Nobody you can reach is offering one yet.",
+  "community.offers.copyPayment": "Copy payment address",
+  "community.offers.use": "Use this",
+  "community.offers.copyAddress": "Copy address",
+  "community.offers.mineEmpty": "You are not offering anything.",
+  "community.offers.mineTitle": "Offer your own:",
+  "community.offers.publish": "Offer",
+  "community.offers.withdraw": "Withdraw",
+  "community.offers.endpointPlaceholder": "Address, e.g. https://my-box:8010/v1",
+  "community.offers.modelsPlaceholder": "Models, comma separated",
+  "community.offers.pricePlaceholder": "Terms in your own words — e.g. free, or 500 sats a request",
+  "community.offers.payToPlaceholder": "Lightning address, if you want paying (optional)",
+  "community.dm.title": "Direct messages",
+  "community.channels.leave": "Leave",
+  "community.filters.title": "Hide messages containing:",
+  "community.filters.placeholder": "A word you would rather not read",
+  "community.channels.nearby": "Channels the instances you can reach say they are in:",
+  "community.channels.archived": "You left these, and still have what was said in them:",
+  "community.channels.joinPlaceholder": "Join a channel by name, e.g. #recipes",
+  // ── Community: the sentences that carry numbers ──────────────────────────────────────────────
+  //
+  // ⚠️ Plurals as `.one`/`.other` SIBLING keys chosen at the call site, which is this codebase's
+  // existing idiom (`session.revertDock.summary.*`). The English `n === 1` test does not travel —
+  // Polish and Russian have three forms and Japanese has one — so the choice belongs to the caller
+  // and the dictionary carries whatever forms a language needs.
+  "community.empty.online": "No messages yet.",
+  "community.empty.airgap": "Offline mode is on, so nothing goes in or out. Your key and contacts are saved; turn it off in Settings to reach people.",
+  "community.empty.notJoined": "You have not joined the community yet. Your key is already saved; turning it on above is all that is left.",
+  "community.empty.noPeers": "Nothing here yet — this instance knows nobody to talk to. Add someone's address, or use Find to look on your network and in the public directory.",
+  "community.status.checking": "Checking…",
+  "community.status.connecting": "Connecting…",
+  "community.status.airgap": "Offline mode is on — nothing goes in or out",
+  "community.status.noPeers": "Ready — add someone with an address to reach anybody",
+  "community.status.ready.one": "Ready — {{count}} peer known",
+  "community.status.ready.other": "Ready — {{count}} peers known",
+  "community.find.reachable.one": "{{count}} instance reachable",
+  "community.find.reachable.other": "{{count}} instances reachable",
+  "community.find.newlyDiscovered": " — {{count}} newly discovered",
+  "community.find.seedsTried.one":
+    "Found nobody yet: {{count}} starting address was tried and none answered. Paste someone's address above if you have one.",
+  "community.find.seedsTried.other":
+    "Found nobody yet: {{count}} starting addresses were tried and none answered. Paste someone's address above if you have one.",
+  "community.doorman.added": "Added as a doorman you trust {{trust}} of 5.",
+  "community.contacts.trusted": "trusted {{trust}}/5",
+  "community.answers.today":
+    "{{today}} of {{total}} answered today. Each reply is signed by this instance and costs its tokens.",
+  "community.announce.published":
+    "Published as {{address}}. Anyone reading the public directory can see it, and it stays there for a while after you stop — we can stop renewing it, but nobody can recall the copies already out there.",
+  "community.announce.noSidecar":
+    "Not published — this build has no directory helper, so nothing on this machine can publish to the public directory. Everything else works: people still find you on your network, from addresses you give them, and through peers you both know.",
+  "community.announce.refused":
+    "Not published yet — the directory did not accept {{address}} on the last try. It will be attempted again; if it keeps failing, check that this address really reaches you from the internet.",
+  "community.announce.pending":
+    "Set to {{address}}. It is announced the next time this instance looks for peers, and this line will say whether the directory took it.",
+  "community.announce.malformed":
+    "That is not an address this can publish. It needs a host and a port, like my-box:4096 or 203.0.113.5:4096 — no https:// and no path.",
+  "community.dm.writeTo": "Write to {{name}}",
+  "community.channels.sayIn": "Say something in {{channel}}",
+  "community.channels.showingRecent": "Showing the most recent {{shown}} of {{held}} messages this room holds.",
+  "community.channels.hiddenByFilters.one": "{{count}} message hidden by your words below.",
+  "community.channels.hiddenByFilters.other": "{{count}} messages hidden by your words below.",
+  "community.channels.archivedEntry.one": "{{name}} — {{count}} message",
+  "community.channels.archivedEntry.other": "{{name}} — {{count}} messages",
 }

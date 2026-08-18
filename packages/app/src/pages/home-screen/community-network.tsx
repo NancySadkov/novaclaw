@@ -187,9 +187,7 @@ export const CommunityNetwork: Component = () => {
   const publishAddress = async () => {
     const typed = publishing().trim()
     if (!CommunityDht.isAnnounceable(typed)) {
-      setAnnounceProblem(
-        `That is not an address this can publish. It needs a host and a port, like my-box:4096 or 203.0.113.5:4096 — no https:// and no path.`,
-      )
+      setAnnounceProblem(language.t("community.announce.malformed"))
       return
     }
     setAnnounceProblem("")
@@ -394,7 +392,7 @@ export const CommunityNetwork: Component = () => {
    */
   const status = createMemo(() => {
     const state = transport()
-    if (state === undefined) return "Checking…"
+    if (state === undefined) return language.t("community.status.checking")
     /**
      * 🔴 "Known", not "Connected" — because that is what the number IS. `state()` counts distinct
      * peers whose address we hold, from contacts and peer exchange. Nothing is dialled to produce it,
@@ -410,13 +408,13 @@ export const CommunityNetwork: Component = () => {
      * for a line that is always on screen. Saying what is actually known costs nothing.
      */
     if (state.kind === "online")
-      return `Ready · ${state.peers} ${state.peers === 1 ? "peer" : "peers"} known`
-    if (state.kind === "connecting") return "Connecting…"
-    if (state.reason === "airgap") return "Offline mode is on — nothing goes in or out"
+      return language.t(state.peers === 1 ? "community.status.ready.one" : "community.status.ready.other", { count: state.peers })
+    if (state.kind === "connecting") return language.t("community.status.connecting")
+    if (state.reason === "airgap") return language.t("community.status.airgap")
     // ⚠️ Three different sentences, because they are three different situations for the person
     // reading them: one they chose (airgap), one they have not yet accepted (never joined), and one
     // they can fix in the next minute (nobody to dial).
-    return "Ready — add someone with an address to reach anybody"
+    return language.t("community.status.noPeers")
   })
 
   /**
@@ -461,13 +459,13 @@ export const CommunityNetwork: Component = () => {
    */
   const emptyReason = createMemo(() => {
     const state = transport()
-    if (state?.kind === "online") return "No messages yet."
+    if (state?.kind === "online") return language.t("community.empty.online")
     if (state?.kind === "off" && state.reason === "airgap")
-      return "Offline mode is on, so nothing goes in or out. Your key and contacts are saved; turn it off in Settings to reach people."
+      return language.t("community.empty.airgap")
     if (state?.kind === "off" && state.reason === "not-joined")
-      return "You have not joined the community yet. Your key is already saved; turning it on above is all that is left."
+      return language.t("community.empty.notJoined")
     // `no-peers`, and the honest sentence for it: the machinery works and has nobody to talk to.
-    return "Nothing here yet — this instance knows nobody to talk to. Add someone's address, or use Find to look on your network and in the public directory."
+    return language.t("community.empty.noPeers")
   })
 
   const [draft, setDraft] = createSignal("")
@@ -564,13 +562,13 @@ export const CommunityNetwork: Component = () => {
       }
       setFound(
         result.peers > 0
-          ? `${result.peers} ${result.peers === 1 ? "instance" : "instances"} reachable` +
-              (result.learned > 0 ? ` — ${result.learned} newly discovered` : "")
+          ? language.t(result.peers === 1 ? "community.find.reachable.one" : "community.find.reachable.other", { count: result.peers }) +
+              (result.learned > 0 ? language.t("community.find.newlyDiscovered", { count: result.learned }) : "")
           : !result.seedsAsked
             ? "Found nobody on this network. Starting addresses are turned off, so paste someone's address above to reach the wider network."
             : result.seedsFound === 0
               ? "Found nobody on this network, and no starting addresses were published. Paste someone's address above — one is enough to reach everyone they know."
-              : `Found nobody yet: ${result.seedsFound} starting ${result.seedsFound === 1 ? "address" : "addresses"} were tried and none answered. Paste someone's address above if you have one.`,
+              : language.t(result.seedsFound === 1 ? "community.find.seedsTried.one" : "community.find.seedsTried.other", { count: result.seedsFound }),
       )
       /**
        * ⚠️ PARTICIPATION too, and it was the missing one (review 1.15): a Find is the moment an
@@ -639,7 +637,7 @@ export const CommunityNetwork: Component = () => {
       })
       setDoormanNote(
         result.found
-          ? `Added as a doorman you trust ${trust()} of 5.`
+          ? language.t("community.doorman.added", { trust: trust() })
           : // ⚠️ Nothing answered, so there is nobody to trust. A rating is a statement about a
             // PERSON, and recording it against an address that answers nothing would attach the
             // user's sentence to whoever is given that address next.
@@ -844,7 +842,7 @@ export const CommunityNetwork: Component = () => {
     <Show when={participation() === undefined || participation()?.participating} fallback={notJoined()}>
     <section class="flex flex-col gap-3" data-slot="community-network">
       <div class="flex flex-col gap-1">
-        <span class="text-sm font-medium text-v2-text-text-base">Your own community</span>
+        <span class="text-sm font-medium text-v2-text-text-base">{language.t("community.title")}</span>
         <span class="text-[12px] leading-snug text-v2-text-text-muted">
           {/* ⚠️ Says "nobody ELSE". The line read "nobody who can switch it off" until a Turn off
               button appeared two elements below it — a promise the screen itself contradicted. The
@@ -873,19 +871,19 @@ export const CommunityNetwork: Component = () => {
             disabled={switching()}
             onClick={() => void setParticipation({ enabled: false })}
           >
-            Turn off
+            {language.t("community.turnOff")}
           </ButtonV2>
         </div>
       </div>
 
       <div class="flex flex-col gap-1 rounded-xl bg-v2-background-bg-layer-02 px-3 py-3">
-        <span class="text-[12px] font-medium text-v2-text-text-base">Your key</span>
+        <span class="text-[12px] font-medium text-v2-text-text-base">{language.t("community.key.title")}</span>
         {/* Selectable, because the only thing a user does with this is hand it to someone. */}
         <span class="select-text break-all font-mono text-[11px] text-v2-text-text-muted">
           {identity()?.networkID ?? "…"}
         </span>
         <span class="text-[11px] leading-snug text-v2-text-text-muted">
-          Share it so someone can add you. The address behind it can change; this cannot.
+          {language.t("community.key.explain")}
         </span>
       </div>
 
@@ -897,7 +895,7 @@ export const CommunityNetwork: Component = () => {
           when={(contacts()?.length ?? 0) > 0}
           fallback={
             <span class="text-[11px] leading-snug text-v2-text-text-muted">
-              Nobody yet. Paste someone's key below — one person is enough to reach everyone they know.
+              {language.t("community.contacts.empty")}
             </span>
           }
         >
@@ -915,7 +913,7 @@ export const CommunityNetwork: Component = () => {
                     when={rating() === contact.networkID}
                     fallback={
                       <ButtonV2 variant="ghost" size="small" onClick={() => setRating(contact.networkID)}>
-                        {contact.trust === undefined ? "Rate trust" : `trusted ${contact.trust}/5`}
+                        {contact.trust === undefined ? "Rate trust" : language.t("community.contacts.trusted", { trust: contact.trust })}
                       </ButtonV2>
                     }
                   >
@@ -942,7 +940,7 @@ export const CommunityNetwork: Component = () => {
                       install. */}
                   <Show when={!contact.blocked}>
                     <ButtonV2 variant="ghost" size="small" onClick={() => setTalkingTo(contact.networkID)}>
-                      Message
+                      {language.t("community.contacts.message")}
                     </ButtonV2>
                   </Show>
                   {/* The only power a user has here, so it belongs on the row rather than behind a
@@ -957,7 +955,7 @@ export const CommunityNetwork: Component = () => {
                   {/* A wrong key pasted once must not be permanent — with no registry there is no
                       support desk to undo it for you. */}
                   <ButtonV2 variant="ghost" size="small" onClick={() => void forget(contact.networkID)}>
-                    Forget
+                    {language.t("community.contacts.forget")}
                   </ButtonV2>
                 </div>
               </div>
@@ -996,7 +994,7 @@ export const CommunityNetwork: Component = () => {
             appearance="base"
             value={adding()}
             onInput={(event) => setAdding(event.currentTarget.value)}
-            placeholder="Address (my-box:4096) — or paste a key"
+            placeholder={language.t("community.contacts.addPlaceholder")}
             spellcheck={false}
             autocapitalize="off"
             autocorrect="off"
@@ -1008,7 +1006,7 @@ export const CommunityNetwork: Component = () => {
             appearance="base"
             value={addingName()}
             onInput={(event) => setAddingName(event.currentTarget.value)}
-            placeholder="Name them (optional)"
+            placeholder={language.t("community.contacts.namePlaceholder")}
           />
           <ButtonV2 variant="neutral" size="small" disabled={busy() || !adding().trim()} onClick={() => void add()}>
             {busy() ? "Adding…" : "Add"}
@@ -1022,7 +1020,7 @@ export const CommunityNetwork: Component = () => {
             {finding() ? "Looking…" : "Find instances"}
           </ButtonV2>
           <span class="text-[11px] leading-snug text-v2-text-text-muted">
-            Looks on this network, then asks whoever answers who else they know.
+            {language.t("community.find.explain")}
           </span>
         </div>
         {/* 🔴 ANSWERING — a second switch, and the only one that spends the user's tokens.
@@ -1048,7 +1046,7 @@ export const CommunityNetwork: Component = () => {
             >
               {/* ⚠️ The COUNT, not just the switch: a budget you cannot see moving is one you cannot
                   trust, and this is the number that stops a stranger spending a day of tokens. */}
-              {`${participation()?.answers.today ?? 0} of ${participation()?.answers.perDay ?? 0} answered today. Each reply is signed by this instance, so a careless one costs your standing.`}
+              {language.t("community.answers.today", { today: participation()?.answers.today ?? 0, total: participation()?.answers.perDay ?? 0 })}
             </Show>
           </span>
         </div>
@@ -1071,7 +1069,7 @@ export const CommunityNetwork: Component = () => {
                   appearance="base"
                   value={publishing()}
                   onInput={(event) => setPublishing(event.currentTarget.value)}
-                  placeholder="your-address:4096"
+                  placeholder={language.t("community.announce.placeholder")}
                   spellcheck={false}
                   autocapitalize="off"
                   autocorrect="off"
@@ -1082,7 +1080,7 @@ export const CommunityNetwork: Component = () => {
                   disabled={switching() || publishing().trim() === ""}
                   onClick={() => void publishAddress()}
                 >
-                  Publish this address
+                  {language.t("community.announce.publish")}
                 </ButtonV2>
                 <Show when={announceProblem()}>
                   <span class="text-[11px] leading-snug text-v2-text-text-danger">{announceProblem()}</span>
@@ -1096,7 +1094,7 @@ export const CommunityNetwork: Component = () => {
             }
           >
             <ButtonV2 variant="neutral" size="small" disabled={switching()} onClick={() => void setParticipation({ announce: "" })}>
-              Stop publishing
+              {language.t("community.announce.stop")}
             </ButtonV2>
             <span class="text-[11px] leading-snug text-v2-text-text-muted">
               {/* 🔴 Says what is KNOWN, not what was asked for. This read "Published as X" because the
@@ -1104,19 +1102,19 @@ export const CommunityNetwork: Component = () => {
                   claim about the network — and an announcement genuinely fails when there is no
                   routing table to publish into. Three states, because there are three. */}
               {participation()?.announceConfirmed === true
-                ? `Published as ${participation()?.announce}. Anyone reading the public directory can see it, and it stays there for a while after you stop — we can stop renewing it, but nobody can recall the copies already out there.`
+                ? language.t("community.announce.published", { address: participation()?.announce ?? "" })
                 : participation()?.announceConfirmed === false && participation()?.announceReason === "no-sidecar"
-                  ? `Not published — this build has no directory helper, so nothing on this machine can publish to the public directory. Everything else works: people still find you on your network, from addresses you give them, and through peers you both know.`
+                  ? language.t("community.announce.noSidecar")
                   : participation()?.announceConfirmed === false
-                    ? `Not published yet — the directory did not accept ${participation()?.announce} on the last try. It will be attempted again; if it keeps failing, check that this address really reaches you from the internet.`
-                    : `Set to ${participation()?.announce}. It is announced the next time this instance looks for peers, and this line will say whether the directory took it.`}
+                    ? language.t("community.announce.refused", { address: participation()?.announce ?? "" })
+                    : language.t("community.announce.pending", { address: participation()?.announce ?? "" })}
             </span>
           </Show>
         </div>
         {/* 🔴 The doorman row. Joining never needs it; it is how a user says "I know this one, and
             this is how far I trust them" once value is involved. */}
         <div class="mt-1 flex items-center gap-2">
-          <span class="text-[11px] leading-snug text-v2-text-text-muted">Trust the address above:</span>
+          <span class="text-[11px] leading-snug text-v2-text-text-muted">{language.t("community.doorman.label")}</span>
           <For each={[1, 2, 3, 4, 5]}>
             {(level) => (
               <ButtonV2
@@ -1146,12 +1144,12 @@ export const CommunityNetwork: Component = () => {
       </div>
 
       <div class="flex flex-col gap-1 rounded-xl bg-v2-background-bg-layer-02 px-3 py-3">
-        <span class="text-[12px] font-medium text-v2-text-text-base">Model servers</span>
+        <span class="text-[12px] font-medium text-v2-text-text-base">{language.t("community.offers.title")}</span>
         <Show
           when={(offers() ?? []).length > 0}
           fallback={
             <span class="text-[11px] leading-snug text-v2-text-text-muted">
-              Nobody you can reach is offering one yet.
+              {language.t("community.offers.empty")}
             </span>
           }
         >
@@ -1175,7 +1173,7 @@ export const CommunityNetwork: Component = () => {
                       size="small"
                       onClick={() => void navigator.clipboard.writeText(offer.payTo)}
                     >
-                      Copy payment address
+                      {language.t("community.offers.copyPayment")}
                     </ButtonV2>
                   </Show>
                   {/*
@@ -1188,14 +1186,14 @@ export const CommunityNetwork: Component = () => {
                   {/* ⚠️ "Use this" prefills; it never saves. The dialog it opens probes the endpoint
                       first, and the user presses through — see `useOffer`. */}
                   <ButtonV2 variant="ghost" size="small" onClick={() => useOffer(offer.endpoint)}>
-                    Use this
+                    {language.t("community.offers.use")}
                   </ButtonV2>
                   <ButtonV2
                     variant="ghost"
                     size="small"
                     onClick={() => void navigator.clipboard.writeText(offer.endpoint)}
                   >
-                    Copy address
+                    {language.t("community.offers.copyAddress")}
                   </ButtonV2>
                 </div>
               </div>
@@ -1216,7 +1214,7 @@ export const CommunityNetwork: Component = () => {
               are not offering anything", which is a different sentence and a false one. */}
           <Show
             when={myOffer()?.offer}
-            fallback={<span class="text-[11px] text-v2-text-text-muted">You are not offering anything.</span>}
+            fallback={<span class="text-[11px] text-v2-text-text-muted">{language.t("community.offers.mineEmpty")}</span>}
           >
             {(mine) => (
               <Show
@@ -1238,37 +1236,37 @@ export const CommunityNetwork: Component = () => {
               </Show>
             )}
           </Show>
-          <span class="text-[11px] text-v2-text-text-muted">Offer your own:</span>
+          <span class="text-[11px] text-v2-text-text-muted">{language.t("community.offers.mineTitle")}</span>
           <TextInputV2
             appearance="base"
             value={offerEndpoint()}
             onInput={(event) => setOfferEndpoint(event.currentTarget.value)}
-            placeholder="Address, e.g. https://my-box:8010/v1"
+            placeholder={language.t("community.offers.endpointPlaceholder")}
           />
           <TextInputV2
             appearance="base"
             value={offerModels()}
             onInput={(event) => setOfferModels(event.currentTarget.value)}
-            placeholder="Models, comma separated"
+            placeholder={language.t("community.offers.modelsPlaceholder")}
           />
           <div class="flex items-center gap-2">
             <TextInputV2
               appearance="base"
               value={offerPrice()}
               onInput={(event) => setOfferPrice(event.currentTarget.value)}
-              placeholder="Terms in your own words — e.g. free, or 500 sats a request"
+              placeholder={language.t("community.offers.pricePlaceholder")}
             />
             <TextInputV2
               appearance="base"
               value={offerPayTo()}
               onInput={(event) => setOfferPayTo(event.currentTarget.value)}
-              placeholder="Lightning address, if you want paying (optional)"
+              placeholder={language.t("community.offers.payToPlaceholder")}
             />
             <ButtonV2 variant="neutral" size="small" disabled={!offerEndpoint().trim()} onClick={() => void publishOffer()}>
-              Offer
+              {language.t("community.offers.publish")}
             </ButtonV2>
             <ButtonV2 variant="ghost" size="small" onClick={() => void withdrawOffer()}>
-              Withdraw
+              {language.t("community.offers.withdraw")}
             </ButtonV2>
           </div>
           {/* ⚠️ No payment exists. Saying so plainly is better than a user assuming the software will
@@ -1285,7 +1283,7 @@ export const CommunityNetwork: Component = () => {
 
       <Show when={(conversations() ?? []).length > 0 || talkingTo() !== ""}>
         <div class="flex flex-col gap-1 rounded-xl bg-v2-background-bg-layer-02 px-3 py-3">
-          <span class="text-[12px] font-medium text-v2-text-text-base">Direct messages</span>
+          <span class="text-[12px] font-medium text-v2-text-text-base">{language.t("community.dm.title")}</span>
           <div class="flex flex-wrap items-center gap-1">
             <For each={conversations() ?? []}>
               {(peer) => (
@@ -1315,7 +1313,7 @@ export const CommunityNetwork: Component = () => {
                 appearance="base"
                 value={dmDraft()}
                 onInput={(event) => setDmDraft(event.currentTarget.value)}
-                placeholder={`Write to ${nameFor()(talkingTo())}`}
+                placeholder={language.t("community.dm.writeTo", { name: nameFor()(talkingTo()) })}
                 spellcheck={true}
               />
               <ButtonV2 variant="neutral" size="small" disabled={!dmDraft().trim()} onClick={() => void sendDirect()}>
@@ -1377,7 +1375,7 @@ export const CommunityNetwork: Component = () => {
                 {/* Leaving KEEPS the history — the store refuses to delete it, so this is a
                     subscription change and not a destructive act needing a confirmation. */}
                 <ButtonV2 variant="ghost" size="small" onClick={() => void leave(entry().name)}>
-                  Leave
+                  {language.t("community.channels.leave")}
                 </ButtonV2>
               </>
             )}
@@ -1407,7 +1405,7 @@ export const CommunityNetwork: Component = () => {
             appearance="base"
             value={draft()}
             onInput={(event) => setDraft(event.currentTarget.value)}
-            placeholder={`Say something in ${channel()}`}
+            placeholder={language.t("community.channels.sayIn", { channel: channel() })}
             spellcheck={true}
           />
           <ButtonV2 variant="neutral" size="small" disabled={!draft().trim()} onClick={() => void say()}>
@@ -1431,17 +1429,17 @@ export const CommunityNetwork: Component = () => {
         */}
         <Show when={(history()?.held ?? 0) > pageRead()}>
           <span class="text-[11px] text-v2-text-text-muted">
-            {`Showing the most recent ${pageRead()} of ${history()?.held ?? 0} messages this room holds.`}
+            {language.t("community.channels.showingRecent", { shown: pageRead(), held: history()?.held ?? 0 })}
           </span>
         </Show>
         <Show when={(history()?.hidden ?? 0) > 0}>
           <span class="text-[11px] leading-snug text-v2-text-text-muted">
-            {`${history()?.hidden} message(s) hidden by your words below.`}
+            {language.t((history()?.hidden ?? 0) === 1 ? "community.channels.hiddenByFilters.one" : "community.channels.hiddenByFilters.other", { count: history()?.hidden ?? 0 })}
           </span>
         </Show>
         <div class="mt-2 flex flex-col gap-1 border-t border-white/5 pt-2">
           <div class="flex flex-wrap items-center gap-1">
-            <span class="text-[11px] text-v2-text-text-muted">Hide messages containing:</span>
+            <span class="text-[11px] text-v2-text-text-muted">{language.t("community.filters.title")}</span>
             <For each={filters() ?? []}>
               {(pattern) => (
                 <ButtonV2 variant="ghost" size="small" onClick={() => void removeFilter(pattern)}>
@@ -1455,7 +1453,7 @@ export const CommunityNetwork: Component = () => {
               appearance="base"
               value={filterDraft()}
               onInput={(event) => setFilterDraft(event.currentTarget.value)}
-              placeholder="A word you would rather not read"
+              placeholder={language.t("community.filters.placeholder")}
             />
             <ButtonV2 variant="ghost" size="small" disabled={!filterDraft().trim()} onClick={() => void addFilter()}>
               Hide
@@ -1476,7 +1474,7 @@ export const CommunityNetwork: Component = () => {
         <Show when={(nearby() ?? []).length > 0}>
           <div class="mt-2 flex flex-col gap-1 border-t border-white/5 pt-2">
             <span class="text-[11px] text-v2-text-text-muted">
-              Channels the instances you can reach say they are in:
+              {language.t("community.channels.nearby")}
             </span>
             <div class="flex flex-wrap items-center gap-1">
               <For each={nearby() ?? []}>
@@ -1492,13 +1490,13 @@ export const CommunityNetwork: Component = () => {
         <Show when={(archived() ?? []).length > 0}>
           <div class="mt-2 flex flex-col gap-1 border-t border-white/5 pt-2">
             <span class="text-[11px] text-v2-text-text-muted">
-              You left these, and still have what was said in them:
+              {language.t("community.channels.archived")}
             </span>
             <div class="flex flex-wrap items-center gap-1">
               <For each={archived() ?? []}>
                 {(entry) => (
                   <ButtonV2 variant="ghost" size="small" onClick={() => void rejoin(entry.name)}>
-                    {`${entry.name} · ${entry.messages} ${entry.messages === 1 ? "message" : "messages"}`}
+                    {language.t(entry.messages === 1 ? "community.channels.archivedEntry.one" : "community.channels.archivedEntry.other", { name: entry.name, count: entry.messages })}
                   </ButtonV2>
                 )}
               </For>
@@ -1510,7 +1508,7 @@ export const CommunityNetwork: Component = () => {
             appearance="base"
             value={joining()}
             onInput={(event) => setJoining(event.currentTarget.value)}
-            placeholder="Join a channel by name, e.g. #recipes"
+            placeholder={language.t("community.channels.joinPlaceholder")}
           />
           <ButtonV2 variant="neutral" size="small" disabled={!joining().trim()} onClick={() => void join()}>
             Join
