@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
+import { dict as en } from "@/i18n/en"
 
 /**
  * 🔴 **What a person must be told BEFORE they join — pinned, because a person cannot consent to what
@@ -18,8 +19,21 @@ import { readFileSync } from "node:fs"
 
 const source = readFileSync(new URL("./community-network.tsx", import.meta.url), "utf8")
 
-/** The screen's own rendered copy, comments stripped — a promise made in a comment is not a promise. */
-const copy = source.replace(/\{\/\*[\s\S]*?\*\/\}/g, "").replace(/\/\*[\s\S]*?\*\//g, "")
+/**
+ * The screen's copy, read from the DICTIONARY now that it is translatable.
+ *
+ * ⚠️ It used to be scraped out of the TSX with comments stripped, which stopped working the moment
+ * the strings became `t()` keys — and a ledger that silently starts matching nothing is worse than
+ * no ledger. Reading `en` is also the more honest source: it is what the screen actually renders for
+ * an English reader, and every other locale falls back to it key by key.
+ */
+const copy = Object.entries(en)
+  .filter(([key]) => key.startsWith("community.consent") || key.startsWith("community.off") || key.startsWith("community.airgap"))
+  .map(([, value]) => value)
+  .join("\n")
+
+// The bullet COUNT is still a fact about the markup, so it is still read from the component.
+const markup = source.replace(/\{\/\*[\s\S]*?\*\/\}/g, "").replace(/\/\*[\s\S]*?\*\//g, "")
 
 describe("the consent screen states every cost", () => {
   test("🔴 the preamble COUNTS the bullets it introduces", () => {
@@ -29,7 +43,7 @@ describe("the consent screen states every cost", () => {
      * person can trust what it says, and it is the cheapest possible thing to get right.
      */
     expect(copy).toContain("four things to know first")
-    const bullets = copy.split("<li").length - 1
+    const bullets = markup.split("<li").length - 1
     expect(bullets, "four bullets, and the preamble says four").toBe(4)
   })
 
@@ -97,6 +111,12 @@ describe("the consent screen states every cost", () => {
      * what makes this about what a user sees.
      */
     expect(source, "the fixture must contain comments to strip, or stripping proves nothing").toContain("/*")
+    // A promise made in a comment is not a promise: the dictionary carries no commentary at all, and
+    // the markup is read with comments removed.
     expect(copy).not.toContain("a person cannot consent to what they were not told")
+    expect(markup).not.toContain("a person cannot consent to what they were not told")
+    // ⚠️ And the dictionary really is the source now — if this ever reads empty, every assertion
+    // above passes vacuously.
+    expect(copy.length, "the consent keys must exist in the dictionary").toBeGreaterThan(500)
   })
 })

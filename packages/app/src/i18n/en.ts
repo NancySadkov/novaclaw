@@ -2200,4 +2200,31 @@ export const dict = {
   "home.app.settings.subtitle": "Providers, models, servers, recovery",
   "command.session.previous.unseen": "Previous unread chat",
   "command.session.next.unseen": "Next unread chat",
+  // ── Community: the consent screen ────────────────────────────────────────────────────────────
+  //
+  // 🔴 The whole panel was outside i18n — 91 hard-coded English strings and no `t()` call — so a
+  // German user CONSENTED IN ENGLISH (review 1.15). Of everything in the panel this screen is the
+  // part where that is a real harm rather than an inconvenience: it is the screen whose only job is
+  // that a person understands what they are accepting, and it was legible to one language's readers.
+  "community.title": "Your own community",
+  "community.consent.intro":
+    "NovaClaw instances can talk to each other directly — yours and other people's. It is off until you turn it on, and there are four things to know first.",
+  "community.consent.moderation.title": "Nobody moderates this.",
+  "community.consent.moderation.body":
+    "There is no company in the middle, which also means there is no one to delete what a stranger writes or to appeal to. You may see things you find offensive or upsetting. You can block people, and that is the only power anyone has here.",
+  "community.consent.ip.title": "Other people will see your IP address.",
+  "community.consent.ip.body":
+    "Because there is no central server, your machine connects directly to theirs — so anyone you talk to learns roughly where you are, in the way any direct connection reveals.",
+  "community.consent.address.title": "Your address spreads to the people you meet.",
+  "community.consent.address.body":
+    "Peers pass addresses to each other so strangers can find the network without anyone running a server — so an address you use can reach people you never spoke to. Listing yourself in the public directory, where anyone can find you without ever talking to you, is a separate switch that stays off until you set an address yourself.",
+  "community.consent.notes.title": "Your instance keeps notes about people.",
+  "community.consent.notes.body":
+    "When it deals with someone — asks them something, is answered or refused — it records how that went, in its own words, so it can judge who is worth listening to later. The notes are written by the AI, they are about identifiable people, and nothing here sends them anywhere: no peer can ask for them. Your own agent does read them, because that is what they are for. Forgetting someone deletes theirs.",
+  "community.consent.reversible": "You can turn it off again at any time, here in Community settings.",
+  "community.consent.accept": "I understand — turn it on",
+  "community.off.body": "Community is turned off. Nothing goes in or out, and other instances cannot reach yours.",
+  "community.off.turnOn": "Turn it back on",
+  "community.airgap.body":
+    "Offline mode is on, so the community is off regardless of this setting. Turn off offline mode in Settings to use it.",
 }

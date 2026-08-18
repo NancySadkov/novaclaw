@@ -4,6 +4,7 @@ import { For, Show, createEffect, createMemo, createResource, createSignal, type
 import { CommunityDht } from "@novaclaw/core/community/dht"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useGlobal } from "@/context/global"
+import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { useServer } from "@/context/server"
 import {
@@ -60,6 +61,7 @@ const DEFAULT_CHANNEL = "#NovaClaw"
 
 export const CommunityNetwork: Component = () => {
   const server = useServer()
+  const language = useLanguage()
   const global = useGlobal()
   const connection = createMemo(() => server.current ?? global.servers.list()[0])
   const dialog = useDialog()
@@ -760,24 +762,17 @@ export const CommunityNetwork: Component = () => {
 
       <section class="flex flex-col gap-3" data-slot="community-network">
         <div class="flex flex-col gap-1">
-          <span class="text-sm font-medium text-v2-text-text-base">Your own community</span>
+          <span class="text-sm font-medium text-v2-text-text-base">{language.t("community.title")}</span>
           <Show when={neverAsked()}>
-            <span class="text-[12px] leading-snug text-v2-text-text-muted">
-              NovaClaw instances can talk to each other directly — yours and other people's. It is off until you
-              turn it on, and there are four things to know first.
-            </span>
+            <span class="text-[12px] leading-snug text-v2-text-text-muted">{language.t("community.consent.intro")}</span>
             {/* Stated plainly and without euphemism. Both are consequences of the architecture, not
                 defects in it, and a person cannot consent to what they were not told. */}
             <ul class="mt-2 flex flex-col gap-2">
               <li class="text-[12px] leading-snug text-v2-text-text-base">
-                <b>Nobody moderates this.</b> There is no company in the middle, which also means there is no one
-                to delete what a stranger writes or to appeal to. You may see things you find offensive or
-                upsetting. You can block people, and that is the only power anyone has here.
+                <b>{language.t("community.consent.moderation.title")}</b> {language.t("community.consent.moderation.body")}
               </li>
               <li class="text-[12px] leading-snug text-v2-text-text-base">
-                <b>Other people will see your IP address.</b> Because there is no central server, your machine
-                connects directly to theirs — so anyone you talk to learns roughly where you are, in the way any
-                direct connection reveals.
+                <b>{language.t("community.consent.ip.title")}</b> {language.t("community.consent.ip.body")}
               </li>
               {/* 🔴 The THIRD thing, and it is a different sentence from the one above it. "The people
                   you speak to know where you are" is the cost of a direct connection; "your address
@@ -797,11 +792,7 @@ export const CommunityNetwork: Component = () => {
                   exchange; being listed for strangers who never spoke to you is the separate decision
                   named in the same sentence. */}
               <li class="text-[12px] leading-snug text-v2-text-text-base">
-                <b>Your address spreads to the people you meet.</b> Peers pass addresses to each other so
-                strangers can find the network without anyone running a server — so an address you use can reach
-                people you never spoke to. Listing yourself in the public directory, where anyone can find you
-                without ever talking to you, is a separate switch that stays off until you set an address
-                yourself.
+                <b>{language.t("community.consent.address.title")}</b> {language.t("community.consent.address.body")}
               </li>
               {/* 🔴 The FOURTH thing, and the only one that is about the user's own machine rather
                   than about what leaves it. §5(k) of the honesty ledger requires this disclosure "by
@@ -814,15 +805,11 @@ export const CommunityNetwork: Component = () => {
                   last sentence is a promise the code now keeps — `forget` deletes the notes with the
                   contact, which it did not until it was checked. */}
               <li class="text-[12px] leading-snug text-v2-text-text-base">
-                <b>Your instance keeps notes about people.</b> When it deals with someone — asks them
-                something, is answered or refused — it records how that went, in its own words, so it can
-                judge who is worth listening to later. The notes are written by the AI, they are about
-                identifiable people, and nothing here sends them anywhere: no peer can ask for them. Your own
-                agent does read them, because that is what they are for. Forgetting someone deletes theirs.
+                <b>{language.t("community.consent.notes.title")}</b> {language.t("community.consent.notes.body")}
               </li>
             </ul>
             <span class="mt-2 text-[11px] leading-snug text-v2-text-text-muted">
-              You can turn it off again at any time, here in Community settings.
+              {language.t("community.consent.reversible")}
             </span>
             <div class="mt-2 flex items-center gap-2">
               <ButtonV2
@@ -830,18 +817,16 @@ export const CommunityNetwork: Component = () => {
                 disabled={switching()}
                 onClick={() => void setParticipation({ consented: true })}
               >
-                I understand — turn it on
+                {language.t("community.consent.accept")}
               </ButtonV2>
             </div>
           </Show>
 
           <Show when={switchedOff()}>
-            <span class="text-[12px] leading-snug text-v2-text-text-muted">
-              Community is turned off. Nothing goes in or out, and other instances cannot reach yours.
-            </span>
+            <span class="text-[12px] leading-snug text-v2-text-text-muted">{language.t("community.off.body")}</span>
             <div class="mt-2 flex items-center gap-2">
               <ButtonV2 appearance="base" disabled={switching()} onClick={() => void setParticipation({ enabled: true })}>
-                Turn it back on
+                {language.t("community.off.turnOn")}
               </ButtonV2>
             </div>
           </Show>
@@ -849,10 +834,7 @@ export const CommunityNetwork: Component = () => {
           <Show when={refusals().includes("airgap")}>
             {/* ⚠️ No community control offered: the airgap is a machine-level decision that overrides
                 this one, so a switch here would do nothing and reading it as broken would be fair. */}
-            <span class="text-[12px] leading-snug text-v2-text-text-muted">
-              Offline mode is on, so the community is off regardless of this setting. Turn off offline mode in
-              Settings to use it.
-            </span>
+            <span class="text-[12px] leading-snug text-v2-text-text-muted">{language.t("community.airgap.body")}</span>
           </Show>
         </div>
       </section>
