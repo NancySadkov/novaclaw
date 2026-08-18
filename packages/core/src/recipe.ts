@@ -139,6 +139,36 @@ export interface Parsed {
 const RESERVED = new Set(["name", "description"])
 
 /**
+ * What counts as a frontmatter BLOCK — spelled once, because `parse`, `edit` and every future reader must
+ * agree to the byte about where the block ends and the author's prose begins. Two readers disagreeing on
+ * that boundary is how an "update" edits a line inside somebody's markdown.
+ */
+const FRONTMATTER = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*\r?\n?/
+
+/**
+ * Collapse anything that could end a LINE, so one value can only ever be one frontmatter line.
+ *
+ * ⚠️ **This is a containment boundary, not tidiness**, and it is shared by every seam where a string
+ * becomes a frontmatter value: `needs`, `produces`, and — since 2026-08-18 — `name` and `description`.
+ * Frontmatter is line-structured, so one un-stripped `\n` turns `name: Hello` into `name: Hello` **plus** a
+ * second key the author never wrote — `permissionMode: bypass`, say, which is precisely the thing ruling 14
+ * rules out of frontmatter.
+ *
+ * ⚠️ `name` and `description` were NOT sanitised until 2026-08-18, and that was a real hole rather than a
+ * theoretical one: `render` wrote `name: ${input.name}` verbatim, and the `recipe` tool's `save` op feeds a
+ * MODEL's string into it. The guarded seam (`needs`) and the unguarded seam (`name`) sat four lines apart,
+ * which is what one containment expression per module is for.
+ *
+ * ONE expression, deliberately: two overlapping strips would each be individually removable without
+ * failing a test, which is an invariant with no mechanical check (ruling 1). `\s` alone would miss NUL and
+ * DEL; the control range alone reads as being about exotica rather than about newlines. Measured: deleting
+ * it fails `test/tool-recipe.test.ts` → "`needs` cannot open a second frontmatter key" and
+ * `test/recipe-update.test.ts` → "a name cannot open a second frontmatter key".
+ */
+// oxlint-disable-next-line no-control-regex -- collapsing control characters IS the job
+const oneLine = (value: string) => value.replace(/[\s\u0000-\u001f\u007f]+/g, " ").trim()
+
+/**
  * Split `recipe.md` into optional frontmatter and the prompt body. Deliberately forgiving: a recipe with
  * NO frontmatter is completely valid (the whole file is the prompt), because a user pasting a prompt into
  * a file must get something that works. Only `name` and `description` are *read*; every other line is
@@ -159,7 +189,7 @@ const RESERVED = new Set(["name", "description"])
  */
 export const parse = (markdown: string): Parsed => {
   const text = markdown.replace(/^﻿/, "")
-  const match = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*\r?\n?/.exec(text)
+  const match = FRONTMATTER.exec(text)
   if (!match) return { frontmatter: [], prompt: text.trim() }
   const body = text.slice(match[0].length).trim()
   let name: string | undefined
@@ -184,6 +214,12 @@ export const parse = (markdown: string): Parsed => {
  * Render a Recipe back to `recipe.md`. The inverse of `parse`: it writes the two keys it owns and then
  * re-emits, unchanged and in order, every line `parse` handed back in `frontmatter`. Pass that array
  * through on every write path or the write is lossy — which is exactly the bug this pair exists to close.
+ *
+ * ⚠️ **`render` is the CREATE path only.** Rewriting a file that already exists goes through {@link edit},
+ * which changes the requested lines and leaves every other byte — line endings, a BOM, the author's key
+ * order, the trailing newline — exactly as it found them. `render` cannot do that and is not supposed to:
+ * it joins with `\n` and normalises the block's shape, which is correct for a file that has no shape yet
+ * and is a rewrite of the author's bytes for one that has.
  */
 export const render = (input: {
   name: string
@@ -191,8 +227,8 @@ export const render = (input: {
   frontmatter?: readonly string[]
   prompt: string
 }): string => {
-  const lines = ["---", `name: ${input.name}`]
-  if (input.description) lines.push(`description: ${input.description}`)
+  const lines = ["---", `name: ${oneLine(input.name)}`]
+  if (input.description) lines.push(`description: ${oneLine(input.description)}`)
   lines.push(...(input.frontmatter ?? []))
   lines.push("---", "", input.prompt.trim(), "")
   return lines.join("\n")
@@ -206,27 +242,12 @@ const PRODUCES_LINE = /^\s*produces\s*:/i
 /**
  * The single `needs:` line for a set of capability facts, or `undefined` when there is nothing to say.
  *
- * ⚠️ **The sanitising is a containment boundary, not tidiness.** These strings arrive from a model, and
- * frontmatter is line-structured: one un-stripped `\n` turns `needs: gcc` into `needs: gcc` **plus** a
- * second key the author never wrote — `permissionMode: bypass`, say, which is precisely the thing ruling
- * 14 rules out of frontmatter. Control characters are collapsed to spaces before anything is joined, so
- * a `needs` entry can only ever produce ONE line. Pinned, with the injection attempt as the fixture, in
- * `test/tool-recipe.test.ts`.
+ * ⚠️ **The sanitising is a containment boundary, not tidiness** — the argument, and why exactly ONE
+ * expression does it for every frontmatter value in this module, is on {@link oneLine}. Pinned, with the
+ * injection attempt as the fixture, in `test/tool-recipe.test.ts`.
  */
 const carriedLine = (key: string, values: readonly string[]): string | undefined => {
-  const facts = values
-    .map((entry) =>
-      entry
-        // ONE expression, deliberately: two overlapping strips would each be individually
-        // removable without failing a test, which is an invariant with no mechanical check
-        // (ruling 1). `\s` alone would miss NUL and DEL; the control range alone reads as
-        // being about exotica rather than about newlines. Measured: deleting this line fails
-        // `test/tool-recipe.test.ts` → "`needs` cannot open a second frontmatter key".
-        // oxlint-disable-next-line no-control-regex -- collapsing control characters IS the job
-        .replace(/[\s\u0000-\u001f\u007f]+/g, " ")
-        .trim(),
-    )
-    .filter((entry) => entry.length > 0)
+  const facts = values.map(oneLine).filter((entry) => entry.length > 0)
   return facts.length === 0 ? undefined : `${key}: ${facts.join(", ")}`
 }
 
@@ -251,6 +272,256 @@ const withCarried = (
   const rest = carried.filter((line) => !pattern.test(line))
   const line = carriedLine(key, values)
   return line === undefined ? rest : [line, ...rest]
+}
+
+// =============================================================================
+// UPDATE — the third verb, and the only one that may not rewrite a byte it was not asked about
+// =============================================================================
+//
+// `parse`/`render` are an inverse pair over a recipe's MODEL. `update` is a different obligation: an
+// inverse pair over the FILE. Round-tripping through `render` normalises — it joins with `\n`, moves the
+// two keys it owns to the top, hoists a rewritten `needs:` line to the front of the block, drops a BOM,
+// trims the body and re-terminates the file — so "parse, change one field, render" silently rewrites a
+// stranger's bytes even though `frontmatter` carried every line. That is losslessness measured on the
+// wrong unit: the LINES survive and the FILE does not.
+//
+// ⭐ **The discipline is `novaclaw.json`'s, and it generalises one step further here.** There, an update
+// had to merge onto the RAW parsed object rather than the decoded type, because a decoded type drops
+// everything the build does not model. A recipe adds a second axis: the file is PROSE, so even the parts
+// the model does carry (name, prompt) have a spelling — quoting, key order, indentation, line endings —
+// that the decoded form cannot represent. So this section merges onto neither the record nor the parsed
+// lines: it edits the ORIGINAL BYTES in place, and every byte it was not asked about is copied forward
+// untouched by construction rather than reconstructed correctly by care.
+//
+// What that buys, each pinned in `test/recipe-update.test.ts` with the changed region asserted back to
+// the original: an unknown frontmatter key · unknown body sections · CRLF (and a `\r`-only file) · a
+// missing or present trailing newline · a BOM · a very long line · a body that CONTAINS something
+// looking like frontmatter · the author's key ORDER and their `Name :` spelling.
+//
+// ⚠️ **Assets are lossless BY CONSTRUCTION, and that is the whole design.** Nothing in this section
+// touches any path but `recipe.md`, so a folder's other files cannot be lost, reordered or corrupted by
+// an edit — there is no code that could. A binary asset and an asset whose name needs escaping are still
+// pinned, because "by construction" is a claim about code that a future refactor can quietly falsify.
+
+/**
+ * A partial edit. `undefined` means *leave whatever is there alone* — the property that makes this safe
+ * for a caller that only knows about one field. `description: null` means *remove that line*; `needs: []`
+ * and `produces: []` clear their line, matching {@link SaveInput}.
+ */
+export interface Patch {
+  readonly name?: string
+  readonly description?: string | null
+  readonly prompt?: string
+  readonly needs?: readonly string[]
+  readonly produces?: readonly string[]
+}
+
+/** A line and the exact terminator that ended it — `""` for a last line with no trailing newline. */
+interface Line {
+  readonly text: string
+  readonly eol: string
+}
+
+/**
+ * Split into lines that remember their own terminator, so `fromLines(toLines(x)) === x` for every input:
+ * LF, CRLF, a lone CR, a mixed file, and a file that does not end with a newline.
+ */
+const toLines = (text: string): Line[] => {
+  const out: Line[] = []
+  let start = 0
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index]
+    if (char !== "\n" && char !== "\r") continue
+    const eol = char === "\r" && text[index + 1] === "\n" ? "\r\n" : char
+    out.push({ text: text.slice(start, index), eol })
+    index += eol.length - 1
+    start = index + 1
+  }
+  if (start < text.length) out.push({ text: text.slice(start), eol: "" })
+  return out
+}
+
+const fromLines = (lines: readonly Line[]) => lines.map((line) => line.text + line.eol).join("")
+
+/**
+ * The terminator a line we ADD should use — the file's own majority, never this platform's.
+ *
+ * ⚠️ A Windows repo trap in the other direction: `text=auto` hides CRLF from `git diff`/`status`, so a
+ * writer that emitted the platform's newline into a user's LF file would leave no visible trace at all.
+ * The file decides, and the tests assert the exact bytes rather than reading the file back through
+ * anything that could normalise them.
+ */
+const dominantEol = (text: string): string => {
+  let crlf = 0
+  let lf = 0
+  let cr = 0
+  for (const line of toLines(text)) {
+    if (line.eol === "\r\n") crlf++
+    else if (line.eol === "\n") lf++
+    else if (line.eol === "\r") cr++
+  }
+  if (crlf > 0 && crlf >= lf && crlf >= cr) return "\r\n"
+  if (cr > lf) return "\r"
+  return "\n"
+}
+
+/**
+ * One `key: value` frontmatter line, capturing the author's own indentation, key SPELLING and separator
+ * so an edit can put the new value back inside their formatting instead of ours (`Name : X` stays
+ * `Name : Y`). Case-insensitive, like `parse`.
+ */
+const fieldLine = (key: string) => new RegExp(`^(\\s*)(${key})(\\s*:[ \\t]*)(.*)$`, "i")
+
+/** Set, or with `null` remove, one of the two keys this module owns — in place, keeping its position. */
+const setField = (lines: readonly Line[], key: string, value: string | null, eol: string, under: readonly string[]) => {
+  const pattern = fieldLine(key)
+  const index = lines.findIndex((line) => pattern.test(line.text))
+  if (index >= 0) {
+    if (value === null) return lines.filter((_, at) => at !== index)
+    const match = pattern.exec(lines[index].text)!
+    // Groups 1-3 are the author's prefix, their spelling of the key, and their separator: only group 4
+    // (the value) is ours to replace, which is what "changes only what was asked" means at line scale.
+    // ⚠️ `line.eol`, NOT the file's dominant one: in a mixed-ending file that would silently re-terminate
+    // the very line being edited, which is a byte nobody asked about.
+    return lines.map((line, at) =>
+      at === index ? { text: `${match[1]}${match[2]}${match[3]}${value}`, eol: line.eol } : line,
+    )
+  }
+  if (value === null) return lines
+  // Absent: insert directly under the last key named in `under` (so a new `description` lands beneath
+  // `name` rather than above it), or at the top of the block when none of them is there either.
+  const anchor = under.reduce(
+    (best, other) =>
+      Math.max(
+        best,
+        lines.findIndex((line) => fieldLine(other).test(line.text)),
+      ),
+    -1,
+  )
+  const at = anchor + 1
+  return [...lines.slice(0, at), { text: `${key}: ${value}`, eol }, ...lines.slice(at)]
+}
+
+/**
+ * Set a CARRIED line (`needs:`, `produces:`) without moving it. `withCarried` — the create path — hoists
+ * the rewritten line to the front of the block, which is correct for a file being generated and is a
+ * reorder of somebody's prose for one that already exists.
+ *
+ * A duplicate key is REPLACED at its first position and its later copies are removed: after asking for
+ * `needs: gcc`, a file still carrying a second `needs:` line would contradict the request, and
+ * `parseNeeds` would read both.
+ */
+const setCarried = (
+  lines: readonly Line[],
+  key: string,
+  pattern: RegExp,
+  values: readonly string[] | undefined,
+  eol: string,
+) => {
+  if (values === undefined) return lines
+  const line = carriedLine(key, values)
+  const matches = lines.flatMap((one, at) => (pattern.test(one.text) ? [at] : []))
+  if (matches.length === 0) return line === undefined ? lines : [...lines, { text: line, eol }]
+  const [first] = matches
+  const duplicates = new Set(matches.slice(1))
+  return lines.flatMap((one, at) => {
+    if (at === first) return line === undefined ? [] : [{ text: line, eol: one.eol }]
+    return duplicates.has(at) ? [] : [one]
+  })
+}
+
+/**
+ * Replace the prose, keeping the whitespace that separates it from the block and the file's final
+ * newline (or its deliberate absence) exactly as they were. The incoming prompt's own line endings are
+ * spelled the way the rest of the file spells them — the region IS what was asked to change, so its
+ * content is the caller's, but a CRLF file must not become half-CRLF because of it.
+ */
+const withPrompt = (body: string, prompt: string, eol: string): string => {
+  const text = prompt.trim().replace(/\r\n|\r|\n/g, eol)
+  if (body.trim() === "") return `${eol}${text}${eol}`
+  return `${body.slice(0, body.length - body.trimStart().length)}${text}${body.slice(body.trimEnd().length)}`
+}
+
+/** Written as a code point, not as a literal: an invisible character in source is a trap for the next editor. */
+const BOM = String.fromCharCode(0xfeff)
+
+/**
+ * Apply a {@link Patch} to `recipe.md`'s bytes. PURE — the whole point, because "every other byte is
+ * unchanged" is then a property of a string function that a test can assert exhaustively without a disk.
+ *
+ * A file with no frontmatter grows a block only if the patch actually sets a frontmatter field; a
+ * prompt-only edit leaves a pasted-prompt recipe exactly as bare as it was. (`materialize`'s
+ * *"cooking a recipe with NO frontmatter does not invent one"* is the same rule one path over.)
+ */
+export const edit = (markdown: string, patch: Patch): string => {
+  const bom = markdown.startsWith(BOM) ? BOM : ""
+  const text = bom === "" ? markdown : markdown.slice(bom.length)
+  const eol = dominantEol(text)
+  const match = FRONTMATTER.exec(text)
+
+  const applyTo = (inner: readonly Line[]) => {
+    let next = inner
+    if (patch.name !== undefined) next = setField(next, "name", oneLine(patch.name), eol, [])
+    if (patch.description !== undefined)
+      next = setField(next, "description", patch.description === null ? null : oneLine(patch.description), eol, [
+        "name",
+      ])
+    next = setCarried(next, "needs", NEEDS_LINE, patch.needs, eol)
+    next = setCarried(next, "produces", PRODUCES_LINE, patch.produces, eol)
+    return next
+  }
+
+  const block = match ? toLines(match[0]) : []
+  if (match && block.length >= 2) {
+    const inner = applyTo(block.slice(1, -1))
+    const body = text.slice(match[0].length)
+    const rest = patch.prompt === undefined ? body : withPrompt(body, patch.prompt, eol)
+    return bom + fromLines([block[0], ...inner, block[block.length - 1]]) + rest
+  }
+
+  const created = applyTo([])
+  const body = patch.prompt === undefined ? text : withPrompt(text, patch.prompt, eol)
+  if (created.length === 0) return bom + body
+  const opened = fromLines([{ text: "---", eol }, ...created, { text: "---", eol }])
+  return bom + opened + (body.startsWith(eol) ? "" : eol) + body
+}
+
+/**
+ * Write only when the bytes actually differ, so a no-op edit is a no-op on disk — the mtime (and hence
+ * `updatedAt`) does not move, and a folder synced or backed up elsewhere does not see a change that is
+ * not one. Returns whether anything was written.
+ */
+const writeIfChanged = async (file: string, before: string | undefined, after: string): Promise<boolean> => {
+  if (before === after) return false
+  await fs.writeFile(file, after, "utf8")
+  return true
+}
+
+/**
+ * Change some of a recipe's fields and NOTHING else. Throws with a user-legible message when the slug is
+ * not a recipe, or when the edit would leave it uncookable (an empty prompt) or unnameable.
+ *
+ * The partial shape is what {@link save} cannot offer: `save` takes a whole recipe, so a caller wanting
+ * to add a `produces:` line has to resend the prompt — and a caller that retypes prose it did not author
+ * is the lossy rewrite this section exists to prevent, arriving through the front door.
+ */
+export async function update(
+  slug: string,
+  patch: Patch,
+  options?: Options & { builtinSlugs?: ReadonlySet<string> },
+): Promise<RecipeRecord> {
+  if (!isValidSlug(slug)) throw new Error(`Invalid recipe id: ${slug}`)
+  if (patch.name !== undefined && oneLine(patch.name) === "") throw new Error("A recipe needs a name")
+  if (patch.prompt !== undefined && patch.prompt.trim() === "")
+    throw new Error("A recipe needs a prompt — that is the whole recipe")
+  const root = recipesRoot(options)
+  const file = path.join(root, slug, RECIPE_FILE)
+  const raw = await fs.readFile(file, "utf8").catch(() => undefined)
+  if (raw === undefined) throw new Error(`No recipe named "${slug}"`)
+  await writeIfChanged(file, raw, edit(raw, patch))
+  const updated = await readOne(root, slug, options?.builtinSlugs ?? new Set())
+  if (!updated) throw new Error(`Recipe "${slug}" could not be read back after updating`)
+  return updated
 }
 
 // =============================================================================
@@ -569,25 +840,38 @@ export async function save(input: SaveInput, options?: Options): Promise<RecipeR
   const dir = path.join(root, slug)
   await fs.mkdir(dir, { recursive: true })
   const file = path.join(dir, RECIPE_FILE)
-  // `SaveInput` carries only the fields the app edits, so an update-in-place would otherwise delete every
-  // frontmatter line this module does not understand. Read them off the file being replaced and carry
-  // them through: editing a recipe's name must not silently strip the author's own keys.
+  // ⚠️ **A save onto an EXISTING file is an edit of that file, not a re-render of it.** `SaveInput` carries
+  // only the fields the app edits, so regenerating the file drops everything else — which is why `render`
+  // was given the author's carried lines in the first place. But carrying the lines only preserved the
+  // LINES: the rewrite still normalised CRLF to LF, moved a rewritten `needs:` to the top of the block,
+  // dropped a BOM and re-terminated the file. `edit` changes the requested lines inside the author's own
+  // bytes, so this path is lossless on the FILE and not merely on the model (see the UPDATE section).
+  // `render` still owns CREATE, where there are no bytes to preserve.
   const existing = await fs.readFile(file, "utf8").catch(() => undefined)
-  await fs.writeFile(
-    file,
-    render({
-      name: input.name.trim(),
-      ...(input.description ? { description: input.description.trim() } : {}),
-      frontmatter: withCarried(
-        withCarried(existing === undefined ? [] : parse(existing).frontmatter, "needs", NEEDS_LINE, input.needs),
-        "produces",
-        PRODUCES_LINE,
-        input.produces,
-      ),
-      prompt: input.prompt,
-    }),
-    "utf8",
-  )
+  const markdown =
+    existing === undefined
+      ? render({
+          name: input.name.trim(),
+          ...(input.description ? { description: input.description.trim() } : {}),
+          frontmatter: withCarried(
+            withCarried([], "needs", NEEDS_LINE, input.needs),
+            "produces",
+            PRODUCES_LINE,
+            input.produces,
+          ),
+          prompt: input.prompt,
+        })
+      : edit(existing, {
+          name: input.name.trim(),
+          // `save` takes a WHOLE recipe, so an omitted description means the user cleared it — which is
+          // what this path already did (`render` simply did not emit the line). `update` is the verb whose
+          // `undefined` means "leave it alone"; conflating the two would make Save unable to clear a field.
+          description: input.description?.trim() || null,
+          prompt: input.prompt,
+          ...(input.needs === undefined ? {} : { needs: input.needs }),
+          ...(input.produces === undefined ? {} : { produces: input.produces }),
+        })
+  await writeIfChanged(file, existing, markdown)
   const saved = await readOne(root, slug, input.builtin ? new Set([slug]) : new Set())
   if (!saved) throw new Error(`Recipe "${slug}" could not be read back after saving`)
   return saved
@@ -628,21 +912,14 @@ export async function duplicate(slug: string, options?: Options): Promise<Recipe
   }
   if (!target) throw new Error(`Too many copies of "${slug}"`)
   await fs.cp(path.join(root, slug), path.join(root, target), { recursive: true })
-  // `fs.cp` already made a byte copy; the ONLY thing that may differ is the title, so the rewrite re-emits
-  // the copied file's own frontmatter and changes exactly one line. Retitling is deliberate (the list
-  // must not show two identical names); losing the author's other keys on the way would not be.
+  // `fs.cp` already made a byte copy, and the ONLY thing that may differ is the title — so the retitle is
+  // an EDIT of one line rather than a re-render of the file. Re-rendering re-emitted the author's carried
+  // lines correctly and still changed the copy's line endings, key order and trailing newline; now the
+  // copy differs from the original in exactly the name line, which is what this comment always claimed.
+  // Retitling itself is deliberate (the list must not show two identical names).
   const copyFile = path.join(root, target, RECIPE_FILE)
-  const carried = parse(await fs.readFile(copyFile, "utf8"))
-  await fs.writeFile(
-    copyFile,
-    render({
-      name: `${source.name} (copy)`,
-      ...(carried.description ? { description: carried.description } : {}),
-      frontmatter: carried.frontmatter,
-      prompt: carried.prompt,
-    }),
-    "utf8",
-  )
+  const raw = await fs.readFile(copyFile, "utf8")
+  await writeIfChanged(copyFile, raw, edit(raw, { name: `${source.name} (copy)` }))
   const copied = await readOne(root, target, new Set())
   if (!copied) throw new Error(`Copy of "${slug}" could not be read back`)
   return copied

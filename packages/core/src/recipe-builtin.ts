@@ -285,6 +285,135 @@ conclusion — say so if that is the situation.`,
 
 export const BUILTIN_SLUGS: ReadonlySet<string> = new Set(BUILTINS.map((recipe) => recipe.slug))
 
+// =============================================================================
+// The `examples` COLLECTION — where a recipe lives, decided by the build
+// =============================================================================
+//
+// Owner decision (`notes/reports/decisions-v0.2.0.md` → *Referred to the owner*, answered 2026-07-27):
+// *"The bundled set keeps its seven, and moves under an `examples/` collection — recipes gain a collection
+// so a user's own recipes, shipped examples, and a possible later curated tier are visibly distinct. The
+// `builtin` boolean cannot express that and cannot group. This does not touch ruling 14: a collection is
+// WHERE A RECIPE LIVES, not what it is granted."*
+//
+// The array above IS that collection's membership, and `BUILTIN_SLUGS` is its index. What follows is the
+// vocabulary — because the boolean answers *"did we ship it?"* and a collection has to answer *"which
+// shelf is it on?"*, which is a different question the moment there are three shelves.
+//
+// ── ⚠️ THE NAME COLLISION THIS ITEM WAS OPENED AGAINST, stated plainly ────────────────────────────────
+//
+// `todo/recipes.md`: *define the bundled `examples/` registry **without confusing recipes with Spark
+// runtime profiles***. That is not a stylistic worry — ruling 14's rules_out list ends with *"two things
+// called 'recipe' in one agent's context"*, and both things exist here already:
+//
+//   · **A NovaClaw recipe** is a FOLDER of prose. It states INTENT, may declare `needs` and `produces`,
+//     and may never carry configuration or anything that runs (ruling 14). Nothing in it is executed.
+//   · **A Spark runtime profile** is a `sparkrun` YAML — and sparkrun is literally *"a community
+//     recipe-runner"* invoked as `sparkrun run <recipe.yaml>`, whose files live in `~/recipes/` on the
+//     Spark (`doc/spark.md`, `notes/ops/test-models-maintenance.md`, `notes/ops/sparkrun-*.yaml`). It
+//     carries `runtime:`, `container:`, `model:`, `env:`, `solo_only:`, `recipe_version:` and a
+//     `command:` template that is EXECUTED verbatim on a GPU host, plus a `defaults:` table of ports,
+//     `max_model_len` and `gpu_memory_utilization`.
+//
+// So the two concepts share a noun AND a verb — `sparkrun run <recipe>` next to `recipe.run` — while one
+// of them is a shell command with a resource budget and the other may not contain either.
+//
+// ⭐ **Why defining a REGISTRY is the exact moment the collision bites.** A registry of bundled entries is
+// precisely what `~/recipes/` is, and sparkrun's is the ready-made template an agent with both in context
+// will reach for: a directory of versioned entries, each a `name` plus a `defaults:` table plus a
+// `command:`. Adopting one field of that shape — a `defaults:` block, an `env:`, a `port`, a
+// `recipe_version` — puts configuration and an executable into a recipe, which is ruling 14's
+// `permissionMode`-in-frontmatter with a different label on it. The distinction is therefore load-bearing
+// and not tidiness, and it is armed by a test rather than by this paragraph:
+// `test/recipe-collection.test.ts` fails if any bundled entry ever grows a runtime-profile field name.
+//
+// The two are kept plainly distinct by three properties, all mechanical:
+//   1. a bundled entry is a `Recipe.SaveInput` and nothing else — prose, `needs`, `produces`, no other
+//      field exists to put a knob in;
+//   2. a collection has an id and a title and NO settings — it is a shelf, not a profile;
+//   3. nothing in this module or `recipe.ts` executes, spawns, or reads an env var.
+//
+// ── WHY MEMBERSHIP IS DERIVED, and not declared or inferred from a folder ─────────────────────────────
+//
+// A collection is a **provenance** fact: *NovaClaw shipped this one.* Two tempting homes are both wrong:
+//
+//   · **A `collection:` frontmatter key.** A recipe is untrusted input the moment it lands (ruling 14), so
+//     a self-declared collection lets a stranger's zip announce itself as a NovaClaw example. `tool/
+//     recipe.ts` already draws this line for the sibling field: *"a shared recipe's self-declared expertise
+//     level is untrusted input, so the artifact may propose and the instance decides."* Provenance is the
+//     case where there is nothing to propose.
+//   · **A `recipes/examples/` DIRECTORY on disk.** It reads like the literal answer to "where a recipe
+//     lives", and it is exactly as forgeable — unzipping a shared folder into it grants the same false
+//     provenance, with no untrusted *file* required. It would also mean migrating folders that are already
+//     on users' disks, and those folders are theirs (see the seeding note in this module's header).
+//
+// What is left is the only teller that cannot be forged from outside: the BUILD. `BUILTIN_SLUGS` is a
+// module constant compiled into the bundle, so membership is a fact about this NovaClaw, decided before
+// any user or peer could touch it. A user may still edit or delete an example — they own the bytes once it
+// is on their disk — and it stays on the Examples shelf, which is correct: it is still the recipe we
+// shipped, now with their changes.
+//
+// ── IS THIS THE `needs`/`collection`/`level` SCHEMA BATCH? NO, and that is the finding ────────────────
+//
+// `todo/recipes.md` sequences *"one schema change, not two (three, counting the level)"* — `needs`,
+// `collection` and `level` promoted together, with a `packages/protocol` field to make them wire-visible.
+// The reasoning above removes `collection` from that batch entirely: it is not a frontmatter field at all,
+// so it has nothing to promote and cannot ride along. The batch is `needs` and `level`, both still
+// unlanded, both still artifact-declared. Nothing here adds a carried field, changes `parse`/`render`, or
+// touches `Recipe`'s key set — which `test/tool-recipe.test.ts` pins EXACTLY, and which pins `collection`
+// itself in its FORBIDDEN list precisely because an artifact-declared one is the thing to keep out.
+
+/** The shelves a recipe can be on. Closed, and every member is decided by the instance, never by the file. */
+export type Collection = "examples" | "mine"
+
+export interface CollectionInfo {
+  readonly id: Collection
+  /** What a person reads above the group. */
+  readonly title: string
+  /** One line the UI may show, in house style: say what the shelf IS, do not explain the mechanism. */
+  readonly note: string
+}
+
+/**
+ * In display order: what the install brought, then what the user made.
+ *
+ * ⚠️ **No settings, no defaults, no command, no version** — a collection is a shelf. That is the whole of
+ * the distinction from a Spark runtime profile at the type level, and the reason a third tier is three
+ * lines of work rather than a schema: add its `CollectionInfo`, add its registry, add its arm to
+ * {@link collectionOf}. A tier with no members is NOT added ahead of time — an empty shelf in the UI is a
+ * promise the product has not kept.
+ */
+export const COLLECTIONS: readonly CollectionInfo[] = [
+  {
+    id: "examples",
+    title: "Examples",
+    note: "Recipes NovaClaw brought with it. Run one to see what this install can do — or copy one and make it yours.",
+  },
+  { id: "mine", title: "My recipes", note: "Everything you wrote, imported, or copied." },
+]
+
+export const collectionInfo = (id: Collection): CollectionInfo =>
+  COLLECTIONS.find((collection) => collection.id === id) ?? COLLECTIONS[COLLECTIONS.length - 1]
+
+/**
+ * Which shelf a slug is on. Reads `BUILTIN_SLUGS` — the build's own record of what it shipped — rather
+ * than the record's `builtin` flag, which is only as good as the `builtinSlugs` its caller remembered to
+ * pass, and rather than anything the file says about itself.
+ */
+export const collectionOf = (slug: string): Collection => (BUILTIN_SLUGS.has(slug) ? "examples" : "mine")
+
+/**
+ * Group a listing onto its shelves, in {@link COLLECTIONS} order, dropping shelves with nothing on them.
+ * The grouping the `builtin` boolean could not do; the order within a group is whatever the caller's
+ * listing already had (`Recipe.list` is name-sorted).
+ */
+export const grouped = (
+  recipes: readonly Recipe.Recipe[],
+): readonly { readonly collection: CollectionInfo; readonly recipes: readonly Recipe.Recipe[] }[] =>
+  COLLECTIONS.map((collection) => ({
+    collection,
+    recipes: recipes.filter((recipe) => collectionOf(recipe.slug) === collection.id),
+  })).filter((group) => group.recipes.length > 0)
+
 /**
  * Write any missing builtin into the recipes folder. Idempotent and NON-destructive: a slug that already
  * exists is left alone, so a user's edits to a shipped recipe survive every upgrade — they own it once it
