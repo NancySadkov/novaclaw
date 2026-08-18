@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test"
-import { readdirSync } from "node:fs"
-import { parse } from "node:path"
+import { mkdirSync, readdirSync, existsSync } from "node:fs"
+import path, { parse } from "node:path"
 import { Global } from "@novaclaw/core/global"
+import { Scratch } from "@novaclaw/core/scratch"
 import { SCRATCH_ROOT, scratchHome } from "@novaclaw/core/kb-graph/wasm-engine"
+import { tmpdir } from "./fixture/tmpdir"
 
 // AGENTS.md design principle 11: outside the home, the OS temp dir and the working folder, the
 // filesystem is READ-ONLY to us. This is the mechanical half — the principle on its own is the class
@@ -48,4 +50,128 @@ describe("design principle 11: we do not write outside the home", () => {
     const ours = entries.filter((n) => /^(kbmem_|novaclaw-kbmem)/i.test(n))
     expect(ours).toEqual([])
   })
+})
+
+// ── the second instance of the same class: a stringified `undefined` as a path segment ───────────
+//
+// Found 2026-08-18, the same way principle 11's first one was — by looking at the owner's drive, not
+// by any test. `C:\Users\nangl\undefined\novaclaw` held `novaclaw.db` (409 KB), `novaclaw-dev.db`, a
+// `memory/graph` (1.9 MB), `recipes/`, `log/` and `scratch/`: six days of a real instance, written
+// into a folder named after a JavaScript value. `String(undefined)` is an ordinary non-empty string,
+// so `path.join` takes it and every `??`/`||` downstream skips its fallback.
+//
+// The data-directory half was fixed in f232051a0 (2026-07-27) and that stray is residue. But the
+// TEMP root was still live when this block was written: `os.tmpdir()` returns TMPDIR/TMP/TEMP
+// verbatim, and `tmp` was the one of the seven instance directories that never went through
+// `Xdg.isSuspect`. With `TEMP="undefined"`, `Global.Path.tmp` was the RELATIVE `"undefined\novaclaw"`
+// and `ensureDirectories` created it under the process's cwd — the user's project folder — while
+// `directoryStatus()` still said `ok`.
+//
+// NEGATIVE CONTROL, measured 2026-08-18 (win32) by reverting each guard and re-running this file.
+// ⚠️ Read the last two rows before "improving" any single guard away: the defences OVERLAP, and
+// removing one on its own is absorbed by a sibling. Only the last row is a real regression signal.
+//
+//   | reverted                                                              | result                     |
+//   |-----------------------------------------------------------------------|----------------------------|
+//   | `NULLISH_SEGMENT` check dropped from `ensureDirectories`               | unit case **RED**          |
+//   | `tmpRoot()` → the shipped `path.join(os.tmpdir(), app)`                 | `temp-undefined` **RED**   |
+//   | `firstNonEmpty`'s `"undefined"` filter + `isSuspect`'s segment check    | green — `isSuspect` still  |
+//   |                                                                         | rejects the RELATIVE       |
+//   |                                                                         | `"undefined"` and relocates|
+//   | all of the above **plus** `isSuspect → false` and `baseDir` returning   | **5 of 5 RED** (both the   |
+//   | `path.join(String(home), …)`, i.e. the pre-f232051a0 shape              | unit case and all four     |
+//   |                                                                         | fixture scenarios)         |
+describe("design principle 11: a stringified `undefined` never becomes a directory", () => {
+  const NULLISH_SEGMENT = /(?:^|[\\/])(?:undefined|null)(?:[\\/]|$)/
+
+  test("this instance's own paths carry no `undefined`/`null` segment", () => {
+    // The cheapest possible version of "look at where the bytes go". On the machine that produced
+    // the stray, `Global.Path.data` WAS `C:\Users\nangl\undefined\novaclaw` and no test noticed.
+    const live = {
+      data: Global.Path.data,
+      cache: Global.Path.cache,
+      config: Global.Path.config,
+      state: Global.Path.state,
+      log: Global.Path.log,
+      repos: Global.Path.repos,
+      bin: Global.Path.bin,
+      tmp: Global.Path.tmp,
+      scratch: Scratch.root(),
+    }
+    expect(Object.entries(live).filter(([, v]) => NULLISH_SEGMENT.test(v))).toEqual([])
+    // …and every one of them absolute, because a relative instance path writes into whatever folder
+    // the process happens to be in — which for this product is the user's own project.
+    expect(Object.entries(live).filter(([, v]) => !path.isAbsolute(v))).toEqual([])
+  })
+
+  test("`ensureDirectories` refuses such a path instead of creating it", async () => {
+    await using dir = await tmpdir()
+    // The control first: the raw syscall this guard wraps is perfectly happy to make the directory.
+    const control = path.join(dir.path, "control", "undefined", "novaclaw")
+    mkdirSync(control, { recursive: true })
+    expect(existsSync(control)).toBe(true)
+
+    const poisoned = [
+      path.join(dir.path, "guarded", String(undefined), "novaclaw"),
+      path.join(dir.path, "guarded", String(null), "novaclaw"),
+      path.join(dir.path, "guarded", "novaclaw", String(undefined)),
+    ]
+    const healthy = path.join(dir.path, "guarded", "real")
+
+    const faults = Global.ensureDirectories([...poisoned, healthy])
+
+    // Each poisoned path is reported by name — a fault a repair can act on, not a silent skip.
+    expect(faults.map((fault) => fault.directory)).toEqual(poisoned)
+    expect(faults.every((fault) => /nullish/i.test(fault.message))).toBe(true)
+    // Nothing was created for them…
+    expect(poisoned.filter((entry) => existsSync(entry))).toEqual([])
+    expect(existsSync(path.join(dir.path, "guarded", "undefined"))).toBe(false)
+    expect(existsSync(path.join(dir.path, "guarded", "null"))).toBe(false)
+    // …and one bad entry does not stop the rest, which is this function's whole contract.
+    expect(existsSync(healthy)).toBe(true)
+  })
+
+  // Every poison the resolver can actually be handed, driven end to end in its own process, with the
+  // disk inspected afterwards. `Global` memoises per process, so a subprocess is the only honest
+  // instrument — see `fixture/write-scope-poison.ts`.
+  const FIXTURE = path.join(import.meta.dir, "fixture", "write-scope-poison.ts")
+  const SCENARIOS = ["xdg-literal-undefined", "empty-homedir", "novaclaw-home-undefined", "temp-undefined"] as const
+
+  for (const scenario of SCENARIOS)
+    test(`the real resolver under \`${scenario}\` writes nothing named "undefined"`, async () => {
+      await using dir = await tmpdir()
+      const child = Bun.spawn([process.execPath, FIXTURE, scenario], {
+        cwd: dir.path,
+        env: { ...process.env, POISON_SANDBOX: dir.path, NODE_ENV: "" },
+        stdout: "pipe",
+        stderr: "pipe",
+      })
+      const [stdout, stderr, exitCode] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+        child.exited,
+      ])
+      const line = stdout.trim().split("\n").at(-1) ?? ""
+      if (!line.startsWith("{"))
+        throw new Error(`the poison fixture printed no report (exit ${exitCode}).\n${stdout}\n${stderr}`)
+      const report = JSON.parse(line) as {
+        twin: { target: string; created: boolean; strays: string[] }
+        resolved: Record<string, string>
+        strays: string[]
+      }
+
+      // ⚠️ THE CONTROL. The pre-fix expression, same process, same poison: it must still produce a
+      // directory literally named `undefined`. Without this the case below passes for free the day
+      // the poison stops biting.
+      expect(NULLISH_SEGMENT.test(report.twin.target)).toBe(true)
+      expect(report.twin.created).toBe(true)
+      expect(report.twin.strays.length).toBeGreaterThan(0)
+
+      // The claim: nothing the guarded resolver produced carries the segment…
+      expect(Object.entries(report.resolved).filter(([, v]) => NULLISH_SEGMENT.test(v))).toEqual([])
+      expect(Object.entries(report.resolved).filter(([, v]) => !path.isAbsolute(v))).toEqual([])
+      // …and nothing named `undefined` exists anywhere it could reach on disk. This is the assertion
+      // that would have caught the original: it looks OUTSIDE the tree, at the bytes.
+      expect(report.strays).toEqual([])
+    })
 })

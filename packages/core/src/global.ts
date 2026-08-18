@@ -24,11 +24,46 @@ const app = "novaclaw"
 // So: resolve the home directory from every source the platform might actually have it in, keep the
 // XDG layout byte-identical so existing installs keep their data, and refuse to build a path at all
 // rather than silently writing to a directory literally named "undefined".
-const tmp = path.join(os.tmpdir(), app)
+/**
+ * The OS temp root, refused if it is not a usable absolute path.
+ *
+ * ⚠️ **`tmp` was the ONE of the seven instance directories that never went through `Xdg.isSuspect`,
+ * and the hole was still open on 2026-08-18** — three weeks after the data-directory half of this
+ * exact bug was fixed. `os.tmpdir()` returns `TMPDIR`/`TMP`/`TEMP` **verbatim**, so the same
+ * `Object.assign(process.env, {K: undefined})` footgun that made the data directory
+ * `undefined\novaclaw` makes the temp root `"undefined"` too. Measured with `TEMP="undefined"`:
+ * `Global.Path.tmp` resolved to the RELATIVE `"undefined\novaclaw"`, `ensureDirectories` created it
+ * under the process's current working directory, and `directoryStatus()` still reported `ok` — no
+ * warning anywhere. A relative temp root writes into whatever folder the process happens to be in,
+ * which on this product is the user's own project: principle 11's exact prohibition.
+ *
+ * So it gets the same treatment as the XDG homes — refuse a suspect value, name it on stderr, and
+ * fall back to the platform's documented default rather than stringifying anything.
+ */
+let cachedTmpRoot: string | undefined
+const tmpRoot = (): string => {
+  if (cachedTmpRoot !== undefined) return cachedTmpRoot
+  const candidate = os.tmpdir()
+  if (typeof candidate === "string" && !Xdg.isSuspect(candidate)) return (cachedTmpRoot = candidate)
+  const systemRoot = [process.env["SystemRoot"], process.env["windir"], "C:\\Windows"].find(
+    (v): v is string => typeof v === "string" && v.trim() !== "" && !Xdg.isSuspect(v),
+  )
+  const fallback = process.platform === "win32" ? path.join(systemRoot ?? "C:\\Windows", "Temp") : "/tmp"
+  console.error(
+    `[novaclaw] WARNING: the system temp directory resolved to ${JSON.stringify(candidate)}, which is ` +
+      `not a usable absolute path — TMPDIR/TMP/TEMP is empty, relative, or holds the literal text ` +
+      `"undefined". NovaClaw is using ${fallback} for this run instead of creating a directory under ` +
+      `the current working folder.`,
+  )
+  return (cachedTmpRoot = fallback)
+}
+
+/** `<tmp>/novaclaw` — design principle 11's location (b). */
+const instanceTmp = () => path.join(tmpRoot(), app)
 
 /** Last resort when the platform exposes no home at all: somewhere that always exists. A running
  *  instance with a warning beats a dead one — "degrade and recover", never a dead end. */
-const emergencyRoot = () => path.join(os.tmpdir(), `${app}-home`)
+const emergencyRoot = () => path.join(tmpRoot(), `${app}-home`)
 
 let cached: Xdg.Dirs | undefined
 
@@ -75,15 +110,43 @@ export const directoriesOf = (chosen: Xdg.Dirs, tmpDir: string): readonly string
 ]
 
 /**
+ * A path segment that is a stringified nullish value.
+ *
+ * `String(undefined)` and `String(null)` are ordinary non-empty strings, so `path.join` accepts them
+ * and every `??`/`||` downstream skips its fallback. That is how `C:\Users\<u>\undefined\novaclaw`
+ * came to hold six days of real databases. No real directory is named exactly `undefined` or `null`;
+ * a path carrying one is a bug that has reached the filesystem.
+ */
+const NULLISH_SEGMENT = /(?:^|[\\/])(?:undefined|null)(?:[\\/]|$)/
+
+/**
  * `mkdirSync` every directory, and report the ones that refused instead of throwing on the first.
  *
  * Every directory is attempted even after one fails: a single unwritable path (a stale file where a
  * directory belongs, a revoked ACL on `state`) should not hide the state of the other six from
  * whoever has to repair this.
+ *
+ * ⚠️ **This is the LAST place a path becomes bytes on someone else's disk, so it is where a
+ * stringified `undefined` is refused rather than created.** The resolver upstream already rejects a
+ * suspect home, but every derived path (`<data>/log`, `<cache>/bin`, the temp root) is built AFTER
+ * that check, and the temp root never went through it at all. A guard at the chokepoint is the one
+ * that cannot be bypassed by adding a directory to `directoriesOf`. It reports rather than throws,
+ * in the same shape as an EACCES, so the caller relocates and says so.
  */
 export const ensureDirectories = (directories: readonly string[]): readonly DirectoryFault[] => {
   const failures: DirectoryFault[] = []
   for (const directory of directories) {
+    if (typeof directory !== "string" || directory.trim() === "" || NULLISH_SEGMENT.test(directory)) {
+      failures.push({
+        directory: String(directory),
+        message:
+          `refusing to create a directory whose path carries a stringified nullish segment — some ` +
+          `variable was undefined/null and got interpolated instead of falling back. This is how ` +
+          `NovaClaw once wrote six days of databases into a folder literally named "undefined" ` +
+          `(AGENTS.md design principle 11).`,
+      })
+      continue
+    }
     try {
       fsSync.mkdirSync(directory, { recursive: true })
     } catch (cause) {
@@ -143,7 +206,7 @@ const dirs = (): Xdg.Dirs => {
   // `Effect.sync` on the boot path: EACCES/EPERM/EROFS/ENOSPC on any one of them was an
   // unrecoverable boot defect. It degrades now instead, in the same shape the home-resolution branch
   // above already used — the emergency root, loudly named.
-  const failures = ensureDirectories(directoriesOf(chosen, tmp))
+  const failures = ensureDirectories(directoriesOf(chosen, instanceTmp()))
   // ⚠️ Only an unusable HOME earns a relocation, never one bad subdirectory. Moving the whole
   // instance because `<data>/log` could not be created would orphan the user's existing sessions
   // database in their real home and start them in an empty one — the "quarantine is scarier than a
@@ -159,7 +222,7 @@ const dirs = (): Xdg.Dirs => {
       state: path.join(root, "state"),
       explicitHome: root,
     }
-    const second = ensureDirectories(directoriesOf(relocated, tmp))
+    const second = ensureDirectories(directoriesOf(relocated, instanceTmp()))
     if (second.length === 0) {
       console.error(
         `[novaclaw] WARNING: NovaClaw could not create its directories under the home it resolved ` +
@@ -219,7 +282,9 @@ const paths = {
   get state() {
     return dirs().state
   },
-  tmp,
+  get tmp() {
+    return instanceTmp()
+  },
   /** The pinned instance home, when one was given — for `novaclaw --help` output and diagnostics. */
   get explicitHome() {
     return dirs().explicitHome
