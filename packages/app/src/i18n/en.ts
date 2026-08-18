@@ -388,6 +388,13 @@ export const dict = {
   "composer.tune.makeDefault.description":
     "Save the switches you changed in this chat into this folder's novaclaw.json, so every new chat here starts the same way. Anything you did not change keeps following your Settings.",
   "composer.tune.makeDefault.inForce.none": "This folder has no project file yet. Saving creates one here.",
+  "composer.tune.makeDefault.inForce.pending": "Checking whether this folder already has a project file…",
+  "composer.tune.makeDefault.inForce.hereUnknown":
+    "This folder already has {{file}}. Saving replaces only its Tune section and leaves the rest as it is. Open a chat here to see what it currently sets.",
+  "composer.tune.makeDefault.inForce.brokenUnreadable":
+    "This folder has {{file}}, and it could not be read — so nothing in it is in force. Saving is refused until the file is valid: fix it, or move it aside.",
+  "composer.tune.makeDefault.inForce.brokenFuture":
+    "This folder has {{file}}, and it was written by a newer NovaClaw — so nothing in it is in force here. Update NovaClaw to use it; the file itself is probably fine.",
   "composer.tune.makeDefault.inForce.here":
     "This folder already has {{file}}. Saving replaces only its Tune section — its permissions and everything else stay exactly as they are.",
   "composer.tune.makeDefault.inForce.ancestor":

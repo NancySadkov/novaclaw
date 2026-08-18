@@ -6,7 +6,7 @@ import { Switch as SwitchToggle } from "@novaclaw/ui/v2/switch-v2"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { useLanguage } from "@/context/language"
 import { pathKey } from "@/utils/path-key"
-import { makeDefaultPayload, planMakeDefault } from "./make-default"
+import { inForceState, makeDefaultPayload, planMakeDefault } from "./make-default"
 
 export type ComposerFeature =
   | "introspection"
@@ -135,6 +135,17 @@ export type ComposerMakeDefaultState = {
    * a user who is not told that will read the receipt as having changed the file they were shown.
    */
   governedBy: ComposerProjectLayer | undefined
+  /**
+   * The DIRECTORY-keyed answer, for a draft chat that has no session to resolve a layer from.
+   *
+   * `undefined` means nobody has answered yet and is deliberately NOT the same as a `none` answer —
+   * see `inForceState`. It carries no `applied`, so the copy it drives names the file and declines to
+   * summarise what it declares rather than printing "it sets nothing".
+   */
+  discovered?:
+    | { readonly kind: "project"; readonly root: string; readonly file: string }
+    | { readonly kind: "invalid"; readonly file: string; readonly reason: string }
+    | { readonly kind: "none" }
   /** `false` while a write is in flight; the button disables itself rather than queueing a second. */
   write: (features: Partial<Record<ComposerFeature, boolean>>) => Promise<ComposerMakeDefaultReceipt>
 }
@@ -493,17 +504,45 @@ function MakeDefaultSection(props: {
   const describe = (entry: { feature: ComposerFeature; value: boolean }) =>
     `${props.featureTitle(entry.feature)} — ${language.t(`prompt.features.state.${entry.value ? "on" : "off"}`)}`
 
-  /** Where the folder's defaults come from TODAY. Principle 12(d): before the control, not after. */
+  /**
+   * Where the folder's defaults come from TODAY. Principle 12(d): before the control, not after.
+   *
+   * The decision lives in `inForceState` so the six cases are assertable without a DOM — including
+   * the draft case, where this sentence used to promise a creation in folders that already had a
+   * file. The `pathKey` comparison (never `===`) is injected for the same reason it was here before.
+   */
   const inForce = () => {
-    const governed = props.state.governedBy
-    if (!governed) return language.t("composer.tune.makeDefault.inForce.none")
-    // ⚠️ Through `pathKey`, not `===`. The two strings come from different places — the browser's
-    // session record and the server's own `path.resolve` — so they can differ in separator style or
-    // a trailing slash while naming one directory. A raw comparison then tells the user their edit
-    // will create a NEW file when it is going to update the one they are looking at.
-    if (pathKey(governed.root) === pathKey(props.state.folder))
-      return language.t("composer.tune.makeDefault.inForce.here", { file: governed.file })
-    return language.t("composer.tune.makeDefault.inForce.ancestor", { file: governed.file })
+    const state = inForceState({
+      folder: props.state.folder,
+      governedBy: props.state.governedBy,
+      discovered: props.state.discovered,
+      samePath: (a, b) => pathKey(a) === pathKey(b),
+    })
+    switch (state.kind) {
+      case "pending":
+        return language.t("composer.tune.makeDefault.inForce.pending")
+      case "none":
+        return language.t("composer.tune.makeDefault.inForce.none")
+      case "here":
+        return language.t("composer.tune.makeDefault.inForce.here", { file: state.file })
+      case "ancestor":
+        return language.t("composer.tune.makeDefault.inForce.ancestor", { file: state.file })
+      case "here-unknown":
+        return language.t("composer.tune.makeDefault.inForce.hereUnknown", { file: state.file })
+      // Deliberately the SAME sentence as a resolved ancestor. That copy already declines to say what
+      // the file sets — it only says an ancestor governs and that saving takes over here — so knowing
+      // `applied` would add nothing to it. A separate key would be two strings to keep in step for no
+      // difference the user can see. The `here` pair DO differ, because that one offers to summarise.
+      case "ancestor-unknown":
+        return language.t("composer.tune.makeDefault.inForce.ancestor", { file: state.file })
+      case "broken":
+        return language.t(
+          state.future
+            ? "composer.tune.makeDefault.inForce.brokenFuture"
+            : "composer.tune.makeDefault.inForce.brokenUnreadable",
+          { file: state.file },
+        )
+    }
   }
 
   const run = () => {

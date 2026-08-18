@@ -81,3 +81,80 @@ export function makeDefaultPayload(plan: MakeDefaultPlan): Partial<Record<Compos
   for (const entry of plan.declared) features[entry.feature] = entry.value
   return features
 }
+
+// ---------------------------------------------------------------------------------------------
+// What governs this folder RIGHT NOW — the sentence above the control
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * 🔴 **This sentence was affirmatively FALSE in a draft chat, and that is worse than saying nothing.**
+ * Measured in the packaged app 2026-08-18 (`notes/reports/electron-render-gates-2026-08-18.md`, D4):
+ * a new unsent chat always read *"This folder has no project file yet. Saving creates one here."* —
+ * including in a folder holding a valid file, and including in a folder whose file was present but
+ * UNREADABLE, where the very next click was refused one second after the UI promised a creation.
+ *
+ * The cause is that the provenance layer comes from the kernel's resolved config, which is keyed on a
+ * session id a draft does not have yet. The old comment called that "a draft simply has no
+ * provenance and the panel keeps its previous wording" — but the wording it kept is a POSITIVE CLAIM,
+ * and principle 12(d) is about saying what is in force, not about defaulting to the cheerful branch.
+ *
+ * ⚠️ **Why there are UNKNOWN variants rather than reusing `here`/`ancestor`.** The draft fallback is
+ * `GET /api/project`, which answers *whether* a file governs the folder and *where it is* — and does
+ * NOT carry `applied`, i.e. which switches the file supplied. Presenting a discovered file as though
+ * it were a resolved layer would mean rendering `applied: []`, which prints "it sets nothing" and is
+ * just a different false statement. So the honest answer names the file and declines to summarise it.
+ * The Chats/Files surfaces hit the same wall and made the same choice.
+ */
+export type InForce =
+  /** Nobody has answered yet. Distinct from `none` on purpose — see {@link inForceState}. */
+  | { readonly kind: "pending" }
+  | { readonly kind: "none" }
+  /** A resolved layer: we know the file AND what it contributed. */
+  | { readonly kind: "here"; readonly file: string }
+  | { readonly kind: "ancestor"; readonly file: string }
+  /** Discovered by directory: the file exists and governs, but what it declares is not known here. */
+  | { readonly kind: "here-unknown"; readonly file: string }
+  | { readonly kind: "ancestor-unknown"; readonly file: string }
+  /** Present and unusable — the case that previously promised a creation the next click refused. */
+  | { readonly kind: "broken"; readonly file: string; readonly future: boolean }
+
+export interface InForceInput {
+  readonly folder: string
+  /** The kernel's resolved project layer, when there is a session to resolve. */
+  readonly governedBy?: { readonly root: string; readonly file: string }
+  /** The directory-keyed answer, used when there is no session yet (a draft). */
+  readonly discovered?:
+    | { readonly kind: "project"; readonly root: string; readonly file: string }
+    | { readonly kind: "invalid"; readonly file: string; readonly reason: string }
+    | { readonly kind: "none" }
+  /**
+   * Path comparison, injected so this stays pure and testable.
+   *
+   * ⚠️ Never `===`. The two strings arrive from different places — the browser's session record and
+   * the server's own `path.resolve` — so they can differ in separator style or a trailing slash while
+   * naming one directory, and a raw comparison then tells the user their edit will create a NEW file
+   * when it is about to update the one they are looking at.
+   */
+  readonly samePath: (a: string, b: string) => boolean
+}
+
+export function inForceState(input: InForceInput): InForce {
+  // The resolved layer WINS when present: it knows strictly more than the directory probe does.
+  if (input.governedBy)
+    return input.samePath(input.governedBy.root, input.folder)
+      ? { kind: "here", file: input.governedBy.file }
+      : { kind: "ancestor", file: input.governedBy.file }
+
+  const found = input.discovered
+  // 🔴 These two are NOT the same answer, and collapsing them is the original bug in miniature.
+  // `kind: "none"` is the server SAYING there is no file — evidence, so "saving creates one here" is
+  // true. `undefined` is no answer yet (probe in flight, or no server at all), which is not evidence
+  // of anything; asserting an absence there is how a positive claim gets made about a folder nobody
+  // has looked at.
+  if (!found) return { kind: "pending" }
+  if (found.kind === "none") return { kind: "none" }
+  if (found.kind === "invalid") return { kind: "broken", file: found.file, future: found.reason === "future-version" }
+  return input.samePath(found.root, input.folder)
+    ? { kind: "here-unknown", file: found.file }
+    : { kind: "ancestor-unknown", file: found.file }
+}

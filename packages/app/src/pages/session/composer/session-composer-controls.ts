@@ -5,7 +5,7 @@ import type { PromptInputControls } from "@/components/prompt-input"
 import type { ComposerMakeDefaultState, ComposerRemoteChatState } from "@/components/composer"
 import * as ConfigProvenance from "./config-provenance"
 import { useSettingsDialog } from "@/components/settings-dialog"
-import { projectWrite } from "@/utils/project-api"
+import { projectState, projectWrite } from "@/utils/project-api"
 import {
   MessengerApiError,
   messengerAccountChats,
@@ -190,6 +190,31 @@ export function createPromptInputController(input: {
   const projectLayer = createMemo(() => ConfigProvenance.projectLayer(resolvedConfig.latest))
 
   /**
+   * The DIRECTORY-keyed project answer, for a chat with no id yet.
+   *
+   * ⚠️ Only fetched when there is no session, deliberately. Once a session exists the kernel's
+   * resolved layer knows strictly more (it carries which switches the file actually supplied), and a
+   * second source that could disagree with it is the "two authorities on what is in force" mistake
+   * `config-provenance.ts` already warns about — a browser-side re-derivation once produced toggles
+   * that were the exact inverse of what the runner resolved.
+   *
+   * Failures degrade to `undefined`, which `inForceState` renders as "still checking" rather than as
+   * an absence: a probe that could not answer is not evidence that the folder is bare.
+   */
+  // ⚠️ The source is the directory STRING, not an object carrying the connection. A source function
+  // returning a fresh `{directory, http}` each read changes identity every time, which is a refetch
+  // on every reactive pass — a poll nobody asked for against a route that walks ancestor directories.
+  // The connection is read inside the fetcher instead, where it costs nothing.
+  const [projectDiscovered] = createResource(
+    () => (input.sessionID() === undefined ? sessionView.directory() : undefined),
+    (directory: string) => {
+      const conn = server.current
+      if (!conn) return undefined
+      return projectState(conn.http, directory).catch(() => undefined)
+    },
+  )
+
+  /**
    * "Make Default for this Folder" — write this chat's declared stance into the folder's own
    * `novaclaw.json` (`todo/projects.md`, Tune and Permissions).
    *
@@ -207,6 +232,11 @@ export function createPromptInputController(input: {
     return {
       folder: directory,
       governedBy: projectLayer(),
+      // A draft has no session id, so `resolvedConfig` — and therefore `projectLayer()` — is empty,
+      // and the panel used to fall through to "this folder has no project file yet". That sentence
+      // was measured FALSE in folders that had one. This directory-keyed answer is what a draft can
+      // honestly know; `inForceState` keeps "no answer yet" distinct from "answered: none".
+      discovered: projectDiscovered.latest,
       write: async (features) => {
         try {
           const result = await projectWrite(conn.http, directory, { tune: { features } })
