@@ -206,6 +206,28 @@ const PER_PEER_TIMEOUT_MS = 8_000
  */
 const FANOUT = 8
 
+/**
+ * 🔴 **How many ROUTES one publish attempts, and how long the whole thing may take** — review §2
+ * (unit 3 F16).
+ *
+ * `publish` walked every route of every reachable peer with no deadline. The peer table holds up to
+ * 500 rows and eight routes each, so one `say` could open **4,000 POSTs**; at eight at a time and an
+ * 8 s timeout, the worst case is over an hour of a user's machine talking to nobody, for a message
+ * that was already stored locally before any of it started.
+ *
+ * ⚠️ A bounded fan-out is not a lost message, and that is what makes this the right shape rather
+ * than a compromise: gossip reaches whoever is online, and reconciliation is what catches everyone
+ * else up — `sync` exists precisely because publishing cannot promise delivery. Widening the blast
+ * radius past this buys reach that the catch-up path already provides, at a cost the sender pays.
+ *
+ * ⚠️ Contacts come first in the reachable list, so the cut falls on strangers rather than on the
+ * people the user actually added.
+ */
+export const MAX_PUBLISH_TARGETS = 64
+
+/** The whole broadcast's budget. One `say` must not be able to hold the machine for minutes. */
+export const PUBLISH_TOTAL_MS = 15_000
+
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -226,7 +248,7 @@ export const layer = Layer.effect(
      * someone whose messages you refuse tells them you are online and hands them your traffic — the
      * block would be one-directional in the direction that helps them.
      */
-    const reachable = Effect.fn("CommunityTransportHttp.reachable")(function* () {
+    const reachable = Effect.fn("CommunityTransportHttp.reachable")(function* (limit?: number) {
       /**
        * 🔴 Contacts AND discovered peers. Caught by running it: discovery learned an instance from
        * its address, the peer table held it, and the transport still reported `no-peers` — so the
@@ -243,7 +265,7 @@ export const layer = Layer.effect(
        * wire as `POST /blocked/api/community/inbound`. Six broadcast paths each built their own list;
        * fixing one of them was never going to be the mechanism.
        */
-      return yield* CommunityReach.reachable({ contacts, peers })
+      return yield* CommunityReach.reachable({ contacts, peers, ...(limit === undefined ? {} : { limit }) })
     })
 
     const state = Effect.fn("CommunityTransportHttp.state")(function* () {
@@ -278,7 +300,7 @@ export const layer = Layer.effect(
 
       publish: Effect.fn("CommunityTransportHttp.publish")(function* (message: CommunityMessage.Proven) {
         if (!speaks()) return false
-        const peers = yield* reachable()
+        const peers = yield* reachable(MAX_PUBLISH_TARGETS)
         if (peers.length === 0) return false
 
         /**
@@ -317,6 +339,20 @@ export const layer = Layer.effect(
               ),
           ),
           { concurrency: FANOUT },
+        ).pipe(
+          /**
+           * 🔴 The whole broadcast's deadline. Every attempt is already total and already has its
+           * own timeout, so this bounds the SUM — the number a user feels when they press send.
+           *
+           * ⚠️ Timing out is reported as "nobody carried it", which is honest: the message is in our
+           * own log either way (`post` stored it before this was called), and whoever we did not
+           * reach gets it from reconciliation. Claiming delivery for an abandoned batch would be the
+           * lie `say`'s own wording exists to avoid.
+           */
+          Effect.timeoutOrElse({
+            duration: PUBLISH_TOTAL_MS,
+            orElse: () => Effect.succeed([] as boolean[]),
+          }),
         )
 
         // True when ANY peer took it. The caller has already stored its own copy, so this reports

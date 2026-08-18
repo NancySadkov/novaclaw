@@ -173,6 +173,41 @@ export const MAX_MESSAGES_PER_REQUEST = 256
  */
 export const BUCKETS_PER_REQUEST = 8
 
+/**
+ * 🔴 **The whole of one catch-up, however many peers answer** — review §2 (unit 3 F6).
+ *
+ * `sync` walked up to `MAX_PEERS_ASKED` peers, each costing a summary, up to eight id requests and
+ * up to twenty message batches at a 10 s timeout apiece. Nothing bounded the total, so one call
+ * could run for the better part of an hour — and the tool that drives it gives up after 5 s, so the
+ * work past that point is spent on a caller who has already stopped listening.
+ *
+ * ⚠️ A budget rather than a smaller per-peer timeout: a slow honest peer and a hundred dead ones are
+ * different problems, and only the total is a number a user can feel.
+ */
+export const SYNC_TOTAL_MS = 20_000
+
+/**
+ * 🔴 How long a route that just failed is skipped for — the fix for DETERMINISTIC starvation.
+ *
+ * `reachable` is stably ordered with contacts first, so a dead first contact was dialled first every
+ * time. With a per-peer timeout of seconds and a caller that waits 5 s, catch-up never reached the
+ * second peer — the same peer, the same failure, forever, and no amount of retrying changed the
+ * order. Remembering a failure for a minute lets the NEXT attempt start where the last one stopped.
+ *
+ * ⚠️ Short on purpose. This is a scheduling hint, not a health verdict: a peer that was asleep for
+ * one dial must not be written off, and the peer table's own `last_seen_at` is what tracks lasting
+ * absence.
+ */
+export const ROUTE_COOLDOWN_MS = 60_000
+
+/**
+ * 🔴 The ceiling on a SMALL read — review §2 (unit 3 F9): the per-shape ceilings were applied to
+ * `ask` and nothing else, so every other route accepted 4 MB, a number derived from a page of 256
+ * messages. An identity probe, a peer list, a room list, an offer and a summary are all kilobytes;
+ * accepting four megabytes of one is accepting 4,000× what it can honestly be.
+ */
+export const MAX_SMALL_RESPONSE_BYTES = 256 * 1024
+
 
 export interface Result {
   /** Peers that answered, whether or not they had anything we lacked. */
@@ -444,7 +479,7 @@ export const layer = Layer.effect(
       schema: Schema.Codec<A, I>,
       method: "POST" | "GET" = "POST",
       /** ⚠️ Per call, because one of these routes costs the peer a model turn and the rest are reads. */
-      budgetMs: number = PER_REQUEST_TIMEOUT_MS,
+      budgetMs: number | undefined = PER_REQUEST_TIMEOUT_MS,
       /** ⚠️ Per call for the same reason: 4 MB is derived from a page of messages, not from a sentence. */
       ceilingBytes: number = MAX_PEER_RESPONSE_BYTES,
     ) =>
@@ -455,7 +490,7 @@ export const layer = Layer.effect(
             : HttpClientRequest.post(`${route.replace(/\/+$/, "")}${path}`).pipe(HttpClientRequest.bodyJsonUnsafe(body)),
         )
         .pipe(
-          Effect.timeout(budgetMs),
+          Effect.timeout(budgetMs ?? PER_REQUEST_TIMEOUT_MS),
           Effect.flatMap((response) => {
             /**
              * ⚠️ Refused on the DECLARED length, before the body is read — the only place the check
@@ -525,7 +560,8 @@ export const layer = Layer.effect(
         undefined,
         Health,
         "GET",
-        ...(budgetMs === undefined ? [] : ([budgetMs] as const)),
+        budgetMs,
+        MAX_SMALL_RESPONSE_BYTES,
       )
       if (health === undefined) return undefined
       if (!InstanceIdentityStore.verifyIdentityProof(health.networkID, challenge, health.proof)) return undefined
@@ -551,7 +587,37 @@ export const layer = Layer.effect(
      * other addresses — repair that costs reachability is not repair. The live one goes FIRST, so
      * the address we just proved is the one tried first next time.
      */
+    /**
+     * 🔴 Routes that just failed, so the NEXT catch-up starts where the last one stopped.
+     *
+     * ⚠️ Bounded like every other in-memory map here: the keys are routes, and routes come from
+     * peers. Insertion order is eviction order, which for a rolling window is oldest-first.
+     */
+    const failedAt = new Map<string, number>()
+    const noteFailure = (route: string) => {
+      failedAt.set(route, Date.now())
+      if (failedAt.size > MAX_SYNC_STAMPS) {
+        const oldest = failedAt.keys().next()
+        if (!oldest.done) failedAt.delete(oldest.value)
+      }
+    }
+    const failedRecently = (route: string) => {
+      const at = failedAt.get(route)
+      return at !== undefined && Date.now() - at < ROUTE_COOLDOWN_MS
+    }
+
+    /** Remember that this room was just caught up, bounded like every other stamp map here. */
+    const stampCooldown = (wanted: string) => {
+      lastSynced.set(wanted, Date.now())
+      // Insertion order is eviction order, which for a rolling window is oldest-first.
+      if (lastSynced.size > MAX_SYNC_STAMPS) {
+        const oldest = lastSynced.keys().next()
+        if (!oldest.done) lastSynced.delete(oldest.value)
+      }
+    }
+
     const reached = Effect.fn("CommunitySync.reached")(function* (networkID: string, route: string) {
+      failedAt.delete(route)
       yield* peers.seen(networkID)
       // Not a contact: the peer table already holds it, and `observe` deliberately cannot create one.
       const known = yield* contacts.get(networkID)
@@ -601,7 +667,7 @@ export const layer = Layer.effect(
           })
           if ("rejected" in composed) return { sent: false, reason: composed.rejected }
 
-          const ack = yield* ask(address, DM_PATH, composed.message, Ack, "POST")
+          const ack = yield* ask(address, DM_PATH, composed.message, Ack, "POST", undefined, MAX_SMALL_RESPONSE_BYTES)
           // ⚠️ Stored either way — `compose` already kept our copy. A send that failed to reach them
           // must not also lose what the user wrote.
           if (ack !== undefined) {
@@ -755,10 +821,10 @@ export const layer = Layer.effect(
         let learned = 0
         for (const peer of yield* reachable) {
           if (announce !== undefined) {
-            const ack = yield* ask(peer.route, SUCCESSION_PATH, announce, Ack, "POST")
+            const ack = yield* ask(peer.route, SUCCESSION_PATH, announce, Ack, "POST", undefined, MAX_SMALL_RESPONSE_BYTES)
             if (ack !== undefined) told++
           }
-          const theirs = yield* ask(peer.route, SUCCESSION_PATH, undefined, Successions, "GET")
+          const theirs = yield* ask(peer.route, SUCCESSION_PATH, undefined, Successions, "GET", undefined, MAX_SMALL_RESPONSE_BYTES)
           if (theirs === undefined) continue
           yield* reached(peer.networkID, peer.route)
           // ⚠️ Sliced: each statement costs a signature verification, and the count is theirs.
@@ -776,7 +842,7 @@ export const layer = Layer.effect(
         const joined = (yield* channels.channels()).map((entry) => CommunityTopic.canonical(entry.name))
         const seen = new Map<string, string>()
         for (const peer of yield* reachable) {
-          const answer = yield* ask(peer.route, LISTED_PATH, undefined, Listed, "GET")
+          const answer = yield* ask(peer.route, LISTED_PATH, undefined, Listed, "GET", undefined, MAX_SMALL_RESPONSE_BYTES)
           if (answer === undefined) continue
           yield* reached(peer.networkID, peer.route)
           // ⚠️ Sliced: every name becomes a row in a Map this returns to the app.
@@ -869,7 +935,7 @@ export const layer = Layer.effect(
         let asked = 0
         let learned = 0
         for (const peer of yield* reachable) {
-          const answer = yield* ask(peer.route, PEERS_PATH, undefined, PeerList, "GET")
+          const answer = yield* ask(peer.route, PEERS_PATH, undefined, PeerList, "GET", undefined, MAX_SMALL_RESPONSE_BYTES)
           if (answer === undefined) continue
           asked++
           // It answered, so it is alive: this is what keeps a working peer ahead of invented ones
@@ -880,7 +946,7 @@ export const layer = Layer.effect(
            * already talking to this instance, and a second sweep would double the traffic for a
            * question it could have answered the first time.
            */
-          const advertised = yield* ask(peer.route, OFFER_PATH, undefined, OfferAnswer, "GET")
+          const advertised = yield* ask(peer.route, OFFER_PATH, undefined, OfferAnswer, "GET", undefined, MAX_SMALL_RESPONSE_BYTES)
           if (advertised?.offer !== undefined) {
             // `learn` verifies and refuses anything claiming to be ours — a peer describing a THIRD
             // party's endpoint is exactly what a signature is here to make harmless.
@@ -980,26 +1046,37 @@ export const layer = Layer.effect(
         if (dialable.length === 0) return { peers: 0, fetched: 0 }
 
         /**
-         * ⚠️ Stamped only once there is somebody to ask. Recording the attempt above this line — the
-         * first way I wrote it — meant a sync that reached NOBODY still started the cooldown, so an
-         * instance whose panel is opened a second before discovery finds its first peer would then
-         * refuse to catch up for the next thirty seconds. A fresh install does exactly that.
+         * 🔴 The cooldown is stamped when somebody ANSWERS, not when we decide to try — review §2.
+         *
+         * "Somebody to ask" is not "somebody who answered", and the difference is a permanent
+         * outage rather than a slow one: a dead first contact burned the window, the caller's own
+         * 5 s timeout cut the attempt before the second peer, and the next thirty seconds refused to
+         * try at all. The same peer, the same failure, forever. See `stampCooldown` below.
          */
-        lastSynced.set(wanted, now)
-        // Insertion order is eviction order, which for a rolling window is oldest-first.
-        if (lastSynced.size > MAX_SYNC_STAMPS) {
-          const oldest = lastSynced.keys().next()
-          if (!oldest.done) lastSynced.delete(oldest.value)
-        }
-
         const topic = CommunityTopic.topicOf(channel)
         let answered = 0
         let fetched = 0
+        /**
+         * 🔴 The whole call's budget. Checked before each peer, so a slow one costs its own timeout
+         * and never the next peer's turn — and `sync` returns in a time a user can feel rather than
+         * in however long the peer table happens to take.
+         */
+        const deadline = now + SYNC_TOTAL_MS
 
         for (const { networkID, route } of dialable) {
+          if (Date.now() >= deadline) break
+          /**
+           * ⚠️ A route that failed a moment ago is SKIPPED, not retried first. `reachable` is stably
+           * ordered, so without this the same dead contact was dialled first every time and catch-up
+           * never reached anybody behind it.
+           */
+          if (failedRecently(route)) continue
           const mine = yield* channels.ids(channel)
-          const theirs = yield* ask(route, SYNC_SUMMARY_PATH, { topic }, Summary)
-          if (theirs === undefined) continue
+          const theirs = yield* ask(route, SYNC_SUMMARY_PATH, { topic }, Summary, "POST", undefined, MAX_SMALL_RESPONSE_BYTES)
+          if (theirs === undefined) {
+            noteFailure(route)
+            continue
+          }
           answered++
           yield* reached(networkID, route)
 
@@ -1028,7 +1105,7 @@ export const layer = Layer.effect(
           const offeredIds: string[] = []
           for (let index = 0; index < disagree.length; index += BUCKETS_PER_REQUEST) {
             const chunk = disagree.slice(index, index + BUCKETS_PER_REQUEST)
-            const answered = yield* ask(route, SYNC_IDS_PATH, { topic, buckets: chunk }, Ids)
+            const answered = yield* ask(route, SYNC_IDS_PATH, { topic, buckets: chunk }, Ids, "POST", undefined, MAX_SMALL_RESPONSE_BYTES)
             if (answered === undefined) break
             /**
              * 🔴 **Each answer is clamped, and the accumulation stops at our own retention.**
@@ -1080,6 +1157,14 @@ export const layer = Layer.effect(
           }
         }
 
+        /**
+         * 🔴 Stamped HERE, and only if somebody answered — the other half of the starvation fix.
+         *
+         * ⚠️ A sync that reached nobody must leave the window open: the next attempt is the one that
+         * finds the peer who just came online. A sync that DID reach somebody has spent their
+         * bandwidth, and repeating it a second later spends it again for nothing.
+         */
+        if (answered > 0) stampCooldown(wanted)
         return { peers: answered, fetched }
       }),
     })

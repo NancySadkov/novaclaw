@@ -184,6 +184,25 @@ const EXPECTED_ORPHANS: Record<string, string> = {
     "internal helper called by prove() in the same file; exported so the difficulty table in `work.test.ts` can be measured directly",
 }
 
+/**
+ * Every source file's TEXT, read once and shared by all of these tests.
+ *
+ * ⚠️ This used to be `sourcesExcept(file).map(readFileSync)` INSIDE each test, so ~25 tests each
+ * read ~700 files — the whole tree, once per module. It crossed bun's 5 s default the moment the
+ * subsystem grew one more module, and it read as a flaky test rather than as a quadratic one.
+ * Caching by path keeps the exclusion honest (a module still never counts as its own caller) while
+ * reading each file at most once.
+ */
+const sourceText = new Map<string, string>()
+const readSources = (exclude: string): string[] =>
+  sourcesExcept(exclude).map((other) => {
+    const cached = sourceText.get(other)
+    if (cached !== undefined) return cached
+    const text = fs.readFileSync(other, "utf8")
+    sourceText.set(other, text)
+    return text
+  })
+
 describe("community capabilities have callers", () => {
   const modules = [
     ...fs
@@ -201,7 +220,7 @@ describe("community capabilities have callers", () => {
     if (methods.length === 0) continue
 
     test(`${moduleName}: ${methods.length} capability(ies) are each used somewhere`, () => {
-      const others = sourcesExcept(file).map((other) => fs.readFileSync(other, "utf8"))
+      const others = readSources(file)
       const orphans = methods.filter((method) => {
         const key = `${moduleName}#${method}`
         if (key in EXPECTED_ORPHANS) return false
