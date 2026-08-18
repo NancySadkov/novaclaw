@@ -5,6 +5,7 @@ import { LocationServiceMap } from "@novaclaw/core/location-services"
 import { ServerLocationServiceMap } from "@/location-service-map"
 import { Location } from "@novaclaw/core/location"
 import { ProjectFileResolve } from "@novaclaw/core/project-file"
+import { ProjectFileCache } from "@novaclaw/core/project-file-cache"
 import { ProjectFileWrite } from "@novaclaw/core/project-file-write"
 import { ProjectGitignore } from "@novaclaw/core/project-gitignore"
 import { FSUtil } from "@novaclaw/core/fs-util"
@@ -196,9 +197,25 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       payload: typeof ProjectWriteInput.Type
     }) {
       const directory = (yield* InstanceState.context).directory
-      const result = yield* ProjectFileWrite.write(directory, ctx.payload).pipe(
-        Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))),
-      )
+      const result = yield* Effect.gen(function* () {
+        const written = yield* ProjectFileWrite.write(directory, ctx.payload)
+        // 🔴 Drop the cached read NOW rather than waiting out its 1 s freshness bound. That TTL exists
+        // for edits we cannot see coming; this one we made ourselves, and a turn starting inside that
+        // window would otherwise run against the file as it WAS — a folder governed half by what its
+        // owner just saved and half by what it used to say. Invalidating clears descendants too,
+        // because a new file steals governance from every folder beneath it.
+        //
+        // ⚠️ Only on a successful write: a refusal changed no bytes, so discarding warm entries for
+        // every directory underneath would be a cost with nothing behind it.
+        //
+        // ⚠️ **Inside this provided scope, deliberately.** The service must be the LOCATION's cache —
+        // the very instance the kernel reads through. Reaching for a fresh `ProjectFileCache.layer`
+        // here would compile, run, and invalidate a second cache nobody consults, which is a silent
+        // no-op rather than a failure. (Measured: hoisting this line out of the scope failed 7 route
+        // tests with "Service not found" while `tsgo -b` stayed green.)
+        if (written.ok) yield* (yield* ProjectFileCache.Service).invalidate(directory)
+        return written
+      }).pipe(Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))))
       // A refusal travels as a 200 body, deliberately — see `ProjectWriteResult`. `orDie` therefore
       // covers only defects: every condition a user can cause is already in the union.
       return result.ok

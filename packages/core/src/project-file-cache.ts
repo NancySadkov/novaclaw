@@ -1,5 +1,6 @@
 export * as ProjectFileCache from "./project-file-cache"
 
+import path from "node:path"
 import { Context, Effect, Layer } from "effect"
 import { Permission } from "@novaclaw/schema/permission"
 import { ProjectFile } from "@novaclaw/schema/project-file"
@@ -38,6 +39,21 @@ import { ProjectFileResolve } from "./project-file"
 const TTL_MS = 1_000
 
 /**
+ * A cache key reduced to something two spellings of one directory agree on.
+ *
+ * ⚠️ Needed because `read` stores the key EXACTLY as the caller passed it, and callers do not agree:
+ * one arrives from the browser's session record and another from the server's own `path.resolve`, so
+ * `C:\a\b`, `C:/a/b` and a trailing-slash variant are three keys for one folder. `read` is left
+ * alone — merging its keys is a separate change with its own risks — but `invalidate` must see
+ * through the difference, or it clears one spelling and leaves the stale twin behind.
+ *
+ * Case is folded unconditionally rather than per-platform: over-invalidating costs one re-read on a
+ * case-sensitive filesystem, while under-invalidating serves the file the user just replaced.
+ */
+const comparable = (directory: string) =>
+  path.resolve(directory).replaceAll("\\", "/").replace(/\/+$/, "").toLowerCase()
+
+/**
  * How many directories stay cached. A bound rather than a plain `Map` because the key is now
  * per-session: an instance that has opened a folder per chat would otherwise grow one entry per
  * folder for the process's whole life, for a cache whose entries are worthless after a second.
@@ -74,6 +90,24 @@ export interface Interface {
    * that reports it.
    */
   readonly read: (directory: string) => Effect.Effect<Entry>
+  /**
+   * Drop what we cached for `directory` and everything under it, because WE just changed the file
+   * there.
+   *
+   * 🔴 **Why this exists even though the TTL already bounds staleness.** The TTL is a bound on
+   * *someone else's* edit, which we cannot see coming. Our own write we know about exactly, and
+   * waiting out a second afterwards means a turn started in that window runs against the file as it
+   * was — the same *half by what its owner just wrote, half by what it used to say* stance the top of
+   * this module rejects. The write path is the one place the invalidation is free and certain.
+   *
+   * ⚠️ **It must clear DESCENDANTS, not just the written directory, and that is the non-obvious
+   * half.** Entries are keyed by the directory a caller ASKED about, while the resolver walks
+   * UPWARD — so a session in `<root>/sub` holds an entry produced by `<root>/novaclaw.json`, under
+   * the key `<root>/sub`. Worse, creating a file where none existed changes the answer for every
+   * descendant whose cached entry names an ANCESTOR's file or no file at all, so matching on the
+   * written file's path would miss exactly the entries a new file steals governance from.
+   */
+  readonly invalidate: (directory: string) => Effect.Effect<void>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/ProjectFileCache") {}
@@ -118,6 +152,15 @@ export const layer = Layer.effect(
           if (!oldest.done) cache.delete(oldest.value)
         }
         return entry
+      }),
+      invalidate: Effect.fn("ProjectFileCache.invalidate")(function* (directory: string) {
+        const target = comparable(directory)
+        for (const key of [...cache.keys()]) {
+          const held = comparable(key)
+          // `${target}/` and not merely `startsWith(target)`: without the separator, invalidating
+          // `…/app` would also clear `…/app-legacy`, a different folder that shares a prefix.
+          if (held === target || held.startsWith(`${target}/`)) cache.delete(key)
+        }
       }),
     })
   }),
