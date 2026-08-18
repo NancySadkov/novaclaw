@@ -30,14 +30,19 @@ const SaveInput = Schema.Struct({
  * One host-capability fact a recipe declares, and what this machine actually said when we looked
  * (`core/src/recipe.ts` → the `needs` section).
  *
- * ⚠️ Three-valued, and `unknown` is not `absent`. There is no probe for most facts a person can write, so
- * a check that could not verify a claim says *"I could not check this"* — reporting it as missing would be
- * a fault described falsely, and it never blocks a cook.
+ * ⚠️ FOUR-valued, and neither not-knowing arm is `absent`. There is no probe for most facts a person can
+ * write (`unknown`), and a probe that exists can itself fail — a locked file, an unreadable directory
+ * (`unreadable`). A check that could not verify a claim says *"I could not check this"*; reporting either
+ * as missing would be a fault described falsely, and neither ever blocks a cook.
+ *
+ * The two are kept apart because they prescribe different actions (`@novaclaw/schema/unknown-reason`):
+ * `unknown` is *not-measured* — nothing for the user to do — while `unreadable` is *measurement-failed*
+ * — a path on their machine they may well be able to fix.
  */
 const NeedCheck = Schema.Struct({
   /** The author's own words, unchanged. */
   fact: Schema.String,
-  status: Schema.Literals(["present", "absent", "unknown"]),
+  status: Schema.Literals(["present", "absent", "unknown", "unreadable"]),
   /** Every candidate actually tried, in order, so the claim is checkable by hand. */
   looked: Schema.Array(Schema.String),
   /** What resolved, when the fact is met. */
@@ -101,6 +106,20 @@ const RunResult = Schema.Struct({
    * is "I cannot tell": a caller should say that rather than showing a success it did not earn.
    */
   produces: Schema.Array(Schema.String),
+  /**
+   * The model this cook will actually run on, as `providerID/modelID` — the caller's own `model` when
+   * they named one, otherwise the instance's default, resolved HERE so the caller does not have to.
+   *
+   * ⚠️ **Without this the NOT AVAILABLE arm was structurally unreachable from the app** (measured
+   * 2026-08-18). The Recipes app sends no `model` on run, kept none, and passed none to `recipe.verify`
+   * — so on an instance whose only model cannot call tools, a cook that could never have written a file
+   * reported *"Did not work · about: this NovaClaw"*. Both arms worked at this HTTP surface; nothing ever
+   * sent one. Handing the resolved model back with the session is what closes that loop.
+   *
+   * Optional because an instance with no usable model at all must say nothing rather than guess: an
+   * unresolvable model is `not-measured` downstream, never `not-applicable`.
+   */
+  model: Schema.optional(Schema.String),
 }).annotate({ identifier: "Recipe.RunResult" })
 
 /**
@@ -134,6 +153,18 @@ const VerifyResult = Schema.Struct({
   /** The same receipt in one sentence, house style, safe to show a normal person. */
   summary: Schema.String,
   at: Schema.Number,
+  /**
+   * What the COOK did, when a `sessionID` was supplied and we could read it.
+   *
+   * 🔴 `blocked` is the field that stops a dead endpoint reading as a broken install. An empty folder
+   * only means the install failed if the cook actually reached this machine; a cook that died on a
+   * transport fault produced no evidence about the host at all, so every `unmet` row is re-filed as
+   * `unknown`/`measurement-failed` and the verdict can no longer be `not-working`. `stopped` is the same
+   * argument for a person pressing stop (`incomplete` — a floor, not an outcome).
+   *
+   * Absent = we were not told, which is NOT the same as `ran` and must not be rendered as it.
+   */
+  cookState: Schema.optional(Schema.Literals(["ran", "blocked", "stopped"])),
 }).annotate({ identifier: "Recipe.VerifyResult" })
 
 export const RecipeGroup = HttpApiGroup.make("server.recipe")
@@ -277,6 +308,20 @@ export const RecipeGroup = HttpApiGroup.make("server.recipe")
          * stop asking a question that is still open.
          */
         model: Schema.optional(Schema.String),
+        /**
+         * The cook's own session (`recipe.run`'s `sessionID`). Supply it and the receipt learns two
+         * things it cannot get from the filesystem:
+         *
+         *  1. **Whether the cook ever reached this machine.** A turn that died on a transport fault
+         *     wrote nothing and proved nothing, so its empty folder is `unknown`, never `not-working` —
+         *     the fault is described falsely otherwise (ruling 2), and it was: measured 2026-08-18.
+         *  2. **Which model ACTUALLY ran**, from the assistant turn's own record, which beats anything a
+         *     caller can remember — a session whose model was switched mid-cook still answers correctly.
+         *     An explicit `model` above still wins, so a caller can override.
+         *
+         * Omit it and nothing changes: the folder is checked exactly as before.
+         */
+        sessionID: Schema.optional(Schema.String),
       }),
       success: VerifyResult,
       error: InvalidRequestError,

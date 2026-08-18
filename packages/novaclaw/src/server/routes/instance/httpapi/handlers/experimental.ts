@@ -8,6 +8,7 @@ import { ProjectFileResolve } from "@novaclaw/core/project-file"
 import { ProjectFileCache } from "@novaclaw/core/project-file-cache"
 import { ProjectFileWrite } from "@novaclaw/core/project-file-write"
 import { ProjectGitignore } from "@novaclaw/core/project-gitignore"
+import { ProjectFile } from "@novaclaw/schema/project-file"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import nodePath from "node:path"
 import { AbsolutePath } from "@novaclaw/core/schema"
@@ -155,6 +156,10 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       )
       if (resolution.kind === "project") {
         const exclude = resolution.info.exclude ?? []
+        // ⚠️ The SAME function the kernel's cache applies, called here rather than re-derived: the
+        // client must be told exactly what is in force, and a second reading of "a project may hide,
+        // never un-hide" is a second chance to get it wrong.
+        const skills = ProjectFile.narrowSkills(resolution.info.skills)
         const gitignore = yield* gitignoreProposal(resolution.root, exclude).pipe(
           Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))),
         )
@@ -166,6 +171,8 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
           permissionRules: resolution.info.permissions?.length ?? 0,
           permissions: resolution.info.permissions ?? [],
           exclude,
+          skills: skills.hidden,
+          skillsRefused: skills.refused,
           ...(gitignore === undefined ? {} : { gitignore }),
         }
       }
@@ -227,6 +234,7 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
             cleared: result.cleared,
             refusedTune: result.refusedTune,
             refusedPermissions: result.refusedPermissions,
+            refusedSkills: result.refusedSkills,
           }
         : { ok: false as const, file: result.file, reason: result.reason, detail: result.detail }
     }, Effect.orDie)

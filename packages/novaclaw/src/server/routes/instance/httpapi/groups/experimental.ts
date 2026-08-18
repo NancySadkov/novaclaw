@@ -111,6 +111,25 @@ export const ProjectState = Schema.Union([
     permissions: Permission.Ruleset,
     exclude: Schema.Array(Schema.String),
     /**
+     * Skill ids this folder hides from the user's own slash menu, sorted.
+     *
+     * 🔴 Already NARROWED — `ProjectFile.narrowSkills`'s `hidden`, the same value the kernel's
+     * `ProjectFileCache` holds. A project may hide a skill and may never un-hide one the instance
+     * hid, so what a client receives is a list of ids the folder HIDES, with no un-hide in it. A
+     * surface reading the raw section instead would have to re-derive the law, and two derivations
+     * of one security rule is one too many.
+     */
+    skills: Schema.Array(Schema.String),
+    /**
+     * Skill ids this folder asked to SHOW, which this build does not act on.
+     *
+     * ⚠️ Reported rather than dropped in silence. A folder that says `{"skills":{"pdf":{"show":true}}}`
+     * has written a sentence with no effect, and the person who wrote it needs to be told — the same
+     * reason `refusedPermissions` exists on the write half. It is not an error: the file is valid
+     * and every other section of it is honoured.
+     */
+    skillsRefused: Schema.Array(Schema.String),
+    /**
      * What importing the project root's `.gitignore` WOULD add — a suggestion, never a sync.
      *
      * Absent when there is no `.gitignore` beside the project file, or when it is too large to be a
@@ -160,6 +179,14 @@ export const ProjectWriteInput = Schema.Struct({
   exclude: Schema.optional(Schema.Array(Schema.String)),
   /** ⛔ IDs of installed policies only — never a command, and never anything the server runs. */
   policies: Schema.optional(Schema.Array(Schema.String)),
+  /**
+   * Per-skill slash-menu choices for this folder, keyed by the skill's name verbatim.
+   *
+   * ⚠️ Only `show:false` is written. `show:true` is dropped and reported in `refusedSkills`: a
+   * folder may hide a skill and may never un-hide one the instance hid, so the reader would ignore
+   * it and writing it would put a sentence in the user's file that does nothing.
+   */
+  skills: Schema.optional(ProjectFile.Skills),
   /**
    * Sections to REMOVE from the file. The other half of "replacing only the sections supplied".
    *
@@ -215,6 +242,14 @@ export const ProjectWriteResult = Schema.Union([
      * is refused and reported in the same shape `refusedTune` uses for the supervision switches.
      */
     refusedPermissions: Permission.Ruleset,
+    /**
+     * Skill ids the caller asked to record as SHOWN here, which were dropped instead.
+     *
+     * A folder may hide a skill and may never un-hide one the instance hid, so `narrowSkills` drops
+     * a `show:true` on every read. Refused and reported in the same shape `refusedPermissions` uses
+     * for the other provably-inert declaration.
+     */
+    refusedSkills: Schema.Array(Schema.String),
   }),
   Schema.Struct({
     ok: Schema.Literal(false),

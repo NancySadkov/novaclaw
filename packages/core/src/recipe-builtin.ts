@@ -87,15 +87,37 @@ Test each capability once, in this order, and keep it quick — no deep work:
 1. **Shell** — run a trivial command (print the working directory).
 2. **Write a file** — create \`health.txt\` here containing the current date, then read it back.
 3. **Toolchain** — find out which of these exist on PATH and report versions: a C compiler
-   (\`cc\`, \`gcc\`, \`clang\`), \`python3\`/\`python\`, \`node\`, \`git\`. Do not install anything.
-4. **Web search** — search for one current fact and report whether results came back.
+   (\`cc\`, \`gcc\`, \`clang\`), \`python3\`/\`python\`, \`node\`, \`git\`. Do not install anything. If a
+   lookup itself fails — a folder you are not allowed to read, a drive that is not there — that is
+   COULD NOT CHECK, not "missing".
+4. **Web search** — search for one current fact and report whether results came back. If searching is
+   turned off, unconfigured, blocked by offline mode, or the search service errors or rate-limits you,
+   that is COULD NOT CHECK: it says nothing about this computer.
 5. **Web fetch** — fetch one page you found and report whether you got real text (not an empty shell).
+   A page that times out, refuses you, or is unreachable is COULD NOT CHECK. Only a fetch tool that ran
+   and returned an empty shell is NOT WORKING.
 6. **Images** — write a small PNG here (any tiny image you can produce with the tools you have), then
    READ that file back. Report WORKING if you can say what is in it, NOT WORKING if reading it failed,
    and NOT AVAILABLE if you cannot see images at all — a text-only model is not a broken install.
 
-Then write a table with a row per capability: WORKING / NOT WORKING / NOT AVAILABLE, plus one short note
-each. End with a single sentence: is this install healthy enough to run the other recipes?
+Then write a table with a row per capability: WORKING / NOT WORKING / NOT AVAILABLE / COULD NOT CHECK,
+plus one short note each. End with a single sentence: is this install healthy enough to run the other
+recipes?
+
+The four words mean four different things and picking the wrong one makes the report worse than no
+report:
+
+- **WORKING** — you did the thing and it worked.
+- **NOT WORKING** — you did the thing on THIS COMPUTER and this computer did not do its job. This is the
+  only row that says something is wrong with the install.
+- **NOT AVAILABLE** — the AI model you are cannot do this at all. Nothing is wrong with the install.
+- **COULD NOT CHECK** — you never got a real answer: a network that did not respond, a service that
+  refused or errored, a path you were not allowed to read, a tool that is not switched on. You learned
+  nothing about this computer, so do not report anything about it.
+
+⚠️ Never write NOT WORKING because something off this machine failed. A dead endpoint, a timeout, or a
+refused request is COULD NOT CHECK — say what stopped you and what the user could do about it. The final
+sentence must judge the install ONLY on the rows you actually measured.
 
 Be honest — a NOT WORKING row is the useful output here, not a failure. Do not fix anything and do not
 install anything; just report.`,

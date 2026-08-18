@@ -90,6 +90,13 @@ export const SETTINGS_KEYS = [
   // ⚠️ It MUST be listed here. An undeclared settings key is accepted by the write, stored, and
   // then bricks the next boot when the synthetic document fails to decode.
   "skill_invocation",
+  // Which installed pre-action policies run (`todo/projects.md` → typed pre-action policies). A
+  // settings key for `skill_invocation`'s reason: a sparse map of user DECISIONS, not a resource
+  // any subsystem materialises, and `tool-policy-gate.ts` reads it through `config.entries()` on
+  // every screened call — so there is nothing to invalidate and no reload trigger to register.
+  // ⚠️ It MUST be listed here. An undeclared settings key is accepted by the write, stored, and
+  // then bricks the next boot when the synthetic document fails to decode.
+  "tool_policy",
   "experimental",
 ] as const satisfies readonly (keyof Config.Info)[]
 

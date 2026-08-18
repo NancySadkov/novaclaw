@@ -37,6 +37,7 @@ import {
   REPRODUCIBILITY,
   sortViews,
   toView,
+  type CookRecord,
   type RecipeView,
   type VerdictView,
 } from "@/apps/recipes"
@@ -184,7 +185,7 @@ export function RecipesPage() {
     const recipe = current()
     const last = cooked()
     if (!recipe || !last || receipt() !== undefined || checking()) return
-    void check(recipe, last.directory)
+    void check(recipe, last.directory, last)
   })
 
   const open = (recipe: RecipeView) => {
@@ -365,7 +366,17 @@ export function RecipesPage() {
       })
       // Remember WHERE, so coming back to this app can offer the receipt instead of asking the user to
       // remember a path. Nothing else records it: a cook is not a property of a recipe.
-      rememberCook({ slug: recipe.key, directory: result.directory, sessionID: result.sessionID, at: Date.now() })
+      // ⚠️ `model` rides along, and it is load-bearing rather than informational: `verify` cannot reach
+      // its NOT AVAILABLE arm without it, so a cook on a model that cannot call tools used to be
+      // reported as a broken install. `recipe.run` answers with the model it actually resolved, which is
+      // the only way this app can know — it names none when it starts a cook.
+      rememberCook({
+        slug: recipe.key,
+        directory: result.directory,
+        sessionID: result.sessionID,
+        at: Date.now(),
+        ...(result.model ? { model: result.model } : {}),
+      })
       showToast({
         title: `Cooking “${recipe.name}”`,
         description: result.produces.length
@@ -398,12 +409,31 @@ export function RecipesPage() {
    * what the model said about its own work. Read-only, runs nothing, and idempotent — pressing it twice
    * costs nothing and can never be the thing that broke the cook.
    */
-  async function check(recipe: RecipeView, directory: string) {
+  /**
+   * ⚠️ `cook` is what makes the receipt honest, and passing it is not optional for a cook this app
+   * started. Two facts the filesystem cannot hold ride on it:
+   *
+   *  - **`sessionID`** — whether the cook ever reached the model. A cook that died on a transport
+   *    fault wrote nothing and proved nothing, and without this the app reported an empty folder as
+   *    *"Did not work · this NovaClaw"*, blaming the user's install for a dead endpoint.
+   *  - **`model`** — which model cooked, so a model that cannot call tools yields NOT AVAILABLE. That
+   *    arm was structurally unreachable from this app before, for want of exactly this value.
+   *
+   * "Check another folder…" legitimately has neither: nobody knows which cook made that folder, so it
+   * asks about the files alone and any gap reads as `not-measured`, never as a fault.
+   */
+  async function check(recipe: RecipeView, directory: string, cook?: CookRecord) {
     const base = httpBase()
     if (!base) return
     setChecking(true)
     try {
-      setReceipt(await verifyRecipe(base, recipe.key, { directory }))
+      setReceipt(
+        await verifyRecipe(base, recipe.key, {
+          directory,
+          ...(cook?.model ? { model: cook.model } : {}),
+          ...(cook?.sessionID ? { sessionID: cook.sessionID } : {}),
+        }),
+      )
     } catch (error) {
       fail(error)
     } finally {

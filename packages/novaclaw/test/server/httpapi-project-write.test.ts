@@ -266,3 +266,72 @@ describe("POST /api/project", () => {
     }),
   )
 })
+
+describe("POST /api/project — the `skills` section refuses what its own reader would ignore", () => {
+  /**
+   * 🔴 The write-side twin of the narrowing, and the third instance of one rule: **our own writer
+   * never emits a line our own reader is guaranteed to discard.** A project may hide a skill and may
+   * never un-hide one the instance hid, so a `show:true` is dropped and REPORTED rather than written
+   * — exactly what `refusedPermissions` does for an `allow` rule and `refusedTune` for a supervision
+   * `false`.
+   *
+   * ⚠️ This is not the enforcement. An attacker's `novaclaw.json` never goes through this route;
+   * `ProjectFile.narrowSkills` holds the line on every READ, and
+   * `packages/core/test/skill-invocation-command-list.test.ts` drives that end to end.
+   *
+   * ⚠️ **A/B, run by hand and reported:** delete the `show === true` branch in
+   * `ProjectFile.writableSkills` — the first case below goes red on both assertions.
+   */
+  it.effect("🔴 a `show:true` is refused and reported; the `show:false` beside it is written", () =>
+    Effect.gen(function* () {
+      const directory = tmp("skills")
+      const response = yield* post(directory, {
+        skills: { "hide-me": { show: false }, "show-me": { show: true } },
+      })
+      expect(response.status).toBe(200)
+      const body: Record<string, unknown> = JSON.parse(yield* response.text)
+      expect(body["ok"]).toBe(true)
+      expect(body["sections"]).toEqual(["skills"])
+      expect(body["refusedSkills"]).toEqual(["show-me"])
+      expect(JSON.parse(fs.readFileSync(at(directory), "utf8"))).toEqual({
+        version: 1,
+        skills: { "hide-me": { show: false } },
+      })
+    }),
+  )
+
+  it.effect("a write with nothing to refuse reports an empty list, not an absent field", () =>
+    Effect.gen(function* () {
+      const directory = tmp("clean")
+      const response = yield* post(directory, { skills: { "hide-me": { show: false } } })
+      const body: Record<string, unknown> = JSON.parse(yield* response.text)
+      expect(body["refusedSkills"]).toEqual([])
+    }),
+  )
+
+  it.effect("`clear` removes the section — the folder stops having an opinion about any skill", () =>
+    Effect.gen(function* () {
+      const directory = tmp("clear")
+      fs.writeFileSync(
+        at(directory),
+        JSON.stringify({ version: 1, name: "Acme", skills: { "hide-me": { show: false } } }),
+      )
+      const response = yield* post(directory, { clear: ["skills"] })
+      const body: Record<string, unknown> = JSON.parse(yield* response.text)
+      expect(body["ok"]).toBe(true)
+      expect(body["cleared"]).toEqual(["skills"])
+      expect(JSON.parse(fs.readFileSync(at(directory), "utf8"))).toEqual({ version: 1, name: "Acme" })
+    }),
+  )
+
+  it.effect("supplying and clearing `skills` in one request is refused without writing", () =>
+    Effect.gen(function* () {
+      const directory = tmp("contradiction")
+      const response = yield* post(directory, { skills: { a: { show: false } }, clear: ["skills"] })
+      const body: Record<string, unknown> = JSON.parse(yield* response.text)
+      expect(body["ok"]).toBe(false)
+      expect(body["reason"]).toBe("contradictory")
+      expect(fs.existsSync(at(directory))).toBe(false)
+    }),
+  )
+})

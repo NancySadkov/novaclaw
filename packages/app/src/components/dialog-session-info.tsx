@@ -13,6 +13,13 @@ import { sessionTitle } from "@/utils/session-title"
 import { adhocDiscard, adhocList, adhocPromote, switchPromptOverride, type AdhocRecipe } from "@/utils/fs-api"
 import { ProjectDetail, useProjectSummary } from "@/components/project-indicator"
 import { PROJECT_DETAIL_LABELS } from "@/components/project-summary"
+import {
+  summarize,
+  toInterventions,
+  type InterventionView,
+  type PolicyDecisionInfo,
+} from "@/apps/session-policies"
+import { policyState } from "@/utils/policy-api"
 
 // Chat details sheet (uix-improvement slice 5): everything a user may want to KNOW about a chat —
 // its working folder, agent + model, live status, file changes, timestamps, and token usage (this
@@ -131,6 +138,85 @@ export const DialogSessionInfo: Component<{ session: Session; projectName?: stri
       .catch((error) => console.error("adhocDiscard failed", error))
   }
 
+  /**
+   * ─── WHAT A PRE-ACTION POLICY DID TO THIS CHAT'S TOOL CALLS ────────────────────────────────
+   *
+   * `todo/projects.md`: *"bind every intervention to a receipt"* — and until 2026-08-19 the binding
+   * existed only in a database row and in the sentence handed to the MODEL. A policy could rewrite a
+   * `bash` command and the person whose computer ran it had nowhere to find out. This sheet is where
+   * that belongs: it is already the place a user comes to ask what a chat actually is, and it
+   * already answers the neighbouring question ("which novaclaw.json is narrowing my permissions")
+   * for exactly the same reason — it is what a person opens after a tool call behaved oddly.
+   *
+   * ⚠️ Both reads DEGRADE rather than throw. A throw inside a `createResource` read reaches the root
+   * ErrorBoundary and replaces the whole application; a receipt that failed to load must never cost
+   * someone their chats.
+   *
+   * ⚠️ The installed list is fetched too, and only so a policy id that no longer resolves can be
+   * NAMED as such. Failing to fetch it is not the same claim as "not installed" — `toIntervention`
+   * keeps those apart, and this passes `undefined` rather than `[]` so it can.
+   */
+  const [receipt] = createResource(
+    () => (server.current ? { conn: server.current } : undefined),
+    async ({ conn }) => {
+      try {
+        const answer = await serverSDK().client.v2.session.receipt({ sessionID: props.session.id })
+        const data = (answer as { data?: { data?: { policies?: readonly PolicyDecisionInfo[] } } }).data?.data
+        // A session that has never run answers 404 and the SDK gives us no data — which is "nothing
+        // ran yet", not "nothing intervened". `undefined` says the first; `[]` would say the second.
+        return data?.policies
+      } catch {
+        return undefined
+      }
+    },
+  )
+  const [installedPolicies] = createResource(
+    () => (server.current ? { conn: server.current, dir: props.session.location.directory } : undefined),
+    async ({ conn, dir }) => {
+      try {
+        return (await policyState(conn.http, dir)).installed.map((entry) => ({
+          id: entry.id,
+          describe: entry.describe,
+        }))
+      } catch {
+        return undefined
+      }
+    },
+  )
+  const interventions = createMemo(() => {
+    const rows = receipt.latest
+    if (!rows) return undefined
+    return toInterventions(rows, installedPolicies.latest)
+  })
+  // ⚠️ Every key is a LITERAL, spelled out per union member rather than assembled from a template.
+  // `i18n/key-typing.test.ts` is a shrink-only ledger of the sites that hand the translator a
+  // computed key, and a new one would have to be added to it — the whole point being that a key
+  // built by string concatenation cannot be checked against the catalogue at all.
+  const outcomeLabel = (view: InterventionView) => {
+    switch (view.outcome) {
+      case "deny":
+        return language.t("policies.session.outcome.deny")
+      case "halt":
+        return language.t("policies.session.outcome.halt")
+      case "patch":
+        return language.t("policies.session.outcome.patch")
+      case "approve":
+        return language.t("policies.session.outcome.approve")
+      case "context":
+        return language.t("policies.session.outcome.context")
+      case "allow":
+        return language.t("policies.session.outcome.allow")
+      case "unknown":
+        return language.t("policies.session.outcome.unknown", { decision: view.rawDecision })
+    }
+  }
+  const ranLabel = (view: InterventionView) =>
+    view.ran === undefined
+      ? language.t("policies.session.unknownRan")
+      : view.ran
+        ? language.t("policies.session.ran")
+        : language.t("policies.session.prevented")
+
   const changes = createMemo(() => {
     const summary = props.session.summary
     if (!summary || (summary.files ?? 0) <= 0) return undefined
@@ -216,6 +302,98 @@ export const DialogSessionInfo: Component<{ session: Session; projectName?: stri
           <Row label={language.t("session.info.created")} value={when().format(props.session.time.created)} />
           <Show when={props.session.time.updated}>
             <Row label={language.t("session.info.updated")} value={when().format(props.session.time.updated)} />
+          </Show>
+          {/* 🔴 Rendered whenever the receipt could be read AT ALL — including when nothing
+              intervened, because "every check allowed every tool call, in time" is a positive
+              statement and the only one this feature can make. Hiding the section when the list is
+              empty would trade that claim for silence, which is what the whole thing exists to
+              stop. It is absent only when there is no receipt to read (a chat that never ran). */}
+          <Show when={interventions()}>
+            {(views) => (
+              <div class="mt-2 border-t border-v2-border-border-base pt-2" data-slot="session-info-policies">
+                <div class="flex items-baseline justify-between py-1.5">
+                  <span class="text-[12px] text-v2-text-text-faint [font-weight:470]">
+                    {language.t("policies.session.title")}
+                  </span>
+                  <Show when={views().length > 0}>
+                    <span class="text-[12px] text-v2-text-text-muted">
+                      {views().length === 1
+                        ? language.t("policies.session.summary.one")
+                        : language.t("policies.session.summary.many", { count: summarize(views()).total })}
+                    </span>
+                  </Show>
+                </div>
+                <Show
+                  when={views().length > 0}
+                  fallback={
+                    <p class="pb-1 text-[12px] leading-snug text-v2-text-text-faint">
+                      {language.t("policies.session.none")}
+                    </p>
+                  }
+                >
+                  <For each={views()}>
+                    {(view) => (
+                      <div class="flex flex-col gap-0.5 py-1.5" data-slot="session-info-policy">
+                        <div class="flex items-center gap-2">
+                          <span class="text-[13px] text-v2-text-text-base [font-weight:470]">
+                            {outcomeLabel(view)}
+                          </span>
+                          <span class="font-mono text-[12px] text-v2-text-text-muted">{view.tool}</span>
+                          <span class="min-w-0 flex-1 truncate text-right text-[12px] text-v2-text-text-faint">
+                            {ranLabel(view)}
+                          </span>
+                        </div>
+                        {/* The policy's OWN sentence — the same words the model was given, so the
+                            two readers of one event cannot be told different things. */}
+                        <p class="text-[12px] leading-snug text-v2-text-text-muted">{view.detail}</p>
+                        <Show when={view.patched.length > 0}>
+                          <div class="pt-0.5">
+                            <div class="text-[11px] text-v2-text-text-faint">
+                              {language.t("policies.session.patched.title")}
+                            </div>
+                            <For each={view.patched}>
+                              {(field) => (
+                                <pre
+                                  data-slot="session-info-policy-patch"
+                                  class="mt-0.5 whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-v2-text-text-base"
+                                >
+                                  {field.field}: {field.value}
+                                </pre>
+                              )}
+                            </For>
+                          </div>
+                        </Show>
+                        <Show when={view.actedBy.length > 0}>
+                          <div class="text-[11px] text-v2-text-text-faint">
+                            {language.t("policies.session.acted", { ids: view.actedBy.join(", ") })}
+                          </div>
+                        </Show>
+                        {/* 🔴 The policies that said NOTHING are listed too. A panel naming only the
+                            one that acted cannot answer "was the other guard even running?", which
+                            is the question a person asks after something got through. */}
+                        <Show when={view.silent.length > 0}>
+                          <div class="text-[11px] text-v2-text-text-faint">
+                            {language.t("policies.session.silent", { ids: view.silent.join(", ") })}
+                          </div>
+                        </Show>
+                        <Show when={view.unavailable.length > 0}>
+                          <div class="text-[11px] text-v2-text-text-faint">
+                            {language.t("policies.session.unavailableProviders", {
+                              ids: view.unavailable.join(", "),
+                            })}
+                          </div>
+                        </Show>
+                        <Show when={view.unresolved.length > 0}>
+                          <div class="text-[11px] text-v2-text-text-faint">
+                            {language.t("policies.session.unresolved", { ids: view.unresolved.join(", ") })}
+                          </div>
+                        </Show>
+                      </div>
+                    )}
+                  </For>
+                </Show>
+              </div>
+            )}
           </Show>
           <div class="mt-2 border-t border-v2-border-border-base pt-2">
             <Row

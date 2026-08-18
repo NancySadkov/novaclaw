@@ -11025,6 +11025,64 @@
         ]
       }
     },
+    "/api/policy": {
+      "get": {
+        "tags": ["policy"],
+        "operationId": "policy.list",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The pre-action policies installed here, and what the routed folder asks for",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "description": "Every installed policy with its own description, whether it runs by default, whether it fails closed, and whether it is switched on — plus the ids this folder's novaclaw.json asks for and any of those that are missing or switched off (either of which refuses every tool call here).",
+        "summary": "List installed pre-action policies",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.policy.list({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/question": {
       "get": {
         "tags": ["question"],
@@ -22526,6 +22584,9 @@
                   },
                   "model": {
                     "type": "string"
+                  },
+                  "sessionID": {
+                    "type": "string"
                   }
                 },
                 "required": ["directory"],
@@ -30500,6 +30561,18 @@
                   "type": "string"
                 }
               },
+              "skills": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "skillsRefused": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
               "gitignore": {
                 "type": "object",
                 "properties": {
@@ -30545,7 +30618,16 @@
                 "additionalProperties": false
               }
             },
-            "required": ["kind", "root", "file", "permissionRules", "permissions", "exclude"],
+            "required": [
+              "kind",
+              "root",
+              "file",
+              "permissionRules",
+              "permissions",
+              "exclude",
+              "skills",
+              "skillsRefused"
+            ],
             "additionalProperties": false
           },
           {
@@ -30605,6 +30687,9 @@
               "type": "string"
             }
           },
+          "skills": {
+            "$ref": "#/components/schemas/ProjectSkills"
+          },
           "clear": {
             "type": "array",
             "items": {
@@ -30649,9 +30734,24 @@
               },
               "refusedPermissions": {
                 "$ref": "#/components/schemas/PermissionV2Ruleset"
+              },
+              "refusedSkills": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
               }
             },
-            "required": ["ok", "file", "created", "sections", "cleared", "refusedTune", "refusedPermissions"],
+            "required": [
+              "ok",
+              "file",
+              "created",
+              "sections",
+              "cleared",
+              "refusedTune",
+              "refusedPermissions",
+              "refusedSkills"
+            ],
             "additionalProperties": false
           },
           {
@@ -31473,6 +31573,62 @@
           }
         },
         "required": ["_tag", "name", "message"],
+        "additionalProperties": false
+      },
+      "InstalledPolicy": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "describe": {
+            "type": "string"
+          },
+          "alwaysOn": {
+            "type": "boolean"
+          },
+          "safetyCritical": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": ["id", "describe", "alwaysOn", "safetyCritical", "enabled"],
+        "additionalProperties": false
+      },
+      "PolicyState": {
+        "type": "object",
+        "properties": {
+          "installed": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InstalledPolicy"
+            }
+          },
+          "requested": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "missing": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "disabledButRequested": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "file": {
+            "type": "string"
+          }
+        },
+        "required": ["installed", "requested", "missing", "disabledButRequested"],
         "additionalProperties": false
       },
       "QuestionRequest": {
@@ -39864,6 +40020,18 @@
               "additionalProperties": false
             }
           },
+          "tool_policy": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
           "commands": {
             "type": "object",
             "additionalProperties": {
@@ -40308,9 +40476,24 @@
         },
         "additionalProperties": false
       },
+      "ProjectSkillChoice": {
+        "type": "object",
+        "properties": {
+          "show": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ProjectSkills": {
+        "type": "object",
+        "additionalProperties": {
+          "$ref": "#/components/schemas/ProjectSkillChoice"
+        }
+      },
       "ProjectSection": {
         "type": "string",
-        "enum": ["name", "permissions", "tune", "exclude", "policies"]
+        "enum": ["name", "permissions", "tune", "exclude", "policies", "skills"]
       },
       "DbRegistryTableSummary": {
         "type": "object",
@@ -40836,6 +41019,70 @@
         "required": ["label", "command", "outcome", "exitCode", "timedOut", "durationMs", "at"],
         "additionalProperties": false
       },
+      "SessionReceiptPolicyDecision": {
+        "type": "object",
+        "properties": {
+          "toolCallID": {
+            "type": "string"
+          },
+          "tool": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "providers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "outcome": {
+                  "type": "string"
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "required": ["id", "outcome"],
+              "additionalProperties": false
+            }
+          },
+          "patched": {
+            "type": "object"
+          },
+          "at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          }
+        },
+        "required": ["toolCallID", "tool", "decision", "detail", "providers", "at"],
+        "additionalProperties": false
+      },
       "SessionReceiptInfo": {
         "type": "object",
         "properties": {
@@ -40903,6 +41150,12 @@
               "$ref": "#/components/schemas/SessionReceiptCheck"
             }
           },
+          "policies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionReceiptPolicyDecision"
+            }
+          },
           "servedBy": {
             "type": "array",
             "items": {
@@ -40916,7 +41169,17 @@
             }
           }
         },
-        "required": ["attemptID", "generation", "state", "startedAt", "declaredPlan", "checks", "servedBy", "children"],
+        "required": [
+          "attemptID",
+          "generation",
+          "state",
+          "startedAt",
+          "declaredPlan",
+          "checks",
+          "policies",
+          "servedBy",
+          "children"
+        ],
         "additionalProperties": false
       },
       "PromptInputFileAttachment": {
@@ -45856,7 +46119,7 @@
           },
           "status": {
             "type": "string",
-            "enum": ["present", "absent", "unknown"]
+            "enum": ["present", "absent", "unknown", "unreadable"]
           },
           "looked": {
             "type": "array",
@@ -46002,6 +46265,9 @@
             "items": {
               "type": "string"
             }
+          },
+          "model": {
+            "type": "string"
           }
         },
         "required": ["sessionID", "directory", "assets", "produces"],
@@ -46100,6 +46366,10 @@
                 "enum": ["Infinity", "-Infinity", "NaN"]
               }
             ]
+          },
+          "cookState": {
+            "type": "string",
+            "enum": ["ran", "blocked", "stopped"]
           }
         },
         "required": ["slug", "name", "directory", "verdict", "checks", "summary", "at"],
@@ -52676,6 +52946,10 @@
     {
       "name": "memory",
       "description": "The graph-memory viewer/editor API (kb-graph)."
+    },
+    {
+      "name": "policy",
+      "description": "Typed pre-action policies: what is installed, what each one does, and what this folder asks for."
     },
     {
       "name": "question",

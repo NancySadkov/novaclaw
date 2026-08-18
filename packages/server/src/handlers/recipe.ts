@@ -9,8 +9,11 @@ import { Recipe } from "@novaclaw/core/recipe"
 import { RecipeBuiltin } from "@novaclaw/core/recipe-builtin"
 import { RecipeVerify } from "@novaclaw/core/recipe-verify"
 import { AbsolutePath } from "@novaclaw/core/schema"
+import type { SessionMessage } from "@novaclaw/schema/session-message"
 import { Scratch } from "@novaclaw/core/scratch"
 import { SessionV2 } from "@novaclaw/core/session"
+import { SessionSchema } from "@novaclaw/core/session/schema"
+import { faultEvidence, sessionErrorDisplay } from "@novaclaw/core/session/session-error"
 import { InvalidRequestError } from "@novaclaw/protocol/errors"
 import { Clock, Effect } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
@@ -41,6 +44,57 @@ const modelRef = (spec: string | undefined): ModelV2.Ref | undefined => {
   if (!providerID || !modelID) return undefined
   return ModelV2.Ref.make({ id: ModelV2.ID.make(modelID), providerID: ProviderV2.ID.make(providerID) })
 }
+
+/** The wire spelling of a ref — the inverse of {@link modelRef}, and what a caller hands back to us. */
+const modelSpec = (ref: { readonly providerID: string; readonly id: string }): string => `${ref.providerID}/${ref.id}`
+
+/**
+ * What the cook itself did — the half of a receipt the filesystem cannot answer.
+ *
+ * 🔴 **This is the fix for "an infrastructure failure reported as a subject failure"** (measured
+ * 2026-08-18: six cooks wrote nothing because the model endpoint had died, and the receipt read *NOT
+ * WORKING — about: this NovaClaw*). An empty folder only licenses a statement about the user's install if
+ * the cook actually reached that install. So the cook's last assistant turn is read, its fault is
+ * classified by the ONE classifier that owns the closed fault vocabulary
+ * (`session-error.ts` → `faultEvidence`), and anything that is not evidence about this machine makes the
+ * declarations unmeasurable rather than unmet.
+ *
+ * ⚠️ **It also answers WHICH MODEL ran**, and that is the better answer than any the caller has: the
+ * assistant turn records the model the provider was actually called with, so a session whose model was
+ * switched mid-cook, or one that never named a model and inherited the instance default, still classifies
+ * correctly. `recipe.run` hands the resolved model back too, for a caller with no session in hand.
+ *
+ * ⚠️ **Never throws and never blocks the receipt.** A session that has been deleted, a decode failure, a
+ * cook we cannot read: all of them answer `undefined`, which restores today's behaviour exactly. A
+ * verifier that fell over because it could not read a session would be a health check that crashes —
+ * which tells the user nothing at all.
+ */
+interface CookReading {
+  readonly cook?: { readonly state: "ran" | "blocked" | "stopped"; readonly why?: string }
+  readonly model?: string
+}
+
+const readCook = (sessions: SessionV2.Interface, sessionID: string): Effect.Effect<CookReading> =>
+  Effect.gen(function* () {
+    const messages = yield* sessions
+      .messages({ sessionID: SessionSchema.ID.make(sessionID), order: "desc", limit: 40 })
+      .pipe(Effect.catchCause((): Effect.Effect<SessionMessage.Message[]> => Effect.succeed([])))
+    // Newest first, so the first assistant row IS the turn the cook ended on.
+    const last = messages.find((message) => message.type === "assistant")
+    if (last === undefined || last.type !== "assistant") return {}
+    const model = modelSpec(last.model)
+    // A turn with no fault RAN — that is the one path on which an absent file is the install's failure.
+    if (last.error === undefined || last.error === null) return { cook: { state: "ran" as const }, model }
+    const evidence = faultEvidence(last.error)
+    // `sessionErrorDisplay` is the same chokepoint the transcript renders through, so the sentence on the
+    // receipt is the sentence in the chat — already free of errnos and stack frames, and it NAMES the
+    // endpoint, which is what makes "could not check" actionable instead of a shrug.
+    const why = sessionErrorDisplay(last.error).headline
+    if (evidence === "instrument") return { cook: { state: "blocked" as const, why }, model }
+    if (evidence === "stopped") return { cook: { state: "stopped" as const, why }, model }
+    // `subject` — a tool failed ON THIS MACHINE, which is exactly the question the health check asks.
+    return { cook: { state: "ran" as const }, model }
+  })
 
 export const RecipeHandler = handlerLayer(
   HttpApiBuilder.group(RecipeApi, "server.recipe", (handlers) =>
@@ -271,7 +325,34 @@ export const RecipeHandler = handlerLayer(
             // has to re-read the recipe to know what to check — and so a recipe that declares NOTHING is
             // visibly unjudgeable at the moment the cook starts, rather than looking like a pass later.
             const produces = yield* Effect.promise(() => Recipe.producesOf(recipe.slug))
-            return { sessionID: session.id, directory, assets, produces }
+            // ── WHICH MODEL WILL COOK, handed back with the session ───────────────────────────────────
+            //
+            // 🔴 Without this the NOT AVAILABLE arm could not fire from the app at all (measured
+            // 2026-08-18). The Recipes app sends no `model`, so the session inherits the instance
+            // default and NOTHING downstream knew what it was — a cook on a model that cannot call tools
+            // read "Did not work · about: this NovaClaw", blaming the install for a model limit. The
+            // arm existed and worked at this HTTP surface; the app simply never had a value to send.
+            //
+            // ⚠️ Resolved through the LOCATION-scoped catalog for the work directory — the same one the
+            // cook's own session resolves through — for the reason spelled out above `locations`: a bare
+            // `yield* Catalog.Service` on this instance-global group typechecks and dies at runtime.
+            //
+            // ⚠️ A failure here answers `undefined` and never fails the run. The caller then sends no
+            // model to `verify`, which checks the files normally — an unresolvable model is `not-measured`
+            // downstream, never `not-applicable`. A cook must never be lost to a catalog read.
+            const cooking =
+              model ??
+              (yield* Catalog.Service.use((catalog) => catalog.model.default()).pipe(
+                Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))),
+                Effect.catchCause(() => Effect.succeed(undefined)),
+              ))
+            return {
+              sessionID: session.id,
+              directory,
+              assets,
+              produces,
+              ...(cooking ? { model: modelSpec(cooking) } : {}),
+            }
           }),
         )
         .handle(
@@ -292,11 +373,20 @@ export const RecipeHandler = handlerLayer(
             if (directory === "")
               return yield* new InvalidRequestError({ message: "Which folder did it cook in?" })
 
+            // What the COOK did, when the caller named its session. Two facts the filesystem cannot
+            // hold: whether the cook ever reached this machine, and which model actually ran.
+            const reading = ctx.payload.sessionID
+              ? yield* readCook(sessions, ctx.payload.sessionID)
+              : ({} as CookReading)
+
             // ⚠️ A model we cannot resolve stays `undefined`, which makes the checks run normally and any
             // gap read as `not-measured`. Answering `not-applicable` here would claim "there was nothing
             // to measure" on the strength of a lookup miss — and `not-applicable` is the one reason that
             // tells a reader to STOP ASKING (`UnknownReason.STOPS_THE_READER`), so it has to be earned.
-            const ref = modelRef(ctx.payload.model)
+            //
+            // An explicit payload `model` wins over the session's own record: a caller that knows better
+            // (the live harness, a script cooking on a named model) must be able to say so.
+            const ref = modelRef(ctx.payload.model ?? reading.model)
             const info = ref
               ? yield* Catalog.Service.use((catalog) => catalog.model.get(ref.providerID, ref.id)).pipe(
                   Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))),
@@ -310,6 +400,7 @@ export const RecipeHandler = handlerLayer(
                 directory,
                 declares,
                 ...(info ? { model: { label: info.name || info.id, tools: info.capabilities.tools } } : {}),
+                ...(reading.cook ? { cook: reading.cook } : {}),
               }),
             )
             return {
@@ -327,6 +418,7 @@ export const RecipeHandler = handlerLayer(
               })),
               summary: RecipeVerify.summary(receipt),
               at: receipt.at,
+              ...(receipt.cook ? { cookState: receipt.cook.state } : {}),
             }
           }),
         )

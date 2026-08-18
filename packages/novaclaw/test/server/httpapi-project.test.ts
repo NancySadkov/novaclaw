@@ -124,3 +124,62 @@ describe("GET /api/project", () => {
     }),
   )
 })
+
+describe("GET /api/project — the `skills` section", () => {
+  /**
+   * 🔴 The route reports what is IN FORCE, already narrowed, plus what it declined to act on.
+   *
+   * A project may HIDE a skill from the user's own slash menu and may never UN-HIDE one the instance
+   * hid — a `novaclaw.json` travels inside a repository somebody cloned. `skills` is therefore a list
+   * of ids the folder hides, and a `{"show":true}` never appears in it. It is not silently dropped
+   * either: `skillsRefused` names it, because the person who wrote a line that does nothing has to be
+   * told, and the file is otherwise perfectly valid.
+   *
+   * ⚠️ **A/B, run by hand and reported:** make the handler send `resolution.info.skills` keys instead
+   * of `narrowSkills(...).hidden` — the second case below goes red.
+   */
+  it.effect("🔴 a `show:false` is reported as hidden; a `show:true` is refused, never hidden", () =>
+    Effect.gen(function* () {
+      const directory = tmp("skills")
+      fs.writeFileSync(
+        path.join(directory, "novaclaw.json"),
+        JSON.stringify({
+          version: 1,
+          skills: { "hidden-one": { show: false }, "asked-back": { show: true }, "no-opinion": {} },
+        }),
+      )
+      const response = yield* requestInDirectory(ExperimentalPaths.project, directory)
+      expect(response.status).toBe(200)
+      const body: Record<string, unknown> = JSON.parse(yield* response.text)
+      expect(body["kind"]).toBe("project")
+      expect(body["skills"]).toEqual(["hidden-one"])
+      expect(body["skillsRefused"]).toEqual(["asked-back"])
+    }),
+  )
+
+  it.effect("a project with no `skills` section reports two empty lists, not absent fields", () =>
+    Effect.gen(function* () {
+      const directory = tmp("noskills")
+      fs.writeFileSync(path.join(directory, "novaclaw.json"), JSON.stringify({ version: 1 }))
+      const response = yield* requestInDirectory(ExperimentalPaths.project, directory)
+      const body: Record<string, unknown> = JSON.parse(yield* response.text)
+      expect(body["skills"]).toEqual([])
+      expect(body["skillsRefused"]).toEqual([])
+    }),
+  )
+
+  it.effect("🔴 a skill named `__proto__` travels as an ordinary id", () =>
+    Effect.gen(function* () {
+      const directory = tmp("proto")
+      // Written as TEXT: `{__proto__: v}` in source sets a prototype and serialises as `{}`, so an
+      // object literal here would test nothing at all.
+      fs.writeFileSync(
+        path.join(directory, "novaclaw.json"),
+        '{"version":1,"skills":{"__proto__":{"show":false}}}',
+      )
+      const response = yield* requestInDirectory(ExperimentalPaths.project, directory)
+      const body: Record<string, unknown> = JSON.parse(yield* response.text)
+      expect(body["skills"]).toEqual(["__proto__"])
+    }),
+  )
+})

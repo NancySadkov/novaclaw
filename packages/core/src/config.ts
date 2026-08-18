@@ -547,6 +547,36 @@ export class Info extends Schema.Class<Info>("Config.Info")({
       description:
         "Per-skill invocation choices, keyed by skill name. Only covers YOUR slash list; whether the agent may choose a skill is the `skill` permission action.",
     }),
+  /**
+   * Which installed pre-action policies actually run — `todo/projects.md`'s policy management half.
+   *
+   * ⚠️ **Sparse, and an absent entry means ON.** An installed policy runs because it was installed;
+   * this key is how the person at the computer switches one OFF, and it is an override rather than
+   * a doorway (principle 12a). Writing `enabled: true` is therefore the same as writing nothing.
+   *
+   * ⚠️ **It may never carry anything but a switch, and that is a type-level property.** A policy is
+   * chosen by ID and its behaviour lives in code that was installed; if this struct could carry a
+   * command, a pattern or a script, a config write would become a way to author a new pre-action
+   * guard — which is precisely what `novaclaw.json`'s `policies` section is forbidden from doing
+   * ("IDs of installed policies only — never a command"). The two surfaces name policies; neither
+   * defines one.
+   *
+   * Keyed by `ProjectFile.POLICY_ID_PATTERN`'s grammar — the same ids a `novaclaw.json` may spell
+   * and the same ids a provider may register under, so the three can always name each other.
+   */
+  tool_policy: Schema.Record(
+    Schema.String,
+    Schema.Struct({
+      enabled: Schema.Boolean.pipe(Schema.optional).annotate({
+        description: "Whether this installed pre-action policy runs. Absent = yes.",
+      }),
+    }),
+  )
+    .pipe(Schema.optional)
+    .annotate({
+      description:
+        "Per-policy on/off choices for the installed pre-action policies, keyed by policy id. Absent = the policy runs. A folder's novaclaw.json may opt IN to an installed policy; only this key can switch one off.",
+    }),
   commands: Schema.Record(Schema.String, ConfigCommand.Info).pipe(Schema.optional).annotate({
     description: "Named slash command definitions",
   }),

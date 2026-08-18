@@ -171,7 +171,31 @@ const GENERATE_TIMEOUT_MS = 60_000
 // ⚠️ The criterion for updating this line is that the diff is ADDITIVE: `git diff openapi.json` shows
 // nine added top-level schema names and ZERO removed, so nothing was renamed and nothing collided
 // into a suffix. A removal beside an addition is a rename and must be read before re-pinning.
-const SCHEMA_NAME_FINGERPRINT = "6764261b097a855b43b6505891542d518e39221aa004e2cf147ebeea7fe77761"
+// ── 2026-08-19: policy interventions reach the wire — THREE additions, ZERO removals ────────────
+//   `SessionReceiptPolicyDecision`                 (`SessionReceipt.PolicyDecision` — one tool call
+//                                                  a pre-action policy intervened on. The receipt
+//                                                  composer has read these rows since the kernel
+//                                                  landed and the success schema dropped every one
+//                                                  of them on the way out, so an intervention was
+//                                                  durable and invisible.)
+//   `ProjectSkills` / `ProjectSkillChoice`         (`ProjectFile.Skills` — the project-scoped skill
+//                                                  section, from the concurrently-running skill
+//                                                  invocation work in the same tree)
+// Measured rather than eyeballed, by generating the spec twice — once with `session-receipt.ts` at
+// HEAD and once with the change — so the receipt half's own contribution is isolated: ONE added name
+// (`SessionReceiptPolicyDecision`), ZERO removed, plus `SessionReceiptInfo` changed SHAPE (which this
+// fingerprint does not cover and the spec check below does). Every one of the three added names maps
+// to itself in the printed table: no rename, no collision suffix, no acronym normalisation moved.
+// ── 2026-08-19: the policy surface and Project-scoped skills, FIVE additions and no removals ──────
+//   `InstalledPolicy` / `PolicyState`            (which pre-action policies are installed, and what
+//                                                each one does — the management surface)
+//   `SessionReceiptPolicyDecision`               (an intervention on the wire; it was durable but
+//                                                INVISIBLE, which is a receipt that does not receipt)
+//   `ProjectSkills` / `ProjectSkillChoice`       (a folder's skill-invocation choices)
+// ⚠️ Additive: `git diff openapi.json` shows five added top-level schema names and ZERO removed, so
+// nothing was renamed and nothing collided into a suffix. A removal beside an addition is a rename and
+// must be read before re-pinning — that is the whole reason this fingerprint is not auto-updated.
+const SCHEMA_NAME_FINGERPRINT = "da36be467297f9c38371a2127442900382f80cf24219c80f1e7ee97124b90ac4"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

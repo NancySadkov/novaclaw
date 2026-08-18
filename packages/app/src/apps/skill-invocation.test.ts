@@ -197,3 +197,118 @@ describe("a saved choice naming a skill that no longer resolves", () => {
     expect(orphanedChoices({}, ["pdf"])).toEqual([])
   })
 })
+
+/**
+ * The THIRD layer, on the page: a `novaclaw.json` that hides a skill from the user's own slash menu.
+ *
+ * 🔴 **Principle 12(d) is the whole reason these fields are separate rather than folded.** A user
+ * must be able to tell "this folder hides it" from "you hid it" from "your agents may not choose
+ * it", because the three fixes are three different places: a file in the repository, the switch on
+ * this page, and a permission rule. Folding the folder into `me` would make the switch read "off"
+ * while the user's own answer is "on" — a control that appears to have been moved by a repository,
+ * and one that appears not to work when moved back.
+ *
+ * ⚠️ **A/B, run by hand and reported:** make `invocationOf` set `me` from `seen.show` instead of
+ * `seen.instance` — the "the switch stays where the USER left it" case goes red.
+ */
+describe("a folder's novaclaw.json is a third layer, and the page must not confuse it with the user's", () => {
+  test("no project means the page says nothing extra", () => {
+    const view = read()
+    expect(view.hiddenByProject).toBe(false)
+    expect(view.effectiveMe).toBe(true)
+    expect(view.meBy).toBe("default")
+  })
+
+  test("🔴 the folder hides it while the user never spoke", () => {
+    const view = read({ projectHidden: ["pdf"] })
+    expect(view.hiddenByProject).toBe(true)
+    expect(view.effectiveMe).toBe(false)
+    expect(view.meBy).toBe("project")
+    // The switch is still ON — nothing on this page decided this.
+    expect(view.me).toBe(true)
+  })
+
+  test("🔴 the switch stays where the USER left it while the folder overrides it", () => {
+    const view = read({ store: { pdf: { show: true } }, projectHidden: ["pdf"] })
+    expect(view.me).toBe(true)
+    expect(view.hiddenByProject).toBe(true)
+    expect(view.effectiveMe).toBe(false)
+  })
+
+  test("the user's own hide is reported as the user's, not as the folder's", () => {
+    const view = read({ store: { pdf: { show: false } } })
+    expect(view.meBy).toBe("instance")
+    expect(view.hiddenByProject).toBe(false)
+    expect(view.effectiveMe).toBe(false)
+  })
+
+  test("both layers hiding names the FOLDER, because that is the one the switch cannot fix", () => {
+    const view = read({ store: { pdf: { show: false } }, projectHidden: ["pdf"] })
+    expect(view.meBy).toBe("project")
+    expect(view.effectiveMe).toBe(false)
+  })
+
+  /**
+   * 🔴 **The two labels, and why they are two — found by RUNNING it.**
+   *
+   * `preset` names the two switches (the "Only when I choose it" button compares against it);
+   * `inForce` names what actually happens. With the folder hiding a skill the first cut printed
+   * `preset` on the principle-12(d) "Right now" line, so the live page read *"it is in your slash
+   * menu for you to run"* one line above *"this folder keeps this skill out of your slash menu"*.
+   * Every unit test was green — they asserted the preset, which was right about the switches.
+   */
+  test("🔴 the in-force label describes the OUTCOME while the preset describes the switches", () => {
+    const view = read({ projectHidden: ["pdf"] })
+    expect(view.preset).toBe("everywhere")
+    expect(view.inForce).toBe("only-nova")
+    // …and the button that sets both switches still compares against the switches.
+    expect(view.isOnlyWhenIChoose).toBe(false)
+  })
+
+  test("with no folder in play the two labels agree, in every corner", () => {
+    for (const nova of [true, false])
+      for (const me of [true, false]) {
+        const view = read({
+          rules: nova ? [] : [{ action: "skill", resource: "pdf", effect: "deny" }],
+          store: me ? {} : { pdf: { show: false } },
+        })
+        expect(view.inForce).toBe(view.preset)
+      }
+  })
+
+  test("a folder naming a DIFFERENT skill changes nothing here", () => {
+    const view = read({ projectHidden: ["docx"] })
+    expect(view.hiddenByProject).toBe(false)
+    expect(view.effectiveMe).toBe(true)
+  })
+
+  test("the folder's list cannot reach a skill whose name has no stable id", () => {
+    const name = `pd${ZWSP}f`
+    const view = invocationOf({
+      name,
+      rules: [],
+      store: undefined,
+      projectHidden: [name],
+      enablement: enablement(),
+    })
+    expect(view.locked).toBe("invisible")
+    expect(view.hiddenByProject).toBe(false)
+    expect(view.effectiveMe).toBe(true)
+  })
+
+  test("🔴 a folder can never UN-HIDE — there is no shape on this seam that could", () => {
+    // `projectHidden` is the server's already-narrowed list. The only thing a project can put in it
+    // is a HIDE; `ProjectFile.narrowSkills` drops every `show:true` before it reaches the wire.
+    const view = read({ store: { pdf: { show: false } }, projectHidden: [] })
+    expect(view.effectiveMe).toBe(false)
+    expect(view.meBy).toBe("instance")
+  })
+
+  test("the folder does not touch the AGENT half — that is the permission rule's job", () => {
+    const view = read({ projectHidden: ["pdf"] })
+    expect(view.nova).toBe(true)
+    // A project narrows the agent half through its own `permissions` section, which
+    // `evaluateNarrowed` folds in; nothing about `skills` changes what an agent may do.
+    expect(view.blockedElsewhere).toBe(false)
+  })
+})

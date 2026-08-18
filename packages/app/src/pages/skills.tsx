@@ -3,8 +3,10 @@ import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { GoldGlyph } from "@/components/gold-glyph"
 import { useLanguage, type TranslationKey, type Translator } from "@/context/language"
+import { useServer } from "@/context/server"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
+import { projectState } from "@/utils/project-api"
 import { AppPage } from "@/components/app-page"
 import {
   authorText,
@@ -124,6 +126,8 @@ export function SkillDetail(props: {
   invocation?: InvocationView
   onInvocation?: (next: { nova: boolean; me: boolean }) => void
   saveFailed?: boolean
+  /** The `novaclaw.json` governing this folder, when one does. Named so the user can go edit it. */
+  projectFile?: string
 }) {
   const t: Translator = (key, params) => props.t(key, params)
   const view = () => props.view
@@ -300,8 +304,22 @@ export function SkillDetail(props: {
 
             {/* Principle 12(d): what is in force RIGHT NOW, before any control. */}
             <p class="mt-1.5 text-sm text-v2-text-text-base" data-slot="skill-invocation-inforce">
-              {t(IN_FORCE_TEXT[invocation().preset])}
+              {t(IN_FORCE_TEXT[invocation().inForce])}
             </p>
+
+            {/* ⚠️ A THIRD sentence, and principle 12(d) is the whole reason it is separate. The line
+                above names the two switches on this page; this one names a layer neither switch can
+                reach. A user who is told only "it is not in your slash menu" goes looking for the
+                switch that did it, finds it reading "on", and has no way left to find out why —
+                which is the *a fault is never described falsely* failure with the fault hidden
+                rather than misnamed. It says WHICH file, because the fix is editing that file. */}
+            <Show when={invocation().hiddenByProject}>
+              <p class="mt-1.5 text-sm text-v2-text-text-accent" data-slot="skill-invocation-project">
+                {props.projectFile
+                  ? t("skills.invocation.project.hiddenNamed", { file: props.projectFile })
+                  : t("skills.invocation.project.hidden")}
+              </p>
+            </Show>
 
             <Show when={invocation().blockedElsewhere}>
               <p class="mt-1.5 text-sm text-v2-text-text-accent" data-slot="skill-invocation-blocked-elsewhere">
@@ -339,6 +357,14 @@ export function SkillDetail(props: {
                     {t("skills.invocation.me.label")}
                   </Switch>
                   <p class="mt-1 text-xs text-v2-text-text-muted">{t("skills.invocation.me.help")}</p>
+                  {/* The switch stays where the USER left it even while the folder overrides it —
+                      moving it would look like a repository had changed the user's own setting. So
+                      the contradiction is stated instead of hidden. */}
+                  <Show when={invocation().hiddenByProject && invocation().me}>
+                    <p class="mt-1 text-xs text-v2-text-text-accent" data-slot="skill-invocation-me-overridden">
+                      {t("skills.invocation.project.overrides")}
+                    </p>
+                  </Show>
                 </div>
 
                 {/* The preset is a WRITE of both switches. It is a button rather than a third
@@ -450,6 +476,40 @@ export function SkillsPage() {
   const rules = createMemo(() => config().permissions ?? [])
   const choices = createMemo(() => config().skill_invocation)
 
+  /**
+   * The THIRD layer: the `novaclaw.json` governing the folder this instance is pointed at.
+   *
+   * ⚠️ Fetched from `GET /api/project`, which already applies the narrowing — a folder may HIDE a
+   * skill and may never un-hide one you hid, so `skills` is a list of what the folder hides. This
+   * page must not re-derive that law; one derivation of a security rule is the right number.
+   *
+   * ⚠️ Failure degrades to `undefined`, never a throw. A throw inside a `createResource` read reaches
+   * the ROOT ErrorBoundary and replaces the whole application (the same rule Settings → Project
+   * records), and a project lookup that failed must not cost someone the Skills page. `undefined`
+   * renders no third sentence, which is honest: this page has not been told, so it claims nothing.
+   */
+  const server = useServer()
+  const projectSource = createMemo(() => {
+    const http = server.current?.http
+    const dir = sync().data.path.directory || sync().data.path.home || ""
+    return http && dir ? { http, dir } : undefined
+  })
+  const [project] = createResource(projectSource, async (value) => {
+    try {
+      return await projectState(value.http, value.dir)
+    } catch {
+      return undefined
+    }
+  })
+  const projectHidden = createMemo(() => {
+    const state = project()
+    return state?.kind === "project" ? state.skills : undefined
+  })
+  const projectFile = createMemo(() => {
+    const state = project()
+    return state?.kind === "project" ? state.file : undefined
+  })
+
   const views = createMemo(() => sortViews(skills().map((skill) => toView(skill, context(), agents()))))
   const shown = createMemo(() => filterViews(views(), query()))
   const current = createMemo(() => views().find((view) => view.key === selected()))
@@ -461,6 +521,7 @@ export function SkillsPage() {
       name: view.rawName,
       rules: rules(),
       store: choices(),
+      projectHidden: projectHidden(),
       enablement: view.enablement,
     })
   })
@@ -644,6 +705,7 @@ export function SkillsPage() {
                   invocation={invocation()}
                   onInvocation={applyInvocation}
                   saveFailed={saveFailed()}
+                  projectFile={projectFile()}
                 />
               </div>
             )}

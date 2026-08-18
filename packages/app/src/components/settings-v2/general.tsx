@@ -19,6 +19,7 @@ import { ServerConnection, serverName } from "@/context/server"
 import { useServerManagementController } from "../dialog-select-server"
 import { ConfigExportImport } from "./config-io"
 import { SettingsProjectSection } from "./project"
+import { SettingsPoliciesSection } from "./policies"
 import { SettingsConfinementSection, type ShellStatusWithJail } from "./confinement"
 import { useSettings } from "@/context/settings"
 import { offlineStatus, shellProvision, shellStatus, type OfflineStatus, type ShellStatus } from "@/utils/fs-api"
@@ -685,6 +686,13 @@ export const SettingsGeneralV2: Component<{
             `novaclaw.json` can narrow this session's permissions, and until this section existed the
             only way to discover that was to be refused and go looking for the file. */}
         <SettingsProjectSection />
+
+        {/* And directly after Project, because it is the THIRD answer to the same question those two
+            raise — not "what boxes the agent in" or "what does this folder narrow", but "what looks
+            at each tool call before it happens". A pre-action policy could already refuse a call,
+            rewrite its arguments or hold it for approval, and no screen anywhere said one existed
+            (`todo/projects.md`). */}
+        <SettingsPoliciesSection />
 
         <NotificationsSection />
 

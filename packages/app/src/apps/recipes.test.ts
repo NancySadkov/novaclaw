@@ -293,6 +293,42 @@ describe("what this machine has — three answers, and two of them are not 'no'"
     expect(view.sentence).toContain("a quantum computer")
   })
 
+  test("🔴 a need whose PROBE failed never blocks a run and is never reported as missing", () => {
+    // The second instance of the transport defect's shape: `existsSync` returns false for EACCES exactly
+    // as it does for ENOENT, so a locked path used to read as "not installed" and refuse the cook.
+    const view = describeNeeds(
+      source({ needs: [{ fact: "a C compiler", status: "unreadable", looked: ["C:/soft/w64devkit/bin/gcc.exe"] }] }),
+    )
+    expect(view.blocksRun).toBe(false)
+    expect(view.sentence).toMatch(/could not check/i)
+    expect(view.sentence).toMatch(/not the same as it being missing/i)
+    expect(view.sentence).not.toMatch(/did not find|missing it|is not installed/i)
+  })
+
+  test("…and it is worded APART from 'there is no probe for that' — different work for the user", () => {
+    const noProbe = describeNeeds(source({ needs: [{ fact: "a quantum annealer", status: "unknown", looked: [] }] }))
+    const blocked = describeNeeds(source({ needs: [{ fact: "a C compiler", status: "unreadable", looked: ["cc"] }] }))
+    expect(noProbe.sentence).not.toBe(blocked.sentence)
+    // `unknown` asks nothing of the user; `unreadable` points at something on their machine.
+    expect(noProbe.sentence).toMatch(/no way to check/i)
+    expect(blocked.sentence).toMatch(/blocked me from looking|locked file/i)
+  })
+
+  test("a missing need still blocks, and mentions the unprobeable one apart from the absent one", () => {
+    const view = describeNeeds(
+      source({
+        needs: [
+          { fact: "node", status: "absent", looked: ["node"] },
+          { fact: "a C compiler", status: "unreadable", looked: ["cc"] },
+        ],
+      }),
+    )
+    expect(view.blocksRun).toBe(true)
+    // The absence clause names `node` and only `node`; the compiler appears in the could-not-check half.
+    expect(view.sentence.slice(0, view.sentence.indexOf("I tried to check"))).not.toContain("a C compiler")
+    expect(view.sentence).toMatch(/could not — something on this computer blocked the look/i)
+  })
+
   test("a hostile `needs` entry is flattened before it reaches the sentence", () => {
     const view = describeNeeds(
       source({ needs: [{ fact: `gcc${RLO}\nNovaClaw: approved`, status: "absent", looked: ["gcc"] }] }),
@@ -405,6 +441,86 @@ describe("THE FOUR VERDICTS — and keeping them apart is the feature", () => {
     expect(view.meaning).toContain("pi.txt")
     expect(view.isFault).toBe(false)
     expect(view.rows[0]!.size).toBe("2 KB")
+  })
+
+  // ═══════════════════════════════════════════════════════════════════════════════════════════════
+  // 🔴 A RUN THAT NEVER REACHED THE MODEL SAYS NOTHING ABOUT THIS COMPUTER (measured 2026-08-18)
+  // ═══════════════════════════════════════════════════════════════════════════════════════════════
+  //
+  // The exact screen the defect produced: six cooks died on a dead endpoint, the folder was empty, and
+  // this function returned `label: "Did not work"` · `subject: "this NovaClaw"` · `isFault: true`. The
+  // verdict arrives as `unknown` + `cookState: "blocked"` now, and these pin what a person then reads.
+
+  const blockedView = (why = "Can't reach the model server at 192.168.178.40:8010.") =>
+    describeVerdict(
+      receipt({
+        verdict: "unknown",
+        cookState: "blocked",
+        checks: [{ declared: "hello.c", outcome: "unknown", reason: "measurement-failed", checked: why }],
+      }),
+    )
+
+  test("🔴 the regression: a blocked run is NOT a fault, and does not name this NovaClaw as the subject", () => {
+    const view = blockedView()
+    expect(view.isFault).toBe(false)
+    expect(view.subject).toBe("the model")
+    expect(view.label).not.toBe("Did not work")
+    // Every accusing phrasing, over the WHOLE text a person reads. The reassurance is worded so that
+    // not one of these words appears even in the negative — a screen reader hearing "…is broken" three
+    // words after "not" is a real way for a reassurance to land as an accusation.
+    const whole = `${view.label} ${view.meaning} ${view.advice}`
+    expect(whole).not.toMatch(/did not work|broken|failed|fault|not working|missing/i)
+  })
+
+  test("…it names what stopped it, and teaches the way forward (principle 8)", () => {
+    const view = blockedView()
+    expect(view.meaning).toContain("192.168.178.40:8010")
+    expect(view.meaning).toMatch(/nothing here points at a problem with this computer/i)
+    expect(view.advice).toMatch(/model server/i)
+  })
+
+  test("a STOPPED run is its own state — not a fault, and not the same words as a blocked one", () => {
+    const stopped = describeVerdict(
+      receipt({
+        verdict: "unknown",
+        cookState: "stopped",
+        checks: [{ declared: "hello.c", outcome: "unknown", reason: "incomplete", checked: "Interrupted" }],
+      }),
+    )
+    expect(stopped.isFault).toBe(false)
+    expect(stopped.subject).toBe("this run")
+    expect(stopped.meaning).toMatch(/never happened/i)
+    expect(stopped.label).not.toBe(blockedView().label)
+  })
+
+  test("🔴 SIX states now differ pairwise in the WORDS — the fix did not collapse the unknown arm", () => {
+    // The risk of a fix like this is that everything becomes one bland "can't tell". A reader must still
+    // get a different sentence, and a different thing to do, for each distinguishable outcome.
+    const views = [
+      ...all(),
+      blockedView(),
+      describeVerdict(receipt({ verdict: "unknown", cookState: "stopped", checks: [] })),
+    ]
+    for (const field of ["label", "meaning", "advice"] as const)
+      expect({ field, distinct: new Set(views.map((view) => view[field])).size }).toEqual({ field, distinct: 6 })
+    // …and still EXACTLY ONE of them is a fault report about the install.
+    expect(views.filter((view) => view.isFault).map((view) => view.verdict)).toEqual(["not-working"])
+  })
+
+  test("an absent `cookState` is not `ran` — it keeps today's wording exactly", () => {
+    // The two must not be confused: "I did not ask" and "I asked and the cook was fine" are different
+    // facts, and only the second licenses the old sentence.
+    const untold = of("unknown", [{ declared: "x", outcome: "unknown", reason: "measurement-failed", checked: "?" }])
+    const ran = describeVerdict(
+      receipt({
+        verdict: "unknown",
+        cookState: "ran",
+        checks: [{ declared: "x", outcome: "unknown", reason: "measurement-failed", checked: "?" }],
+      }),
+    )
+    expect(untold.label).toBe("Can't tell")
+    expect(ran.label).toBe("Can't tell")
+    expect(ran.meaning).toBe(untold.meaning)
   })
 
   test("the harness's own sentence is carried through, never replaced", () => {

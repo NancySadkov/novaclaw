@@ -26,6 +26,20 @@ export type ProjectState =
       readonly permissions: readonly ProjectPermissionRule[]
       readonly exclude: readonly string[]
       /**
+       * Skill ids this folder hides from your own slash menu, sorted.
+       *
+       * ⚠️ Already narrowed by the server: a folder may HIDE a skill and may never un-hide one you
+       * hid, so this is a list of what the folder hides and never a list of what it wants shown.
+       */
+      readonly skills: readonly string[]
+      /**
+       * Skill ids the folder asked to SHOW, which NovaClaw does not act on.
+       *
+       * Not an error — the file is valid and every other section is honoured. It is reported so the
+       * person who wrote the line is told it does nothing, rather than discovering it by surprise.
+       */
+      readonly skillsRefused: readonly string[]
+      /**
        * What importing the project root's `.gitignore` WOULD add. A suggestion, never a sync.
        *
        * ⚠️ Absent when there is no `.gitignore` beside the project file. "Nothing to import" and
@@ -105,6 +119,14 @@ export interface ProjectWriteInput {
   readonly exclude?: readonly string[]
   readonly policies?: readonly string[]
   /**
+   * Per-skill slash-menu choices for this folder, keyed by the skill's name verbatim.
+   *
+   * ⚠️ A `show:true` is DROPPED by the server and reported in `refusedSkills`, for the same reason
+   * an `allow` permission rule is: a folder may hide a skill and may never un-hide one you hid, so
+   * the reader ignores it and saving one would write a sentence into your file that does nothing.
+   */
+  readonly skills?: Readonly<Record<string, { readonly show?: boolean }>>
+  /**
    * Sections to REMOVE from the file — the other half of "an absent section is left alone".
    *
    * Without this there is no way to say *"this folder declares no permission rules any more"*: an
@@ -115,7 +137,7 @@ export interface ProjectWriteInput {
 }
 
 /** The top-level sections of a `novaclaw.json` that a write may replace or clear. */
-export type ProjectSection = "name" | "permissions" | "tune" | "exclude" | "policies"
+export type ProjectSection = "name" | "permissions" | "tune" | "exclude" | "policies" | "skills"
 
 /**
  * The receipt, or the refusal.
@@ -145,6 +167,11 @@ export type ProjectWriteResult =
        * `allow` rule can never narrow anything. Reported so the surface says it out loud.
        */
       readonly refusedPermissions: readonly ProjectPermissionRule[]
+      /**
+       * Skill ids asked for as SHOWN here and dropped instead: a folder may only ever hide.
+       * Reported so the surface says it out loud rather than writing an inert line.
+       */
+      readonly refusedSkills: readonly string[]
     }
   | { readonly ok: false; readonly file: string; readonly reason: string; readonly detail: string }
 

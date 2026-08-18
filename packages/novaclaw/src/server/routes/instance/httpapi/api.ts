@@ -19,6 +19,7 @@ import { FileApi } from "./groups/file"
 import { InstanceApi } from "./groups/instance"
 import { McpApi } from "./groups/mcp"
 import { MemoryApi } from "./groups/memory"
+import { PolicyApi } from "./groups/policy"
 import { ProviderApi } from "./groups/provider"
 import { QuestionApi } from "./groups/question"
 import { RegistryApi } from "./groups/registry"
@@ -73,6 +74,7 @@ export const InstanceHttpApi = HttpApi.make("novaclaw-instance")
   .addHttpApi(InstanceApi)
   .addHttpApi(McpApi)
   .addHttpApi(MemoryApi)
+  .addHttpApi(PolicyApi)
   .addHttpApi(QuestionApi)
   .addHttpApi(RegistryApi)
   .addHttpApi(ProviderApi)

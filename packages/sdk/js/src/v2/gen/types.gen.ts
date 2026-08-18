@@ -1423,6 +1423,8 @@ export type ProjectState =
       permissionRules: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
       permissions: PermissionV2Ruleset
       exclude: Array<string>
+      skills: Array<string>
+      skillsRefused: Array<string>
       gitignore?: {
         file: string
         add: Array<string>
@@ -1450,6 +1452,7 @@ export type ProjectWriteInput = {
   tune?: ProjectTune
   exclude?: Array<string>
   policies?: Array<string>
+  skills?: ProjectSkills
   clear?: Array<ProjectSection>
 }
 
@@ -1462,6 +1465,7 @@ export type ProjectWriteResult =
       cleared: Array<string>
       refusedTune: Array<string>
       refusedPermissions: PermissionV2Ruleset
+      refusedSkills: Array<string>
     }
   | {
       ok: false
@@ -1726,6 +1730,22 @@ export type McpServerNotFoundError = {
   _tag: "McpServerNotFoundError"
   name: string
   message: string
+}
+
+export type InstalledPolicy = {
+  id: string
+  describe: string
+  alwaysOn: boolean
+  safetyCritical: boolean
+  enabled: boolean
+}
+
+export type PolicyState = {
+  installed: Array<InstalledPolicy>
+  requested: Array<string>
+  missing: Array<string>
+  disabledButRequested: Array<string>
+  file?: string
 }
 
 export type QuestionRequest = {
@@ -4409,6 +4429,11 @@ export type ConfigInfo = {
       show?: boolean
     }
   }
+  tool_policy?: {
+    [key: string]: {
+      enabled?: boolean
+    }
+  }
   commands?: {
     [key: string]: ConfigV2Command
   }
@@ -4555,7 +4580,15 @@ export type ProjectTune = {
   }
 }
 
-export type ProjectSection = "name" | "permissions" | "tune" | "exclude" | "policies"
+export type ProjectSkillChoice = {
+  show?: boolean
+}
+
+export type ProjectSkills = {
+  [key: string]: ProjectSkillChoice
+}
+
+export type ProjectSection = "name" | "permissions" | "tune" | "exclude" | "policies" | "skills"
 
 export type DbRegistryTableSummary = {
   name: string
@@ -4640,6 +4673,22 @@ export type SessionReceiptCheck = {
   at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
 }
 
+export type SessionReceiptPolicyDecision = {
+  toolCallID: string
+  tool: string
+  decision: string
+  detail: string
+  providers: Array<{
+    id: string
+    outcome: string
+    detail?: string
+  }>
+  patched?: {
+    [key: string]: unknown
+  }
+  at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
 export type SessionReceiptInfo = {
   attemptID: string
   generation: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
@@ -4647,6 +4696,7 @@ export type SessionReceiptInfo = {
   startedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   declaredPlan: Array<SessionReceiptPlanItem>
   checks: Array<SessionReceiptCheck>
+  policies: Array<SessionReceiptPolicyDecision>
   servedBy: Array<string>
   children: Array<string>
 }
@@ -5994,7 +6044,7 @@ export type RecipeInfo = {
 
 export type RecipeNeedCheck = {
   fact: string
-  status: "present" | "absent" | "unknown"
+  status: "present" | "absent" | "unknown" | "unreadable"
   looked: Array<string>
   found?: string
 }
@@ -6037,6 +6087,7 @@ export type RecipeRunResult = {
   directory: string
   assets: Array<string>
   produces: Array<string>
+  model?: string
 }
 
 export type RecipeVerifyCheck = {
@@ -6056,6 +6107,7 @@ export type RecipeVerifyResult = {
   checks: Array<RecipeVerifyCheck>
   summary: string
   at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  cookState?: "ran" | "blocked" | "stopped"
 }
 
 export type PermissionV2Request = {
@@ -12265,6 +12317,38 @@ export type MemoryClearScopeResponses = {
 
 export type MemoryClearScopeResponse = MemoryClearScopeResponses[keyof MemoryClearScopeResponses]
 
+export type PolicyListData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/api/policy"
+}
+
+export type PolicyListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type PolicyListError = PolicyListErrors[keyof PolicyListErrors]
+
+export type PolicyListResponses = {
+  /**
+   * The pre-action policies installed here, and what the routed folder asks for
+   */
+  200: PolicyState
+}
+
+export type PolicyListResponse = PolicyListResponses[keyof PolicyListResponses]
+
 export type QuestionListData = {
   body?: never
   path?: never
@@ -16718,6 +16802,7 @@ export type V2RecipeVerifyData = {
   body: {
     directory: string
     model?: string
+    sessionID?: string
   }
   path: {
     slug: string

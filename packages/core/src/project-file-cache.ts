@@ -4,8 +4,9 @@ import path from "node:path"
 import { Context, Effect, Layer } from "effect"
 import { Permission } from "@novaclaw/schema/permission"
 import { ProjectFile } from "@novaclaw/schema/project-file"
-import { makeGlobalNode } from "./effect/app-node"
+import { makeGlobalNode, makeLocationNode } from "./effect/app-node"
 import { FSUtil } from "./fs-util"
+import { Location } from "./location"
 import { ProjectFileResolve } from "./project-file"
 
 /**
@@ -87,13 +88,31 @@ export interface Entry {
    * property of the type rather than of every consumer.
    */
   readonly policies: readonly string[]
+  /**
+   * The skill ids this folder hides from the user's own slash menu, or empty when it hides none.
+   *
+   * Consumed by `command/list.ts`, the one reader of the human half of the two skill-invocation
+   * switches. Read HERE for the fourth time for the reason at the top of this module: a folder
+   * governed half by its old menu and half by its new one is the worst of both, and every extra
+   * cache over one `novaclaw.json` is another chance for two answers to one file.
+   *
+   * 🔴 **Already NARROWED — this is `ProjectFile.narrowSkills`'s output, not the file's map.** A
+   * project may hide a skill and may never un-hide one the instance hid, so a `{"show":true}` in
+   * the file is dropped before it reaches this record. Carrying it verbatim like `rules` and `tune`
+   * would leave the whole law resting on the single consumer remembering a `=== false`, and the
+   * failure mode of forgetting it is a cloned repository putting a skill back into its owner's own
+   * menu. What the reader holds is *ids this folder hides*, which has no un-hide in it to forget.
+   * The refused ids are not lost — `GET /api/project` calls `narrowSkills` itself so the surface can
+   * report them.
+   */
+  readonly skills: readonly string[]
   /** The directory holding the file, when one was found. */
   readonly root?: string
   /** The file itself, when one was found. */
   readonly file?: string
 }
 
-export const EMPTY: Entry = { rules: [], tune: undefined, exclude: [], policies: [] }
+export const EMPTY: Entry = { rules: [], tune: undefined, exclude: [], policies: [], skills: [] }
 
 export interface Interface {
   /**
@@ -150,6 +169,9 @@ export const layer = Layer.effect(
                     tune: resolution.info.tune,
                     exclude: resolution.info.exclude ?? [],
                     policies: resolution.info.policies ?? [],
+                    // ⚠️ Narrowed HERE, at the one boundary every consumer comes through. See
+                    // `Entry.skills`.
+                    skills: ProjectFile.narrowSkills(resolution.info.skills).hidden,
                     root: resolution.root,
                     file: resolution.file,
                   }
@@ -183,3 +205,54 @@ export const layer = Layer.effect(
 export const defaultLayer = layer.pipe(Layer.provide(FSUtil.defaultLayer))
 
 export const node = makeGlobalNode({ service: Service, layer, deps: [FSUtil.node] })
+
+/**
+ * The project governing THIS location — the same cache, asked the question a location consumer has.
+ *
+ * 🔴 **Why a second tag exists over one cache, and why it is not a second cache.** The cache is a
+ * `global` node on purpose: it is keyed by directory so that one map answers for every folder any
+ * session in the process sits in, and the write path invalidates *that* map. `LayerNode.hoist` lifts
+ * every global node OUT of the per-location half, so a global service is BUILT for a location's
+ * graph and is not VISIBLE in its output — a location consumer that reaches for it fails at runtime
+ * with "Service not found" while the typechecker stays green.
+ *
+ * The two wrong fixes, named so they are not tried again:
+ *   ❌ re-tag `ProjectFileCache.node` as `location`. `Layer.fresh` on the per-location half would
+ *      give every location its own map, and the invalidation the write path performs would then
+ *      clear a map some other location's kernel is still reading — the "second cache nobody
+ *      consults" hazard `httpapi/handlers/experimental.ts` already measured, with the halves
+ *      swapped.
+ *   ❌ list the global node in `locationServices`. Hoisting takes it straight back out again, so
+ *      nothing changes except that the list now lies about what it offers.
+ *
+ * What this node adds is a NAME in the location graph for a question only a location can ask. It
+ * holds no state: `entry` is `read(location.directory)` and nothing else, so there is still exactly
+ * one map, one TTL and one invalidation.
+ *
+ * ⚠️ `entry` is an Effect re-evaluated on every use, never a value captured at layer build. The
+ * cache exists because a folder's file changes under a running process; freezing the answer at boot
+ * would reintroduce the *read once* staleness the top of this module rejects.
+ */
+export interface LocalInterface {
+  /** The project governing this location's directory, read through the shared cache. */
+  readonly entry: Effect.Effect<Entry>
+}
+
+export class LocalService extends Context.Service<LocalService, LocalInterface>()(
+  "@novaclaw/v2/ProjectFileCache/Local",
+) {}
+
+export const localLayer = Layer.effect(
+  LocalService,
+  Effect.gen(function* () {
+    const location = yield* Location.Service
+    const cache = yield* Service
+    return LocalService.of({ entry: Effect.suspend(() => cache.read(location.directory)) })
+  }),
+)
+
+export const localNode = makeLocationNode({
+  service: LocalService,
+  layer: localLayer,
+  deps: [node, Location.node],
+})

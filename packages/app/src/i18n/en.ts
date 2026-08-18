@@ -1496,6 +1496,73 @@ export const dict = {
     "It was written by a newer NovaClaw. Update NovaClaw to use it — the file itself is probably fine.",
   "settings.project.invalidBroken": "The file could not be read: {{detail}}",
 
+  // ── Settings → Pre-action policies, and the chat sheet's "what a policy did" section ──────────
+  //
+  // `todo/projects.md`: a policy could refuse a tool call, rewrite its arguments or hold it for a
+  // human, and NONE of that was visible anywhere. Two surfaces read these keys — Settings (what is
+  // installed, and the switch) and the chat details sheet (what actually happened in this chat).
+  //
+  // 🔴 Two rules run through every sentence below and must survive any edit:
+  //  1. **A policy's own words are the policy's, not ours.** `{{describe}}`, `{{detail}}` and every
+  //     `{{id}}` are supplied by whoever wrote the policy. The copy therefore attributes rather
+  //     than asserts — "the policy says", never "this policy is safe".
+  //  2. **An empty list is a SENTENCE, not a hidden section.** A chat where nothing intervened says
+  //     so; hiding the section would trade the one claim this feature exists to make for silence.
+  //
+  // ⚠️ ENGLISH-ONLY on purpose, like the Confinement and Project blocks above: the parity ratchet
+  // fails on an EXTRA key in a locale and only COUNTS a missing one, so pasting English into de.ts
+  // would make the translation backlog read as done.
+  "policies.section": "Checks before every tool",
+  "policies.inForce.none":
+    "Right now: nothing is installed, so no check runs before a tool. NovaClaw normally ships two — if this stays empty, something has gone wrong with this instance.",
+  "policies.inForce.all":
+    "Right now: {{count}} installed, and all of them run. Each one sees a tool call before it happens and may add a note, correct it, ask you first, or refuse it.",
+  "policies.inForce.some":
+    "Right now: {{count}} installed, and {{off}} switched off. The rest see a tool call before it happens and may add a note, correct it, ask you first, or refuse it.",
+  "policies.inForce.title": "What runs before a tool",
+  "policies.hint":
+    "These are installed with NovaClaw, not written here — a folder can ask for one by name, and no file can ever add a command of its own.",
+  "policies.row.describes": "It says: “{{describe}}”",
+  "policies.row.optIn": "Only runs in folders whose novaclaw.json asks for it by name.",
+  "policies.row.advisory": "Advisory: if it stops answering, your tool call still runs.",
+  "policies.row.safetyCritical": "If it stops answering, tool calls are refused until it does — on purpose.",
+  "policies.row.off": "Switched off — it is not consulted at all.",
+  "policies.row.requestedHere": "This folder asks for it by name.",
+  "policies.folder.title": "What this folder asks for",
+  "policies.folder.none": "Nothing — this folder takes whatever is installed and switched on.",
+  "policies.folder.requested": "{{file}} asks for: {{ids}}",
+  "policies.folder.missing.title": "Every tool in this folder is being refused",
+  "policies.folder.missing":
+    "{{file}} asks for {{ids}}, which is not installed here. A check that was asked for and is missing is not the same as no check, so NovaClaw refuses rather than run the folder unguarded. Install it, or remove that line from the file.",
+  "policies.folder.disabled.title": "Every tool in this folder is being refused",
+  "policies.folder.disabled":
+    "{{file}} asks for {{ids}}, and you have switched it off. Switch it back on above, or remove that line from the file.",
+
+  // The chat details sheet — what a policy actually DID in this chat.
+  "policies.session.title": "Checks that stepped in",
+  "policies.session.none":
+    "Nothing stepped in: every check allowed every tool call in this chat, and answered in time.",
+  "policies.session.unavailable": "Not available for this chat yet.",
+  "policies.session.summary.one": "1 tool call",
+  "policies.session.summary.many": "{{count}} tool calls",
+  "policies.session.ran": "It ran",
+  "policies.session.prevented": "It did not run",
+  "policies.session.unknownRan": "This NovaClaw cannot tell whether it ran",
+  "policies.session.outcome.deny": "Refused",
+  "policies.session.outcome.halt": "Refused, and the run was stopped",
+  "policies.session.outcome.patch": "Corrected first",
+  "policies.session.outcome.approve": "You were asked first",
+  "policies.session.outcome.context": "A note was added",
+  "policies.session.outcome.allow": "Allowed, with a check missing",
+  // ⚠️ Never folded into "Allowed". A row written by a newer NovaClaw must read as unfamiliar, not
+  // as reassuring — guessing in the permissive direction is how a refusal becomes a calm sentence.
+  "policies.session.outcome.unknown": "“{{decision}}” — a newer NovaClaw recorded this",
+  "policies.session.patched.title": "What was changed before it ran",
+  "policies.session.acted": "Done by {{ids}}",
+  "policies.session.silent": "Also consulted, and had nothing to say: {{ids}}",
+  "policies.session.unavailableProviders": "Did not answer: {{ids}}",
+  "policies.session.unresolved": "Not installed here any more: {{ids}}",
+
   // ── Settings → Project → the folder's permission rules, and where the OTHER rules come from ──
   //
   // 🔴 The sentences here carry the one thing a person needs when a tool call was refused: WHICH of
@@ -2663,6 +2730,16 @@ export const dict = {
   "skills.invocation.preset.help":
     "A shortcut that sets both switches at once: “Nova may choose this” off, “Show it for me to run” on.",
   "skills.invocation.preset.applied": "Both switches are already set that way.",
+  // The THIRD layer, and the three sentences below are deliberately different from one another:
+  // "this folder hides it" is fixed by editing a file in the repository, "you hid it" is fixed by
+  // the switch on this screen, and "your agents may not choose it" is a permission rule. A user who
+  // cannot tell which one is in force cannot fix any of them (AGENTS.md principle 12d).
+  "skills.invocation.project.hidden":
+    "This folder keeps this skill out of your slash menu. That comes from the folder's own novaclaw.json rather than from you, so the switch below cannot bring it back — editing that file can. Nothing here changes what your agents may do: a folder can take a skill off your menu, and it can never put one back on it.",
+  "skills.invocation.project.hiddenNamed":
+    "This folder keeps this skill out of your slash menu — that is {{file}} talking, not you, so the switch below cannot bring it back. Editing that file can. Nothing here changes what your agents may do: a folder can take a skill off your menu, and it can never put one back on it.",
+  "skills.invocation.project.overrides":
+    "Your own answer is “show it”, and it still is — this folder is overriding it while you work here.",
   "skills.invocation.blockedElsewhere":
     "Careful: another permission rule of yours already refuses this skill, so leaving this switch on changes nothing until that rule does. “Who can use it” above shows what your agents actually do.",
   "skills.invocation.locked.title": "These switches are unavailable for this skill",

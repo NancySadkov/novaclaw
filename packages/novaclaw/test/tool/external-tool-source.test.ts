@@ -100,6 +100,7 @@ const bypassedPolicyGate = Layer.succeed(
   ToolPolicyGate.Service.of({
     install: () => Effect.void,
     installed: () => Effect.succeed([]),
+    list: () => Effect.succeed([]),
     screen: (input) => Effect.succeed({ kind: "run", input: input.input }),
   }),
 )

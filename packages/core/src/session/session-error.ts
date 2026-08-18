@@ -192,6 +192,99 @@ const RETRYABLE_BY_DEFAULT = new Set<string>(["Transport", "ProviderInternal", "
 /** Every arm the display knows about — exported so a test can diff it against the schema's set. */
 export const sessionErrorArms: ReadonlyArray<string> = Object.keys(ARMS)
 
+// =============================================================================
+// WHAT A FAULT IS EVIDENCE ABOUT — the instrument, or the subject
+// =============================================================================
+//
+// 🔴 **The defect class this exists to make hard.** Measured 2026-08-18: six recipe cooks settled having
+// written nothing because the model endpoint had died (`_tag: "Transport"`), and the health check reported
+// **NOT WORKING — about: this NovaClaw**. It blamed the user's install for a dead endpoint. The evidence
+// only ever supported a statement about the INSTRUMENT; the verdict made one about the SUBJECT.
+//
+// That is a SHAPE, not one bug: any surface that turns "the work did not happen" into "your machine /
+// your install / your file is broken" is making the same mistake, and every such surface has to decide
+// the same question. So the decision lives here — beside `ARMS`, the one place that already owns the
+// closed fault vocabulary — rather than being re-derived correctly by each caller and wrongly by the next
+// one. Ruling 2 (*a fault is never described falsely*) is the law; this is its mechanism.
+//
+// ⚠️ **The default is the SAFE answer, deliberately** — the exclusion-guard precedent: a guard that sits
+// below every tool on a flag defaulting to "refuse" means a forgetful tool is refused rather than waved
+// through. Here the safe answer is `"instrument"`: a fault we do not recognise has NOT earned the right
+// to accuse the user's install. A new `ErrorTag` that nobody classifies therefore degrades to "I could
+// not tell", never to "your NovaClaw is broken" — and `session-error-evidence.test.ts` fails until the
+// author makes the call explicitly, so the safe default is a floor and not a hiding place.
+
+/**
+ * What a session fault licenses a statement ABOUT.
+ *
+ * | value | the fault happened | so an absence of work is evidence about |
+ * |---|---|---|
+ * | `instrument` | before anything ran on this machine | the model / the network / this instance's own policy — **never the install** |
+ * | `subject` | while running on this machine | the install, the machine, the files — the SUBJECT really did fail |
+ * | `stopped` | because a person stopped it | nothing; the work simply never happened |
+ */
+export type FaultEvidence = "instrument" | "subject" | "stopped"
+
+/**
+ * Every arm of `SessionMessage.ErrorTags`, classified. Kept as a record keyed on the SAME tags `ARMS`
+ * uses so a test can assert the two agree exactly, rather than as a `switch` whose gaps are invisible.
+ *
+ * The reasoning per arm, since "which side is this on?" is the whole judgement:
+ *
+ * - `Transport` · `ProviderInternal` · `RateLimit` · `QuotaExceeded` · `Authentication` · `NoRoute` ·
+ *   `UnknownProvider` — the request never produced a usable answer from the model. Nothing on this
+ *   machine was exercised, so nothing about this machine was learned.
+ * - `InvalidRequest` · `InvalidProviderOutput` — the model and this instance failed to understand each
+ *   other. That is a fault in the pairing, i.e. the instrument, and the user's files are untouched by it.
+ * - `OfflineBlocked` — a DECISION this instance made; the request never left the computer. It is a fact
+ *   about the instrument's configuration, and reporting it as a broken install would be doubly false:
+ *   the install is working exactly as it was told to.
+ * - `Interrupted` — a person pressed stop. There is no fault at all to attribute.
+ * - `ToolFailure` — **the one arm on the subject's side, and it earns it.** A tool failing means the
+ *   model DID reach this machine and this machine refused or broke: no compiler, a denied write, a
+ *   command that exited non-zero. That is the health check's actual question being answered.
+ */
+const EVIDENCE = {
+  InvalidRequest: "instrument",
+  NoRoute: "instrument",
+  Authentication: "instrument",
+  RateLimit: "instrument",
+  QuotaExceeded: "instrument",
+  ContentPolicy: "instrument",
+  ProviderInternal: "instrument",
+  Transport: "instrument",
+  OfflineBlocked: "instrument",
+  InvalidProviderOutput: "instrument",
+  UnknownProvider: "instrument",
+  Interrupted: "stopped",
+  ToolFailure: "subject",
+} as const satisfies Record<keyof typeof ARMS, FaultEvidence>
+
+/** Exported for the ratchet test — the classified set must equal `sessionErrorArms` exactly. */
+export const sessionErrorEvidenceArms: Readonly<Record<string, FaultEvidence>> = EVIDENCE
+
+/**
+ * Classify a fault. **Call this before writing any verdict about the user**, and treat anything other
+ * than `"subject"` as "I could not check this" rather than as a failure of theirs.
+ *
+ * ⚠️ Pass the fault, not the absence of one: `undefined` answers `"instrument"` because a caller that
+ * cannot produce a fault has not demonstrated anything about the subject either. A caller that knows the
+ * turn *completed* must not consult this at all — a completed turn that produced nothing IS evidence
+ * about the subject, and that is the one path to a fault report.
+ */
+export function faultEvidence(error: SessionErrorLike | undefined | null): FaultEvidence {
+  const raw = typeof error?.message === "string" ? error.message : ""
+  const tag = typeof error?._tag === "string" && error._tag.length > 0 ? error._tag : undefined
+  // The pre-`_tag` fallback `sessionErrorDisplay` already uses, kept identical so an old row classifies
+  // the same way it renders: an untagged "interrupted" is a stop, and untagged machine detail (an
+  // ECONNREFUSED with no tag) is a transport fault in every producer that emits one.
+  if (tag === undefined) {
+    if (/interrupted/i.test(raw)) return "stopped"
+    return "instrument"
+  }
+  return EVIDENCE[tag as keyof typeof EVIDENCE] ?? "instrument"
+}
+
 /**
  * Machine detail a person cannot act on and must never read in a chat. Deliberately NARROW: a
  * URL alone is not detail (naming the endpoint is the point), and a provider's own prose is kept

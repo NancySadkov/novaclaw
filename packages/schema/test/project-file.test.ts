@@ -320,6 +320,7 @@ describe("the sections an edit may name", () => {
         tune: { features: { memory: true } },
         exclude: ["a/**"],
         policies: ["policy.review"],
+        skills: { pdf: { show: false } },
       }),
     )
     expect(parsed.ok).toBe(true)
@@ -341,5 +342,111 @@ describe("the sections an edit may name", () => {
     const decode = Schema.decodeUnknownResult(ProjectFile.Section)
     for (const section of ProjectFile.SECTIONS) expect(decode(section)._tag).toBe("Success")
     for (const bogus of ["version", "futureSection", ""]) expect(decode(bogus)._tag).toBe("Failure")
+  })
+})
+
+/**
+ * The `skills` section — the THIRD narrowing layer.
+ *
+ * 🔴 The law: **a project may HIDE a skill, never UN-HIDE one the instance hid.** A `novaclaw.json`
+ * travels inside a repository somebody cloned, so a file that could un-hide would be a stranger's
+ * repo putting a skill back into the user's own slash menu. Same shape as `evaluateNarrowed` for
+ * permissions and `narrowTune` for the supervision switches.
+ *
+ * ⚠️ **A/B, run by hand and reported:** delete the `else if (choice.show === true)` branch and make
+ * `narrowSkills` keep every entry — the 🔴 cases go red. Delete the `show === true` guard in
+ * `writableSkills` — the write-side 🔴 goes red.
+ */
+describe("narrowSkills — a folder may hide, never un-hide", () => {
+  test("🔴 `show:false` is honoured; `show:true` is refused, not written into `hidden`", () => {
+    const result = ProjectFile.narrowSkills({ pdf: { show: false }, docx: { show: true } })
+    expect(result.hidden).toEqual(["pdf"])
+    expect(result.refused).toEqual(["docx"])
+  })
+
+  test("🔴 a file that only ever asks to SHOW hides nothing at all", () => {
+    const result = ProjectFile.narrowSkills({ pdf: { show: true }, xlsx: { show: true } })
+    expect(result.hidden).toEqual([])
+    expect(result.refused).toEqual(["pdf", "xlsx"])
+  })
+
+  test("an entry that takes no position is neither hidden nor refused — absent means inherit", () => {
+    expect(ProjectFile.narrowSkills({ pdf: {} })).toEqual({ hidden: [], refused: [] })
+  })
+
+  test("no section at all is not an empty section", () => {
+    expect(ProjectFile.narrowSkills(undefined)).toEqual({ hidden: [], refused: [] })
+  })
+
+  test("both lists are sorted, so a receipt and a UI never disagree about order", () => {
+    const result = ProjectFile.narrowSkills({
+      zeta: { show: false },
+      alpha: { show: false },
+      omega: { show: true },
+      beta: { show: true },
+    })
+    expect(result.hidden).toEqual(["alpha", "zeta"])
+    expect(result.refused).toEqual(["beta", "omega"])
+  })
+
+  /**
+   * ⚠️ `JSON.parse` gives `__proto__` an OWN data property, so a hostile file really can carry one.
+   * The output is an ARRAY of ids precisely so there is no object here whose prototype could be
+   * reassigned, and `Object.hasOwn` guards the read.
+   */
+  test("a skill named `__proto__` is an ordinary id, and nothing is written to a prototype", () => {
+    const declared = JSON.parse('{"__proto__":{"show":false},"pdf":{"show":false}}') as ProjectFile.Skills
+    const result = ProjectFile.narrowSkills(declared)
+    expect(result.hidden).toEqual(["__proto__", "pdf"])
+    expect(({} as Record<string, unknown>)["show"]).toBeUndefined()
+  })
+
+  test("a `skills` section reaches `parse` as declared, `show:true` included — the narrowing is the READER's", () => {
+    const parsed = ProjectFile.parse(write({ version: 1, skills: { pdf: { show: true } } }))
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    // 🔴 The value is legal in the FILE. Rejecting it would take the folder's tune, permissions and
+    // exclusion list down with it over a line that is merely inert — the opposite of narrowing.
+    expect(parsed.info.skills).toEqual({ pdf: { show: true } })
+    expect(ProjectFile.narrowSkills(parsed.info.skills).hidden).toEqual([])
+  })
+})
+
+describe("writableSkills — our own writer never emits a line our own reader discards", () => {
+  test("🔴 a `show:true` is dropped and reported rather than written", () => {
+    const result = ProjectFile.writableSkills({ pdf: { show: true }, docx: { show: false } })
+    expect(result.refused).toEqual(["pdf"])
+    expect({ ...result.skills }).toEqual({ docx: { show: false } })
+  })
+
+  test("an empty result is written as `{}` rather than dropped — the receipt stays honest", () => {
+    const result = ProjectFile.writableSkills({ pdf: { show: true } })
+    expect({ ...result.skills }).toEqual({})
+    expect(result.skills).not.toBeUndefined()
+  })
+
+  test("no section supplied is not an empty section", () => {
+    expect(ProjectFile.writableSkills(undefined)).toEqual({ skills: undefined, refused: [] })
+  })
+
+  test("an entry taking no position is kept — a folder may declare a row without an opinion", () => {
+    const result = ProjectFile.writableSkills({ pdf: {} })
+    expect({ ...result.skills }).toEqual({ pdf: {} })
+    expect(result.refused).toEqual([])
+  })
+
+  test("a `__proto__` key lands as an OWN property of the written object", () => {
+    const declared = JSON.parse('{"__proto__":{"show":false}}') as ProjectFile.Skills
+    const result = ProjectFile.writableSkills(declared)
+    expect(Object.hasOwn(result.skills as object, "__proto__")).toBe(true)
+    expect(JSON.parse(JSON.stringify(result.skills))).toEqual({ __proto__: { show: false } })
+  })
+
+  test("🔴 the write side is NOT the enforcement — a hand-written file bypasses it entirely", () => {
+    // The file never went through our writer. `narrowSkills` is what holds the line.
+    const parsed = ProjectFile.parse(write({ version: 1, skills: { pdf: { show: true } } }))
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(ProjectFile.narrowSkills(parsed.info.skills).hidden).not.toContain("pdf")
   })
 })

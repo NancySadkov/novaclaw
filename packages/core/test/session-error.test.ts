@@ -3,8 +3,10 @@ import { SessionMessage } from "../src/session/message"
 import {
   SESSION_ERROR_TEXT,
   endpointOf,
+  faultEvidence,
   isMachineDetail,
   sessionErrorArms,
+  sessionErrorEvidenceArms,
   sessionErrorDisplay,
   sessionErrorDiagnostic,
   sessionErrorEnglish,
@@ -458,5 +460,93 @@ describe("sessionErrorLike — the untyped record-level payload", () => {
   test("nothing readable returns undefined rather than a fabricated sentence", () => {
     for (const value of [undefined, null, "", "   ", 42, {}, { data: {} }, { message: 7 }, []])
       expect(sessionErrorLike(value), JSON.stringify(value) ?? "undefined").toBeUndefined()
+  })
+})
+
+// =============================================================================
+// 🔴 THE RATCHET: a fault about the INSTRUMENT may never become a verdict about the SUBJECT
+// =============================================================================
+//
+// Measured 2026-08-18: six recipe cooks wrote nothing because the model endpoint had died, and the
+// health check reported **NOT WORKING — about: this NovaClaw**. The evidence supported a statement about
+// the INSTRUMENT; the verdict made one about the SUBJECT. That is a shape, not one bug, and a pattern
+// others must remember is one they will forget — so it is a classifier plus this file, not a convention.
+
+describe("faultEvidence — the one place that decides what a fault is evidence ABOUT", () => {
+  const like = (tag: string, message = "boom") => ({ type: "unknown" as const, message, _tag: tag })
+
+  test("⭐ every arm of the schema's vocabulary is classified — a new tag cannot ship unclassified", () => {
+    // The ratchet itself. `sessionErrorArms` is already pinned against `SessionMessage.ErrorTags`, so
+    // pinning the evidence map against `sessionErrorArms` closes the chain: schema → display → blame.
+    // Adding an `ErrorTag` without deciding which side of the line it falls on fails HERE, at the one
+    // decision a forgetful author would otherwise leave to a default.
+    expect(Object.keys(sessionErrorEvidenceArms).sort()).toEqual([...sessionErrorArms].sort())
+  })
+
+  test("every provider-side and network-side fault is about the INSTRUMENT", () => {
+    for (const tag of [
+      "Transport",
+      "ProviderInternal",
+      "RateLimit",
+      "QuotaExceeded",
+      "Authentication",
+      "NoRoute",
+      "UnknownProvider",
+      "InvalidRequest",
+      "InvalidProviderOutput",
+      "ContentPolicy",
+      // A policy decision this instance made. The install is working exactly as it was told to, so
+      // reporting it as broken would be false twice over.
+      "OfflineBlocked",
+    ])
+      expect({ tag, evidence: faultEvidence(like(tag)) }).toEqual({ tag, evidence: "instrument" })
+  })
+
+  test("a tool failure is the ONE arm on the subject's side, and it earns it", () => {
+    // A tool failing means the model DID reach this machine and this machine refused or broke — no
+    // compiler, a denied write, a non-zero exit. That is the health check's actual question, answered.
+    expect(faultEvidence(like("ToolFailure", "gcc: command not found"))).toBe("subject")
+  })
+
+  test("a person pressing stop is neither — there is no fault to attribute", () => {
+    expect(faultEvidence(like("Interrupted"))).toBe("stopped")
+    // The pre-`_tag` fallback, kept identical to the one `sessionErrorDisplay` uses so an old row
+    // classifies the way it renders.
+    expect(faultEvidence({ type: "unknown", message: "The turn was interrupted" })).toBe("stopped")
+  })
+
+  test("⭐ the DEFAULT is the safe answer: an unclassified fault never accuses the user", () => {
+    // The exclusion-guard precedent — a guard below every tool on a flag defaulting to "refuse", so a
+    // forgetful tool is refused rather than waved through. Here the safe answer is `instrument`: a fault
+    // we do not recognise has not earned the right to blame the install. The test above stops this
+    // default from becoming a hiding place; this one stops it from being the WRONG default.
+    for (const error of [
+      undefined,
+      null,
+      { type: "unknown" as const, message: "boom" },
+      like("SomeTagFromANewerInstance"),
+      like("ToolFailureV2"),
+      { type: "unknown" as const, message: "connect ECONNREFUSED 192.168.178.40:8010" },
+    ])
+      expect({ error, evidence: faultEvidence(error) }).toEqual({ error, evidence: "instrument" })
+  })
+
+  test("⭐ no transport-shaped fault anywhere in the corpus classifies as `subject`", () => {
+    // The property, stated over the same corpus `never leaks machine detail` walks: whatever wording a
+    // producer invents, a transport failure may never license a claim about the user's machine.
+    for (const message of [
+      "HTTP transport failed: fetch failed | cause: connect ECONNREFUSED 192.168.178.40:8010",
+      "HTTP transport failed (target http://192.168.178.40:8010/v1/chat/completions)",
+      "getaddrinfo ENOTFOUND api.example.com",
+      "socket hang up",
+      "read ECONNRESET",
+    ]) {
+      expect({ message, evidence: faultEvidence({ type: "unknown", message, _tag: "Transport" }) }).toEqual({
+        message,
+        evidence: "instrument",
+      })
+      // …and untagged, which is every row written before `_tag` existed.
+      expect(faultEvidence({ type: "unknown", message })).not.toBe("subject")
+    }
   })
 })

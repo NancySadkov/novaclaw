@@ -4,6 +4,7 @@ import { Effect } from "effect"
 import { Command } from "@novaclaw/schema/command"
 import { CommandV2 } from "../command"
 import { Config } from "../config"
+import { ProjectFileCache } from "../project-file-cache"
 import { SkillV2 } from "../skill"
 import { SkillInvocation } from "../skill/invocation"
 import { ExternalCommandSource } from "./external-command-source"
@@ -51,10 +52,39 @@ const savedInvocation = Effect.fn("CommandList.savedInvocation")(function* () {
   return store as SkillInvocation.Store
 })
 
+/**
+ * The skill ids the folder's own `novaclaw.json` hides — the PROJECT half of "Show it for me to run".
+ *
+ * ⚠️ Resolved from the LOCATION's directory (`ProjectFileCache.LocalService`) because that is the
+ * only folder this list has. The
+ * permission evaluator uses the SESSION's working folder instead, and it can — an assert carries a
+ * session id. This list does not — the composer fetches it per location, before any session exists
+ * — and a location's directory is the folder the user opened. The two answers differ only for a
+ * session moved elsewhere after it was created, which is the same folder every other per-location
+ * surface in this list already answers for.
+ *
+ * ⚠️ Read through `ProjectFileCache` rather than resolving the file here, so this is the FIFTH
+ * consumer of ONE read of one `novaclaw.json` and not a fifth cache over it. Two caches over one
+ * file disagree across a mid-window edit, and a folder whose menu comes from the file it used to be
+ * while its permissions come from the file it now is, is the worst of both.
+ *
+ * 🔴 Already narrowed: `ProjectFileCache` stores `ProjectFile.narrowSkills(...).hidden`, so a folder
+ * asking to SHOW a skill the user hid never reaches this function at all. A project may hide, never
+ * un-hide.
+ */
+const projectHidden = Effect.fn("CommandList.projectHidden")(function* () {
+  const project = yield* ProjectFileCache.LocalService
+  return (yield* project.entry).skills
+})
+
 export const list: Effect.Effect<
   Command.Info[],
   never,
-  CommandV2.Service | SkillV2.Service | ExternalCommandSource.Service | Config.Service
+  | CommandV2.Service
+  | SkillV2.Service
+  | ExternalCommandSource.Service
+  | Config.Service
+  | ProjectFileCache.LocalService
 > = Effect.gen(function* () {
   const commands = yield* CommandV2.Service
   const skills = yield* SkillV2.Service
@@ -64,6 +94,9 @@ export const list: Effect.Effect<
   // skill here removes it from the user's own menu and changes nothing about what an agent may do.
   // The agent half is the `skill` permission action — see `core/src/skill/invocation.ts`.
   const invocation = yield* savedInvocation()
+  // ⚠️ Resolved ONCE per list rather than per skill: a mid-list TTL expiry would otherwise let two
+  // skills in one popover be judged against two different readings of one file.
+  const hidden = yield* projectHidden()
 
   const result: Command.Info[] = []
   const seen = new Set<string>()
@@ -77,7 +110,7 @@ export const list: Effect.Effect<
     // command outranks a same-named skill which outranks a same-named MCP prompt. Marking a hidden
     // skill as seen would let it suppress the MCP prompt behind it, so hiding one entry would
     // silently delete a different one.
-    if (!SkillInvocation.showsToUser(invocation, skill.name)) continue
+    if (!SkillInvocation.showsToUser(invocation, hidden, skill.name)) continue
     seen.add(skill.name)
     result.push({
       name: skill.name,

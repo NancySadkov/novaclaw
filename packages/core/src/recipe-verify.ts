@@ -103,7 +103,7 @@ import { UnknownReason } from "@novaclaw/schema/unknown-reason"
  * | `met` | WORKING | the artifact is there and matches its shape |
  * | `unmet` | NOT WORKING | we looked, and it is missing / empty / not what its extension says |
  * | `unknown` + `not-applicable` | NOT AVAILABLE | the model that cooked cannot do this at all |
- * | `unknown` + `not-measured` / `measurement-failed` | (no verdict) | we could not check |
+ * | `unknown` + `not-measured` / `measurement-failed` / `incomplete` | (no verdict) | we could not check |
  *
  * The four `unknown` reasons are `@novaclaw/schema/unknown-reason`'s shared vocabulary, not a fifth
  * private spelling of "we do not know" (`notes/reports/receipt-unknowns-vocabulary-2026-08-12.md`).
@@ -119,6 +119,40 @@ import { UnknownReason } from "@novaclaw/schema/unknown-reason"
  * `model` → we check the files normally. Caller passes a model whose capabilities we could not resolve →
  * that is an unmeasured fact, and filing it under the reason that tells a reader to stop asking would
  * silently close an open question. Same trap as the Windows enclosure probe in the report above.
+ *
+ * ── 🔴 `unmet` IS A CLAIM ABOUT THE SUBJECT, AND IT NEEDS THE INSTRUMENT TO HAVE WORKED ────────────
+ *
+ * **Measured 2026-08-18, and this is the defect the {@link CookOutcome} arm exists for.** Six cooks
+ * "settled" in 47–57 s having written nothing, because the model endpoint had died mid-run
+ * (`"finish":"error","error":{"message":"HTTP transport failed","_tag":"Transport"}`). Every declared
+ * file was absent, so every row was `unmet`, so the verdict was `not-working` and the receipt read **NOT
+ * WORKING — about: this NovaClaw**. It blamed the user's install for a dead endpoint.
+ *
+ * Nothing above was wrong about the *filesystem*: the files really were absent. The error is one step
+ * earlier, in what absence MEANS. `unmet` says *"we looked, and the install did not do its job"* — and
+ * that inference is only valid if the cook actually ran on this install. A cook that never reached the
+ * model produced no evidence about this machine at all, so its empty folder is an unmeasured fact, not a
+ * failed one. Ruling 2 in its exact words: *a check that cannot verify a claim must say "I could not
+ * check this", never "missing"*.
+ *
+ * The rule this file now enforces, and the reason it is stated as a direction rather than as a special
+ * case: **a cook's outcome may SOFTEN an `unmet` and may never overturn a `met`.** A file that is there
+ * is positive evidence and no story about the instrument can take it away (a cook whose fourth turn died
+ * on transport, having written everything on its second, really did work). A file that is *not* there is
+ * only evidence when the instrument worked. So the folder is read first, exactly as before, and the cook
+ * outcome is applied afterwards in one direction only — which is why this cannot regress into "a
+ * transport error hides a real failure".
+ *
+ * Which reason each non-`ran` state maps to is `@novaclaw/schema/unknown-reason`'s table, not taste:
+ * `blocked` is `measurement-failed` (*it ran and produced nothing usable → investigate the instrument*
+ * — the model server is the instrument), and `stopped` is `incomplete` (*it started and did not finish;
+ * any value is a FLOOR* — which is exactly what a half-finished folder is). Neither is `not-applicable`:
+ * the question *"does this install work?"* is still wide open, and `not-applicable` would close it.
+ *
+ * ⚠️ **Deciding WHICH faults are instrument faults is deliberately NOT this file's job.**
+ * `@novaclaw/core/session/session-error`'s `faultEvidence` owns that, because it already owns the closed
+ * fault vocabulary and because every other surface with this shape must answer it the same way. This
+ * module takes the answer as an input, so a new `ErrorTag` is classified once for the whole product.
  */
 
 // =============================================================================
@@ -154,6 +188,32 @@ export interface Receipt {
   readonly verdict: Verdict
   readonly checks: readonly Check[]
   readonly at: number
+  /** What the cook itself did, when the caller could tell us. Absent = we were not told. */
+  readonly cook?: CookOutcome
+}
+
+/**
+ * What happened to the COOK, as distinct from what is in the folder — see the header's third block.
+ *
+ * ⚠️ **`ran` is a claim and `undefined` is not.** A caller that knows the cook reached the model and
+ * finished says `ran`; a caller that has no idea says nothing and gets today's behaviour unchanged. They
+ * are not the same, and collapsing them would make "I did not ask" indistinguishable from "I asked and
+ * it was fine" — which is the shape of mistake this whole arm is about.
+ */
+export interface CookOutcome {
+  /**
+   * `ran` — it reached the model and did (or failed to do) its work HERE, so the folder is evidence.
+   * `blocked` — it never got that far: the model server was unreachable, the account was rejected,
+   *   offline mode refused the request. The folder is evidence about nothing.
+   * `stopped` — a person stopped it. Whatever is in the folder is a floor, not an outcome.
+   */
+  readonly state: "ran" | "blocked" | "stopped"
+  /**
+   * A calm sentence naming what happened, already free of transport noise — in practice
+   * `sessionErrorDisplay(...).headline`. Shown to the user verbatim, so it must never carry an errno or
+   * a stack frame; when it is absent a house sentence is used instead.
+   */
+  readonly why?: string
 }
 
 /**
@@ -340,7 +400,59 @@ export interface Input {
   readonly declares: readonly string[]
   /** What the instance knows about the model that cooked, when it knows anything. */
   readonly model?: CookingModel
+  /** What the cook itself did, when the caller could tell us. See {@link CookOutcome}. */
+  readonly cook?: CookOutcome
   readonly now?: () => number
+}
+
+// =============================================================================
+// The one-directional softening: an `unmet` needs the instrument to have worked
+// =============================================================================
+
+/**
+ * The reason each non-`ran` state files under, from `@novaclaw/schema/unknown-reason`'s table. Kept as
+ * data so the mapping is assertable rather than buried in a branch — the vocabulary module's own point.
+ */
+const REASON_FOR: Readonly<Record<"blocked" | "stopped", UnknownReason.Reason>> = {
+  /** The instrument ran and produced nothing usable → *investigate the instrument*. */
+  blocked: "measurement-failed",
+  /** It started and did not finish → whatever is in the folder is a FLOOR. */
+  stopped: "incomplete",
+}
+
+/**
+ * Used when the caller had no sentence of its own. A SENTENCE, matching what `sessionErrorDisplay`
+ * hands over, so the two are interchangeable wherever `why` is printed. Never accuses.
+ */
+const HOUSE_REASON: Readonly<Record<"blocked" | "stopped", string>> = {
+  blocked: "The model never answered.",
+  stopped: "It was stopped before it finished.",
+}
+
+/** A caller's sentence is untrusted for punctuation only — the words themselves are used verbatim. */
+const period = (text: string) => (/[.!?…]$/.test(text) ? text : `${text}.`)
+
+/**
+ * Re-file every `unmet` row as `unknown` when the cook could not have produced evidence about the host.
+ *
+ * ⚠️ **One direction only, and that is the safety argument.** `met` and every existing `unknown` pass
+ * through untouched, so this can only ever move a receipt from "your install failed" towards "I could not
+ * tell" — never the reverse. A transport error can therefore never HIDE a genuine failure: it can only
+ * stop us from asserting one we did not witness.
+ *
+ * `looked` is carried forward on purpose. The path we inspected is a true fact about what we did, and a
+ * reader who wants to open the folder themselves still needs it; dropping it would make the honest answer
+ * less useful than the false one it replaces.
+ */
+const soften = (checks: readonly Check[], cook: CookOutcome | undefined): readonly Check[] => {
+  if (cook === undefined || cook.state === "ran") return checks
+  const reason = REASON_FOR[cook.state]
+  const why = period(cook.why?.trim() || HOUSE_REASON[cook.state])
+  return checks.map((check) =>
+    check.outcome === "unmet"
+      ? { declared: check.declared, outcome: "unknown" as const, reason, ...(check.looked ? { looked: check.looked } : {}), checked: why }
+      : check,
+  )
 }
 
 /**
@@ -351,7 +463,7 @@ export interface Input {
  */
 export const verify = async (input: Input): Promise<Receipt> => {
   const at = (input.now ?? Date.now)()
-  const base = { recipe: input.recipeName, directory: input.directory, at }
+  const base = { recipe: input.recipeName, directory: input.directory, at, ...(input.cook ? { cook: input.cook } : {}) }
 
   // ── NOT AVAILABLE ─────────────────────────────────────────────────────────────────────────────────
   // A model that cannot call tools cannot have written a file, so every declaration is unmeasurable
@@ -381,7 +493,11 @@ export const verify = async (input: Input): Promise<Receipt> => {
 
   const checks: Check[] = []
   for (const declared of input.declares) checks.push(await checkOne(input.directory, declared))
-  return { ...base, verdict: verdictOf(checks), checks }
+  // ⚠️ The folder is read FIRST and the cook's outcome applied afterwards, never the other way round —
+  // see the header. A blocked cook that nevertheless left every artifact behind still reads WORKING,
+  // because a file that is there is positive evidence and no story about the instrument removes it.
+  const softened = soften(checks, input.cook)
+  return { ...base, verdict: verdictOf(softened), checks: softened }
 }
 
 /**
@@ -446,8 +562,35 @@ export const summary = (receipt: Receipt): string => {
       `NovaClaw — run it again with a model that can use tools.`
     )
 
+  // ── The cook never got to exercise this install ────────────────────────────────────────────────────
+  // 🔴 The sentence that used to read "NOT WORKING — about: this NovaClaw" when an endpoint died. It
+  // must do three things in this order: say we could not check, name what stopped it, and say what to do.
+  // It must NOT contain a word about the install being at fault — that is the whole defect — and the
+  // `not-working` arm below is now unreachable for a blocked cook by construction (`soften` leaves no
+  // `unmet` row), so this is a sentence for a state, not a second guess at the same state.
+  const declaresNothing = receipt.checks.length === 0
+  const hint =
+    ` (This recipe also names no files a finished cook leaves behind, so add a “produces:” line and I ` +
+    `can check it properly next time.)`
+  if (receipt.cook?.state === "blocked" && receipt.verdict === "unknown")
+    return (
+      `${name} — I could not check this cook. ${period(receipt.cook.why?.trim() || HOUSE_REASON.blocked)} ` +
+      `The recipe never got to run on this computer, so there is nothing here for me to judge — and ` +
+      `nothing here says anything is wrong with this NovaClaw. Start the model server again, or pick a ` +
+      `model that is running, and cook it once more.` +
+      (declaresNothing ? hint : "")
+    )
+
+  if (receipt.cook?.state === "stopped" && receipt.verdict === "unknown")
+    return (
+      `${name} — I could not check this cook. ${period(receipt.cook.why?.trim() || HOUSE_REASON.stopped)} ` +
+      `Anything missing from ${receipt.directory} is work that never happened rather than work that ` +
+      `failed, so this tells us nothing about this NovaClaw either way. Run it again and let it finish.` +
+      (declaresNothing ? hint : "")
+    )
+
   if (receipt.verdict === "unknown")
-    return receipt.checks.length === 0
+    return declaresNothing
       ? `${name} — I cannot say whether this cook worked: the recipe does not name anything it produces. ` +
           `Add a “produces:” line naming the files a finished cook leaves behind (for example ` +
           `“produces: report.md”) and I can check it for you next time.`

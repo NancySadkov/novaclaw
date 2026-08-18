@@ -68,6 +68,12 @@ export interface RunResult {
   readonly assets: readonly string[]
   /** What `verifyRecipe` will judge this cook on. Empty = the recipe declares no postcondition. */
   readonly produces: readonly string[]
+  /**
+   * The model this cook runs on, as `providerID/modelID` — the instance's own answer, so a caller that
+   * named no model still learns which one it got. Pass it back to {@link verifyRecipe}: without it the
+   * NOT AVAILABLE arm cannot fire from this app at all, and a tools-less model reads as a broken install.
+   */
+  readonly model?: string
 }
 
 /**
@@ -96,6 +102,12 @@ export interface VerifyResult {
   readonly checks: readonly VerifyCheck[]
   readonly summary: string
   readonly at: number
+  /**
+   * What the COOK did, when a `sessionID` was supplied. `blocked` means it never reached the model, so
+   * an empty folder is evidence about the endpoint and about nothing else — that is what stops a dead
+   * model server rendering as *"Did not work · this NovaClaw"*. Absent ≠ `ran`.
+   */
+  readonly cookState?: "ran" | "blocked" | "stopped"
 }
 
 const call = <T>(server: ServerConnection.HttpBase, method: string, route: string, body?: unknown): Promise<T> =>
@@ -135,5 +147,5 @@ export const runRecipe = (
 export const verifyRecipe = (
   server: ServerConnection.HttpBase,
   slug: string,
-  input: { directory: string; model?: string },
+  input: { directory: string; model?: string; sessionID?: string },
 ) => call<VerifyResult>(server, "POST", `api/recipe/${encodeURIComponent(slug)}/verify`, input)

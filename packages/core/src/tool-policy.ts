@@ -475,6 +475,39 @@ export const validateRegistration = (id: string, installed: ReadonlySet<string>)
   return Effect.void
 }
 
+/** One document's `config.tool_policy` section: a sparse map of switches, keyed by policy id. */
+export type SwitchDeclaration = Readonly<Record<string, { readonly enabled?: boolean } | undefined>>
+
+/**
+ * Fold the config documents' `tool_policy` sections into the set of ids that are switched OFF.
+ *
+ * Pure, and exported, for one reason: **the fold is last-writer-wins in BOTH directions and the
+ * layered case cannot be reached through the real `Config` layer today** — there is exactly one
+ * synthetic settings document, so a gate test can never make a later document overturn an earlier
+ * one. Leaving that branch inside the gate would make it code whose only justification is a comment;
+ * here it is a function with a test.
+ *
+ * ⚠️ `enabled: true` DELETES rather than being ignored. A switch that only worked in the disabling
+ * direction is a one-way door: the later document could turn a guard off and never back on, which is
+ * the opposite of how every other sparse settings map in this repo resolves.
+ *
+ * ⚠️ Ids are taken verbatim and are NOT validated against {@link ProjectFile.POLICY_ID_PATTERN}. A
+ * stored switch for an id no provider registered is inert by construction (nothing looks it up), and
+ * refusing to decode the whole section because of one stale row would let a removed plugin brick the
+ * switch for every policy beside it.
+ */
+export function disabledPolicies(declarations: readonly (SwitchDeclaration | undefined)[]): Set<string> {
+  const off = new Set<string>()
+  for (const declaration of declarations) {
+    if (!declaration) continue
+    for (const [id, choice] of Object.entries(declaration)) {
+      if (choice?.enabled === false) off.add(id)
+      else off.delete(id)
+    }
+  }
+  return off
+}
+
 /**
  * The refusal for a project that names a policy which is not installed.
  *
@@ -498,5 +531,33 @@ export function missingPolicyRefusal(missing: readonly string[], file: string, i
     `Installed policies right now: ${installed.length === 0 ? "(none)" : installed.map((id) => `\`${id}\``).join(", ")}. ` +
     `The user can fix this by installing the missing ${missing.length === 1 ? "policy" : "policies"} or by ` +
     `removing the entry from the \`policies\` section of that file; say so in your reply and stop retrying.`
+  )
+}
+
+/**
+ * The refusal for a project that names a policy the USER has switched off in Settings.
+ *
+ * 🔴 **Spelled differently from {@link missingPolicyRefusal} because the fix is different, and that
+ * is the whole reason it is its own function.** "This NovaClaw has never heard of that policy" and
+ * "it is installed and you turned it off" send a reader in opposite directions — one goes looking
+ * for something to install, the other flips a switch they already own. One message covering both
+ * would send half its readers the wrong way, which is the mistake `settings.project.invalid` records
+ * for its own two reasons.
+ *
+ * ⚠️ The DIRECTION is the same as the missing case, and it has to be: a folder that asked for a
+ * guard and did not get one is refused rather than run unpoliced. Turning a policy off is allowed —
+ * it is the operator's own instance — but it cannot silently downgrade a folder that declared it.
+ */
+export function disabledPolicyRefusal(disabled: readonly string[], file: string) {
+  const names = disabled.map((id) => `\`${id}\``).join(", ")
+  const one = disabled.length === 1
+  return (
+    `Refused before running: this folder's \`${file.replaceAll("\\", "/")}\` asks for the pre-action ` +
+    `${one ? "policy" : "policies"} ${names}, which ${one ? "is" : "are"} installed in this NovaClaw but ` +
+    `switched OFF in Settings. A requested guard that has been turned off is not the same as no guard, so ` +
+    `every tool call in this folder is refused rather than run unpoliced — retrying, or calling a different ` +
+    `tool, will be refused the same way. Only the person at this computer can resolve it, in Settings → ` +
+    `Policies (switch ${one ? "it" : "them"} back on) or by removing the entry from the \`policies\` section ` +
+    `of that file. You cannot fix this from inside the session: say so in your reply and stop retrying.`
   )
 }

@@ -38,6 +38,8 @@ const projectState = (over: Partial<Extract<ProjectState, { kind: "project" }>> 
   permissionRules: 0,
   permissions: [],
   exclude: [],
+  skills: [],
+  skillsRefused: [],
   ...over,
 })
 

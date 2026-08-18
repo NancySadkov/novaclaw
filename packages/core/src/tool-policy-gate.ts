@@ -1,6 +1,7 @@
 export * as ToolPolicyGate from "./tool-policy-gate"
 
 import { Context, Effect, Layer, Scope } from "effect"
+import { Config } from "./config"
 import { Database } from "./database/database"
 import { makeLocationNode } from "./effect/app-node"
 import { Location } from "./location"
@@ -74,8 +75,30 @@ export interface Interface {
   ) => Effect.Effect<void, ToolPolicy.RegistrationError, Scope.Scope>
   /** Every installed policy id, sorted. */
   readonly installed: () => Effect.Effect<readonly string[]>
+  /**
+   * Every installed policy, with what it does and whether it is switched on — the management
+   * surface's whole input.
+   *
+   * ⚠️ `enabled` is computed HERE rather than by the caller, because it is a fact about what the
+   * gate will do on the next tool call. A route that re-derived it from the config would be a
+   * second answer to "is this guard running", and the two would disagree the day the rule changes.
+   */
+  readonly list: () => Effect.Effect<readonly Installed[]>
   /** Decide about one tool call. Never fails: a refusal is a value, not an error channel. */
   readonly screen: (input: ScreenInput) => Effect.Effect<Screened>
+}
+
+/** One installed policy, as a surface that lists them needs it. */
+export interface Installed {
+  readonly id: string
+  /** The provider's own one-line description. AUTHOR TEXT — a plugin writes its own. */
+  readonly describe: string
+  /** `false` marks a policy a folder must opt into by naming it in its `novaclaw.json`. */
+  readonly alwaysOn: boolean
+  /** `false` marks an ADVISORY policy, whose failure to answer does not refuse the call. */
+  readonly safetyCritical: boolean
+  /** Whether it will be consulted at all — `config.tool_policy.<id>.enabled`, absent = yes. */
+  readonly enabled: boolean
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/ToolPolicyGate") {}
@@ -84,6 +107,7 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const { db } = yield* Database.Service
+    const config = yield* Config.Service
     const location = yield* Location.Service
     const permission = yield* PermissionV2.Service
     const projects = yield* ProjectFileCache.Service
@@ -115,6 +139,47 @@ export const layer = Layer.effect(
             )
           }),
         )
+      })
+
+    /**
+     * The ids the person at this computer has switched OFF.
+     *
+     * 🔴 **Read THROUGH `config.entries()` on every screened call, never hoisted** — ruling 3, the
+     * same discipline the Config layer records for itself: *a settings change is not a reboot*. A
+     * guard the user just turned off must be off for the very next tool call, and a guard they just
+     * turned back on must be consulted again without restarting the instance. Hoisting this would
+     * be a cache with no invalidation, on a switch whose whole purpose is to take effect now.
+     *
+     * ⚠️ Cost, and it IS on the hot path (once per screened tool call): one single-table SELECT
+     * plus the settings decode `Config.entries()` already performs. That is the same read
+     * `tool/bash.ts` makes per call and the runner makes per turn — measured beside the provider
+     * budget in `test/tool-policy-timeout.test.ts`. It is deliberately paid AFTER the in-memory
+     * applicability filter, so an instance with nothing installed pays nothing at all.
+     *
+     * Later documents win per id, exactly as every other sparse settings map resolves. The FOLD
+     * itself lives in `tool-policy.ts` as a pure function, because its layered case is unreachable
+     * through the real Config layer (there is one synthetic settings document) and a branch that no
+     * test can reach is a comment, not code. This side only gathers the documents.
+     */
+    const disabledIDs = Effect.fnUntraced(function* () {
+      const entries = yield* config.entries()
+      return ToolPolicy.disabledPolicies(
+        entries.filter((entry) => entry.type === "document").map((entry) => entry.info.tool_policy),
+      )
+    })
+
+    const list: Interface["list"] = () =>
+      Effect.gen(function* () {
+        const off = yield* disabledIDs()
+        return [...providers.values()]
+          .map((provider) => ({
+            id: provider.id,
+            describe: provider.describe,
+            alwaysOn: ToolPolicy.alwaysOn(provider),
+            safetyCritical: ToolPolicy.safetyCritical(provider),
+            enabled: !off.has(provider.id),
+          }))
+          .toSorted((a, b) => a.id.localeCompare(b.id))
       })
 
     /**
@@ -231,11 +296,29 @@ export const layer = Layer.effect(
       // the first one untestable: the seam's determinism test would keep passing with `compose`'s
       // sort deleted, which is the shape of a guard that is green because something else is doing
       // its job. One decision, one place (ruling 6) — the order belongs to the composer's contract.
-      const applicable = [...providers.values()].filter(
+      const candidates = [...providers.values()].filter(
         (provider) => ToolPolicy.alwaysOn(provider) || wanted.has(provider.id),
       )
       // The fast path, and it is the normal one: nothing installed applies, so nothing is consulted,
-      // nothing is composed and no row is written.
+      // nothing is composed, no row is written — and, deliberately, the settings store is not read.
+      // Placing the config read AFTER this is what keeps an instance with no policies free.
+      if (candidates.length === 0 && requested.length === 0)
+        return { kind: "run", input: input.input } satisfies Screened
+
+      // 🔴 What the user switched off in Settings. The direction below is the same fail-closed one
+      // the missing case uses: a folder that DECLARED a policy which is now off is refused, because
+      // "the guard you asked for is not running" must never be spelled the same way as "you asked
+      // for nothing". A policy nobody's folder declared simply stops being consulted.
+      const off = yield* disabledIDs()
+      const disabledRequested = requested.filter((id) => providers.has(id) && off.has(id)).toSorted()
+      if (disabledRequested.length > 0)
+        return {
+          kind: "refuse",
+          halt: false,
+          message: ToolPolicy.disabledPolicyRefusal(disabledRequested, project.file ?? `${directory}/novaclaw.json`),
+        } satisfies Screened
+
+      const applicable = candidates.filter((provider) => !off.has(provider.id))
       if (applicable.length === 0) return { kind: "run", input: input.input } satisfies Screened
 
       const request: ToolPolicy.Request = {
@@ -360,6 +443,7 @@ export const layer = Layer.effect(
     return Service.of({
       install,
       installed: () => Effect.sync(() => [...providers.keys()].toSorted()),
+      list,
       screen,
     })
   }),
@@ -388,5 +472,5 @@ export function refusalMessage(decision: ToolPolicy.Decision) {
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [Database.node, Location.node, PermissionV2.node, ProjectFileCache.node, SessionStore.node],
+  deps: [Config.node, Database.node, Location.node, PermissionV2.node, ProjectFileCache.node, SessionStore.node],
 })

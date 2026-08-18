@@ -23,10 +23,47 @@ export type { Enablement, PermissionRule }
 export interface InvocationView {
   /** The "Nova may choose this" switch position. */
   readonly nova: boolean
-  /** The "Show it for me to run" switch position. */
+  /**
+   * The "Show it for me to run" switch position — the USER's own answer, project or no project.
+   *
+   * ⚠️ Deliberately not the folded one. A folder that hides a skill must not make this switch read
+   * "off", because then it would appear to have been moved by a repository and moving it back would
+   * appear not to work. {@link InvocationView.hiddenByProject} carries the folder's statement, and
+   * {@link InvocationView.effectiveMe} is what the slash menu actually does.
+   */
   readonly me: boolean
-  /** The name for the pair — a LABEL derived from the two booleans, never a stored third state. */
+  /** Whether the folder's `novaclaw.json` hides this skill from the slash menu. */
+  readonly hiddenByProject: boolean
+  /**
+   * Whether it is in the slash menu right now, both layers folded — `me && !hiddenByProject`.
+   *
+   * This is what `CommandList` serves, and it is what the "right now" line must describe.
+   */
+  readonly effectiveMe: boolean
+  /** Which layer produced {@link effectiveMe}. Principle 12(d): a user must be able to tell. */
+  readonly meBy: SkillInvocation.ShownBy
+  /**
+   * The name for the pair of SWITCHES — a LABEL derived from the two booleans, never a stored third
+   * state. This is what the "Only when I choose it" button compares itself against.
+   *
+   * ⚠️ NOT the sentence that says what is in force. See {@link inForce}.
+   */
   readonly preset: SkillInvocation.Preset
+  /**
+   * The name for what is ACTUALLY happening, folder included — `presetOf({nova, me: effectiveMe})`.
+   *
+   * 🔴 **Found by running it, not by a test.** Principle 12(d) asks for *what is in force right
+   * now*, before any control, and the first cut used {@link preset} for that line. On a skill the
+   * folder hides, the page then read *"it is in your slash menu for you to run"* directly above
+   * *"this folder keeps this skill out of your slash menu"* — a sentence contradicted by the next
+   * one, which is the fault-described-falsely shape with two sentences instead of none. The unit
+   * tests were green: they asserted the preset, which was correctly reporting the switches.
+   *
+   * So the in-force line describes the OUTCOME and {@link preset} keeps describing the controls.
+   * They differ only while a folder overrides the user, which is exactly when the difference is the
+   * thing the reader needs.
+   */
+  readonly inForce: SkillInvocation.Preset
   /** True when the pair is exactly the "Only when I choose it" preset. */
   readonly isOnlyWhenIChoose: boolean
   /** The stable id, when this skill's name can be written down at all. */
@@ -51,6 +88,13 @@ export interface InvocationInput {
   readonly rules: readonly PermissionRule[]
   /** `config.skill_invocation`. */
   readonly store: SkillInvocation.Store | undefined
+  /**
+   * The skill ids the session folder's `novaclaw.json` hides — `GET /api/project`'s `skills`.
+   *
+   * ⚠️ Already narrowed by the server: a folder asking to SHOW a skill never appears here, because
+   * a project may hide and may never un-hide. `undefined` means "no project, or not asked".
+   */
+  readonly projectHidden?: readonly string[]
   /** What `apps/skills.ts` already computed per agent — our only view of the WHOLE ruleset. */
   readonly enablement: Enablement
 }
@@ -58,12 +102,21 @@ export interface InvocationInput {
 export function invocationOf(input: InvocationInput): InvocationView {
   const identity = SkillInvocation.identify(input.name)
   const nova = !SkillInvocation.deniedByName(input.rules, input.name)
-  const me = SkillInvocation.showsToUser(input.store, input.name)
+  const seen = SkillInvocation.visibility(input.store, input.projectHidden, input.name)
+  const me = seen.instance
+  // ⚠️ The PRESET names the pair of SWITCHES, not the folded outcome. It labels what the two
+  // controls on this page say, and a folder's file moves neither of them — folding it in here would
+  // print "Right now: neither" over two switches both reading "on", which is the confident-falsehood
+  // shape. The folder's own sentence is a separate line; see `hiddenByProject`.
   const state = { nova, me }
   return {
     nova,
     me,
+    hiddenByProject: seen.project,
+    effectiveMe: seen.show,
+    meBy: seen.by,
     preset: SkillInvocation.presetOf(state),
+    inForce: SkillInvocation.presetOf({ nova, me: seen.show }),
     isOnlyWhenIChoose:
       nova === SkillInvocation.ONLY_WHEN_I_CHOOSE.nova && me === SkillInvocation.ONLY_WHEN_I_CHOOSE.me,
     ...(identity.ok ? { id: identity.id } : { locked: identity.reason }),

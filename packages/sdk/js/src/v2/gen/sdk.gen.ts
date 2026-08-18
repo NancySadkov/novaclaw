@@ -3064,6 +3064,28 @@ class ApiMemory extends NovaClawApiClient {
   }
 }
 
+class ApiPolicy extends NovaClawApiClient {
+  /**
+   * List installed pre-action policies
+   *
+   * Every installed policy with its own description, whether it runs by default, whether it fails closed, and whether it is switched on — plus the ids this folder's novaclaw.json asks for and any of those that are missing or switched off (either of which refuses every tool call here).
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
+    return (options?.client ?? this.client).get<T.PolicyListResponses, T.PolicyListErrors, ThrowOnError>({
+      url: "/api/policy",
+      ...options,
+      query,
+    })
+  }
+}
+
 class ApiQuestion extends NovaClawApiClient {
   /**
    * List pending questions
@@ -6116,11 +6138,16 @@ class ApiV2Recipe extends NovaClawApiClient {
       slug: string
       directory: string
       model?: string
+      sessionID?: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
     const path = { slug: parameters?.["slug"] }
-    const body = { directory: parameters?.["directory"], model: parameters?.["model"] }
+    const body = {
+      directory: parameters?.["directory"],
+      model: parameters?.["model"],
+      sessionID: parameters?.["sessionID"],
+    }
     return (options?.client ?? this.client).post<T.V2RecipeVerifyResponses, T.V2RecipeVerifyErrors, ThrowOnError>({
       url: "/api/recipe/{slug}/verify",
       ...options,
@@ -7088,6 +7115,10 @@ export class NovaclawClient extends NovaClawApiClient {
   private _memory?: ApiMemory
   get memory(): ApiMemory {
     return (this._memory ??= new ApiMemory({ client: this.client }))
+  }
+  private _policy?: ApiPolicy
+  get policy(): ApiPolicy {
+    return (this._policy ??= new ApiPolicy({ client: this.client }))
   }
   private _question?: ApiQuestion
   get question(): ApiQuestion {

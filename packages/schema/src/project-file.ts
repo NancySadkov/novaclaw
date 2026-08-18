@@ -156,6 +156,51 @@ export const PolicyID = Schema.String.check(Schema.isPattern(POLICY_ID_PATTERN))
 })
 export type PolicyID = typeof PolicyID.Type
 
+/**
+ * What one skill's entry in a project's `skills` section may say.
+ *
+ * 🔴 **Structurally identical to `Config.Info.skill_invocation`'s entry, and only ONE of its two
+ * values can ever bite.** The instance store is the user's own answer to *"does this appear in MY
+ * slash menu"*; this is a folder's answer to the same question, and a folder is UNTRUSTED INPUT — a
+ * `novaclaw.json` travels inside a repository somebody cloned. So `show:false` is honoured (the
+ * folder hides a skill while you are working in it) and `show:true` is provably inert: against an
+ * instance that already shows the skill it changes nothing, and against one that HIDES it, it would
+ * be a stranger's repository putting a skill back into the user's own menu. See {@link narrowSkills}.
+ *
+ * ⚠️ **Why `Schema.Boolean` and not `Schema.Literal(false)`, which would make an un-hide
+ * unspellable.** That is the `Tune.mode` trick, and it is right there because `mode:"goal-oriented"`
+ * is a request to start unattended agents — a file asking for it is a file whose every other section
+ * is now suspect, so refusing the whole document is proportionate. `{"show":true}` is not hostile;
+ * it is a folder saying something ordinary that this build declines to act on. Refusing the whole
+ * file for it would take the folder's tune, permissions and exclusion list down with it, which is
+ * the opposite of narrowing. It is dropped and REPORTED instead — the shape `writablePermissions`
+ * already uses for the other provably-inert declaration.
+ *
+ * ⚠️ There is deliberately no "may Nova choose it" field here. That switch is the `skill` PERMISSION
+ * action, and a project already narrows it through the `permissions` section that
+ * `PermissionV2.evaluateNarrowed` enforces. A second spelling of one decision is two gates that can
+ * disagree — the argument is written out in `core/src/skill/invocation.ts`.
+ */
+export const SkillChoice = Schema.Struct({
+  show: Schema.optional(Schema.Boolean),
+}).annotate({ identifier: "Project.SkillChoice" })
+export type SkillChoice = typeof SkillChoice.Type
+
+/**
+ * The `skills` section — sparse, keyed by the skill's own name VERBATIM.
+ *
+ * ⚠️ The key is `SkillInvocation.identify`'s id and nothing else: no case folding, no globbing, no
+ * normalisation. Folding would map two distinct names onto one key, so an imported `Writer` would
+ * inherit whatever the user decided about their own `writer`; globbing would let `pdf*` in a cloned
+ * repo hide every skill whose name starts with `pdf`. The lookup is an exact string match against
+ * the id the engine holds, which is why a `*` in a key can only ever match a skill literally named
+ * that — and such a name has no id at all, so it matches nothing.
+ *
+ * ⚠️ Absent means INHERIT, never "shown". Same sparse-override discipline as {@link Tune}.
+ */
+export const Skills = Schema.Record(Schema.String, SkillChoice).annotate({ identifier: "Project.Skills" })
+export type Skills = typeof Skills.Type
+
 /** What a folder may declare about itself. Every section optional: an empty project is still valid. */
 export const Info = Schema.Struct({
   version: Schema.Number,
@@ -175,6 +220,11 @@ export const Info = Schema.Struct({
   exclude: Schema.optional(Schema.Array(Schema.String)),
   /** IDs of installed pre-action policies. ⛔ IDs only — see {@link PolicyID}. */
   policies: Schema.optional(Schema.Array(PolicyID)),
+  /**
+   * Skills this folder hides from the user's own slash menu. Narrowing only — see
+   * {@link narrowSkills}. A folder may HIDE a skill; it may never un-hide one the instance hid.
+   */
+  skills: Schema.optional(Skills),
 }).annotate({ identifier: "Project.File" })
 export type Info = typeof Info.Type
 
@@ -186,7 +236,7 @@ export type Info = typeof Info.Type
  * does not parse. A caller able to name `version` could delete it and brick its own project file
  * through a route whose whole promise is that it never produces a file this build cannot read.
  */
-export const SECTIONS = ["name", "permissions", "tune", "exclude", "policies"] as const
+export const SECTIONS = ["name", "permissions", "tune", "exclude", "policies", "skills"] as const
 export const Section = Schema.Literals(SECTIONS).annotate({ identifier: "Project.Section" })
 export type Section = (typeof SECTIONS)[number]
 
@@ -367,6 +417,95 @@ export function writableTune(tune: Tune | undefined): {
   // `tune` key at all mean the same thing to a reader, and preserving the caller's intent to have
   // SUPPLIED the section keeps the receipt honest about which sections the write touched.
   return { tune: { ...tune, features }, refused }
+}
+
+/**
+ * The skill ids a project file is ALLOWED to hide, and the ones it asked for and cannot have.
+ *
+ * 🔴 **The third narrowing layer, and the only one whose safe direction needs no baseline.**
+ * `narrowTune` has to know the effective value to tell an attack (`safeMode:false` over a `true`)
+ * from a no-op, and `evaluateNarrowed` has to compare restrictiveness against the winning base rule.
+ * Here the asymmetry is total: `show:false` is either a narrowing or a no-op, and `show:true` is
+ * either an un-hide or a no-op. Neither direction's no-op case is worth preserving, so the whole
+ * law is *keep the falses, drop the trues* — and it holds without reading the instance store at all.
+ *
+ * 🔴 **The result is a LIST OF IDS rather than the declared map, and that is the enforcement.** The
+ * other two sections travel through `ProjectFileCache.Entry` verbatim and are narrowed at their
+ * consumer, which is fine for them because each has a consumer that provably runs (`evaluate` is
+ * the only path to a verdict; `resolveSessionConfig` is the only path to a stance). This section
+ * has exactly one consumer today, so a verbatim `{show:true}` reaching it would be one forgotten
+ * `!== true` away from a cloned repository restoring a skill to the user's own menu. Converting at
+ * the boundary means a downstream reader is holding *ids this folder hides* — a value with no
+ * un-hide in it to forget.
+ *
+ * ⚠️ Built through `Object.keys` + `Object.hasOwn` and returned as an ARRAY, never as an object
+ * keyed by the file's own strings. `JSON.parse` gives `__proto__` an own data property, and a later
+ * spread or `obj[key] = …` over such a map writes the PROTOTYPE — a hazard `skill/invocation.ts`
+ * already records for the instance store. An array of ids cannot express it.
+ *
+ * ⚠️ An entry that declares no `show` at all (`{}`) is neither hidden nor refused. Absent means
+ * inherit, and a folder is allowed to take no position.
+ *
+ * @param declared the `skills` section as the file spells it
+ * @returns `hidden` — ids this folder may hide, sorted; `refused` — ids it asked to SHOW, which
+ *          this build will not act on and the surface should say so about
+ */
+export function narrowSkills(declared: Skills | undefined): {
+  readonly hidden: readonly string[]
+  readonly refused: readonly string[]
+} {
+  if (!declared) return { hidden: [], refused: [] }
+  const hidden: string[] = []
+  const refused: string[] = []
+  for (const id of Object.keys(declared)) {
+    if (!Object.hasOwn(declared, id)) continue
+    const choice = declared[id]
+    if (typeof choice !== "object" || choice === null) continue
+    if (choice.show === false) hidden.push(id)
+    else if (choice.show === true) refused.push(id)
+  }
+  hidden.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+  refused.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+  return { hidden, refused }
+}
+
+/**
+ * The `skills` section a WRITE may record — {@link narrowSkills}'s twin on the other side of the file.
+ *
+ * 🔴 Third instance of the same rule `writableTune` and `writablePermissions` state: our own writer
+ * must not put a sentence into the user's file that our own reader is guaranteed to discard. A
+ * control offering "show this skill in this folder" would be a control that silently does nothing,
+ * and the user only discovers it by being confused later.
+ *
+ * ⚠️ Not the enforcement — `narrowSkills` is, because it runs on every read including the files this
+ * build never wrote. This is a truthfulness rule for our own output, and the refused ids come back
+ * so the surface can say them out loud.
+ *
+ * ⚠️ An empty result is written as `{}` rather than dropped, exactly as `writableTune` writes an
+ * empty `features`: the caller SUPPLIED the section and the receipt must stay honest about which
+ * sections the write touched. Clearing it is a different sentence — `ProjectFileWrite.Changes.clear`.
+ */
+export function writableSkills(skills: Skills | undefined): {
+  readonly skills: Skills | undefined
+  readonly refused: readonly string[]
+} {
+  if (!skills) return { skills: undefined, refused: [] }
+  // A fresh null-prototype object, so a key of `__proto__` coming off a decoded file lands as an own
+  // property here instead of reassigning a prototype. `JSON.stringify` serialises it identically.
+  const kept: Record<string, SkillChoice> = Object.create(null) as Record<string, SkillChoice>
+  const refused: string[] = []
+  for (const id of Object.keys(skills)) {
+    if (!Object.hasOwn(skills, id)) continue
+    const choice = skills[id]
+    if (typeof choice !== "object" || choice === null) continue
+    if (choice.show === true) {
+      refused.push(id)
+      continue
+    }
+    kept[id] = choice
+  }
+  refused.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+  return { skills: kept, refused }
 }
 
 /** One switch on the composer's Tuning panel. */

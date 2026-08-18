@@ -1,9 +1,9 @@
 import { For, Show, Switch, Match, createMemo, createResource, type Component, type JSX } from "solid-js"
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
-import { useSDK } from "@/context/sdk"
 import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
+import { instanceFetch } from "@/utils/instance-fetch"
 import type { ProjectPermissionRule, ProjectState } from "@/utils/project-api"
 import { projectState } from "@/utils/project-api"
 import { SettingsListV2 } from "./parts/list"
@@ -52,15 +52,30 @@ export const SettingsProjectSection: Component = () => {
    * the ROOT ErrorBoundary and replaces the whole application (review 1.15), and a permission list
    * that failed to load must never cost someone their chats. `undefined` renders nothing, which is
    * honest: the block has not been told, so it claims nothing.
+   *
+   * 🔴 **`instanceFetch`, NOT `useSDK()` — and that guard above is exactly why this had to change.**
+   * `useSDK` is the DIRECTORY-scoped SDK, and `SDKProvider` is mounted only inside the session and
+   * draft routes (`app.tsx`). A dialog runs under the owner of whoever called `useDialog()`
+   * (`ui/context/dialog.tsx` → `runWithOwner(base, …)`), and both real ways into Settings — the home
+   * screen's tile (`apps/builtins.tsx`) and the shell's mod+comma command (`pages/layout-new.tsx`) —
+   * sit ABOVE that provider. So `useSDK()` threw at component setup, before any resource existed for
+   * the try/catch to protect, and the root ErrorBoundary replaced the whole application with
+   * "Something went wrong" the moment anyone opened Settings. Measured in a production
+   * `electron-vite build` on 2026-08-19, from both entry points. The composer's own
+   * `useSettingsDialog` call IS inside the provider, which is why the surface looked fine to
+   * whoever drove it from a chat.
    */
-  const sdk = useSDK()
+  // ⚠️ The MEMO is the source, not a fresh `{http, dir}` literal. A source function that mints a new
+  // object each read changes identity on every reactive pass, which is a refetch loop nobody asked
+  // for — the trap `session-composer-controls.ts` records against the draft's own project probe.
   const [savedRules] = createResource(
-    () => directory(),
-    async (): Promise<readonly ProjectPermissionRule[] | undefined> => {
+    source,
+    async (value): Promise<readonly ProjectPermissionRule[] | undefined> => {
       try {
-        const answer = await sdk().client.v2.permission.saved.list()
-        const rows = (answer as { data?: { data?: readonly { action: string; resource: string; effect?: string }[] } })
-          .data?.data
+        const answer = await instanceFetch<{
+          data?: readonly { action: string; resource: string; effect?: string }[]
+        }>(value.http, { route: "api/permission/saved", directory: value.dir })
+        const rows = answer.data
         if (!rows) return undefined
         // ⚠️ A legacy row carries no `effect` and means "allow" — the schema says so
         // (`PermissionSaved.Info`), and defaulting it to anything else would misreport an old

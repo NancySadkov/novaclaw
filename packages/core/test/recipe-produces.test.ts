@@ -4,6 +4,7 @@ import path from "node:path"
 import { Recipe } from "@novaclaw/core/recipe"
 import { RecipeBuiltin } from "@novaclaw/core/recipe-builtin"
 import { RecipeVerify } from "@novaclaw/core/recipe-verify"
+import { UnknownReason } from "@novaclaw/schema/unknown-reason"
 import { tmpdir } from "./fixture/tmpdir"
 
 /**
@@ -31,6 +32,7 @@ const receipt = (input: {
   directory: string
   declares: readonly string[]
   model?: RecipeVerify.CookingModel
+  cook?: RecipeVerify.CookOutcome
   name?: string
 }) =>
   RecipeVerify.verify({
@@ -38,6 +40,7 @@ const receipt = (input: {
     directory: input.directory,
     declares: input.declares,
     ...(input.model ? { model: input.model } : {}),
+    ...(input.cook ? { cook: input.cook } : {}),
     now: at,
   })
 
@@ -342,6 +345,134 @@ describe("outcome 4 of 4 — `unknown`, and ruling 2: a fault is never described
   })
 })
 
+describe("🔴 a cook that never reached the model says NOTHING about the install (2026-08-18)", () => {
+  // The measured defect: six cooks "settled" having written nothing because holo3.1 had died
+  // (`"finish":"error","error":{"message":"HTTP transport failed","_tag":"Transport"}`), and the receipt
+  // read NOT WORKING — about: this NovaClaw. Every row was `unmet` and every `unmet` was true about the
+  // FILESYSTEM; the error was in what absence MEANS. These tests pin the direction of the inference.
+
+  const declares = ["hello.c", "hello.out.txt"]
+  const blocked = {
+    state: "blocked",
+    why: "Can't reach the model server at 192.168.178.40:8010. It may be turned off, still starting, or on another network.",
+  } as const
+
+  test("the regression itself: an empty folder + a blocked cook is NEVER `not-working`", async () => {
+    await using dir = await tmpdir()
+    const before = await receipt({ directory: dir.path, declares, name: "Hello, C" })
+    // The old behaviour, still correct when we were told nothing: absence with no story is a failure.
+    expect(before.verdict).toBe("not-working")
+
+    const after = await receipt({ directory: dir.path, declares, cook: blocked, name: "Hello, C" })
+    expect(after.verdict).toBe("unknown")
+    for (const check of after.checks) {
+      expect(check.outcome).toBe("unknown")
+      // `measurement-failed` = *investigate the instrument*. The model server IS the instrument.
+      // NOT `not-applicable`, which would tell the reader to stop asking whether their install works.
+      expect(check.reason).toBe("measurement-failed")
+    }
+  })
+
+  test("…and the sentence names the endpoint, blames nothing, and says what to do", async () => {
+    await using dir = await tmpdir()
+    const text = RecipeVerify.summary(await receipt({ directory: dir.path, declares, cook: blocked, name: "Hello, C" }))
+    expect(text).toContain("192.168.178.40:8010")
+    expect(text).toContain("could not check")
+    // Principle 8 — it teaches rather than accuses.
+    expect(text).toContain("Start the model server again")
+    for (const forbidden of ["NOT WORKING", "did not find", "missing"]) expect(text).not.toContain(forbidden)
+  })
+
+  test("⭐ the softening is ONE-DIRECTIONAL: a blocked cook cannot erase a file that IS there", async () => {
+    // The safety argument for the whole arm. If a story about the instrument could overturn `met`, a
+    // transport error would HIDE real failures instead of refusing to invent them. A cook whose fourth
+    // turn died on transport, having written everything on its second, really did work.
+    await using dir = await tmpdir()
+    await write(dir.path, "hello.c", "int main(void){return 0;}")
+    await write(dir.path, "hello.out.txt", "hello\n")
+    const result = await receipt({ directory: dir.path, declares, cook: blocked })
+    expect(result.verdict).toBe("working")
+    expect(result.checks.map((check) => check.outcome)).toEqual(["met", "met"])
+  })
+
+  test("a MIXED folder keeps what it proved and stops asserting what it did not", async () => {
+    await using dir = await tmpdir()
+    await write(dir.path, "hello.c", "int main(void){return 0;}")
+    const result = await receipt({ directory: dir.path, declares, cook: blocked })
+    // `hello.c` arrived, so the cook demonstrably ran far enough to write it → still `working`.
+    expect(result.verdict).toBe("working")
+    expect(result.checks[0]!.outcome).toBe("met")
+    expect(result.checks[1]!.outcome).toBe("unknown")
+    expect(RecipeVerify.summary(result)).not.toContain("NOT WORKING")
+  })
+
+  test("`ran` is a CLAIM and it leaves the old verdict intact — absent ≠ ran", async () => {
+    await using dir = await tmpdir()
+    const told = await receipt({ directory: dir.path, declares, cook: { state: "ran" } })
+    const untold = await receipt({ directory: dir.path, declares })
+    // A cook that reached this machine and produced nothing IS the install failing. That is the ONE path
+    // to a fault report, and this arm must survive the fix — otherwise the receipt can never say "no".
+    expect(told.verdict).toBe("not-working")
+    expect(untold.verdict).toBe("not-working")
+  })
+
+  test("a person pressing stop is `incomplete` — a floor, not a fault, and not `measurement-failed`", async () => {
+    await using dir = await tmpdir()
+    const result = await receipt({
+      directory: dir.path,
+      declares,
+      cook: { state: "stopped", why: "Interrupted" },
+      name: "Hello, C",
+    })
+    expect(result.verdict).toBe("unknown")
+    // `incomplete` is the one reason whose neighbouring value is a LOWER BOUND — exactly a half-written
+    // folder. Filing it as `measurement-failed` would send the user to investigate a healthy instrument.
+    expect(result.checks.every((check) => check.reason === "incomplete")).toBe(true)
+    const text = RecipeVerify.summary(result)
+    expect(text).toContain("work that never happened")
+    expect(text).not.toContain("NOT WORKING")
+  })
+
+  test("the whole four-arm surface still discriminates, each for its own reason", async () => {
+    // The point of the fix is that FOUR states stay four, not that everything becomes `unknown`.
+    await using dir = await tmpdir()
+    await write(dir.path, "hello.c", "int main(void){return 0;}")
+    await write(dir.path, "hello.out.txt", "hello\n")
+    await using empty = await tmpdir()
+
+    expect((await receipt({ directory: dir.path, declares })).verdict).toBe("working")
+    expect((await receipt({ directory: empty.path, declares })).verdict).toBe("not-working")
+    expect(
+      (await receipt({ directory: empty.path, declares, model: { label: "no-tools", tools: false } })).verdict,
+    ).toBe("not-available")
+    expect((await receipt({ directory: empty.path, declares, cook: blocked })).verdict).toBe("unknown")
+    expect((await receipt({ directory: empty.path, declares: [] })).verdict).toBe("unknown")
+  })
+
+  test("NOT AVAILABLE still outranks a blocked cook — a model that cannot write files never could", async () => {
+    // A tools-less model whose endpoint ALSO died: `not-applicable` is the earned answer (there is
+    // genuinely nothing to measure), and it is decided before the filesystem and before the cook story.
+    await using dir = await tmpdir()
+    const result = await receipt({
+      directory: dir.path,
+      declares,
+      model: { label: "no-tools", tools: false },
+      cook: blocked,
+    })
+    expect(result.verdict).toBe("not-available")
+  })
+
+  test("the reason mapping is the shared vocabulary's, not a private one", async () => {
+    await using dir = await tmpdir()
+    const reasons = async (state: "blocked" | "stopped") =>
+      (await receipt({ directory: dir.path, declares: ["x.md"], cook: { state } })).checks[0]!.reason
+    expect(await reasons("blocked")).toBe("measurement-failed")
+    expect(await reasons("stopped")).toBe("incomplete")
+    // Neither may ever be the one that STOPS THE READER — the question "does my install work?" is open.
+    expect(UnknownReason.STOPS_THE_READER).toBe("not-applicable")
+  })
+})
+
 describe("the wire: the receipt is reachable, or it is a library nobody calls", () => {
   // A SOURCE assertion, for the reason `recipe-needs.test.ts`'s door test uses one: the handler is an
   // Effect HttpApi group whose real behaviour needs a booted server, but whether these four lines exist
@@ -372,9 +503,31 @@ describe("the wire: the receipt is reachable, or it is a library nobody calls", 
     expect(source).toContain("Effect.provide(locations.get(Location.Ref.make(")
   })
 
-  test("`recipe.run` hands back what the cook will be judged on", async () => {
+  test("`recipe.run` hands back what the cook will be judged on, AND which model will cook", async () => {
     const source = await fs.readFile(HANDLER, "utf8")
-    expect(source).toContain("return { sessionID: session.id, directory, assets, produces }")
+    for (const needle of ["sessionID: session.id", "directory,", "assets,", "produces,"])
+      expect({ needle, found: source.includes(needle) }).toEqual({ needle, found: true })
+    // 🔴 The model is the half that was missing, and its absence made NOT AVAILABLE unreachable from the
+    // app: `recipes.tsx` names no model on run, so unless the RUN resolves the instance default and hands
+    // it back, nothing downstream can ever know a tools-less model cooked. Measured 2026-08-18 as
+    // "Did not work · about: this NovaClaw" on an instance whose only model could not call tools.
+    expect(source).toContain("catalog.model.default()")
+    expect(source).toContain("{ model: modelSpec(cooking) }")
+  })
+
+  test("`recipe.verify` reads the COOK's own outcome, and classifies it through the shared classifier", async () => {
+    // The transport defect's structural fix: an empty folder is only evidence about the install if the
+    // cook reached the install. The handler must (a) read the session and (b) ask `faultEvidence` — never
+    // re-derive "is this an instrument fault?" locally, which is how the next surface gets it wrong.
+    const source = await fs.readFile(HANDLER, "utf8")
+    for (const needle of [
+      'from "@novaclaw/core/session/session-error"',
+      "faultEvidence(last.error)",
+      "readCook(sessions, ctx.payload.sessionID)",
+      "{ cook: reading.cook }",
+      "{ cookState: receipt.cook.state }",
+    ])
+      expect({ needle, found: source.includes(needle) }).toEqual({ needle, found: true })
   })
 })
 

@@ -121,6 +121,84 @@ describe("checkNeeds — ruling 2 lives in the `unknown` arm", () => {
   })
 })
 
+// =============================================================================
+// 🔴 A PROBE THAT FAILED IS NOT A FACT THAT IS ABSENT
+// =============================================================================
+//
+// The same defect class as the transport receipt, one module over: `existsSync` returns `false` for
+// EACCES, EPERM, ELOOP and EIO exactly as it does for ENOENT, so an unreadable path was byte-identical
+// to "not installed" — and the refusal built from it told the user to *"install what is missing"* on the
+// strength of a read that had simply failed. `UNREADABLE` is the third answer that separates them.
+
+describe("a locked path is `unreadable`, never `absent`", () => {
+  /**
+   * Every candidate blocked: the instrument failed on all of them.
+   *
+   * ⚠️ Annotated as `ResolveCommand` rather than inferred. `UNREADABLE` is a `unique symbol`, and a
+   * bare `() => Recipe.UNREADABLE` widens its return to plain `symbol`, which the parameter type then
+   * refuses. Contextual typing keeps the unique symbol narrow.
+   */
+  const blocked: Recipe.ResolveCommand = () => Recipe.UNREADABLE
+
+  test("⭐ the regression: an unreadable candidate is NOT reported as missing, and does NOT block a cook", () => {
+    const [check] = Recipe.checkNeeds(["a C compiler"], blocked)
+    expect(check!.status).toBe("unreadable")
+    // The whole point — `unmetMessage` only refuses on `absent`, so this cannot stop a cook.
+    expect(Recipe.unmetMessage("Hello, C", Recipe.checkNeeds(["a C compiler"], blocked))).toBeUndefined()
+  })
+
+  test("a hit later in the list wins — a blocked candidate is irrelevant once something resolves", () => {
+    // The blocked probe must not END the search, or a locked `cc` would hide a perfectly good `gcc`.
+    const resolve = (candidate: string) => (candidate === "gcc" ? candidate : Recipe.UNREADABLE)
+    const [check] = Recipe.checkNeeds(["a C compiler"], resolve)
+    expect(check!.status).toBe("present")
+    expect(check!.found).toBe("gcc")
+  })
+
+  test("`absent` still dominates: a fact with one PROVABLY missing member is still a refusal", () => {
+    // "python3 and a C compiler" where python3 is genuinely not there and every compiler probe was
+    // blocked. One member is provably missing, so refusing is a claim the evidence supports.
+    const resolve = (candidate: string) =>
+      candidate === "python3" || candidate === "python" ? null : Recipe.UNREADABLE
+    const [check] = Recipe.checkNeeds(["python3 and a C compiler"], resolve)
+    expect(check!.status).toBe("absent")
+  })
+
+  test("the refusal names it under “could not check”, never among the missing", () => {
+    // Ruling 2 inside the sentence: a refusal that implied we had verified a fact our instrument failed
+    // on would be the fault described falsely, in the very sentence written to avoid it.
+    const resolve = (candidate: string) =>
+      candidate === "node" ? null : candidate === "git" ? Recipe.UNREADABLE : null
+    const message = Recipe.unmetMessage("Thing", Recipe.checkNeeds(["node", "git"], resolve))!
+    expect(message).toContain("I could not check: git")
+    expect(message.slice(0, message.indexOf("I could not check"))).not.toContain("git")
+  })
+
+  test("⭐ the REAL errno decision, not a stub: only ENOENT/ENOTDIR mean 'not there'", () => {
+    // The tests above drive an injected resolver, which proves the POLICY. This drives the production
+    // decision itself, which is the line that was wrong: without it the suite would pass on a module
+    // that still folded EACCES into "missing", because the seam would never produce an `UNREADABLE`.
+    for (const code of ["ENOENT", "ENOTDIR"]) expect({ code, out: Recipe.fromStatError(code) }).toEqual({ code, out: null })
+    for (const code of ["EACCES", "EPERM", "ELOOP", "EIO", "EBUSY", undefined, "SOMETHING_NEW"])
+      expect({ code, out: Recipe.fromStatError(code) }).toEqual({ code, out: Recipe.UNREADABLE })
+  })
+
+  test("the PRODUCTION resolver on a real filesystem: found is found, and absent is still absent", async () => {
+    // The A/B on the other side. Honesty must not have been bought by disabling the probe, so this
+    // drives `resolveCommand` ITSELF against real paths rather than through the injected seam.
+    await using dir = await tmpdir()
+    const real = path.join(dir.path, "gcc.exe")
+    await fs.writeFile(real, "not really a compiler")
+    expect(Recipe.resolveCommand(real)).toBe(real)
+    // Nothing there at all -> ENOENT -> `null`, which is what still makes a refusal possible.
+    expect(Recipe.resolveCommand(path.join(dir.path, "nope", "gcc.exe"))).toBeNull()
+    // A path THROUGH a file (ENOTDIR on POSIX, ENOENT on win32) is a real absence too, not a failed
+    // instrument -- both codes sit on the `null` side for exactly this case.
+    expect(Recipe.resolveCommand(path.join(real, "child.exe"))).toBeNull()
+  })
+})
+
+
 describe("unmetMessage — the refusal a normal person reads", () => {
   const checks = (resolve: (candidate: string) => string | null, facts: string[]) => Recipe.checkNeeds(facts, resolve)
 

@@ -49,7 +49,13 @@ export interface RecipeInfo {
 /** One `needs:` fact, probed against this machine. `unknown` is NOT `absent` — see {@link describeNeeds}. */
 export interface NeedCheckInfo {
   readonly fact: string
-  readonly status: "present" | "absent" | "unknown"
+  /**
+   * ⚠️ **Two of these four are not "no".** `unknown` = we have no probe for that fact; `unreadable` = we
+   * have one and it failed (a locked file, a folder we cannot read). Neither blocks a cook and neither
+   * may ever be rendered as "missing" — that is the instrument's failure told as a fact about the user's
+   * machine, complete with an instruction to go and install something.
+   */
+  readonly status: "present" | "absent" | "unknown" | "unreadable"
   readonly looked: readonly string[]
   readonly found?: string
 }
@@ -78,6 +84,15 @@ export interface VerifyCheckInfo {
 
 export type Verdict = "working" | "not-working" | "not-available" | "unknown"
 
+/**
+ * What the COOK did, as opposed to what is in the folder.
+ *
+ * 🔴 `blocked` is why a dead model endpoint no longer reads as a broken install. An empty folder is
+ * only evidence about this computer if the cook actually reached it — see `core/src/recipe-verify.ts`.
+ * Absent means we were not told, which is NOT `ran`.
+ */
+export type CookState = "ran" | "blocked" | "stopped"
+
 export interface VerifyResultInfo {
   readonly slug: string
   readonly name: string
@@ -86,6 +101,7 @@ export interface VerifyResultInfo {
   readonly checks: readonly VerifyCheckInfo[]
   readonly summary: string
   readonly at: number
+  readonly cookState?: CookState
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -280,9 +296,19 @@ export function describeNeeds(source: SourceInfo | undefined): NeedsView {
     }
   const absent = facts.filter((need) => need.status === "absent")
   const unsure = facts.filter((need) => need.status === "unknown")
+  // A probe that EXISTS and failed. Kept apart from `unsure` all the way to the screen because the two
+  // give a person different work to do: nothing at all for `unknown`, and "a path on your machine I
+  // could not read" for this one — which they can often fix.
+  const blocked = facts.filter((need) => need.status === "unreadable")
   const present = facts.filter((need) => need.status === "present")
   const cannotCheck =
-    unsure.length > 0 ? ` It also says it needs ${quoted(unsure.map((need) => need.fact))}, which I have no way to check.` : ""
+    (unsure.length > 0
+      ? ` It also says it needs ${quoted(unsure.map((need) => need.fact))}, which I have no way to check.`
+      : "") +
+    (blocked.length > 0
+      ? ` I tried to check ${quoted(blocked.map((need) => need.fact))} and could not — something on this ` +
+        `computer blocked the look, which is not the same as it being missing.`
+      : "")
 
   if (absent.length > 0)
     return {
@@ -307,11 +333,28 @@ export function describeNeeds(source: SourceInfo | undefined): NeedsView {
       facts,
       blocksRun: false,
     }
+  // Nothing was found and nothing was provably missing, so every fact is one we could not settle. Which
+  // sentence depends on WHY, and the two are not interchangeable: "there is no way to check that" asks
+  // nothing of the user, while "I could not read the places I look" points at something they can fix.
+  if (unsure.length === 0 && blocked.length > 0)
+    return {
+      state: "unsure",
+      sentence:
+        `This recipe says it needs ${quoted(blocked.map((need) => need.fact))}, and I could not check — ` +
+        `something on this computer blocked me from looking (a locked file, or a folder I am not allowed ` +
+        `to read). That is not the same as it being missing, so I will not stand in the way of the cook.`,
+      looked: [...new Set(blocked.flatMap((need) => need.looked))],
+      facts,
+      blocksRun: false,
+    }
   return {
     state: "unsure",
     sentence:
       `This recipe says it needs ${quoted(unsure.map((need) => need.fact))}. I have no way to check that, so ` +
-      `I will not stand in the way — if it turns out not to be there, the run itself will say so.`,
+      `I will not stand in the way — if it turns out not to be there, the run itself will say so.` +
+      (blocked.length > 0
+        ? ` It also names ${quoted(blocked.map((need) => need.fact))}, which I tried to check and could not.`
+        : ""),
     looked: [],
     facts,
     blocksRun: false,
@@ -480,6 +523,42 @@ export function describeVerdict(result: VerifyResultInfo): VerdictView {
       }
     default: {
       const noPostcondition = rows.length === 0
+      // ── The run never got to exercise this computer ───────────────────────────────────────────────
+      //
+      // 🔴 This is the arm the 2026-08-18 defect fell through. Six cooks died on a dead model endpoint,
+      // every declared file was absent, and this app rendered `label: "Did not work"` ·
+      // `subject: "this NovaClaw"` · `isFault: true` — accusing the user's install of a fault that
+      // belonged entirely to an endpoint. The engine now re-files those rows as unknown, and these two
+      // branches are what a person then reads. Note `subject: "the model"` and `isFault: false`: a
+      // caller may show an alarm ONLY on `isFault`, so this cannot render as a fault report by accident.
+      if (result.cookState === "blocked")
+        return {
+          ...base,
+          label: "Couldn't run",
+          subject: "the model",
+          isFault: false,
+          tone: "unsure",
+          meaning:
+            "This run never reached the AI model, so it never actually did anything on this computer — " +
+            (rows[0]?.checked ?? "the model did not answer.") +
+            " There is nothing here for me to check, and nothing here points at a problem with this " +
+            "computer or with your NovaClaw.",
+          advice:
+            "Start your model server again, or pick a model that is running, and cook this recipe once " +
+            "more. Everything else is still fine.",
+        }
+      if (result.cookState === "stopped")
+        return {
+          ...base,
+          label: "Stopped early",
+          subject: "this run",
+          isFault: false,
+          tone: "unsure",
+          meaning:
+            "This run was stopped before it finished, so anything missing is work that never happened " +
+            "rather than work that failed. That tells us nothing about this computer either way.",
+          advice: "Run it again and let it finish, and I will be able to tell you what it made.",
+        }
       return {
         ...base,
         label: "Can't tell",
@@ -518,6 +597,19 @@ export interface CookRecord {
   readonly directory: string
   readonly sessionID: string
   readonly at: number
+  /**
+   * The model this cook was started on, as `providerID/modelID` — `recipe.run`'s own answer, which is
+   * the caller's `model` when it named one and the instance default otherwise.
+   *
+   * 🔴 **This field is the whole of defect 2.** Until it existed the app sent no model on run, kept
+   * none, and passed none to `verify` — so the NOT AVAILABLE arm was structurally unreachable from the
+   * UI, and an instance whose only model cannot call tools reported *"Did not work · about: this
+   * NovaClaw"*. Both arms worked at the HTTP surface; the app simply never had a value to send.
+   *
+   * Optional because an instance with no usable model must send nothing rather than guess: downstream,
+   * an unresolvable model is `not-measured` and never `not-applicable`.
+   */
+  readonly model?: string
 }
 
 const cooks = new Map<string, CookRecord>()

@@ -1,6 +1,6 @@
 export * as Recipe from "./recipe"
 
-import { existsSync } from "node:fs"
+import { statSync } from "node:fs"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { Global } from "./global"
@@ -564,8 +564,26 @@ export async function update(
 // install would be the escalation the ruling forbids, wearing a different hat. Nothing below executes a
 // candidate: it resolves a name on PATH or stats a path, and that is the whole of its authority.
 
-/** How a candidate binary is resolved. Injected so the policy is testable without a host. */
-export type ResolveCommand = (candidate: string) => string | null
+/**
+ * The probe could not answer for this candidate — a locked file, an unreadable directory, a PATH entry
+ * on a disconnected drive. **It is not `null`, and that difference is the whole of ruling 2 here.**
+ *
+ * `null` says *"I looked and it is not there"*, which licenses a refusal. This says *"my instrument
+ * failed"*, which licenses nothing at all about the user's machine. `existsSync` returns `false` for
+ * `EACCES`, `EPERM`, `ELOOP` and `EIO` exactly as it does for `ENOENT`, so the two really were one value
+ * here until this existed — and the sentence built from it told the user to *"install what is missing"*
+ * on the strength of a read that had simply failed.
+ */
+export const UNREADABLE: unique symbol = Symbol.for("novaclaw.recipe.needs.unreadable")
+
+/**
+ * How a candidate binary is resolved. Injected so the policy is testable without a host.
+ *
+ * Three answers, not two: the path (found), `null` (looked, not there), {@link UNREADABLE} (the probe
+ * itself failed). A resolver written before the third existed still typechecks and still behaves
+ * identically — it simply never returns the third.
+ */
+export type ResolveCommand = (candidate: string) => string | null | typeof UNREADABLE
 
 export type NeedStatus =
   /** Probed and found. */
@@ -581,6 +599,19 @@ export type NeedStatus =
    * sentence that says something is absent.
    */
   | "unknown"
+  /**
+   * A probe EXISTS and it failed — the instrument, not the fact.
+   *
+   * ⚠️ Kept apart from `unknown` because the two prescribe different actions, which is
+   * `@novaclaw/schema/unknown-reason`'s entire thesis: `unknown` here is *not-measured* (nothing to do
+   * — we have no probe for that), while this is *measurement-failed* (**investigate the instrument** —
+   * a path we could not read, and one you may well be able to fix). Folding it into `absent` would be
+   * the defect this whole vocabulary exists to stop: an instrument failure reported as a fact about the
+   * subject's machine, complete with an imperative to go and install something.
+   *
+   * Like `unknown`, it NEVER blocks a cook.
+   */
+  | "unreadable"
 
 export interface NeedCheck {
   /** The author's own words, unchanged — messages quote the recipe rather than our paraphrase of it. */
@@ -643,8 +674,37 @@ const CAPABILITIES: readonly { readonly match: RegExp; readonly candidates: read
  * cannot name a binary to look for. That is the untrusted-input half of ruling 14 holding at the one
  * place in this module where prose meets the host.
  */
-const resolveCommand: ResolveCommand = (candidate) =>
-  /[\\/]/.test(candidate) ? (existsSync(candidate) ? candidate : null) : which(candidate)
+export const resolveCommand: ResolveCommand = (candidate) => {
+  // A bare name goes to PATH resolution.
+  //
+  // ⚠️ **The PATH arm cannot distinguish `UNREADABLE` today, and saying so is the honest half of this
+  // fix.** `util/which.ts` wraps `which@5`, which calls `isexeSync(…, { ignoreErrors: true })` and then
+  // `nothrow`s — so an AV-locked binary or a PATH entry on a disconnected network drive comes back as
+  // the same `null` a genuinely absent command does. Changing that means reimplementing PATH scanning
+  // in a util a dozen unrelated callers share, which is a separate change with a much wider blast
+  // radius than this one. The ABSOLUTE-path arm below is where the failure was actually observable
+  // (`WINDOWS_GCC`'s four entries), and it is now discriminated; claiming the PATH arm were too would
+  // be exactly the false description this is fixing, one layer up.
+  if (!/[\\/]/.test(candidate)) return which(candidate)
+  try {
+    statSync(candidate)
+    return candidate
+  } catch (error) {
+    return fromStatError((error as NodeJS.ErrnoException).code)
+  }
+}
+
+/**
+ * The errno decision, exported so it can be asserted directly.
+ *
+ * ⚠️ **This is the whole fix in one line, so it gets its own name rather than living inside a `catch`.**
+ * `ENOENT` and `ENOTDIR` are the only two codes that mean *there is nothing there*. Everything else —
+ * `EACCES`, `EPERM`, `ELOOP`, `EIO`, and whatever a network filesystem invents — is our instrument
+ * failing, and an unrecognised code goes to {@link UNREADABLE} because the safe direction is to claim
+ * LESS about the user's machine, never more.
+ */
+export const fromStatError = (code: string | undefined): null | typeof UNREADABLE =>
+  code === "ENOENT" || code === "ENOTDIR" ? null : UNREADABLE
 
 /**
  * The facts stated by a recipe's carried frontmatter, in the order the author wrote them.
@@ -691,22 +751,39 @@ export const checkNeed = (fact: string, resolve: ResolveCommand = resolveCommand
   const looked: string[] = []
   const found: string[] = []
   let missing = false
+  let unreadable = false
   // ALL matching capabilities, not the first: "python3 and a C compiler" is one fact naming two, and
   // checking only one of them would report `present` for a host missing the other.
   for (const capability of matched) {
     let hit: string | undefined
+    let blocked = false
     for (const candidate of capability.candidates) {
       looked.push(candidate)
       const resolved = resolve(candidate)
+      // ⚠️ A failed probe is NOT a miss, so it must not end the search and must not count as one. We
+      // keep going — a later candidate that resolves makes the unreadable one irrelevant, which is why
+      // `blocked` is only consulted once every candidate has been tried.
+      if (resolved === UNREADABLE) {
+        blocked = true
+        continue
+      }
       if (resolved !== null) {
         hit = resolved
         break
       }
     }
-    if (hit === undefined) missing = true
-    else found.push(hit)
+    if (hit !== undefined) found.push(hit)
+    // 🔴 The ordering that fixes the defect: a capability whose search was BLOCKED is unmeasured, never
+    // missing. Reporting `absent` here would refuse the cook and tell the user to install something we
+    // never actually failed to find — an instrument failure dressed as a fact about their machine.
+    else if (blocked) unreadable = true
+    else missing = true
   }
-  return missing ? { fact, status: "absent", looked } : { fact, status: "present", looked, found: found.join(", ") }
+  // `absent` still dominates: a fact naming two capabilities, one provably missing and one we could not
+  // probe, HAS a provably missing member, and refusing on it is a claim the evidence supports.
+  if (missing) return { fact, status: "absent", looked }
+  if (unreadable) return { fact, status: "unreadable", looked }
+  return { fact, status: "present", looked, found: found.join(", ") }
 }
 
 export const checkNeeds = (facts: readonly string[], resolve?: ResolveCommand): NeedCheck[] =>
@@ -731,7 +808,10 @@ const clip = (fact: string) => (fact.length > 60 ? `${fact.slice(0, 59)}…` : f
 export const unmetMessage = (recipeName: string, checks: readonly NeedCheck[]): string | undefined => {
   const absent = checks.filter((check) => check.status === "absent")
   if (absent.length === 0) return undefined
-  const unchecked = checks.filter((check) => check.status === "unknown")
+  // ⚠️ `unreadable` joins `unknown` in the "could not check" clause and NEVER in the absence clause.
+  // A refusal that implied we had verified a fact our instrument failed on would be the fault described
+  // falsely, inside the very sentence written to avoid it.
+  const unchecked = checks.filter((check) => check.status === "unknown" || check.status === "unreadable")
   const looked = [...new Set(absent.flatMap((check) => check.looked))]
   return (
     `Not cooking “${recipeName}”: it says it needs ${absent.map((check) => clip(check.fact)).join(" and ")}, ` +

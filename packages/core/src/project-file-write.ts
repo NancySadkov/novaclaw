@@ -42,6 +42,14 @@ export interface Changes {
   readonly exclude?: readonly string[]
   readonly policies?: readonly string[]
   /**
+   * Per-skill slash-menu choices for this folder.
+   *
+   * ⚠️ Only `show:false` survives the write — see `ProjectFile.writableSkills`. A folder may hide a
+   * skill and may never un-hide one the instance hid, so a `show:true` here is dropped and reported
+   * in `refusedSkills` rather than written into a file whose reader is guaranteed to ignore it.
+   */
+  readonly skills?: ProjectFile.Skills
+  /**
    * Sections to REMOVE from the file entirely.
    *
    * 🔴 **Why an explicit list and not `undefined`.** `ProjectFile.merge` already deletes a key whose
@@ -99,6 +107,14 @@ export type Result =
        * in the user's file that the reader provably ignores.
        */
       readonly refusedPermissions: Permission.Ruleset
+      /**
+       * Skill ids the caller asked to record as SHOWN in this folder, which were NOT written.
+       *
+       * See `ProjectFile.writableSkills`: a project may hide a skill and may never un-hide one the
+       * instance hid, so `ProjectFile.narrowSkills` drops a `show:true` on every read. Writing one
+       * would put a sentence in the user's file that the reader provably ignores.
+       */
+      readonly refusedSkills: readonly string[]
     }
   | {
       readonly ok: false
@@ -140,6 +156,7 @@ export function plan(
       readonly cleared: readonly Section[]
       readonly refusedTune: readonly ProjectFile.TuneFeature[]
       readonly refusedPermissions: Permission.Ruleset
+      readonly refusedSkills: readonly string[]
     }
   | (Result & { readonly ok: false }) {
   // ⚠️ Checked BEFORE the file is even read, because a contradiction is a fault in the REQUEST and
@@ -169,6 +186,7 @@ export function plan(
 
   const { tune, refused } = ProjectFile.writableTune(changes.tune)
   const { permissions, refused: refusedPermissions } = ProjectFile.writablePermissions(changes.permissions)
+  const { skills, refused: refusedSkills } = ProjectFile.writableSkills(changes.skills)
   // Mutable, because `ProjectFile.Info`'s properties are `readonly` (Effect schema types are) and
   // this is the one place that assembles a change set key by key.
   const applied: { -readonly [K in keyof ProjectFile.Info]?: ProjectFile.Info[K] } = {}
@@ -202,6 +220,9 @@ export function plan(
       case "policies":
         applied.policies = changes.policies
         break
+      case "skills":
+        applied.skills = skills
+        break
     }
   }
 
@@ -220,7 +241,7 @@ export function plan(
       reason: "would-not-parse",
       detail: `the merged file would not read back (${verify.reason}: ${verify.detail})`,
     }
-  return { ok: true, text, created, sections, cleared, refusedTune: refused, refusedPermissions }
+  return { ok: true, text, created, sections, cleared, refusedTune: refused, refusedPermissions, refusedSkills }
 }
 
 /**
@@ -271,5 +292,6 @@ export const write = Effect.fn("ProjectFileWrite.write")(function* (directory: s
     cleared: planned.cleared,
     refusedTune: planned.refusedTune,
     refusedPermissions: planned.refusedPermissions,
+    refusedSkills: planned.refusedSkills,
   } satisfies Result
 })
