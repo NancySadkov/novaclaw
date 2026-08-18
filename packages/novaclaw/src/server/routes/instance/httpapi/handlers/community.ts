@@ -647,6 +647,22 @@ const TURN_TIMED_OUT = { timedOut: true } as const
           const overall = yield* answers.state()
           if (overall.refusal !== undefined) return { refused: overall.refusal }
 
+          /**
+           * 🔴 **The question's WEIGHT, before a model is resolved and before a signature is
+           * checked** (Codex review P1). `maxTokens` bounds what a model generates and says nothing
+           * about prefill, so one signed ask could hand the owner a quarter-megabyte of input —
+           * roughly 5 MB a day across the default budget — for the price of one signature.
+           *
+           * ⚠️ Cheapest-first, like the checks around it: measuring a string costs nothing, so it
+           * happens before the 41 µs signature verification rather than after. A question too large
+           * to answer is too large whoever signed it.
+           *
+           * ⚠️ `not-answering`, not a new wire token that would tell a prober exactly which ceiling
+           * they hit and therefore what to vary — the same reason the block refusal is
+           * indistinguishable from a quiet day.
+           */
+          if (CommunityAnswer.questionTooLarge(ctx.payload.question)) return { refused: "not-answering" as const }
+
           if (!CommunityAnswer.verifyAsk(ctx.payload)) return { refused: "unsigned" as const }
 
           /**

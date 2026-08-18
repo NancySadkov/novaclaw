@@ -5,6 +5,10 @@ import { Context, Effect, Layer } from "effect"
 import { CommunityConsent } from "./consent"
 import { InstanceIdentityStore } from "../instance-identity-store"
 import { CommunityAnsweredTable } from "./sql"
+import { CommunityContacts } from "./contacts"
+import { CommunityObservation } from "./observation"
+import { CommunityPeers } from "./peers"
+import { CommunityStanding } from "./standing"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
 import { Identifier } from "../id/id"
@@ -23,7 +27,7 @@ import { SessionOrigin } from "../session/origin"
  */
 
 /** Why we are not answering. Named, so a refusal is never silence — the shape `consent.ts` uses. */
-export type Refusal = "not-joined" | "not-answering" | "budget-spent" | "asker-spent"
+export type Refusal = "not-joined" | "not-answering" | "budget-spent" | "asker-spent" | "newcomer-share-spent"
 
 /**
  * 🔴 **Every refusal token an honest instance sends — the CLOSED vocabulary** (review 1.6).
@@ -50,6 +54,7 @@ export const WIRE_REFUSALS = [
   "not-answering",
   "budget-spent",
   "asker-spent",
+  "newcomer-share-spent",
   "unsigned",
   "busy",
   "unavailable",
@@ -305,6 +310,53 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/CommunityAnswer") {}
 
+/**
+ * 🔴 **The share of the daily budget a peer with NO STANDING may take** (Codex review P1).
+ *
+ * Admission consulted joined/enabled, the global count and a flat per-key count — nothing else. So
+ * four disposable keys took all twenty of the default day's answers at five each, before the user's
+ * own doorman or anybody they had ever dealt with got to ask. That is precisely the Sybil shape the
+ * introduction edge and the non-transitive ladder exist to distinguish, and having an observation
+ * store did not make answering trust-aware.
+ *
+ * ⚠️ **A reservation, not a filter, and the distinction is the design.** `honesty-ledger.md` says
+ * answer service is *ordered, not filtered*: strangers keep access, because a network that answers
+ * only people it already knows is a club, and the whole point is that a Nova nobody has met can ask
+ * what happened in the world today. What they cannot do is take the WHOLE day. A quarter, with a
+ * floor of one so a tiny budget still admits a newcomer.
+ *
+ * ⚠️ This is not a priority queue and must not be described as one. Nothing here re-orders
+ * concurrent askers — the one-turn semaphore is still first-arrival. What it guarantees is that when
+ * a stranger arrives at a spent share, the rest of the budget is still there for the three rungs
+ * above them.
+ */
+export const STRANGER_SHARE = 0.25
+
+/**
+ * 🔴 **The most a question may WEIGH** (Codex review P1) — bytes, checked before a model sees it.
+ *
+ * The ask schema bounded nothing, so the only ceiling was the generic 256 KB peer-body limit, and
+ * the question went verbatim into the model request. `maxTokens` bounds what a model GENERATES; it
+ * says nothing about prefill. So a free keypair bought five turns a day at a quarter-megabyte of
+ * input each, and four keys bought the whole default budget: the attacker pays one Ed25519
+ * signature, the owner pays roughly 5 MB of model input — about 1.3 million tokens — plus whatever
+ * a context overflow does. The claim that answering exposure is bounded by `perDay × maxTokens` was
+ * false in the direction that costs the user.
+ *
+ * ⚠️ 4 KiB, and it is already generous for the shape the design describes — *"what happened in the
+ * world today?"* is fifty bytes. A bound has to be small enough to be a bound: 64 KB would be 16×
+ * the cost for questions nobody sends.
+ *
+ * ⚠️ BYTES, not characters. A question of emoji or CJK is several bytes per character, so a
+ * character bound would let the same question weigh three times what it claimed — the same
+ * correction the channel body bound records.
+ */
+export const MAX_QUESTION_BYTES = 4 * 1024
+
+/** Whether a question is small enough to answer. Pure, so the route and the tests share one rule. */
+export const questionTooLarge = (question: string): boolean =>
+  Buffer.byteLength(question, "utf8") > MAX_QUESTION_BYTES
+
 /** Midnight LOCAL, because a user's "20 a day" means their day, not UTC's. */
 const startOfToday = (now: number): number => {
   const date = new Date(now)
@@ -316,6 +368,11 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const { db } = yield* Database.Service
+    const stores = {
+      contacts: yield* CommunityContacts.Service,
+      peers: yield* CommunityPeers.Service,
+      observations: yield* CommunityObservation.Service,
+    }
 
     const countToday = (asker?: string) =>
       Effect.gen(function* () {
@@ -339,13 +396,49 @@ export const layer = Layer.effect(
         joined: CommunityConsent.participates(CommunityConsent.currentGate()),
       })
 
+    /** Today's askers, so a rung-aware share can be computed without storing one per row. */
+    const askersToday = () =>
+      Effect.gen(function* () {
+        const since = startOfToday(Date.now())
+        const rows = yield* db
+          .select({ asker: CommunityAnsweredTable.asker })
+          .from(CommunityAnsweredTable)
+          .where(gte(CommunityAnsweredTable.at, since))
+          .all()
+          .pipe(Effect.orDie)
+        return rows.map((row) => row.asker)
+      })
+
     const allowed = Effect.fn("CommunityAnswer.allowed")(function* (asker: string) {
       const gate = gateNow()
       if (!gate.joined) return "not-joined" as const
       if (!gate.enabled) return "not-answering" as const
       if ((yield* countToday()) >= gate.perDay) return "budget-spent" as const
       if ((yield* countToday(asker)) >= gate.perPeerPerDay) return "asker-spent" as const
-      return undefined
+
+      /**
+       * 🔴 The newcomer share — the last check, because it is the only one that needs the stores.
+       *
+       * ⚠️ Rungs are recomputed for today's askers rather than stamped on the row. A stranger who
+       * asked this morning and has since become somebody we deal with is not a stranger now, and a
+       * stored rung would spend their share forever. Twenty rows a day makes the recomputation
+       * cheaper than the migration it replaces.
+       */
+      const rung = yield* CommunityStanding.rungOf(stores, asker)
+      if (rung !== "stranger") return undefined
+      /**
+       * ⚠️ No address book, no reservation — see `hasStanding`. On a fresh install every asker is a
+       * stranger, and a share kept back from all of them would strand three quarters of the budget
+       * where nobody could claim it.
+       */
+      if (!(yield* CommunityStanding.hasStanding(stores))) return undefined
+      const ceiling = Math.max(1, Math.floor(gate.perDay * STRANGER_SHARE))
+      const asked = yield* askersToday()
+      let strangers = 0
+      for (const past of new Set(asked))
+        if ((yield* CommunityStanding.rungOf(stores, past)) === "stranger")
+          strangers += asked.filter((entry) => entry === past).length
+      return strangers >= ceiling ? ("newcomer-share-spent" as const) : undefined
     })
 
     return Service.of({
@@ -375,4 +468,11 @@ export const layer = Layer.effect(
   }),
 )
 
-export const node = makeGlobalNode({ service: Service, layer, deps: [Database.node] })
+export const node = makeGlobalNode({
+  service: Service,
+  layer,
+  // ⚠️ Three stores beyond the database, because admission is now trust-aware: the rung an asker
+  // stands on is read from the dealings we witnessed, the contacts the user rated, and the
+  // introduction edge peer exchange recorded.
+  deps: [Database.node, CommunityContacts.node, CommunityPeers.node, CommunityObservation.node],
+})

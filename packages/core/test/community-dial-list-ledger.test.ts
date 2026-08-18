@@ -29,6 +29,11 @@ const READERS: Record<string, "dial" | "read"> = {
   "community/reach.ts": "dial",
   /** Lists known peers to the agent, and reads one row's introducer for the trust ladder. */
   "tool/community.ts": "read",
+  /**
+   * Reads ONE row's `introducedBy` to place an asker on the trust ladder. It dials nothing: a rung
+   * is a fact about who introduced somebody, and the answer is a word, never an address.
+   */
+  "community/standing.ts": "read",
 }
 
 const filesCalling = (): string[] => {

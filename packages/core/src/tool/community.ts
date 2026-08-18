@@ -163,6 +163,10 @@ export const refusalSentence = (peer: string, refused: CommunityAnswer.WireRefus
     "not-answering": "is not answering questions right now",
     "budget-spent": "has spent the answers it pays for today",
     "asker-spent": "has spent what it lets us ask for today",
+    // ⚠️ Says WHY without flattering or insulting: the share for peers it has no standing with is
+    // spent, which is a fact about their budget rather than a judgement about us. Somebody reading
+    // this can act on it — deal with that peer, or ask again tomorrow.
+    "newcomer-share-spent": "has spent the share it keeps for peers it does not know yet",
     unsigned: "could not verify our question came from us",
     busy: "is answering someone else right now",
     unavailable: "has no model available to answer with",
