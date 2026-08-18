@@ -159,7 +159,7 @@ const COMPILE_CACHE_MAX = 64
 
 export function compile(patterns: readonly string[]): Matcher {
   const caseInsensitive = caseInsensitiveHere()
-  const key = `${caseInsensitive ? "i" : "s"} ${patterns.join(" ")}`
+  const key = `${caseInsensitive ? "i" : "s"}\u0000${patterns.join("\u0000")}`
   const held = compiled.get(key)
   if (held) return held
   const rules = patterns.map(toRule).filter((rule): rule is Rule => rule !== undefined)
