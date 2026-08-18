@@ -18,6 +18,15 @@ import path from "node:path"
 const root = path.dirname(Bun.fileURLToPath(import.meta.url))
 const exe = process.platform === "win32" ? "novaclaw-dht.exe" : "novaclaw-dht"
 const built = path.join(root, "target", "release", exe)
+/**
+ * 🔴 A clean directory holding ONLY the binary, mirroring `packages/host/build/`.
+ *
+ * Packaging copies a directory, and `target/release/` is a cargo scratch tree — hundreds of
+ * megabytes of intermediate objects beside the 9 MB we want. Copying the tree would bloat the
+ * installer; naming the file in two places would let them drift. So the build publishes its one
+ * artifact here and every consumer reads THIS.
+ */
+const shipped = path.join(root, "build", exe)
 
 const cargo = Bun.which("cargo")
 if (cargo === null) {
@@ -37,4 +46,5 @@ if (!result.success || !existsSync(built)) {
   process.exit(0)
 }
 
-console.log(`built ${path.relative(process.cwd(), built)} (${(Bun.file(built).size / 1048576).toFixed(1)} MB)`)
+await Bun.write(shipped, Bun.file(built))
+console.log(`built ${path.relative(process.cwd(), shipped)} (${(Bun.file(shipped).size / 1048576).toFixed(1)} MB)`)

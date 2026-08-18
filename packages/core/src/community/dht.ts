@@ -60,7 +60,26 @@ export const binaryPath = (): string => {
    */
   const beside = path.join(path.dirname(process.execPath), exe)
   if (existsSync(beside)) return beside
-  return fileURLToPath(new URL(`../../../dht/target/release/${exe}`, import.meta.url))
+
+  /**
+   * 🔴 **Then the packaged desktop's resources** — the candidate whose absence meant the product's
+   * primary face had no DHT at all (review 1.7). `packages/host` has had this line since it
+   * replaced `@parcel/watcher`; this module was written without it, so even once the packager
+   * copied the binary there would have been nothing to look for it. Both halves are the fix.
+   *
+   * ⚠️ Electron's main process has `resourcesPath`; a plain node or bun process does not, hence the
+   * guarded read rather than a bare property access.
+   */
+  const resources = (process as { resourcesPath?: string }).resourcesPath
+  if (resources !== undefined && resources !== "") {
+    const packaged = path.join(resources, "dht", exe)
+    if (existsSync(packaged)) return packaged
+  }
+
+  // ⚠️ `build/`, the sidecar's published artifact, not cargo's `target/release` scratch tree: the
+  // packager copies `build/`, so a dev tree that resolved somewhere else would be testing a path
+  // the product does not use.
+  return fileURLToPath(new URL(`../../../dht/build/${exe}`, import.meta.url))
 }
 
 /**

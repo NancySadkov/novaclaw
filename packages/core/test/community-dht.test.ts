@@ -1,4 +1,8 @@
 import { describe, expect, test } from "bun:test"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import path from "node:path"
+import { fileURLToPath } from "node:url"
 import { Effect, Fiber, Layer } from "effect"
 import { CommunityDht } from "@novaclaw/core/community/dht"
 
@@ -480,5 +484,52 @@ describe("the sidecar obeys the gate", () => {
       }),
       { start, timeoutMs: 500 },
     )
+  })
+})
+
+describe("finding the sidecar binary", () => {
+  /**
+   * 🔴 Review 1.7 — the desktop package shipped no sidecar AND could not have found one.
+   *
+   * `binaryPath()` had two candidates: beside the executable, and the dev tree. A packaged Electron
+   * app is neither — its extra resources live under `process.resourcesPath`, which is what
+   * `packages/host` has looked in since it replaced `@parcel/watcher`. So even after the packager
+   * was taught to copy the binary, nothing would have looked for it there.
+   */
+  test("🔴 a packaged desktop's resources are searched", () => {
+    const original = (process as { resourcesPath?: string }).resourcesPath
+    const exe = process.platform === "win32" ? "novaclaw-dht.exe" : "novaclaw-dht"
+    /**
+     * ⚠️ A REAL directory in the packaged layout, not the repo — the first version of this test
+     * pointed at `packages/` and guarded its assertion with `existsSync`, so it passed without the
+     * candidate it was written to pin. The A/B is what said so. A packager's output is a shape, and
+     * a shape is cheap to build.
+     */
+    const resources = mkdtempSync(path.join(tmpdir(), "novaclaw-resources-"))
+    mkdirSync(path.join(resources, "dht"))
+    writeFileSync(path.join(resources, "dht", exe), "")
+    try {
+      ;(process as { resourcesPath?: string }).resourcesPath = resources
+      expect(CommunityDht.binaryPath(), "a packaged app must look under its own resources").toBe(
+        path.join(resources, "dht", exe),
+      )
+    } finally {
+      if (original === undefined) delete (process as { resourcesPath?: string }).resourcesPath
+      else (process as { resourcesPath?: string }).resourcesPath = original
+      rmSync(resources, { recursive: true, force: true })
+    }
+  })
+
+  test("⚠️ an explicit override still wins, and the dev tree is the fallback", () => {
+    const original = process.env["NOVACLAW_DHT_BINARY"]
+    try {
+      process.env["NOVACLAW_DHT_BINARY"] = "/somewhere/else/novaclaw-dht"
+      expect(CommunityDht.binaryPath()).toBe("/somewhere/else/novaclaw-dht")
+    } finally {
+      if (original === undefined) delete process.env["NOVACLAW_DHT_BINARY"]
+      else process.env["NOVACLAW_DHT_BINARY"] = original
+    }
+    // The dev fallback names `build/`, the artifact the packager copies — not cargo's scratch tree.
+    expect(CommunityDht.binaryPath().split(path.sep).join("/")).toContain("/dht/build/")
   })
 })

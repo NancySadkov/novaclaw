@@ -230,7 +230,9 @@ await $`bun ${path.resolve(dir, "../host/build.ts")}`.catch((error) => {
  * is the one reading this build's output.
  */
 const dhtBinary = process.platform === "win32" ? "novaclaw-dht.exe" : "novaclaw-dht"
-const dhtBuilt = path.resolve(dir, "../dht/target/release", dhtBinary)
+// ⚠️ `build/`, not `target/release/` — the sidecar build publishes its one artifact there so the
+// desktop packager can copy a directory without dragging cargo's whole scratch tree with it.
+const dhtBuilt = path.resolve(dir, "../dht/build", dhtBinary)
 await $`bun ${path.resolve(dir, "../dht/build.ts")}`.catch((error) => {
   console.warn(`WARNING: could not build the DHT sidecar — ${error?.stderr?.toString().trim() || error}`)
 })

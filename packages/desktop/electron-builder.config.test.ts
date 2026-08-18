@@ -65,3 +65,19 @@ test("embeds the prepared w64devkit tree in Windows packages", async () => {
   })
   expect(config.files).toContain("!resources/third-party/**")
 })
+
+test("🔴 ships the DHT sidecar, which the desktop package did not carry at all", async () => {
+  const module = await import(`./electron-builder.config.ts?dht=${Date.now()}`)
+  const config = module.default as Configuration
+
+  /**
+   * Review 1.7. `extraResources` had no `dht` entry, `prebuild` never built it, and
+   * `community/dht.ts` had no `resourcesPath` candidate to find it with — so the DHT existed in the
+   * dev tree and in the CLI build, and not on the product's primary face. A desktop user's discovery
+   * fell back to the LAN and typed addresses, which is indistinguishable from a public DHT that
+   * nobody is on.
+   *
+   * ⚠️ `build/`, not `target/release/`: cargo's scratch tree is hundreds of megabytes.
+   */
+  expect(config.extraResources).toContainEqual({ from: "../dht/build/", to: "dht/" })
+})

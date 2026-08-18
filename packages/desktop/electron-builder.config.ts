@@ -89,6 +89,20 @@ const getBase = (appId: string): Configuration => ({
       from: "../host/build/",
       to: "host/",
     },
+    {
+      // The DHT sidecar (`packages/dht`), built by `scripts/prebuild.ts`.
+      //
+      // ⚠️ A separate process, so the asar is doubly wrong for it: `spawn` hands the path to the OS,
+      // which knows nothing about an asar's virtual paths. `community/dht.ts`'s `binaryPath()` looks
+      // under `process.resourcesPath/dht` for exactly this copy — the same shape `packages/host`
+      // uses, because the failure is the same shape: no binary means no error, just an instance
+      // that quietly discovers nobody through the DHT.
+      //
+      // ⚠️ `build/`, not `target/release/`: cargo's scratch tree is hundreds of megabytes and this
+      // is 2.7 MB of it.
+      from: "../dht/build/",
+      to: "dht/",
+    },
     ...(process.platform === "win32"
       ? [
           {
