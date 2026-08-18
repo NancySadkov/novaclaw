@@ -110,7 +110,14 @@ describe("what a stranger can make this instance spend", () => {
     const answering = handlerSource.slice(handlerSource.indexOf('"communityAsk"'))
     const spend = answering.indexOf("answers.spent")
     const stream = answering.indexOf("ReasoningBudget.stream")
-    const emptyCheck = answering.indexOf('refused: "no-answer"')
+    /**
+     * ⚠️ The REFUSAL HELPER, not a literal. Refusals are signed now, so the handler says
+     * `refuse("no-answer")` rather than `refused: "no-answer"` — and when that landed, this scan
+     * returned -1 and the ordering assertions compared against a position that does not exist. A
+     * source ledger has to be taught the shape it polices, or it silently stops policing.
+     */
+    const emptyCheck = answering.indexOf('refuse("no-answer")')
+    expect(emptyCheck, "the scan must find the empty-answer refusal").toBeGreaterThan(-1)
 
     expect(spend, "the handler must record a spend at all").toBeGreaterThan(-1)
     expect(spend, "and it must be recorded BEFORE the model runs").toBeLessThan(stream)
@@ -171,10 +178,12 @@ describe("what a stranger can make this instance spend", () => {
      */
     const answering = handlerSource.slice(handlerSource.indexOf('"communityAsk"'))
     const spend = answering.indexOf("answers.spent")
-    expect(answering.indexOf('refused: "busy"'), "busy is decided after the spend point").toBeGreaterThan(spend)
+    const busy = answering.indexOf('refuse("busy")')
+    expect(busy, "the scan must find the busy refusal").toBeGreaterThan(-1)
+    expect(busy, "busy is decided after the spend point").toBeGreaterThan(spend)
     // ⚠️ `unavailable` is returned when `resolveDefault` yielded nothing — which happens BEFORE the
     // stream, and therefore before the spend, inside the answering effect.
-    expect(answering).toContain('refused: "unavailable"')
+    expect(answering).toContain('refuse("unavailable")')
   })
 })
 

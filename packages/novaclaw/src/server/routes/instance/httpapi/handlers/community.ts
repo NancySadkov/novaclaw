@@ -609,7 +609,30 @@ const TURN_TIMED_OUT = { timedOut: true } as const
           // The verdict is dropped, as on the channel door: reporting it would tell a stranger
           // whether they are blocked, and whether this instance holds the key they sealed to.
           yield* direct.receive(ctx.payload)
-          return { received: true } as const
+          /**
+           * 🔴 SIGNED, and the verdict is still not disclosed (Codex review P1). The ack proves the
+           * holder of this key received a message with this id — equally true whether it was stored,
+           * refused as blocked, or dropped as unreadable — so the uniform reply keeps its property
+           * while a black hole loses the one it was exploiting: an endpoint claiming somebody else's
+           * key cannot produce this, and `sendDirect` stops reporting success for a message nobody
+           * will ever read.
+           *
+           * ⚠️ Signed for a blocked sender too, for the same reason the reply is uniform.
+           */
+          const at = Date.now()
+          const unsigned = {
+            recipient: (yield* selfIdentity.identity()).networkID,
+            sender: ctx.payload.from,
+            message: CommunityDirect.messageID(ctx.payload),
+            at,
+          }
+          const signature = yield* selfIdentity.sign(CommunityDirect.deliveryBytes(unsigned))
+          return {
+            received: true,
+            by: unsigned.recipient,
+            at,
+            signature: signature.toString("base64url"),
+          } as const
         }),
       )
       .handle(
@@ -645,8 +668,36 @@ const TURN_TIMED_OUT = { timedOut: true } as const
            * It is the one refusal keyed on who is asking, so consulting it for an unproven identity
            * would let a stranger probe whether a peer they name has used up their share.
            */
+          /**
+           * 🔴 Every refusal leaves here SIGNED (Codex review P1). The asker records a first-hand
+           * dealing about us on a refusal — *"they would not answer"* is what standing is made of —
+           * so an unsigned one let any endpoint answering at an address write a dealing in a
+           * victim's name. Bound to the ask's own signature so it cannot be replayed at the next
+           * question.
+           *
+           * ⚠️ Signed for a BLOCKED asker too. Withholding the proof there would make a block
+           * distinguishable from a quiet day, which is the property the uniform refusal exists for.
+           */
+          const refuse = (reason: CommunityAnswer.WireRefusal) =>
+            Effect.gen(function* () {
+              const at = Date.now()
+              const unsigned = {
+                author: (yield* selfIdentity.identity()).networkID,
+                asker: typeof ctx.payload.asker === "string" ? ctx.payload.asker : "",
+                request: typeof ctx.payload.signature === "string" ? ctx.payload.signature : "",
+                reason,
+                at,
+              }
+              const signature = yield* selfIdentity.sign(CommunityAnswer.refusalBytes(unsigned))
+              return {
+                refused: reason,
+                refusalAt: at,
+                refusalSignature: signature.toString("base64url"),
+              } as const
+            })
+
           const overall = yield* answers.state()
-          if (overall.refusal !== undefined) return { refused: overall.refusal }
+          if (overall.refusal !== undefined) return yield* refuse(overall.refusal)
 
           /**
            * 🔴 **The question's WEIGHT, before a model is resolved and before a signature is
@@ -662,7 +713,7 @@ const TURN_TIMED_OUT = { timedOut: true } as const
            * they hit and therefore what to vary — the same reason the block refusal is
            * indistinguishable from a quiet day.
            */
-          if (CommunityAnswer.questionTooLarge(ctx.payload.question)) return { refused: "not-answering" as const }
+          if (CommunityAnswer.questionTooLarge(ctx.payload.question)) return yield* refuse("not-answering")
 
           /**
            * ⚠️ Verified against OUR OWN identity, because the signature now names who the question is
@@ -671,7 +722,7 @@ const TURN_TIMED_OUT = { timedOut: true } as const
            * became trust-aware, their standing — at every instance that receives it.
            */
           const me = (yield* selfIdentity.identity()).networkID
-          if (!CommunityAnswer.verifyAsk(ctx.payload, me)) return { refused: "unsigned" as const }
+          if (!CommunityAnswer.verifyAsk(ctx.payload, me)) return yield* refuse("unsigned")
 
           /**
            * 🔴 BLOCKING applies here too — the checklist's inbound rule 4, *"check blocking if the
@@ -691,10 +742,10 @@ const TURN_TIMED_OUT = { timedOut: true } as const
            * an identity nobody proved.
            */
           const asking = yield* contacts.get(ctx.payload.asker)
-          if (asking?.blocked === true) return { refused: "not-answering" as const }
+          if (asking?.blocked === true) return yield* refuse("not-answering")
 
           const refusal = yield* answers.allowed(ctx.payload.asker)
-          if (refusal !== undefined) return { refused: refusal }
+          if (refusal !== undefined) return yield* refuse(refusal)
 
           /**
            * 🔴 The evidence packet, gathered BEFORE the permit is taken.
@@ -885,7 +936,7 @@ const TURN_TIMED_OUT = { timedOut: true } as const
             )
 
           // Nobody got the permit: somebody else's question is being answered right now.
-          if (Option.isNone(answer)) return { refused: "busy" as const }
+          if (Option.isNone(answer)) return yield* refuse("busy")
           /**
            * ⚠️ A turn that ran out of TIME is named, like every other refusal here. The asker is
            * about to give up anyway; what this protects is the permit, and the owner's tokens.
@@ -893,12 +944,12 @@ const TURN_TIMED_OUT = { timedOut: true } as const
           // ⚠️ Discriminated by TYPE, not by identity: TypeScript does not narrow an object
           // comparison, and an unnarrowed union here would hide the empty-answer check below it.
           if (answer.value !== undefined && typeof answer.value !== "string")
-            return { refused: "unavailable" as const }
+            return yield* refuse("unavailable")
           // ⚠️ Distinct from "no-answer": the model never ran, rather than running and saying nothing.
-          if (answer.value === undefined) return { refused: "unavailable" as const }
+          if (answer.value === undefined) return yield* refuse("unavailable")
           const text = answer.value.trim()
           // An empty completion is a broken call, not an answer worth signing our name to.
-          if (text === "") return { refused: "no-answer" as const }
+          if (text === "") return yield* refuse("no-answer")
 
           /**
            * ⚠️ The spend is already recorded — it happens the moment the model starts, not here.

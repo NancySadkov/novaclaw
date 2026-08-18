@@ -315,6 +315,9 @@ const AnswerReply = Schema.Struct({
   author: Schema.optional(Schema.String),
   at: Schema.optional(Schema.Number),
   signature: Schema.optional(Schema.String),
+  /** The refusal's own proof — see the dealing below for why a refusal needs one. */
+  refusalAt: Schema.optional(Schema.Number),
+  refusalSignature: Schema.optional(Schema.String),
 })
 
 const Summary = Schema.Struct({ buckets: Schema.Array(Schema.String) })
@@ -399,7 +402,13 @@ const Messages = Schema.Struct({
   ),
 })
 
-const Ack = Schema.Struct({ received: Schema.Boolean })
+const Ack = Schema.Struct({
+  received: Schema.Boolean,
+  /** The recipient's proof that they received THIS message — see `sendDirect`. */
+  by: Schema.optional(Schema.String),
+  at: Schema.optional(Schema.Number),
+  signature: Schema.optional(Schema.String),
+})
 
 const PER_REQUEST_TIMEOUT_MS = 10_000
 
@@ -652,6 +661,13 @@ export const layer = Layer.effect(
         const addresses = yield* dialableRoutes(to)
         if (addresses.length === 0) return { sent: false, reason: "no-route" }
 
+        /**
+         * ⚠️ Bound to a NAME, because `self` in this scope is the global `Window` — the typecheck
+         * caught it reading `self.networkID` off the DOM, which would have compiled to `undefined`
+         * on a runtime that has one and made every delivery proof fail open.
+         */
+        const me = (yield* identity.identity()).networkID
+        let lastRejection: string | undefined
         for (const address of addresses) {
           const health = yield* probeIdentity(address)
           // A different identity at that address means the route is stale or someone else is there.
@@ -665,17 +681,50 @@ export const layer = Layer.effect(
             sealingSignature: health.sealingSignature,
             body,
           })
-          if ("rejected" in composed) return { sent: false, reason: composed.rejected }
+          /**
+           * ⚠️ CONTINUE, not return (Codex review P1). A rejection here means the key this address
+           * offered was unusable — which is exactly what a hostile endpoint supplies — and the next
+           * address may be the genuine instance. Ending the send on the first bad tuple let one
+           * impostor route black-hole a message that had a working route behind it.
+           */
+          if ("rejected" in composed) {
+            lastRejection = composed.rejected
+            continue
+          }
 
           const ack = yield* ask(address, DM_PATH, composed.message, Ack, "POST", undefined, MAX_SMALL_RESPONSE_BYTES)
+          /**
+           * 🔴 **`sent` means the RECIPIENT proved they got it** (Codex review P1).
+           *
+           * A hostile endpoint claiming this peer's key accepted the ciphertext it could not open,
+           * answered the uniform `{received:true}`, and the user was told their message was sent —
+           * a black hole that reports success. The ack is now bound to the recipient, to us, and to
+           * this message's id, so only the real holder of the key can produce one.
+           *
+           * ⚠️ An unproven ack does NOT end the loop: the next route may be the genuine instance.
+           * Treating it as delivery was the bug; treating it as fatal would be a second one.
+           */
+          const delivered =
+            ack !== undefined &&
+            ack.signature !== undefined &&
+            CommunityDirect.verifyDelivery(
+              {
+                recipient: ack.by ?? "",
+                sender: me,
+                message: CommunityDirect.messageID(composed.message),
+                at: ack.at ?? 0,
+                signature: ack.signature,
+              },
+              { recipient: to, sender: me, message: CommunityDirect.messageID(composed.message) },
+            )
           // ⚠️ Stored either way — `compose` already kept our copy. A send that failed to reach them
           // must not also lose what the user wrote.
-          if (ack !== undefined) {
+          if (delivered) {
             yield* reached(to, address)
             return { sent: true }
           }
         }
-        return { sent: false, reason: "unreachable" }
+        return { sent: false, reason: lastRejection ?? "unreachable" }
       }),
 
       askPeer: Effect.fn("CommunitySync.askPeer")(function* (to: string, question: string) {
@@ -772,12 +821,36 @@ export const layer = Layer.effect(
             ledger.recordFirstHand({ subject: to, at: Date.now(), context: "asked", outcome })
 
           if (reply.refused !== undefined) {
-            yield* dealing(CommunityObservation.Outcome.REFUSED)
+            /**
+             * 🔴 **A DEALING is recorded only against a refusal this peer PROVED** (Codex review P1).
+             *
+             * *"They would not answer"* is exactly what standing is made of, so this writes a
+             * first-hand observation about `to` — and while a refusal carried no signature, anything
+             * answering at that address could make us write one in a victim's name. The identity
+             * challenge settles who is at the address; this settles what they said once there.
+             *
+             * ⚠️ An unproven refusal is still REPORTED to the user — it is what the far end said, and
+             * hiding it would leave a silent failure — it simply earns nobody a dealing. Reporting
+             * and recording are different acts, and only one of them is a claim about a person.
+             */
+            const proven =
+              reply.refusalSignature !== undefined &&
+              CommunityAnswer.verifyRefusal(
+                {
+                  author: to,
+                  asker: self.networkID,
+                  request: payload.signature,
+                  reason: reply.refused,
+                  at: reply.refusalAt ?? 0,
+                  signature: reply.refusalSignature,
+                },
+                { author: to, asker: self.networkID, request: payload.signature },
+              )
+            if (proven) yield* dealing(CommunityObservation.Outcome.REFUSED)
             /**
              * 🔴 Mapped to our own vocabulary HERE, at the seam the bytes arrive at, rather than
-             * anywhere they are rendered. The `refused` branch is the one part of an ask reply that
-             * carries no signature — only `answer` is verified — so it is a stranger's free text
-             * with our sentence wrapped around it, which is how it reached the model unframed.
+             * anywhere they are rendered. A stranger's free text with our sentence wrapped around it
+             * is how it reached the model unframed.
              */
             return { refused: CommunityAnswer.asWireRefusal(reply.refused) ?? "unrecognised" }
           }

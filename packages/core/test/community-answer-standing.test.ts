@@ -4,6 +4,7 @@ import { Effect } from "effect"
 import { CommunityAnswer } from "@novaclaw/core/community/answer"
 import { CommunityConsent } from "@novaclaw/core/community/consent"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
+import { CommunityDirect } from "@novaclaw/core/community/dm"
 import { CommunityObservation } from "@novaclaw/core/community/observation"
 import { CommunityPeers } from "@novaclaw/core/community/peers"
 import { CommunityStanding } from "@novaclaw/core/community/standing"
@@ -319,6 +320,79 @@ describe("what an instance answers FROM (Codex P2)", () => {
       // A question with nothing to match on selects nothing rather than everything — the failure
       // mode is "no evidence found", which the prompt requires the answer to admit.
       expect(CommunityAnswer.selectEvidence("what is it", history)).toEqual([])
+    }),
+  )
+})
+
+describe("a refusal and a delivery are CLAIMS that must be proven (Codex P1)", () => {
+  it.effect("🔴 a refusal is bound to the refuser, the asker, and the question", () =>
+    Effect.gen(function* () {
+      /**
+       * The asking side records a first-hand dealing about a peer on a refusal — "they would not
+       * answer" is what standing is made of — so while refusals carried no signature, anything
+       * answering at an address could make us write one in a victim's name.
+       */
+      const { publicKey, privateKey } = generateKeyPairSync("ed25519")
+      const raw = (publicKey.export({ type: "spki", format: "der" }) as Buffer).subarray(12)
+      const author = `nid_${raw.toString("base64url")}`
+      const asker = mintIdentity().networkID
+      const request = "the-ask-signature"
+
+      const unsigned = { author, asker, request, reason: "budget-spent", at: Date.now() }
+      const refusal = {
+        ...unsigned,
+        signature: nodeSign(null, Buffer.from(CommunityAnswer.refusalBytes(unsigned)), privateKey).toString(
+          "base64url",
+        ),
+      }
+      expect(CommunityAnswer.verifyRefusal(refusal, { author, asker, request })).toBe(true)
+
+      // ⚠️ Bound to the QUESTION, so one captured refusal cannot be replayed at every later one —
+      // otherwise a single message would fill our ledger with dealings.
+      expect(CommunityAnswer.verifyRefusal(refusal, { author, asker, request: "another-question" })).toBe(false)
+      // …and it cannot be lifted from somebody else's exchange, or re-attributed.
+      expect(CommunityAnswer.verifyRefusal(refusal, { author, asker: mintIdentity().networkID, request })).toBe(false)
+      expect(
+        CommunityAnswer.verifyRefusal({ ...refusal, author: mintIdentity().networkID }, { author, asker, request }),
+      ).toBe(false)
+      // A reason outside our own vocabulary is not a refusal we will record against anybody.
+      expect(CommunityAnswer.verifyRefusal({ ...refusal, reason: "whatever" }, { author, asker, request })).toBe(false)
+    }),
+  )
+
+  it.effect("🔴 a delivery ack proves possession without disclosing the verdict", () =>
+    Effect.gen(function* () {
+      /**
+       * The DM door answers a uniform `{received:true}` on purpose, so a sender cannot probe who is
+       * blocked. An UNSIGNED uniform ack is also what a black hole returns: an endpoint claiming a
+       * victim's key accepted ciphertext it could not open, said received, and the user was told
+       * their message was sent.
+       */
+      const { publicKey, privateKey } = generateKeyPairSync("ed25519")
+      const raw = (publicKey.export({ type: "spki", format: "der" }) as Buffer).subarray(12)
+      const recipient = `nid_${raw.toString("base64url")}`
+      const sender = mintIdentity().networkID
+      const message = "sha256-of-the-envelope"
+
+      const unsigned = { recipient, sender, message, at: Date.now() }
+      const ack = {
+        ...unsigned,
+        signature: nodeSign(null, Buffer.from(CommunityDirect.deliveryBytes(unsigned)), privateKey).toString(
+          "base64url",
+        ),
+      }
+      expect(CommunityDirect.verifyDelivery(ack, { recipient, sender, message })).toBe(true)
+
+      // The black hole: an impostor cannot produce this for a key it does not hold.
+      const impostor = mintIdentity().networkID
+      expect(CommunityDirect.verifyDelivery({ ...ack, recipient: impostor }, { recipient: impostor, sender, message })).toBe(
+        false,
+      )
+      // Bound to THIS message, so an ack cannot be replayed for the next one.
+      expect(CommunityDirect.verifyDelivery(ack, { recipient, sender, message: "a-different-message" })).toBe(false)
+      // …and it says nothing about the verdict, which is the property the uniform reply protects:
+      // the same signed shape is returned whether the message was stored, blocked or unreadable.
+      expect(Object.keys(ack).sort()).toEqual(["at", "message", "recipient", "sender", "signature"])
     }),
   )
 })

@@ -234,7 +234,16 @@ describe("every community operation is classified for framing", () => {
         new URL("../../novaclaw/src/server/routes/instance/httpapi/handlers/community.ts", import.meta.url),
         "utf8",
       )
-      const emitted = [...handlers.matchAll(/refused:\s*"([a-z-]+)"/g)].map((match) => match[1]!)
+      /**
+       * ⚠️ TWO SHAPES, because the handler now signs its refusals: the literal `refused: "token"`
+       * and `refuse("token")`, the helper that signs one. When the signing refactor landed, this
+       * scan found zero and the guard below fired — which is exactly what it was added for. A
+       * ledger that silently stopped matching would have gone green while nothing was checked.
+       */
+      const emitted = [
+        ...[...handlers.matchAll(/refused:\s*"([a-z-]+)"/g)].map((match) => match[1]!),
+        ...[...handlers.matchAll(/refuse\("([a-z-]+)"\)/g)].map((match) => match[1]!),
+      ]
       // The scan must find them at all — an empty list satisfies every loop below.
       expect(emitted.length, "the scan must find the refusals we send").toBeGreaterThan(3)
       for (const token of new Set(emitted))

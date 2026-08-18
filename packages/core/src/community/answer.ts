@@ -469,6 +469,86 @@ export const verifyAsk = (ask: SignedAsk, self: string): boolean => {
   return InstanceIdentityStore.verifySignature(ask.asker, askBytes(ask), signature)
 }
 
+/**
+ * 🔴 **A refusal is a CLAIM, and it was taken on trust** (Codex review P1).
+ *
+ * Only the `answer` branch of a reply was signed. A refusal was not — and the asking side records a
+ * first-hand dealing about the peer either way, because *"they would not answer"* is exactly what
+ * standing is made of. So any endpoint that could answer at an address could forge a refusal in a
+ * victim's name and make us write it into our own ledger about them. The identity challenge closes
+ * who is at the address; this closes what they said once they are there.
+ *
+ * ⚠️ Bound to the ASK, not just to the refuser: without the request id, one signed refusal is
+ * replayable against every later question we put to that peer, and the ledger would fill with
+ * dealings from a single captured message. The ask's own signature is the id — it is unique per
+ * question by construction.
+ */
+const REFUSAL_DOMAIN = "novaclaw/community/refusal/1"
+
+export interface UnsignedRefusal {
+  /** The instance refusing — whose standing this is about. */
+  readonly author: string
+  /** Who asked, so a refusal cannot be lifted from somebody else's exchange. */
+  readonly asker: string
+  /** The ask's signature: unique per question, so a refusal cannot be replayed at the next one. */
+  readonly request: string
+  /** A token from `WIRE_REFUSALS`. Signing free text would re-open what the closed vocabulary shut. */
+  readonly reason: string
+  readonly at: number
+}
+
+export interface SignedRefusal extends UnsignedRefusal {
+  readonly signature: string
+}
+
+export const refusalBytes = (input: UnsignedRefusal): Uint8Array => {
+  const parts: Uint8Array[] = []
+  const push = (value: string) => {
+    const bytes = encoder.encode(value)
+    const length = new Uint8Array(4)
+    new DataView(length.buffer).setUint32(0, bytes.length, false)
+    parts.push(length, bytes)
+  }
+  push(REFUSAL_DOMAIN)
+  push(input.author)
+  push(input.asker)
+  push(input.request)
+  push(input.reason)
+  const at = new Uint8Array(8)
+  new DataView(at.buffer).setBigUint64(0, BigInt(Math.trunc(input.at)), false)
+  parts.push(at)
+  const total = parts.reduce((sum, part) => sum + part.length, 0)
+  const out = new Uint8Array(total)
+  let offset = 0
+  for (const part of parts) {
+    out.set(part, offset)
+    offset += part.length
+  }
+  return out
+}
+
+/**
+ * True only if THIS peer really refused THIS question of ours.
+ *
+ * ⚠️ `expected` is required, and every field of it is checked. A verification that only proved "some
+ * instance signed some refusal" would accept a refusal harvested from another exchange entirely,
+ * which is the replay the request id exists to stop.
+ */
+export const verifyRefusal = (
+  refusal: SignedRefusal,
+  expected: { readonly author: string; readonly asker: string; readonly request: string },
+): boolean => {
+  if (typeof refusal.signature !== "string" || refusal.signature.length === 0) return false
+  if (refusal.author !== expected.author) return false
+  if (refusal.asker !== expected.asker) return false
+  if (refusal.request !== expected.request) return false
+  if (asWireRefusal(refusal.reason) === undefined) return false
+  if (!Number.isSafeInteger(refusal.at) || refusal.at < 0) return false
+  const signature = Buffer.from(refusal.signature, "base64url")
+  if (signature.length !== 64) return false
+  return InstanceIdentityStore.verifySignature(refusal.author, refusalBytes(refusal), signature)
+}
+
 export interface Interface {
   /** The gate as it stands right now, including how much of today's budget is left. */
   readonly state: () => Effect.Effect<{

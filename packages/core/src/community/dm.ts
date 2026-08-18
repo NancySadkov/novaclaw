@@ -141,6 +141,77 @@ export const canonicalBytes = (message: Unsigned): Uint8Array => {
   return out
 }
 
+/**
+ * 🔴 **The delivery acknowledgement, signed** (Codex review P1).
+ *
+ * The DM door answers `{received:true}` to everybody, deliberately: a sender must not learn whether
+ * their message was kept, and must not be able to probe who this user blocks. But an UNSIGNED
+ * uniform ack is also what a black hole returns — a hostile endpoint that claimed a victim's key
+ * accepted ciphertext it could not open, said `received:true`, and `sendDirect` reported success to
+ * the user for a message nobody would ever read.
+ *
+ * ⚠️ Signing does not weaken the indistinguishability, and that is why this shape and not a verdict:
+ * it says "the holder of this key received a message with this id", which is true whether the
+ * message was stored, refused as blocked or dropped as unreadable. A blocked sender is answered with
+ * the same signed ack as anyone else — refusing to sign for them would leak the block that the
+ * uniform reply exists to hide.
+ */
+const DELIVERY_DOMAIN = "novaclaw/community/delivery/1"
+
+export interface UnsignedDelivery {
+  /** Who received it — the key whose possession this proves. */
+  readonly recipient: string
+  /** Who sent it, so an ack cannot be lifted from somebody else's delivery. */
+  readonly sender: string
+  /** The message id: unique per message, so an ack cannot be replayed for the next one. */
+  readonly message: string
+  readonly at: number
+}
+
+export interface SignedDelivery extends UnsignedDelivery {
+  readonly signature: string
+}
+
+export const deliveryBytes = (input: UnsignedDelivery): Uint8Array => {
+  const parts: Uint8Array[] = []
+  const push = (value: string) => {
+    const bytes = encoder.encode(value)
+    const length = new Uint8Array(4)
+    new DataView(length.buffer).setUint32(0, bytes.length, false)
+    parts.push(length, bytes)
+  }
+  push(DELIVERY_DOMAIN)
+  push(input.recipient)
+  push(input.sender)
+  push(input.message)
+  const at = new Uint8Array(8)
+  new DataView(at.buffer).setBigUint64(0, BigInt(Math.trunc(input.at)), false)
+  parts.push(at)
+  const total = parts.reduce((sum, part) => sum + part.length, 0)
+  const out = new Uint8Array(total)
+  let offset = 0
+  for (const part of parts) {
+    out.set(part, offset)
+    offset += part.length
+  }
+  return out
+}
+
+/** True only if the peer we addressed really received THIS message from US. */
+export const verifyDelivery = (
+  ack: SignedDelivery,
+  expected: { readonly recipient: string; readonly sender: string; readonly message: string },
+): boolean => {
+  if (typeof ack.signature !== "string" || ack.signature.length === 0) return false
+  if (ack.recipient !== expected.recipient) return false
+  if (ack.sender !== expected.sender) return false
+  if (ack.message !== expected.message) return false
+  if (!Number.isSafeInteger(ack.at) || ack.at < 0) return false
+  const signature = Buffer.from(ack.signature, "base64url")
+  if (signature.length !== 64) return false
+  return InstanceIdentityStore.verifySignature(ack.recipient, deliveryBytes(ack), signature)
+}
+
 /** Is this really from the author it names? Pure and total — a peer is untrusted bytes. */
 export const verify = (message: Signed): boolean => {
   if (typeof message.signature !== "string" || message.signature.length === 0) return false

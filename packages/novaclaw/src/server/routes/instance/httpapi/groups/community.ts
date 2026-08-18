@@ -709,7 +709,22 @@ const PeerDelivery = Schema.Struct({ topic: Schema.String, message: PeerMessage 
  * are cheap to harvest at scale. This costs the sender nothing real — `delivered` has always meant
  * "a transport accepted it", never "it was stored", let alone "it was read".
  */
-const PeerAck = Schema.Struct({ received: Schema.Literal(true) })
+/**
+ * ⚠️ `received` stays a uniform `true` — the verdict is deliberately not disclosed — and the
+ * signature does not change that: it proves the KEY WE ADDRESSED received a message with this id,
+ * which is equally true of a message stored, refused as blocked, or dropped as unreadable. Without
+ * it, a hostile endpoint claiming a victim's key returned exactly this shape and `sendDirect`
+ * reported success for a message nobody would ever read (Codex review P1).
+ *
+ * ⚠️ Optional on the wire so a peer running an older build still answers rather than failing to
+ * decode; the SENDER decides what an unproven ack is worth.
+ */
+const PeerAck = Schema.Struct({
+  received: Schema.Literal(true),
+  by: Schema.optional(Schema.String),
+  at: Schema.optional(Schema.Number),
+  signature: Schema.optional(Schema.String),
+})
 
 /**
  * Community P4 — the three steps of a catch-up, served to whoever asks.
@@ -856,6 +871,17 @@ export const CommunityPeerApi = HttpApi.make("communityPeer").add(
              */
             answer: Schema.optional(Schema.String),
             refused: Schema.optional(Schema.String),
+            /**
+             * 🔴 The refusal, SIGNED — because the asker records a first-hand dealing about this
+             * peer either way, and an unsigned refusal let anyone answering at an address write a
+             * dealing into our ledger in a victim's name (Codex review P1).
+             *
+             * ⚠️ Bound to the ask's own signature, so one captured refusal cannot be replayed at
+             * every later question. Optional on the wire; an unproven refusal is still reported to
+             * the user, it simply earns nobody a dealing.
+             */
+            refusalAt: Schema.optional(Schema.Number),
+            refusalSignature: Schema.optional(Schema.String),
             /**
              * 🔴 The answer is a CLAIM WE AUTHOR, so it is signed — and every field the
              * signature covers has to travel with it or the asker cannot rebuild the bytes.

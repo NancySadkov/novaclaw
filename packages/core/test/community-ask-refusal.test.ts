@@ -147,3 +147,92 @@ describe("a peer's refusal is a TOKEN, never their words (finding 1.6)", () => {
     }),
   )
 })
+
+describe("a refusal earns a DEALING only when it is proven (Codex P1)", () => {
+  /**
+   * 🔴 The asking side records a first-hand observation about a peer on a refusal, because *"they
+   * would not answer"* is exactly what standing is made of. While refusals carried no signature,
+   * anything that could answer at an address could make this instance write a dealing in a victim's
+   * name — reputation forgery through a door built for honesty.
+   *
+   * ⚠️ These drive the REAL `askPeer` against a real socket. The envelope's own tests prove the
+   * signature checks out; only this proves the caller consults it. An A/B on `sync` passed against
+   * the envelope tests alone, which is exactly the gap this file exists to close.
+   */
+  const peerThatRefuses = (identity: MintedIdentity, sign: boolean) =>
+    Bun.serve({
+      port: 0,
+      fetch: async (request) => {
+        const url = new URL(request.url)
+        if (url.pathname === "/api/community/identity") {
+          const challenge = url.searchParams.get("challenge")
+          const bytes = challenge === null ? undefined : InstanceIdentityStore.identityProofBytes(challenge)
+          return Response.json({
+            networkID: identity.networkID,
+            ...(bytes === undefined
+              ? {}
+              : { proof: nodeSign(null, Buffer.from(bytes), identity.privateKey).toString("base64url") }),
+          })
+        }
+        if (url.pathname === "/api/community/ask") {
+          const ask = (await request.json()) as { asker: string; signature: string }
+          if (!sign) return Response.json({ refused: "budget-spent" })
+          const at = Date.now()
+          const unsigned = {
+            author: identity.networkID,
+            asker: ask.asker,
+            request: ask.signature,
+            reason: "budget-spent",
+            at,
+          }
+          return Response.json({
+            refused: "budget-spent",
+            refusalAt: at,
+            refusalSignature: nodeSign(
+              null,
+              Buffer.from(CommunityAnswer.refusalBytes(unsigned)),
+              identity.privateKey,
+            ).toString("base64url"),
+          })
+        }
+        return new Response("no", { status: 404 })
+      },
+    })
+
+  const refuseThrough = (sign: boolean) =>
+    Effect.gen(function* () {
+      CommunityConsent.applied({ consented: true }, { enabled: false })
+      const peers = yield* CommunityPeers.Service
+      const sync = yield* CommunitySync.Service
+      const ledger = yield* CommunityObservation.Service
+      const peer = mintIdentity()
+      const server = peerThatRefuses(peer, sign)
+      try {
+        yield* peers.learn(peer.networkID, [`http://127.0.0.1:${server.port}`], "lan")
+        const result = yield* sync.askPeer(peer.networkID, "what happened today?")
+        return { result, dealings: yield* ledger.about(peer.networkID) }
+      } finally {
+        server.stop(true)
+      }
+    })
+
+  it.effect("🔴 an UNSIGNED refusal is reported to the user and recorded against nobody", () =>
+    Effect.gen(function* () {
+      const { result, dealings } = yield* refuseThrough(false)
+      // Reported: it is what the far end said, and hiding it would be a silent failure.
+      expect(result).toEqual({ refused: "budget-spent" })
+      // Recorded: nothing. Reporting and recording are different acts, and only one of them is a
+      // claim about a person.
+      expect(dealings, "an unproven refusal must not become a dealing").toEqual([])
+    }),
+  )
+
+  it.effect("⚠️ and the control: a SIGNED refusal is a dealing, or the ledger would learn nothing", () =>
+    Effect.gen(function* () {
+      const { result, dealings } = yield* refuseThrough(true)
+      expect(result).toEqual({ refused: "budget-spent" })
+      expect(dealings.length, "a proven refusal is exactly what standing is made of").toBe(1)
+      expect(dealings[0]?.outcome).toBe(CommunityObservation.Outcome.REFUSED)
+    }),
+  )
+})
