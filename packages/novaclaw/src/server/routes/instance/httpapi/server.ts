@@ -49,7 +49,7 @@ import { Vcs } from "@/project/vcs"
 import { Question } from "@/question"
 import { Todo } from "@/session/todo"
 import { Skill } from "@/skill"
-import { Discovery } from "@/skill/discovery"
+import { SkillDiscovery } from "@novaclaw/core/skill/discovery"
 import { Snapshot } from "@/snapshot"
 import { Storage } from "@/storage/storage"
 import { Truncate } from "@/tool/truncate"
@@ -312,7 +312,7 @@ const app = LayerNode.group([
   ModelsDev.node,
   Agent.node,
   Skill.node,
-  Discovery.node,
+  SkillDiscovery.node,
   Question.node,
   PermissionSaved.node,
   Todo.node,

@@ -13,7 +13,7 @@ import { Snapshot } from "@/snapshot"
 import { ModelsDev } from "@novaclaw/core/models-dev"
 import { Agent } from "@/agent/agent"
 import { Skill } from "@/skill"
-import { Discovery } from "@/skill/discovery"
+import { SkillDiscovery } from "@novaclaw/core/skill/discovery"
 import { Question } from "@/question"
 import { Todo } from "@/session/todo"
 import { MCP } from "@/mcp"
@@ -43,7 +43,7 @@ export const AppLayer = Layer.mergeAll(
   ModelsDev.defaultLayer,
   Agent.defaultLayer,
   Skill.defaultLayer,
-  Discovery.defaultLayer,
+  SkillDiscovery.defaultLayer,
   Question.defaultLayer,
   Todo.defaultLayer,
   RuntimeFlags.defaultLayer,

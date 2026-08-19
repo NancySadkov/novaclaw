@@ -14,7 +14,7 @@ import { FrontmatterError } from "@novaclaw/core/config/error"
 import { ConfigMarkdown } from "@/config/markdown"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Glob } from "@novaclaw/core/util/glob"
-import { Discovery } from "./discovery"
+import { SkillDiscovery } from "@novaclaw/core/skill/discovery"
 import { isRecord } from "@/util/record"
 import { escapeHtml } from "@/util/html"
 
@@ -173,7 +173,7 @@ const scan = Effect.fnUntraced(function* (
 
 const discoverSkills = Effect.fnUntraced(function* (
   config: Config.Interface,
-  discovery: Discovery.Interface,
+  discovery: SkillDiscovery.Interface,
   fsys: FSUtil.Interface,
   global: Global.Interface,
   disableExternalSkills: boolean,
@@ -255,7 +255,7 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/Sk
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const discovery = yield* Discovery.Service
+    const discovery = yield* SkillDiscovery.Service
     const config = yield* Config.Service
     const events = yield* EventV2Bridge.Service
     const fsys = yield* FSUtil.Service
@@ -316,7 +316,7 @@ export const layer = Layer.effect(
 )
 
 export const defaultLayer = layer.pipe(
-  Layer.provide(Discovery.defaultLayer),
+  Layer.provide(SkillDiscovery.defaultLayer),
   Layer.provide(Config.defaultLayer),
   Layer.provide(EventV2Bridge.defaultLayer),
   Layer.provide(FSUtil.defaultLayer),
@@ -354,7 +354,7 @@ export function fmt(list: Info[], opts: { verbose: boolean }) {
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [Discovery.node, Config.node, EventV2Bridge.node, FSUtil.node, Global.node, RuntimeFlags.node],
+  deps: [SkillDiscovery.node, Config.node, EventV2Bridge.node, FSUtil.node, Global.node, RuntimeFlags.node],
 })
 
 export * as Skill from "."

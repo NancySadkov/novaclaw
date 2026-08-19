@@ -1,7 +1,7 @@
 import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
 import { Skill } from "../../src/skill"
-import { Discovery } from "../../src/skill/discovery"
+import { SkillDiscovery } from "@novaclaw/core/skill/discovery"
 import { RuntimeFlags } from "../../src/effect/runtime-flags"
 import { EventV2Bridge } from "../../src/event-v2-bridge"
 import { Config } from "../../src/config/config"
@@ -19,7 +19,7 @@ const it = testEffect(Layer.mergeAll(Skill.defaultLayer, node, testInstanceStore
 const itWithoutClaudeCodeSkills = testEffect(
   Layer.mergeAll(
     Skill.layer.pipe(
-      Layer.provide(Discovery.defaultLayer),
+      Layer.provide(SkillDiscovery.defaultLayer),
       Layer.provide(Config.defaultLayer),
       Layer.provide(EventV2Bridge.defaultLayer),
       Layer.provide(FSUtil.defaultLayer),
@@ -33,7 +33,7 @@ const itWithoutClaudeCodeSkills = testEffect(
 const itWithoutExternalSkills = testEffect(
   Layer.mergeAll(
     Skill.layer.pipe(
-      Layer.provide(Discovery.defaultLayer),
+      Layer.provide(SkillDiscovery.defaultLayer),
       Layer.provide(Config.defaultLayer),
       Layer.provide(EventV2Bridge.defaultLayer),
       Layer.provide(FSUtil.defaultLayer),
