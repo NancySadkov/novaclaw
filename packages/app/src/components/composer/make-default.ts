@@ -98,12 +98,16 @@ export function makeDefaultPayload(plan: MakeDefaultPlan): Partial<Record<Compos
  * provenance and the panel keeps its previous wording" — but the wording it kept is a POSITIVE CLAIM,
  * and principle 12(d) is about saying what is in force, not about defaulting to the cheerful branch.
  *
- * ⚠️ **Why there are UNKNOWN variants rather than reusing `here`/`ancestor`.** The draft fallback is
- * `GET /api/project`, which answers *whether* a file governs the folder and *where it is* — and does
- * NOT carry `applied`, i.e. which switches the file supplied. Presenting a discovered file as though
- * it were a resolved layer would mean rendering `applied: []`, which prints "it sets nothing" and is
- * just a different false statement. So the honest answer names the file and declines to summarise it.
- * The Chats/Files surfaces hit the same wall and made the same choice.
+ * ⚠️ **Why there are UNKNOWN variants rather than reusing `here`/`ancestor`.** They exist for the
+ * case where we know a file governs the folder and NOT what it declares: presenting that as a
+ * resolved layer would mean rendering `applied: []`, which prints "it sets nothing" and is just a
+ * different false statement. So the honest answer names the file and declines to summarise it.
+ *
+ * ⚠️ **Updated 2026-08-19 — this used to say `GET /api/project` never carries `applied`, and it now
+ * does.** The route answers with the kernel's own fold for the folder (`tune.applied`), so a draft
+ * against a current instance takes the RESOLVED `here`/`ancestor` arm through `governedBy`, exactly
+ * like a session. The unknown arms remain reachable against an instance older than that field, which
+ * is the one situation where *"open a chat here to see what it sets"* is still the right advice.
  */
 export type InForce =
   /** Nobody has answered yet. Distinct from `none` on purpose — see {@link inForceState}. */

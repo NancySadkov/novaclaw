@@ -139,8 +139,11 @@ export type ComposerMakeDefaultState = {
    * The DIRECTORY-keyed answer, for a draft chat that has no session to resolve a layer from.
    *
    * `undefined` means nobody has answered yet and is deliberately NOT the same as a `none` answer —
-   * see `inForceState`. It carries no `applied`, so the copy it drives names the file and declines to
-   * summarise what it declares rather than printing "it sets nothing".
+   * see `inForceState`.
+   *
+   * ⚠️ It is the fallback for the arms `governedBy` cannot cover: `none`, `invalid`, and an instance
+   * too old to send the folder's fold. When the fold IS there, the draft's `governedBy` is built from
+   * it and wins here, so this drives the "file exists, contents unknown" copy and nothing else.
    */
   discovered?:
     | { readonly kind: "project"; readonly root: string; readonly file: string }
@@ -703,8 +706,17 @@ export function ComposerFeaturesControl(props: { state: ComposerFeaturesControlS
   // `onClose` is the composer's "the user finished tuning" hook (it re-reads the session record), so it
   // fires when the dialog goes away by ANY route — button, overlay click or Escape — via dialog.show's
   // own onClose callback rather than a hand-rolled handler per dismissal path.
+  //
+  // 🔴 **`showScoped`, not `show`, and the difference is a mis-targeted WRITE.** `dialog.show` mounts
+  // under `createRoot`, which is DETACHED — the panel's root is never linked to this component's
+  // lifetime — while everything the panel renders and acts on lives in `props.state`, a memo the
+  // composer owns. Measured in dev Electron: open Tune on a draft in one folder, deep-link the draft
+  // to another, and the still-open panel keeps the FROZEN state of the folder you left. It says
+  // "This folder has no project file yet. Saving creates one here.", and pressing Save as folder
+  // default creates `novaclaw.json` in the OLD folder while the new one stays empty. `showScoped`
+  // binds the panel's life to this composer, so a route change takes it with it.
   const openPanel = () =>
-    void dialog.show(
+    void dialog.showScoped(
       () => <TuningPanel state={props.state} onDismiss={() => props.state.onClose()} />,
       () => props.state.onClose(),
     )

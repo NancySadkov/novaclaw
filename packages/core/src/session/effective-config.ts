@@ -91,6 +91,56 @@ export const clampToCeilings = (config: EffectiveConfig, ceilings: Ceilings): Ef
 
 const currentCeilings = (): Ceilings => ({ memory: MemorySetting.memoryEnabled() })
 
+/** The instance's live ceilings, for a caller outside this service (`GET /api/project`). */
+export const ceilings = currentCeilings
+
+/** What a folder alone decides, before any chat exists to declare anything. */
+export interface FolderStance {
+  /** The stance a chat created here would START with — the folded defaults, ceilings applied. */
+  readonly config: EffectiveConfig
+  /** The tune components the folder actually contributes to it. */
+  readonly applied: readonly ProjectFile.TuneFeature[]
+  /** Declared and refused: a folder may raise a supervision rail and may never lower one. */
+  readonly refused: readonly ProjectFile.TuneFeature[]
+  /** Declared, allowed, and not applied because no reader folds it yet (`ProjectDefaults.WIRED`). */
+  readonly deferred: readonly ProjectFile.TuneFeature[]
+}
+
+/**
+ * 🔴 **The same fold, for a chat that does not exist yet — and it lives HERE for the reason the rest
+ * of this file exists.**
+ *
+ * A DRAFT has no session id, so `resolution` cannot answer for it, and the composer's Tuning panel
+ * therefore showed every switch at the INSTANCE stance: a draft in a folder declaring
+ * `quality: true` rendered *"Using Settings default: Off"* while the chat that same click would
+ * create resolves `quality: true` from the folder. Measured 2026-08-19. The sentence above the
+ * switches had already been fixed to name the folder's file, so the two halves of one panel
+ * contradicted each other — worse than either alone.
+ *
+ * The obvious repair is to let the browser fold the folder's declared tune over its own baseline.
+ * That is the mistake `config-provenance.ts` records: a browser-side re-derivation once produced
+ * toggles that were the exact INVERSE of what the runner resolved. `narrowTune` is a security rule —
+ * a folder may raise a supervision switch and never lower one — and a second implementation of it in
+ * a renderer is a second chance to get a security rule wrong. So the kernel folds, and the client
+ * renders what it is told.
+ *
+ * ⚠️ There is no chain step because there is no chain: `resolveConfig(base, [])` is `{...base}`, so
+ * running the walk over an empty chain would be a longer spelling of `folded.defaults`. The
+ * CEILINGS still apply, because they clamp the resolution rather than the defaults — a folder that
+ * asks for `memory: true` while the user's privacy switch is off must not be reported as supplying
+ * it, since the chat this creates will not have it.
+ */
+export const folderStance = (tune: ProjectFile.Tune | undefined, limits: Ceilings): FolderStance => {
+  const folded = ProjectDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, tune)
+  const config = clampToCeilings(folded.defaults, limits)
+  return {
+    config,
+    applied: folded.applied.filter((feature) => config[feature] === folded.defaults[feature]),
+    refused: folded.refused,
+    deferred: folded.deferred,
+  }
+}
+
 export interface Interface {
   /** The full resolution, including where the folder layer came from and what it could not do. */
   readonly resolution: (sessionID: SessionSchema.ID) => Effect.Effect<Resolution>

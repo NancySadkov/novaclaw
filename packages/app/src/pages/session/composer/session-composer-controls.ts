@@ -115,7 +115,11 @@ export function createPromptInputController(input: {
       draft && Object.prototype.hasOwnProperty.call(draft, feature) ? draft[feature] : record?.[feature]
     // The kernel's answer, when we have it. It outranks the derived baseline below and loses to this
     // chat's own stance — see `resolvedStances` for what the derivation cannot see.
-    const resolvedStance = ConfigProvenance.resolvedStances(resolvedConfig.latest)
+    //
+    // ⚠️ For a DRAFT that answer comes from the folder's fold rather than from a session resolution,
+    // and it is the same kind of thing: what the chat this button creates will actually start with.
+    // Without it the switches state the instance's stance under a sentence naming the folder's file.
+    const resolvedStance = kernelStances()
     const derived = (feature: SessionFeatureName) =>
       // `thinkingBudget` has no global `{ enabled }` block to fall back on — its instance default IS the
       // model's own budget, which the browser cannot know per-model. Default it ON (enforced) so the
@@ -129,7 +133,15 @@ export function createPromptInputController(input: {
             : feature === "shortChat"
               ? false
               : config[feature]?.enabled === true
-    const baseline = (feature: SessionFeatureName) => resolvedStance[feature] ?? derived(feature)
+    // ⚠️ The precedence itself lives in `switchStance`, so the ORDER the panel renders is the same
+    // expression a test can assert — the whole surface exists to agree with the runner, and the
+    // agreement IS the order.
+    const stance = (feature: SessionFeatureName) =>
+      ConfigProvenance.switchStance({
+        own: override(feature),
+        kernel: resolvedStance[feature],
+        instance: derived(feature),
+      })
     const overrides: Record<SessionFeatureName, boolean | undefined> = {
       introspection: override("introspection"),
       quality: override("quality"),
@@ -143,16 +155,16 @@ export function createPromptInputController(input: {
       shortChat: override("shortChat"),
     }
     const current: Record<SessionFeatureName, boolean> = {
-      introspection: overrides.introspection ?? baseline("introspection"),
-      quality: overrides.quality ?? baseline("quality"),
-      affective: overrides.affective ?? baseline("affective"),
-      thinkingBudget: overrides.thinkingBudget ?? baseline("thinkingBudget"),
-      surgicalEdits: overrides.surgicalEdits ?? baseline("surgicalEdits"),
-      askBeforeChanges: overrides.askBeforeChanges ?? baseline("askBeforeChanges"),
-      safeMode: overrides.safeMode ?? baseline("safeMode"),
-      contextBudget: overrides.contextBudget ?? baseline("contextBudget"),
-      memory: overrides.memory ?? baseline("memory"),
-      shortChat: overrides.shortChat ?? baseline("shortChat"),
+      introspection: stance("introspection"),
+      quality: stance("quality"),
+      affective: stance("affective"),
+      thinkingBudget: stance("thinkingBudget"),
+      surgicalEdits: stance("surgicalEdits"),
+      askBeforeChanges: stance("askBeforeChanges"),
+      safeMode: stance("safeMode"),
+      contextBudget: stance("contextBudget"),
+      memory: stance("memory"),
+      shortChat: stance("shortChat"),
     }
     return { current, overrides }
   }
@@ -164,31 +176,6 @@ export function createPromptInputController(input: {
   const serverSDK = useServerSDK()
   const openMessengerSettings = useSettingsDialog("messengers")
   const messengerServer = () => serverSDK().server.http
-  /**
-   * WHERE each switch's value came from, straight from the kernel's own resolution.
-   *
-   * ⚠️ Asked of the server rather than derived here, and that is the point. The browser already
-   * re-derives a BASELINE for each switch (`featureState` below), which is a second copy of a rule
-   * the kernel owns; provenance cannot be re-derived at all — a folder's `novaclaw.json` is not
-   * something the client can see. `GET /api/session/:id/config` reports the resolution the TURN
-   * runs with, including the folder layer, so the panel and the runner cannot disagree.
-   *
-   * Keyed on the session id, so a draft (no id) simply has no provenance and the panel keeps its
-   * previous wording. Failures degrade to `undefined` for the same reason: a line explaining where a
-   * value came from is worth having and never worth a toast.
-   */
-  const [resolvedConfig, resolvedConfigRes] = createResource(
-    () => input.sessionID(),
-    async (sessionID: string) => {
-      const response = await sdk().client.v2.session.config({ sessionID })
-      if (response.error) throw response.error
-      return response.data?.data
-    },
-  )
-
-  const featureOrigins = createMemo(() => ConfigProvenance.featureOrigins(resolvedConfig.latest))
-  const projectLayer = createMemo(() => ConfigProvenance.projectLayer(resolvedConfig.latest))
-
   /**
    * The DIRECTORY-keyed project answer, for a chat with no id yet.
    *
@@ -213,6 +200,60 @@ export function createPromptInputController(input: {
       return projectState(conn.http, directory).catch(() => undefined)
     },
   )
+
+  /**
+   * WHERE each switch's value came from, straight from the kernel's own resolution.
+   *
+   * ⚠️ Asked of the server rather than derived here, and that is the point. The browser already
+   * re-derives a BASELINE for each switch (`featureState` below), which is a second copy of a rule
+   * the kernel owns; provenance cannot be re-derived at all — a folder's `novaclaw.json` is not
+   * something the client can see. `GET /api/session/:id/config` reports the resolution the TURN
+   * runs with, including the folder layer, so the panel and the runner cannot disagree.
+   *
+   * Keyed on the session id, so a draft (no id) simply has no provenance and the panel keeps its
+   * previous wording. Failures degrade to `undefined` for the same reason: a line explaining where a
+   * value came from is worth having and never worth a toast.
+   */
+  const [resolvedConfig, resolvedConfigRes] = createResource(
+    () => input.sessionID(),
+    async (sessionID: string) => {
+      const response = await sdk().client.v2.session.config({ sessionID })
+      if (response.error) throw response.error
+      return response.data?.data
+    },
+  )
+
+  /**
+   * WHERE each switch's value came from, and what the folder contributed — from the kernel either
+   * way, and from a DIFFERENT kernel answer depending on whether this chat exists yet.
+   *
+   * 🔴 A draft has no session id, so the resolution above is empty and every switch used to read as
+   * the instance's. Measured 2026-08-19: a draft in a folder declaring `quality: true` said *"Using
+   * Settings default: Off"* one line under a sentence naming the very file that sets it on. The
+   * directory-keyed probe now carries the kernel's own fold for the folder, so the draft renders the
+   * folder's stance instead of contradicting itself.
+   *
+   * ⚠️ Never both at once, and never merged. Once a session exists its resolution knows strictly
+   * more (the chain, the ceilings, this chat's own row) and is the only answer that can agree with
+   * the turn; layering a directory probe under it would be the second authority
+   * `config-provenance.ts` warns about.
+   */
+  const isDraft = () => input.sessionID() === undefined
+  const featureOrigins = createMemo(() =>
+    isDraft()
+      ? ConfigProvenance.draftOrigins(projectDiscovered.latest)
+      : ConfigProvenance.featureOrigins(resolvedConfig.latest),
+  )
+  const projectLayer = createMemo(() =>
+    isDraft()
+      ? ConfigProvenance.draftProjectLayer(projectDiscovered.latest)
+      : ConfigProvenance.projectLayer(resolvedConfig.latest),
+  )
+  /** The kernel's stance per switch — the session's resolution, or the folder's fold for a draft. */
+  const kernelStances = () =>
+    isDraft()
+      ? ConfigProvenance.draftStances(projectDiscovered.latest)
+      : ConfigProvenance.resolvedStances(resolvedConfig.latest)
 
   /**
    * "Make Default for this Folder" — write this chat's declared stance into the folder's own
