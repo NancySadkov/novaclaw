@@ -118,6 +118,7 @@ import { AttachmentPaths } from "./attachment-paths"
 import { TodoReminder } from "./todo-reminder"
 import { CalloutPolicy } from "../../callout-policy"
 import { ProjectGrounding } from "./project-grounding"
+import { VisionCopy } from "./vision-copy"
 
 // Ordering can only choose among retrieved candidates — fetch wider than the recall budget.
 
@@ -1161,7 +1162,11 @@ export const layer = Layer.effect(
           ...(todoReminder === undefined ? [] : [Message.user(todoReminder)]),
           ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : []),
         ],
-        tools: toolMaterialization?.definitions ?? [],
+        // A text-only model is not told a picture "arrives as a picture you can see" (owner,
+        // 2026-08-20). Applied HERE rather than in the registry because this is the first point
+        // that knows both the tool list and the resolved model's declared modalities; `undefined`
+        // capabilities mean nobody told us and keep today's wording. See `vision-copy.ts`.
+        tools: VisionCopy.forCapabilities(toolMaterialization?.definitions ?? [], modelCapabilities?.input),
         callableTools: isLastStep ? [] : [...discoveredTools],
         toolChoice: isLastStep ? "none" : undefined,
         ...(affectiveGeneration === undefined ? {} : { generation: affectiveGeneration }),

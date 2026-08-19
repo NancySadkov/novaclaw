@@ -35,6 +35,36 @@ export const name = "read"
  * behaviour. `test/tool-read.test.ts` checks that it still confirms the read AND still asks for
  * the description; `notes/reports/vision-on-disk-2026-08-19.md` is why the ask exists.
  */
+/**
+ * What `read` advertises to a model that CAN see, and to one that cannot.
+ *
+ * 🔴 **A text-only model used to be told a picture "arrives as a picture you can see"** (owner,
+ * 2026-08-20: *"please ensure the text only models are spared of vision model related stuff"*). The
+ * wasted tokens were the smaller half: the model believed the promise, called `read` on a PNG, and
+ * the capability gate in `to-llm-message` then replaced the bytes with "this model cannot read
+ * images" — the product describing its own behaviour falsely, which is the exact fault ruling 2
+ * forbids and which `perceptionSection` (correctly gated on the same modality) exists to prevent.
+ *
+ * ⚠️ Self-inflicted by the fix that made vision WORK. The image clause was deliberately made
+ * unhedged and moved to the FRONT on 2026-08-19, because a hedge reads as a prohibition and
+ * Holo-3.1 was refusing to open images at all. That was right for a vision model and made the
+ * text-only case worse in the same commit — so the clause is now conditional rather than softened,
+ * and the vision wording is untouched.
+ */
+/** Everything true of `read` on any model. Written out rather than assembled — one string per
+ *  audience is longer and is what a reader can actually check against what the model receives. */
+const SHARED_TAIL =
+  "Prefer this over bash cat/head/tail. Continue paged reads with `offset` until complete; never conclude from a partial view. A complete lossless text read returns the observation token `write` needs to replace that existing file; pages accumulate only while its version is unchanged. Binary files give a `read-hex` hint. Relative paths use the current location; absolute paths may read anywhere the host account permits. An observation proves freshness, not write permission."
+
+/** Advertised to a model whose catalog declares an `image` input modality. UNCHANGED wording. */
+export const DESCRIPTION =
+  "Read a file, LOOK AT an image, page through large UTF-8 text, or list a directory. An image (png/jpeg/gif/webp) arrives as a picture you can see — use it for what a file LOOKS like. " +
+  SHARED_TAIL
+
+/** Advertised to a model that declares no image modality: the same tool, minus a promise it cannot
+ *  keep. `read` still opens the file; it simply does not claim the bytes come back as a picture. */
+export const DESCRIPTION_TEXT_ONLY = "Read a file, page through large UTF-8 text, or list a directory. " + SHARED_TAIL
+
 export const IMAGE_NOTE =
   "Image read successfully. Write one line now saying what it shows, before you read anything else — " +
   "images are dropped from context once this model's per-request limit is reached, and only what you " +
@@ -80,7 +110,7 @@ export const layer = Layer.effectDiscard(
             // rename a folder of PNGs never called this tool once and said it could not see them
             // (`notes/reports/vision-on-disk-2026-08-19.md`). Codex fixed the same bug the same way
             // (openai/codex#23949). Say that the picture ARRIVES; a hedge reads as a prohibition.
-            "Read a file, LOOK AT an image, page through large UTF-8 text, or list a directory. An image (png/jpeg/gif/webp) arrives as a picture you can see — use it for what a file LOOKS like. Prefer this over bash cat/head/tail. Continue paged reads with `offset` until complete; never conclude from a partial view. A complete lossless text read returns the observation token `write` needs to replace that existing file; pages accumulate only while its version is unchanged. Binary files give a `read-hex` hint. Relative paths use the current location; absolute paths may read anywhere the host account permits. An observation proves freshness, not write permission.",
+            DESCRIPTION,
           input: Input,
           output: Output,
           // ── Deliberately NOT untrusted-framed, and this is the reasoning ────────────────────────
