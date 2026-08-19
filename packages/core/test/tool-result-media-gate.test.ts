@@ -476,10 +476,24 @@ describe("per-request image budget", () => {
     expect(lowered).toContain(budgetedImageNotice("icon_3.png"))
   })
 
-  test("says the model DID see the elided image — unlike the capability notice, it really did", () => {
+  /**
+   * 🔴 **The wording that shipped first CAUSED confabulation, and this is the regression test.**
+   * It said *"You DID look at it earlier — rely on what you said about it then"*. Measured
+   * 2026-08-19 on the six-glyph corpus: the budget behaved exactly as designed, and the model then
+   * named all six files with five wrong, because it had read the first three SILENTLY and the
+   * instruction to rely on its own description pointed at nothing.
+   *
+   * The harness cannot know whether a description exists, so it must not claim one does.
+   */
+  test("never tells the model to recall an image it may never have described", () => {
     const notice = budgetedImageNotice("icon_1.png")
-    expect(notice).toContain("You DID look at it earlier")
-    // Distinct from the capability notice, which is about a model that never saw anything.
+    expect(notice).not.toContain("rely on what you said")
+    expect(notice).not.toContain("You DID look at it")
+    // What it must say instead: the pixels are gone NOW, do not invent, and re-read is the fix.
+    expect(notice).toContain("cannot see it now")
+    expect(notice).toContain("Do not describe it or name it from memory")
+    expect(notice).toContain("read it again")
+    // Still distinct from the capability notice, which is about a model that can never see at all.
     expect(notice).not.toContain("cannot read")
     expect(notice).not.toBe(unreadableToolMediaNotice({ mime: "image/png", name: "icon_1.png" }, "read"))
   })

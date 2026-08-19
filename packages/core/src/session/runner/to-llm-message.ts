@@ -598,10 +598,29 @@ export const toLLMMessages = (
 //    `ProviderCapabilityStore` pattern — is the follow-up in `todo/vision.md`.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** What replaces an image the per-request budget could not carry. Distinct from the capability
- *  notice on purpose: nothing is wrong with the model or the file, and the model DID see this one. */
+/**
+ * What replaces an image the per-request budget could not carry.
+ *
+ * 🔴 **This wording used to say "You DID look at it earlier — rely on what you said about it then",
+ * and that sentence produced confabulation.** Measured 2026-08-19 on the six-glyph corpus: the
+ * budget worked exactly as designed — 4 images refused, the cap learned, the turn re-run with the
+ * newest 3 and the rest as notices — and the model then named all six files, getting five wrong. It
+ * had read the first three SILENTLY, emitting no description of any of them, so the instruction to
+ * rely on what it said pointed at nothing and it invented the rest.
+ *
+ * ⚠️ **The harness cannot know whether a description exists**, so it must not assert that one does.
+ * Ruling 2 — *a dropped image must not read as a seen one* — is broken not only by silence but by a
+ * confident pointer to a memory that may be empty. What the notice can say truthfully is that the
+ * pixels are GONE NOW and how to get them back, and it must make re-reading the expected act rather
+ * than an afterthought.
+ *
+ * ⭐ The real fix is upstream and is `todo/vision.md` work: an image must not be elidable until the
+ * model has committed a description of it to text — which is the jh thesis applied exactly
+ * (*the model never instruments voluntarily; the harness must force it*), and is why a sub-session
+ * that looks at ≤N images and returns TEXT is the shape that actually survives a large folder.
+ */
 export const budgetedImageNotice = (name: string | undefined): string =>
-  `[An earlier image${name ? ` (${name})` : ""} was removed from this request: this model accepts only a limited number of images per request, and the newest ones were kept. You DID look at it earlier in this conversation — rely on what you said about it then, and read it again if you need another look.]`
+  `[An image${name ? ` (${name})` : ""} you opened earlier is NOT in this request: this model accepts only a limited number of images at once, so the most recent ones were kept. You cannot see it now. Do not describe it or name it from memory — if this task needs it, read it again, and write down what each image shows as you go so the description survives.]`
 
 // Type GUARDS, not predicates: the flatMap below reads `.filename` / `.name` off the narrowed arm,
 // and a bare boolean leaves the compiler holding the whole union.
