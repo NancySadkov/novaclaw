@@ -213,8 +213,22 @@ export const perceptionSection = (input: {
       "tool result, for you to look at. That is how you answer any question about what a file LOOKS " +
       "like: what a photo contains, what an icon depicts, what a screenshot shows, how two images " +
       "differ, what name a picture deserves.",
-    "`bash ls`, `glob` and `grep` return file NAMES and text, never pixels — no listing can answer a " +
-      "question about what a picture shows. When the task is about images, open the images.",
+    // 🔴 This paragraph used to end "…no listing can answer a question about what a picture shows.
+    // When the task is about images, open the images." — and measured 2026-08-20 on the six-glyph
+    // corpus, that overshot into discouraging the listing STEP. Asked "please describe each glyph
+    // here" with the folder as the working directory, Holo-3.1 called no `ls`, no `glob`, invented
+    // the single filename `glyphs.png`, failed to read it twice, and then asked the user to describe
+    // the glyphs in words — the exact behaviour the first sentence of this section forbids.
+    //
+    // The sentence was written against a REAL failure (substituting a listing for looking) and that
+    // half is kept. What was missing is that a listing is how the model learns WHICH files exist:
+    // without it there is no path to call `read` on, and a model told only that listings cannot
+    // answer will guess one. Enumerate, then open — and never invent a name.
+    "`bash ls`, `glob` and `grep` return file NAMES and text, never pixels: a listing tells you WHICH " +
+      "images exist, never what any of them shows. So when you are pointed at a folder, list it " +
+      "first to learn the real filenames, then `read` each image you were asked about. Never guess " +
+      "or invent a filename, and never answer from names alone — if a read fails, list the folder " +
+      "and use the names it returns.",
     ...(input.canSpawn
       ? [
           "An image costs far more context than its filename — a photo or a screenshot can cost as " +

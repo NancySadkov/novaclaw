@@ -4,6 +4,7 @@ import type { ShellStatus } from "@/utils/fs-api"
 // No `SettingsListV2` here any more: these rows are rendered INSIDE the health report's list, not in
 // a list of their own (see `ConfinementRows` below for why).
 import { SettingsRowV2 } from "./parts/row"
+import { SettingsExplainV2 } from "./explain"
 // ⚠️ TYPE-ONLY. `@novaclaw/core/agent-jail` imports `node:child_process` at module scope, so a VALUE
 // import of it would follow the renderer into the browser bundle. `import type` is erased before the
 // bundler ever sees it, which is what lets the state machine below be typed by the kernel's own
@@ -169,8 +170,14 @@ export const ConfinementRows: Component<{
               {language.t(`settings.confinement.reason.${displayKind()}`, {
                 platform: platform(),
                 backend: backendLabel(),
-              })}{" "}
-              {language.t("settings.confinement.meanwhile")}
+              })}
+              {/* ⚠️ `meanwhile` is 455 characters and used to sit RIGHT HERE, inline, under every
+                  visit — the owner quoted this exact row as the example of copy "cluttering our
+                  UI". The state in force still leads (principle 12(d)); the four-sentence account
+                  of what protects you meanwhile is one hover or tap away. */}
+              <SettingsExplainV2 label={language.t("settings.confinement.title")}>
+                {language.t("settings.confinement.meanwhile")}
+              </SettingsExplainV2>
             </>
           }
         >

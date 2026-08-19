@@ -1220,12 +1220,12 @@ export const dict = {
   "settings.tab.appearance": "Appearance",
   "settings.tab.instances": "Instances",
   "settings.tab.shortcuts": "Shortcuts",
-  // ⚠️ Renamed 2026-08-19 when the health report moved into this tab. The rename is half of how the
-  // report stayed discoverable: a worried person scanning the rail now reads their own question,
-  // where "Recovery" alone described only the remedy. The 17 translated bundles still say the old
-  // word — that is translation backlog (parity rule 2 counts it, correctly, rather than failing),
-  // not a fork: the tab still IS the recovery tab in every language.
-  "settings.tab.recovery": "Health & recovery",
+  // ⚠️ "Health", one word (owner, 2026-08-20: the old "Health & recovery" was "offensively long" for
+  // a rail label). It was renamed there on 2026-08-19 to keep the health report discoverable, and the
+  // shorter word does that job too — a worried person still reads their own question. A rail is an
+  // INDEX, not a place to explain: the tab's own header says it covers recovery as well. The 17
+  // translated bundles still say the older word; that is translation backlog, not a fork.
+  "settings.tab.recovery": "Health",
   "settings.tab.about": "About",
   "settings.tab.storage": "Storage",
   "settings.tunes.title": "Tunes",
@@ -2898,13 +2898,10 @@ export const dict = {
   "skills.instructions.note": "This is the text your agent is given, word for word, when it opens this skill.",
   "skills.instructions.empty": "(this skill's instructions are empty)",
 
-  "skills.sources.title": "Where NovaClaw looks",
-  "skills.sources.none":
-    "You have added no extra places. NovaClaw still reads its own skills folder and the project you have open.",
-  // ⚠️ Moved with the control too: this used to end "…not a per-skill switch", which stopped being
-  // true the day one shipped. The distinction it was reaching for is still real, so it is stated
-  // instead of implied — this list decides which skills EXIST, the per-skill switches decide when
-  // an existing one is offered.
+  // Shown only when the user HAS extra sources, folded behind a summary (owner, 2026-08-20). The
+  // empty-state line that used to sit here — "You have added no extra places…" — is gone with the
+  // block it explained: a person who has added nothing does not need to be told so on every visit.
+  "skills.sources.title": "Extra sources",
   "skills.sources.note":
-    "Folders and web addresses you added. This list decides which skills exist at all; each skill's own switches decide when it is offered.",
+    "This list decides which skills exist at all; each skill's own switches decide when it is offered.",
 }

@@ -98,10 +98,13 @@ export function useBuiltinApps(): () => HomeApp[] {
     {
       id: "skills",
       title: name("skills"),
-      // No UI-kit artwork exists for this tile yet, so it takes the sanctioned gradient fallback
-      // (uix.md §4): a cool hue + a v2 sprite glyph. `brain` is the knowledge glyph and is used by
-      // no other built-in — an unknown v2 name would silently render a "plus".
+      // Owner-supplied artwork (2026-08-20), so this tile no longer takes the gradient fallback:
+      // the gold brain from `doc/gfx/other/brain.png`, downscaled 1024 -> 256 like every other tile
+      // and kept on transparency so the aubergine field shows through. `icon` stays as the fallback
+      // for surfaces that render a glyph rather than the tile art — `brain` is the knowledge glyph
+      // and is used by no other built-in, and an unknown v2 name would silently render a "plus".
       icon: "brain",
+      tile: "/assets/skin/tiles/skills.png",
       accent: "#06b6d4",
       subtitle: sub("skills"),
       source: "builtin",

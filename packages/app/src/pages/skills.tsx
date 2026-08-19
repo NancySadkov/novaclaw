@@ -786,18 +786,25 @@ export function SkillsPage() {
             </Show>
           </div>
           <div class="border-t border-v2-border-border-base p-2">
-            <div class="text-[11px] font-semibold uppercase tracking-wide text-v2-text-text-faint">
-              {t("skills.sources.title")}
-            </div>
-            <Show
-              when={sources().length}
-              fallback={<div class="mt-0.5 text-[11px] text-v2-text-text-muted">{t("skills.sources.none")}</div>}
-            >
-              <ul class="mt-0.5 flex flex-col gap-0.5 text-[11px] break-all text-v2-text-text-muted">
-                <For each={sources()}>{(source) => <li>{source}</li>}</For>
-              </ul>
+            {/* ⚠️ "Where NovaClaw looks" USED to stand here as a permanent block: a heading, the list
+                of extra source folders, and a two-sentence note — visible on every visit, to every
+                user. Removed 2026-08-20 (owner): adding a search path is not a thing a person does.
+                The agent installs skills; the person imports or exports a skill file and edits its
+                fields. So the list is now a DETAIL, shown only when the user has actually added
+                sources, with the explanation on demand rather than under the heading. The sources
+                themselves are unchanged — this is what the panel spends its space on, not what the
+                product supports. */}
+            <Show when={sources().length}>
+              <details class="group" data-slot="skill-sources">
+                <summary class="cursor-pointer list-none text-[11px] font-semibold uppercase tracking-wide text-v2-text-text-faint hover:text-v2-text-text-muted">
+                  {t("skills.sources.title")} ({sources().length})
+                </summary>
+                <ul class="mt-0.5 flex flex-col gap-0.5 text-[11px] break-all text-v2-text-text-muted">
+                  <For each={sources()}>{(source) => <li>{source}</li>}</For>
+                </ul>
+                <div class="mt-1 text-[11px] text-v2-text-text-faint">{t("skills.sources.note")}</div>
+              </details>
             </Show>
-            <div class="mt-1 text-[11px] text-v2-text-text-faint">{t("skills.sources.note")}</div>
 
             {/* A saved choice whose skill is gone. Shown here rather than on a detail pane because
                 there is no skill to open — and KEPT rather than swept, since a source being offline
