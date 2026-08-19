@@ -361,13 +361,10 @@ if (outcome === "over-ceiling") {
 release()
 process.exit(outcome)
 
-// The lock must not survive our own death, or the next run queues behind a corpse until the staleness
-// check notices.
-for (const signal of ["SIGINT", "SIGTERM"] as const) {
-  process.on(signal, () => {
-    try {
-      if (child.pid !== undefined) process.kill(child.pid, "SIGKILL")
-    } catch {}
-    finish(1)
-  })
-}
+// ⚠️ A SIGINT/SIGTERM block used to sit here, AFTER the `process.exit(outcome)` above, and it was
+// dead three times over (deleted 2026-08-19): unreachable at top level, referencing `child` which is
+// scoped inside `attempt()`, and calling a `finish()` that is not defined anywhere in this file. It
+// also broke `typecheck:repo-script` — `tsgo.ts(367,11): Property 'on' does not exist on type
+// 'never'`, the compiler narrowing an unreachable statement — so the repo's own build tooling had a
+// red typecheck unit that nothing was tracking. The LIVE handler is inside `attempt()`, registered
+// with the child it kills in scope, and it releases the lock before exiting.

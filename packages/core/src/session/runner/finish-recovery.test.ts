@@ -168,7 +168,18 @@ describe("runner/llm.ts wiring", () => {
   test("the stop arm surfaces a notice and ends the RUN, not just the step loop", () => {
     expect(runnerSource).toContain("text: truncation.notice")
     expect(runnerSource).toContain("truncationHalted = true")
-    expect(runnerSource).toContain("if (exitedMidDrain || truncationHalted) break")
+    // ⚠️ Matched as a PATTERN, not as a literal line (2026-08-19). This assertion was
+    // `toContain("if (exitedMidDrain || truncationHalted) break")` and it went red the day a THIRD
+    // halt flag joined the same break — `|| policyHalted`, from the pre-action policy work. The
+    // property being pinned is "the truncation stop leaves the RUN loop, not merely the step loop",
+    // and adding another reason to leave that loop strengthens it; a literal pin reported a
+    // regression against a change that was in its favour. Pinning source text is already a weak
+    // instrument, so it must at least fail for the right reason.
+    expect(
+      /if \(exitedMidDrain \|\| truncationHalted(?: \|\| \w+)*\) break/.test(runnerSource),
+      "the drain-level break no longer leaves the run loop on `truncationHalted` — the stop arm would " +
+        "end only the inner step loop, which is the defect this file exists to pin",
+    ).toBe(true)
   })
 })
 

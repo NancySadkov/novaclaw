@@ -45,18 +45,14 @@ import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
 import { ProjectV2 } from "@novaclaw/core/project"
-import { SessionV2 } from "@novaclaw/core/session"
 import { SessionExecution } from "@novaclaw/core/session/execution"
-import { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { ProjectFileCache } from "@novaclaw/core/project-file-cache"
-import { SessionEffectiveConfig } from "@novaclaw/core/session/effective-config"
 import { SessionProjector } from "@novaclaw/core/session/projector"
-import { SessionReceipt } from "@novaclaw/core/session/receipt"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import { SessionStore } from "@novaclaw/core/session/store"
-import { SessionTags } from "@novaclaw/core/session/tags"
 import { SessionFeature } from "@novaclaw/schema/session-feature"
+import { SESSION_HANDLER_NODES } from "./session-nodes"
 import { Api } from "../api"
 import { LocationMiddleware } from "../location"
 import { SessionLocationMiddleware } from "../middleware/session-location"
@@ -86,27 +82,20 @@ const kernel = AppNodeBuilder.build(
     EventV2.node,
     SessionProjector.node,
     SessionStore.node,
-    SessionTags.node,
-    SessionV2.node,
     // ⚠️ These are listed because the HANDLER reads them out of the ambient context
     // (`handlers/session.ts` yields each before returning), not because the kernel needs them —
     // a node that is only replaced is provided INWARD, and the handler is outside that graph.
     //
-    // 🔴 **This list is a liability the typecheck cannot cover, and it has now bitten twice in one
-    // day.** The handler group's `Effect.gen` yields its services at BUILD time, so a service the
-    // group reads and this graph omits fails at run time with `Service not found` — every case in
-    // the file, none of them about what the file tests. `SessionReceipt` went missing when the
-    // receipt endpoint landed, and `SessionEffectiveConfig` when the resolved-config view started
-    // resolving through the one entry point. Whoever adds the next `yield*` to that group adds a
-    // line here.
-    SessionExecution.node,
-    SessionExecutionAttempt.node,
-    SessionReceipt.node,
+    // 🔴 **This list used to be restated here by hand, and that bit three times** — `SessionReceipt`,
+    // then `SessionEffectiveConfig`, then `SessionPresence` (2026-08-19, 14 red tests across two
+    // files, none of them about what either file tests). It is now ONE value shared with the other
+    // test kernel and with production `routes.ts`, so adding a `yield*` to a handler group is a
+    // single line in `session-nodes.ts` rather than three that must be kept in agreement.
+    ...SESSION_HANDLER_NODES,
     // The config view resolves the layer the TURN uses — the session folder's tune folded in — so
     // its project-file cache (and the filesystem behind it) come with it.
     FSUtil.node,
     ProjectFileCache.node,
-    SessionEffectiveConfig.node,
   ]),
   [
     [Database.node, Database.layerFromPath(":memory:")],

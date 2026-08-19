@@ -34,18 +34,14 @@ import { AbsolutePath } from "@novaclaw/core/schema"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { ProjectFileCache } from "@novaclaw/core/project-file-cache"
-import { SessionEffectiveConfig } from "@novaclaw/core/session/effective-config"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
 import { ProjectV2 } from "@novaclaw/core/project"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionExecution } from "@novaclaw/core/session/execution"
-import { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionSchema } from "@novaclaw/core/session/schema"
-import { SessionReceipt } from "@novaclaw/core/session/receipt"
 import { SessionStore } from "@novaclaw/core/session/store"
-import { SessionTags } from "@novaclaw/core/session/tags"
 import {
   EFFECTIVE_CONFIG_DEFAULTS,
   resolveConfig,
@@ -58,6 +54,7 @@ import { LocationMiddleware } from "../location"
 import { SessionLocationMiddleware } from "../middleware/session-location"
 import { WorkspaceRoutingMiddleware } from "../middleware/workspace-routing"
 import { SessionHandler } from "./session"
+import { SESSION_HANDLER_NODES } from "./session-nodes"
 import { resolvedConfigView } from "./session-config"
 
 // ⚠️ Branded at the constant, not at each call site: `location.directory` is
@@ -237,18 +234,15 @@ const kernel = AppNodeBuilder.build(
     EventV2.node,
     SessionProjector.node,
     SessionStore.node,
-    SessionTags.node,
-    SessionV2.node,
-    SessionExecution.node,
-    SessionExecutionAttempt.node,
-    // The session routes reach the receipt service; without its node the three tests that drive a
-    // real HTTP request fail with `Service not found` rather than anything about config resolution.
-    SessionReceipt.node,
+    // The session routes reach these out of the ambient context at BUILD time, so omitting one
+    // fails every test here that drives a real HTTP request with `Service not found` rather than
+    // anything about config resolution. Shared with the other test kernel and production
+    // `routes.ts` — see `session-nodes.ts` for the three times a hand-kept copy went stale.
+    ...SESSION_HANDLER_NODES,
     // The handler resolves the layer the TURN uses through this service — the folder's tune folded
     // in — so the view cannot disagree with the runner. `FSUtil` is how the cache reaches the disk.
     FSUtil.node,
     ProjectFileCache.node,
-    SessionEffectiveConfig.node,
   ]),
   [
     [Database.node, Database.layerFromPath(":memory:")],

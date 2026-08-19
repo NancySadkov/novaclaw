@@ -143,13 +143,27 @@ describe("typecheck run units", () => {
   })
 
   test("carries each package's own typecheck command rather than assuming one", () => {
-    // `app` needs `tsgo -b` and `desktop` needs two passes; the phase shells out to `bun run typecheck`
-    // precisely so the package stays the authority. If this list ever collapses to one command, the
-    // phase has started guessing.
+    // `app` needs one `-b` pass and `desktop` and `core` need two; the phase shells out to
+    // `bun run typecheck` precisely so the package stays the authority. If this list ever collapses to
+    // one command, the phase has started guessing.
+    //
+    // ⚠️ Updated 2026-08-19: these were pinned as bare `tsgo …` and the packages have since routed
+    // through `script/tsgo.ts` — the wrapper that holds the single-typecheck lock and downscales to
+    // `--singleThreaded` before the box is killed for using its own concurrency. The INTENT is
+    // unchanged and is what the three cases below still assert; only the binary moved. The pin was
+    // left stale, so the `script` unit was red at HEAD with nothing tracking it.
     const scripts = new Map(typecheckUnits(ROOT).map((unit) => [unit.dir, unit.script]))
-    expect(scripts.get("packages/app")).toBe("tsgo -b")
-    expect(scripts.get("packages/desktop")).toBe("tsgo -b && tsgo --noEmit -p tsconfig.test.json")
-    expect(scripts.get("packages/core")).toBe("tsgo -b && tsgo -p tsconfig.smoke.json")
+    expect(scripts.get("packages/app")).toBe("bun ../../script/tsgo.ts -b")
+    expect(scripts.get("packages/desktop")).toBe(
+      "bun ../../script/tsgo.ts -b && bun ../../script/tsgo.ts --noEmit -p tsconfig.test.json",
+    )
+    expect(scripts.get("packages/core")).toBe(
+      "bun ../../script/tsgo.ts -b && bun ../../script/tsgo.ts -p tsconfig.smoke.json",
+    )
+    // The point of the three cases: they are three DIFFERENT commands. A tree where every package
+    // typechecks identically is one where this module could safely have assumed a command, and the
+    // literals above would then be pinning a coincidence rather than a property.
+    expect(new Set([...scripts.values()]).size, "every package typechecks with the same command").toBeGreaterThan(1)
   })
 })
 

@@ -7,13 +7,8 @@ import { EventV2 } from "@novaclaw/core/event"
 import { Credential } from "@novaclaw/core/credential"
 import { PermissionSaved } from "@novaclaw/core/permission/saved"
 import { PtyTicket } from "@novaclaw/core/pty/ticket"
-import { SessionV2 } from "@novaclaw/core/session"
-import { SessionEffectiveConfig } from "@novaclaw/core/session/effective-config"
-import { SessionTags } from "@novaclaw/core/session/tags"
 import { SessionExecution } from "@novaclaw/core/session/execution"
-import { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
-import { SessionReceipt } from "@novaclaw/core/session/receipt"
-import { SessionPresence } from "@novaclaw/core/session/presence"
+import { SESSION_HANDLER_NODES } from "./handlers/session-nodes"
 import { LocationServiceMap } from "@novaclaw/core/location-service-map"
 import { MessengerDrivers } from "@novaclaw/core/messenger/drivers"
 import { MessengerGateway } from "@novaclaw/core/messenger/gateway"
@@ -40,17 +35,11 @@ const applicationServices = LayerNode.group([
   EventV2.node,
   httpClient,
   ToolOutputStore.cleanupNode,
-  SessionV2.node,
-  SessionTags.node,
-  // The resolved-config view resolves against the layer the TURN uses, folder tune included.
-  SessionEffectiveConfig.node,
-  SessionExecutionAttempt.node,
-  SessionReceipt.node,
-  // Global, so it belongs in the app group a route handler can reach. `handlers/session.ts` acquires
-  // it for `session.presence.*`; without it here the requirement leaks out of `makeRoutes` and this
-  // package stops typechecking, while `packages/novaclaw` — which already registers it — stays green.
-  SessionPresence.node,
-  SessionExecution.node,
+  // Every service the session handler groups acquire at BUILD time, as one value — see
+  // `handlers/session-nodes.ts` for why this is not a hand-kept list. Production needs them because
+  // the requirement otherwise leaks out of `makeRoutes` and this package stops typechecking; the two
+  // `server` test kernels need the identical set for the same reason, so all three read it here.
+  ...SESSION_HANDLER_NODES,
   PermissionSaved.node,
   PtyTicket.node,
   Credential.node,
