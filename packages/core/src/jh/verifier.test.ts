@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
+import type { Presence } from "../presence"
 import type { JhStep } from "./step"
 import { JhProcessRunner } from "./process-runner"
 import { JhVerifier } from "./verifier"
@@ -17,6 +18,7 @@ const doVerify = (
   opts: {
     runner?: JhProcessRunner.Runner
     fileExists?: (p: string) => boolean
+    filePresence?: (p: string) => Presence.Answer
     producedPresent?: boolean
     defaultTimeoutMs?: number
   } = {},
@@ -27,6 +29,7 @@ const doVerify = (
       cwd: process.cwd(),
       runner: opts.runner ?? fake(rr()),
       fileExists: opts.fileExists ?? (() => false),
+      ...(opts.filePresence === undefined ? {} : { filePresence: opts.filePresence }),
       producedPresent: opts.producedPresent ?? false,
       defaultTimeoutMs: opts.defaultTimeoutMs,
     }),
@@ -88,6 +91,50 @@ describe("JhVerifier.verify (fake runner)", () => {
     expect(await doVerify({ type: "file_exists", path: "foo" }, { fileExists: () => false })).toEqual({
       ok: false,
       detail: "file not found: foo",
+    })
+  })
+
+  // ─── a check that could not be PERFORMED is not a check the subject failed ────────────────────
+  //
+  // 🔴 Audited 2026-08-19. `file_exists` was built on `session/runner/strict.ts`'s `fs.existsSync`,
+  // which answers `false` for `EACCES`, `EPERM`, `ELOOP` and `EIO` exactly as it does for `ENOENT`. So
+  // a locked path put the sentence **"file not found: <path>"** into the transcript the model reads
+  // back as established fact, and the gate — whose entire job is to be the objective check — was the
+  // thing fabricating the observation.
+  describe("file_exists — three answers, because a failed probe is not an absent file", () => {
+    test("an UNREADABLE path never says “file not found”, and is marked inconclusive", async () => {
+      const result = await doVerify({ type: "file_exists", path: "locked.txt" }, { filePresence: () => "unreadable" })
+      expect(result.ok).toBe(false)
+      expect(result.inconclusive).toBe(true)
+      // The assertion the whole change is about: no claim about the user's disk.
+      for (const forbidden of ["file not found", "missing", "does not exist"])
+        expect({ forbidden, detail: result.detail.includes(forbidden) }).toEqual({ forbidden, detail: false })
+      expect(result.detail).toContain("could not check locked.txt")
+      expect(result.detail).toContain("NOTHING about whether the file is there")
+    })
+
+    test("a CONFIRMED absence still fails the step, and still says so plainly", async () => {
+      // The one-directional guarantee: this can only ever stop us asserting a failure we did not
+      // witness. A real miss is unchanged, so a transport-shaped excuse can never hide a real one.
+      const result = await doVerify({ type: "file_exists", path: "gone.txt" }, { filePresence: () => "absent" })
+      expect(result).toEqual({ ok: false, detail: "file not found: gone.txt" })
+    })
+
+    test("`present` passes, and the two-answer probe still works for callers that only have one", async () => {
+      expect((await doVerify({ type: "file_exists", path: "a" }, { filePresence: () => "present" })).ok).toBe(true)
+      // No `filePresence` supplied: every in-memory suite in this package keeps its boolean probe.
+      expect((await doVerify({ type: "file_exists", path: "a" }, { fileExists: () => true })).ok).toBe(true)
+    })
+
+    test("⭐ `filePresence` WINS over `fileExists` — otherwise the honest probe would be decorative", async () => {
+      // The trap this pins: threading a new field in but leaving the old one in charge. `strict.ts`
+      // supplies both (the boolean is still on the engine's required contract), so if precedence went
+      // the other way the fix would typecheck, ship, and change nothing.
+      const result = await doVerify(
+        { type: "file_exists", path: "locked.txt" },
+        { fileExists: () => false, filePresence: () => "unreadable" },
+      )
+      expect(result.inconclusive).toBe(true)
     })
   })
 

@@ -370,8 +370,7 @@ export const RecipeHandler = handlerLayer(
             if (recipe === undefined)
               return yield* new InvalidRequestError({ message: `No recipe named "${ctx.params.slug}"` })
             const directory = ctx.payload.directory.trim()
-            if (directory === "")
-              return yield* new InvalidRequestError({ message: "Which folder did it cook in?" })
+            if (directory === "") return yield* new InvalidRequestError({ message: "Which folder did it cook in?" })
 
             // What the COOK did, when the caller named its session. Two facts the filesystem cannot
             // hold: whether the cook ever reached this machine, and which model actually ran.
@@ -386,10 +385,20 @@ export const RecipeHandler = handlerLayer(
             //
             // An explicit payload `model` wins over the session's own record: a caller that knows better
             // (the live harness, a script cooking on a named model) must be able to say so.
+            //
+            // ⚠️ **And a catalog read that DIES must not take the receipt with it.** `recipe.run` guards
+            // the identical call (`Effect.catchCause` → `undefined`, "a cook must never be lost to a
+            // catalog read"); this one did not, so a location layer that failed to build — the very
+            // "Service not found" shape measured on this group a day earlier — turned the health check
+            // into a 500. `recipe-verify.ts` promises it "never throws: a health check that crashes has
+            // told the user nothing", and that promise has to hold at the surface a person actually
+            // presses, not only inside the function. Degrading to `undefined` is the answer the comment
+            // above already prescribes: check the files normally, and any gap reads `not-measured`.
             const ref = modelRef(ctx.payload.model ?? reading.model)
             const info = ref
               ? yield* Catalog.Service.use((catalog) => catalog.model.get(ref.providerID, ref.id)).pipe(
                   Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))),
+                  Effect.catchCause(() => Effect.succeed(undefined)),
                 )
               : undefined
 

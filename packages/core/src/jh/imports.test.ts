@@ -41,6 +41,17 @@ function violationFor(filename: string, spec: string): string | undefined {
   // NOT read this as opening `@novaclaw/schema/*` generally — the rest of that package pulls the
   // session and config shapes jh must not see.
   if (spec === "@novaclaw/schema/log") return undefined
+  // 2026-08-19: the three-answer presence probe. `verifier.ts` and `engine.ts` take it as a TYPE ONLY
+  // (`import type`), so this adds no runtime edge whatsoever — the specifier is erased at compile and
+  // jh's bundle is byte-identical. Even as a value it would qualify on exactly the `../util/kill-tree`
+  // grounds this function already states: `src/presence.ts` imports `node:fs` and `node:fs/promises`
+  // and NOTHING else, so it carries no session/tool/config/v1/llm/schema reach.
+  //
+  // Why the gate needed it at all: `file_exists` reported a path it COULD NOT READ as "file not found",
+  // writing an observation the gate never made into the transcript the model reasons from — which is
+  // the one thing jh.md §5 law 4 exists to prevent, since the gate is supposed to be the objective
+  // check. Answering that honestly needs three values, and this is where the third one is defined.
+  if (spec === "../presence") return undefined
   if (spec.startsWith("node:")) {
     return NODE_ALLOWED.has(filename) ? undefined : `node: import "${spec}" not allowed in ${filename}`
   }

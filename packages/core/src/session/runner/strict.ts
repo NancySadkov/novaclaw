@@ -25,6 +25,7 @@ import { JhEngine } from "../../jh/engine"
 import { JhLog } from "../../jh/log"
 import { JhProcessRunner } from "../../jh/process-runner"
 import { HostExec } from "../../host-exec"
+import { Presence } from "../../presence"
 import { Shell } from "../../shell"
 import type { ConfigStrict } from "../../config/strict"
 import { SessionInput } from "../input"
@@ -872,7 +873,12 @@ export function runTask(args: RunArgs): Effect.Effect<StrictReport> {
     })(),
     runner,
     artifacts: JhArtifact.memory(),
+    // ⚠️ Both are supplied, and `filePresence` is the one the gate uses. `existsSync` answers `false`
+    // for `EACCES`, `EPERM`, `ELOOP` and `EIO` exactly as for `ENOENT`, so on a real user project — the
+    // only place this executor ever runs — a locked path used to be written into the transcript as
+    // "file not found: <path>" and read back by the model as established fact.
     fileExists: (rel, base) => fs.existsSync(path.isAbsolute(rel) ? rel : path.join(base, rel)),
+    filePresence: (rel, base) => Presence.probe(path.isAbsolute(rel) ? rel : path.join(base, rel)),
     cwd: args.cwd,
     environment: environmentFor(process.platform, agentShell),
     forceRootDecompose: true,

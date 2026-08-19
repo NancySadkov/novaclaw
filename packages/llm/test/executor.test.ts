@@ -557,6 +557,84 @@ describe("RequestExecutor", () => {
     ),
   )
 
+  // ── every Transport fault NAMES the endpoint it could not reach ───────────────────────────────
+  //
+  // 🔴 Measured live 2026-08-19 against a dead endpoint. This arm — the platform's own
+  // `TransportError`, i.e. the ordinary "the model server is not answering" — produced the bare
+  // message `HTTP transport failed`, with no `(target …)` and no URL. `session-error.ts` picks its
+  // headline by running `endpointOf` over that MESSAGE (it is the only field that survives onto the
+  // session record), so it found nothing and fell back to `session.error.transport`:
+  //
+  //   "Can't reach the model server. It may be turned off, still starting, or on another network."
+  //
+  // …without ever telling the user WHICH server. The endpoint-naming variant
+  // (`session.error.transportEndpoint`) exists and is translated in all 18 bundles; it was simply
+  // unreachable on the single most likely first failure a lay user hits. Three of the four arms
+  // appended the suffix by hand and this one had been missed — so it is now added once, in
+  // `transportError`, where the request is already in hand.
+  //
+  // That is ruling 2's other half: hiding the address is *"the other failure: a fault described
+  // uselessly"*, and AGENTS.md's self-healing rule needs it — a user whose provider moved can only
+  // repair a URL they are shown.
+  const transportFailureLayer = (description: string | undefined) =>
+    RequestExecutor.layer.pipe(
+      Layer.provide(
+        Layer.succeed(
+          HttpClient.HttpClient,
+          HttpClient.make((request) =>
+            Effect.fail(
+              new HttpClientError.HttpClientError({
+                reason: new HttpClientError.TransportError({
+                  request,
+                  ...(description === undefined ? {} : { description }),
+                  cause: new Error("connect ECONNREFUSED 192.168.178.40:8010"),
+                }),
+              }),
+            ),
+          ),
+        ),
+      ),
+    )
+
+  it.effect("⭐ a bare transport failure still names the endpoint it could not reach", () =>
+    Effect.gen(function* () {
+      const executor = yield* RequestExecutor.Service
+      const error = yield* executor.execute(request).pipe(Effect.flip)
+
+      expectLLMError(error)
+      expect(error.reason._tag).toBe("Transport")
+      // The assertion the change is about: `endpointOf` can recover a host:port from this message,
+      // so the user reads "Can't reach the model server at provider.test" rather than a nameless one.
+      expect(error.reason.message).toContain("(target https://provider.test/v1/chat")
+      // …redacted like every other reason's — the request carries `api_key=secret`.
+      expect(error.reason.message).not.toContain("secret")
+    }).pipe(Effect.provide(transportFailureLayer(undefined))),
+  )
+
+  it.effect("a transport failure that carries its own words keeps them, AND names the endpoint", () =>
+    Effect.gen(function* () {
+      const executor = yield* RequestExecutor.Service
+      const error = yield* executor.execute(request).pipe(Effect.flip)
+
+      expectLLMError(error)
+      expect(error.reason.message).toContain("upstream closed the connection")
+      expect(error.reason.message).toContain("(target https://provider.test/v1/chat")
+    }).pipe(Effect.provide(transportFailureLayer("upstream closed the connection"))),
+  )
+
+  it.effect("⭐ the suffix is added ONCE — an arm that already named a target is left alone", () =>
+    Effect.gen(function* () {
+      // The idempotence that lets this live in the constructor rather than in each arm. Without it the
+      // three arms that already append by hand would double up, and `endpointOf`/`tidy` would then be
+      // parsing a message no producer intended.
+      const executor = yield* RequestExecutor.Service
+      const error = yield* executor.execute(request).pipe(Effect.flip)
+
+      expectLLMError(error)
+      expect(error.reason.message.match(/\(target /g)?.length).toBe(1)
+    }).pipe(Effect.provide(transportFailureLayer("already named (target https://provider.test/v1/chat)"))),
+  )
+
   it.effect("an egress block is never retried — a verdict cannot change on attempt two", () =>
     Effect.gen(function* () {
       const attempts = yield* Ref.make(0)

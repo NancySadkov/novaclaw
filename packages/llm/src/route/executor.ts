@@ -309,6 +309,32 @@ const statusError =
 const toHttpError =
   (redactedNames: ReadonlyArray<string | RegExp>, outgoing: HttpClientRequest.HttpClientRequest) =>
   (error: unknown) => {
+    /**
+     * 🔴 **The endpoint is attached HERE, by construction, and not by each arm remembering to.**
+     *
+     * `session-error.ts` ships two headlines for a transport fault — `session.error.transport`
+     * (*"Can't reach the model server."*) and `session.error.transportEndpoint` (*"Can't reach the
+     * model server at {{endpoint}}."*) — and the second is translated in all 18 bundles. It is chosen
+     * by `endpointOf(message)`, which reads the message and nothing else, because the message is the
+     * only field that survives onto the session record (`session/runner/llm.ts` publishes
+     * `reason.message`; `reason.url` is dropped).
+     *
+     * Measured live 2026-08-19 against a dead endpoint: the `TransportError` arm below produced the
+     * bare message `HTTP transport failed`, so `endpointOf` found nothing and a user whose model server
+     * was down read *"Can't reach the model server"* **without ever being told which one**. Three of
+     * the four arms appended `(target …)` by hand; that one had been missed, so the translated,
+     * actionable headline was unreachable on the single most likely first failure a lay user hits.
+     *
+     * That is ruling 2's other half — this module's own header names it: hiding the address is *"the
+     * other failure: a fault described uselessly"* — and it is what AGENTS.md's self-healing rule needs,
+     * since a user whose provider moved can only repair the URL they are shown. So the suffix is added
+     * once, here, where the request is already in hand. Idempotent: an arm that already named a target
+     * is left exactly as it wrote it.
+     */
+    const withTarget = (message: string, request: HttpClientRequest.HttpClientRequest | undefined) => {
+      if (request === undefined || /\(target\s/.test(message)) return message
+      return `${message} (target ${redactUrl(request.url)})`
+    }
     const transportError = (input: {
       readonly message: string
       readonly kind?: string | undefined
@@ -318,7 +344,7 @@ const toHttpError =
         module: "RequestExecutor",
         method: "execute",
         reason: new TransportReason({
-          message: input.message,
+          message: withTarget(input.message, input.request),
           kind: input.kind,
           url: input.request ? redactUrl(input.request.url) : undefined,
           http: input.request ? new HttpContext({ request: requestDetails(input.request, redactedNames) }) : undefined,

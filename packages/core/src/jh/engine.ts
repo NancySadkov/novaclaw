@@ -17,6 +17,7 @@ export * as JhEngine from "./engine"
 //       exhausted → forceDecompose|block(budget); else write_file→corrector / other→re-introspect }.
 
 import { Effect, Exit } from "effect"
+import type { Presence } from "../presence"
 import { Hash } from "../util/hash"
 import { JhTree } from "./tree"
 import { JhStep } from "./step"
@@ -65,6 +66,13 @@ export interface Deps {
   readonly runner: JhProcessRunner.Runner
   readonly artifacts: JhArtifact.Store
   readonly fileExists: (relPath: string, cwd: string) => boolean
+  /**
+   * The three-answer form of {@link fileExists} — `present` | `absent` | `unreadable`
+   * (`@novaclaw/core/presence`). Optional so the in-memory worlds the suites build keep their two-answer
+   * probe; a caller backed by a real disk supplies this so a permission refusal cannot be written into
+   * the transcript as "file not found". See `verifier.ts`'s `inconclusive`.
+   */
+  readonly filePresence?: (relPath: string, cwd: string) => Presence.Answer
   readonly cwd: string
   readonly toolNames: ReadonlyArray<string>
   /** Harness-owned execution-environment description injected into every introspection (shell, cwd,
@@ -1839,6 +1847,9 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
               cwd: deps.cwd,
               runner: deps.runner,
               fileExists: (rel) => deps.fileExists(rel, deps.cwd),
+              ...(deps.filePresence === undefined
+                ? {}
+                : { filePresence: (rel: string) => deps.filePresence!(rel, deps.cwd) }),
               producedPresent,
               defaultTimeoutMs: checkTimeout,
             })

@@ -1,4 +1,5 @@
 import { Global } from "@novaclaw/core/global"
+import { Presence } from "@novaclaw/core/presence"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import type { SessionSchema } from "@novaclaw/core/session/schema"
 import fs from "node:fs"
@@ -10,7 +11,7 @@ import path from "node:path"
  * 🔴 **The vision law this serves is "never breaks in your hands — degrade and recover".** A working
  * directory can vanish under a live session: deleted, renamed, an unmounted share, an ejected volume,
  * or a git worktree removed by the `worktree remove` path. Before this, the worker refused to start
- * (`session-worker/supervisor.ts` checks `existsSync` first, deliberately, so the fault names the
+ * (`session-worker/supervisor.ts` probes the folder first, deliberately, so the fault names the
  * folder rather than blaming the interpreter) and the session was ISOLATED after repeated failures —
  * legible, but stopped, waiting for a human to restore the folder or repoint the session.
  *
@@ -39,7 +40,18 @@ export const scratchDirectory = (sessionID: SessionSchema.ID): string =>
  * mechanism must never turn a stopped session into a crashed one.
  */
 export const workingDirectory = (sessionID: SessionSchema.ID, directory: string): AbsolutePath => {
-  if (fs.existsSync(directory)) return AbsolutePath.make(directory)
+  // ⚠️ **Only a CONFIRMED absence may move a session** (`@novaclaw/core/presence`). This used to test
+  // `existsSync`, which answers `false` for `EACCES`, `EPERM`, `ELOOP` and `EIO` exactly as it does for
+  // `ENOENT` — so a project folder that had merely lost read permission, or lived on a share that was
+  // erroring rather than unmounted, silently RELOCATED a live session and durably wrote the
+  // `missing_working_folder` component, which tells the user their folder "is no longer there".
+  //
+  // 🔴 The direction matters and it is the reverse of the usual degrade. Everywhere else the safe move
+  // is to keep going; here "keeping going" is itself the destructive act, because it detaches the
+  // session from the user's real work. So an `unreadable` returns the ORIGINAL path and the
+  // supervisor's guard refuses the spawn with a sentence that names the errno and claims nothing —
+  // which is exactly the behaviour this function's own header calls "the right thing to degrade to".
+  if (!Presence.isConfirmedAbsent(directory)) return AbsolutePath.make(directory)
   const scratch = scratchDirectory(sessionID)
   try {
     fs.mkdirSync(scratch, { recursive: true })

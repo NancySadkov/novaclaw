@@ -1,10 +1,10 @@
+import { Presence } from "@novaclaw/core/presence"
 import { killTreeSync } from "@novaclaw/core/util/kill-tree"
 import { SessionWorkerProtocol } from "@novaclaw/core/session/execution/worker-protocol"
 import type { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import type { Location } from "@novaclaw/core/location"
 import childProcess from "node:child_process"
-import fs from "node:fs"
 import type { Readable } from "node:stream"
 
 export type Outcome =
@@ -59,7 +59,10 @@ export interface Input {
     >,
     signal: AbortSignal,
   ) => Promise<
-    Extract<SessionWorkerProtocol.HostMessage, { readonly type: "permission-result" | "question-result" | "spawn-result" | "await-child-result" }>
+    Extract<
+      SessionWorkerProtocol.HostMessage,
+      { readonly type: "permission-result" | "question-result" | "spawn-result" | "await-child-result" }
+    >
   >
   readonly onExecutionRequest?: (
     message: SessionWorkerProtocol.ExecutionRequest,
@@ -96,9 +99,21 @@ export function spawn(input: Input): Handle {
   // is ruling 2's "a fault is never described falsely", and it reaches users through boot recovery,
   // which resumes abandoned input for sessions whose folder may have been deleted since. Check first
   // so the fault names the thing that is actually absent.
-  if (!fs.existsSync(input.directory))
+  // ⚠️ **Three answers, not two** (`@novaclaw/core/presence`). The check above used `existsSync`, which
+  // answers `false` for `EACCES`, `EPERM`, `ELOOP` and `EIO` exactly as it does for `ENOENT` — so a
+  // folder we merely could not READ produced the flat sentence "no longer exists", plus an imperative
+  // to *restore* something that was very likely still sitting right there. That is ruling 2 again, one
+  // step past where the comment above stopped: it moved the blame off the interpreter and onto the
+  // folder, on evidence that only supported "the stat failed".
+  const reading = Presence.read(input.directory)
+  if (reading.answer === "absent")
     throw new Error(
       `Session working folder no longer exists: ${input.directory} — the session cannot run until it is restored or the session is pointed at another folder.`,
+    )
+  if (reading.answer === "unreadable")
+    throw new Error(
+      `${Presence.couldNotRead(input.directory, reading)}. The session cannot start until I can read that ` +
+        `folder — check its permissions, or whether the drive or network share it lives on is still connected.`,
     )
   const child = childProcess.spawn(input.command[0]!, input.command.slice(1), {
     cwd: input.directory,
@@ -279,34 +294,34 @@ export function spawn(input: Input): Handle {
                   outcome: "rejected",
                 }
               : message.type === "spawn-child"
-              ? {
-                  version: SessionWorkerProtocol.VERSION,
-                  type: "spawn-result",
-                  sessionID: input.lease.sessionID,
-                  attemptID: input.lease.attemptID,
-                  generation: input.lease.generation,
-                  requestID: message.requestID,
-                  outcome: "rejected",
-                }
-              : message.type === "permission-assert"
-              ? {
-                  version: SessionWorkerProtocol.VERSION,
-                  type: "permission-result",
-                  sessionID: input.lease.sessionID,
-                  attemptID: input.lease.attemptID,
-                  generation: input.lease.generation,
-                  requestID: message.requestID,
-                  outcome: "rejected",
-                }
-              : {
-                  version: SessionWorkerProtocol.VERSION,
-                  type: "question-result",
-                  sessionID: input.lease.sessionID,
-                  attemptID: input.lease.attemptID,
-                  generation: input.lease.generation,
-                  requestID: message.requestID,
-                  outcome: "rejected",
-                },
+                ? {
+                    version: SessionWorkerProtocol.VERSION,
+                    type: "spawn-result",
+                    sessionID: input.lease.sessionID,
+                    attemptID: input.lease.attemptID,
+                    generation: input.lease.generation,
+                    requestID: message.requestID,
+                    outcome: "rejected",
+                  }
+                : message.type === "permission-assert"
+                  ? {
+                      version: SessionWorkerProtocol.VERSION,
+                      type: "permission-result",
+                      sessionID: input.lease.sessionID,
+                      attemptID: input.lease.attemptID,
+                      generation: input.lease.generation,
+                      requestID: message.requestID,
+                      outcome: "rejected",
+                    }
+                  : {
+                      version: SessionWorkerProtocol.VERSION,
+                      type: "question-result",
+                      sessionID: input.lease.sessionID,
+                      attemptID: input.lease.attemptID,
+                      generation: input.lease.generation,
+                      requestID: message.requestID,
+                      outcome: "rejected",
+                    },
           )
           return
         }
