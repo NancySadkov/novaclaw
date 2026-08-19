@@ -1137,8 +1137,16 @@ export const layer = Layer.effect(
         projectGroundingStates.get(session.id),
       )
       if (groundingDecision.state !== undefined) rememberProjectGrounding(session.id, groundingDecision.state)
+      // The folder's CONTENTS ride the grounding message, not just its path — see
+      // `project-grounding.ts` for the measurement (the model invented a filename from the folder's
+      // own name rather than listing it). Read only when a message is actually due, so this costs
+      // one bounded `readdir` per grounding cadence and nothing on an ordinary turn; a failure
+      // yields `undefined` and the message is exactly what it was before.
+      const groundingListing = groundingDecision.due
+        ? yield* Effect.promise(() => ProjectGrounding.readListing(location.directory))
+        : undefined
       const projectGrounding = groundingDecision.due
-        ? SessionInput.applySteerProvenance(ProjectGrounding.render(location))
+        ? SessionInput.applySteerProvenance(ProjectGrounding.render(location, groundingListing))
         : undefined
       const fullRequest = LLM.request({
         model,
