@@ -204,18 +204,20 @@ export const layerWith = (
   tier: Interface["tier"] = () => Effect.succeed(undefined),
   prePrompt: Interface["prePrompt"] = () => Effect.succeed(undefined),
   capabilities: Interface["capabilities"] = () => Effect.succeed(undefined),
-  imageLimit: Interface["imageLimit"] = () => Effect.succeed(undefined),
   ref: Interface["ref"] = () => Effect.succeed(undefined),
   retryAttempts: Interface["retryAttempts"] = () => Effect.succeed(undefined),
   device: Interface["device"] = () => Effect.succeed(undefined),
   // ⚠️ LAST, deliberately. Inserting a parameter mid-list silently rebinds every positional argument
   // after it — a caller passing `tier` second would have been handing it a default-model resolver,
-  // and both compile.
+  // and both compile. (`imageLimit` was briefly added mid-list on 2026-08-19 and is now appended
+  // below; no caller passes past `resolve` today, so nothing broke, but the rule stands.)
   /** Seams that never do session-free work leave this alone; calling it then says so by name. */
   resolveDefault: Interface["resolveDefault"] = () =>
     Effect.fail(new NoDefaultModelError({ reason: "this SessionRunnerModel seam provides no default resolver" })),
   /** ⚠️ Added LAST for the reason above. A seam with no capability store simply observes nothing. */
   observeServing: Interface["observeServing"] = () => Effect.void,
+  /** ⚠️ Added LAST for the reason above. `undefined` = unlimited, the pass-everything answer. */
+  imageLimit: Interface["imageLimit"] = () => Effect.succeed(undefined),
 ) =>
   Layer.succeed(
     Service,

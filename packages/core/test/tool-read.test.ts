@@ -282,10 +282,19 @@ describe("ReadTool", () => {
       ).toEqual({
         type: "content",
         value: [
-          { type: "text", text: "Image read successfully" },
+          { type: "text", text: expect.stringContaining("Image read successfully") },
           { type: "file", uri: `data:image/png;base64,${png}`, mime: "image/png", name: "pixel.png" },
         ],
       })
+      // 🔴 The image result must ASK FOR A DESCRIPTION, and this is the regression test for why.
+      // Measured 2026-08-19: with a bare "Image read successfully", the model read six glyphs in
+      // silence and — once the per-request image budget elided the oldest — named all six from a
+      // memory it did not have, getting five wrong. Restoring the bare text takes the corpus back
+      // from 5/6 correct to 1/6 (notes/reports/vision-on-disk-2026-08-19.md).
+      const noteText = ReadTool.IMAGE_NOTE
+      expect(noteText).toContain("Image read successfully")
+      expect(noteText).toContain("what it shows")
+      expect(noteText).toContain("before you read anything else")
       expect(readCalls).toEqual([
         {
           input: AbsolutePath.make(path.join(process.cwd(), "pixel.png")),
@@ -305,7 +314,7 @@ describe("ReadTool", () => {
         encoding: "base64",
       })
       expect(settled.output?.content).toMatchObject([
-        { type: "text", text: "Image read successfully" },
+        { type: "text", text: expect.stringContaining("Image read successfully") },
         { type: "file", mime: "image/png", uri: `data:image/png;base64,${png}` },
       ])
     }),
@@ -344,7 +353,7 @@ describe("ReadTool", () => {
       expect(settled.result).toEqual({
         type: "content",
         value: [
-          { type: "text", text: "Image read successfully" },
+          { type: "text", text: ReadTool.IMAGE_NOTE },
           { type: "file", uri: `data:image/png;base64,${png}`, mime: "image/png", name: "large.png" },
         ],
       })

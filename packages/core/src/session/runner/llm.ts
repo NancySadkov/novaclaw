@@ -631,8 +631,20 @@ export const layer = Layer.effect(
      * capability store is `todo/vision.md` work; guessing a default for a stranger's endpoint is not.
      */
     const discoveredImageLimits = new Map<string, number>()
-    const imageLimitKey = (reference: { readonly providerID: string; readonly id: string }) =>
-      `${reference.providerID}/${reference.id}`
+    /**
+     * ⚠️ **`models.ref` is declared `… | undefined` and really is undefined in practice**, so this
+     * takes an optional and answers `undefined` rather than dereferencing.
+     *
+     * 🔴 The first version took a required reference. It compiled, `tsgo -b` was clean, and every
+     * runner test hung for 5 s and timed out — 102 of them — because the test seam's `ref` defaults
+     * to `undefined` and `${reference.providerID}` threw inside the turn, so the turn never settled.
+     * A raw failure count would have read as one of this platform's known runner quirks; what found
+     * it was reverting `llm.ts` alone to its pre-change version and watching 7 failures become 7
+     * passes. **An accessor whose type says `| undefined` means it, and the seams are where it is
+     * undefined most often.**
+     */
+    const imageLimitKey = (reference: { readonly providerID: string; readonly id: string } | undefined) =>
+      reference === undefined ? undefined : `${reference.providerID}/${reference.id}`
 
     type TurnTransition =
       // Automatic compaction completed; rebuild the request from compacted history.
@@ -928,7 +940,9 @@ export const layer = Layer.effect(
       const declaredImageLimit = yield* models.imageLimit(modelSession)
       // The DECLARED cap wins when there is one — a catalog entry is the operator's statement and a
       // learned value is an inference. Otherwise use whatever this endpoint told us it allows.
-      const modelImageLimit = declaredImageLimit ?? discoveredImageLimits.get(imageLimitKey(modelRef))
+      const learnedKey = imageLimitKey(modelRef)
+      const modelImageLimit =
+        declaredImageLimit ?? (learnedKey === undefined ? undefined : discoveredImageLimits.get(learnedKey))
       const unreadable = unreadableTurnAttachments(context, modelCapabilities)
       if (unreadable.length > 0) {
         // Name the model the USER picked, not the wire id: `model.id` is the API-side id
@@ -1439,13 +1453,15 @@ export const layer = Layer.effect(
           // four images still in it.
           const discovered = mediaLimitFailure(mediaLimitFailureEvent ?? failure)
           if (discovered !== undefined && !publisher.hasAssistantStarted()) {
+            // No key means no identity to remember it against; the turn still recovers, it just
+            // re-learns the cap next time rather than caching it under a name it does not have.
             const key = imageLimitKey(modelRef)
-            const known = discoveredImageLimits.get(key)
+            const known = key === undefined ? undefined : discoveredImageLimits.get(key)
             // Only re-run when this is NEWS. A cap we already applied and still hit is a different
             // fault (or a cap that does not mean what its message says), and re-running on it would
             // be an unbounded loop dressed as a recovery.
             if (known === undefined || discovered < known) {
-              discoveredImageLimits.set(key, discovered)
+              if (key !== undefined) discoveredImageLimits.set(key, discovered)
               yield* Log.event("session.media.limit.learned", {
                 "session.id": session.id,
                 "media.limit": discovered,

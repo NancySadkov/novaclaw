@@ -26,6 +26,19 @@ import { Tool } from "./tool"
 import { Tools } from "./tools"
 
 export const name = "read"
+
+/**
+ * What rides alongside an image in the tool result.
+ *
+ * Exported so tests can assert its PROPERTIES without keeping a second copy of the sentence —
+ * a duplicated string is a pin that fails on every wording change and proves nothing about
+ * behaviour. `test/tool-read.test.ts` checks that it still confirms the read AND still asks for
+ * the description; `notes/reports/vision-on-disk-2026-08-19.md` is why the ask exists.
+ */
+export const IMAGE_NOTE =
+  "Image read successfully. Write one line now saying what it shows, before you read anything else — " +
+  "images are dropped from context once this model's per-request limit is reached, and only what you " +
+  "wrote down survives. If you are working through several images, describe each as you open it."
 const SUPPORTED_IMAGE_MIMES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"])
 const LocationInput = Schema.Struct({
   path: Schema.String,
@@ -116,13 +129,7 @@ export const layer = Layer.effectDiscard(
               // The mechanical fix — an image is not ELIDABLE until its description is in the
               // transcript — is `todo/vision.md` work. This is measured against that failure, not
               // assumed to fix it.
-              {
-                type: "text",
-                text:
-                  "Image read successfully. Write one line now saying what it shows, before you read anything else — " +
-                  "images are dropped from context once this model's per-request limit is reached, and only what you " +
-                  "wrote down survives. If you are working through several images, describe each as you open it.",
-              },
+              { type: "text", text: IMAGE_NOTE },
               { type: "file", data: output.content, mime: output.mime, name: input.path },
             ]
           },
