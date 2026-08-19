@@ -65,6 +65,24 @@ export interface Interface {
   /**
    * Install providers for the life of the caller's scope.
    *
+   * ⚠️ **`ToolPolicyBuiltin` is the only caller, and that is a DECISION rather than an omission
+   * (2026-08-19).** `ToolPolicy.Provider` is deliberately the interface a third party would
+   * implement — the shipped policies are not a privileged category — but no path from outside this
+   * repo reaches here, and none is being added in v0.2.0. All four surfaces AGENTS.md names were
+   * weighed: the app registry stores manifests and no code, a tool is model-elected and would end up
+   * reading and rewriting its siblings' arguments, a spawned session is neither deterministic nor
+   * inside the budget, and MCP fails on AVAILABILITY rather than on speed — out of process the
+   * budget below stops bounding a function call and starts bounding a process lifecycle whose own
+   * default in this codebase is 30 s, six times what the gate will wait, with every tool call in the
+   * instance refused meanwhile (`safetyCritical` defaults true).
+   *
+   * The intended host is the in-process `{plugin,plugins}/*.ts` glob ruling 5 keeps. Three things
+   * must be true first, two of them defects in that door and one of them work this seam owns:
+   * `Provider` carries no PROVENANCE, so the model-facing note and refusal (see `refusalMessage` and
+   * `ToolRegistry`'s `withPolicyNote`) cannot be framed as a stranger's text the way the Settings and
+   * receipt surfaces already frame it. Measurements and the full list:
+   * `notes/reports/projects-program-2026-08-18.md` → *"Who may call `ToolPolicyGate.install`"*.
+   *
    * Scoped, like `ToolRegistry.register`, so a test or a plugin that installs a policy takes it
    * back out again. Registration validates the whole batch before touching anything, for the
    * reason `ToolRegistry.register` states: one refused entry must take its siblings with it rather
@@ -153,7 +171,7 @@ export const layer = Layer.effect(
      * ⚠️ Cost, and it IS on the hot path (once per screened tool call): one single-table SELECT
      * plus the settings decode `Config.entries()` already performs. That is the same read
      * `tool/bash.ts` makes per call and the runner makes per turn — measured beside the provider
-     * budget in `test/tool-policy-timeout.test.ts`. It is deliberately paid AFTER the in-memory
+     * budget in `test/tool-policy.test.ts`. It is deliberately paid AFTER the in-memory
      * applicability filter, so an instance with nothing installed pays nothing at all.
      *
      * Later documents win per id, exactly as every other sparse settings map resolves. The FOLD
@@ -339,7 +357,8 @@ export const layer = Layer.effect(
       // finish in whatever order they finish, the results are sorted by id before anything reads
       // them, and the decision is a function of the SET. `Effect.forEach` preserves input order in
       // its output, which would mask an ordering bug — the sort inside `compose` is what actually
-      // holds the line, and `tool-policy-determinism.test.ts` shuffles both to prove it.
+      // holds the line, and `test/tool-policy.test.ts` → "shuffling installation AND completion
+      // order yields an identical decision and receipt" shuffles both to prove it.
       const results = yield* Effect.forEach(applicable, (provider) => consult(provider, request), {
         concurrency: "unbounded",
       })

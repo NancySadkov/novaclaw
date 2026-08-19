@@ -110,5 +110,6 @@ export const migrations = (
     import("./migration/20260816215708_add_contact_trust"),
     import("./migration/20260817222746_add_succession_cosignature"),
     import("./migration/20260818192520_add_session_policy_decision"),
+    import("./migration/20260819032112_drop_plugin_config"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

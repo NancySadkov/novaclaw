@@ -30,7 +30,7 @@ import { ToolPolicyGate } from "@novaclaw/core/tool-policy-gate"
  *     error; this makes it a test failure too, and additionally proves the RUNTIME fallback is safe
  *     rather than open — the two halves ruling 1 asks for.
  *  2. **The partition itself, by name.** Re-pricing a key is a legitimate decision and an invisible
- *     one: without this, moving `plugins` to `operational` would be a one-word diff that no check
+ *     one: without this, moving `permissions` to `operational` would be a one-word diff that no check
  *     notices. Pinned as three sorted lists, so it shows up as a decision.
  *  3. **The tiers do different things.** A tier-1 write proceeds with NO consent card; a
  *     consequential one asks on `configure`; a privileged one asks on `configure_privileged`. The
@@ -243,7 +243,6 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       "offline",
       "permissions",
       "persona",
-      "plugins",
       "providers",
       "quality",
       "references",
@@ -251,6 +250,11 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       "shell",
       "skills",
       "telemetry",
+      // Which pre-action policies are switched off. PRIVILEGED because switching one off is the only
+      // way to stop a guard that screens every tool call before it runs — it changes who may do what,
+      // which is this tier's own definition. The contrast with `skill_invocation` two tiers up is
+      // deliberate: that one decides what a HUMAN sees in their own menu and grants the agent nothing.
+      "tool_policy",
       "user_profile",
       "username",
       "web_search",
@@ -472,23 +476,21 @@ describe("the tool reaches EVERY store the router writes to", () => {
             commands: { deploy: { template: "run it" } },
             references: { docs: { path: "/docs" } },
             skills: ["/opt/skills"],
-            plugins: ["team-plugin@1.0.0"],
           },
         })
         expect(result.type).toBe("text")
-        for (const key of ["providers", "agents", "commands", "references", "skills", "plugins"])
+        for (const key of ["providers", "agents", "commands", "references", "skills"])
           expect(textOf(result)).toContain(key)
         expect(textOf(result)).not.toContain("DISCARDED")
 
         // Read one of them back through its own store, so "it committed" is not the tool's opinion.
         expect(Object.keys(yield* catalog.providers())).toContain("spark")
-        // All six are privileged, so exactly one card, carrying all six.
+        // All five are privileged, so exactly one card, carrying all five.
         expect(asserted).toHaveLength(1)
         expect(asserted[0]!.action).toBe("configure_privileged")
         expect([...asserted[0]!.resources].sort()).toEqual([
           "agents",
           "commands",
-          "plugins",
           "providers",
           "references",
           "skills",

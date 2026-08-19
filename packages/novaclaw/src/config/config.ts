@@ -14,7 +14,6 @@ import { CatalogStore } from "@novaclaw/core/catalog-store"
 import { CommandConfigStore } from "@novaclaw/core/command-config-store"
 import { ConfigSeedStartup } from "@novaclaw/core/config-seed-startup"
 import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
-import { PluginConfigStore } from "@novaclaw/core/plugin-config-store"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
@@ -29,13 +28,11 @@ import { Config as ConfigV2 } from "@novaclaw/core/config"
 import { ConfigPermission } from "@novaclaw/core/config/permission"
 import type { DeepMutable } from "@novaclaw/core/schema"
 import { InvalidError, RemoteAuthError } from "@novaclaw/core/config/error"
-import { ConfigPluginSpec } from "@novaclaw/core/config/plugin-spec"
 import { ConfigAgent } from "./agent"
 import { ConfigCommand } from "./command"
 import { ConfigManaged } from "./managed"
 import { ConfigParse } from "./parse"
 import { ConfigPaths } from "./paths"
-import { ConfigPlugin } from "./plugin"
 import { ConfigVariable } from "./variable"
 import { Npm } from "@novaclaw/core/npm"
 import { withTransientReadRetry } from "@/util/effect-http-client"
@@ -149,43 +146,17 @@ async function substituteWellKnownRemoteConfig(input: {
   return { url, headers }
 }
 
-async function resolveLoadedPlugins(config: Info, filepath: string) {
-  if (!config.plugins) return config
-  for (let i = 0; i < config.plugins.length; i++) {
-    // Normalize path-like plugin specs while we still know which config file declared them.
-    // This prevents `./plugin.ts` from being reinterpreted relative to some later merge location.
-    // Resolve in the V1 `Spec` domain the resolver understands, then convert back to a V2 entry.
-    config.plugins[i] = specToEntry(await ConfigPlugin.resolvePluginSpec(entryToSpec(config.plugins[i]), filepath))
-  }
-  return config
-}
-
 // The service authors + serves V2 `Config.Info` shapes. Internally it MUTATES a merged accumulator
 // (mergeDeep + field assignments), so the working type is a deep-mutable V2 Info. Every config source —
 // jsonc files AND markdown-agent frontmatter — is authored directly as V2 (the V1 config migrator was
 // retired in F1-config; no on-read migration remains).
-export type Info = DeepMutable<typeof ConfigV2.Info.Type> & {
-  // plugin_origins is derived state, not a persisted config field, and it never reaches the wire — the
-  // `/config` handlers decode through `ConfigV2.Info`, which has no such key. It exists so the merge can
-  // dedupe by plugin identity while remembering which config file won and at which scope; `plugins` (the
-  // persisted V2 entries the loader actually reads) is its projection. Kept in the resolver `Spec` shape
-  // because that is what `ConfigPlugin.deduplicatePluginOrigins` operates on. (It used to be read directly
-  // by the V1 loader, `plugin/index.ts`; that arm is deleted — this is now purely a merge accumulator.)
-  plugin_origins?: ConfigPlugin.Origin[]
-}
-
-// V2 plugin entry shape (mirror of core `ConfigPlugin.Plugin`, kept local to avoid the name clash with
-// this package's `ConfigPlugin` origin helpers).
-type PluginEntry = string | { package: string; options?: Record<string, unknown> }
-
-function specToEntry(spec: ConfigPluginSpec.Spec): PluginEntry {
-  return Array.isArray(spec) ? { package: spec[0], ...(spec[1] ? { options: spec[1] } : {}) } : spec
-}
-
-function entryToSpec(entry: PluginEntry): ConfigPluginSpec.Spec {
-  if (typeof entry === "string") return entry
-  return entry.options ? [entry.package, entry.options] : entry.package
-}
+// ⚠️ This used to carry a `plugin_origins` accumulator beside the V2 shape, plus a `Spec`↔entry
+// conversion pair and a scope classifier, all so a merge could dedupe config-declared plugin
+// specs by identity and remember which document won. Ruling 5 / step 17 deleted the `plugins[]`
+// key they served, so the merged document is now exactly the V2 shape and nothing else. External
+// plugins are discovered by `core/src/config/plugin/external.ts`'s filesystem walk at load time —
+// they are never a config value, so they never take part in a merge.
+export type Info = DeepMutable<typeof ConfigV2.Info.Type>
 
 // Dir-discovered agents (`{agent,agents,mode,modes}/**/*.md`) already parse as canonical V2
 // `ConfigAgent.Info`; strip undefined fields (JSON round-trip) so they deep-merge cleanly into the V2
@@ -228,7 +199,6 @@ export const layer = Layer.effect(
     const agentStore = yield* AgentConfigStore.Service
     const catalogStore = yield* CatalogStore.Service
     const commandStore = yield* CommandConfigStore.Service
-    const pluginStore = yield* PluginConfigStore.Service
     const referenceStore = yield* ReferenceConfigStore.Service
     const settingsStore = yield* SettingsConfigStore.Service
     const skillStore = yield* SkillConfigStore.Service
@@ -237,7 +207,6 @@ export const layer = Layer.effect(
         Effect.provideService(AgentConfigStore.Service, agentStore),
         Effect.provideService(CatalogStore.Service, catalogStore),
         Effect.provideService(CommandConfigStore.Service, commandStore),
-        Effect.provideService(PluginConfigStore.Service, pluginStore),
         Effect.provideService(ReferenceConfigStore.Service, referenceStore),
         Effect.provideService(SettingsConfigStore.Service, settingsStore),
         Effect.provideService(SkillConfigStore.Service, skillStore),
@@ -289,7 +258,6 @@ export const layer = Layer.effect(
       const data = loadAsV2(parsed, source)
       if (!("path" in options)) return data
 
-      yield* Effect.promise(() => resolveLoadedPlugins(data, options.path))
       if (!data.$schema) {
         data.$schema = "https://novaclaw.app/config.json"
         const updated = text.replace(/^\s*\{/, '{\n  "$schema": "https://novaclaw.app/config.json",')
@@ -356,39 +324,12 @@ export const layer = Layer.effect(
         let result: Info = {}
         const authEnv: Record<string, string> = {}
 
-        const pluginScopeForSource = Effect.fnUntraced(function* (source: string) {
-          if (source.startsWith("http://") || source.startsWith("https://")) return "global"
-          if (source === "NOVACLAW_CONFIG_CONTENT") return "local"
-          if (containsPath(source, ctx)) return "local"
-          return "global"
-        })
-
-        const mergePluginOrigins = Effect.fnUntraced(function* (
-          source: string,
-          // Receives the V2 `plugins` entries from one config source (or already-normalized Specs from
-          // the dir loader — plain file-URL strings, which are valid entries), before provenance for this
-          // merge step is attached. Converted into the resolver `Spec` shape the origin dedup consumes;
-          // `plugin_origins` stays Spec-shaped on purpose and `result.plugins` is projected back from it.
-          list: PluginEntry[] | undefined,
-          // Scope can be inferred from the source path, but some callers already know whether the config should
-          // behave as global or local and can pass that explicitly.
-          kind?: ConfigPlugin.Scope,
-        ) {
-          if (!list?.length) return
-          const hit = kind ?? (yield* pluginScopeForSource(source))
-          // Merge newly seen plugin origins with previously collected ones, then dedupe by plugin identity while
-          // keeping the winning source/scope metadata for downstream installs, writes, and diagnostics.
-          const plugins = ConfigPlugin.deduplicatePluginOrigins([
-            ...(result.plugin_origins ?? []),
-            ...list.map((entry) => ({ spec: entryToSpec(entry), source, scope: hit })),
-          ])
-          result.plugins = plugins.map((item) => specToEntry(item.spec))
-          result.plugin_origins = plugins
-        })
-
-        const merge = (source: string, next: Info, kind?: ConfigPlugin.Scope) => {
+        // Folding one document into the accumulator IS the whole merge now. It used to also thread
+        // each document's plugin specs through an origin dedup that remembered the winning source
+        // and whether it was global or local; ruling 5 / step 17 removed the key those specs came
+        // from, and with it the only reason this had to be an Effect.
+        const merge = (next: Info) => {
           result = mergeConfigConcatArrays(result, next)
-          return mergePluginOrigins(source, next.plugins, kind)
         }
 
         for (const [key, value] of Object.entries(auth)) {
@@ -428,7 +369,7 @@ export const layer = Layer.effect(
               },
               authEnv,
             )
-            yield* merge(source, next, "global")
+            merge(next)
             yield* Log.event("config.remote.load.ok", { "config.url": url })
           }
         }
@@ -440,10 +381,9 @@ export const layer = Layer.effect(
         // are served as imported (provider env resolution happens at runtime in the catalog
         // integration transform, not here).
         const stored = yield* getGlobal()
-        yield* merge("sqlite-stores", stored, "global")
+        merge(stored)
 
         result.agents = result.agents || {}
-        result.plugins = result.plugins || []
 
         const directories = yield* ConfigPaths.directories(ctx.directory, ctx.worktree)
 
@@ -504,10 +444,11 @@ export const layer = Layer.effect(
             result.agents ?? {},
             dirAgents(yield* Effect.promise(() => ConfigAgent.loadMode(dir))),
           )
-          // Auto-discovered plugins under `.novaclaw/plugin(s)` are already local files, so ConfigPlugin.load
-          // returns normalized Specs (plain file-URL strings) and we only need to attach origin metadata here.
-          const list = yield* Effect.promise(() => ConfigPlugin.load(dir))
-          yield* mergePluginOrigins(dir, list.map(specToEntry))
+          // (No plugin walk here. `{plugin,plugins}/*.{ts,js}` under a config directory is still a
+          // supported place to drop your own plugin, but it is LOADED by
+          // `core/src/config/plugin/external.ts`, which does its own walk over the same directories.
+          // This service used to walk them too, purely so the file URLs could be projected into the
+          // now-deleted `plugins` config key — a listing, never a load.)
         }
 
         if (process.env.NOVACLAW_CONFIG_CONTENT) {
@@ -516,7 +457,7 @@ export const layer = Layer.effect(
             dir: ctx.directory,
             source,
           })
-          yield* merge(source, next, "local")
+          merge(next)
           yield* Log.event("config.content.load", {})
         }
 
@@ -524,7 +465,7 @@ export const layer = Layer.effect(
         if (existsSync(managedDir)) {
           for (const file of ["novaclaw.json", "novaclaw.jsonc"]) {
             const source = path.join(managedDir, file)
-            yield* merge(source, yield* loadFile(source), "global")
+            merge(yield* loadFile(source))
           }
         }
 
@@ -659,7 +600,6 @@ export const defaultLayer = layer.pipe(
   Layer.provide(AgentConfigStore.defaultLayer),
   Layer.provide(CatalogStore.defaultLayer),
   Layer.provide(CommandConfigStore.defaultLayer),
-  Layer.provide(PluginConfigStore.defaultLayer),
   Layer.provide(ReferenceConfigStore.defaultLayer),
   Layer.provide(SettingsConfigStore.defaultLayer),
   Layer.provide(SkillConfigStore.defaultLayer),
@@ -676,7 +616,6 @@ export const node = LayerNode.make({
     AgentConfigStore.node,
     CatalogStore.node,
     CommandConfigStore.node,
-    PluginConfigStore.node,
     ReferenceConfigStore.node,
     SettingsConfigStore.node,
     SkillConfigStore.node,

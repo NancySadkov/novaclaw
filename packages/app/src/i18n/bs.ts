@@ -171,7 +171,6 @@ export const dict = {
   "dialog.mcp.description": "{{enabled}} od {{total}} omogućeno",
   "dialog.mcp.empty": "Nema konfigurisnih MCP-ova",
 
-  "dialog.plugins.empty": "Plugini su konfigurisani u novaclaw.json",
 
   "mcp.status.connected": "povezano",
   "mcp.status.failed": "neuspjelo",
@@ -394,7 +393,6 @@ export const dict = {
   "status.popover.ariaLabel": "Konfiguracije servera",
   "status.popover.tab.servers": "Serveri",
   "status.popover.tab.mcp": "MCP",
-  "status.popover.tab.plugins": "Plugini",
   "status.popover.action.manageServers": "Upravljaj serverima",
 
   "session.share.popover.title": "Objavi na webu",

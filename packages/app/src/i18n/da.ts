@@ -170,7 +170,6 @@ export const dict = {
   "dialog.mcp.description": "{{enabled}} af {{total}} aktiveret",
   "dialog.mcp.empty": "Ingen MCP'er konfigureret",
 
-  "dialog.plugins.empty": "Plugins konfigureret i novaclaw.json",
 
   "mcp.status.connected": "forbundet",
   "mcp.status.failed": "mislykkedes",
@@ -390,7 +389,6 @@ export const dict = {
   "status.popover.ariaLabel": "Serverkonfigurationer",
   "status.popover.tab.servers": "Servere",
   "status.popover.tab.mcp": "MCP",
-  "status.popover.tab.plugins": "Plugins",
   "status.popover.action.manageServers": "Administrer servere",
 
   "session.share.popover.title": "Udgiv på nettet",

@@ -13,8 +13,9 @@
  *
  * Peak COMMIT charge (a runaway shows in commit long before the working set moves):
  *
- *     per package  `-b` core                                854 MB
- *     per package  `-b` server                             2201 MB
+ *     per package  `-b` core, WARM incremental                854 MB
+ *     per package  `-b` core, COLD                       4097-4158 MB  <- over the ceiling, parallel
+ *     per package  `-b` server, warm                          2201 MB
  *     ROOT         `-b` parallel, GOMEMLIMIT=3GiB         >5390 MB
  *     ROOT         `-b` --singleThreaded, GOMEMLIMIT=3GiB  4178 MB   18 s
  *     ROOT         `-b` --singleThreaded, GOMEMLIMIT=2GiB  4189 MB   24 s
@@ -35,9 +36,14 @@
  *
  * ## The design that follows from that
  *
- * Typecheck PER PACKAGE (≤2.2 GB, fast, parallel) and never whole-repo in one process. The repo's own
- * `bun run typecheck` already does this via `script/test.ts`. A root `tsgo -b` will hit the ceiling and
- * be killed — deliberately, because it is the thing that cannot fit.
+ * Typecheck PER PACKAGE and never whole-repo in one process. The repo's own `bun run typecheck` already
+ * does this via `script/test.ts`.
+ *
+ * ⚠️ **The "≤2.2 GB per package" claim this paragraph used to make was WARM-only, and it was wrong in
+ * the case that matters.** A COLD `packages/core` peaks 4097-4158 MB parallel — just over the ceiling —
+ * so it was killed on every clean checkout, and `packages/novaclaw` inherited it. That is what the
+ * downscale ladder below exists for: it now retries single-threaded and PASSES. Measured 2026-08-19.
+ * A number taken from a warm build and written as if general is how a guard ends up refusing honest work.
  *
  * SINGLE ENTRY is the other half and the one that actually caused the lockup: one 2 GB typecheck is
  * fine, five at once is not. A lock is honest here in a way tuning is not.
@@ -237,45 +243,124 @@ function ensureGuard() {
 
 ensureGuard()
 const release = await acquireLock()
-let killed = false
-let peak = 0
 
-const child = spawn(binary, args, {
-  stdio: "inherit",
-  env: { ...process.env, GOMEMLIMIT: MEM_LIMIT, GOGC: GC_PERCENT },
-})
+/**
+ * Free physical memory in MB, or `undefined` when it cannot be read.
+ *
+ * Used for ONE decision — whether to start already-downscaled. A guard that only kills teaches nothing
+ * and costs the whole run; knowing the box is tight before spawning is what lets it degrade instead.
+ */
+function freeMemoryMB(): number | undefined {
+  if (platform() !== "win32") return undefined
+  const probe = Bun.spawnSync([
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "[math]::Round((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory/1KB)",
+  ])
+  const value = Number(new TextDecoder().decode(probe.stdout).trim())
+  return Number.isFinite(value) && value > 0 ? value : undefined
+}
 
-const stopWatching =
-  child.pid === undefined
-    ? () => {}
-    : watchMemory(child.pid, CHECK_MS, (mb) => {
-        if (killed) return
-        if (mb > peak) peak = mb
-        if (mb <= CEILING_MB) return
-        killed = true
-        const message = `killed tsgo pid ${child.pid} at ${mb} MB commit — over the ${CEILING_MB} MB ceiling`
-        log(`${message} | args: ${args.join(" ")}`)
-        console.error(
-          `\n[tsgo] ${message}.\n` +
-            `[tsgo] This is a DEFECT, not load. Per-package typechecks peak near 1-2 GB.\n` +
-            `[tsgo] A whole-repo build genuinely needs >4 GB of LIVE heap and cannot be tuned under it —\n` +
-            `[tsgo] typecheck the package you changed instead (\`cd packages/<name> && bun run typecheck\`).\n`,
-        )
+/**
+ * One attempt. Resolves with the exit code, or `"over-ceiling"` when the guard had to kill it.
+ *
+ * ⚠️ The child is watched rather than trusted: `GOMEMLIMIT` is a SOFT limit over the heap and cannot
+ * evict a live set, which is why a hard ceiling exists at all.
+ */
+function attempt(runArgs: readonly string[], memLimit: string): Promise<number | "over-ceiling"> {
+  return new Promise((resolve) => {
+    let killed = false
+    let peak = 0
+    const child = spawn(binary, [...runArgs], {
+      stdio: "inherit",
+      env: { ...process.env, GOMEMLIMIT: memLimit, GOGC: GC_PERCENT },
+    })
+    const stopWatching =
+      child.pid === undefined
+        ? () => {}
+        : watchMemory(child.pid, CHECK_MS, (mb) => {
+            if (killed) return
+            if (mb > peak) peak = mb
+            if (mb <= CEILING_MB) return
+            killed = true
+            log(`over ceiling at ${mb} MB | args: ${runArgs.join(" ")}`)
+            try {
+              if (child.pid !== undefined) process.kill(child.pid, "SIGKILL")
+            } catch {}
+          })
+    child.on("exit", (code, signal) => {
+      stopWatching()
+      if (peak > 0) log(`tsgo peak ${peak} MB | exit ${killed ? "KILLED" : (code ?? signal)} | args: ${runArgs.join(" ")}`)
+      resolve(killed ? "over-ceiling" : signal ? 1 : (code ?? 0))
+    })
+    for (const signal of ["SIGINT", "SIGTERM"] as const) {
+      process.on(signal, () => {
         try {
           if (child.pid !== undefined) process.kill(child.pid, "SIGKILL")
         } catch {}
+        stopWatching()
+        release()
+        process.exit(1)
       })
-
-const finish = (code: number) => {
-  stopWatching()
-  release()
-  process.exit(code)
+    }
+  })
 }
 
-child.on("exit", (code, signal) => {
-  if (peak > 0) log(`tsgo peak ${peak} MB | exit ${killed ? "KILLED" : (code ?? signal)} | args: ${args.join(" ")}`)
-  finish(killed ? 97 : signal ? 1 : (code ?? 0))
-})
+/**
+ * 🔴 **DOWNSCALE before dying.** The first version only killed, which is the right backstop and a poor
+ * strategy: a run that would have fitted single-threaded was destroyed for using the concurrency it was
+ * given. Measured on this repo — a whole-repo `-b` peaks **>5.4 GB parallel and ~4.2 GB
+ * `--singleThreaded`**, so serialising is worth ~1.2 GB, and a per-package build (854 MB – 2.2 GB) has
+ * room either way.
+ *
+ * ⚠️ `GOMEMLIMIT` is NOT the lever here and lowering it further is a trap: at 3 GiB / 2 GiB / 1.5 GiB /
+ * 1 GiB the same build peaked 4178 / 4189 / 4307 / 4259 MB while wall time rose 18 → 34 s. That is a
+ * large LIVE set, which a soft heap limit cannot evict — it only makes the collector thrash.
+ *
+ * So the ladder is CONCURRENCY, not GC: parallel, then single-threaded, then an honest refusal naming
+ * the one thing that actually fits — per-package.
+ */
+const alreadySerial = args.includes("--singleThreaded")
+const free = freeMemoryMB()
+// Start downscaled when the box cannot plausibly hold a parallel run: the ceiling plus a working margin
+// for everything else on the machine. Cheaper than discovering it by being killed.
+const startSerial = alreadySerial || (free !== undefined && free < CEILING_MB + 1024)
+if (startSerial && !alreadySerial)
+  console.error(`[tsgo] only ${free} MB free — starting single-threaded to stay under ${CEILING_MB} MB.`)
+
+const firstArgs = startSerial && !alreadySerial ? [...args, "--singleThreaded"] : args
+let outcome = await attempt(firstArgs, MEM_LIMIT)
+
+if (outcome === "over-ceiling" && !startSerial) {
+  console.error(
+    `
+[tsgo] over the ${CEILING_MB} MB ceiling — retrying single-threaded, which measured ~1.2 GB cheaper.
+`,
+  )
+  log(`downscaling to --singleThreaded | args: ${args.join(" ")}`)
+  outcome = await attempt([...args, "--singleThreaded"], MEM_LIMIT)
+}
+
+if (outcome === "over-ceiling") {
+  console.error(
+    `
+[tsgo] still over ${CEILING_MB} MB with concurrency already at 1.
+` +
+      `[tsgo] Lowering GOMEMLIMIT will not help — this is live heap, not garbage (measured).
+` +
+      `[tsgo] Typecheck the package you changed: \`cd packages/<name> && bun run typecheck\`.
+` +
+      `[tsgo] Per-package peaks are 854 MB – 2.2 GB and fit comfortably.
+`,
+  )
+  release()
+  process.exit(97)
+}
+
+release()
+process.exit(outcome)
+
 // The lock must not survive our own death, or the next run queues behind a corpse until the staleness
 // check notices.
 for (const signal of ["SIGINT", "SIGTERM"] as const) {

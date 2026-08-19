@@ -1403,6 +1403,20 @@ export const EVENTS = {
   },
 
   // ── plugin ────────────────────────────────────────────────────────────────────────────────────
+  /**
+   * An upgrading instance held a config-declared external plugin, and ruling 5 removed the key that
+   * declared it. One line per stored spec, at the migration that drops the store — so a plugin that
+   * stops loading at this boot is NAMED rather than silently absent.
+   */
+  "plugin.config.dropped": {
+    level: "warn",
+    message:
+      "a config-declared external plugin was REMOVED and will not load — external plugins now come only " +
+      "from a file you drop under plugin/ in a NovaClaw config directory, or out-of-process via MCP",
+    attributes: { "plugin.package": "text" },
+    content: "user",
+    file: "packages/core/src/database/migration/20260819032112_drop_plugin_config.ts",
+  },
   /** One plugin event handler failed; its subscription continues. */
   "plugin.event.delivery.failed": {
     level: "error",

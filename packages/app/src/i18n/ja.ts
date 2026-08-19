@@ -149,7 +149,6 @@ export const dict = {
   "dialog.mcp.title": "MCP",
   "dialog.mcp.description": "{{total}}個中{{enabled}}個が有効",
   "dialog.mcp.empty": "MCPが設定されていません",
-  "dialog.plugins.empty": "novaclaw.jsonで設定されたプラグイン",
   "mcp.status.connected": "接続済み",
   "mcp.status.failed": "失敗",
   "mcp.status.needs_auth": "認証が必要",
@@ -335,7 +334,6 @@ export const dict = {
   "status.popover.ariaLabel": "サーバー設定",
   "status.popover.tab.servers": "サーバー",
   "status.popover.tab.mcp": "MCP",
-  "status.popover.tab.plugins": "プラグイン",
   "status.popover.action.manageServers": "サーバーを管理",
   "session.share.popover.title": "ウェブで公開",
   "session.share.popover.description.shared":

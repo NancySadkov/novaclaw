@@ -1,3 +1,4 @@
+import { ConfigPluginGlob } from "@novaclaw/core/config/plugin/glob"
 import { Global } from "@novaclaw/core/global"
 import { InstallationVersion } from "@novaclaw/core/installation/version"
 import { Flag } from "@novaclaw/core/flag/flag"
@@ -46,8 +47,6 @@ const InfoCommand = effectCmd({
   command: "info",
   describe: "show debug information",
   handler: Effect.fn("Cli.debug.info")(function* () {
-    const { Config } = yield* Effect.promise(() => import("@/config/config"))
-    const config = yield* Config.Service.use((cfg) => cfg.get())
     const termProgram = process.env.TERM_PROGRAM
       ? `${process.env.TERM_PROGRAM}${process.env.TERM_PROGRAM_VERSION ? ` ${process.env.TERM_PROGRAM_VERSION}` : ""}`
       : undefined
@@ -56,18 +55,29 @@ const InfoCommand = effectCmd({
     console.log(`novaclaw version: ${InstallationVersion}`)
     console.log(`os: ${os.type()} ${os.release()} ${os.arch()}`)
     console.log(`terminal: ${terminal || "unknown"}`)
-    console.log("plugins:")
+    // ⚠️ This used to print `config.plugins`. Ruling 5 / step 17 deleted that key — an external
+    // plugin is no longer a config VALUE — so the honest answer is the same filesystem walk the
+    // loader itself performs (`core/src/config/plugin/external.ts`): `{plugin,plugins}/*.{ts,js}`
+    // under the INSTANCE CONFIG DIR, and nowhere else. Printing the directory it looked in is the
+    // point when the answer is "none": principle 12(d), say what is in force right now.
+    // `Global.make()` rather than `Global.Path`: it is what applies `NOVACLAW_CONFIG_DIR`, and this
+    // line must name the directory the LOADER reads, not the default one.
+    const configDir = Global.make().config
+    console.log(`plugins (${configDir}):`)
     if (Flag.NOVACLAW_PURE) {
       console.log("external plugins disabled (--pure)")
       return
     }
-    if (!config.plugins?.length) {
+    const files = yield* Effect.promise(() =>
+      Array.fromAsync(
+        new Bun.Glob(ConfigPluginGlob.PATTERN).scan({ cwd: configDir, absolute: true, dot: true }),
+      ).catch(() => [] as string[]),
+    )
+    if (files.length === 0) {
       console.log("none")
       return
     }
-    for (const plugin of config.plugins) {
-      console.log(`- ${typeof plugin === "string" ? plugin : plugin.package}`)
-    }
+    for (const file of files.sort()) console.log(`- ${file}`)
   }),
 })
 

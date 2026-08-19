@@ -10,7 +10,6 @@ import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
-import { PluginConfigStore } from "@novaclaw/core/plugin-config-store"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { SettingsConfigSeed } from "@novaclaw/core/settings-config-seed"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
@@ -118,7 +117,6 @@ const it = testEffect(
       AgentConfigStore.node,
       CatalogStore.node,
       CommandConfigStore.node,
-      PluginConfigStore.node,
       ReferenceConfigStore.node,
       SettingsConfigStore.node,
       SkillConfigStore.node,
@@ -150,7 +148,7 @@ describe("the sweep", () => {
     expect(SETTINGS_ROUTED.size).toBeGreaterThan(20)
   })
 
-  test("the nine per-key arms are what the sweep found", () => {
+  test("the eight per-key arms are what the sweep found", () => {
     // Named explicitly so that DELETING an arm fails here too — the regex alone would just return a
     // shorter list and the partition test would blame `config.ts` for a key the router lost.
     expect([...STORE_ROUTED].sort()).toEqual([
@@ -159,19 +157,18 @@ describe("the sweep", () => {
       "default_agent",
       "model",
       "models",
-      "plugins",
       "providers",
       "references",
       "skills",
     ])
   })
 
-  test("…and the 3/6 split between the hand-written arms and the table rows is what it claims", () => {
+  test("…and the 3/5 split between the hand-written arms and the table rows is what it claims", () => {
     // The union above would still pass if a table row were quietly rewritten as a hand-written `if`,
     // or a special-cased arm folded into a row it cannot express — so pin WHICH form each key uses.
     // Moving one is legitimate; doing it without noticing is what this line prevents.
     expect([...LITERAL_ROUTED].sort()).toEqual(["default_agent", "model", "models"])
-    expect([...TABLE_ROUTED].sort()).toEqual(["agents", "commands", "plugins", "providers", "references", "skills"])
+    expect([...TABLE_ROUTED].sort()).toEqual(["agents", "commands", "providers", "references", "skills"])
   })
 
   test("every routed key is a real Config.Info key", () => {
@@ -268,7 +265,6 @@ describe("the router refuses an unrouted key at runtime", () => {
           commands: { deploy: { template: "run it" } },
           references: { docs: { path: "/docs" } },
           skills: ["/opt/skills"],
-          plugins: ["team-plugin@1.0.0"],
         }),
       )
       expect([...consumed].sort()).toEqual([...STORE_ROUTED].sort())

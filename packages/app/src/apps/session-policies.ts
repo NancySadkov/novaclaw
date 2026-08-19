@@ -228,7 +228,7 @@ export function toIntervention(
     }
   })
   return {
-    key: `${row.toolCallID} ${row.tool}`,
+    key: `${row.toolCallID}\x00${row.tool}`,
     toolCallID: row.toolCallID,
     tool: authorText(row.tool, 80) || "(unnamed tool)",
     outcome,

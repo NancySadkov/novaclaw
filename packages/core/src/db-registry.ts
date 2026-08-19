@@ -100,7 +100,6 @@ const CONFIG_BACKED_TABLES: ReadonlySet<string> = new Set([
   "command_config",
   "reference_config",
   "skill_config",
-  "plugin_config",
 ])
 
 /**

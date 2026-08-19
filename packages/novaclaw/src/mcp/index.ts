@@ -22,7 +22,6 @@ import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
 import { CatalogStore } from "@novaclaw/core/catalog-store"
 import { CommandConfigStore } from "@novaclaw/core/command-config-store"
 import { Database } from "@novaclaw/core/database/database"
-import { PluginConfigStore } from "@novaclaw/core/plugin-config-store"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
@@ -339,7 +338,6 @@ export const layer = Layer.effect(
       catalog: yield* CatalogStore.Service,
       commands: yield* CommandConfigStore.Service,
       database: yield* Database.Service,
-      plugins: yield* PluginConfigStore.Service,
       references: yield* ReferenceConfigStore.Service,
       settings: yield* SettingsConfigStore.Service,
       skills: yield* SkillConfigStore.Service,
@@ -350,7 +348,6 @@ export const layer = Layer.effect(
         Effect.provideService(CatalogStore.Service, configStores.catalog),
         Effect.provideService(CommandConfigStore.Service, configStores.commands),
         Effect.provideService(Database.Service, configStores.database),
-        Effect.provideService(PluginConfigStore.Service, configStores.plugins),
         Effect.provideService(ReferenceConfigStore.Service, configStores.references),
         Effect.provideService(SettingsConfigStore.Service, configStores.settings),
         Effect.provideService(SkillConfigStore.Service, configStores.skills),
@@ -1332,7 +1329,6 @@ export const defaultLayer = layer.pipe(
   Layer.provide(AgentConfigStore.defaultLayer),
   Layer.provide(CatalogStore.defaultLayer),
   Layer.provide(CommandConfigStore.defaultLayer),
-  Layer.provide(PluginConfigStore.defaultLayer),
   Layer.provide(ReferenceConfigStore.defaultLayer),
   Layer.provide(SettingsConfigStore.defaultLayer),
   Layer.provide(SkillConfigStore.defaultLayer),
@@ -1357,7 +1353,6 @@ export const node = LayerNode.make({
     AgentConfigStore.node,
     CatalogStore.node,
     CommandConfigStore.node,
-    PluginConfigStore.node,
     ReferenceConfigStore.node,
     SettingsConfigStore.node,
     SkillConfigStore.node,

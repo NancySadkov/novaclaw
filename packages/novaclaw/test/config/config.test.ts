@@ -38,8 +38,6 @@ import os from "os"
 import { pathToFileURL } from "url"
 import { Global } from "@novaclaw/core/global"
 import { Filesystem } from "@/util/filesystem"
-import { ConfigPlugin } from "@/config/plugin"
-import { ConfigPluginSpec } from "@novaclaw/core/config/plugin-spec"
 import { AuthTest } from "../fake/auth"
 import { NpmTest } from "../fake/npm"
 import { Database } from "@novaclaw/core/database/database"
@@ -47,7 +45,6 @@ import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
 import { CatalogStore } from "@novaclaw/core/catalog-store"
 import { CommandConfigStore } from "@novaclaw/core/command-config-store"
-import { PluginConfigStore } from "@novaclaw/core/plugin-config-store"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
@@ -58,7 +55,6 @@ import { AgentConfigTable, AgentSettingTable } from "@novaclaw/core/agent-config
 import { CommandConfigTable } from "@novaclaw/core/command-config/sql"
 import { ReferenceConfigTable } from "@novaclaw/core/reference-config/sql"
 import { SkillConfigTable } from "@novaclaw/core/skill-config/sql"
-import { PluginConfigTable } from "@novaclaw/core/plugin-config/sql"
 
 /** Infra layer that provides FileSystem, Path, ChildProcessSpawner for test fixtures */
 const infra = CrossSpawnSpawner.defaultLayer.pipe(
@@ -133,7 +129,6 @@ const configLayer = (
     Layer.provide(AgentConfigStore.defaultLayer),
     Layer.provide(CatalogStore.defaultLayer),
     Layer.provide(CommandConfigStore.defaultLayer),
-    Layer.provide(PluginConfigStore.defaultLayer),
     Layer.provide(ReferenceConfigStore.defaultLayer),
     Layer.provide(SettingsConfigStore.defaultLayer),
     Layer.provide(SkillConfigStore.defaultLayer),
@@ -155,7 +150,6 @@ const storeAccess = Layer.mergeAll(
   AgentConfigStore.defaultLayer,
   CatalogStore.defaultLayer,
   CommandConfigStore.defaultLayer,
-  PluginConfigStore.defaultLayer,
   ReferenceConfigStore.defaultLayer,
   SettingsConfigStore.defaultLayer,
   SkillConfigStore.defaultLayer,
@@ -178,7 +172,6 @@ const wipeStores = withStores(
       CommandConfigTable,
       ReferenceConfigTable,
       SkillConfigTable,
-      PluginConfigTable,
     ]) {
       yield* db.delete(table).run().pipe(Effect.orDie)
     }
@@ -617,7 +610,6 @@ test("remote well-known config can use FetchHttpClient layer", async () => {
             Layer.provide(AgentConfigStore.defaultLayer),
             Layer.provide(CatalogStore.defaultLayer),
             Layer.provide(CommandConfigStore.defaultLayer),
-            Layer.provide(PluginConfigStore.defaultLayer),
             Layer.provide(ReferenceConfigStore.defaultLayer),
             Layer.provide(SettingsConfigStore.defaultLayer),
             Layer.provide(SkillConfigStore.defaultLayer),
@@ -1012,32 +1004,33 @@ it.effect("installs dependencies in writable NOVACLAW_CONFIG_DIR", () =>
   }).pipe(Effect.provide(testInstanceStoreLayer), Effect.provide(CrossSpawnSpawner.defaultLayer)),
 )
 
-it.instance("merges store plugins with auto-discovered dir-walk plugins, origins aligned", () =>
+// Ruling 5 / step 17. This service used to walk `.novaclaw/{plugin,plugins}/` in every config
+// directory and merge the hits — plus a `plugins[]` store — into a `plugins` key on the served
+// document. The key is deleted, so a plugin FILE contributes nothing here: it is loaded by
+// `core/src/config/plugin/external.ts`, from the INSTANCE config dir only, and never described as
+// config. The neighbouring section-D tests are the control — a project `.novaclaw` still
+// contributes agents and commands, so "the walk found nothing" cannot be what makes this pass.
+it.instance("a plugin file in a project .novaclaw contributes NOTHING to the config document", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
-    yield* withStores(
-      Effect.gen(function* () {
-        const plugins = yield* PluginConfigStore.Service
-        yield* plugins.setPlugin({ package: "store-plugin@1.0.0", options: { source: "store" } })
-      }),
-    )
-    yield* Config.use.invalidate()
     yield* FSUtil.use.writeWithDirs(
       path.join(test.directory, ".novaclaw", "plugin", "my-plugin.js"),
       "export default {}",
     )
+    // Same directory, a resource that IS config — so the walk is proven live in this very test.
+    yield* FSUtil.use.writeWithDirs(
+      path.join(test.directory, ".novaclaw", "agent", "beside-the-plugin.md"),
+      `---
+model: test/model
+---
+Agent beside the plugin`,
+    )
 
     const config = yield* Config.use.get()
-    const names = (config.plugins ?? []).map((p) => (typeof p === "string" ? p : p.package))
-    expect(names).toContain("store-plugin@1.0.0")
-    expect(names.some((p) => p.startsWith("file://") && p.includes("my-plugin"))).toBe(true)
-    // plugin_origins stays in the resolver Spec shape; the persisted `plugins` are its V2-entry
-    // projection — aligned by identity. Store-borne plugins carry the instance-wide scope.
-    const origins = config.plugin_origins ?? []
-    expect(origins.map((item) => ConfigPlugin.pluginSpecifier(item.spec))).toEqual(names)
-    expect(origins.find((item) => ConfigPlugin.pluginSpecifier(item.spec) === "store-plugin@1.0.0")?.scope).toBe(
-      "global",
-    )
+    expect(config.agents?.["beside-the-plugin"]).toEqual(expect.objectContaining({ model: "test/model" }))
+    expect(Object.keys(config)).not.toContain("plugins")
+    expect(Object.keys(config)).not.toContain("plugin_origins")
+    expect(JSON.stringify(config)).not.toContain("my-plugin")
   }),
 )
 
@@ -1125,123 +1118,6 @@ test("config parser preserves permission dict key order", () => {
   const permission = ConfigParse.schema(ConfigPermission.Info, { bash: "allow", "*": "deny", edit: "ask" }, "test")
 
   expect(Object.keys(permission)).toEqual(["bash", "*", "edit"])
-})
-
-describe("resolvePluginSpec", () => {
-  test("keeps package specs unchanged", async () => {
-    await using tmp = await tmpdir()
-    const file = path.join(tmp.path, "novaclaw.json")
-    expect(await ConfigPlugin.resolvePluginSpec("oh-my-novaclaw@2.4.3", file)).toBe("oh-my-novaclaw@2.4.3")
-    expect(await ConfigPlugin.resolvePluginSpec("@scope/pkg", file)).toBe("@scope/pkg")
-  })
-
-  test("resolves windows-style relative plugin directory specs", async () => {
-    if (process.platform !== "win32") return
-
-    await using tmp = await tmpdir({
-      init: async (dir) => {
-        const plugin = path.join(dir, "plugin")
-        await fs.mkdir(plugin, { recursive: true })
-        await Filesystem.write(path.join(plugin, "index.ts"), "export default {}")
-      },
-    })
-
-    const file = path.join(tmp.path, "novaclaw.json")
-    const hit = await ConfigPlugin.resolvePluginSpec(".\\plugin", file)
-    expect(ConfigPlugin.pluginSpecifier(hit)).toBe(pathToFileURL(path.join(tmp.path, "plugin", "index.ts")).href)
-  })
-
-  test("resolves relative file plugin paths to file urls", async () => {
-    await using tmp = await tmpdir({
-      init: async (dir) => {
-        await Filesystem.write(path.join(dir, "plugin.ts"), "export default {}")
-      },
-    })
-
-    const file = path.join(tmp.path, "novaclaw.json")
-    const hit = await ConfigPlugin.resolvePluginSpec("./plugin.ts", file)
-    expect(ConfigPlugin.pluginSpecifier(hit)).toBe(pathToFileURL(path.join(tmp.path, "plugin.ts")).href)
-  })
-
-  test("resolves plugin directory paths to directory urls", async () => {
-    await using tmp = await tmpdir({
-      init: async (dir) => {
-        const plugin = path.join(dir, "plugin")
-        await fs.mkdir(plugin, { recursive: true })
-        await Filesystem.writeJson(path.join(plugin, "package.json"), {
-          name: "demo-plugin",
-          type: "module",
-          main: "./index.ts",
-        })
-        await Filesystem.write(path.join(plugin, "index.ts"), "export default {}")
-      },
-    })
-
-    const file = path.join(tmp.path, "novaclaw.json")
-    const hit = await ConfigPlugin.resolvePluginSpec("./plugin", file)
-    expect(ConfigPlugin.pluginSpecifier(hit)).toBe(pathToFileURL(path.join(tmp.path, "plugin")).href)
-  })
-
-  test("resolves plugin directories without package.json to index.ts", async () => {
-    await using tmp = await tmpdir({
-      init: async (dir) => {
-        const plugin = path.join(dir, "plugin")
-        await fs.mkdir(plugin, { recursive: true })
-        await Filesystem.write(path.join(plugin, "index.ts"), "export default {}")
-      },
-    })
-
-    const file = path.join(tmp.path, "novaclaw.json")
-    const hit = await ConfigPlugin.resolvePluginSpec("./plugin", file)
-    expect(ConfigPlugin.pluginSpecifier(hit)).toBe(pathToFileURL(path.join(tmp.path, "plugin", "index.ts")).href)
-  })
-})
-
-describe("deduplicatePluginOrigins", () => {
-  const dedupe = (plugins: ConfigPluginSpec.Spec[]) =>
-    ConfigPlugin.deduplicatePluginOrigins(
-      plugins.map((spec) => ({
-        spec,
-        source: "",
-        scope: "global" as const,
-      })),
-    ).map((item) => item.spec)
-
-  test("removes duplicates keeping higher priority (later entries)", () => {
-    const plugins = ["global-plugin@1.0.0", "shared-plugin@1.0.0", "local-plugin@2.0.0", "shared-plugin@2.0.0"]
-
-    const result = dedupe(plugins)
-
-    expect(result).toContain("global-plugin@1.0.0")
-    expect(result).toContain("local-plugin@2.0.0")
-    expect(result).toContain("shared-plugin@2.0.0")
-    expect(result).not.toContain("shared-plugin@1.0.0")
-    expect(result.length).toBe(3)
-  })
-
-  test("keeps path plugins separate from package plugins", () => {
-    const plugins = ["oh-my-novaclaw@2.4.3", "file:///project/.novaclaw/plugin/oh-my-novaclaw.js"]
-
-    const result = dedupe(plugins)
-
-    expect(result).toEqual(plugins)
-  })
-
-  test("deduplicates direct path plugins by exact spec", () => {
-    const plugins = ["file:///project/.novaclaw/plugin/demo.ts", "file:///project/.novaclaw/plugin/demo.ts"]
-
-    const result = dedupe(plugins)
-
-    expect(result).toEqual(["file:///project/.novaclaw/plugin/demo.ts"])
-  })
-
-  test("preserves order of remaining plugins", () => {
-    const plugins = ["a-plugin@1.0.0", "b-plugin@1.0.0", "c-plugin@1.0.0"]
-
-    const result = dedupe(plugins)
-
-    expect(result).toEqual(["a-plugin@1.0.0", "b-plugin@1.0.0", "c-plugin@1.0.0"])
-  })
 })
 
 // parseManagedPlist unit tests — pure function, no OS interaction

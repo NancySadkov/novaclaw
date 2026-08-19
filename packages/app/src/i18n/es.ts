@@ -171,7 +171,6 @@ export const dict = {
   "dialog.mcp.description": "{{enabled}} de {{total}} habilitados",
   "dialog.mcp.empty": "No hay MCPs configurados",
 
-  "dialog.plugins.empty": "Plugins configurados en novaclaw.json",
 
   "mcp.status.connected": "conectado",
   "mcp.status.failed": "fallido",
@@ -396,7 +395,6 @@ export const dict = {
   "status.popover.ariaLabel": "Configuraciones del servidor",
   "status.popover.tab.servers": "Servidores",
   "status.popover.tab.mcp": "MCP",
-  "status.popover.tab.plugins": "Plugins",
   "status.popover.action.manageServers": "Administrar servidores",
 
   "session.share.popover.title": "Publicar en web",

@@ -17,7 +17,6 @@ import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
 import { CatalogSeed } from "@novaclaw/core/catalog-seed"
 import { CatalogStore } from "@novaclaw/core/catalog-store"
 import { CommandConfigStore } from "@novaclaw/core/command-config-store"
-import { PluginConfigStore } from "@novaclaw/core/plugin-config-store"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
@@ -300,7 +299,6 @@ const configStores = LayerNode.compile(
     AgentConfigStore.node,
     CatalogStore.node,
     CommandConfigStore.node,
-    PluginConfigStore.node,
     ReferenceConfigStore.node,
     SettingsConfigStore.node,
     SkillConfigStore.node,
@@ -393,7 +391,6 @@ const serverStores = LayerNode.compile(
     AgentConfigStore.node,
     CatalogStore.node,
     CommandConfigStore.node,
-    PluginConfigStore.node,
     ReferenceConfigStore.node,
     SettingsConfigStore.node,
     SkillConfigStore.node,
@@ -469,15 +466,17 @@ const SETTINGS_KEYS: ReadonlySet<string> = new Set(SettingsConfigSeed.SETTINGS_K
 
 /**
  * The keys this fixture REFUSES to provision, each with the reason, because a generic "teach
- * clearProvisioned() to remove it" would be false advice for both of them.
+ * clearProvisioned() to remove it" would be false advice.
  *
- * Neither is missing a remove op — `SkillConfigStore.removeSource` and
- * `PluginConfigStore.removePlugin` both exist, and `ConfigStoreWrite` calls them. They are
- * ARRAY-shaped keys, and the documented `updateConfig` contract is that arrays replace WHOLESALE,
- * which `config-store-write.ts` implements by emptying the store and re-inserting the patch's items.
- * So the undo is not "remove what this test added" — that leaves the store missing whatever the
- * write wiped, which is the same cross-test leak one step removed — it is "put the previous list
- * back", and that needs a snapshot this fixture deliberately does not take.
+ * It is not missing a remove op — `SkillConfigStore.removeSource` exists and `ConfigStoreWrite`
+ * calls it. It is an ARRAY-shaped key, and the documented `updateConfig` contract is that arrays
+ * replace WHOLESALE, which `config-store-write.ts` implements by emptying the store and re-inserting
+ * the patch's items. So the undo is not "remove what this test added" — that leaves the store
+ * missing whatever the write wiped, which is the same cross-test leak one step removed — it is "put
+ * the previous list back", and that needs a snapshot this fixture deliberately does not take.
+ *
+ * (`plugins` was the second entry here until ruling 5 / step 17 deleted the key and its store. The
+ * map stays a map: the next array-shaped key inherits the same problem and the same refusal.)
  */
 const REFUSED: Record<string, string> = {
   skills:
@@ -485,11 +484,6 @@ const REFUSED: Record<string, string> = {
     `empties the store and re-inserts), so undoing it needs the PREVIOUS list restored rather than ` +
     `the new entries removed — this fixture takes no such snapshot. Provision skills through the ` +
     `store in your own test, or use test/fixture/skills/.`,
-  plugins:
-    `"plugins" is an array key: a write REPLACES the whole plugin list (config-store-write.ts ` +
-    `empties the store and re-inserts), so undoing it needs the PREVIOUS list restored rather than ` +
-    `the new entries removed — this fixture takes no such snapshot. Provision plugins through ` +
-    `PluginConfigStore.setPlugin in your own test (see test/config/config.test.ts).`,
 }
 
 /**
@@ -573,7 +567,6 @@ const PRESERVED_TABLES: ReadonlySet<string> = new Set([
   "agent_setting",
   "command_config",
   "reference_config",
-  "plugin_config",
   "skill_config",
   "instance_identity",
 ])

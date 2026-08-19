@@ -195,7 +195,19 @@ const GENERATE_TIMEOUT_MS = 60_000
 // ⚠️ Additive: `git diff openapi.json` shows five added top-level schema names and ZERO removed, so
 // nothing was renamed and nothing collided into a suffix. A removal beside an addition is a rename and
 // must be read before re-pinning — that is the whole reason this fingerprint is not auto-updated.
-const SCHEMA_NAME_FINGERPRINT = "da36be467297f9c38371a2127442900382f80cf24219c80f1e7ee97124b90ac4"
+// ── 2026-08-19: ruling 5 / step 17 — ONE REMOVAL and ZERO additions ─────────────────────────────
+//   − `ConfigV2PluginEntry`                      (`ConfigV2.Plugin.Entry`, the `{package, options}`
+//                                                half of a `plugins[]` array item)
+// ⚠️ **This is the one case the "additive" rule above does NOT cover, and it is deliberate.** Every
+// earlier update reasoned "additions only, nothing removed, therefore no rename"; here the diff is a
+// pure REMOVAL, so the rename check has to be made the other way round: a removal is a rename only
+// if some name ARRIVED to take its place, and `git diff packages/sdk/openapi.json` shows zero added
+// top-level schema names. The removal is the point of the change, not a side effect of one — the
+// `plugins[]` config key and the `npm.add` arm it fed are deleted (`config.ts` now carries a ⚠️
+// where the key was), so `ConfigInfo` loses the `plugins` property and the entry schema loses its
+// only referent. `PluginAdded` / `EventPluginAdded` are UNTOUCHED and must stay: they are the plugin
+// HOST's events, nothing to do with the config key.
+const SCHEMA_NAME_FINGERPRINT = "642096f2947e7fd8c1f66eb3f91bb57d2bdae27801f66721e3beb9df46d4da08"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

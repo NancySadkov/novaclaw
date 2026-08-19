@@ -189,7 +189,6 @@ export const dict = {
   "dialog.mcp.description": "已启用 {{enabled}} / {{total}}",
   "dialog.mcp.empty": "未配置 MCPs",
 
-  "dialog.plugins.empty": "在 novaclaw.json 中配置的插件",
 
   "mcp.status.connected": "已连接",
   "mcp.status.failed": "失败",
@@ -394,7 +393,6 @@ export const dict = {
   "status.popover.ariaLabel": "服务器配置",
   "status.popover.tab.servers": "服务器",
   "status.popover.tab.mcp": "MCP",
-  "status.popover.tab.plugins": "插件",
   "status.popover.action.manageServers": "管理服务器",
 
   "session.share.popover.title": "发布到网页",

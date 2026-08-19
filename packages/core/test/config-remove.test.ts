@@ -9,7 +9,6 @@ import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
-import { PluginConfigStore } from "@novaclaw/core/plugin-config-store"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
@@ -43,7 +42,6 @@ const it = testEffect(
       AgentConfigStore.node,
       CatalogStore.node,
       CommandConfigStore.node,
-      PluginConfigStore.node,
       ReferenceConfigStore.node,
       SettingsConfigStore.node,
       SkillConfigStore.node,

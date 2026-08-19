@@ -12,7 +12,6 @@ import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
-import { PluginConfigStore } from "@novaclaw/core/plugin-config-store"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
@@ -438,10 +437,19 @@ describe("the projection joins the existing tables rather than restating them", 
       expect(key.removable.kind === "no").toBe(ConfigStoreWrite.REMOVE_REFUSED_KEYS.has(name))
       expect(key.live.kind === "restart").toBe(ConfigStoreWrite.RESTART_REQUIRED_KEYS.has(name))
     }
-    // Non-vacuity: each ledger is non-empty today, so each branch above is actually taken.
+    // Non-vacuity: these two ledgers are non-empty today, so both branches above are actually taken.
     expect(ConfigStoreWrite.NOT_ROUTED_KEYS.size).toBeGreaterThan(0)
     expect(ConfigStoreWrite.REMOVE_REFUSED_KEYS.size).toBeGreaterThan(0)
-    expect(ConfigStoreWrite.RESTART_REQUIRED_KEYS.size).toBeGreaterThan(0)
+    // ⚠️ **The third ledger is EMPTY, so its branch is UNREACHABLE and this file says so rather than
+    // pretending otherwise.** `RESTART_REQUIRED_KEYS` held exactly one key, `plugins`, and ruling 5 /
+    // step 17 deleted it — there is no longer a config write this instance cannot make live. The loop
+    // above therefore proves nothing about `live.kind === "restart"`, and asserting `size > 0` here
+    // would just be a red test demanding a defect exist. What IS still checked: the ledger is empty
+    // (so no key silently acquired a restart requirement without a reason), every projected key
+    // agrees, and the mechanism itself is negative-controlled over a SYNTHETIC ledger in
+    // `config-reload-order-ledger.test.ts`. Refill this ledger and the loop above covers it again.
+    expect(ConfigStoreWrite.RESTART_REQUIRED_KEYS.size).toBe(0)
+    expect(ConfigProjection.overview().filter((key) => key.live.kind === "restart")).toEqual([])
   })
 
   test("the rendered key states the removal verb in the shape that verb accepts", () => {
@@ -556,7 +564,6 @@ const stores = AppNodeBuilder.build(
     CommandConfigStore.node,
     ReferenceConfigStore.node,
     SkillConfigStore.node,
-    PluginConfigStore.node,
   ]),
   [],
 ) as Layer.Layer<
@@ -567,7 +574,6 @@ const stores = AppNodeBuilder.build(
   | CommandConfigStore.Service
   | ReferenceConfigStore.Service
   | SkillConfigStore.Service
-  | PluginConfigStore.Service
 >
 
 describe("a repair the projection describes actually lands", () => {

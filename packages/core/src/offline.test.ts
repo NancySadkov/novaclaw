@@ -11,7 +11,6 @@ import { Config } from "./config"
 import { ConfigStoreWrite } from "./config-store-write"
 import { Database } from "./database/database"
 import { LayerNode } from "./effect/layer-node"
-import { PluginConfigStore } from "./plugin-config-store"
 import { ReferenceConfigStore } from "./reference-config-store"
 import { SettingsConfigStore } from "./settings-config-store"
 import { SkillConfigStore } from "./skill-config-store"
@@ -322,7 +321,6 @@ describe("A3: a config write engages the airgap without a restart", () => {
         AgentConfigStore.node,
         CatalogStore.node,
         CommandConfigStore.node,
-        PluginConfigStore.node,
         ReferenceConfigStore.node,
         SettingsConfigStore.node,
         SkillConfigStore.node,

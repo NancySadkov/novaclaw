@@ -171,7 +171,6 @@ export const dict = {
   "dialog.mcp.description": "{{enabled}} จาก {{total}} ที่เปิดใช้งาน",
   "dialog.mcp.empty": "ไม่มี MCP ที่กำหนดค่า",
 
-  "dialog.plugins.empty": "ปลั๊กอินที่กำหนดค่าใน novaclaw.json",
 
   "mcp.status.connected": "เชื่อมต่อแล้ว",
   "mcp.status.failed": "ล้มเหลว",
@@ -390,7 +389,6 @@ export const dict = {
   "status.popover.ariaLabel": "การกำหนดค่าเซิร์ฟเวอร์",
   "status.popover.tab.servers": "เซิร์ฟเวอร์",
   "status.popover.tab.mcp": "MCP",
-  "status.popover.tab.plugins": "ปลั๊กอิน",
   "status.popover.action.manageServers": "จัดการเซิร์ฟเวอร์",
 
   "session.share.popover.title": "เผยแพร่บนเว็บ",

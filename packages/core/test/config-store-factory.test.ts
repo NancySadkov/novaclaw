@@ -11,7 +11,6 @@ import { ConfigStoreFactory } from "@novaclaw/core/config-store-factory"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
-import { PluginConfigStore } from "@novaclaw/core/plugin-config-store"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
@@ -45,7 +44,6 @@ const it = testEffect(
       AgentConfigStore.node,
       CatalogStore.node,
       CommandConfigStore.node,
-      PluginConfigStore.node,
       ReferenceConfigStore.node,
       SettingsConfigStore.node,
       SkillConfigStore.node,
@@ -386,9 +384,12 @@ interface ListCase {
   readonly isEmpty: () => Effect.Effect<boolean>
 }
 
+// ⚠️ ONE case, and the plural machinery stays. `PluginConfigStore` was the second — deleted with the
+// `plugins[]` key by ruling 5 / step 17 — and collapsing this into a single hand-written store would
+// mean re-deriving the table on the day a third list store lands. The loop is the invariant; the
+// number of rows in it is not.
 const listCases = Effect.gen(function* () {
   const skills = yield* SkillConfigStore.Service
-  const plugins = yield* PluginConfigStore.Service
   const cases: ListCase[] = [
     {
       label: "SkillConfigStore",
@@ -397,18 +398,11 @@ const listCases = Effect.gen(function* () {
       remove: (key) => skills.removeSource(key),
       isEmpty: () => skills.isEmpty(),
     },
-    {
-      label: "PluginConfigStore",
-      keys: () => plugins.plugins().pipe(Effect.map((entries) => entries.map((entry) => entry.package))),
-      put: (key) => plugins.setPlugin({ package: key }),
-      remove: (key) => plugins.removePlugin(key),
-      isEmpty: () => plugins.isEmpty(),
-    },
   ]
   return cases
 })
 
-describe("every list store (one row skeleton, two stores)", () => {
+describe("every list store (one row skeleton)", () => {
   it.effect("keeps INSERTION order, and re-putting an existing key does not reorder it", () =>
     Effect.gen(function* () {
       for (const store of yield* listCases) {
@@ -417,7 +411,7 @@ describe("every list store (one row skeleton, two stores)", () => {
         expect(yield* store.keys(), store.label).toEqual(["/a", "/b", "/c"])
 
         // The identity IS the key: a second write updates in place. `selectAll` has no ORDER BY, so
-        // this is the rowid order the plugin store's documented "insertion order" contract rests on
+        // this is the rowid order the list stores' documented "insertion order" contract rests on
         // — a store that deleted-and-reinserted on conflict would move "/a" to the end here.
         yield* store.put("/a")
         expect(yield* store.keys(), `${store.label} reordered on re-put`).toEqual(["/a", "/b", "/c"])
@@ -427,22 +421,6 @@ describe("every list store (one row skeleton, two stores)", () => {
         for (const key of ["/a", "/c"]) yield* store.remove(key)
         expect(yield* store.isEmpty(), store.label).toBe(true)
       }
-    }),
-  )
-
-  // The plugin store is the list shape WITH a payload column, and its options are last-write-wins
-  // while the row's position is not.
-  it.effect("the plugin payload is last-write-wins, and options are omitted rather than null", () =>
-    Effect.gen(function* () {
-      const plugins = yield* PluginConfigStore.Service
-      yield* plugins.setPlugin({ package: "team@1.0.0", options: { mode: "a" } })
-      yield* plugins.setPlugin({ package: "/opt/local.js" })
-      yield* plugins.setPlugin({ package: "team@1.0.0", options: { mode: "b" } })
-      const entries = yield* plugins.plugins()
-      expect(entries).toEqual([{ package: "team@1.0.0", options: { mode: "b" } }, { package: "/opt/local.js" }])
-      // An absent payload is an ABSENT key, not `options: null` — the export document round-trips
-      // through `plugins.map((entry) => (entry.options ? entry : entry.package))`.
-      expect(Object.keys(entries[1]!)).toEqual(["package"])
     }),
   )
 })

@@ -12,7 +12,6 @@ import { Integration } from "@novaclaw/core/integration"
 import { Location } from "@novaclaw/core/location"
 import { LocationServiceMap } from "@novaclaw/core/location-services"
 import { PluginV2 } from "@novaclaw/core/plugin"
-import { PluginConfigStore } from "@novaclaw/core/plugin-config-store"
 import { ModelV2 } from "@novaclaw/core/model"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
@@ -67,7 +66,6 @@ const it = testEffect(
       CommandConfigStore.node,
       ReferenceConfigStore.node,
       SkillConfigStore.node,
-      PluginConfigStore.node,
       LocationServiceMap.node,
     ]),
   ).pipe(Layer.provide(flagsLayer)),

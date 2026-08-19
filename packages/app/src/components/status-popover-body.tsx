@@ -253,11 +253,12 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
   const mcpNames = createMemo(() => Object.keys(sync().data.mcp ?? {}).sort((a, b) => a.localeCompare(b)))
   const mcpStatus = (name: string) => sync().data.mcp?.[name]?.status
   const mcpConnected = createMemo(() => mcpNames().filter((name) => mcpStatus(name) === "connected").length)
-  const plugins = createMemo(() =>
-    (sync().data.config.plugins ?? []).map((item) => (typeof item === "string" ? item : item.package)),
-  )
-  const pluginCount = createMemo(() => plugins().length)
-  const pluginEmpty = createMemo(() => language.t("dialog.plugins.empty"))
+  // ⚠️ There is no Plugins tab any more, and it is not an oversight. It listed `config.plugins`,
+  // the key ruling 5 / step 17 deleted along with the `npm.add` arm that made a plugin something an
+  // agent could install. Its own empty-state copy said "ask an agent to set one up for you", which
+  // stopped being true in the same commit. External extensions now reach NovaClaw out-of-process
+  // through MCP — the tab beside this comment — or as a file the user drops under `plugin/` in their
+  // own config directory, which is not config and therefore not on this wire.
 
   return (
     <div class="flex items-center gap-1 w-[360px] rounded-xl shadow-[var(--shadow-lg-border-base)]">
@@ -270,10 +271,6 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
           <TabsV2.Trigger value="mcp">
             {mcpConnected() > 0 ? `${mcpConnected()} ` : ""}
             {language.t("status.popover.tab.mcp")}
-          </TabsV2.Trigger>
-          <TabsV2.Trigger value="plugins">
-            {pluginCount() > 0 ? `${pluginCount()} ` : ""}
-            {language.t("status.popover.tab.plugins")}
           </TabsV2.Trigger>
         </TabsV2.List>
 
@@ -339,25 +336,6 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
           </div>
         </TabsV2.Content>
 
-        <TabsV2.Content value="plugins">
-          <div class="flex flex-col px-2 pb-2">
-            <div class="flex flex-col p-3 bg-background-base rounded-sm min-h-14">
-              <Show
-                when={plugins().length > 0}
-                fallback={<div class="text-14-regular text-text-base text-center my-auto">{pluginEmpty()}</div>}
-              >
-                <For each={plugins()}>
-                  {(plugin) => (
-                    <div class="flex items-center gap-2 w-full px-2 py-1">
-                      <div class="size-1.5 rounded-full shrink-0 bg-icon-success-base" />
-                      <span class="text-14-regular text-text-base truncate">{plugin}</span>
-                    </div>
-                  )}
-                </For>
-              </Show>
-            </div>
-          </div>
-        </TabsV2.Content>
       </TabsV2>
     </div>
   )

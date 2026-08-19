@@ -6,7 +6,6 @@ import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
 import { CatalogStore } from "@novaclaw/core/catalog-store"
 import { CommandConfigStore } from "@novaclaw/core/command-config-store"
 import { Database } from "@novaclaw/core/database/database"
-import { PluginConfigStore } from "@novaclaw/core/plugin-config-store"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
@@ -61,7 +60,6 @@ const configStores = LayerNode.compile(
     AgentConfigStore.node,
     CatalogStore.node,
     CommandConfigStore.node,
-    PluginConfigStore.node,
     ReferenceConfigStore.node,
     SettingsConfigStore.node,
     SkillConfigStore.node,

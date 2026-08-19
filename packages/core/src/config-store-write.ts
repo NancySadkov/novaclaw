@@ -9,7 +9,6 @@ import { CommandConfigStore } from "./command-config-store"
 import { Config } from "./config"
 import { ConfigAgent } from "./config/agent"
 import { ConfigCommand } from "./config/command"
-import type { ConfigPlugin } from "./config/plugin"
 import { ConfigProvider } from "./config/provider"
 import { ConfigReference } from "./config/reference"
 import { Database } from "./database/database"
@@ -19,8 +18,6 @@ import { MergePatch } from "./merge-patch"
 import { CommunityConsent } from "./community/consent"
 import { CommunityDht } from "./community/dht"
 import { Offline } from "./offline"
-import { PluginConfigSeed } from "./plugin-config-seed"
-import { PluginConfigStore } from "./plugin-config-store"
 import { ProviderV2 } from "./provider"
 import { ReferenceConfigStore } from "./reference-config-store"
 import { SettingsConfigSeed } from "./settings-config-seed"
@@ -53,7 +50,7 @@ import { SkillConfigStore } from "./skill-config-store"
 // - layered stores (providers/agents/commands/references): fold the stored layers AND the patch
 //   fragment into ONE layer (`collapseLayers`) — the same left fold the runtime and the served view
 //   already apply, so the value is unchanged while the list stays bounded.
-// - list stores (skills/plugins): the config value is an array (replace-wholesale contract) —
+// - list stores (skills): the config value is an array (replace-wholesale contract) —
 //   the store content is replaced.
 
 /** Deep patch-merge: objects merge recursively, arrays and primitives replace (merge-patch.ts). */
@@ -180,10 +177,8 @@ export const unroutedKeys = (patch: Config.Info, consumed: ReadonlySet<string>):
  * Forcing those three shapes into the table would mean a row with an escape hatch per column, i.e.
  * the table describing nothing. Six rows and three named exceptions is the honest split.
  *
- * ⚠️ ORDER IS PART OF THE CONTRACT, twice over. `providers` must precede `models` so a patch
- * carrying both folds hand-authored-provider-first (see the `expanded` block). And `plugins` must
- * stay LAST — `config-store-write.test.ts`'s rollback test fails it precisely because everything
- * else has already written by then.
+ * ⚠️ ORDER IS PART OF THE CONTRACT: `providers` must precede `models` so a patch carrying both
+ * folds hand-authored-provider-first (see the `expanded` block).
  */
 
 /** The store operations one layered arm needs, resolved from context when the arm actually fires.
@@ -368,19 +363,6 @@ const LIST_ARMS = [
       }
     }),
   }),
-  listArm({
-    key: "plugins",
-    items: (patch) => patch.plugins,
-    normalize: (item: ConfigPlugin.Plugin) => PluginConfigSeed.normalizePluginEntry("", item),
-    store: Effect.gen(function* () {
-      const plugins = yield* PluginConfigStore.Service
-      return {
-        keys: () => plugins.plugins().pipe(Effect.map((entries) => entries.map((entry) => entry.package))),
-        put: (entry: PluginConfigStore.PluginConfigEntry) => plugins.setPlugin(entry),
-        remove: (pkg) => plugins.removePlugin(pkg),
-      }
-    }),
-  }),
 ]
 
 /**
@@ -454,8 +436,8 @@ const applyToStores = (patch: Config.Info) =>
       consumed.add("default_agent")
     }
 
-    // The list arms, `plugins` LAST — the rollback test in config-store-write.test.ts fails the
-    // plugin write precisely because every other store has committed by the time it runs.
+    // The list arms. `skills` is the last store to write, which is what the rollback test in
+    // config-store-write.test.ts fails on purpose — every other store has committed by then.
     for (const arm of LIST_ARMS) if (yield* arm.route(patch)) consumed.add(arm.key)
 
     // Ruling 2, second clause — *a failed mutation never reports success.* Everything above is a
@@ -554,20 +536,15 @@ export type ReloadDomain = (typeof RELOAD_DOMAINS)[number]
  * unreachable, and `config-instance-reload-ledger.test.ts` ratchets the list in both directions: an
  * entry that stops being a `Config.Info` key fails, and an entry that acquires a reload trigger fails
  * with "drop it" — so the list can only shrink.
+ *
+ * ⭐ **It is EMPTY, and that is the shipped state, not an oversight.** Its one entry was `plugins`,
+ * whose confession read "no in-place cure — only a restart, or a redesign that runs plugins
+ * out-of-process". Ruling 5 / step 17 took the second option all the way: the key and the `npm.add`
+ * arm are deleted, so there is no longer a config write this instance cannot make live. Keep the map
+ * and its ledger test — the next key that cannot go live must confess here rather than answer an
+ * unqualified 200.
  */
-export const RESTART_REQUIRED_KEYS: ReadonlyMap<string, string> = new Map([
-  [
-    "plugins",
-    "An external plugin is a JavaScript module `config/plugin/external.ts` brings into this process " +
-      "with `import()`, and ESM caches a module URL for the life of the process: a changed plugin " +
-      "file cannot be re-read, and an already-registered plugin cannot be unregistered. So there is " +
-      "no in-place cure — only a restart, or a redesign that runs plugins out-of-process. Ruling 5 " +
-      "has already chosen the second and deleted the premise: outside code never runs in-process, " +
-      "MCP is the out-of-process seam, and this loader plus this key are scheduled for removal " +
-      "(todo.md → 'Ruling 5 in execution', item ②). Building a live reload for it would add " +
-      "third-party code execution to the config-write path to serve a surface we are deleting.",
-  ],
-])
+export const RESTART_REQUIRED_KEYS: ReadonlyMap<string, string> = new Map([])
 
 /**
  * Which `Config.Info` keys leave which domain stale — the per-key discipline `consumed.has(...)`
@@ -746,8 +723,18 @@ export const staleDomains = (consumed: ReadonlySet<string>): ReloadDomain[] =>
   RELOAD_DOMAINS.filter((domain) => RELOAD_TRIGGERS[domain].some((key) => consumed.has(key)))
 
 /** The keys of `consumed` this process cannot make live — see {@link RESTART_REQUIRED_KEYS}. */
-export const restartRequired = (consumed: ReadonlySet<string>): string[] =>
-  [...RESTART_REQUIRED_KEYS.keys()].filter((key) => consumed.has(key))
+/**
+ * Which of the consumed keys are stored-but-not-live.
+ *
+ * ⚠️ `ledger` is a parameter with a default, not a closed-over constant, for ONE reason: the ledger
+ * is empty today (see {@link RESTART_REQUIRED_KEYS}), so every assertion about this function over
+ * the real ledger is vacuous. `config-reload-order-ledger.test.ts` drives it over a synthetic ledger
+ * to prove the mechanism still bites. Production callers pass nothing.
+ */
+export const restartRequired = (
+  consumed: ReadonlySet<string>,
+  ledger: ReadonlyMap<string, string> = RESTART_REQUIRED_KEYS,
+): string[] => [...ledger.keys()].filter((key) => consumed.has(key))
 
 /**
  * Re-materialise every registered location for each stale domain.
@@ -824,10 +811,10 @@ const refreshDomains = (domains: readonly ReloadDomain[]) =>
  * So `consumed.size === 0` means "the patch asked for nothing storable", never "we dropped it".
  *
  * v0.2.0 ruling 2 — *a failed mutation never reports success*. This used to issue seven
- * independent writes (settings · catalog · agents · commands · references · skills · plugins),
- * so a failure at step 5 left steps 1-4 committed and the HTTP handler still answered 200. The
- * two list stores were worse: they are wipe-then-reinsert, so a failure landing between the
- * delete loop and the insert loop left the skills or plugins store EMPTY.
+ * independent writes (settings · catalog · agents · commands · references · skills), so a failure
+ * at step 5 left steps 1-4 committed and the HTTP handler still answered 200. The list store was
+ * worse: it is wipe-then-reinsert, so a failure landing between the delete loop and the insert
+ * loop left the skills store EMPTY.
  *
  * The whole route now runs inside ONE `db.transaction`, and every store participates WITHOUT
  * threading a `tx` handle. That works because of two facts worth stating, since neither is
@@ -879,8 +866,9 @@ const refreshDomains = (domains: readonly ReloadDomain[]) =>
  * rather than in core: the per-instance merged config document (`instance_config`), the formatter
  * table (`formatter`) and the connected MCP server set (`mcp`). Those were the last things the
  * teardown was silently refreshing, and `InstanceState.invalidate` had ZERO callers tree-wide — the
- * instance being destroyed WAS their refresh. `plugins` is the one key that stays stuck, and it says
- * so by name rather than by omission (`RESTART_REQUIRED_KEYS`).
+ * instance being destroyed WAS their refresh. No key stays stuck any more — `plugins` was the last
+ * one and ruling 5 / step 17 deleted it, so `RESTART_REQUIRED_KEYS` is empty and stays a ledger for
+ * the next confession rather than a live one.
  */
 export const apply = (patch: Config.Info) =>
   Effect.gen(function* () {
@@ -1049,7 +1037,6 @@ export const REMOVE_REFUSED_KEYS: ReadonlyMap<string, string> = new Map([
       'deletes an entry: send `{"skills": [...]}` without it. Commit 53051cca8 ruled on this and ' +
       "deliberately left the array-shaped keys without delete routes for the same reason.",
   ],
-  ["plugins", "an ARRAY — same as `skills`: re-send the list without the entry through `PATCH /config`."],
   [
     "models",
     "the FLAT authoring shape, which normalizes into `providers` on write and is never stored under " +
@@ -1340,12 +1327,6 @@ export const overlay = (base: Record<string, unknown>) =>
     const skills = yield* SkillConfigStore.Service
     const sources = yield* skills.sources()
     if (sources.length > 0) result.skills = sources
-
-    const plugins = yield* PluginConfigStore.Service
-    const entries = yield* plugins.plugins()
-    if (entries.length > 0) {
-      result.plugins = entries.map((entry) => (entry.options ? entry : entry.package))
-    }
 
     return result
   })

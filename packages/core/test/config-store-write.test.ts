@@ -8,7 +8,6 @@ import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
-import { PluginConfigStore } from "@novaclaw/core/plugin-config-store"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
@@ -26,7 +25,6 @@ const it = testEffect(
       AgentConfigStore.node,
       CatalogStore.node,
       CommandConfigStore.node,
-      PluginConfigStore.node,
       ReferenceConfigStore.node,
       SettingsConfigStore.node,
       SkillConfigStore.node,
@@ -191,26 +189,22 @@ describe("ConfigStoreWrite.apply", () => {
     }),
   )
 
-  it.effect("replaces list stores wholesale (skills, plugins); step 9 routes the last settings keys", () =>
+  it.effect("replaces the list store wholesale (skills); step 9 routes the last settings keys", () =>
     Effect.gen(function* () {
       const skills = yield* SkillConfigStore.Service
       yield* skills.addSource("/old/skills")
-      const plugins = yield* PluginConfigStore.Service
-      yield* plugins.setPlugin({ package: "old-plugin" })
 
       // Step 9: instructions + disabled/enabled_providers joined SETTINGS_KEYS — every
       // Config.Info key now routes (nothing falls back to a jsonc patch anymore).
       const consumed = yield* ConfigStoreWrite.apply(
         decodeInfo({
           skills: ["/new/skills"],
-          plugins: ["new-plugin"],
           instructions: ["now-routed.md"],
           disabled_providers: ["x"],
         }),
       )
-      expect([...consumed].sort()).toEqual(["disabled_providers", "instructions", "plugins", "skills"])
+      expect([...consumed].sort()).toEqual(["disabled_providers", "instructions", "skills"])
       expect(yield* skills.sources()).toEqual(["/new/skills"])
-      expect(yield* plugins.plugins()).toEqual([{ package: "new-plugin" }])
       const settings = yield* SettingsConfigStore.Service
       const all = yield* settings.all()
       expect(all.instructions).toEqual(["now-routed.md"])
@@ -248,8 +242,13 @@ describe("ConfigStoreWrite.apply", () => {
   )
 
   // Ruling 2, the ATOMICITY half. `apply` writes to seven stores; before the transaction those were
-  // seven independent writes, so a failure at step 5 left steps 1-4 committed. Worse, skills and
-  // plugins are wipe-then-reinsert, so a failure between the two loops left the store EMPTY.
+  // seven independent writes, so a failure at step 5 left steps 1-4 committed. Worse, the list store
+  // is wipe-then-reinsert, so a failure between the two loops left it EMPTY.
+  //
+  // ⚠️ Both failures below are injected into `skills`, the LAST arm `applyToStores` runs — so each
+  // one lands after every other store has already written. It used to be `plugins`; that arm and its
+  // store went with the `plugins[]` key under ruling 5 / step 17. **If a new list arm is ever
+  // appended after `skills`, move these injections onto it** or they stop testing "last".
   it.effect("a mid-apply failure rolls back every earlier store write", () =>
     Effect.gen(function* () {
       const skills = yield* SkillConfigStore.Service
@@ -260,13 +259,13 @@ describe("ConfigStoreWrite.apply", () => {
       yield* settings.all() // hydrate the synchronous log projection from the committed baseline
       const skillsBefore = yield* skills.sources()
 
-      // Plugins routes LAST, so failing it lands after every other store has written — including
-      // after the skills delete loop and its insert loop.
-      const failingPlugins = PluginConfigStore.Service.of({
-        plugins: () => Effect.succeed([]),
-        setPlugin: () => Effect.die(new Error("plugin store write failed")),
-        removePlugin: () => Effect.void,
-        isEmpty: () => Effect.succeed(true),
+      // Real store for the reads and the DELETE loop; the FIRST insert dies. Un-transacted, the two
+      // settings writes AND the skills delete are already committed by the time it does.
+      const failingSkills = SkillConfigStore.Service.of({
+        sources: () => skills.sources(),
+        removeSource: (source) => skills.removeSource(source),
+        isEmpty: () => skills.isEmpty(),
+        addSource: () => Effect.die(new Error("skill store write failed")),
       })
 
       const exit = yield* ConfigStoreWrite.apply(
@@ -274,9 +273,8 @@ describe("ConfigStoreWrite.apply", () => {
           shell: "after-the-failed-write",
           log: { level: "error" },
           skills: ["/replacement/skills"],
-          plugins: ["some-plugin"],
         }),
-      ).pipe(Effect.provideService(PluginConfigStore.Service, failingPlugins), Effect.exit)
+      ).pipe(Effect.provideService(SkillConfigStore.Service, failingSkills), Effect.exit)
 
       expect(Exit.isFailure(exit)).toBe(true)
       // Nothing the failed patch touched survives — not the settings write, and (the sharp edge)
@@ -287,33 +285,32 @@ describe("ConfigStoreWrite.apply", () => {
     }),
   )
 
-  // The same invariant with the REAL table underneath: the failure lands INSIDE the reinsert loop,
-  // after the delete loop has already emptied the plugin table.
-  it.effect("the plugins wipe-then-reinsert is atomic — a failure mid-loop restores the stored list", () =>
+  // The same invariant one step deeper: the failure lands INSIDE the reinsert loop, after the delete
+  // loop has emptied the table AND after the first replacement row is already in.
+  it.effect("the skills wipe-then-reinsert is atomic — a failure mid-loop restores the stored list", () =>
     Effect.gen(function* () {
-      const plugins = yield* PluginConfigStore.Service
-      yield* ConfigStoreWrite.apply(decodeInfo({ plugins: ["keeper-a", "keeper-b"] }))
-      const before = yield* plugins.plugins()
-      expect(before).toEqual([{ package: "keeper-a" }, { package: "keeper-b" }])
+      const skills = yield* SkillConfigStore.Service
+      yield* ConfigStoreWrite.apply(decodeInfo({ skills: ["/keeper-a", "/keeper-b"] }))
+      const before = yield* skills.sources()
+      expect(before).toEqual(["/keeper-a", "/keeper-b"])
 
-      // Real store for the reads and the DELETE loop; only the SECOND insert dies. Un-transacted,
-      // both deletes and the first insert are committed by the time it does.
+      // Real store for the reads and the DELETE loop; only the SECOND insert dies.
       let inserts = 0
-      const flaky = PluginConfigStore.Service.of({
-        plugins: () => plugins.plugins(),
-        removePlugin: (pkg) => plugins.removePlugin(pkg),
-        isEmpty: () => plugins.isEmpty(),
-        setPlugin: (entry) =>
-          ++inserts === 2 ? Effect.die(new Error("plugin insert failed")) : plugins.setPlugin(entry),
+      const flaky = SkillConfigStore.Service.of({
+        sources: () => skills.sources(),
+        removeSource: (source) => skills.removeSource(source),
+        isEmpty: () => skills.isEmpty(),
+        addSource: (source) =>
+          ++inserts === 2 ? Effect.die(new Error("skill insert failed")) : skills.addSource(source),
       })
 
-      const exit = yield* ConfigStoreWrite.apply(decodeInfo({ plugins: ["new-a", "new-b"] })).pipe(
-        Effect.provideService(PluginConfigStore.Service, flaky),
+      const exit = yield* ConfigStoreWrite.apply(decodeInfo({ skills: ["/new-a", "/new-b"] })).pipe(
+        Effect.provideService(SkillConfigStore.Service, flaky),
         Effect.exit,
       )
 
       expect(Exit.isFailure(exit)).toBe(true)
-      expect(yield* plugins.plugins()).toEqual(before)
+      expect(yield* skills.sources()).toEqual(before)
     }),
   )
 })
@@ -333,7 +330,6 @@ describe("ConfigStoreWrite export→import round-trip (step 8)", () => {
           commands: { review: { template: "review it" } },
           references: { docs: "https://github.com/example/docs.git" },
           skills: ["/opt/skills"],
-          plugins: ["team-plugin@1.0.0", { package: "/opt/plugins/local.js", options: { x: 1 } }],
         }),
       )
       // A second provider patch: the export must FOLD the two layers into one fragment.
@@ -355,8 +351,6 @@ describe("ConfigStoreWrite export→import round-trip (step 8)", () => {
       for (const name of Object.keys(yield* references.references())) yield* references.removeReference(name)
       const skills = yield* SkillConfigStore.Service
       for (const source of yield* skills.sources()) yield* skills.removeSource(source)
-      const plugins = yield* PluginConfigStore.Service
-      for (const entry of yield* plugins.plugins()) yield* plugins.removePlugin(entry.package)
       const settings = yield* SettingsConfigStore.Service
       for (const key of Object.keys(yield* settings.all())) yield* settings.remove(key)
 

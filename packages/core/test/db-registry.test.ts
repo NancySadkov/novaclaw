@@ -202,7 +202,10 @@ describe("DbRegistry", () => {
       const declared = DbRegistry.configBackedTables()
       const existing = new Set((yield* DbRegistry.tables()).map((table) => table.name))
       for (const table of declared) expect(`${table}:${existing.has(table)}`).toBe(`${table}:true`)
-      expect(declared.size).toBe(9)
+      // 9 → 8 on 2026-08-19: `plugin_config` left with the `plugins[]` key and the `npm.add` arm
+      // (ruling 5 / step 17), and its table is DROPPED by a migration, so the existence check above
+      // would fail on it too.
+      expect(declared.size).toBe(8)
       // The settings store's own table is the one that carries every tiered key.
       expect(declared.has("runtime_setting")).toBe(true)
       // And a plainly non-config table is NOT in it — otherwise the set could be "every table".

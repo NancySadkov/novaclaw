@@ -149,7 +149,6 @@ export const dict = {
   "dialog.mcp.title": "MCP",
   "dialog.mcp.description": "{{enabled}} z {{total}} włączone",
   "dialog.mcp.empty": "Brak skonfigurowanych MCP",
-  "dialog.plugins.empty": "Wtyczki skonfigurowane w novaclaw.json",
   "mcp.status.connected": "połączono",
   "mcp.status.failed": "niepowodzenie",
   "mcp.status.needs_auth": "wymaga autoryzacji",
@@ -334,7 +333,6 @@ export const dict = {
   "status.popover.ariaLabel": "Konfiguracje serwerów",
   "status.popover.tab.servers": "Serwery",
   "status.popover.tab.mcp": "MCP",
-  "status.popover.tab.plugins": "Wtyczki",
   "status.popover.action.manageServers": "Zarządzaj serwerami",
   "session.share.popover.title": "Opublikuj w sieci",
   "session.share.popover.description.shared":

@@ -105,14 +105,23 @@ describe("RESTART_REQUIRED_KEYS — the keys this instance admits it cannot appl
     }
   })
 
-  test("`plugins` is the only one, and `apply` can name it", () => {
-    // Recorded as a count so shrinking it is a deliberate edit here too. `plugins` is on the list
-    // because `config/plugin/external.ts` brings third-party modules in with `import()`, and ESM
-    // caches a module URL forever: there is no re-read and no unregister. Ruling 5 has already
-    // scheduled that loader and this key for deletion, which is what makes "restart" the honest
-    // answer rather than a missing feature.
-    expect([...ConfigStoreWrite.RESTART_REQUIRED_KEYS.keys()]).toEqual(["plugins"])
-    expect(ConfigStoreWrite.restartRequired(new Set(["plugins", "username"]))).toEqual(["plugins"])
+  test("the ledger is EMPTY — every config write this instance accepts, it can make live", () => {
+    // ⭐ Recorded as a set so REFILLING it is a deliberate edit here too. Its one entry was
+    // `plugins`: `config/plugin/external.ts` brought third-party modules in with `import()` and ESM
+    // caches a module URL forever, so there was no re-read and no unregister. Ruling 5 / step 17
+    // deleted the key and the `npm.add` arm instead of building a live reload for them, which is
+    // what emptied this list. Adding an entry back means shipping a key a config write cannot make
+    // live — legitimate, but it must be a confession with a reason, not a silent regression.
+    expect([...ConfigStoreWrite.RESTART_REQUIRED_KEYS.keys()]).toEqual([])
     expect(ConfigStoreWrite.restartRequired(new Set(["username"]))).toEqual([])
+  })
+
+  test("…and `restartRequired` still BITES (negative control)", () => {
+    // An empty ledger makes every assertion above vacuous — `restartRequired` returning `[]` proves
+    // nothing when there is nothing to return. Drive the same pure function over a synthetic ledger
+    // so the mechanism, not just today's contents, is what passed.
+    const synthetic: ReadonlyMap<string, string> = new Map([["shell", "a synthetic reason"]])
+    expect(ConfigStoreWrite.restartRequired(new Set(["shell", "username"]), synthetic)).toEqual(["shell"])
+    expect(ConfigStoreWrite.restartRequired(new Set(["username"]), synthetic)).toEqual([])
   })
 })

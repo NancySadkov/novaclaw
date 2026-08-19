@@ -238,8 +238,13 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   permissions: "privileged",
   // Prepended to EVERY agent's system prompt. Ruling 4 names it.
   persona: "privileged",
-  // `npm.add` + `import()` — outside code in our process. Ruling 5 is retiring this arm entirely.
-  plugins: "privileged",
+  // ⚠️ There is no `plugins` row, and there must never be one again. It used to read "`npm.add` +
+  // `import()` — outside code in our process", i.e. the single most dangerous thing an agent could
+  // write. Ruling 5 / step 17 removed the target instead of classifying it: the key is gone from
+  // `Config.Info`, so this table — typed `Record<keyof Config.Info, Tier>` — cannot name it and the
+  // completeness test cannot ask for it. Third-party code reaches NovaClaw out-of-process (`mcp`,
+  // privileged above) or as a file the user drops in their own config dir, which no config write and
+  // therefore no tier can reach.
   // Endpoint URLs (egress of every prompt and the Authorization header) plus per-model `prePrompt`,
   // which `config/provider.ts` describes as "prepended to the system context".
   providers: "privileged",

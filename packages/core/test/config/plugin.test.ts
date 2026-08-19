@@ -1,41 +1,39 @@
 import path from "path"
 import { describe, expect } from "bun:test"
-import { Effect, Logger, Schema } from "effect"
+import { Effect, Logger } from "effect"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { Config } from "@novaclaw/core/config"
 import { ConfigExternalPlugin } from "@novaclaw/core/config/plugin/external"
 import { FSUtil } from "@novaclaw/core/fs-util"
-import { Location } from "@novaclaw/core/location"
-import { Npm } from "@novaclaw/core/npm"
+import { Global } from "@novaclaw/core/global"
 import { PluginV2 } from "@novaclaw/core/plugin"
-import { PluginConfigStore, type PluginConfigEntry } from "@novaclaw/core/plugin-config-store"
 import { PluginHost } from "@novaclaw/core/plugin/host"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { testEffect } from "../lib/effect"
 import { PluginTestLayer } from "../plugin/fixture"
 
 const it = testEffect(PluginTestLayer)
-const decode = Schema.decodeUnknownSync(Config.Info)
 
-// Config→SQLite steps 5 + 8c: the loader reads config-borne plugin specs from the instance-wide
-// store (pre-populated here with the ABSOLUTE paths the import seeds would have resolved;
-// documents are never read — entries only feed the D2 `{plugin,plugins}/*` directory walk).
-const fixture = (name: string) => path.resolve(import.meta.dir, "../plugin/fixtures", name)
-const memoryStore = () => {
-  const entries = new Map<string, PluginConfigEntry>()
-  return PluginConfigStore.Service.of({
-    plugins: () => Effect.sync(() => [...entries.values()]),
-    setPlugin: (entry) =>
-      Effect.sync(() => {
-        entries.set(entry.package, entry)
-      }),
-    removePlugin: (pkg) =>
-      Effect.sync(() => {
-        entries.delete(pkg)
-      }),
-    isEmpty: () => Effect.sync(() => entries.size === 0),
+/** The INSTANCE config dir the loader is allowed to read (`plugin/{directory,effect}-plugin.ts`). */
+const CONFIG_DIR = path.resolve(import.meta.dir, "fixtures")
+/** Stands in for `<project>/.novaclaw` — a directory `Config.entries()` lists and the loader must NOT read. */
+const PROJECT_DIR = path.resolve(import.meta.dir, "fixtures-project")
+/** Two broken plugins and a healthy one behind them, all in one config dir's `plugin/`. */
+const BROKEN_CONFIG_DIR = path.resolve(import.meta.dir, "fixtures-broken")
+
+/** A `Global.Service` whose config dir is `dir`; every other path is the real one and unused here. */
+const globalAt = (dir: string) => Global.Service.of(Global.make({ config: dir }))
+
+/**
+ * `Config.entries()` as the real `Config.layer` builds it: the instance config dir FIRST, then every
+ * `.novaclaw` the walk-up found between the session's folder and its VCS root. The loader is handed
+ * this on purpose even though it no longer reads it — see the project-directory test.
+ */
+const entriesOf = (...dirs: string[]) =>
+  Config.Service.of({
+    entries: () =>
+      Effect.succeed(dirs.map((dir) => new Config.Directory({ type: "directory", path: AbsolutePath.make(dir) }))),
   })
-}
 
 /** Collect every WARN emitted while `effect` runs — including from fibers it forks. */
 const collectWarnings = () => {
@@ -48,119 +46,90 @@ const collectWarnings = () => {
 }
 
 describe("ConfigExternalPlugin", () => {
-  it.live("resolves and loads a configured Promise plugin with options", () =>
+  it.live("loads plugin files from the instance config directory, in both plugin shapes", () =>
     Effect.gen(function* () {
       const plugins = yield* PluginV2.Service
       const agents = yield* AgentV2.Service
       const fs = yield* FSUtil.Service
-      const location = yield* Location.Service
-      const npm = yield* Npm.Service
       const host = yield* PluginHost.make(plugins)
-      const store = memoryStore()
-      yield* store.setPlugin({
-        package: fixture("config-promise-plugin.ts"),
-        options: { description: "Loaded from config" },
-      })
 
       yield* ConfigExternalPlugin.Plugin.effect(host).pipe(
         Effect.provideService(PluginV2.Service, plugins),
         Effect.provideService(FSUtil.Service, fs),
-        Effect.provideService(Location.Service, location),
-        Effect.provideService(Npm.Service, npm),
-        Effect.provideService(PluginConfigStore.Service, store),
-        Effect.provideService(Config.Service, Config.Service.of({ entries: () => Effect.succeed([]) })),
+        Effect.provideService(Global.Service, globalAt(CONFIG_DIR)),
       )
 
-      expect(yield* waitForAgent(agents, "configured")).toMatchObject({
-        description: "Loaded from config",
+      expect(yield* waitForAgent(agents, "directory")).toMatchObject({
+        description: "Loaded from plugin directory",
+        mode: "subagent",
+      })
+      expect(yield* waitForAgent(agents, "effect-directory")).toMatchObject({
+        description: "Loaded from plugin directory as an Effect plugin",
         mode: "subagent",
       })
     }),
   )
 
-  it.live("loads a configured Effect plugin with options", () =>
+  /**
+   * 🔴 **The security regression test, and the reason the surviving glob is defensible at all.**
+   *
+   * Ruling 5 spared this loader because a plugin file is "the user's own code at the user's own
+   * privilege, unreachable by an agent, a registry or a peer". That was FALSE as built until
+   * 2026-08-19: the loader globbed every `entry.type === "directory"` of `Config.entries()`, and
+   * that set is the instance config dir PLUS every `.novaclaw` the walk-up finds between the
+   * session's folder and its VCS root — so `git clone` of a hostile repo, or a file an agent wrote
+   * into the project it was pointed at, was arbitrary in-process code execution. Module scope runs
+   * on `import()`, before any NovaClaw API is consulted, so nothing downstream could gate it.
+   *
+   * ⚠️ The fixture is proven CAPABLE of producing the hole before the absence is asserted — the
+   * glob below finds the project plugin, and the entries handed to the loader list its directory.
+   * Without both, "the agent never appeared" would also pass against a loader that globs nothing.
+   * The healthy config-dir agent is the third leg: it proves the loader ran to completion.
+   */
+  it.live("never loads a plugin from a project directory, even though Config.entries() lists it", () =>
     Effect.gen(function* () {
       const plugins = yield* PluginV2.Service
       const agents = yield* AgentV2.Service
       const fs = yield* FSUtil.Service
-      const location = yield* Location.Service
-      const npm = yield* Npm.Service
       const host = yield* PluginHost.make(plugins)
+
+      // Vacuity guard 1: the project directory really does hold a plugin this loader's own pattern
+      // matches. If the fixture ever stops matching, this fails here rather than passing silently.
+      const wouldMatch = yield* fs.glob(ConfigExternalPlugin.PLUGIN_GLOB, {
+        cwd: PROJECT_DIR,
+        absolute: true,
+        include: "file",
+        dot: true,
+        symlink: true,
+      })
+      expect(wouldMatch.map((file) => path.basename(file))).toEqual(["project-plugin.ts"])
 
       yield* ConfigExternalPlugin.Plugin.effect(host).pipe(
         Effect.provideService(PluginV2.Service, plugins),
         Effect.provideService(FSUtil.Service, fs),
-        Effect.provideService(Location.Service, location),
-        Effect.provideService(Npm.Service, npm),
-        Effect.provideService(
-          PluginConfigStore.Service,
-          yield* Effect.gen(function* () {
-            const store = memoryStore()
-            yield* store.setPlugin({
-              package: fixture("config-effect-plugin.ts"),
-              options: { description: "Effect plugin from config" },
-            })
-            return store
-          }),
-        ),
-        Effect.provideService(Config.Service, Config.Service.of({ entries: () => Effect.succeed([]) })),
+        Effect.provideService(Global.Service, globalAt(CONFIG_DIR)),
+        // Vacuity guard 2: the loader is handed the project directory exactly the way the walk-up
+        // would hand it over. It ignores this service today — that is the fix — so a revert that
+        // reads `entries()` again finds the project plugin here and turns this test red.
+        Effect.provideService(Config.Service, entriesOf(CONFIG_DIR, PROJECT_DIR)),
       )
 
-      expect(yield* waitForAgent(agents, "effect-configured")).toMatchObject({
-        description: "Effect plugin from config",
-        mode: "subagent",
-      })
-    }),
-  )
-
-  it.live("ignores invalid plugins and continues loading", () =>
-    Effect.gen(function* () {
-      const plugins = yield* PluginV2.Service
-      const agents = yield* AgentV2.Service
-      const fs = yield* FSUtil.Service
-      const location = yield* Location.Service
-      const npm = yield* Npm.Service
-      const host = yield* PluginHost.make(plugins)
-
-      yield* ConfigExternalPlugin.Plugin.effect(host).pipe(
-        Effect.provideService(PluginV2.Service, plugins),
-        Effect.provideService(FSUtil.Service, fs),
-        Effect.provideService(Location.Service, location),
-        Effect.provideService(Npm.Service, npm),
-        Effect.provideService(
-          PluginConfigStore.Service,
-          yield* Effect.gen(function* () {
-            const store = memoryStore()
-            yield* store.setPlugin({ package: fixture("missing-plugin.ts") })
-            yield* store.setPlugin({ package: fixture("invalid-plugin.ts") })
-            yield* store.setPlugin({
-              package: fixture("config-promise-plugin.ts"),
-              options: { description: "Loaded after invalid plugins" },
-            })
-            return store
-          }),
-        ),
-        Effect.provideService(Config.Service, Config.Service.of({ entries: () => Effect.succeed([]) })),
-      )
-
-      expect(yield* waitForAgent(agents, "configured")).toMatchObject({
-        description: "Loaded after invalid plugins",
-      })
+      // The loader ran to completion: its own config dir loaded.
+      expect(yield* waitForAgent(agents, "directory")).toMatchObject({ mode: "subagent" })
+      expect(yield* agents.get(AgentV2.ID.make("project-directory"))).toBeUndefined()
     }),
   )
 
   // ⚠️ Ruling 2 (a fault is never described falsely). `ignoreCause` alone made a user's broken
   // plugin fail INVISIBLY once the V1 arm — the only thing that ever surfaced a failed load — was
-  // deleted. The two fixtures cover both fault SHAPES: `missing-plugin.ts` throws out of `import()`
-  // (a defect before `tryPromise`), `invalid-plugin.ts` fails schema decode (an ordinary error).
-  // Both must reach the log, and neither may stop the good plugin behind them.
+  // deleted. The two fixtures cover both fault SHAPES: `a-throws-on-import.ts` throws out of
+  // `import()` (a defect before `tryPromise`), `b-wrong-shape.ts` fails schema decode (an ordinary
+  // error). Both must reach the log, and neither may stop the good plugin behind them.
   it.live("warns — never silently drops — when an external plugin fails to load", () =>
     Effect.gen(function* () {
       const plugins = yield* PluginV2.Service
       const agents = yield* AgentV2.Service
       const fs = yield* FSUtil.Service
-      const location = yield* Location.Service
-      const npm = yield* Npm.Service
       const host = yield* PluginHost.make(plugins)
       const { records, layer } = collectWarnings()
 
@@ -168,26 +137,11 @@ describe("ConfigExternalPlugin", () => {
         Effect.provide(layer),
         Effect.provideService(PluginV2.Service, plugins),
         Effect.provideService(FSUtil.Service, fs),
-        Effect.provideService(Location.Service, location),
-        Effect.provideService(Npm.Service, npm),
-        Effect.provideService(
-          PluginConfigStore.Service,
-          yield* Effect.gen(function* () {
-            const store = memoryStore()
-            yield* store.setPlugin({ package: fixture("missing-plugin.ts") })
-            yield* store.setPlugin({ package: fixture("invalid-plugin.ts") })
-            yield* store.setPlugin({
-              package: fixture("config-promise-plugin.ts"),
-              options: { description: "Loaded after broken plugins" },
-            })
-            return store
-          }),
-        ),
-        Effect.provideService(Config.Service, Config.Service.of({ entries: () => Effect.succeed([]) })),
+        Effect.provideService(Global.Service, globalAt(BROKEN_CONFIG_DIR)),
       )
 
-      // The good plugin landing is the loader's own "all three refs were processed" signal.
-      expect(yield* waitForAgent(agents, "configured")).toMatchObject({
+      // The good plugin landing is the loader's own "all three files were processed" signal.
+      expect(yield* waitForAgent(agents, "healthy")).toMatchObject({
         description: "Loaded after broken plugins",
       })
 
@@ -195,9 +149,8 @@ describe("ConfigExternalPlugin", () => {
         (record) => (record[0] as { event?: string } | undefined)?.event === "plugin.external.load.failed",
       )
       expect(reported).toHaveLength(2)
-      expect(reported.map((record) => (record[2] as { "plugin.package": string })["plugin.package"]).sort()).toEqual(
-        [fixture("invalid-plugin.ts"), fixture("missing-plugin.ts")].sort(),
-      )
+      expect(reported.map((record) => path.basename((record[2] as { "plugin.package": string })["plugin.package"]))
+        .sort()).toEqual(["a-throws-on-import.ts", "b-wrong-shape.ts"])
       for (const record of reported) {
         expect(record).toEqual([
           { event: "plugin.external.load.failed" },
@@ -208,97 +161,15 @@ describe("ConfigExternalPlugin", () => {
     }),
   )
 
-  it.live("installs and resolves npm plugin packages", () =>
-    Effect.gen(function* () {
-      const plugins = yield* PluginV2.Service
-      const agents = yield* AgentV2.Service
-      const fs = yield* FSUtil.Service
-      const location = yield* Location.Service
-      const host = yield* PluginHost.make(plugins)
-      let installed: string | undefined
-      const npm = Npm.Service.of({
-        add: (spec) =>
-          Effect.sync(() => {
-            installed = spec
-            return {
-              directory: import.meta.dir,
-              entrypoint: path.join(import.meta.dir, "../plugin/fixtures/config-promise-plugin.ts"),
-            }
-          }),
-        install: () => Effect.void,
-        which: () => Effect.succeed(undefined),
-      })
-
-      yield* ConfigExternalPlugin.Plugin.effect(host).pipe(
-        Effect.provideService(PluginV2.Service, plugins),
-        Effect.provideService(FSUtil.Service, fs),
-        Effect.provideService(Location.Service, location),
-        Effect.provideService(Npm.Service, npm),
-        Effect.provideService(
-          PluginConfigStore.Service,
-          yield* Effect.gen(function* () {
-            const store = memoryStore()
-            yield* store.setPlugin({ package: "example-plugin@1.0.0", options: { description: "Installed from npm" } })
-            return store
-          }),
-        ),
-        Effect.provideService(Config.Service, Config.Service.of({ entries: () => Effect.succeed([]) })),
-      )
-
-      expect(yield* waitForAgent(agents, "configured")).toMatchObject({
-        description: "Installed from npm",
-      })
-      expect(installed).toBe("example-plugin@1.0.0")
-    }),
-  )
-
-  it.live("loads plugin files from config directories", () =>
-    Effect.gen(function* () {
-      const plugins = yield* PluginV2.Service
-      const agents = yield* AgentV2.Service
-      const fs = yield* FSUtil.Service
-      const location = yield* Location.Service
-      const npm = yield* Npm.Service
-      const host = yield* PluginHost.make(plugins)
-
-      yield* ConfigExternalPlugin.Plugin.effect(host).pipe(
-        Effect.provideService(PluginV2.Service, plugins),
-        Effect.provideService(FSUtil.Service, fs),
-        Effect.provideService(Location.Service, location),
-        Effect.provideService(Npm.Service, npm),
-        Effect.provideService(PluginConfigStore.Service, memoryStore()),
-        Effect.provideService(
-          Config.Service,
-          Config.Service.of({
-            entries: () =>
-              Effect.succeed([
-                new Config.Directory({
-                  type: "directory",
-                  path: AbsolutePath.make(path.join(import.meta.dir, "fixtures")),
-                }),
-              ]),
-          }),
-        ),
-      )
-
-      expect(yield* waitForAgent(agents, "directory")).toMatchObject({
-        description: "Loaded from plugin directory",
-        mode: "subagent",
-      })
-    }),
-  )
-
   // `--pure` / `NOVACLAW_PURE` is advertised in every CLI --help as "run without external plugins".
   // It used to gate the deleted V1 loader; it now gates THIS one, which is the only remaining door
-  // third-party code comes through. Negative-controlled by the two tests above, which load exactly
-  // these two sources (store entry + config-directory walk) when the flag is absent.
+  // third-party code comes through. Negative-controlled by the first test, which loads exactly this
+  // directory when the flag is absent.
   it.live("loads nothing at all under NOVACLAW_PURE", () =>
     Effect.gen(function* () {
       const plugins = yield* PluginV2.Service
       const agents = yield* AgentV2.Service
       const fs = yield* FSUtil.Service
-      const location = yield* Location.Service
-      const npm = yield* Npm.Service
       const host = yield* PluginHost.make(plugins)
 
       const previous = process.env.NOVACLAW_PURE
@@ -307,28 +178,7 @@ describe("ConfigExternalPlugin", () => {
         yield* ConfigExternalPlugin.Plugin.effect(host).pipe(
           Effect.provideService(PluginV2.Service, plugins),
           Effect.provideService(FSUtil.Service, fs),
-          Effect.provideService(Location.Service, location),
-          Effect.provideService(Npm.Service, npm),
-          Effect.provideService(
-            PluginConfigStore.Service,
-            yield* Effect.gen(function* () {
-              const store = memoryStore()
-              yield* store.setPlugin({ package: fixture("config-promise-plugin.ts") })
-              return store
-            }),
-          ),
-          Effect.provideService(
-            Config.Service,
-            Config.Service.of({
-              entries: () =>
-                Effect.succeed([
-                  new Config.Directory({
-                    type: "directory",
-                    path: AbsolutePath.make(path.join(import.meta.dir, "fixtures")),
-                  }),
-                ]),
-            }),
-          ),
+          Effect.provideService(Global.Service, globalAt(CONFIG_DIR)),
         )
         // The loader forks its work; give it the same budget waitForAgent would have spent.
         yield* Effect.sleep("300 millis")
@@ -337,8 +187,8 @@ describe("ConfigExternalPlugin", () => {
         else process.env.NOVACLAW_PURE = previous
       }
 
-      expect(yield* agents.get(AgentV2.ID.make("configured"))).toBeUndefined()
       expect(yield* agents.get(AgentV2.ID.make("directory"))).toBeUndefined()
+      expect(yield* agents.get(AgentV2.ID.make("effect-directory"))).toBeUndefined()
     }),
   )
 })

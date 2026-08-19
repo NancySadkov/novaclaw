@@ -12,7 +12,6 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { Location } from "@novaclaw/core/location"
 import { LocationServiceMap } from "@novaclaw/core/location-services"
 import { PluginV2 } from "@novaclaw/core/plugin"
-import { PluginConfigStore } from "@novaclaw/core/plugin-config-store"
 import { Reference } from "@novaclaw/core/reference"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { AbsolutePath } from "@novaclaw/core/schema"
@@ -64,7 +63,6 @@ const it = testEffect(
       CommandConfigStore.node,
       ReferenceConfigStore.node,
       SkillConfigStore.node,
-      PluginConfigStore.node,
       LocationServiceMap.node,
     ]),
   ).pipe(Layer.provide(flagsLayer)),

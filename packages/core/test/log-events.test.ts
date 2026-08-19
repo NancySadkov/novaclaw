@@ -718,7 +718,7 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     )
     const [restart] = lines(
       Log.event("config.runtime.restart.required", {
-        "config.keys": ["plugins"],
+        "config.keys": ["some_future_key"],
         "config.reasons": ["module cache cannot reload a private package"],
       }),
     )

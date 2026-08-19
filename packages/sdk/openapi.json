@@ -38691,19 +38691,6 @@
         "required": ["path"],
         "additionalProperties": false
       },
-      "ConfigV2PluginEntry": {
-        "type": "object",
-        "properties": {
-          "package": {
-            "type": "string"
-          },
-          "options": {
-            "type": "object"
-          }
-        },
-        "required": ["package"],
-        "additionalProperties": false
-      },
       "PolicyEffect": {
         "type": "string",
         "enum": ["allow", "deny"]
@@ -40095,19 +40082,6 @@
                 },
                 {
                   "$ref": "#/components/schemas/ConfigV2ReferenceLocal"
-                }
-              ]
-            }
-          },
-          "plugins": {
-            "type": "array",
-            "items": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "$ref": "#/components/schemas/ConfigV2PluginEntry"
                 }
               ]
             }

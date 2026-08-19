@@ -27,7 +27,6 @@ import { ConfigLocalModelCatalog } from "./config/local-model-catalog"
 import { ConfigLog } from "./config/log"
 import { ConfigMCP } from "./config/mcp"
 import { ConfigPersona } from "./config/persona"
-import { ConfigPlugin } from "./config/plugin"
 import { ConfigProvider } from "./config/provider"
 import { ConfigProviderPreset } from "./config/provider-preset"
 import { ConfigProviderConnection } from "./config/provider-connection"
@@ -586,9 +585,13 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   references: ConfigReference.Info.pipe(Schema.optional).annotate({
     description: "Named local directories or Git repositories available as external context",
   }),
-  plugins: ConfigPlugin.Plugins.pipe(Schema.optional).annotate({
-    description: "Ordered external plugin packages to load",
-  }),
+  // ⚠️ There is deliberately NO `plugins` key. Ruling 5 (`notes/reports/decisions-v0.2.0.md` §5,
+  // executed as dependency step 17): outside code never runs in-process, so the arm that fetched a
+  // package with `npm.add` and `import()`ed it is gone and the key that fed it went with it. MCP is
+  // the out-of-process extension seam. What SURVIVES is the user's own `{plugin,plugins}/*.ts` files
+  // dropped in a config directory — `config/plugin/external.ts` still walks for those — but they are
+  // filesystem-discovered at user privilege, never nameable by an agent, a registry or a peer, which
+  // is precisely why they are not a config key. Do not re-add one.
   experimental: ConfigExperimental.Experimental.pipe(Schema.optional).annotate({
     description:
       "Unstable settings, including `policies` — the provider allow/deny rules `catalog.ts` evaluates. " +

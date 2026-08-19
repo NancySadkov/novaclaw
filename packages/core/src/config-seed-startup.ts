@@ -4,7 +4,6 @@ import { Effect } from "effect"
 import { AgentConfigSeed } from "./agent-config-seed"
 import { CatalogSeed } from "./catalog-seed"
 import { CommandConfigSeed } from "./command-config-seed"
-import { PluginConfigSeed } from "./plugin-config-seed"
 import { ReferenceConfigSeed } from "./reference-config-seed"
 import { SettingsConfigMigrate } from "./settings-config-migrate"
 import { SettingsConfigSeed } from "./settings-config-seed"
@@ -33,7 +32,9 @@ export const seedAll = (globalConfigDir: string, home: string) =>
     yield* CommandConfigSeed.seedFromDirectory(globalConfigDir).pipe(Effect.ignore)
     yield* SkillConfigSeed.seedFromDirectory(globalConfigDir, home).pipe(Effect.ignore)
     yield* ReferenceConfigSeed.seedFromDirectory(globalConfigDir, home).pipe(Effect.ignore)
-    yield* PluginConfigSeed.seedFromDirectory(globalConfigDir).pipe(Effect.ignore)
+    // (There is no plugin seed. Ruling 5 / step 17 deleted the `plugins[]` key and its store; a
+    // user's own `{plugin,plugins}/*.ts` files are filesystem-walked by `config/plugin/external.ts`
+    // at load time and were never imported here.)
     yield* SettingsConfigSeed.seedFromDirectory(globalConfigDir).pipe(Effect.ignore)
     // …and THEN the data repairs over whatever is already stored. Ordered last on purpose: the
     // seeds above are isEmpty-gated first-boot IMPORTS, so a value that just arrived from a

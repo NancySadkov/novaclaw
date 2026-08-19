@@ -149,8 +149,8 @@ describe("routeConfig", () => {
     }
   }
 
-  /** The two array-shaped keys whose write REPLACES the store's list — see `REFUSED` in fixture.ts. */
-  const REFUSED = ["plugins", "skills"]
+  /** The array-shaped key whose write REPLACES the store's list — see `REFUSED` in fixture.ts. */
+  const REFUSED = ["skills"]
 
   test("every Config.Info key is either routed or refused BY NAME", () => {
     // The ratchet. A new top-level config key added to `Config.Info` lands here first: it is either

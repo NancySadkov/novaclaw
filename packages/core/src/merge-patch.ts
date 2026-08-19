@@ -69,8 +69,8 @@ export const showPath = (path: Path): string => path.map((segment) => JSON.strin
  *
  * ⚠️ **It refuses to descend into or delete out of an ARRAY, deliberately.** Arrays replace
  * wholesale under the merge contract, so `PATCH /config` can already delete an array entry by
- * sending the array without it — commit `53051cca8` ruled on exactly this and left `skills`/
- * `plugins` without delete routes for that reason. Supporting an index segment here would add a
+ * sending the array without it — commit `53051cca8` ruled on exactly this and left `skills`
+ * (and, while it existed, `plugins`) without delete routes for that reason. Supporting an index segment here would add a
  * second way to do a thing that already works, with an off-by-one and a "what does removing index 2
  * of a list someone else just appended to mean" race attached. The refusal surfaces as
  * `undefined`; the callers' ledger names the key and says what to send instead.

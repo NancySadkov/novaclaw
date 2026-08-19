@@ -171,7 +171,6 @@ export const dict = {
   "dialog.mcp.description": "{{total}} içerisinden {{enabled}} etkin",
   "dialog.mcp.empty": "Yapılandırılmış MCP yok",
 
-  "dialog.plugins.empty": "Eklentiler novaclaw.json içinde yapılandırılır",
 
   "mcp.status.connected": "bağlı",
   "mcp.status.failed": "başarısız",
@@ -395,7 +394,6 @@ export const dict = {
   "status.popover.ariaLabel": "Sunucu yapılandırmaları",
   "status.popover.tab.servers": "Sunucular",
   "status.popover.tab.mcp": "MCP",
-  "status.popover.tab.plugins": "Eklentiler",
   "status.popover.action.manageServers": "Sunucuları yönet",
 
   "session.share.popover.title": "Web'de yayınla",

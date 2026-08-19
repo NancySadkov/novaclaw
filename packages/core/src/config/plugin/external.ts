@@ -4,16 +4,12 @@ import type { Plugin as EffectPlugin } from "@novaclaw/plugin/v2/effect"
 import type { Plugin as PromisePlugin } from "@novaclaw/plugin/v2/promise"
 import { Log } from "@novaclaw/schema/log"
 import { Effect, Schema } from "effect"
-import path from "path"
 import { pathToFileURL } from "url"
-import { Config } from "../../config"
 import { Flag } from "../../flag/flag"
 import { FSUtil } from "../../fs-util"
-import { Location } from "../../location"
-import { Npm } from "../../npm"
+import { Global } from "../../global"
+import { ConfigPluginGlob } from "./glob"
 import { define } from "../../plugin/internal"
-import { PluginConfigSeed } from "../../plugin-config-seed"
-import { PluginConfigStore } from "../../plugin-config-store"
 import { PluginPromise } from "../../plugin/promise"
 
 const PluginModule = Schema.Struct({
@@ -33,10 +29,38 @@ const PluginModule = Schema.Struct({
   ]),
 })
 
-// Config→SQLite step 5: config-borne external plugin specs come from the instance-wide
-// `PluginConfigStore` (normalized package + options), not from `config.entries()`. Plugin FILES
-// dropped under `{plugin,plugins}/` in config dirs stay filesystem-walked (the D2 analog —
-// user-dropped modules, not settings).
+/**
+ * The one pattern an external plugin may be found under, relative to the INSTANCE config dir.
+ *
+ * Re-exported rather than declared: it lives in the leaf `./glob.ts` so the CLI can print the same
+ * directory without importing this file's graph. See that module's header.
+ */
+export const PLUGIN_GLOB = ConfigPluginGlob.PATTERN
+
+// The ONE remaining door in-process third-party code comes through, and it is deliberately the
+// narrowest door in the tree: `{plugin,plugins}/*.{ts,js}` under the INSTANCE CONFIG DIRECTORY —
+// `Global.Service.config`, i.e. `$XDG_CONFIG_HOME/novaclaw` or whatever `NOVACLAW_CONFIG_DIR` names.
+// One directory, per instance, on the user's own machine.
+//
+// ⚠️ **It reads `Global.Service`, NOT `Config.entries()`, and that is the whole security property.**
+// `Config.entries()` returns the config dir PLUS every `.novaclaw` directory the walk-up
+// (`config.ts`: `fs.up({ targets: [".novaclaw"], start: location.directory, stop: location.root })`)
+// finds between the session's working folder and its VCS root. Globbing that set — which is what
+// this loader did until 2026-08-19 — made `<project>/.novaclaw/plugin/x.ts` load at user privilege
+// on the next session opened in that folder, so `git clone` of a hostile repo was arbitrary
+// in-process code execution, and so was a file an AGENT wrote into the project it was pointed at
+// (AGENTS.md principle 11 calls that the product working). Module scope runs on `import()`, before
+// any NovaClaw API is consulted, so nothing downstream could have gated it. Measured end to end
+// against the real `Config.layer` and a real glob, with a no-`.novaclaw` control.
+// **A project `.novaclaw` still contributes CONFIG — agents, commands, skills, `novaclaw.json` — it
+// just never contributes CODE.** Pinned by `test/config/plugin.test.ts`'s
+// "never loads a plugin from a project directory".
+//
+// ⚠️ There is no second source, and that absence is also the property. Ruling 5
+// (`notes/reports/decisions-v0.2.0.md` §5, dependency step 17) deleted the arm that took a package
+// NAME from config, fetched it with `npm.add` and `import()`ed the result — remote code at this
+// process's privilege — and the `plugins[]` key and `PluginConfigStore` that fed it went with it.
+// The out-of-process extension seam is MCP.
 //
 // `--pure` / `NOVACLAW_PURE` ("run without external plugins") is enforced HERE, at the one place
 // third-party code enters the process. It used to gate the V1 loader; when that arm was deleted the
@@ -52,39 +76,25 @@ export const Plugin = define({
       yield* Log.event("plugin.external.skipped", {})
       return
     }
-    const config = yield* Config.Service
-    const store = yield* PluginConfigStore.Service
     const fs = yield* FSUtil.Service
-    const location = yield* Location.Service
-    const npm = yield* Npm.Service
+    const global = yield* Global.Service
     yield* Effect.gen(function* () {
-      const entries = yield* config.entries()
+      const discovered = yield* fs
+        .glob(PLUGIN_GLOB, {
+          cwd: global.config,
+          absolute: true,
+          include: "file",
+          dot: true,
+          symlink: true,
+        })
+        .pipe(Effect.orElseSucceed(() => []))
+      discovered.sort()
 
-      const configured: { package: string; options?: Record<string, any> }[] = []
-      for (const stored of yield* store.plugins()) configured.push(stored)
-
-      for (const entry of entries) {
-        if (entry.type === "directory") {
-          const files = yield* fs
-            .glob("{plugin,plugins}/*.{ts,js}", {
-              cwd: entry.path,
-              absolute: true,
-              include: "file",
-              dot: true,
-              symlink: true,
-            })
-            .pipe(Effect.orElseSucceed(() => []))
-          files.sort()
-          for (const file of files) configured.push({ package: file })
-        }
-      }
-
-      for (const ref of configured) {
+      for (const file of discovered) {
         yield* Effect.gen(function* () {
-          const entrypoint = path.isAbsolute(ref.package)
-            ? pathToFileURL(ref.package).href
-            : (yield* npm.add(ref.package)).entrypoint
-          if (!entrypoint) return
+          // A glob hit is always an absolute path (`absolute: true`), so the entrypoint is a plain
+          // file URL. There is no name-resolution step left to get wrong.
+          const entrypoint = pathToFileURL(file).href
 
           // `tryPromise`, not `promise`: an entrypoint that throws on import is an ORDINARY failure of
           // third-party code, not a defect in ours. Typed here so the tap below reports it as a plugin
@@ -94,7 +104,9 @@ export const Plugin = define({
           const plugin = "effect" in value ? value : PluginPromise.fromPromise(value)
           yield* ctx.plugin.add({
             id: plugin.id,
-            effect: (host) => plugin.effect({ ...host, options: ref.options ?? {} }),
+            // `options` stays in the host shape because the plugin API declares it; with the config
+            // key gone there is nothing left that could carry a value, so it is always empty.
+            effect: (host) => plugin.effect({ ...host, options: {} }),
           })
         }).pipe(
           // ⚠️ One broken plugin must never take the others down — but it must never vanish either.
@@ -106,7 +118,7 @@ export const Plugin = define({
           // and core has no session-event bridge to publish to.
           Effect.tapCause((cause) =>
             Log.event("plugin.external.load.failed", {
-              "plugin.package": ref.package,
+              "plugin.package": file,
               "plugin.cause": Log.fault(cause),
             }),
           ),

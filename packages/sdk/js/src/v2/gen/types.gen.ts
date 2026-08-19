@@ -3992,13 +3992,6 @@ export type ConfigV2ReferenceLocal = {
   hidden?: boolean
 }
 
-export type ConfigV2PluginEntry = {
-  package: string
-  options?: {
-    [key: string]: unknown
-  }
-}
-
 export type PolicyEffect = "allow" | "deny"
 
 export type ConfigV2ExperimentalPolicy = {
@@ -4450,7 +4443,6 @@ export type ConfigInfo = {
   references?: {
     [key: string]: string | ConfigV2ReferenceGit | ConfigV2ReferenceLocal
   }
-  plugins?: Array<string | ConfigV2PluginEntry>
   experimental?: ConfigV2Experimental
   provider_presets?: {
     [key: string]: ConfigV2ProviderPreset

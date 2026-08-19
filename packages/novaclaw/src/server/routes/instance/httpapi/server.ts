@@ -15,7 +15,6 @@ import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
 import { ConfigSeedStartup } from "@novaclaw/core/config-seed-startup"
 import { CatalogStore } from "@novaclaw/core/catalog-store"
 import { CommandConfigStore } from "@novaclaw/core/command-config-store"
-import { PluginConfigStore } from "@novaclaw/core/plugin-config-store"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { CommunityChannels } from "@novaclaw/core/community/channels"
 import { CommunityContacts } from "@novaclaw/core/community/contacts"
@@ -258,7 +257,6 @@ const app = LayerNode.group([
   AgentConfigStore.node,
   CatalogStore.node,
   CommandConfigStore.node,
-  PluginConfigStore.node,
   SettingsConfigStore.node,
   InstanceIdentityStore.node,
   // The folder's `novaclaw.json`, cached. Listed HERE so `POST /api/project` can invalidate the very

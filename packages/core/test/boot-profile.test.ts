@@ -10,7 +10,6 @@ import { Location } from "@novaclaw/core/location"
 import { LocationServiceMap } from "@novaclaw/core/location-services"
 import { BootProfile } from "@novaclaw/core/observability/boot-profile"
 import { PluginV2 } from "@novaclaw/core/plugin"
-import { PluginConfigStore } from "@novaclaw/core/plugin-config-store"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
@@ -264,7 +263,6 @@ const it = testEffect(
       CommandConfigStore.node,
       ReferenceConfigStore.node,
       SkillConfigStore.node,
-      PluginConfigStore.node,
       LocationServiceMap.node,
     ]),
   ).pipe(Layer.provide(flagsLayer)),

@@ -439,14 +439,6 @@ export default {
         );
       `)
       yield* tx.run(`
-        CREATE TABLE \`plugin_config\` (
-          \`package\` text PRIMARY KEY,
-          \`options\` text,
-          \`time_created\` integer NOT NULL,
-          \`time_updated\` integer NOT NULL
-        );
-      `)
-      yield* tx.run(`
         CREATE TABLE \`reference_config\` (
           \`name\` text PRIMARY KEY,
           \`layers\` text NOT NULL,

@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "c62e3625-b915-44ab-a89b-3203fa4cc229",
+  "id": "3dcf826f-152c-4354-b69a-c4884b3f26d5",
   "prevIds": [
-    "0825e5d6-67ac-4da7-9a52-30929db7bd49"
+    "c62e3625-b915-44ab-a89b-3203fa4cc229"
   ],
   "ddl": [
     {
@@ -168,10 +168,6 @@
     },
     {
       "name": "permission",
-      "entityType": "tables"
-    },
-    {
-      "name": "plugin_config",
       "entityType": "tables"
     },
     {
@@ -2870,46 +2866,6 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "package",
-      "entityType": "columns",
-      "table": "plugin_config"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "options",
-      "entityType": "columns",
-      "table": "plugin_config"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "time_created",
-      "entityType": "columns",
-      "table": "plugin_config"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "time_updated",
-      "entityType": "columns",
-      "table": "plugin_config"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
       "name": "name",
       "entityType": "columns",
       "table": "reference_config"
@@ -5012,15 +4968,6 @@
       "nameExplicit": false,
       "name": "permission_pk",
       "table": "permission",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
-        "package"
-      ],
-      "nameExplicit": false,
-      "name": "plugin_config_pk",
-      "table": "plugin_config",
       "entityType": "pks"
     },
     {

@@ -196,7 +196,8 @@ export const safetyCritical = (provider: Provider) => provider.safetyCritical !=
  * ⚠️ *A threshold that fires on normal traffic is not a threshold*, so the healthy distribution came
  * first. A provider is a function over a tool name and its already-decoded arguments; the shipped
  * one is a set of regular expressions over a command string. Measured on this laptop
- * (`test/tool-policy-timeout.test.ts`, which fails if this stops being true): the shipped provider
+ * (`test/tool-policy.test.ts` → *"the budget is UNREACHABLE by normal traffic"*, which fails if this
+ * stops being true — 0.0145 ms/call re-measured 2026-08-19): the shipped provider
  * answers a worst-case call in well under a millisecond, and the whole gate — cache read, project
  * resolution, every provider, composition — is a small number of milliseconds. A provider that read
  * a file or ran one SQLite query would still be inside single-digit milliseconds.

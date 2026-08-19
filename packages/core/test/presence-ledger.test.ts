@@ -176,7 +176,7 @@ const LEDGER: readonly Entry[] = [
     file: "novaclaw/src/util/filesystem.ts",
     kind: "fallback",
     why:
-      "`exists()` gates reads (`config/markdown.ts`, `plugin/shared.ts`, `format/formatter.ts`) and " +
+      "`exists()` gates reads (`config/markdown.ts`, `format/formatter.ts`) and " +
       "`writeStream` gates a recursive mkdir. No caller builds a sentence from it.",
   },
 ]

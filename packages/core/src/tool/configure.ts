@@ -132,7 +132,6 @@ import { Database } from "../database/database"
 import { makeLocationNode } from "../effect/app-node"
 import { CapabilityRegistry } from "../effect/capability-registry"
 import { PermissionV2 } from "../permission"
-import { PluginConfigStore } from "../plugin-config-store"
 import { ReferenceConfigStore } from "../reference-config-store"
 import { SettingsConfigStore } from "../settings-config-store"
 import { SkillConfigStore } from "../skill-config-store"
@@ -486,7 +485,6 @@ export const layer = Layer.effectDiscard(
       | CommandConfigStore.Service
       | ReferenceConfigStore.Service
       | SkillConfigStore.Service
-      | PluginConfigStore.Service
     >()
 
     yield* tools
@@ -771,7 +769,6 @@ export const node = makeLocationNode({
     CommandConfigStore.node,
     ReferenceConfigStore.node,
     SkillConfigStore.node,
-    PluginConfigStore.node,
     CapabilityRegistry.node,
   ],
 })
