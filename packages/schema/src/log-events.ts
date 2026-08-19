@@ -2292,13 +2292,21 @@ export const EVENTS = {
     content: "user",
     file: "packages/novaclaw/src/skill/index.ts",
   },
-  /** A remote catalog entry lacks the required SKILL.md document and is ignored. */
+  /**
+   * A remote catalog entry was refused and ignored — a missing SKILL.md, a name or file path that
+   * would escape the source's cache directory, or more files than the per-skill cap allows.
+   *
+   * ⚠️ The message used to read "skill entry missing SKILL.md", which was one of four reasons and
+   * became the wrong one the moment containment refusals started being reported here: an operator
+   * reading it after a traversal attempt would have been told a falsehood about their own log. The
+   * offending `skill.name` is carried so the entry can be identified whatever the reason.
+   */
   "skill.index.entry.invalid": {
     level: "warn",
-    message: "skill entry missing SKILL.md",
+    message: "skill entry refused",
     attributes: { "skill.url": "text", "skill.name": "text" },
     content: "user",
-    file: "packages/novaclaw/src/skill/discovery.ts",
+    file: "packages/core/src/skill/discovery.ts",
   },
   /** A remote skill catalog index is about to be fetched. */
   "skill.index.fetch": {
@@ -2306,7 +2314,7 @@ export const EVENTS = {
     message: "fetching index",
     attributes: { "skill.url": "text" },
     content: "user",
-    file: "packages/novaclaw/src/skill/discovery.ts",
+    file: "packages/core/src/skill/discovery.ts",
   },
   /** A remote skill catalog index could not be fetched or decoded. */
   "skill.index.fetch.failed": {

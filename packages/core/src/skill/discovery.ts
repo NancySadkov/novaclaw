@@ -130,6 +130,7 @@ export const layer = Layer.effect(
         const base = url.endsWith("/") ? url : `${url}/`
         const source = new URL(base)
         const index = new URL("index.json", source).href
+        yield* Log.event("skill.index.fetch", { "skill.url": index })
         const data = yield* HttpClientRequest.get(index).pipe(
           HttpClientRequest.acceptJson,
           http.execute,
@@ -171,22 +172,36 @@ export const layer = Layer.effect(
         }
 
         const sourceRoot = path.resolve(global.cache, "skills", Bun.hash(base).toString(16))
-        return yield* Effect.forEach(
+        /**
+         * 🔴 Every rejection below used to be a bare `return []`, so a source that tried to escape
+         * its own cache directory was refused in COMPLETE SILENCE. The containment held, but the
+         * operator had no way to learn that a skill source had attempted it — and "the attack was
+         * blocked" and "the source had no such entry" looked identical from outside.
+         *
+         * Collected rather than logged inline because this callback is synchronous; the names are
+         * emitted immediately after, one `skill.index.entry.invalid` each.
+         */
+        const rejected: string[] = []
+        const roots = yield* Effect.forEach(
           data.skills.flatMap((skill) => {
             if (!isSafeSegment(skill.name)) {
+              rejected.push(skill.name)
               return []
             }
             if (!skill.files.includes("SKILL.md") && !skill.files.includes(`${skill.name}.md`)) {
+              rejected.push(skill.name)
               return []
             }
             // Dropped like every other malformed-skill case here — one oversized entry must not take
             // the rest of a legitimate source down with it.
             if (skill.files.length > MAX_FILES_PER_SKILL) {
+              rejected.push(skill.name)
               return []
             }
 
             const root = path.resolve(sourceRoot, skill.name)
             if (!FSUtil.contains(sourceRoot, root) || root === sourceRoot) {
+              rejected.push(skill.name)
               return []
             }
 
@@ -275,6 +290,15 @@ export const layer = Layer.effect(
             }),
           { concurrency: skillConcurrency },
         ).pipe(Effect.map((directories) => directories.flat()))
+        // Named AFTER the walk: the flatMap above runs to completion while the array is built, so
+        // `rejected` is already whole here. One line per dropped entry, so a refused traversal is
+        // something the operator can actually see in the log.
+        yield* Effect.forEach(
+          rejected,
+          (name) => Log.event("skill.index.entry.invalid", { "skill.url": index, "skill.name": name }),
+          { discard: true },
+        )
+        return roots
       }),
     })
   }),
