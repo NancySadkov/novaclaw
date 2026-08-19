@@ -305,3 +305,58 @@ export function summarize(views: readonly InterventionView[]): Summary {
     withUnavailable: views.filter((view) => view.unavailable.length > 0).length,
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// Reading the receipt at all — three answers, never two
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * What the receipt read told us, before anything is rendered.
+ *
+ * 🔴 **Three answers, and the third is the point.** A `catch` that returned "nothing" for both a 404
+ * and a dead request spells *"this chat has no attempt yet"* and *"we could not look"* the same way —
+ * and the second one, rendered as the first, silently removes the whole section from a chat that DOES
+ * have interventions. That is the exact failure this feature exists to stop, reappearing one layer up:
+ * an intervention that happened and nobody was told. Same discipline as `recipe-verify.ts`'s
+ * `UNREADABLE` — the path (found), `null` (looked, not there), and could-not-look are three states.
+ *
+ * ⚠️ `absent` is the only one that renders NOTHING, and it is the only one that has earned it: a chat
+ * that has never run cannot have been intervened on, so there is no claim to suppress.
+ */
+export type ReceiptRead =
+  /** A receipt was read. `rows` may legitimately be empty — that is the positive statement. */
+  | { readonly kind: "rows"; readonly rows: readonly PolicyDecisionInfo[] }
+  /** No attempt exists yet (the route answered 404). Nothing has run, so nothing can have intervened. */
+  | { readonly kind: "absent" }
+  /** The read failed. We know nothing, and the surface must SAY so rather than show an empty list. */
+  | { readonly kind: "unreadable" }
+
+/**
+ * Classify one call to `GET /api/session/:id/receipt`.
+ *
+ * `status` is the HTTP status the client saw, or `undefined` when the request never produced one
+ * (a thrown fetch, an aborted connection). Everything that is not a 200-with-a-body and not a 404 is
+ * `unreadable`, deliberately: a 401 or a 500 is precisely the case where claiming "nothing stepped
+ * in" would be a fabrication.
+ */
+export function classifyReceipt(
+  status: number | undefined,
+  policies: readonly PolicyDecisionInfo[] | undefined,
+): ReceiptRead {
+  if (status === 404) return { kind: "absent" }
+  if (status === 200 && policies !== undefined) return { kind: "rows", rows: policies }
+  return { kind: "unreadable" }
+}
+
+/** What the panel shows. One arm per {@link ReceiptRead}, with the rows already ordered and counted. */
+export type PolicyPanel =
+  | { readonly state: "list"; readonly views: readonly InterventionView[]; readonly summary: Summary }
+  | { readonly state: "absent" }
+  | { readonly state: "unreadable" }
+
+export function toPanel(read: ReceiptRead, installed?: readonly InstalledPolicy[]): PolicyPanel {
+  if (read.kind === "absent") return { state: "absent" }
+  if (read.kind === "unreadable") return { state: "unreadable" }
+  const views = toInterventions(read.rows, installed)
+  return { state: "list", views, summary: summarize(views) }
+}

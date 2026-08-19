@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { ToolPolicy } from "@novaclaw/core/tool-policy"
 import {
+  classifyReceipt,
   describeValue,
   didRun,
   outcomeOf,
@@ -10,6 +11,7 @@ import {
   summarize,
   toIntervention,
   toInterventions,
+  toPanel,
   type InstalledPolicy,
   type PolicyDecisionInfo,
 } from "./session-policies"
@@ -319,5 +321,45 @@ describe("values, ordering and the empty case", () => {
     expect(view.unavailable).toEqual(["slow-advisor"])
     // Counted as an annotation rather than discarded: the call ran and not every policy answered.
     expect(summarize([view])).toMatchObject({ total: 1, annotated: 1, withUnavailable: 1 })
+  })
+})
+
+describe("🔴 reading the receipt has THREE answers, and 'we could not look' is one of them", () => {
+  const row = rowFor(ToolPolicy.compose([answered("git-no-pager", OUTCOME_FOR.patch)]))
+
+  test("a 200 with rows is a receipt", () => {
+    expect(classifyReceipt(200, [row])).toEqual({ kind: "rows", rows: [row] })
+    // An EMPTY list is still a receipt — it is the positive statement, not an absence.
+    expect(classifyReceipt(200, [])).toEqual({ kind: "rows", rows: [] })
+  })
+
+  test("a 404 is 'this chat has no attempt yet', which is the only silent arm", () => {
+    expect(classifyReceipt(404, undefined)).toEqual({ kind: "absent" })
+    expect(toPanel(classifyReceipt(404, undefined), installed)).toEqual({ state: "absent" })
+  })
+
+  test("everything else is UNREADABLE, and is never spelled like 'nothing stepped in'", () => {
+    // A dead request (no status at all), an auth failure, a server fault, and a 200 whose body did
+    // not carry the field. Each one is a case where claiming a clean bill of health is a fabrication.
+    for (const status of [undefined, 401, 403, 500, 502] as const)
+      expect(classifyReceipt(status, undefined)).toEqual({ kind: "unreadable" })
+    expect(classifyReceipt(200, undefined)).toEqual({ kind: "unreadable" })
+    expect(toPanel(classifyReceipt(500, undefined), installed)).toEqual({ state: "unreadable" })
+  })
+
+  test("the panel carries the ordered rows and their summary, so the page counts nothing itself", () => {
+    const panel = toPanel(classifyReceipt(200, [row]), installed)
+    expect(panel.state).toBe("list")
+    if (panel.state !== "list") throw new Error("unreachable")
+    expect(panel.views.map((view) => view.outcome)).toEqual(["patch"])
+    expect(panel.summary.total).toBe(1)
+    expect(panel.summary.rewritten).toBe(1)
+  })
+
+  test("an unreadable read yields NO rows — a surface cannot accidentally render a clean list", () => {
+    for (const read of [classifyReceipt(500, undefined), classifyReceipt(404, undefined)]) {
+      const panel = toPanel(read, installed)
+      expect(panel.state === "list").toBe(false)
+    }
   })
 })

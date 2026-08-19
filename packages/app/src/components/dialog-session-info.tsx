@@ -14,10 +14,11 @@ import { adhocDiscard, adhocList, adhocPromote, switchPromptOverride, type Adhoc
 import { ProjectDetail, useProjectSummary } from "@/components/project-indicator"
 import { PROJECT_DETAIL_LABELS } from "@/components/project-summary"
 import {
-  summarize,
-  toInterventions,
+  classifyReceipt,
+  toPanel,
   type InterventionView,
   type PolicyDecisionInfo,
+  type ReceiptRead,
 } from "@/apps/session-policies"
 import { policyState } from "@/utils/policy-api"
 
@@ -152,21 +153,37 @@ export const DialogSessionInfo: Component<{ session: Session; projectName?: stri
    * ErrorBoundary and replaces the whole application; a receipt that failed to load must never cost
    * someone their chats.
    *
+   * 🔴 But degrading is not the same as going quiet. The read has THREE outcomes and `classifyReceipt`
+   * keeps them apart: a receipt (rows, possibly none), a chat with no attempt yet (404 — nothing has
+   * run, so nothing can have intervened), and a read that FAILED. Collapsing the last into the middle
+   * would delete the whole section from a chat that does have interventions — this feature's own
+   * failure mode, one layer up.
+   *
    * ⚠️ The installed list is fetched too, and only so a policy id that no longer resolves can be
    * NAMED as such. Failing to fetch it is not the same claim as "not installed" — `toIntervention`
    * keeps those apart, and this passes `undefined` rather than `[]` so it can.
    */
   const [receipt] = createResource(
     () => (server.current ? { conn: server.current } : undefined),
-    async ({ conn }) => {
+    async ({ conn }): Promise<ReceiptRead> => {
       try {
-        const answer = await serverSDK().client.v2.session.receipt({ sessionID: props.session.id })
-        const data = (answer as { data?: { data?: { policies?: readonly PolicyDecisionInfo[] } } }).data?.data
-        // A session that has never run answers 404 and the SDK gives us no data — which is "nothing
-        // ran yet", not "nothing intervened". `undefined` says the first; `[]` would say the second.
-        return data?.policies
+        // ⚠️ `throwOnError: false` for THIS call, and it is load-bearing rather than a style choice.
+        // The shared client is built with `throwOnError: true` (`context/server-sdk.tsx`), which
+        // turns a 404 into a thrown value carrying the error BODY and no status — so the three
+        // states above would collapse back to two and a chat that never ran would read as "we could
+        // not look". Asking for the envelope keeps `response.status` in hand.
+        const answer = await serverSDK().client.v2.session.receipt(
+          { sessionID: props.session.id },
+          { throwOnError: false },
+        )
+        const typed = answer as {
+          response?: { status?: number }
+          data?: { data?: { policies?: readonly PolicyDecisionInfo[] } }
+        }
+        return classifyReceipt(typed.response?.status, typed.data?.data?.policies)
       } catch {
-        return undefined
+        // The request never produced a status at all, which is exactly the `unreadable` case.
+        return classifyReceipt(undefined, undefined)
       }
     },
   )
@@ -183,10 +200,15 @@ export const DialogSessionInfo: Component<{ session: Session; projectName?: stri
       }
     },
   )
-  const interventions = createMemo(() => {
-    const rows = receipt.latest
-    if (!rows) return undefined
-    return toInterventions(rows, installedPolicies.latest)
+  const policyPanel = createMemo(() => {
+    const read = receipt.latest
+    if (!read) return undefined
+    return toPanel(read, installedPolicies.latest)
+  })
+  /** The rows to render. Empty for every arm that has no rows, so the JSX asks one question. */
+  const policyViews = createMemo((): readonly InterventionView[] => {
+    const panel = policyPanel()
+    return panel?.state === "list" ? panel.views : []
   })
   // ⚠️ Every key is a LITERAL, spelled out per union member rather than assembled from a template.
   // `i18n/key-typing.test.ts` is a shrink-only ledger of the sites that hand the translator a
@@ -307,31 +329,43 @@ export const DialogSessionInfo: Component<{ session: Session; projectName?: stri
               intervened, because "every check allowed every tool call, in time" is a positive
               statement and the only one this feature can make. Hiding the section when the list is
               empty would trade that claim for silence, which is what the whole thing exists to
-              stop. It is absent only when there is no receipt to read (a chat that never ran). */}
-          <Show when={interventions()}>
-            {(views) => (
-              <div class="mt-2 border-t border-v2-border-border-base pt-2" data-slot="session-info-policies">
-                <div class="flex items-baseline justify-between py-1.5">
-                  <span class="text-[12px] text-v2-text-text-faint [font-weight:470]">
-                    {language.t("policies.session.title")}
+              stop. The ONE case that renders nothing is a chat with no attempt yet: nothing has run,
+              so no intervention can have been suppressed. A read that FAILED says so instead — see
+              `classifyReceipt`. */}
+          <Show when={policyPanel() !== undefined && policyPanel()!.state !== "absent"}>
+            <div class="mt-2 border-t border-v2-border-border-base pt-2" data-slot="session-info-policies">
+              <div class="flex items-baseline justify-between py-1.5">
+                <span class="text-[12px] text-v2-text-text-faint [font-weight:470]">
+                  {language.t("policies.session.title")}
+                </span>
+                <Show when={policyViews().length > 0}>
+                  <span class="text-[12px] text-v2-text-text-muted">
+                    {policyViews().length === 1
+                      ? language.t("policies.session.summary.one")
+                      : language.t("policies.session.summary.many", { count: policyViews().length })}
                   </span>
-                  <Show when={views().length > 0}>
-                    <span class="text-[12px] text-v2-text-text-muted">
-                      {views().length === 1
-                        ? language.t("policies.session.summary.one")
-                        : language.t("policies.session.summary.many", { count: summarize(views()).total })}
-                    </span>
-                  </Show>
-                </div>
-                <Show
-                  when={views().length > 0}
-                  fallback={
+                </Show>
+              </div>
+              {/* 🔴 The read FAILED: we know nothing about this chat's interventions, and the copy
+                  says exactly that instead of the reassuring sentence below it. Spelling this the
+                  same way as "nothing stepped in" would be the product asserting a clean bill of
+                  health it never obtained. */}
+              <Show when={policyPanel()!.state === "unreadable"}>
+                <p class="pb-1 text-[12px] leading-snug text-v2-text-text-faint">
+                  {language.t("policies.session.unavailable")}
+                </p>
+              </Show>
+              <Show
+                when={policyViews().length > 0}
+                fallback={
+                  <Show when={policyPanel()!.state === "list"}>
                     <p class="pb-1 text-[12px] leading-snug text-v2-text-text-faint">
                       {language.t("policies.session.none")}
                     </p>
-                  }
-                >
-                  <For each={views()}>
+                  </Show>
+                }
+              >
+                <For each={policyViews()}>
                     {(view) => (
                       <div class="flex flex-col gap-0.5 py-1.5" data-slot="session-info-policy">
                         <div class="flex items-center gap-2">
@@ -391,9 +425,8 @@ export const DialogSessionInfo: Component<{ session: Session; projectName?: stri
                       </div>
                     )}
                   </For>
-                </Show>
-              </div>
-            )}
+              </Show>
+            </div>
           </Show>
           <div class="mt-2 border-t border-v2-border-border-base pt-2">
             <Row
