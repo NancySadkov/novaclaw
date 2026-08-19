@@ -1,6 +1,10 @@
 export * as SystemCompose from "./system-compose"
 
 import type { PermissionMode } from "../config-resolve"
+// Type-only, so this file stays pure: `InputCapabilities` is the structural shape `attachmentSupport`
+// reads, and sharing it is what keeps the perception SECTION and the media GATE deciding from one
+// declaration rather than two that can drift (ruling 6).
+import type { InputCapabilities } from "./to-llm-message"
 
 // The ordered assembly of the system-prompt parts, extracted from the runner (session/runner/llm.ts)
 // so the composition — and especially the placement of the optional per-model PRE-PROMPT — is a pure
@@ -159,6 +163,71 @@ export const toolDiscoverySection = (deferredCount: number): string | undefined 
 }
 
 /**
+ * That the model can SEE, and that an image on disk is therefore its own to look at.
+ *
+ * 🔴 **The defect (measured 2026-08-19, `notes/reports/vision-on-disk-2026-08-19.md`).** Asked
+ * *"please rename each png glyph into proper name"* in a folder of six PNGs, Holo-3.1 called `bash
+ * ls`, `glob`, `ls ../` and `ls ../icons/glyphs_256/` — **`read` zero times** — then said *"Since I
+ * can't visually identify the icons"* and asked the user what they were. Told to call `read` by
+ * name, the same model on the same instance described the file correctly. Every layer between the
+ * file and the provider works: magic-byte MIME, the `{type:"file"}` part, the capability gate, the
+ * untrusted-media frame, the `image_url` on the wire.
+ *
+ * ⚠️ **The harness had written only the NEGATIVE branch.** `unreadableToolMediaNotice` is a
+ * carefully-drafted sentence for the model that CANNOT see, and there was no sentence at all for the
+ * model that can — so the only statement about vision a model could ever receive was one saying it
+ * had none. An absence teaches the negative. This is the same defect as `toolDiscoverySection`
+ * above, one function away: a capability the runtime knew about and never disclosed, and a model
+ * answering correctly from the information it had.
+ *
+ * ⭐ Codex closed the identical bug by REWORDING `view_image` (openai/codex#23949) after
+ * openai/codex#12439 — *"view_image requires user to explicitly paste path to image"*. A hedged
+ * capability description is read as a prohibition, which is why this section states the fact flatly
+ * and names the tool.
+ *
+ * ⚠️ **ABSENT unless the catalog declares an `image` input modality**, so it is never a false
+ * description (ruling 2) and never dead text on a text-only model. `undefined`/empty capabilities
+ * mean *nobody told us* — the same tri-state `attachmentSupport` reads — and there the section stays
+ * absent: an unmeasured local endpoint gets today's behaviour rather than a promise we cannot keep.
+ *
+ * ⚠️ **The delegation paragraph is gated on `spawn` being CALLABLE**, for the same reason: telling a
+ * model to fan out through a tool its permission baseline withholds is an instruction it cannot
+ * follow. `spawn` is deliberately outside `AMBIENT_SAFE_BASELINE`.
+ *
+ * ⚠️ Constant for the context epoch, as this file's header requires: it is derived from the resolved
+ * model's declared modalities and the materialized tool set, neither of which moves between two
+ * turns of one epoch. A model swap changes it — and a model swap has already forfeited that server's
+ * prefix cache by moving to a different server.
+ */
+export const perceptionSection = (input: {
+  readonly capabilities: InputCapabilities | undefined
+  readonly canSpawn: boolean
+}): string | undefined => {
+  const declared = input.capabilities?.input
+  if (declared === undefined || declared.length === 0) return undefined
+  if (!declared.some((entry) => entry.toLowerCase().trim().startsWith("image"))) return undefined
+  return [
+    "You can SEE. This model reads images as well as text, so a picture on this machine is yours to " +
+      "look at — you never need the user to describe one for you, and you must not ask them to.",
+    "Call `read` on the image's path (png, jpeg, gif, webp) and the picture itself arrives in the " +
+      "tool result, for you to look at. That is how you answer any question about what a file LOOKS " +
+      "like: what a photo contains, what an icon depicts, what a screenshot shows, how two images " +
+      "differ, what name a picture deserves.",
+    "`bash ls`, `glob` and `grep` return file NAMES and text, never pixels — no listing can answer a " +
+      "question about what a picture shows. When the task is about images, open the images.",
+    ...(input.canSpawn
+      ? [
+          "An image costs far more context than its filename — a photo or a screenshot can cost as " +
+            "much as several pages of text, so a large folder will not fit in this conversation. " +
+            "For more than a handful of images, `spawn` a child session per batch, let it look and " +
+            "return its findings as TEXT through `exit`, and join the results. The pixels stay in " +
+            "the children; your own context keeps the task.",
+        ]
+      : []),
+  ].join("\n\n")
+}
+
+/**
  * ⚠️ **The turn-CLOSING instruction lived here and was CUT on 2026-08-11 — the day it shipped.**
  *
  * The idea: a settled turn renders as the answer with everything behind it folded under "Done", so
@@ -196,6 +265,8 @@ export interface SystemPromptParts {
   readonly agentSystem?: string
   /** That the tool list is partial (via `toolDiscoverySection`); absent when nothing is deferred. */
   readonly toolDiscovery?: string
+  /** That the model can SEE (via `perceptionSection`); absent unless an `image` modality is declared. */
+  readonly perception?: string
   /** The project-scope rule (already resolved via `projectScopeSection`); absent in `yolo`. */
   readonly projectScope?: string
   /** The immutable kernel base context (environment, tools, skills) — composed LAST. */
@@ -226,6 +297,11 @@ export const composeSystemParts = (parts: SystemPromptParts): string[] =>
     parts.systemPromptOverride,
     parts.agentSystem,
     parts.toolDiscovery,
+    // Beside `toolDiscovery` and for the same reason: both are facts about what this runtime can
+    // REACH — one about tools, one about perception — and both are kernel material a persona or an
+    // agent prompt must not be able to bury. Absent when the model declares no image modality, so a
+    // text-only model's prompt is byte-identical to the pre-feature one.
+    parts.perception,
     parts.projectScope,
     parts.base,
   ].filter((part): part is string => part !== undefined && part.length > 0)

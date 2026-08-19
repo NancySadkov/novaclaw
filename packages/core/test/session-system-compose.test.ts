@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test"
 import { Schema } from "effect"
 import { ConfigProvider } from "@novaclaw/core/config/provider"
 import { SystemCompose } from "@novaclaw/core/session/runner/system-compose"
+import { SpawnTool } from "@novaclaw/core/tool/spawn"
 
 // Pure unit test for the per-model PRE-PROMPT composition (owner 2026-07-29, todo/assorted.md).
 // The two binding claims of the feature, proven without executing the live runner:
@@ -16,12 +17,12 @@ describe("SystemCompose — per-model pre-prompt composition", () => {
   // ⚠️ `memoryRecall` is deliberately NOT here: it left the system prompt on 2026-08-05 because it is
   // the one per-turn-volatile part and it was destroying the server-side prefix cache. It now rides
   // the message tail (llm.ts). See the ⚠️ header in system-compose.ts.
-  // ⚠️ `projectScope` and `toolDiscovery` are omitted alongside `modelPrePrompt` on purpose: this
-  // file's whole claim is "byte-identical to today when the OPTIONAL sections are absent", so every
-  // optional section has to be absent from the baseline. `projectScope`'s own composition is covered
-  // in `test/unattended-bash-safe-mode.test.ts`.
+  // ⚠️ `projectScope`, `toolDiscovery` and `perception` are omitted alongside `modelPrePrompt` on
+  // purpose: this file's whole claim is "byte-identical to today when the OPTIONAL sections are
+  // absent", so every optional section has to be absent from the baseline. `projectScope`'s own
+  // composition is covered in `test/unattended-bash-safe-mode.test.ts`.
   const baseParts: Required<
-    Omit<SystemCompose.SystemPromptParts, "modelPrePrompt" | "projectScope" | "toolDiscovery">
+    Omit<SystemCompose.SystemPromptParts, "modelPrePrompt" | "projectScope" | "toolDiscovery" | "perception">
   > = {
     persona: "You are Nova.",
     expertiseHint: "Explain in plain language.",
@@ -143,3 +144,107 @@ describe("toolDiscoverySection — the model must know its tool list is partial"
 
 })
 
+// ─────────────────────────────────────────────────────────────────────────────
+// perceptionSection — the model must know it can SEE (measured 2026-08-19,
+// notes/reports/vision-on-disk-2026-08-19.md). Holo-3.1, asked to rename a folder of PNGs, called
+// bash ls / glob / ls ../ and NEVER `read`, then said "Since I can't visually identify the icons".
+// The pipeline worked the whole time; only the negative branch (`unreadableToolMediaNotice`) had
+// ever been written, so the sole statement about vision a model could receive said it had none.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// The same kernel parts the first describe uses, at module scope so the perception block can reuse
+// them without reaching inside another closure.
+const KERNEL_BASE = {
+  persona: "You are Nova.",
+  expertiseHint: "Explain in plain language.",
+  tierHint: "You are a small local model.",
+  systemPromptOverride: "Session override text.",
+  agentSystem: "Build agent instructions.",
+  base: "Initial context (kernel base).",
+} as const
+const KERNEL_ORDER = [
+  KERNEL_BASE.persona,
+  KERNEL_BASE.expertiseHint,
+  KERNEL_BASE.tierHint,
+  KERNEL_BASE.systemPromptOverride,
+  KERNEL_BASE.agentSystem,
+  KERNEL_BASE.base,
+]
+
+describe("perceptionSection — the model must know it can see", () => {
+  const seeing = { input: ["text", "image"] }
+
+  it("states the capability flatly and names the tool that delivers pixels", () => {
+    const section = SystemCompose.perceptionSection({ capabilities: seeing, canSpawn: false })!
+    expect(section).toContain("You can SEE")
+    expect(section).toContain("`read`")
+    // ⭐ The failing run's own behaviour, named: a listing cannot answer a question about a picture.
+    expect(section).toContain("`bash ls`")
+    expect(section).toContain("glob")
+    // No hedge. Codex's identical bug was CAUSED by a hedged description (openai/codex#23949), so a
+    // regression that softens this back into "may be able to" must fail here.
+    expect(section).not.toMatch(/may be able to|if supported|might be/i)
+  })
+
+  it("is ABSENT when the model declares no image modality — never a false description", () => {
+    expect(SystemCompose.perceptionSection({ capabilities: { input: ["text"] }, canSpawn: true })).toBeUndefined()
+  })
+
+  // ⚠️ The tri-state `attachmentSupport` reads: absent/empty means NOBODY TOLD US, not text-only.
+  // A hand-added local endpoint keeps today's behaviour rather than being handed a promise we
+  // cannot keep — the same reasoning that makes `attachmentSupport` answer "unknown" there.
+  it("is ABSENT on unknown capabilities, not assumed either way", () => {
+    expect(SystemCompose.perceptionSection({ capabilities: undefined, canSpawn: true })).toBeUndefined()
+    expect(SystemCompose.perceptionSection({ capabilities: { input: [] }, canSpawn: true })).toBeUndefined()
+  })
+
+  // models.dev modality entries are matched with startsWith, exactly like `attachmentSupport` — one
+  // convention, so the section and the media gate can never disagree about the same model.
+  it("matches a modality entry by prefix, and is case/space tolerant", () => {
+    expect(SystemCompose.perceptionSection({ capabilities: { input: [" IMAGE "] }, canSpawn: false })).toBeDefined()
+    expect(SystemCompose.perceptionSection({ capabilities: { input: ["image/png"] }, canSpawn: false })).toBeDefined()
+    // A near-miss must NOT match: "images" is fine (prefix), "imagination" would be too — so pin the
+    // real negative instead, a modality that merely shares no prefix.
+    expect(SystemCompose.perceptionSection({ capabilities: { input: ["audio", "pdf"] }, canSpawn: false })).toBeUndefined()
+  })
+
+  // 🔴 The owner's requirement: a folder of photos must not clobber the parent's context. The
+  // paragraph is an INSTRUCTION, so it may only appear when the tool it names is callable — `spawn`
+  // is deliberately outside AMBIENT_SAFE_BASELINE and a session may not have it.
+  it("adds the delegation paragraph only when spawn is actually callable", () => {
+    const withSpawn = SystemCompose.perceptionSection({ capabilities: seeing, canSpawn: true })!
+    const without = SystemCompose.perceptionSection({ capabilities: seeing, canSpawn: false })!
+    expect(withSpawn).toContain("`spawn`")
+    expect(withSpawn).toContain("`exit`")
+    expect(without).not.toContain("`spawn`")
+    // The seeing half is identical either way — gating the delegation must not gate the disclosure.
+    expect(withSpawn.startsWith(without)).toBe(true)
+  })
+
+  // The literal in llm.ts (`tool.name === "spawn"`) cannot import SpawnTool without closing an
+  // import cycle through session/spawner. This is the pin that fails if the tool is ever renamed.
+  it("pins the spawn tool name the runner matches on", () => {
+    expect(SpawnTool.name).toBe("spawn")
+  })
+
+  // Kernel material, same as toolDiscovery/projectScope: what this runtime can perceive is a fact
+  // about the product, not a preference a persona or an agent prompt may bury under later text.
+  it("sits in the kernel material, after anything a persona or agent prompt can say", () => {
+    const section = SystemCompose.perceptionSection({ capabilities: seeing, canSpawn: true })!
+    const parts = SystemCompose.composeSystemParts({ ...KERNEL_BASE, perception: section })
+    const index = parts.indexOf(section)
+    expect(index).toBeGreaterThan(parts.indexOf(KERNEL_BASE.agentSystem))
+    expect(index).toBeGreaterThan(parts.indexOf(KERNEL_BASE.systemPromptOverride))
+    expect(index).toBeLessThan(parts.indexOf(KERNEL_BASE.base))
+  })
+
+  // The byte-identical claim this file exists for, extended to the new section.
+  it("leaves a text-only model's composed prompt byte-identical to the pre-feature one", () => {
+    expect(
+      SystemCompose.composeSystemParts({
+        ...KERNEL_BASE,
+        perception: SystemCompose.perceptionSection({ capabilities: { input: ["text"] }, canSpawn: true }),
+      }),
+    ).toEqual(KERNEL_ORDER)
+  })
+})

@@ -61,7 +61,13 @@ export const layer = Layer.effectDiscard(
         [name]: Tool.make({
           sideEffect: "read",
           description:
-            "Read text or a supported image, page through large UTF-8 text, or list a directory. Prefer this over bash cat/head/tail. Continue paged reads with `offset` until complete; never conclude from a partial view. A complete lossless text read returns the observation token `write` needs to replace that existing file; pages accumulate only while its version is unchanged. Binary files give a `read-hex` hint. Relative paths use the current location; absolute paths may read anywhere the host account permits. An observation proves freshness, not write permission.",
+            // ⚠️ The image clause LEADS and is unhedged, and that is the fix rather than the wording.
+            // It used to open "Read text or a supported image, …", which a model reads as "opens the
+            // file" — true of every binary it cannot use. Measured 2026-08-19: Holo-3.1 asked to
+            // rename a folder of PNGs never called this tool once and said it could not see them
+            // (`notes/reports/vision-on-disk-2026-08-19.md`). Codex fixed the same bug the same way
+            // (openai/codex#23949). Say that the picture ARRIVES; a hedge reads as a prohibition.
+            "Read a file, LOOK AT an image, page through large UTF-8 text, or list a directory. An image file (png, jpeg, gif, webp) is delivered to you as a picture you can actually see, so use this to answer anything about what a file LOOKS like — a photo's contents, what an icon depicts, what a screenshot shows. Prefer this over bash cat/head/tail. Continue paged reads with `offset` until complete; never conclude from a partial view. A complete lossless text read returns the observation token `write` needs to replace that existing file; pages accumulate only while its version is unchanged. Binary files give a `read-hex` hint. Relative paths use the current location; absolute paths may read anywhere the host account permits. An observation proves freshness, not write permission.",
           input: Input,
           output: Output,
           // ── Deliberately NOT untrusted-framed, and this is the reasoning ────────────────────────

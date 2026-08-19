@@ -888,7 +888,15 @@ export const layer = Layer.effect(
       // tool-returned image (`read.ts` emits one for jpeg/png/gif/webp today) rides an assistant
       // message, so the inline form made the capability gate inert for exactly the case Computer Use
       // will produce — a gate that looked complete and covered one of two doors.
-      const modelCapabilities = needsCapabilityEvidence(context) ? yield* models.capabilities(modelSession) : undefined
+      //
+      // ⚠️ **NO LONGER GATED ON MEDIA, and the old note claiming a saving was wrong.** It read "the
+      // catalog read is gated on there being MEDIA at all, so the media-free turn pays nothing" —
+      // but `models.capabilities` resolves through the very same `select(session)` that `tier` and
+      // `prePrompt` above already call unconditionally on every turn. The gate saved a third copy of
+      // a read this turn had made twice, and it cost the perception section its input on exactly the
+      // turns that need it: a media-free turn is where a model DECIDES whether to go and look, and
+      // under the gate it was told nothing. Measured 2026-08-19 — see `perceptionSection`.
+      const modelCapabilities = yield* models.capabilities(modelSession)
       const unreadable = unreadableTurnAttachments(context, modelCapabilities)
       if (unreadable.length > 0) {
         // Name the model the USER picked, not the wire id: `model.id` is the API-side id
@@ -1054,6 +1062,18 @@ export const layer = Layer.effect(
             // catalogue it CANNOT see is `.deferred`. Saying how many there are is the whole point —
             // see the section's own note on why a count and not a hedge.
             toolDiscovery: SystemCompose.toolDiscoverySection(toolMaterialization?.deferred.length ?? 0),
+            // That the model can SEE, when the catalog says it can. The `canSpawn` half is read off
+            // the tools the model is ACTUALLY about to receive rather than off the registry: the
+            // delegation paragraph is an instruction, and an instruction naming a tool this turn
+            // cannot call is the false description ruling 2 forbids.
+            perception: SystemCompose.perceptionSection({
+              capabilities: modelCapabilities,
+              // ⚠️ The literal, not `SpawnTool.name`: `tool/spawn.ts` reaches `session/spawner.ts`,
+              // which is on this runner's own import path, so naming the module here would close a
+              // cycle for one string. The coupling is pinned instead by
+              // `test/session-system-compose.test.ts`, which fails if `SpawnTool.name` ever moves.
+              canSpawn: (toolMaterialization?.definitions ?? []).some((tool) => tool.name === "spawn"),
+            }),
             projectScope: SystemCompose.projectScopeSection(config.permissionMode),
             base: system.baseline,
           })).map(SystemPart.make)
