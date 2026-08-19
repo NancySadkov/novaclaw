@@ -98,7 +98,31 @@ export const layer = Layer.effectDiscard(
             if (!("encoding" in output) || output.encoding !== "base64" || !SUPPORTED_IMAGE_MIMES.has(output.mime))
               return []
             return [
-              { type: "text", text: "Image read successfully" },
+              // 🔴 **"Image read successfully" was the whole message, and it cost five wrong
+              // filenames.** Measured 2026-08-19 on the six-glyph corpus: the model read six images
+              // in a row, said nothing about any of them, and — once the per-request image budget
+              // elided the oldest — named all six from memory it did not have, getting five wrong
+              // (`notes/reports/vision-on-disk-2026-08-19.md`).
+              //
+              // The ask sits HERE rather than in the system prompt because this is the moment it is
+              // actionable: the pixels are in front of the model right now, and this is the last
+              // instant at which a description is free. It also states the CONSEQUENCE rather than
+              // giving a bare instruction — jh §13.4's finding is that the model never instruments
+              // voluntarily, and AGENTS.md's own note on `PROJECT_SCOPE_INSTRUCTION` is that the
+              // vague form is the one a model reasons its way around.
+              //
+              // ⚠️ Honest about what this is: an INFORMATIONAL lever, and the pitfall this repo
+              // keeps re-learning is that informational levers engage while mechanical ones convert.
+              // The mechanical fix — an image is not ELIDABLE until its description is in the
+              // transcript — is `todo/vision.md` work. This is measured against that failure, not
+              // assumed to fix it.
+              {
+                type: "text",
+                text:
+                  "Image read successfully. Write one line now saying what it shows, before you read anything else — " +
+                  "images are dropped from context once this model's per-request limit is reached, and only what you " +
+                  "wrote down survives. If you are working through several images, describe each as you open it.",
+              },
               { type: "file", data: output.content, mime: output.mime, name: input.path },
             ]
           },
