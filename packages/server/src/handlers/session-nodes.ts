@@ -32,13 +32,25 @@ import { SessionTags } from "@novaclaw/core/session/tags"
  * graph that endpoint's test builds — it does not need to be here.
  */
 /**
- * ⚠️ **The ORDER is production's original order, and it is not cosmetic.** These seven were
- * contiguous in `routes.ts`'s `applicationServices`, and lifting them into this constant with the
- * members rearranged (`SessionEffectiveConfig` moved from third to last) turned `novaclaw:server`
- * red — `POST /api/project invalidates the cache the kernel reads`, the suite that covers the
- * project-file cache `SessionEffectiveConfig` pulls in. Whatever the mechanism, a group's member
- * order is observable, so this list reproduces the sequence the shipped graph already had.
- * A reorder here is a behaviour change and needs its own gate run, not a tidy-up.
+ * The order is production's original order — these seven were contiguous in `routes.ts`'s
+ * `applicationServices` and are reproduced in the same sequence, because a spread that also
+ * rearranges is two changes wearing one diff.
+ *
+ * ⚠️ **RETRACTION, 2026-08-19.** This comment previously claimed that rearranging them (moving
+ * `SessionEffectiveConfig` from third to last) turned `novaclaw:server` red, and concluded that a
+ * `LayerNode.group`'s member order is behaviourally observable. **That was WRONG**, and it was
+ * asserted on a 2-vs-2 A/B that looked convincing and was coincidence.
+ *
+ * `packages/server/src/routes.ts` has **no importer anywhere in the tree** — `packages/novaclaw`
+ * builds its own `app` group in `src/server/routes/instance/httpapi/server.ts`, with its own
+ * `ProjectFileCache.node` and `SessionEffectiveConfig.node`. So nothing in this file can reach the
+ * `novaclaw:server` suite at all, and no reordering here could have caused that red.
+ *
+ * The real cause was a zero-margin wall-clock assertion in
+ * `packages/novaclaw/test/server/httpapi-project-write-invalidates.test.ts` — `the round trip took
+ * 1010 ms, past the 1000 ms TTL`, i.e. ten milliseconds of machine load. It is fixed there.
+ * The lesson worth keeping is not about layer order: **a flaky test does not merely fail randomly,
+ * it hands a confident and wrong cause to whoever is holding a diff at the time.**
  */
 export const SESSION_HANDLER_NODES = [
   SessionV2.node,
