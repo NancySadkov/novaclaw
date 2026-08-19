@@ -331,18 +331,6 @@ export function NewHome() {
     })
   })
   const records = createMemo(() => allRecords().slice(0, HOME_SESSION_LIMIT))
-  /**
-   * Is there anything already worth rendering, independent of whether a load is in flight?
-   *
-   * ⚠️ Reads the SAME three lists the pane's own emptiness check below uses, `?.`-guarded for the same
-   * reason: a faulted or HMR-disposed memo reads as `undefined`, and `.length` of undefined once
-   * crashed the whole sessions pane. Anything less than all three would leave a real case — a folder
-   * with only attention rows, say — still flashing a skeleton over content it already had.
-   */
-  const hasSessionsToShow = createMemo(
-    () =>
-      (groups()?.length ?? 0) > 0 || (attentionRecords()?.length ?? 0) > 0 || (flatSorted()?.length ?? 0) > 0,
-  )
   // Tags component (notes/entities.md T0): the tag filter over chat processes. The universe is the
   // tags of the currently listed roots; picking one narrows the list (attention cluster included).
   const [selectedTag, setSelectedTag] = createSignal<string | undefined>()
@@ -530,6 +518,26 @@ export function NewHome() {
     )
   })
   const sessionHeaderOpacity = useHomeSessionHeaderOpacity(groups)
+  /**
+   * Is there anything already worth rendering, independent of whether a load is in flight?
+   *
+   * ⚠️ Reads the SAME three lists the pane's own emptiness check below uses, `?.`-guarded for the same
+   * reason: a faulted or HMR-disposed memo reads as `undefined`, and `.length` of undefined once
+   * crashed the whole sessions pane. Anything less than all three would leave a real case — a folder
+   * with only attention rows, say — still flashing a skeleton over content it already had.
+   *
+   * 🔴 **It must stay BELOW `flatSorted`, `attentionRecords` and `groups` — do not move it back up
+   * beside `records`.** `createMemo` computes EAGERLY at creation, so a copy placed above those three
+   * `const`s reads them inside their temporal dead zone and throws
+   * `ReferenceError: Cannot access 'groups' before initialization` during component setup. That is
+   * not a subtle degrade: it escapes to the root ErrorBoundary and replaces the entire application
+   * with "Something went wrong", every time this screen opens. Measured in dev Electron 2026-08-19
+   * by clicking the home screen's own Tasks tile — the app's main entry to the chat list.
+   */
+  const hasSessionsToShow = createMemo(
+    () =>
+      (groups()?.length ?? 0) > 0 || (attentionRecords()?.length ?? 0) > 0 || (flatSorted()?.length ?? 0) > 0,
+  )
   const prefetched = new Set<string>()
 
   createEffect(() => {
