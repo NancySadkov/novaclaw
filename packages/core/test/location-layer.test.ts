@@ -195,6 +195,24 @@ describe("LocationServiceMap", () => {
           // ratchet asks was answered before the number moved, not after. A/B measured on this box:
           // **29,441 without the tool, 31,820 with it — a 2,379-byte resident cost.**
           //
+          //
+          // RAISED 2026-08-19, 32,500 → 32,750, for `read`'s description — and the question was
+          // answered by measurement before the number moved, as the 2026-08-07 raise did.
+          //
+          // *What do the bytes buy?* The tool being USABLE FOR IMAGES AT ALL. `read` opened with
+          // "Read text or a supported image", which a model reads as "opens the file" — true of
+          // every binary it cannot use. Measured 2026-08-19: asked to rename a folder of six PNGs,
+          // Holo-3.1 called `read` **zero times** and said it could not see them. With the image
+          // clause leading and unhedged, the same prompt on the same model called it **four times**,
+          // and the corpus went from 1/6 to 5/6 correctly named
+          // (`notes/reports/vision-on-disk-2026-08-19.md`). Codex closed the identical bug the same
+          // way (openai/codex#23949): a hedged capability description reads as a prohibition.
+          //
+          // *Could it be cheaper?* It was trimmed twice first — 122 characters out of the new
+          // wording, dropping the illustrative examples and the long MIME list — which took it from
+          // 32,699 to 32,577. What remains is the clause that does the work. The ask for a
+          // description lives in the tool RESULT (`IMAGE_NOTE`), not here, so it costs no resident
+          // bytes at all.
           // *Should it be resident at all?* Yes, and it is the one tool where deferral defeats the
           // feature rather than deferring it. The manual's index IS its topic names, so a deferred
           // `docs` carries no names, and a model that does not know the manual exists never searches
@@ -205,7 +223,7 @@ describe("LocationServiceMap", () => {
           // mechanically — a page body leaking into the description turns it red.
           const fullAgentTools = blockedState.tools.filter((tool) => ShortChat.offered(undefined, tool.name))
           const residentBytes = Buffer.byteLength(JSON.stringify(fullAgentTools))
-          expect(residentBytes).toBeLessThan(32_500) // observed 31,820 on 2026-08-07 (97.9% of 32,500)
+          expect(residentBytes).toBeLessThan(32_750) // observed 32,577 on 2026-08-19 (99.5% of 32,750)
           const chatTools = blockedState.tools.filter((tool) => ShortChat.offered(true, tool.name))
           expect(chatTools.map((tool) => tool.name)).toEqual(["upgrade_chat"])
           expect(Buffer.byteLength(JSON.stringify(chatTools))).toBeLessThan(1_500)

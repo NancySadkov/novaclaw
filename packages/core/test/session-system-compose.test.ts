@@ -183,7 +183,7 @@ describe("perceptionSection — the model must know it can see", () => {
     expect(section).toContain("glob")
     // No hedge. Codex's identical bug was CAUSED by a hedged description (openai/codex#23949), so a
     // regression that softens this back into "may be able to" must fail here.
-    expect(section).not.toMatch(/may be able to|if supported|might be/i)
+    expect(section).not.toMatch(/\bmay be able to\b|\bif supported\b|\bmight be\b/i)
   })
 
   it("is ABSENT when the model declares no image modality — never a false description", () => {
