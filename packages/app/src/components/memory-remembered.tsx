@@ -1,6 +1,6 @@
 import { type Component, For, Show, createMemo, createResource, createSignal } from "solid-js"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
-import { RequiresLevel } from "@/context/expertise"
+import { useConfirm } from "@/components/dialog-confirm"
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
@@ -29,6 +29,7 @@ export const MemoryRemembered: Component<{
   class?: string
 }> = (props) => {
   const language = useLanguage()
+  const confirm = useConfirm()
   const server = useServer()
   const global = useGlobal()
   const serverSync = useServerSync()
@@ -123,6 +124,16 @@ export const MemoryRemembered: Component<{
   const forget = async (row: MemoryRow) => {
     const cn = conn()
     if (!cn) return
+    // ⚠️ The confirm is what REPLACES the expertise gate this control used to sit behind, and it is
+    // the honest trade: hiding an irreversible action from most people does not make it safer, it
+    // makes the fault unfixable for them. A question anyone can answer does.
+    const proceed = await confirm({
+      title: language.t("memory.forget.confirm.title"),
+      description: row.text,
+      confirmLabel: language.t("settings.memory.forget.action"),
+      destructive: true,
+    })
+    if (!proceed) return
     await memoryInvalidate(cn.http, { directory: directory(), id: row.id }).catch((error: unknown) =>
       showToast({
         variant: "error",
@@ -175,18 +186,25 @@ export const MemoryRemembered: Component<{
                   <span class="text-sm leading-snug break-words">{row.text}</span>
                   <span class="text-xs opacity-60">{scopeLabel(row.scope)}</span>
                 </div>
-                {/* Forgetting stays ADVANCED, unchanged. Reading what is remembered is for everyone;
-                    deleting it is the irreversible half and keeps its guard. */}
-                <RequiresLevel min="advanced">
-                  <ButtonV2
-                    size="small"
-                    variant="ghost-muted"
-                    icon="close-small"
-                    aria-label={language.t("settings.memory.forget.action")}
-                    title={language.t("settings.memory.forget.action")}
-                    onClick={() => void forget(row)}
-                  />
-                </RequiresLevel>
+                {/* 🔴 **Forgetting was ADVANCED, and that is why the owner reported the Memory app
+                    had "no way to remove memories" (2026-08-20) — the button was there and their
+                    level hid it.** The old note said reading is for everyone while deleting is "the
+                    irreversible half" and keeps its guard. That reasoning does not survive contact
+                    with what this list holds: these are facts about the PERSON READING, and an
+                    expertise gate on removing your own memory is exactly the shape principle 12
+                    rejects — the same argument that put Memory itself at Normal (`builtins.tsx`).
+                    A gate here also fails the product's own promise: a user who sees something
+                    wrong about themselves and cannot remove it has been handed a fault they cannot
+                    fix. The irreversibility is answered by the CONFIRM below, which is a question
+                    anyone can answer, not by hiding the control from most people. */}
+                <ButtonV2
+                  size="small"
+                  variant="ghost-muted"
+                  icon="close-small"
+                  aria-label={language.t("settings.memory.forget.action")}
+                  title={language.t("settings.memory.forget.action")}
+                  onClick={() => void forget(row)}
+                />
               </div>
             )}
           </For>

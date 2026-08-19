@@ -2346,6 +2346,10 @@ export const dict = {
   "settings.memory.embedding.none": "Not set — keyword matching only",
   "settings.memory.embedding.typed": "Type it myself…",
   "settings.memory.forget.action": "Forget this",
+  // The confirm that replaced the expertise gate on forgetting (owner, 2026-08-20: the Memory
+  // app "has no way to remove memories" — the control existed and their level hid it). The
+  // memory's own text is the dialog body, so the question names what is about to go.
+  "memory.forget.confirm.title": "Forget this?",
   "settings.memory.toast.failed": "Something went wrong with memory",
   "settings.about.author": "by Nancy Sadkov",
   "settings.about.credits.title": "Built with open-source software",
