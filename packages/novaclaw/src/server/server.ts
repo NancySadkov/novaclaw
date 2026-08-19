@@ -2,7 +2,8 @@ import "./init-projectors"
 
 import { NodeHttpServer } from "@effect/platform-node"
 import { ConfigProvider, Context, Effect, Exit, Layer, Scope } from "effect"
-import { HttpRouter, HttpServer } from "effect/unstable/http"
+import { HttpIncomingMessage, HttpRouter, HttpServer } from "effect/unstable/http"
+import * as FileSystem from "effect/FileSystem"
 import { OpenApi } from "effect/unstable/httpapi"
 import { createServer } from "node:http"
 import { InstallationVersion } from "@novaclaw/core/installation/version"
@@ -301,6 +302,25 @@ function serverLayer(opts: { port: number; hostname: string }) {
   }) as typeof server.close
 
   return Layer.mergeAll(
+    /**
+     * 🔴 A CEILING ON EVERY REQUEST BODY THIS SERVER READS. Effect's `MaxBodySize` defaults to
+     * `undefined` — no limit — and a repo-wide grep found ZERO first-party uses before this line, so
+     * every authenticated route buffered whatever a client chose to send.
+     *
+     * ⚠️ Provided at the SERVER rather than as group middleware, and that is the point. The peer
+     * group already refuses on a declared `content-length` (`middleware/peer-door.ts`), but a
+     * declared length is a claim: a chunked request, or one that simply omits the header, is read
+     * hopefully by anything that only inspects headers. `MaxBodySize` is enforced by the reader
+     * itself as bytes arrive, so it bounds the shapes a header check cannot see, and it covers every
+     * route — including any added later, which a per-route list would not.
+     *
+     * The number is a CEILING, not a budget: it is deliberately far above every legitimate app-API
+     * payload (the largest bound anywhere in the product is the messenger's 50 MB attachment cap) and
+     * far below what it takes to exhaust the host. It converts "unbounded" into "bounded", which is
+     * the property that was missing; tightening individual routes toward their real maxima is a
+     * separate, per-route change that can now be made against a floor instead of against infinity.
+     */
+    Layer.succeed(HttpIncomingMessage.MaxBodySize, FileSystem.MiB(64)),
     NodeHttpServer.layer(() => server, { port: opts.port, host: opts.hostname, gracefulShutdownTimeout: "1 second" }),
     Layer.succeed(ListenerServerService)(
       ListenerServerService.of({
