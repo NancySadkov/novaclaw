@@ -16,14 +16,34 @@ enforce("a desktop build", process.argv, { minimumFreeBytes: 2.5 * 1024 ** 3 })
 const channel = resolveChannel()
 await prepareW64devkit()
 
-// The native host module, which `electron-builder.config.ts` copies out of `packages/host/build/`
-// into `resources/host/`. Built here because that directory must EXIST before packaging — an
-// `extraResources` entry pointing at a missing source is the difference between a packaged watcher
-// that works and one that is silently absent. Not fatal: macOS has no backend yet, and a build
-// without a host library is a documented degradation rather than a broken build.
+/**
+ * The native host module, which `electron-builder.config.ts` copies out of `packages/host/build/`
+ * into `resources/host/`. Built here because that directory must EXIST before packaging — an
+ * `extraResources` entry pointing at a missing source is the difference between a packaged watcher
+ * that works and one that is silently absent.
+ *
+ * 🔴 **FATAL on Windows, a warning elsewhere** (owner, 2026-08-19: *"so there will be no further
+ * confusion"*). The soft catch is why the 0.1.63 release build packaged a `host.dll` from a week
+ * earlier without anyone noticing: `build.ts` could not find a compiler, this line shrugged, and the
+ * word WARNING scrolled past in a 4,000-line log. On Windows there is now nothing left to be
+ * tolerant of — `prepareW64devkit()` ran on the line above and `build.ts` provisions the pinned kit
+ * itself, so a failure here means the toolchain is genuinely broken and the build must say so. The
+ * degradation this catch was written for is macOS, which has no backend at all.
+ *
+ * ⚠️ The old message also overstated the damage and would have sent a reader the wrong way: the
+ * desktop sidecar is an Electron `utilityProcess`, i.e. NODE, and `host.node.ts` watches with
+ * `fs.watch`, loading no library. What a missing `host.dll` costs is the BUN side — the compiled
+ * `novaclaw` CLI, where `watcher.ts` answers a failed load with an empty service.
+ */
 await $`bun ../host/build.ts`.catch((error) => {
-  console.warn(`WARNING: could not build the host module — file watching will be absent in this package.`)
-  console.warn(String(error?.stderr?.toString().trim() || error))
+  const detail = String(error?.stderr?.toString().trim() || error)
+  if (process.platform === "win32") {
+    console.error(`the host module FAILED to build — refusing to package a Windows build without it.`)
+    console.error(detail)
+    process.exit(1)
+  }
+  console.warn(`WARNING: could not build the host module — the Bun runtime will have no file watcher here.`)
+  console.warn(detail)
 })
 await $`bun ./scripts/copy-icons.ts ${channel}`
 await $`bun ./scripts/copy-metainfo.ts ${channel}`
