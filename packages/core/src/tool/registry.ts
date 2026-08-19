@@ -170,6 +170,23 @@ const registryLayer = Layer.effect(
       invokeDeferred?: ToolContext["invokeDeferred"],
       halt?: { halted: boolean },
     ) {
+      /**
+       * 🔴 **THE PRECEDENCE, and it is the same one `catalogue` and `materialize` advertise in:
+       * `local` > `application` > `external`.**
+       *
+       * Application beats external deliberately. An external tool arrives from an MCP server or a
+       * plugin — the untrusted end — and letting it win a name collision would let a remote party
+       * SHADOW a first-party application tool: the model would be told it is calling the OS's own
+       * tool and reach someone else's code instead. Precedence is a trust ordering here, not a
+       * registration detail.
+       *
+       * ⚠️ It is written three times (here, `catalogue`, `materialize`) because each site needs a
+       * different shape, and until 2026-08-19 the other two had it BACKWARDS — they looped
+       * applications first and let external overwrite. The identity check below then rejected every
+       * colliding name: the advertised registration was the external one, the resolved registration
+       * was the application one, so the call answered `Stale tool call` **every time** and neither
+       * tool was reachable. `registry-source-precedence.test.ts` now asserts all three agree.
+       */
       const registration =
         local.get(input.call.name)?.at(-1)?.registration ??
         applications.entries().get(input.call.name) ??
@@ -281,13 +298,17 @@ const registryLayer = Layer.effect(
       }),
       catalogue: Effect.fn("ToolRegistry.catalogue")(function* () {
         const sources = new Map<string, ToolCatalogue.Source>()
-        for (const [name, registration] of applications.entries())
-          sources.set(name, { server: "application", definition: definition(name, registration.tool) })
+        // PRECEDENCE — see `settleRaw`. Lowest first, so a later `set` wins: external < application
+        // < local. External comes first here and in `materialize` because these two ADVERTISE and
+        // `settleRaw` RESOLVES, and a name that resolves to one tool while being advertised as
+        // another can only ever answer `Stale tool call`.
         for (const [name, registration] of yield* external.entries())
           sources.set(name, {
             server: ToolCatalogue.externalServer(name),
             definition: definition(name, registration.tool),
           })
+        for (const [name, registration] of applications.entries())
+          sources.set(name, { server: "application", definition: definition(name, registration.tool) })
         for (const [name, entries] of local) {
           const registration = entries.at(-1)?.registration
           if (registration) sources.set(name, { server: "core", definition: definition(name, registration.tool) })
@@ -301,10 +322,12 @@ const registryLayer = Layer.effect(
       ) {
         type MaterializedRegistration = Registration & { readonly server: string; readonly deferred: boolean }
         const registrations = new Map<string, MaterializedRegistration>()
-        for (const [name, entry] of applications.entries())
-          registrations.set(name, { ...entry, server: "application", deferred: false })
+        // PRECEDENCE — external < application < local, the same order `settleRaw` resolves in and
+        // the same order `catalogue` advertises in. See the block comment on `settleRaw`.
         for (const [name, entry] of yield* external.entries())
           registrations.set(name, { ...entry, server: ToolCatalogue.externalServer(name), deferred: true })
+        for (const [name, entry] of applications.entries())
+          registrations.set(name, { ...entry, server: "application", deferred: false })
         for (const [name, entries] of local) {
           const registration = entries.at(-1)?.registration
           if (registration)
