@@ -119,3 +119,75 @@ describe("estimated tokens ride the ONE shared heuristic", () => {
     expect(RF.measure(input()).estimatedTokens).toBeGreaterThan(0)
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MEDIA IS NOT PROSE (measured 2026-08-19, notes/reports/vision-on-disk-2026-08-19.md).
+// The first live run in which a model read a folder of images grew `estimatedTokens` by ~2,890 per
+// glyph while the server charged ~66 — the base64 payload was counted as text, ~40× over.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("base64 media payloads", () => {
+  const dataUri = (kb: number) => `data:image/png;base64,${"A".repeat(kb * 1024)}`
+  const withImage = (kb: number) =>
+    RF.measure({
+      system: [],
+      tools: [],
+      messages: [
+        {
+          id: "m1",
+          role: "user",
+          content: [
+            { type: "text", text: "what is this" },
+            { type: "media", mediaType: "image/png", data: dataUri(kb) },
+          ],
+        } as never,
+      ],
+    })
+
+  test("a payload does not inflate the prose estimate — 1 KB and 512 KB read the same", () => {
+    const small = withImage(1)
+    const large = withImage(512)
+    expect(large.estimatedTokens).toBe(small.estimatedTokens)
+    // …and the reading is the size of the PROSE, not of the image. "what is this" is a dozen chars.
+    expect(small.estimatedTokens).toBeLessThan(100)
+  })
+
+  test("the image is COUNTED, so it is excluded rather than invisible", () => {
+    expect(withImage(4).mediaCount).toBe(1)
+    // A count is the fact we have; a per-image token cost is model-specific and unmeasured here.
+    expect(withImage(4).largestTool).toBeUndefined()
+  })
+
+  test("a media-free request is unchanged — the fix costs the ordinary turn nothing", () => {
+    const plain = RF.measure({
+      system: [{ text: "You are Nova." }],
+      tools: [{ name: "read" }],
+      messages: [{ id: "m1", role: "user", content: "hello" } as never],
+    })
+    expect(plain.mediaCount).toBe(0)
+    expect(plain.estimatedTokens).toBeGreaterThan(0)
+  })
+
+  test("only base64 data: URIs are stripped — a file path or an http URL stays prose", () => {
+    const urls = RF.measure({
+      system: [],
+      tools: [],
+      messages: [
+        {
+          id: "m1",
+          role: "user",
+          content: `see https://example.com/${"x".repeat(4000)}.png and file:///c/tmp/${"y".repeat(4000)}.png`,
+        } as never,
+      ],
+    })
+    expect(urls.mediaCount).toBe(0)
+    // 8 KB of URL is 8 KB of text the model really does pay for.
+    expect(urls.estimatedTokens).toBeGreaterThan(1_000)
+  })
+
+  test("the attribute set carries the count, and stays numbers only", () => {
+    const attributes = RF.attributes(withImage(2))
+    expect(attributes["request.count.media"]).toBe(1)
+    for (const value of Object.values(attributes)) expect(typeof value).toBe("number")
+  })
+})

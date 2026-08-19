@@ -51,8 +51,19 @@ export interface Footprint {
    * fixed cost added to every future turn by a change made somewhere else entirely.
    */
   readonly toolSharePercent: number
-  /** ⚠️ `Token.estimate` — the ONE shared heuristic, not a tokenizer. Trend only. */
+  /**
+   * ⚠️ `Token.estimate` — the ONE shared heuristic, not a tokenizer. Trend only.
+   * ⚠️ **Text only.** Base64 media payloads are excluded — see `mediaCount` and `mediaFreeJson`.
+   */
   readonly estimatedTokens: number
+  /**
+   * How many base64 media payloads the messages carry.
+   *
+   * A COUNT, not a size, because the size is the wrong unit: an image's cost is set by its pixels
+   * and the model's patch size, and its base64 length predicts neither. Numeric, so the
+   * content-free contract is unaffected.
+   */
+  readonly mediaCount: number
   /**
    * The single largest tool schema, so the number has an address.
    *
@@ -63,18 +74,56 @@ export interface Footprint {
 }
 
 /**
+ * How many characters a base64 `data:` payload contributes to the PROSE estimate: none.
+ *
+ * 🔴 **Measured 2026-08-19** (`notes/reports/vision-on-disk-2026-08-19.md`). The first run in which
+ * a model actually read a folder of images grew this estimate by **~2,890 tokens per glyph** while
+ * the server charged **~66** — the payload was being counted as if it were text, ~40× over. It is
+ * not text: a vision model turns an image into patches, and the count depends on its pixels and the
+ * model's patch size, not on how many characters its base64 spelling takes.
+ *
+ * ⚠️ **Excluded rather than estimated, and that is the honest choice.** Two measured points
+ * (7.9 KB → 66 tokens, 718 KB → 2,302) do not establish a law — they do not even agree on a
+ * bytes-per-token ratio — and this file's own history says what a wrong-by-construction reading
+ * costs: the first draft measured `JSON.stringify(section)` and reported 33% tools for an empty
+ * request, because "a diagnostic whose zero is not zero cannot be trusted at any other value." A
+ * 40× skew is that failure at the other end of the scale. So the payload leaves the prose number and
+ * arrives as its own COUNT, which is a fact we actually have.
+ *
+ * ⚠️ **What this changes downstream, stated rather than discovered later:** `ProjectGrounding.decide`
+ * keys its cadence on `estimatedTokens`, so a visual session now re-grounds LESS often than it did
+ * this morning. That is the correct direction — it was re-grounding on phantom growth — but it does
+ * mean image growth is currently invisible to that trigger. Giving images a real cost needs a
+ * per-model token rule, which is `todo/vision.md` work and not a number to guess here.
+ */
+const DATA_URI = /"data:[^";,]*;base64,[A-Za-z0-9+/=]+"/g
+const mediaFreeJson = (json: string): { readonly text: string; readonly media: number } => {
+  let media = 0
+  const text = json.replace(DATA_URI, () => {
+    media++
+    return '""'
+  })
+  return { text, media }
+}
+
+/**
  * `JSON.stringify` can throw on a cycle and returns `undefined` for `undefined`.
  *
  * ⚠️ A diagnostic that throws takes down the turn it was measuring, which trades a real conversation
  * for a number nobody asked for. Every failure here degrades to 0 and the reading stays honest by
  * being low rather than absent.
  */
-const bytesOf = (value: unknown): number => {
+const bytesOf = (value: unknown): number => measureValue(value).bytes
+
+/** Bytes with every base64 `data:` payload removed, plus how many were removed. */
+const measureValue = (value: unknown): { readonly bytes: number; readonly media: number } => {
   try {
     const json = JSON.stringify(value)
-    return json === undefined ? 0 : Buffer.byteLength(json, "utf8")
+    if (json === undefined) return { bytes: 0, media: 0 }
+    const stripped = mediaFreeJson(json)
+    return { bytes: Buffer.byteLength(stripped.text, "utf8"), media: stripped.media }
   } catch {
-    return 0
+    return { bytes: 0, media: 0 }
   }
 }
 
@@ -101,6 +150,9 @@ export const measure = (input: Input): Footprint => {
   const messageBytes = sumBytes(input.messages)
   const toolBytes = sumBytes(input.tools)
   const totalBytes = systemBytes + messageBytes + toolBytes
+  // Counted over the MESSAGES only: system parts and tool schemas carry no media, and scanning them
+  // would be paying for a match that cannot occur.
+  const mediaCount = input.messages.reduce((total, message) => total + measureValue(message).media, 0)
 
   let largestTool: Footprint["largestTool"]
   for (const tool of input.tools) {
@@ -120,6 +172,7 @@ export const measure = (input: Input): Footprint => {
     // NaN in a log attribute is worse than 0 — it renders, it sorts, and it means nothing.
     toolSharePercent: totalBytes === 0 ? 0 : Math.round((toolBytes / totalBytes) * 100),
     estimatedTokens: Token.estimateFromChars(totalBytes),
+    mediaCount,
     ...(largestTool === undefined ? {} : { largestTool }),
   }
 }
@@ -157,5 +210,6 @@ export const attributes = (footprint: Footprint) => ({
   "request.count.tools": footprint.toolCount,
   "request.tools.share.percent": footprint.toolSharePercent,
   "request.tokens.estimated": footprint.estimatedTokens,
+  "request.count.media": footprint.mediaCount,
   "request.tools.largest.bytes": footprint.largestTool?.bytes ?? 0,
 })

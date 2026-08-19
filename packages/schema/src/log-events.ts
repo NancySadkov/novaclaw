@@ -1781,6 +1781,7 @@ export const EVENTS = {
       "request.count.tools": "count",
       "request.tools.share.percent": "count",
       "request.tokens.estimated": "count",
+      "request.count.media": "count",
       "request.tools.largest.bytes": "count",
     },
     content: "correlated",
