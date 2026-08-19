@@ -183,3 +183,77 @@ describe("GET /api/project — the `skills` section", () => {
     }),
   )
 })
+
+describe("GET /api/project — the `tune` the folder puts in force", () => {
+  /**
+   * 🔴 **The route said WHICH file governs and never WHAT it sets, and that gap was a false
+   * statement on screen.** The composer's Tune panel keys provenance on a session id, so a DRAFT had
+   * none and every switch read as the instance's. Measured in dev Electron 2026-08-19: a draft in a
+   * folder declaring `quality: true` rendered *"Quality gates … Using Settings default: Off"* one
+   * line below a sentence naming the file that sets it on.
+   *
+   * ⚠️ What is asserted here is the WIRING — that the kernel's own fold reaches the wire. The fold
+   * itself is `packages/core/test/folder-stance.test.ts`, and it is called rather than re-derived for
+   * the same reason `narrowSkills` is: two implementations of one narrowing rule is one too many.
+   */
+  it.effect("carries the switches a chat created here would start with, and names them", () =>
+    Effect.gen(function* () {
+      const directory = tmp("tune")
+      fs.writeFileSync(
+        path.join(directory, "novaclaw.json"),
+        JSON.stringify({ version: 1, tune: { features: { quality: true, introspection: false } } }),
+      )
+      const response = yield* requestInDirectory(ExperimentalPaths.project, directory)
+      expect(response.status).toBe(200)
+      const body: Record<string, unknown> = JSON.parse(yield* response.text)
+      const tune = body["tune"] as Record<string, unknown>
+      expect(tune["features"]).toEqual({ quality: true, introspection: false })
+      expect([...(tune["applied"] as string[])].sort()).toEqual(["introspection", "quality"])
+      expect(tune["refused"]).toEqual([])
+      expect(tune["deferred"]).toEqual([])
+    }),
+  )
+
+  it.effect("a folder with no `tune` section supplies NOTHING — never a list of offs", () =>
+    Effect.gen(function* () {
+      // The distinction the whole `ProjectFile.Tune` discipline rests on: absent means INHERIT. A
+      // route that answered `{quality:false}` here would pin every folder against the user's own
+      // Settings, which is exactly what the file format refuses to let a folder do.
+      const directory = tmp("notune")
+      fs.writeFileSync(path.join(directory, "novaclaw.json"), JSON.stringify({ version: 1, name: "Acme" }))
+      const response = yield* requestInDirectory(ExperimentalPaths.project, directory)
+      const body: Record<string, unknown> = JSON.parse(yield* response.text)
+      expect(body["tune"]).toEqual({ features: {}, applied: [], refused: [], deferred: [] })
+    }),
+  )
+
+  it.effect("the answer comes from the NEAREST governing file, ancestor included", () =>
+    Effect.gen(function* () {
+      // A nested folder follows the file above it, and the panel names that file — so the tune it
+      // reports has to be that file's, not an empty one because the leaf folder holds no `.json`.
+      const root = tmp("ancestor")
+      fs.writeFileSync(path.join(root, "novaclaw.json"), JSON.stringify({ version: 1, tune: { features: { affective: true } } }))
+      const nested = path.join(root, "packages", "app")
+      fs.mkdirSync(nested, { recursive: true })
+      const response = yield* requestInDirectory(ExperimentalPaths.project, nested)
+      const body: Record<string, unknown> = JSON.parse(yield* response.text)
+      expect(body["root"]).toBe(root)
+      expect((body["tune"] as Record<string, unknown>)["features"]).toEqual({ affective: true })
+    }),
+  )
+
+  it.effect("a `mode` a folder may declare is not smuggled in as a switch", () =>
+    Effect.gen(function* () {
+      // `tune.mode` is a different kind of thing (the kernel thread type) and only `interactive` is
+      // expressible at all. It must not appear among the feature switches this panel renders.
+      const directory = tmp("tunemode")
+      fs.writeFileSync(
+        path.join(directory, "novaclaw.json"),
+        JSON.stringify({ version: 1, tune: { mode: "interactive", features: { memory: false } } }),
+      )
+      const response = yield* requestInDirectory(ExperimentalPaths.project, directory)
+      const body: Record<string, unknown> = JSON.parse(yield* response.text)
+      expect((body["tune"] as Record<string, unknown>)["features"]).toEqual({ memory: false })
+    }),
+  )
+})

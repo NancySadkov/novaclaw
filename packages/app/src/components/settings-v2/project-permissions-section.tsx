@@ -334,7 +334,22 @@ export const ProjectPermissionsSection: Component<ProjectPermissionsProps> = (pr
  * reached the instance" (retry) — and three copies of that mapping is three chances for two of them
  * to disagree about the same file. `extra` is where a section adds what only it can say.
  */
-const WriteReceipt: Component<{
+/**
+ * The sections one write reports having touched — replaced and removed alike, in the server's order.
+ *
+ * ⚠️ Read off the RECEIPT rather than off what the caller sent. The server is the authority on what
+ * landed (it drops an `allow` rule, a `show:true`, an always-on policy id), and a sentence built
+ * from the request would claim a section changed when the whole of it was refused.
+ */
+const sectionsTouched = (written: Extract<ProjectWriteResult, { ok: true }>): readonly string[] => [
+  ...written.sections,
+  ...written.cleared,
+]
+
+// ⚠️ EXPORTED for the folder-policy control in `policies.tsx` — a fourth writer of the same file,
+// living in a different Settings section. A fourth copy of this mapping was the alternative, and the
+// paragraph above is the argument against it.
+export const WriteReceipt: Component<{
   result: ProjectWriteResult | { readonly failed: string }
   extra?: (written: Extract<ProjectWriteResult, { ok: true }>) => unknown
 }> = (props) => {
@@ -368,7 +383,17 @@ const WriteReceipt: Component<{
                 )}
               </span>
               {props.extra?.(value()) as never}
-              <Muted>{language.t("settings.permissions.project.receipt.preserved")}</Muted>
+              {/* 🔴 The sections this write actually touched, replaced and removed alike. This line
+                  used to say "Only the permissions section changed" for EVERY writer of this file,
+                  which was a falsehood on three of the four — found by saving a folder's check list
+                  and reading the receipt it produced. */}
+              <Muted>
+                {sectionsTouched(value()).length === 0
+                  ? language.t("settings.permissions.project.receipt.preservedNone")
+                  : language.t("settings.permissions.project.receipt.preserved", {
+                      sections: sectionsTouched(value()).join(", "),
+                    })}
+              </Muted>
             </>
           )}
         </Match>

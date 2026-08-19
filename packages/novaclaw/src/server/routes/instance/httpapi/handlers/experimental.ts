@@ -8,6 +8,7 @@ import { ProjectFileResolve } from "@novaclaw/core/project-file"
 import { ProjectFileCache } from "@novaclaw/core/project-file-cache"
 import { ProjectFileWrite } from "@novaclaw/core/project-file-write"
 import { ProjectGitignore } from "@novaclaw/core/project-gitignore"
+import { SessionEffectiveConfig } from "@novaclaw/core/session/effective-config"
 import { ProjectFile } from "@novaclaw/schema/project-file"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import nodePath from "node:path"
@@ -160,6 +161,16 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
         // client must be told exactly what is in force, and a second reading of "a project may hide,
         // never un-hide" is a second chance to get it wrong.
         const skills = ProjectFile.narrowSkills(resolution.info.skills)
+        // ⚠️ The KERNEL's fold, called rather than re-derived — the same reason `narrowSkills` is
+        // called above instead of the section being handed over raw. The draft composer renders this
+        // verbatim; a second fold in the browser is a second chance to get `narrowTune`'s
+        // raise-only rule wrong, and that has already happened once (`config-provenance.ts`).
+        const stance = SessionEffectiveConfig.folderStance(resolution.info.tune, SessionEffectiveConfig.ceilings())
+        const tuneFeatures: Record<string, boolean> = {}
+        for (const feature of stance.applied) {
+          const value = stance.config[feature]
+          if (typeof value === "boolean") tuneFeatures[feature] = value
+        }
         const gitignore = yield* gitignoreProposal(resolution.root, exclude).pipe(
           Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))),
         )
@@ -173,6 +184,12 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
           exclude,
           skills: skills.hidden,
           skillsRefused: skills.refused,
+          tune: {
+            features: tuneFeatures,
+            applied: stance.applied,
+            refused: stance.refused,
+            deferred: stance.deferred,
+          },
           ...(gitignore === undefined ? {} : { gitignore }),
         }
       }
@@ -235,6 +252,7 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
             refusedTune: result.refusedTune,
             refusedPermissions: result.refusedPermissions,
             refusedSkills: result.refusedSkills,
+            refusedPolicies: result.refusedPolicies,
           }
         : { ok: false as const, file: result.file, reason: result.reason, detail: result.detail }
     }, Effect.orDie)

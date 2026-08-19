@@ -1425,6 +1425,14 @@ export type ProjectState =
       exclude: Array<string>
       skills: Array<string>
       skillsRefused: Array<string>
+      tune: {
+        features: {
+          [key: string]: boolean
+        }
+        applied: Array<string>
+        refused: Array<string>
+        deferred: Array<string>
+      }
       gitignore?: {
         file: string
         add: Array<string>
@@ -1466,6 +1474,7 @@ export type ProjectWriteResult =
       refusedTune: Array<string>
       refusedPermissions: PermissionV2Ruleset
       refusedSkills: Array<string>
+      refusedPolicies: Array<string>
     }
   | {
       ok: false

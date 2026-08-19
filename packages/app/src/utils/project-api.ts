@@ -40,6 +40,20 @@ export type ProjectState =
        */
       readonly skillsRefused: readonly string[]
       /**
+       * The stance a chat CREATED IN THIS FOLDER would start with — the folder's tune, folded by
+       * the kernel.
+       *
+       * 🔴 **Render it; never re-derive it.** A folder may raise a supervision switch and may never
+       * lower one (`narrowTune`), and only some components are wired to fold at all. Both rules are
+       * applied server-side, with the instance's ceilings on top. `config-provenance.ts` records the
+       * run where a browser-side re-derivation of this produced toggles that were the exact inverse
+       * of what the runner resolved.
+       *
+       * ⚠️ Optional on the type, not on the wire: an older instance answers without it, and a draft
+       * must then fall back to saying nothing rather than to saying "off".
+       */
+      readonly tune?: ProjectTuneStance
+      /**
        * What importing the project root's `.gitignore` WOULD add. A suggestion, never a sync.
        *
        * ⚠️ Absent when there is no `.gitignore` beside the project file. "Nothing to import" and
@@ -54,6 +68,20 @@ export type ProjectState =
    */
   | { readonly kind: "invalid"; readonly file: string; readonly reason: string; readonly detail: string }
   | { readonly kind: "none" }
+
+/**
+ * What a folder alone decides about a chat's switches, as the kernel folded it.
+ *
+ * `applied` is `features`' key set, restated so a reader never has to decide what an absent key
+ * means; `refused` and `deferred` are what the file asked for and did not get, carried so a surface
+ * can SAY so rather than leaving a line in someone's file that silently does nothing.
+ */
+export interface ProjectTuneStance {
+  readonly features: Readonly<Record<string, boolean>>
+  readonly applied: readonly string[]
+  readonly refused: readonly string[]
+  readonly deferred: readonly string[]
+}
 
 /** One ordered permission rule as a `novaclaw.json` carries it. */
 export interface ProjectPermissionRule {
@@ -117,6 +145,14 @@ export interface ProjectWriteInput {
   readonly permissions?: readonly ProjectPermissionRule[]
   readonly tune?: { readonly mode?: "interactive"; readonly features?: ProjectTuneFeatures }
   readonly exclude?: readonly string[]
+  /**
+   * The installed pre-action policies this folder opts INTO, by id.
+   *
+   * ⚠️ An entry that is not id-shaped is DROPPED by the server and reported in `refusedPolicies`: a
+   * `novaclaw.json` names a policy and can never carry a command. Everything else is written —
+   * naming a policy is opting IN, which a folder may do; what it cannot do, and has no spelling for,
+   * is switch an installed policy off.
+   */
   readonly policies?: readonly string[]
   /**
    * Per-skill slash-menu choices for this folder, keyed by the skill's name verbatim.
@@ -172,6 +208,12 @@ export type ProjectWriteResult =
        * Reported so the surface says it out loud rather than writing an inert line.
        */
       readonly refusedSkills: readonly string[]
+      /**
+       * Policy ids asked for and dropped instead: an entry that is not id-shaped. The grammar is
+       * what keeps a command out of a `novaclaw.json`, and one bad entry would otherwise make the
+       * whole file unreadable rather than the one line unwritable.
+       */
+      readonly refusedPolicies: readonly string[]
     }
   | { readonly ok: false; readonly file: string; readonly reason: string; readonly detail: string }
 

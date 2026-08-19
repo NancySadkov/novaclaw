@@ -231,6 +231,7 @@ export const projectPermissionKeys: readonly TranslationKey[] = [
   "settings.permissions.project.receipt.created",
   "settings.permissions.project.receipt.cleared",
   "settings.permissions.project.receipt.preserved",
+  "settings.permissions.project.receipt.preservedNone",
   "settings.permissions.project.receipt.refused",
   "settings.permissions.project.receipt.refusedBroken",
   "settings.permissions.project.receipt.refusedFuture",

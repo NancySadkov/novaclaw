@@ -312,6 +312,56 @@ describe("a folder that declared a policy the user then switched off", () => {
   })
 })
 
+/**
+ * `todo/projects.md`: *"A folder's policy list is READ-ONLY in the app — wants the section-scoped
+ * write Permissions got."* Before a write surface existed, the property below was enforced by the
+ * TYPE and by nothing else — `policies` is an array of ids, so a removal had no spelling. A write
+ * surface is exactly what could grow one, so the property is pinned here as behaviour.
+ *
+ * 🔴 **The claim: no `policies` section can stop an installed always-on policy being consulted.** A
+ * folder that could is a cloned repository disarming the user's rails, and the reader is where that
+ * has to hold — `ProjectFileWrite.writablePolicies` only keeps our own writer honest, and an
+ * attacker's file never goes through it.
+ *
+ * ⚠️ **A/B, run by hand and reported:** change the gate's applicability filter from
+ * `ToolPolicy.alwaysOn(provider) || wanted.has(provider.id)` to `wanted.has(provider.id)` — all
+ * three cases below go red.
+ */
+describe("what a folder's policy list can NEVER do", () => {
+  const drives = [
+    ["with no project file at all", undefined],
+    ["with an empty list", { version: 1, policies: [] }],
+    ["with a list naming a DIFFERENT installed policy", { version: 1, policies: ["other-guard"] }],
+  ] as const
+
+  for (const [label, project] of drives)
+    test(`an always-on policy still refuses the call ${label}`, async () => {
+      const text = await withHarness(
+        ({ registry, gate }) =>
+          Effect.gen(function* () {
+            // Always-on by default — `alwaysOn` is `!== false`, the safe direction: an operator who
+            // installed a guard installed it to run.
+            yield* gate
+              .install([
+                provider("blocker", { type: "deny", reason: "no" }),
+                // Opt-in and permissive, so the third arm's list is a real, honoured declaration
+                // rather than a missing-policy refusal wearing the same clothes.
+                provider("other-guard", { type: "allow" }, { alwaysOn: false }),
+              ])
+              .pipe(Effect.orDie)
+            const settlement = yield* call(registry, "hello")
+            return resultText(settlement.result)
+          }).pipe(Effect.scoped),
+        project === undefined ? {} : { project: project as Record<string, unknown> },
+      )
+      // Refused in every arm, by the always-on policy itself — not by the fail-closed missing-policy
+      // path, which would be a different refusal wearing the same clothes.
+      expect(text).not.toBe("ran: hello")
+      expect(text).toContain("Refused by an installed policy before this call ran")
+      expect(text).toContain("blocker")
+    })
+})
+
 describe("the fold from stored switches to the OFF set", () => {
   test("absent means ON, and only an explicit `false` switches anything off", () => {
     expect([...ToolPolicy.disabledPolicies([])]).toEqual([])

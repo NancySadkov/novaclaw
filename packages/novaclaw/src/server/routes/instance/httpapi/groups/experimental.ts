@@ -130,6 +130,40 @@ export const ProjectState = Schema.Union([
      */
     skillsRefused: Schema.Array(Schema.String),
     /**
+     * The stance a chat CREATED IN THIS FOLDER would start with — the folder's tune, already folded.
+     *
+     * 🔴 **The route used to say WHICH file governs and never WHAT it sets, and that gap was
+     * measured as a false statement on screen.** The composer's Tune panel keys its provenance on a
+     * session id, which a draft does not have, so a draft in a folder declaring `quality: true`
+     * rendered *"Quality gates … Using Settings default: Off"* while the chat that same click would
+     * create resolves `quality: true` with `source: {kind:"project"}`. The sentence above those
+     * switches had already been fixed to name the folder's file, so one panel stated two
+     * contradictory things about the same folder.
+     *
+     * ⚠️ **Folded by the KERNEL, never by the client.** `narrowTune` is a security rule — a folder
+     * may raise a supervision switch and may never lower one — and `ProjectDefaults.WIRED` gates
+     * which components a folder may influence at all. A browser re-deriving either would be a second
+     * implementation of a rule that must have one; `config-provenance.ts` records the run where a
+     * browser-side re-derivation produced toggles that were the exact inverse of the runner's. So
+     * this carries the ANSWER: `features` is what a fresh chat here starts with from the folder,
+     * `applied` names those keys, and the two rejection lists say what the file asked for and did
+     * not get.
+     *
+     * ⚠️ Instance ceilings are applied. A folder asking for `memory: true` while the user's Memory
+     * privacy switch is off is not reported as supplying it, because the chat this creates will not
+     * have it.
+     */
+    tune: Schema.Struct({
+      /** The switches the folder contributes, by name. Absent = the folder said nothing about it. */
+      features: Schema.Record(Schema.String, Schema.Boolean),
+      /** `features`' keys, so a client never has to decide whether an absent key means anything. */
+      applied: Schema.Array(Schema.String),
+      /** Asked for and refused: a folder may raise a supervision rail, never lower one. */
+      refused: Schema.Array(Schema.String),
+      /** Asked for, allowed, and not applied because no reader folds it yet. Reported, not dropped. */
+      deferred: Schema.Array(Schema.String),
+    }),
+    /**
      * What importing the project root's `.gitignore` WOULD add — a suggestion, never a sync.
      *
      * Absent when there is no `.gitignore` beside the project file, or when it is too large to be a
@@ -177,7 +211,19 @@ export const ProjectWriteInput = Schema.Struct({
   permissions: Schema.optional(Permission.Ruleset),
   tune: Schema.optional(ProjectFile.Tune),
   exclude: Schema.optional(Schema.Array(Schema.String)),
-  /** ⛔ IDs of installed policies only — never a command, and never anything the server runs. */
+  /**
+   * ⛔ IDs of installed policies only — never a command, and never anything the server runs.
+   *
+   * ⚠️ `Schema.String` rather than `ProjectFile.PolicyID`, and the difference is a REPORT versus a
+   * 400. A malformed id decoded here would fail the request with a schema error, and the client
+   * would have to re-derive the grammar to say anything useful about it; `ProjectFileWrite`'s
+   * `writablePolicies` drops it instead and names it in `refusedPolicies`, which is the same
+   * treatment an `allow` rule and a `show:true` skill get. What must never happen — a command
+   * reaching the file — is guaranteed by that drop AND by the re-parse of the merged document.
+   *
+   * ⚠️ An id naming an ALWAYS-ON policy IS written: naming one is opting IN, which a folder may do.
+   * What a folder still cannot do — and has no spelling for — is switch an installed policy off.
+   */
   policies: Schema.optional(Schema.Array(Schema.String)),
   /**
    * Per-skill slash-menu choices for this folder, keyed by the skill's name verbatim.
@@ -250,6 +296,14 @@ export const ProjectWriteResult = Schema.Union([
      * for the other provably-inert declaration.
      */
     refusedSkills: Schema.Array(Schema.String),
+    /**
+     * Policy ids the caller asked to record, which were dropped instead.
+     *
+     * One cause: an entry that is not id-shaped. The grammar exists so a `novaclaw.json` can never
+     * carry a command, and a violating entry makes the whole FILE unreadable — so it is dropped and
+     * named here rather than allowed to fail the save and point the user at a file that is fine.
+     */
+    refusedPolicies: Schema.Array(Schema.String),
   }),
   Schema.Struct({
     ok: Schema.Literal(false),

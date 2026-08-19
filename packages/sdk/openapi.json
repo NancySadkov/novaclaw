@@ -30573,6 +30573,37 @@
                   "type": "string"
                 }
               },
+              "tune": {
+                "type": "object",
+                "properties": {
+                  "features": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "boolean"
+                    }
+                  },
+                  "applied": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "refused": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "deferred": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": ["features", "applied", "refused", "deferred"],
+                "additionalProperties": false
+              },
               "gitignore": {
                 "type": "object",
                 "properties": {
@@ -30626,7 +30657,8 @@
               "permissions",
               "exclude",
               "skills",
-              "skillsRefused"
+              "skillsRefused",
+              "tune"
             ],
             "additionalProperties": false
           },
@@ -30740,6 +30772,12 @@
                 "items": {
                   "type": "string"
                 }
+              },
+              "refusedPolicies": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
               }
             },
             "required": [
@@ -30750,7 +30788,8 @@
               "cleared",
               "refusedTune",
               "refusedPermissions",
-              "refusedSkills"
+              "refusedSkills",
+              "refusedPolicies"
             ],
             "additionalProperties": false
           },

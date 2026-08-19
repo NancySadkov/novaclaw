@@ -40,6 +40,13 @@ export interface Changes {
   readonly permissions?: ProjectFile.Info["permissions"]
   readonly tune?: ProjectFile.Tune
   readonly exclude?: readonly string[]
+  /**
+   * The installed pre-action policies this folder opts INTO, by id.
+   *
+   * ⚠️ Only an ID survives the write — see {@link writablePolicies}. A command-shaped entry is
+   * dropped and reported in `refusedPolicies` rather than written into a file whose reader would
+   * then refuse the whole document.
+   */
   readonly policies?: readonly string[]
   /**
    * Per-skill slash-menu choices for this folder.
@@ -115,6 +122,14 @@ export type Result =
        * would put a sentence in the user's file that the reader provably ignores.
        */
       readonly refusedSkills: readonly string[]
+      /**
+       * Policy ids the caller asked to record, which were NOT written.
+       *
+       * See {@link writablePolicies}: an entry that is not id-shaped would make the whole FILE fail
+       * to parse, so it is dropped rather than allowed to fail the save. Reported in the caller's own
+       * order so a surface can name what did not land.
+       */
+      readonly refusedPolicies: readonly string[]
     }
   | {
       readonly ok: false
@@ -137,6 +152,78 @@ export type Result =
     }
 
 /**
+ * The `policies` section a WRITE may record — the fourth twin of {@link ProjectFile.writableTune},
+ * `writablePermissions` and `writableSkills`.
+ *
+ * 🔴 **The one property this enforces: a `novaclaw.json` names a policy by ID and may NEVER carry a
+ * command.** The grammar (`ProjectFile.POLICY_ID_PATTERN`) makes a command unspellable, and a
+ * violating entry makes the WHOLE FILE fail to parse — deliberately, because a file trying to carry
+ * a command is not one to act on any part of. That is right for a file we READ and wrong as the
+ * answer to a write: `plan` re-parses its own output, so one command-shaped entry would come back as
+ * `would-not-parse` — a refusal whose copy says *"your novaclaw.json is broken"* about a file that is
+ * perfectly fine, and which takes every other edit in the same save down with it. So it is dropped
+ * and REPORTED, exactly as an `allow` rule is, and the rest of the write lands.
+ *
+ * ⚠️ **An ALWAYS-ON id is written, and an earlier version of this function refused it. That was
+ * wrong and the reasoning is worth keeping, because it looked right.** The argument was: the gate's
+ * filter is `alwaysOn(provider) || wanted.has(provider.id)`, so naming an always-on policy cannot
+ * turn it on; and the one path where it is NOT inert — `screen` refuses every tool call in a folder
+ * whose file names a policy the user switched OFF — is a folder overruling an instance-level switch.
+ *
+ * Two things break that. First, `config.ts`'s sentence PERMITS it: *"a folder's novaclaw.json may
+ * opt IN to an installed policy; only this key can switch one off."* Naming an always-on policy is
+ * opting in; what the folder still cannot do is switch one off, and no spelling for that exists.
+ * Second, and decisively: `ToolPolicy.alwaysOn` is `provider.alwaysOn !== false`, so always-on is the
+ * DEFAULT and neither shipped policy opts out — under that rule this section could never write an id
+ * that names anything installed, which is a write surface that cannot write.
+ *
+ * ⭐ And the behaviour it enables is the SAFE direction: the folder is saying *"never run me
+ * unpoliced"*. If the user later switches that policy off, every tool call in the folder is refused
+ * with a message naming the file. It cannot make the folder run anything the user forbade; it can
+ * only decline to run at all.
+ *
+ * ⚠️ **An id nothing here installs is written too**, and that is the same judgement one step further
+ * out: the file travels, so an id installed on a colleague's machine is a legitimate declaration, and
+ * dropping it would mean that editing one entry silently deletes another person's. The surface says
+ * what it costs — every tool call in this folder is refused until that policy is installed — BEFORE
+ * the control rather than in a receipt afterwards.
+ *
+ * ⚠️ **Not the enforcement**, for the reason all three twins state about themselves: an attacker's
+ * `novaclaw.json` never goes through our writer. `ProjectFile.parse` refuses a command-carrying file
+ * on every read, including files this build never wrote. This is a truthfulness rule for our output.
+ *
+ * ⚠️ Duplicates collapse to their first occurrence. `screen` builds a `Set` from the list, so a
+ * repeat is already nothing to the reader; leaving one in the file makes every surface that lists the
+ * section say one name twice.
+ *
+ * @param declared the ids the caller asked to record, in its own order
+ */
+export function writablePolicies(declared: readonly string[] | undefined): {
+  readonly policies: readonly string[] | undefined
+  readonly refused: readonly string[]
+} {
+  if (!declared) return { policies: undefined, refused: [] }
+  const policies: string[] = []
+  const refused: string[] = []
+  const seen = new Set<string>()
+  for (const id of declared) {
+    if (!ProjectFile.POLICY_ID_PATTERN.test(id)) {
+      // Reported once even if the caller repeated it — a receipt naming one id twice reads as two
+      // separate refusals.
+      if (!refused.includes(id)) refused.push(id)
+      continue
+    }
+    if (seen.has(id)) continue
+    seen.add(id)
+    policies.push(id)
+  }
+  // An empty result is written as `[]` rather than dropped, exactly as `writableTune` writes an
+  // empty `features`: the caller SUPPLIED the section and the receipt has to stay honest about which
+  // sections the write touched. Removing it is a different sentence — {@link Changes.clear}.
+  return { policies, refused }
+}
+
+/**
  * Everything about a write except the filesystem, so the merge semantics are testable without one.
  *
  * `existing` is the file's current text, or `undefined` when there is no file. ⚠️ "There is no file"
@@ -157,6 +244,7 @@ export function plan(
       readonly refusedTune: readonly ProjectFile.TuneFeature[]
       readonly refusedPermissions: Permission.Ruleset
       readonly refusedSkills: readonly string[]
+      readonly refusedPolicies: readonly string[]
     }
   | (Result & { readonly ok: false }) {
   // ⚠️ Checked BEFORE the file is even read, because a contradiction is a fault in the REQUEST and
@@ -187,6 +275,7 @@ export function plan(
   const { tune, refused } = ProjectFile.writableTune(changes.tune)
   const { permissions, refused: refusedPermissions } = ProjectFile.writablePermissions(changes.permissions)
   const { skills, refused: refusedSkills } = ProjectFile.writableSkills(changes.skills)
+  const { policies, refused: refusedPolicies } = writablePolicies(changes.policies)
   // Mutable, because `ProjectFile.Info`'s properties are `readonly` (Effect schema types are) and
   // this is the one place that assembles a change set key by key.
   const applied: { -readonly [K in keyof ProjectFile.Info]?: ProjectFile.Info[K] } = {}
@@ -218,7 +307,7 @@ export function plan(
         applied.exclude = changes.exclude
         break
       case "policies":
-        applied.policies = changes.policies
+        applied.policies = policies
         break
       case "skills":
         applied.skills = skills
@@ -241,7 +330,17 @@ export function plan(
       reason: "would-not-parse",
       detail: `the merged file would not read back (${verify.reason}: ${verify.detail})`,
     }
-  return { ok: true, text, created, sections, cleared, refusedTune: refused, refusedPermissions, refusedSkills }
+  return {
+    ok: true,
+    text,
+    created,
+    sections,
+    cleared,
+    refusedTune: refused,
+    refusedPermissions,
+    refusedSkills,
+    refusedPolicies,
+  }
 }
 
 /**
@@ -253,7 +352,10 @@ export function plan(
  * would CREATE a file over one that is really there — destroying content because we could not see
  * it, which is the same class of mistake as overwriting a file that does not parse.
  */
-export const write = Effect.fn("ProjectFileWrite.write")(function* (directory: string, changes: Changes) {
+export const write = Effect.fn("ProjectFileWrite.write")(function* (
+  directory: string,
+  changes: Changes,
+) {
   const fs = yield* FSUtil.Service
   const file = path.join(path.resolve(directory), FILENAME)
 
@@ -293,5 +395,6 @@ export const write = Effect.fn("ProjectFileWrite.write")(function* (directory: s
     refusedTune: planned.refusedTune,
     refusedPermissions: planned.refusedPermissions,
     refusedSkills: planned.refusedSkills,
+    refusedPolicies: planned.refusedPolicies,
   } satisfies Result
 })

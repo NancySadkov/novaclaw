@@ -6,7 +6,14 @@ import { useLanguage, type TranslationKey, type Translator } from "@/context/lan
 import { useServer } from "@/context/server"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
-import { projectState } from "@/utils/project-api"
+import { projectState, projectWrite } from "@/utils/project-api"
+import {
+  canWriteFolder,
+  folderSkillWrite,
+  folderWritability,
+  WRITABILITY_KEY,
+  type FolderWritability,
+} from "@/apps/project-skills"
 import { AppPage } from "@/components/app-page"
 import {
   authorText,
@@ -128,6 +135,17 @@ export function SkillDetail(props: {
   saveFailed?: boolean
   /** The `novaclaw.json` governing this folder, when one does. Named so the user can go edit it. */
   projectFile?: string
+  /**
+   * What a FOLDER-scoped save would do to the filesystem, said before its control (principle 12d).
+   *
+   * ⚠️ Absent while `GET /api/project` has not answered. The control is then not drawn — the same
+   * call `invocation` makes: a switch showing a guessed position is worse than no switch.
+   */
+  folderWrite?: FolderWritability
+  onFolderHide?: (hide: boolean) => void
+  /** The last folder save's refusal, when the server dropped an inert `show:true` line by name. */
+  folderRefused?: readonly string[]
+  folderSaveFailed?: boolean
 }) {
   const t: Translator = (key, params) => props.t(key, params)
   const view = () => props.view
@@ -385,6 +403,65 @@ export function SkillDetail(props: {
                   </p>
                 </div>
 
+                {/* ── The THIRD layer, and the first time it is editable. ──
+                    🔴 A folder may HIDE and may never UN-HIDE, so this is one switch with one
+                    direction of force: on writes `{"<id>":{"show":false}}` into the folder's
+                    `novaclaw.json`, off DELETES that line (absent means INHERIT) and hands the
+                    question back to the user's own switch above. There is deliberately no
+                    "show it here": `ProjectFile.narrowSkills` discards a `show:true` on every read,
+                    so the control would flip and do nothing. See `apps/project-skills.ts`. */}
+                <Show when={props.folderWrite}>
+                  {(writability) => (
+                    <div class="border-t border-v2-border-border-base pt-3" data-slot="skill-invocation-folder">
+                      {/* Principle 12(d) again, for the layer this control acts on: what a save
+                          would DO to the filesystem, before the switch that would do it. */}
+                      <p class="text-xs text-v2-text-text-muted" data-slot="skill-invocation-folder-target">
+                        {t(WRITABILITY_KEY[writability().kind], {
+                          file: (writability() as { file?: string }).file ?? "",
+                        })}
+                      </p>
+                      <Show
+                        when={canWriteFolder(writability())}
+                        fallback={
+                          <p class="mt-1 text-xs text-v2-text-text-faint" data-slot="skill-invocation-folder-withheld">
+                            {t("skills.invocation.project.write.withheld")}
+                          </p>
+                        }
+                      >
+                        <div class="mt-2">
+                          <Switch
+                            checked={invocation().hiddenByProject}
+                            onChange={(checked) => props.onFolderHide?.(checked)}
+                          >
+                            {t("skills.invocation.project.hide.label")}
+                          </Switch>
+                          <p class="mt-1 text-xs text-v2-text-text-muted">{t("skills.invocation.project.hide.help")}</p>
+                          {/* 🔴 The direction that does not exist, said AT the control. A user
+                              reaching for a per-folder switch is usually reaching for the one thing
+                              a folder may never do, and discovering that by flipping something and
+                              watching nothing happen is the defect the write-side twins exist to
+                              prevent one layer down. */}
+                          <p class="mt-1 text-xs text-v2-text-text-faint" data-slot="skill-invocation-folder-law">
+                            {t("skills.invocation.project.hide.law")}
+                          </p>
+                        </div>
+                      </Show>
+                      <Show when={(props.folderRefused?.length ?? 0) > 0}>
+                        <p class="mt-1.5 text-xs text-v2-text-text-accent" data-slot="skill-invocation-folder-refused">
+                          {t("skills.invocation.project.hide.refused", {
+                            ids: (props.folderRefused ?? []).map((id) => authorText(id, 64) || "?").join(", "),
+                          })}
+                        </p>
+                      </Show>
+                      <Show when={props.folderSaveFailed}>
+                        <p class="mt-1.5 text-sm text-v2-text-text-accent" data-slot="skill-invocation-folder-error">
+                          {t("skills.invocation.project.hide.error")}
+                        </p>
+                      </Show>
+                    </div>
+                  )}
+                </Show>
+
                 <p class="text-xs text-v2-text-text-faint" data-slot="skill-invocation-independent">
                   {t("skills.invocation.independent")}
                 </p>
@@ -494,7 +571,7 @@ export function SkillsPage() {
     const dir = sync().data.path.directory || sync().data.path.home || ""
     return http && dir ? { http, dir } : undefined
   })
-  const [project] = createResource(projectSource, async (value) => {
+  const [project, { refetch: refetchProject }] = createResource(projectSource, async (value) => {
     try {
       return await projectState(value.http, value.dir)
     } catch {
@@ -509,6 +586,26 @@ export function SkillsPage() {
     const state = project()
     return state?.kind === "project" ? state.file : undefined
   })
+  /**
+   * What a FOLDER-scoped save would do — computed here rather than in the detail component, because
+   * it needs the routed directory and the detail component is a pure render of one skill.
+   *
+   * ⚠️ `undefined` while the read has not answered. `folderWritability` already answers `unknown`
+   * for that, and the section is simply not drawn: a control drawn over a guessed target could
+   * create a `novaclaw.json` in a folder the user is not in.
+   */
+  const folderWrite = createMemo<FolderWritability | undefined>(() => {
+    const source = projectSource()
+    if (!source) return undefined
+    // ⚠️ `state`, not `loading`. A save REFETCHES this resource, and `loading` is true during a
+    // refetch as well as during the first read — so guarding on it would take the control off the
+    // screen for the length of every save and put it back, which reads as the switch having broken.
+    // `unresolved`/`pending` are the first read alone; `refreshing` keeps the previous answer.
+    if (project.state === "unresolved" || project.state === "pending") return undefined
+    return folderWritability(project(), source.dir)
+  })
+  const [folderRefused, setFolderRefused] = createSignal<readonly string[]>([])
+  const [folderSaveFailed, setFolderSaveFailed] = createSignal(false)
 
   const views = createMemo(() => sortViews(skills().map((skill) => toView(skill, context(), agents()))))
   const shown = createMemo(() => filterViews(views(), query()))
@@ -575,6 +672,56 @@ export function SkillsPage() {
       return
     }
     write(plan.patch, plan.remove)
+  }
+
+  /**
+   * The FOLDER half — a different file, a different route, and deliberately a different handler.
+   *
+   * ⚠️ `POST /api/project` is section-scoped: it replaces `skills` WHOLE and leaves every other
+   * section of the file untouched, which is why the payload is rebuilt from what the read reported
+   * rather than patched. `apps/project-skills.ts` owns that reconstruction and the law it obeys.
+   *
+   * ⚠️ A refusal arrives as a 200 body (`ok:false`), never as a thrown error — the same posture
+   * `projectState` takes — so the two are handled separately: `ok:false` is the file's problem and
+   * shows the banner, a throw is ours.
+   */
+  const applyFolderHide = (hide: boolean) => {
+    const view = current()
+    const source = projectSource()
+    const state = project()
+    if (!view || !source) return
+    const held = state?.kind === "project" ? state : undefined
+    const plan = folderSkillWrite({
+      hidden: held?.skills ?? [],
+      refused: held?.skillsRefused ?? [],
+      name: view.rawName,
+      hide,
+    })
+    if (plan.kind === "no-op") return
+    // Unreachable from the UI — the switches are not drawn for an unaddressable name — and handled
+    // because "silently do nothing" is the one outcome a control may never have.
+    if (plan.kind === "unaddressable") {
+      setFolderSaveFailed(true)
+      return
+    }
+    setFolderSaveFailed(false)
+    setFolderRefused([])
+    void (async () => {
+      const result = await projectWrite(
+        source.http,
+        source.dir,
+        plan.kind === "clear" ? { clear: ["skills"] } : { skills: plan.skills },
+      )
+      if (!result.ok) {
+        setFolderSaveFailed(true)
+        return
+      }
+      setFolderRefused(result.refusedSkills)
+      // The page's own view of the folder is a resource over a different route from `updateConfig`,
+      // so nothing refetches it for us. Without this the switch stays where it was while the file on
+      // disk has already moved — the class of defect the instance half measured live on 2026-08-18.
+      await (refetchProject() as unknown as Promise<unknown>)
+    })().catch(() => setFolderSaveFailed(true))
   }
 
   return (
@@ -706,6 +853,10 @@ export function SkillsPage() {
                   onInvocation={applyInvocation}
                   saveFailed={saveFailed()}
                   projectFile={projectFile()}
+                  folderWrite={folderWrite()}
+                  onFolderHide={applyFolderHide}
+                  folderRefused={folderRefused()}
+                  folderSaveFailed={folderSaveFailed()}
                 />
               </div>
             )}
