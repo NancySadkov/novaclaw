@@ -564,4 +564,99 @@ export const toLLMMessages = (
   messages: readonly SessionMessage.Message[],
   model: Model,
   capabilities?: InputCapabilities | undefined,
-) => messages.flatMap((message) => toLLMMessage(message, model, capabilities))
+  maxImages?: number | undefined,
+) => budgetImages(messages.flatMap((message) => toLLMMessage(message, model, capabilities)), maxImages)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE PER-REQUEST IMAGE BUDGET — the dead-end a working vision path walks into.
+//
+// 🔴 Measured 2026-08-19 (`notes/reports/vision-on-disk-2026-08-19.md`), the FIRST run in which a
+// model actually looked at a folder: the fourth image came back
+// `HTTP 400: At most 3 image(s) may be provided in one prompt. (parameter=image)`. The endpoint runs
+// vLLM's `--limit-mm-per-prompt '{"image": 3, "video": 0}'` — a sparkrun DEFAULT, not a choice of
+// ours, and the same class of cap hosted and local servers both apply.
+//
+// ⚠️ **The 400 is the least of it; the DEAD-END is the defect.** A session that has looked at four
+// images re-lowers all four on every later turn, so the chat can never continue — the exact
+// permanent-refusal shape the capability gate above already forbids for history, and which
+// "the UI never crashes to a dead-end" forbids outright. Raising the flag on OUR fleet does not fix
+// the product: a user's endpoint is not ours to configure.
+//
+// So the newest images ride and the older ones degrade to a notice, exactly as an unreadable
+// attachment does. Three deliberate choices:
+//
+//  · **NEWEST wins.** An agent looking at a folder is working forward; the image it just opened is
+//    the one the next step reasons about. Keeping the oldest would strand it with the pictures it
+//    has already described.
+//  · **REPLACE, never drop** (ruling 2, and the same reasoning `gateToolMedia` records): an elided
+//    image must not read as one the model still holds. The notice says it was seen EARLIER, because
+//    unlike the capability case it genuinely was — the model's own description of it is still in the
+//    transcript above, which is what makes the degrade lossless enough to continue on.
+//  · **UNSET means unlimited**, so an endpoint that never had this cap lowers byte-identically to
+//    before this existed. We do not guess a number for a stranger's server; we carry the one that
+//    was measured. Learning it from the 400 itself and storing it per endpoint — the
+//    `ProviderCapabilityStore` pattern — is the follow-up in `todo/vision.md`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** What replaces an image the per-request budget could not carry. Distinct from the capability
+ *  notice on purpose: nothing is wrong with the model or the file, and the model DID see this one. */
+export const budgetedImageNotice = (name: string | undefined): string =>
+  `[An earlier image${name ? ` (${name})` : ""} was removed from this request: this model accepts only a limited number of images per request, and the newest ones were kept. You DID look at it earlier in this conversation — rely on what you said about it then, and read it again if you need another look.]`
+
+// Type GUARDS, not predicates: the flatMap below reads `.filename` / `.name` off the narrowed arm,
+// and a bare boolean leaves the compiler holding the whole union.
+type MediaContentPart = Extract<ContentPart, { readonly type: "media" }>
+const isImagePart = (part: ContentPart): part is MediaContentPart =>
+  part.type === "media" && attachmentModality(part.mediaType) === "image"
+
+const isImageContent = (item: ToolContent): item is ToolFileContent =>
+  item.type === "file" && attachmentModality(item.mime) === "image"
+
+/**
+ * Keep the newest `max` images across the whole lowered request; degrade the rest to a notice.
+ *
+ * Returns the SAME array when there is nothing to do — no limit, or the request is already inside
+ * it — so the overwhelmingly common turn allocates nothing and stays byte-identical.
+ *
+ * ⚠️ It counts BOTH doors in one pass (a user's `media` part and a tool result's `file` content),
+ * because the provider counts both and a budget that saw only one of them would still 400.
+ */
+export const budgetImages = (
+  messages: readonly Message[],
+  max: number | undefined,
+): readonly Message[] => {
+  if (max === undefined || !Number.isFinite(max) || max < 0) return messages
+  let total = 0
+  for (const message of messages) {
+    if (!Array.isArray(message.content)) continue
+    for (const part of message.content as readonly ContentPart[]) {
+      if (isImagePart(part)) total++
+      else if (part.type === "tool-result") {
+        const value = contentEntries((part as ToolResultPart).result)
+        if (value) total += value.filter(isImageContent).length
+      }
+    }
+  }
+  if (total <= max) return messages
+  // Walk FORWARD dropping the oldest surplus, which is the same decision as "keep the newest"
+  // expressed without a reverse pass — `budget` is how many of the leading images must go.
+  let budget = total - max
+  const take = (): boolean => (budget > 0 ? (budget--, true) : false)
+  return messages.map((message) => {
+    if (budget <= 0 || !Array.isArray(message.content)) return message
+    const content = (message.content as readonly ContentPart[]).flatMap((part): ContentPart[] => {
+      if (isImagePart(part))
+        return take() ? [{ type: "text", text: budgetedImageNotice(part.filename) }] : [part]
+      if (part.type !== "tool-result") return [part]
+      const value = contentEntries((part as ToolResultPart).result)
+      if (value === undefined || !value.some(isImageContent)) return [part]
+      const gated = value.flatMap((item): ToolContent[] =>
+        isImageContent(item) && take()
+          ? [{ type: "text", text: budgetedImageNotice(item.name) }]
+          : [item],
+      )
+      return [{ ...(part as ToolResultPart), result: { type: "content", value: gated } } as ContentPart]
+    })
+    return { ...message, content } as Message
+  })
+}

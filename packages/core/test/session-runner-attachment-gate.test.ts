@@ -311,7 +311,20 @@ describe("runner/llm.ts is wired to the gate", () => {
     wired("models.capabilities(", "nothing reads the resolved model's capabilities")
     // The regression this catches: lowering keeps its old two-argument call, so history silently
     // ships media bytes to a model that cannot read them while the pre-turn gate looks healthy.
-    wired("toLLMMessages(context, model, modelCapabilities)", "toLLMMessages is not receiving the capabilities")
+    // ⚠️ A PREFIX pin, not the whole call. It used to name the exact three-argument form and fired
+    // on 2026-08-19 when a fourth argument (the per-request image budget) was added — a change that
+    // could not possibly cause the regression this test names. Pin the arguments that matter and
+    // let the call grow; the failure it exists to catch is the third argument going missing.
+    wired("toLLMMessages(context, model, modelCapabilities", "toLLMMessages is not receiving the capabilities")
+  })
+
+  test("the per-request image budget reaches lowering", () => {
+    // 🔴 Measured 2026-08-19: the fourth image returned `At most 3 image(s) may be provided in one
+    // prompt`, and every later turn re-lowered the same history and re-failed — a dead-end session.
+    // The budget is inert unless the model declares one, so the regression is silent: lowering keeps
+    // its old call, the limit is never passed, and only a live multi-image sweep notices.
+    wired("models.imageLimit(", "nothing reads the resolved model's per-request image limit")
+    wired("modelCapabilities, modelImageLimit)", "the image budget never reaches lowering")
   })
 
   test("a capability refusal is not re-described as 'the model is unavailable'", () => {

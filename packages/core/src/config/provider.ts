@@ -54,6 +54,16 @@ class Limit extends Schema.Class<Limit>("ConfigV2.Model.Limit")({
   context: Schema.Int.pipe(Schema.optional),
   input: Schema.Int.pipe(Schema.optional),
   output: Schema.Int.pipe(Schema.optional),
+  /**
+   * How many images this endpoint accepts in ONE request. Absent = unlimited, which is the only
+   * honest default: we carry a number that was MEASURED, never one guessed for a stranger's server.
+   *
+   * 🔴 Measured 2026-08-19 on the Spark's holo3.1: `HTTP 400 — At most 3 image(s) may be provided
+   * in one prompt`, from vLLM's `--limit-mm-per-prompt` (a sparkrun default). Without this the
+   * session DEAD-ENDS at image N+1: every later turn re-lowers the same history and re-fails.
+   * `budgetImages` (session/runner/to-llm-message.ts) degrades the oldest images to a notice.
+   */
+  images: Schema.Int.pipe(Schema.optional),
 }) {}
 
 class Retry extends Schema.Class<Retry>("ConfigV2.Model.Retry")({

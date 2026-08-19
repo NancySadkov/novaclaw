@@ -897,6 +897,10 @@ export const layer = Layer.effect(
       // turns that need it: a media-free turn is where a model DECIDES whether to go and look, and
       // under the gate it was told nothing. Measured 2026-08-19 — see `perceptionSection`.
       const modelCapabilities = yield* models.capabilities(modelSession)
+      // How many images this endpoint takes in one request; `undefined` = unlimited. Without it a
+      // session that looked at more images than the server allows DEAD-ENDS — every later turn
+      // re-lowers the same history and re-fails the same 400. See `budgetImages`.
+      const modelImageLimit = yield* models.imageLimit(modelSession)
       const unreadable = unreadableTurnAttachments(context, modelCapabilities)
       if (unreadable.length > 0) {
         // Name the model the USER picked, not the wire id: `model.id` is the API-side id
@@ -1077,7 +1081,7 @@ export const layer = Layer.effect(
             projectScope: SystemCompose.projectScopeSection(config.permissionMode),
             base: system.baseline,
           })).map(SystemPart.make)
-      const providerMessages = toLLMMessages(context, model, modelCapabilities)
+      const providerMessages = toLLMMessages(context, model, modelCapabilities, modelImageLimit)
       const latestCompactionID = context.findLast((message) => message.type === "compaction")?.id
       const strictEnabled = ({ ...(harness.strict ?? {}), ...(config.strict ?? {}) }).enabled === true
       const groundingDecision = ProjectGrounding.decide(

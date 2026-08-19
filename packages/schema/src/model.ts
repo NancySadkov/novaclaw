@@ -106,6 +106,8 @@ export const Info = Schema.Struct({
     context: Schema.Int,
     input: Schema.Int.pipe(optional),
     output: Schema.Int,
+    /** Images accepted in ONE request; absent = unlimited. See ConfigV2.Model.Limit.images. */
+    images: Schema.Int.pipe(optional),
   }),
 })
   .annotate({ identifier: "ModelV2.Info" })

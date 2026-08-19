@@ -11,6 +11,7 @@ import { SessionMessage } from "@novaclaw/core/session/message"
 import { FileAttachment } from "@novaclaw/core/session/prompt"
 import { SessionOrigin } from "@novaclaw/core/session/origin"
 import {
+  budgetedImageNotice,
   needsCapabilityEvidence,
   toLLMMessages,
   unreadableToolMediaNotice,
@@ -433,5 +434,93 @@ describe("to-llm-message.ts cannot regain a way around the gate", () => {
     expect(ungatedRawReads("// lowers tool.state.content straight through")).toEqual([])
     // …while the presence guard both live branches need is not an offender either.
     expect(ungatedRawReads("if (tool.state.result !== undefined) return")).toEqual([])
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE PER-REQUEST IMAGE BUDGET (measured 2026-08-19).
+//
+// 🔴 The first live run in which a model actually looked at a folder died on the FOURTH image:
+// `HTTP 400: At most 3 image(s) may be provided in one prompt` — vLLM's `--limit-mm-per-prompt`,
+// a sparkrun default. The 400 is not the defect; the DEAD-END is: every later turn re-lowers the
+// same four images and re-fails, so the chat can never continue.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("per-request image budget", () => {
+  /** n reads of n distinct images, oldest first — the shape the failing run actually produced. */
+  const sweep = (n: number) =>
+    Array.from({ length: n }, (_, index) =>
+      completed([
+        { type: "text", text: "Image read successfully" },
+        { type: "file", uri: IMAGE_URI, mime: "image/png", name: `icon_${index + 1}.png` },
+      ]),
+    )
+
+  // ⚠️ Counts BOTH lowered shapes. A user attachment becomes a `media` part and a tool result keeps
+  // a `file` entry, so a helper that greps one of them measures half the budget — which is exactly
+  // the mistake `budgetImages` itself must not make.
+  const imagesIn = (messages: readonly SessionMessage.Message[], max?: number) => {
+    const json = JSON.stringify(toLLMMessages(messages, model, VISION, max))
+    return json.split('"type":"file"').length - 1 + (json.split('"type":"media"').length - 1)
+  }
+
+  test("keeps the NEWEST images and degrades the rest — the session survives image N+1", () => {
+    const lowered = JSON.stringify(toLLMMessages(sweep(6), model, VISION, 3))
+    expect(lowered.split('"type":"file"').length - 1).toBe(3)
+    // The three that survived are the NEWEST — an agent walking a folder reasons about what it just
+    // opened, so stranding it with the ones it already described would be the wrong three.
+    for (const kept of ["icon_4.png", "icon_5.png", "icon_6.png"]) expect(lowered).toContain(kept)
+    // …and the elided ones are REPLACED, not deleted (ruling 2): a dropped image must never read as
+    // one the model still holds.
+    expect(lowered).toContain(budgetedImageNotice("icon_1.png"))
+    expect(lowered).toContain(budgetedImageNotice("icon_3.png"))
+  })
+
+  test("says the model DID see the elided image — unlike the capability notice, it really did", () => {
+    const notice = budgetedImageNotice("icon_1.png")
+    expect(notice).toContain("You DID look at it earlier")
+    // Distinct from the capability notice, which is about a model that never saw anything.
+    expect(notice).not.toContain("cannot read")
+    expect(notice).not.toBe(unreadableToolMediaNotice({ mime: "image/png", name: "icon_1.png" }, "read"))
+  })
+
+  test("UNSET is unlimited, and an in-budget request is byte-identical", () => {
+    const messages = sweep(6)
+    const unlimited = JSON.stringify(toLLMMessages(messages, model, VISION))
+    expect(unlimited.split('"type":"file"').length - 1).toBe(6)
+    // Same array back when the request already fits — no allocation, no rewrite.
+    expect(JSON.stringify(toLLMMessages(messages, model, VISION, 6))).toBe(unlimited)
+    expect(JSON.stringify(toLLMMessages(messages, model, VISION, 99))).toBe(unlimited)
+  })
+
+  test("counts BOTH doors, because the provider does", () => {
+    // A user attachment and a tool-returned image compete for one budget. A pass that saw only the
+    // tool door would still 400 on a chat that started by attaching a photo.
+    const attached = SessionMessage.User.make({
+      id: id("user"),
+      type: "user",
+      time: { created },
+      text: "look at these",
+      files: [FileAttachment.make({ mime: "image/png", uri: IMAGE_URI, name: "attached.png" })],
+    })
+    expect(imagesIn([attached, ...sweep(3)], 2)).toBe(2)
+    expect(imagesIn([attached, ...sweep(3)])).toBe(4)
+  })
+
+  test("a zero budget elides everything and still never deletes a part", () => {
+    const lowered = JSON.stringify(toLLMMessages(sweep(2), model, VISION, 0))
+    expect(lowered.split('"type":"file"').length - 1).toBe(0)
+    expect(lowered).toContain(budgetedImageNotice("icon_1.png"))
+    expect(lowered).toContain(budgetedImageNotice("icon_2.png"))
+    // ⚠️ And the bytes are GONE — not re-shipped as structured JSON, the trap `gateToolMedia`
+    // records. An empty content array would send `structured`, which for `read` is the same image.
+    expect(lowered).not.toContain(IMAGE_BYTES)
+  })
+
+  test("a text-only model is unaffected — the capability gate already removed the images", () => {
+    const lowered = JSON.stringify(toLLMMessages(sweep(4), model, TEXT_ONLY, 2))
+    expect(lowered.split('"type":"file"').length - 1).toBe(0)
+    // Every one reads as a capability refusal, not as a budget elision: the model never saw these.
+    expect(lowered).not.toContain("You DID look at it earlier")
   })
 })

@@ -171,6 +171,14 @@ export interface Interface {
    * endpoint (which is most of them, and all of ours).
    */
   readonly capabilities: (session: SessionSchema.Info) => Effect.Effect<ModelV2.Capabilities | undefined>
+  /**
+   * How many images the resolved model accepts in ONE request, or `undefined` for unlimited.
+   *
+   * Read the same best-effort way as `tier`/`prePrompt`/`capabilities` — one `select(session)`, no
+   * new cost — and `undefined` is the pass-everything answer, which is what every endpoint that
+   * never had this cap wants. See `budgetImages` for why a guessed default would be wrong.
+   */
+  readonly imageLimit: (session: SessionSchema.Info) => Effect.Effect<number | undefined>
   /** Catalog identity of the model `resolve` selects. Unlike the wire route's `model.id`, this is
    * the stable user-facing id and is therefore the identity model-routing config matches. */
   readonly ref: (session: SessionSchema.Info) => Effect.Effect<ModelV2.Ref | undefined>
@@ -196,6 +204,7 @@ export const layerWith = (
   tier: Interface["tier"] = () => Effect.succeed(undefined),
   prePrompt: Interface["prePrompt"] = () => Effect.succeed(undefined),
   capabilities: Interface["capabilities"] = () => Effect.succeed(undefined),
+  imageLimit: Interface["imageLimit"] = () => Effect.succeed(undefined),
   ref: Interface["ref"] = () => Effect.succeed(undefined),
   retryAttempts: Interface["retryAttempts"] = () => Effect.succeed(undefined),
   device: Interface["device"] = () => Effect.succeed(undefined),
@@ -210,7 +219,18 @@ export const layerWith = (
 ) =>
   Layer.succeed(
     Service,
-    Service.of({ resolve, resolveDefault, tier, prePrompt, retryAttempts, capabilities, ref, device, observeServing }),
+    Service.of({
+      resolve,
+      resolveDefault,
+      tier,
+      prePrompt,
+      retryAttempts,
+      capabilities,
+      imageLimit,
+      ref,
+      device,
+      observeServing,
+    }),
   )
 
 /**
@@ -635,6 +655,9 @@ export const locationLayer = Layer.effect(
       // The attachment gate's evidence, read exactly like `tier` above — no boot-latch wait, never
       // fails. An unresolved model returns undefined, which the gate reads as "no evidence" and
       // lets through; the turn's real model resolution (`resolve`) is what fails a missing model.
+      imageLimit: Effect.fn("SessionRunnerModel.imageLimit")(function* (session) {
+        return (yield* select(session).pipe(Effect.orElseSucceed(() => undefined)))?.limit?.images
+      }),
       capabilities: Effect.fn("SessionRunnerModel.capabilities")(function* (session) {
         return (yield* select(session).pipe(Effect.orElseSucceed(() => undefined)))?.capabilities
       }),
