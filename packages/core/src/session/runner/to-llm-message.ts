@@ -19,7 +19,21 @@ const media = (file: FileAttachment): ContentPart => ({
   mediaType: file.mime,
   data: file.uri,
   filename: file.name,
-  metadata: file.description === undefined ? undefined : { description: file.description },
+  // ⚠️ `sourceUri` is carried, not dropped, and `budgetedImageNotice` is why. When the per-request
+  // budget elides an image the notice tells the model to read it again — which is only an
+  // instruction it can FOLLOW if it knows where the file is. An inlined attachment's `data` is a
+  // data: URI and its `filename` is a bare basename, so without this the model is told to re-read
+  // something it cannot name. Measured 2026-08-20: told a filename it could resolve, the model does
+  // re-read voluntarily ("I'm missing my description for icon_002 due to the image limit. Let me
+  // read it again"); handed six attachments with no paths, it silently described the surviving three
+  // and renumbered them.
+  metadata:
+    file.description === undefined && file.sourceUri === undefined
+      ? undefined
+      : {
+          ...(file.description === undefined ? {} : { description: file.description }),
+          ...(file.sourceUri === undefined ? {} : { sourceUri: file.sourceUri }),
+        },
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -619,8 +633,16 @@ export const toLLMMessages = (
  * (*the model never instruments voluntarily; the harness must force it*), and is why a sub-session
  * that looks at ≤N images and returns TEXT is the shape that actually survives a large folder.
  */
-export const budgetedImageNotice = (name: string | undefined): string =>
-  `[An image${name ? ` (${name})` : ""} you opened earlier is NOT in this request: this model accepts only a limited number of images at once, so the most recent ones were kept. You cannot see it now. Do not describe it or name it from memory — if this task needs it, read it again, and write down what each image shows as you go so the description survives.]`
+export const budgetedImageNotice = (name: string | undefined, sourcePath?: string): string => {
+  // ⭐ The path, when we have one, is what turns "read it again" from advice into a step. See
+  // `media()` for the measurement: the model DOES re-read an image it can name, and cannot re-read
+  // one it cannot. A `file://` URI is de-scheme'd because that is the spelling `read` takes.
+  const readable = sourcePath?.startsWith("file:///") ? decodeURIComponent(sourcePath.slice(8)) : sourcePath
+  const how = readable
+    ? ` Read it again with \`read\` at this exact path: ${readable}`
+    : " If this task needs it, read it again."
+  return `[An image${name ? ` (${name})` : ""} you opened earlier is NOT in this request: this model accepts only a limited number of images at once, so the most recent ones were kept. You cannot see it now. Do not describe it or name it from memory — that is a mistake this notice exists to prevent, and a description you invent here will be wrong.${how} Write down what each image shows as you go, so the description survives even when the picture does not.]`
+}
 
 // Type GUARDS, not predicates: the flatMap below reads `.filename` / `.name` off the narrowed arm,
 // and a bare boolean leaves the compiler holding the whole union.
@@ -763,13 +785,27 @@ const evictImages = (messages: readonly Message[], take: () => boolean): readonl
     if (!Array.isArray(message.content)) return message
     const content = (message.content as readonly ContentPart[]).flatMap((part): ContentPart[] => {
       if (isImagePart(part))
-        return take() ? [{ type: "text", text: budgetedImageNotice(part.filename) }] : [part]
+        return take()
+          ? [
+              {
+                type: "text",
+                // The user-attachment door: the path rides in `metadata.sourceUri` (see `media`),
+                // because an inlined attachment's own `data` is a data: URI that names nothing.
+                text: budgetedImageNotice(
+                  part.filename,
+                  (part.metadata as { readonly sourceUri?: string } | undefined)?.sourceUri,
+                ),
+              },
+            ]
+          : [part]
       if (part.type !== "tool-result") return [part]
       const value = contentEntries((part as ToolResultPart).result)
       if (value === undefined || !value.some(isImageContent)) return [part]
       const gated = value.flatMap((item): ToolContent[] =>
         isImageContent(item) && take()
-          ? [{ type: "text", text: budgetedImageNotice(item.name) }]
+          ? // The TOOL door: `read` sets the file's own path as the content's name, so the notice
+            // can point straight back at what produced it and no second field is needed.
+            [{ type: "text", text: budgetedImageNotice(item.name, item.name) }]
           : [item],
       )
       return [{ ...(part as ToolResultPart), result: { type: "content", value: gated } } as ContentPart]

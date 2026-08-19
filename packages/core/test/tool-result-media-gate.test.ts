@@ -472,8 +472,11 @@ describe("per-request image budget", () => {
     for (const kept of ["icon_4.png", "icon_5.png", "icon_6.png"]) expect(lowered).toContain(kept)
     // …and the elided ones are REPLACED, not deleted (ruling 2): a dropped image must never read as
     // one the model still holds.
-    expect(lowered).toContain(budgetedImageNotice("icon_1.png"))
-    expect(lowered).toContain(budgetedImageNotice("icon_3.png"))
+    // ⚠️ Two arguments now: `read` names the file it opened, so the notice points back at that exact
+    // path and "read it again" becomes a step the model can take rather than advice it cannot act
+    // on. Passing one argument here would assert the pathless wording and pass only by accident.
+    expect(lowered).toContain(budgetedImageNotice("icon_1.png", "icon_1.png"))
+    expect(lowered).toContain(budgetedImageNotice("icon_3.png", "icon_3.png"))
   })
 
   /**
@@ -524,8 +527,8 @@ describe("per-request image budget", () => {
   test("a zero budget elides everything and still never deletes a part", () => {
     const lowered = JSON.stringify(toLLMMessages(sweep(2), model, VISION, 0))
     expect(lowered.split('"type":"file"').length - 1).toBe(0)
-    expect(lowered).toContain(budgetedImageNotice("icon_1.png"))
-    expect(lowered).toContain(budgetedImageNotice("icon_2.png"))
+    expect(lowered).toContain(budgetedImageNotice("icon_1.png", "icon_1.png"))
+    expect(lowered).toContain(budgetedImageNotice("icon_2.png", "icon_2.png"))
     // ⚠️ And the bytes are GONE — not re-shipped as structured JSON, the trap `gateToolMedia`
     // records. An empty content array would send `structured`, which for `read` is the same image.
     expect(lowered).not.toContain(IMAGE_BYTES)
@@ -576,10 +579,10 @@ describe("per-request image budget", () => {
     const lowered = JSON.stringify(toLLMMessages(history, model, VISION, 2))
     expect(lowered.split('"type":"file"').length - 1).toBe(2)
     expect(lowered).toContain("That is a golden broken heart.")
-    expect(lowered).toContain(budgetedImageNotice("b.png"))
+    expect(lowered).toContain(budgetedImageNotice("b.png", "b.png"))
     // The silent ones survive as PIXELS — including the OLDEST, which oldest-first would have taken.
-    expect(lowered).not.toContain(budgetedImageNotice("a.png"))
-    expect(lowered).not.toContain(budgetedImageNotice("c.png"))
+    expect(lowered).not.toContain(budgetedImageNotice("a.png", "a.png"))
+    expect(lowered).not.toContain(budgetedImageNotice("c.png", "c.png"))
   })
 
   // ⚠️ When NOTHING has been described the preference cannot help: the cap is hard and something has
@@ -588,9 +591,9 @@ describe("per-request image budget", () => {
     const history = [readOf("a.png"), readOf("b.png"), readOf("c.png"), readOf("d.png")]
     const lowered = JSON.stringify(toLLMMessages(history, model, VISION, 2))
     expect(lowered.split('"type":"file"').length - 1).toBe(2)
-    expect(lowered).toContain(budgetedImageNotice("a.png"))
-    expect(lowered).toContain(budgetedImageNotice("b.png"))
-    expect(lowered).not.toContain(budgetedImageNotice("d.png"))
+    expect(lowered).toContain(budgetedImageNotice("a.png", "a.png"))
+    expect(lowered).toContain(budgetedImageNotice("b.png", "b.png"))
+    expect(lowered).not.toContain(budgetedImageNotice("d.png", "d.png"))
   })
 
   test("takes silent images too, once every described one is already gone", () => {
@@ -599,9 +602,9 @@ describe("per-request image budget", () => {
     const history = [readOf("a.png"), described("A broken heart."), readOf("b.png"), readOf("c.png")]
     const lowered = JSON.stringify(toLLMMessages(history, model, VISION, 1))
     expect(lowered.split('"type":"file"').length - 1).toBe(1)
-    expect(lowered).toContain(budgetedImageNotice("a.png"))
-    expect(lowered).toContain(budgetedImageNotice("b.png"))
-    expect(lowered).not.toContain(budgetedImageNotice("c.png"))
+    expect(lowered).toContain(budgetedImageNotice("a.png", "a.png"))
+    expect(lowered).toContain(budgetedImageNotice("b.png", "b.png"))
+    expect(lowered).not.toContain(budgetedImageNotice("c.png", "c.png"))
   })
 })
 
