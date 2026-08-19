@@ -657,12 +657,110 @@ export const budgetImages = (
     }
   }
   if (total <= max) return messages
-  // Walk FORWARD dropping the oldest surplus, which is the same decision as "keep the newest"
-  // expressed without a reverse pass — `budget` is how many of the leading images must go.
-  let budget = total - max
-  const take = (): boolean => (budget > 0 ? (budget--, true) : false)
-  return messages.map((message) => {
-    if (budget <= 0 || !Array.isArray(message.content)) return message
+  // ─────────────────────────────────────────────────────────────────────────────
+  // WHICH images go, and it is not simply the oldest.
+  //
+  // 🔴 Measured 2026-08-19 on the six-glyph corpus: evicting oldest-first, with no regard for
+  // whether the model had ever SAID what an image showed, produced five wrong filenames out of six.
+  // An image the model has described is partly redundant — its content survives as text. An image it
+  // read in silence exists nowhere else, and eliding it deletes the only copy while leaving the model
+  // convinced it still knows.
+  //
+  // So: **a DESCRIBED image is evicted before an undescribed one**, and only within that preference
+  // does oldest-first apply. This is the mechanical half of the same finding whose informational half
+  // lives in `tool/read.ts` (ask for the line while the pixels are still there) — and it is the half
+  // that holds when the model ignores the ask, which is the case AGENTS.md's pitfall list says to
+  // design for.
+  //
+  // ⚠️ "Described" is approximated as ASSISTANT TEXT LATER IN THE REQUEST, and the approximation is
+  // stated rather than hidden: the harness cannot verify that a sentence is *about* the image. What
+  // it can verify is that the model was given the chance and took it — silence is unambiguous, and
+  // silence is the case that produced the defect. Over-counting a description costs an eviction we
+  // would have made anyway; under-counting silence costs correctness.
+  //
+  // ⚠️ When EVERY image is undescribed the preference cannot help — the cap is hard and something
+  // must go. Oldest-first then applies unchanged, and `budgetedImageNotice` is what keeps that
+  // honest by forbidding the model to name it from memory.
+  // ─────────────────────────────────────────────────────────────────────────────
+  const describedBefore = describedImageIndices(messages)
+  // ⚠️ Choose the victims UP FRONT, then walk once.
+  //
+  // The first draft did two walks — described images, then the rest — and it was wrong in a way that
+  // passed three of its four tests: the second walk re-indexes over an array the first walk already
+  // rewrote, so once an image has become a notice every later index refers to a different picture.
+  // A victim SET is computed against one fixed ordering and cannot drift.
+  const victims = new Set<number>()
+  const needed = total - max
+  for (const described of [true, false]) {
+    for (let index = 0; index < total && victims.size < needed; index++)
+      if (describedBefore.has(index) === described) victims.add(index)
+    if (victims.size >= needed) break
+  }
+  let imageIndex = -1
+  return evictImages(messages, () => victims.has(++imageIndex))
+}
+
+/**
+ * The positions — in forward image order — of images the model actually said something after.
+ *
+ * ⚠️ **The rule is text BETWEEN this image and the next one**, not "any assistant text later in the
+ * request". The first draft used the latter and it marked every image described the moment the model
+ * spoke once: with `read(a) read(b) "a golden heart" read(c)`, `a` counted as described on the
+ * strength of a sentence that followed `b`. That is the exact confusion the whole feature exists to
+ * prevent, reproduced inside the fix — and it evicted the silent oldest image while keeping the
+ * described one.
+ *
+ * ⚠️ Still an approximation, stated rather than hidden: the harness cannot verify a sentence is
+ * ABOUT the image it follows. What it can verify is that the model was given the chance and took it
+ * before moving on. Silence is unambiguous, and silence is the case that produced the defect —
+ * over-counting a description costs an eviction we would likely have made anyway, while
+ * under-counting silence costs correctness.
+ *
+ * ⚠️ The last image has no "next", so its window runs to the end of the request. An image the model
+ * opened and has not yet spoken after is undescribed, which is the correct reading: the turn that
+ * would describe it has not happened.
+ */
+const describedImageIndices = (messages: readonly Message[]): ReadonlySet<number> => {
+  // One forward pass emitting a flat event stream: each image position, and each point where the
+  // assistant produced non-empty text. An image is described when text appears before the next image.
+  const events: Array<{ readonly kind: "image" | "text"; readonly index: number }> = []
+  let imageIndex = 0
+  for (const message of messages) {
+    const parts: readonly ContentPart[] = Array.isArray(message.content) ? (message.content as readonly ContentPart[]) : []
+    // Text first within a message: an assistant message lowers as [text, tool-call], so its prose
+    // belongs to the images ALREADY seen, never to the call it is about to make.
+    const text =
+      typeof message.content === "string"
+        ? message.content
+        : parts
+            .filter((part) => part.type === "text")
+            .map((part) => (part as { readonly text?: string }).text ?? "")
+            .join("")
+    if (message.role === "assistant" && text.trim().length > 0) events.push({ kind: "text", index: -1 })
+    for (const part of parts) {
+      if (isImagePart(part)) events.push({ kind: "image", index: imageIndex++ })
+      else if (part.type === "tool-result") {
+        const value = contentEntries((part as ToolResultPart).result)
+        if (value) for (const item of value) if (isImageContent(item)) events.push({ kind: "image", index: imageIndex++ })
+      }
+    }
+  }
+  const described = new Set<number>()
+  for (let at = 0; at < events.length; at++) {
+    if (events[at]!.kind !== "image") continue
+    for (let ahead = at + 1; ahead < events.length; ahead++) {
+      if (events[ahead]!.kind === "image") break
+      described.add(events[at]!.index)
+      break
+    }
+  }
+  return described
+}
+
+/** One eviction walk: `take` decides, per image in forward order, whether this one goes. */
+const evictImages = (messages: readonly Message[], take: () => boolean): readonly Message[] =>
+  messages.map((message) => {
+    if (!Array.isArray(message.content)) return message
     const content = (message.content as readonly ContentPart[]).flatMap((part): ContentPart[] => {
       if (isImagePart(part))
         return take() ? [{ type: "text", text: budgetedImageNotice(part.filename) }] : [part]
@@ -678,4 +776,3 @@ export const budgetImages = (
     })
     return { ...message, content } as Message
   })
-}

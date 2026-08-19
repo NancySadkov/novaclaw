@@ -537,4 +537,71 @@ describe("per-request image budget", () => {
     // Every one reads as a capability refusal, not as a budget elision: the model never saw these.
     expect(lowered).not.toContain("You DID look at it earlier")
   })
+
+  /**
+   * 🔴 **The mechanical half of the 2026-08-19 finding.** Evicting oldest-first, with no regard for
+   * whether the model had ever SAID what an image showed, produced five wrong filenames out of six
+   * on the glyph corpus. A described image is partly redundant — its content survives as text. An
+   * image read in silence exists nowhere else, so eliding it deletes the only copy while leaving the
+   * model convinced it still knows.
+   */
+  const described = (text: string) =>
+    SessionMessage.Assistant.make({
+      id: id(`said-${text.replace(/\W/g, "")}`),
+      type: "assistant",
+      agent: "build",
+      model: { id: ModelV2.ID.make("model"), providerID: ProviderV2.ID.make("provider") },
+      content: [SessionMessage.AssistantText.make({ type: "text", id: `t-${text.length}`, text })],
+      time: { created, completed: created },
+    })
+
+  /** One read of one NAMED image — `sweep` restarts at icon_1 each call, which silently produced
+   *  duplicate names and a test that passed for the wrong reason on the first draft. */
+  const readOf = (name: string) =>
+    completed([
+      { type: "text", text: "Image read successfully" },
+      { type: "file", uri: IMAGE_URI, mime: "image/png", name },
+    ])
+
+  /**
+   * ⚠️ **The DISCRIMINATING case, and the first draft of this test did not have it.** Putting the
+   * described image first makes both policies agree — oldest-first and described-first both evict
+   * it — so the test passed with the preference deleted. The described image has to be NEWER than a
+   * silent one for the two policies to disagree at all.
+   */
+  test("evicts a DESCRIBED image before an OLDER silent one", () => {
+    // a.png silent (oldest) · b.png described · c.png silent. Budget 2 must drop b.png, not a.png:
+    // b's content survives in the sentence, a's exists nowhere else.
+    const history = [readOf("a.png"), readOf("b.png"), described("That is a golden broken heart."), readOf("c.png")]
+    const lowered = JSON.stringify(toLLMMessages(history, model, VISION, 2))
+    expect(lowered.split('"type":"file"').length - 1).toBe(2)
+    expect(lowered).toContain("That is a golden broken heart.")
+    expect(lowered).toContain(budgetedImageNotice("b.png"))
+    // The silent ones survive as PIXELS — including the OLDEST, which oldest-first would have taken.
+    expect(lowered).not.toContain(budgetedImageNotice("a.png"))
+    expect(lowered).not.toContain(budgetedImageNotice("c.png"))
+  })
+
+  // ⚠️ When NOTHING has been described the preference cannot help: the cap is hard and something has
+  // to go. Oldest-first then applies unchanged — this is the case the honest notice exists for.
+  test("falls back to oldest-first when the model described nothing at all", () => {
+    const history = [readOf("a.png"), readOf("b.png"), readOf("c.png"), readOf("d.png")]
+    const lowered = JSON.stringify(toLLMMessages(history, model, VISION, 2))
+    expect(lowered.split('"type":"file"').length - 1).toBe(2)
+    expect(lowered).toContain(budgetedImageNotice("a.png"))
+    expect(lowered).toContain(budgetedImageNotice("b.png"))
+    expect(lowered).not.toContain(budgetedImageNotice("d.png"))
+  })
+
+  test("takes silent images too, once every described one is already gone", () => {
+    // Budget 1 against 3 images where only a.png is described: the described one goes first, then
+    // oldest-first takes over for the remainder, leaving the NEWEST silent image.
+    const history = [readOf("a.png"), described("A broken heart."), readOf("b.png"), readOf("c.png")]
+    const lowered = JSON.stringify(toLLMMessages(history, model, VISION, 1))
+    expect(lowered.split('"type":"file"').length - 1).toBe(1)
+    expect(lowered).toContain(budgetedImageNotice("a.png"))
+    expect(lowered).toContain(budgetedImageNotice("b.png"))
+    expect(lowered).not.toContain(budgetedImageNotice("c.png"))
+  })
 })
+
