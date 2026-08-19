@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
-import { formatResourceBytes } from "./instance-resources"
+import { formatResourceBytes } from "./instance-resources-format"
 
 const source = fs.readFileSync(new URL("./instance-resources.tsx", import.meta.url), "utf8")
 

@@ -9,14 +9,12 @@ import { instanceResources } from "@/utils/resource-api"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 
-const GIB = 1024 ** 3
-const MIB = 1024 ** 2
+// Imported for this file's own use AND re-exported so existing importers keep working. The
+// implementation lives in a component-free sibling so its test can load without dragging Kobalte in;
+// a bare `export … from` would re-export without binding it locally.
+import { formatResourceBytes } from "./instance-resources-format"
 
-export function formatResourceBytes(value: number): string {
-  if (value >= GIB) return `${(value / GIB).toFixed(1)} GiB`
-  if (value >= MIB) return `${(value / MIB).toFixed(value >= 10 * MIB ? 0 : 1)} MiB`
-  return `${Math.round(value / 1024)} KiB`
-}
+export { formatResourceBytes } from "./instance-resources-format"
 
 export const InstanceResources: Component = () => {
   const language = useLanguage()

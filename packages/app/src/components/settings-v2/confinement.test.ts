@@ -6,7 +6,7 @@ import {
   confinementState,
   type ConfinementState,
   type ShellStatusWithJail,
-} from "./confinement"
+} from "./confinement-state"
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // The confinement-surface ratchet (ruling 1 — an invariant with no mechanical check does not exist).

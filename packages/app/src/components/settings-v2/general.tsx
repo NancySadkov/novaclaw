@@ -7,7 +7,6 @@ import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useGlobal } from "@/context/global"
 import { ReleaseNotesStatusLine } from "@/context/highlights"
-import { NovaHealthBoard } from "./nova-health"
 import { useLanguage } from "@/context/language"
 import { useExpertise, PERMISSION_MODE_MIN_LEVEL } from "@/context/expertise"
 import { usePermission } from "@/context/permission"
@@ -20,7 +19,8 @@ import { useServerManagementController } from "../dialog-select-server"
 import { ConfigExportImport } from "./config-io"
 import { SettingsProjectSection } from "./project"
 import { SettingsPoliciesSection } from "./policies"
-import { SettingsConfinementSection, type ShellStatusWithJail } from "./confinement"
+// Confinement is no longer rendered here — it is part of the health report now. `ShellStatus` below
+// still types the shell-BUNDLE row's own fetch, which stays in this tab because it has a control.
 import { useSettings } from "@/context/settings"
 import { offlineStatus, shellProvision, shellStatus, type OfflineStatus, type ShellStatus } from "@/utils/fs-api"
 import { useUpdaterAction } from "../updater-action"
@@ -44,6 +44,15 @@ type ShellSelectOption = {
 
 export const SettingsGeneralV2: Component<{
   sessionID?: string
+  /**
+   * Switch the settings dialog to another tab.
+   *
+   * Only one row uses it — the health pointer at the top of this tab — and it exists so that moving
+   * the health report out of General did not cost the discoverability the report's old placement
+   * bought. Optional so a caller that renders this panel outside the dialog still compiles; the
+   * button simply does nothing there, which is the right failure for a pure navigation affordance.
+   */
+  onOpenTab?: (tab: string) => void
 }> = (props) => {
   const language = useLanguage()
   const settings = useSettings()
@@ -662,26 +671,67 @@ export const SettingsGeneralV2: Component<{
       </div>
 
       <div class="settings-v2-tab-body">
-        {/* Nova Health leads the tab because it answers the question that BRINGS someone to
-            Settings when something feels wrong -- putting it under the preference rows would mean a
-            worried user reads a language picker first. It costs nothing to open: the endpoint
-            deliberately gathers no reading that egresses. */}
-        <NovaHealthBoard />
+        {/* ─────────────────────────────────────────────────────────────────────────────────────
+            🔴 WHAT THIS TAB IS FOR (decided 2026-08-19, owner-driven; principle 10 — a
+            vision-answerable question is a mandatory action, not an escalation).
+
+            **General is what you SET.** Every row below is a control: a preference, a switch, a
+            picker, a button. That is the whole membership rule, and it exists because General had
+            stopped having one — it had become the tab things landed in when they had no obvious
+            home, which is how a tab stops being navigable.
+
+            The symptom that made it visible was two READ-ONLY STATUS BOARDS living here (Nova Health
+            and Confinement) in the tab you open in order to change something. So the rule was
+            decided for the CLASS rather than for one board: **a read-only reading of this instance
+            is a FINDING, and findings go in the health report** (`nova-health.tsx`), **which lives
+            in Health & recovery** — the tab whose whole subject is "something is wrong, help me fix
+            it", and which `uix.md` §7 already labelled *understand + reset*. Confinement went one
+            step further at the owner's instruction and is now three ROWS of that report rather than
+            a board beside it, because it never had a control in it at all.
+
+            The next status board goes into the report too. It does not come back here.
+
+            ⚠️ WHAT DELIBERATELY STAYED, so the rule is not read as "move anything that shows a
+            fact": Project and Policies are NOT status boards. Both carry real controls — Project
+            writes `novaclaw.json` (rules, the never-read list, the .gitignore import) and Policies
+            is the other agent's live surface — and their fact rows are the context those controls
+            need. A control with an explanation is a setting; an explanation with no control is a
+            finding. Storage stays where it is for the same reason it always did: it has an unload
+            button and is already in the Safety section.
+
+            ⚠️ AND THE DISCOVERABILITY ARGUMENT THAT USED TO PIN HEALTH HERE SURVIVES — it was the
+            right argument (a worried user must not read a language picker first) and it is now
+            carried by three things instead of one: the report LEADS its new tab, the tab is NAMED
+            "Health & recovery" so the rail states the question, and the row directly below is the
+            first thing in General — a pointer, one click, before any preference.
+            ───────────────────────────────────────────────────────────────────────────────────── */}
+        <div class="settings-v2-section">
+          <SettingsListV2>
+            <SettingsRowV2
+              title={language.t("settings.general.row.health.title")}
+              description={language.t("settings.general.row.health.description")}
+            >
+              <ButtonV2
+                size="normal"
+                variant="neutral"
+                data-action="settings-open-health"
+                onClick={() => props.onOpenTab?.("recovery")}
+              >
+                {language.t("settings.general.row.health.action")}
+              </ButtonV2>
+            </SettingsRowV2>
+          </SettingsListV2>
+        </div>
 
         <GeneralSection />
 
-        {/* Confinement sits directly under the safety rows above (Ask-before-reading, Offline mode)
-            because it answers the question those two raise: what actually stops the agent, as
-            opposed to what asks it nicely. It rides the SAME `shell/status` fetch the shell-bundle
-            row already makes — the posture is a field on that response, so this section adds no
-            request of its own and no second probe. `jail` is absent on an instance older than this
-            screen, which the section reports rather than papers over. */}
-        <SettingsConfinementSection
-          status={bundle.latest as ShellStatusWithJail | undefined}
-          loading={bundle.loading}
-        />
+        {/* Confinement used to sit here, directly under the safety rows above. It is now part of the
+            health report (see the block at the top of this tab) — it was a read-only reading with no
+            control in it, which makes it a finding rather than a setting. `bundle` below is still
+            fetched for the shell-BUNDLE row inside GeneralSection; the report makes its own
+            `shell/status` call, which is named as a cost in `nova-health.tsx` rather than hidden. */}
 
-        {/* Directly after Confinement, because it answers the same question from the other side: not
+        {/* Directly after the settings above, because it answers the same question from the other side: not
             "what boxes the agent in", but "what ELSE is deciding what it may do here". A folder's
             `novaclaw.json` can narrow this session's permissions, and until this section existed the
             only way to discover that was to be refused and go looking for the file. */}

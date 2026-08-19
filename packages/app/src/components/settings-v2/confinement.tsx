@@ -1,7 +1,8 @@
 import { For, Show, type Component } from "solid-js"
 import { useLanguage } from "@/context/language"
 import type { ShellStatus } from "@/utils/fs-api"
-import { SettingsListV2 } from "./parts/list"
+// No `SettingsListV2` here any more: these rows are rendered INSIDE the health report's list, not in
+// a list of their own (see `ConfinementRows` below for why).
 import { SettingsRowV2 } from "./parts/row"
 // ⚠️ TYPE-ONLY. `@novaclaw/core/agent-jail` imports `node:child_process` at module scope, so a VALUE
 // import of it would follow the renderer into the browser bundle. `import type` is erased before the
@@ -32,66 +33,25 @@ import type { BashPlan, ConfinementReason, Enclosure, JailPostureWire } from "@n
 // than guessing. `confinementState` below has exactly one inference in it, and it is pinned by test.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-/**
- * The instance-reported shell status, plus the confinement posture the instance MAY attach to it.
- *
- * ⚠️ `jail` is optional because the field rides an existing response (`GET /shell/status`) and an
- * instance older than this screen does not send it. That is a first-class state here, not an error —
- * see `"unreported"` below.
- */
-export type ShellStatusWithJail = ShellStatus & {
-  readonly jail?: ReportedPosture
-  /** Optional for the same reason `jail` is: an older instance omits it and the row says so. */
-  readonly enclosure?: Enclosure
-}
+// The state machine and its types live in a component-free sibling so their ratchet can load under
+// the unit tier. Imported for this file's own use AND re-exported, so existing importers of
+// `./confinement` are unaffected — a bare `export … from` would re-export without binding locally.
+import {
+  confinementState,
+  UNPROBED_ON_THIS_PLATFORM,
+  type ConfinementState,
+  type ShellStatusWithJail,
+} from "./confinement-state"
 
-/**
- * The posture as this screen may receive it.
- *
- * ⚠️ `bash` is optional HERE while it is required on the kernel's `JailPostureWire`, and the
- * widening is deliberate rather than sloppy: the one posture this screen may synthesise
- * (`UNPROBED_ON_THIS_PLATFORM`) has no per-turn outcomes, because those are the kernel's answers and
- * computing them in the renderer is exactly the restatement `bashPlan` exists to prevent. Modelling
- * that as "absent" costs one `Show`; modelling it with a cast would let a fabricated outcome table
- * reach a user. Everything else is the kernel's type, so a field added there arrives here typed.
- */
-export type ReportedPosture = Omit<JailPostureWire, "bash"> & { readonly bash?: BashPlan }
+export {
+  BACKENDED_PLATFORMS,
+  confinementState,
+  UNPROBED_ON_THIS_PLATFORM,
+  type ConfinementState,
+  type ReportedPosture,
+  type ShellStatusWithJail,
+} from "./confinement-state"
 
-/**
- * The platforms on which THIS build implements a sandbox backend.
- *
- * ⚠️ DERIVED, not decided here. `confinement.test.ts` drives the kernel's own `detectBackend` across
- * every platform string and fails if this list disagrees with it — so the day a Seatbelt or
- * AppContainer backend lands, the test goes red until this line and the copy catch up. Without that
- * pin this would be a normative claim about code in another package, which is the ruling-1 defect
- * class exactly.
- *
- * It is used for ONE inference, and only when the instance sent no posture: a host whose platform has
- * no backend at all cannot be confined, and saying so is not a guess. On a platform that DOES have a
- * backend, whether it works is unknowable from here (that is the whole AppArmor story), so we say we
- * do not know.
- */
-export const BACKENDED_PLATFORMS: readonly string[] = ["linux"]
-
-/**
- * What this screen can honestly say. Keyed by the kernel's own `ConfinementReason` wherever the
- * instance answered, plus the two states that are about the ANSWER rather than the host.
- */
-export type ConfinementState =
-  | { readonly kind: ConfinementReason; readonly jail: ReportedPosture; readonly platform: string }
-  /** The instance is older than this screen: it has a backend-capable platform and did not say. */
-  | { readonly kind: "unreported"; readonly platform: string }
-  /** We could not reach the instance at all. Says "I do not know", never "you are unprotected". */
-  | { readonly kind: "unknown" }
-
-export function confinementState(status: ShellStatusWithJail | undefined): ConfinementState {
-  if (!status) return { kind: "unknown" }
-  const jail = status.jail
-  if (jail) return { kind: jail.reason, jail, platform: status.platform }
-  // No posture on the wire. Exactly one of the two remaining answers is honest.
-  if (BACKENDED_PLATFORMS.includes(status.platform)) return { kind: "unreported", platform: status.platform }
-  return { kind: "platform-unsupported", jail: UNPROBED_ON_THIS_PLATFORM, platform: status.platform }
-}
 
 /**
  * The posture an instance that did not report one necessarily has, on a platform where no backend
@@ -104,14 +64,26 @@ export function confinementState(status: ShellStatusWithJail | undefined): Confi
  * them here would be the restatement `bashPlan` exists to prevent. The outcomes row simply does not
  * render until an instance sends them.
  */
-const UNPROBED_ON_THIS_PLATFORM: ReportedPosture = {
-  kind: "none",
-  fs: false,
-  net: false,
-  reason: "platform-unsupported",
-}
 
-export const SettingsConfinementSection: Component<{
+/**
+ * The confinement rows, as part of the HEALTH REPORT rather than as a settings section.
+ *
+ * 🔴 Owner, 2026-08-19: *"Confinement shouldn't really be a user configurable, but part of the health
+ * report, if it is available."* This used to be `SettingsConfinementSection` — a peer section in
+ * Settings → General with its own "Confinement" heading, sitting among rows a person can change. It
+ * never had a control in it (no switch, no button, no config write), so nothing configurable was
+ * taken away when it moved: it was always a read-only reading of the user's own machine, which is
+ * the definition of a health finding. It now renders as rows of `NovaHealthBoard` — hence no
+ * `settings-v2-section` wrapper and no `<h3>` here; the report owns the heading. Each row's own
+ * title still says what it is about ("Sandbox for the agent's shell", "What this machine already
+ * runs inside"), so the grouping label was the only thing lost, and it was redundant.
+ *
+ * ⚠️ *"if it is available"* is load-bearing and is already implemented: `platform-unsupported`,
+ * `backend-absent` and `backend-blocked` are three DIFFERENT user actions (wait for v0.3 / install
+ * bwrap / fix AppArmor), so they must never collapse into one "unavailable". The report says which
+ * one, on a platform that has no backend at all, rather than hiding the row.
+ */
+export const ConfinementRows: Component<{
   status?: ShellStatusWithJail
   /** The status fetch is still in flight — see `displayKind` for why this is not cosmetic. */
   loading?: boolean
@@ -179,11 +151,8 @@ export const SettingsConfinementSection: Component<{
   }
 
   return (
-    <div class="settings-v2-section" data-component="settings-confinement">
-      <h3 class="settings-v2-section-title">{language.t("settings.confinement.section")}</h3>
-
-      <SettingsListV2>
-        {/*
+    <>
+      {/*
           ONE row, not five. This section used to carry ~5 800 characters across five rows, two of
           which rendered `<span />` as their control — prose wearing a settings row's clothes.
           Nothing here is a setting, because the core does not implement OS confinement: per
@@ -248,9 +217,8 @@ export const SettingsConfinementSection: Component<{
             title={probeDetail()}
           >
             {probeDetail()}
-          </code>
-        </SettingsRowV2>
-      </SettingsListV2>
-    </div>
+        </code>
+      </SettingsRowV2>
+    </>
   )
 }

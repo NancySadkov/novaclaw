@@ -2,14 +2,39 @@ import { For, Show, createMemo, createResource, createSignal, type Component } f
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
+import { useServerSync } from "@/context/server-sync"
 import { instanceDiagnosis, type DiagnosisSignal, type DiagnosisStatus } from "@/utils/resource-api"
+import { shellStatus } from "@/utils/fs-api"
+import { ConfinementRows, type ShellStatusWithJail } from "./confinement"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 
 /**
- * Nova Health — the board a person opens when they already suspect something is broken.
+ * Nova Health — **the health report**: the one place that answers "is anything wrong with this
+ * instance, and what do I do about it".
  *
- * The composition lives on the server (`NovaHealth`, served by `GET /diagnosis`); this renders it.
+ * 🔴 WHERE IT LIVES, AND THE RULE BEHIND IT (owner, 2026-08-19). This report used to lead Settings →
+ * General, on the argument that a worried user must not have to read a language picker first. That
+ * argument was right and the placement was still wrong, because General had by then accumulated
+ * **two read-only status boards** — this one and Confinement — sitting among rows a person opens
+ * that tab to CHANGE. The rule that resolves it, and that applies to the next board as well:
+ *
+ *   • **General is for what you SET.** Every row in it is a control: a preference, a switch, a
+ *     picker, a button. If a person cannot change it, it does not belong there.
+ *   • **A read-only reading of this instance is a FINDING, and findings go in the health report** —
+ *     not beside it as a peer section, and not in General. That is why Confinement is now three rows
+ *     of this report rather than a section of its own.
+ *   • **The report lives in Health & recovery**, the tab whose whole subject is "something is wrong,
+ *     help me fix it". `uix.md` §7 already assigned that section the pillar *understand + reset*;
+ *     the report is the "understand" half and was simply never put there.
+ *
+ * ⚠️ **The discoverability argument had to survive the move, and it is carried by three things, not
+ * one.** (1) The report LEADS its tab, above the reset rungs — the same "leads the tab" reasoning,
+ * now in a tab that is about being worried. (2) The tab is named **Health & recovery**, so a worried
+ * person scanning the rail reads their own question; "Recovery" alone hid it. (3) General keeps a
+ * single row at the very top that points here — a control, not a board — so someone who lands on
+ * General still meets the health affordance before the language picker, one click away.
+ *
  * Two rules it exists to keep, both easy to undo by accident:
  *
  * 1. **`unknown` is never a tick.** Several readings can legitimately answer "cannot tell" — the
@@ -44,6 +69,7 @@ export const NovaHealthBoard: Component = () => {
   const language = useLanguage()
   const server = useServer()
   const global = useGlobal()
+  const sync = useServerSync()
   const connection = createMemo(() => server.current ?? global.servers.list()[0])
   // `probe` is a SIGNAL, not an argument to the initial load: the board must open without
   // contacting anyone, and only a deliberate click may spend egress.
@@ -56,6 +82,35 @@ export const NovaHealthBoard: Component = () => {
   // A failed fetch is itself a finding, and saying so beats an empty panel that reads as "nothing
   // wrong". This is the screen where an unexplained blank is the worst possible answer.
   const unreachable = createMemo(() => diagnosis.error !== undefined)
+
+  /**
+   * The confinement reading, fetched HERE rather than handed in as a prop.
+   *
+   * The report is now the home of every read-only reading, so it owns the fetches that feed it and
+   * can be mounted wherever the tab layout puts it without a parent having to know what it needs.
+   *
+   * ⚠️ This is a SECOND `shell/status` call on a Settings open — General still makes its own for the
+   * shell-bundle row, and the two do not share a cache. That is a real cost and it is named rather
+   * than hidden: it is one local GET against the user's own instance (no egress, which is the rule
+   * this board actually guards), and keeping a status board in the wrong tab to save it would be the
+   * worse trade. If a third reader ever wants it, lift it to a shared query then.
+   *
+   * ⚠️ `.catch(() => undefined)` matches what General did with the same call: an unreachable
+   * instance must reach `ConfinementRows` as "we do not know", which is a state it renders honestly,
+   * and never as a throw that the root ErrorBoundary turns into "Something went wrong".
+   */
+  const confinementDir = createMemo(() => sync().data.path.directory || sync().data.path.home || "")
+  const [shell] = createResource(
+    () => {
+      const conn = connection()
+      const dir = confinementDir()
+      return conn && dir ? { conn, dir } : undefined
+    },
+    ({ conn, dir }) =>
+      shellStatus(conn.http, { directory: dir })
+        .then((value) => value as ShellStatusWithJail)
+        .catch(() => undefined),
+  )
 
   return (
     <section class="flex flex-col gap-2" data-slot="nova-health">
@@ -85,6 +140,14 @@ export const NovaHealthBoard: Component = () => {
             </SettingsRowV2>
           )}
         </For>
+
+        {/* Confinement, folded in (owner, 2026-08-19). It is a reading of the user's own machine
+            with no control attached, which makes it a finding rather than a setting — so it renders
+            as rows of this report, in this same list, instead of as a section of its own in General.
+            It goes AFTER the server's signals deliberately: those answer "is this instance working",
+            this answers "how boxed in is what it runs", and the second is only interesting once the
+            first is. See `confinement.tsx` for what each arm may and may not claim. */}
+        <ConfinementRows status={shell.latest} loading={shell.loading} />
       </SettingsListV2>
 
       <div class="flex gap-3">

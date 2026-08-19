@@ -214,7 +214,10 @@ export const DialogSettings: Component<{
                 </div>
               </TabsV2.List>
               <TabsV2.Content value="general" class="settings-v2-panel">
-                <SettingsGeneralV2 sessionID={props.sessionID} />
+                {/* `setTab` is handed down so General's health pointer can open the report. The
+                    health report moved to Health & recovery (see general.tsx's header block); this
+                    one click is part of what keeps a worried user's path as short as it was. */}
+                <SettingsGeneralV2 sessionID={props.sessionID} onOpenTab={setTab} />
               </TabsV2.Content>
               <TabsV2.Content value="memory" class="settings-v2-panel">
                 <SettingsMemoryV2 sessionID={props.sessionID} />

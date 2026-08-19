@@ -1218,7 +1218,12 @@ export const dict = {
   "settings.tab.appearance": "Appearance",
   "settings.tab.instances": "Instances",
   "settings.tab.shortcuts": "Shortcuts",
-  "settings.tab.recovery": "Recovery",
+  // ⚠️ Renamed 2026-08-19 when the health report moved into this tab. The rename is half of how the
+  // report stayed discoverable: a worried person scanning the rail now reads their own question,
+  // where "Recovery" alone described only the remedy. The 17 translated bundles still say the old
+  // word — that is translation backlog (parity rule 2 counts it, correctly, rather than failing),
+  // not a fork: the tab still IS the recovery tab in every language.
+  "settings.tab.recovery": "Health & recovery",
   "settings.tab.about": "About",
   "settings.tab.storage": "Storage",
   "settings.tunes.title": "Tunes",
@@ -1312,6 +1317,10 @@ export const dict = {
   "settings.storage.tmp": "Temporary files",
   "settings.storage.tmp.description": "Short-lived working files. Cleared by the operating system.",
 
+  // The heading over the three undo rungs. It exists because this tab now has TWO parts — the health
+  // report first, then the ways back — and an unlabelled list under a report would read as more of
+  // the report. ENGLISH-ONLY like its neighbours; translate properly or leave it out.
+  "settings.recovery.section.restore": "Ways back",
   "settings.recovery.row.resetUi.title": "Reset appearance and layout",
   "settings.recovery.row.resetUi.description":
     "Reset how NovaClaw looks and is laid out back to the defaults — theme, the welcome tour, and view options. Your chats, files, and connected models are kept.",
@@ -1350,6 +1359,17 @@ export const dict = {
   "settings.instances.discovered.title": "Discovered on your network",
   "settings.instances.discovered.rescan": "Scan again",
   "settings.instances.discovered.add": "Add this instance",
+  // The pointer at the very top of General, and the reason it is the FIRST thing in that tab. The
+  // health report itself moved to Health & recovery; the argument that used to keep it in General —
+  // a worried person must not read a language picker first — is preserved by this row plus the
+  // report leading its new tab plus the tab's new name. Deliberately a control (a button that
+  // navigates), not a summary: a second place that states the verdict is a second place for the
+  // verdict to be stale, and this tab is not where findings live any more.
+  // ENGLISH-ONLY like its neighbours; translate properly or leave the keys out.
+  "settings.general.row.health.title": "Is something wrong?",
+  "settings.general.row.health.description":
+    "The health report checks this instance — its models, its storage, and how far the agent's shell is boxed in on this machine — and says what to do about anything it finds. It is also where the ways back live, if you need one.",
+  "settings.general.row.health.action": "Open health & recovery",
   "settings.health.title": "Is anything wrong?",
   "settings.health.checking": "Checking…",
   "settings.health.unreachable": "This instance could not be reached, so nothing below was checked.",
@@ -1476,10 +1496,30 @@ export const dict = {
   // EXTRA key in a locale and only COUNTS a missing one, and pasting English into de.ts et al. would
   // make the translation backlog read as done. Translate properly or leave the key out.
   "settings.project.section": "Project",
-  "settings.project.none": "This folder is not a Project",
+  // ⚠️ EVERY sentence below NAMES the folder — see `settings-v2/project-copy.ts` for why, and
+  // `project-copy.test.ts` for the check that keeps it true. These rows used to say "this folder"
+  // and "add a novaclaw.json HERE" with nothing on screen saying which folder that was; on a desktop
+  // launch the instance's folder is the user's home, so the invitation read as "make C:\Users\<you>
+  // a Project" to a reader who had a project chat open, and twice made a working feature look broken.
+  "settings.project.subject":
+    "These rows describe {{directory}} — the folder this instance itself is working in. It is fixed when the instance starts and does not follow whichever chat you have open; a chat running in another folder shows that folder's own Project inside the chat.",
+  "settings.project.subjectHome":
+    "These rows describe your home folder, {{directory}}. This instance was not started in a working folder, so the folder it is working in is your home. It does not follow whichever chat you have open; a chat running in another folder shows that folder's own Project inside the chat.",
+  "settings.project.none": "{{directory}} is not a Project",
   "settings.project.noneDetail":
-    "Add a novaclaw.json here to give the folder its own defaults. Without one the folder works exactly as it does now.",
-  "settings.project.nameLabel": "Name",
+    "Add a novaclaw.json to {{directory}} to give that folder its own defaults. Without one it works exactly as it does now.",
+  // The home folder gets its own sentence rather than the generic invitation above. A novaclaw.json
+  // at the top of your home folder is not wrong, but it governs every chat you start anywhere
+  // beneath it — so the copy says what accepting the offer would actually mean instead of hiding the
+  // control (teach, don't gatekeep).
+  "settings.project.noneHome": "Your home folder is not a Project",
+  "settings.project.noneHomeDetail":
+    "That is the normal state, and usually the one you want. You can add a novaclaw.json to {{directory}} below, but a Project at the top of your home folder applies to every chat you start anywhere inside it — most people want one on a single working folder instead.",
+  "settings.project.namedTitle": "{{directory}} belongs to the Project “{{name}}”",
+  "settings.project.unnamedTitle": "{{directory}} belongs to a Project",
+  "settings.project.rootHere": "The novaclaw.json that says so is in this folder.",
+  "settings.project.rootAbove":
+    "The novaclaw.json that says so is in {{root}}, above this folder — it governs this folder and everything else beneath that one.",
   "settings.project.rootLabel": "Project root",
   "settings.project.fileLabel": "Declared in",
   "settings.project.rulesLabel": "Permission rules",
@@ -1491,7 +1531,7 @@ export const dict = {
   "settings.project.excludeNone":
     "Nothing — Nova may read any file in this folder. Add an `exclude` list to novaclaw.json to keep keys, credentials or bulky folders out of its reach.",
   "settings.project.excludeLabel": "Never read",
-  "settings.project.invalid": "This folder's novaclaw.json could not be used",
+  "settings.project.invalid": "The novaclaw.json in {{directory}} could not be used",
   "settings.project.invalidFuture":
     "It was written by a newer NovaClaw. Update NovaClaw to use it — the file itself is probably fine.",
   "settings.project.invalidBroken": "The file could not be read: {{detail}}",
@@ -1542,7 +1582,11 @@ export const dict = {
   "policies.session.title": "Checks that stepped in",
   "policies.session.none":
     "Nothing stepped in: every check allowed every tool call in this chat, and answered in time.",
-  "policies.session.unavailable": "Not available for this chat yet.",
+  // 🔴 Deliberately NOT a variant of "nothing stepped in". This line appears only when the receipt
+  // could not be read, and a reassuring sentence there would be a clean bill of health nobody
+  // obtained — the same failure this whole section exists to prevent, one layer up.
+  "policies.session.unavailable":
+    "This chat's record of checks could not be read just now, so nothing here says whether anything stepped in. Close and reopen this sheet to try again.",
   "policies.session.summary.one": "1 tool call",
   "policies.session.summary.many": "{{count}} tool calls",
   "policies.session.ran": "It ran",
@@ -1656,7 +1700,11 @@ export const dict = {
   "settings.project.exclude.import.saving": "Adding…",
   "settings.project.exclude.import.done": "Added {{count}} to Never read in {{file}}",
 
-  "settings.confinement.section": "Confinement",
+  // ⚠️ `settings.confinement.section` ("Confinement") was DELETED on 2026-08-19, not orphaned: these
+  // rows moved into the Nova Health report (owner: *"Confinement shouldn't really be a user
+  // configurable, but part of the health report"*), so they no longer own a section heading. No
+  // locale carried the key, so removing it here removes it everywhere. Every row title below still
+  // says what its row is about, which is what the heading was doing.
   "settings.confinement.title": "Sandbox for the agent's shell",
   "settings.confinement.meanwhile":
     "Two things hold regardless: Analyze mode refuses to run shell commands at all, and a turn driven by someone messaging you from outside can only run them inside a sandbox — where there is none, it is refused. Beyond those, in every mode except YOLO the agent is told to leave everything outside your project folder alone, which is an instruction the model follows rather than a wall. Full OS confinement comes from a setup recipe, not from NovaClaw’s core.",

@@ -8,6 +8,7 @@ import type { ProjectPermissionRule, ProjectState } from "@/utils/project-api"
 import { projectState } from "@/utils/project-api"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
+import { projectSectionCopy } from "./project-copy"
 import { ProjectExcludeSection, ProjectGitignoreImport, ProjectPermissionsSection } from "./project-permissions-section"
 
 /**
@@ -23,6 +24,17 @@ import { ProjectExcludeSection, ProjectGitignoreImport, ProjectPermissionsSectio
  * other places rules come from — live in `ProjectPermissionsSection` below them, which is the
  * surface `todo/projects.md` asked for. Until 2026-08-18 the comment here said the permission
  * surface rendered them; no such surface existed, so the count was the only thing anyone could see.
+ *
+ * 🔴 **WHICH FOLDER. The target is the INSTANCE's directory, and that is correct — do not "fix" it.**
+ * Settings is an instance-wide dialog; pointing this section at the active chat's folder would make
+ * one dialog describe a different subject depending on which tab was open behind it. What was
+ * genuinely broken until 2026-08-19 is that no sentence here ever NAMED that folder: the rows said
+ * *"This folder is not a Project"* and *"Add a novaclaw.json **here**"* with no antecedent on screen.
+ * On a desktop launch the instance's folder is the user's HOME, so the section appeared to offer to
+ * make `C:\Users\<name>` a Project, and a reader with a project chat open reasonably concluded it was
+ * pointed at the wrong place — twice, by two different readers. Every sentence now interpolates the
+ * path (`project-copy.ts`, pinned by `project-copy.test.ts`). **If you add a state here, name the
+ * folder in it.**
  */
 
 /** The right-hand value slot. Muted, because every row here is a FACT rather than a control. */
@@ -37,6 +49,12 @@ export const SettingsProjectSection: Component = () => {
   const sync = useServerSync()
   const connection = createMemo(() => server.current ?? global.servers.list()[0])
   const directory = createMemo(() => sync().data.path.directory || sync().data.path.home || "")
+  // Read separately, because `directory` above has already FOLDED the home into itself as a
+  // fallback — so by the time the copy sees it, "the instance is working in the home" is
+  // indistinguishable from any other folder. The home is what decides which of the two "not a
+  // Project" sentences a user reads (principle 11: the home's top level is somewhere we are careful
+  // about writing), so the copy needs it as a separate fact rather than as a fallback.
+  const home = createMemo(() => sync().data.path.home || "")
   const source = createMemo(() => {
     const http = connection()?.http
     const dir = directory()
@@ -99,39 +117,42 @@ export const SettingsProjectSection: Component = () => {
     const value = state()
     return value?.kind === "project" ? value : undefined
   })
+  // Every sentence that names the folder lives in one pure module, so the naming is testable rather
+  // than scattered across three JSX branches where a fourth could quietly forget it.
+  const copy = createMemo(() =>
+    projectSectionCopy({ state: state(), directory: directory(), home: home(), t: language.t }),
+  )
 
   return (
     <Show when={state()}>
       {(resolved) => (
         <div class="settings-v2-section" data-component="settings-project">
           <h3 class="settings-v2-section-title">{language.t("settings.project.section")}</h3>
+          {/* Principle 12(d) — say what is in force right now, BEFORE any control. This line is the
+              whole fix for the defect the header describes: it names the folder these rows describe,
+              and says out loud that it is the instance's folder rather than the open chat's, which
+              is the inference two readers made wrongly because nothing here contradicted it. */}
+          <p class="settings-v2-tab-description" data-slot="project-subject">
+            {copy()?.subject}
+          </p>
 
           <SettingsListV2>
             <Switch>
               <Match when={resolved().kind === "none"}>
                 {/* Not an error and not a nag: a folder without one is perfectly usable, and saying
-                    so plainly is the difference between an explanation and a prompt to fix nothing. */}
-                <SettingsRowV2
-                  title={language.t("settings.project.none")}
-                  description={language.t("settings.project.noneDetail")}
-                >
+                    so plainly is the difference between an explanation and a prompt to fix nothing.
+                    The home folder gets a different second sentence — see `project-copy.ts`. */}
+                <SettingsRowV2 title={copy()?.title ?? ""} description={copy()?.description ?? ""}>
                   <span />
                 </SettingsRowV2>
               </Match>
 
               <Match when={invalid()}>
                 {(broken) => (
-                  <SettingsRowV2
-                    title={language.t("settings.project.invalid")}
-                    description={
-                      // ⚠️ The two reasons get DIFFERENT sentences on purpose. "Update NovaClaw" and
-                      // "fix your file" are opposite actions, and one message covering both would
-                      // send half its readers the wrong way.
-                      broken().reason === "future-version"
-                        ? language.t("settings.project.invalidFuture")
-                        : language.t("settings.project.invalidBroken", { detail: broken().detail })
-                    }
-                  >
+                  // ⚠️ The two reasons get DIFFERENT sentences on purpose. "Update NovaClaw" and
+                  // "fix your file" are opposite actions, and one message covering both would send
+                  // half its readers the wrong way. Both come from `project-copy.ts` now.
+                  <SettingsRowV2 title={copy()?.title ?? ""} description={copy()?.description ?? ""}>
                     <Value>{broken().file}</Value>
                   </SettingsRowV2>
                 )}
@@ -140,13 +161,13 @@ export const SettingsProjectSection: Component = () => {
               <Match when={project()}>
                 {(info) => (
                   <>
-                    <Show when={info().name}>
-                      {(name) => (
-                        <SettingsRowV2 title={language.t("settings.project.nameLabel")} description={info().root}>
-                          <Value>{name()}</Value>
-                        </SettingsRowV2>
-                      )}
-                    </Show>
+                    {/* Always rendered, where the old name row appeared only when the file declared
+                        a name — so an unnamed Project used to open with "Declared in <path>" and
+                        never said which folder was the subject. It also distinguishes a file in THIS
+                        folder from one in an ancestor governing it, which "Declared in" alone cannot. */}
+                    <SettingsRowV2 title={copy()?.title ?? ""} description={copy()?.description ?? ""}>
+                      <span />
+                    </SettingsRowV2>
                     <SettingsRowV2
                       title={language.t("settings.project.fileLabel")}
                       description={language.t("settings.project.fileDetail")}

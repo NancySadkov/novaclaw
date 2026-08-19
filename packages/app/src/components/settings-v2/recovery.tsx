@@ -4,6 +4,7 @@ import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { removePersisted } from "@/utils/persist"
 import { HELP_SEEN_KEY } from "@/pages/home-screen/help-tour"
+import { NovaHealthBoard } from "./nova-health"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 
@@ -25,8 +26,24 @@ const UI_PREF_RAW_KEYS = [
   "novaclaw-theme-css-dark",
 ]
 
-// The Recovery tab — the vision's third settings pillar (bootstrap · manage · RESET). Three rungs of
-// "get me back to a good state", weakest to strongest:
+// The Health & recovery tab — the tab a person opens when something is WRONG.
+//
+// 🔴 It gained the health report on 2026-08-19, and the reasoning belongs here as much as in
+// `nova-health.tsx`. `uix.md` §7 has always given this section the pillar *understand + reset*, and
+// until now it only did the second half: it offered three ways to undo without ever saying what was
+// broken. The report is the "understand" half, and it had been sitting in General — the tab you open
+// to CHANGE something — alongside a second read-only board (Confinement, now folded into the report
+// itself). The rule, stated so the next status board has an obvious home: **General is what you SET;
+// a read-only reading of this instance is a finding, and findings go in the health report, which
+// lives here.**
+//
+// ⚠️ THE REPORT LEADS THIS TAB, and that ordering is load-bearing rather than cosmetic. The argument
+// for it leading General was that a worried user must not read a language picker first; the same
+// argument says they must not read a *reset* button first either. Diagnose, then undo — in that
+// order, because two of the three rungs below are irreversible and a person should know what is
+// actually wrong before reaching for them.
+//
+// Then the three rungs of "get me back to a good state", weakest to strongest:
 //   1. Reset UI preferences — live today (see the curated list above; chats/servers/drafts untouched).
 //   2. Snapshots — restore-to-a-date (pairs with the dated Trash). Server-side; surfaced as coming soon.
 //   3. Factory reset — erase chats/sessions/config on this device. Server-side; surfaced as coming soon.
@@ -64,7 +81,10 @@ export const SettingsRecoveryV2: Component = () => {
       </div>
 
       <div class="settings-v2-tab-body">
+        <NovaHealthBoard />
+
         <div class="settings-v2-section">
+          <h3 class="settings-v2-section-title">{language.t("settings.recovery.section.restore")}</h3>
           <SettingsListV2>
             <SettingsRowV2
               title={language.t("settings.recovery.row.resetUi.title")}
