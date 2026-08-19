@@ -2,6 +2,7 @@ export * as RequestFootprint from "./footprint"
 
 import type { Message } from "@novaclaw/llm"
 import { Token } from "../../util/token"
+import { MediaSize } from "./media-size"
 
 /**
  * How big is this turn's request, and which part of it grew? — a per-turn, CONTENT-FREE measurement.
@@ -65,6 +66,17 @@ export interface Footprint {
    */
   readonly mediaCount: number
   /**
+   * Total PIXELS across those payloads — the unit an image's cost is actually in.
+   *
+   * 🔴 Measured 2026-08-19 on `holo3.1`: `tokens = 2 + max(64, floor(w/32) × floor(h/32))`, exact on
+   * ten sizes, and IDENTICAL for a 2–3× larger file at the same dimensions. So pixels are the fact
+   * and bytes are noise. ⚠️ The divisor (32 there) is a property of the MODEL, so it is deliberately
+   * not applied here — this reports what the request carries, not what a particular model will
+   * charge for it. 0 when nothing could be read: an unparsed container adds nothing rather than a
+   * false zero-sized image.
+   */
+  readonly mediaPixels: number
+  /**
    * The single largest tool schema, so the number has an address.
    *
    * ⚠️ The only field that can carry a user-authored string (a `define_tool` name). Everything else
@@ -96,14 +108,19 @@ export interface Footprint {
  * mean image growth is currently invisible to that trigger. Giving images a real cost needs a
  * per-model token rule, which is `todo/vision.md` work and not a number to guess here.
  */
-const DATA_URI = /"data:[^";,]*;base64,[A-Za-z0-9+/=]+"/g
-const mediaFreeJson = (json: string): { readonly text: string; readonly media: number } => {
+const DATA_URI = /"(data:[^";,]*;base64,[A-Za-z0-9+/=]+)"/g
+const mediaFreeJson = (json: string): { readonly text: string; readonly media: number; readonly pixels: number } => {
   let media = 0
-  const text = json.replace(DATA_URI, () => {
+  let pixels = 0
+  const text = json.replace(DATA_URI, (_match, uri: string) => {
     media++
+    // ⚠️ `undefined` — a container we do not parse, a truncated header — adds NOTHING rather than
+    // zero. A total that silently absorbed unreadable images would understate by an unknown amount
+    // while looking precise, which is the failure this whole file is a monument to.
+    pixels += MediaSize.pixelsFromDataUri(uri) ?? 0
     return '""'
   })
-  return { text, media }
+  return { text, media, pixels }
 }
 
 /**
@@ -115,15 +132,17 @@ const mediaFreeJson = (json: string): { readonly text: string; readonly media: n
  */
 const bytesOf = (value: unknown): number => measureValue(value).bytes
 
-/** Bytes with every base64 `data:` payload removed, plus how many were removed. */
-const measureValue = (value: unknown): { readonly bytes: number; readonly media: number } => {
+/** Bytes with every base64 `data:` payload removed, plus how many there were and their pixels. */
+const measureValue = (
+  value: unknown,
+): { readonly bytes: number; readonly media: number; readonly pixels: number } => {
   try {
     const json = JSON.stringify(value)
-    if (json === undefined) return { bytes: 0, media: 0 }
+    if (json === undefined) return { bytes: 0, media: 0, pixels: 0 }
     const stripped = mediaFreeJson(json)
-    return { bytes: Buffer.byteLength(stripped.text, "utf8"), media: stripped.media }
+    return { bytes: Buffer.byteLength(stripped.text, "utf8"), media: stripped.media, pixels: stripped.pixels }
   } catch {
-    return { bytes: 0, media: 0 }
+    return { bytes: 0, media: 0, pixels: 0 }
   }
 }
 
@@ -152,7 +171,13 @@ export const measure = (input: Input): Footprint => {
   const totalBytes = systemBytes + messageBytes + toolBytes
   // Counted over the MESSAGES only: system parts and tool schemas carry no media, and scanning them
   // would be paying for a match that cannot occur.
-  const mediaCount = input.messages.reduce((total, message) => total + measureValue(message).media, 0)
+  const media = input.messages.reduce(
+    (total, message) => {
+      const measured = measureValue(message)
+      return { count: total.count + measured.media, pixels: total.pixels + measured.pixels }
+    },
+    { count: 0, pixels: 0 },
+  )
 
   let largestTool: Footprint["largestTool"]
   for (const tool of input.tools) {
@@ -172,7 +197,8 @@ export const measure = (input: Input): Footprint => {
     // NaN in a log attribute is worse than 0 — it renders, it sorts, and it means nothing.
     toolSharePercent: totalBytes === 0 ? 0 : Math.round((toolBytes / totalBytes) * 100),
     estimatedTokens: Token.estimateFromChars(totalBytes),
-    mediaCount,
+    mediaCount: media.count,
+    mediaPixels: media.pixels,
     ...(largestTool === undefined ? {} : { largestTool }),
   }
 }
@@ -211,5 +237,6 @@ export const attributes = (footprint: Footprint) => ({
   "request.tools.share.percent": footprint.toolSharePercent,
   "request.tokens.estimated": footprint.estimatedTokens,
   "request.count.media": footprint.mediaCount,
+  "request.media.pixels": footprint.mediaPixels,
   "request.tools.largest.bytes": footprint.largestTool?.bytes ?? 0,
 })
