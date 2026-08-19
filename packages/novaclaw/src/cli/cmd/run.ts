@@ -84,6 +84,28 @@ type FilePart = {
 
 const ATTACH_FILE_MAX_BYTES = 10 * 1024 * 1024
 
+/**
+ * The image MIME a file's own BYTES declare, or `undefined` when they declare none.
+ *
+ * ⚠️ Magic bytes, never the extension — the standing constraint in `todo/vision.md`, and the defect
+ * class that fills Claude Code's tracker. `FSUtil.mimeType` is `mime-types.lookup`, i.e. the
+ * extension, so `screenshot.txt` holding a PNG would be announced as text and rejected, while a
+ * `.png` holding anything at all would be announced as an image and rejected at the provider.
+ *
+ * Scoped deliberately to the four types the image pipeline accepts (`tool/read.ts`'s
+ * SUPPORTED_IMAGE_MIMES): this decides whether bytes ride as a PICTURE, and guessing outside that
+ * set buys nothing. Everything else keeps the existing text-or-extension answer.
+ */
+const sniffImageMime = (bytes: Buffer): string | undefined => {
+  const starts = (...magic: number[]) => magic.every((byte, index) => bytes[index] === byte)
+  if (starts(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) return "image/png"
+  if (starts(0xff, 0xd8, 0xff)) return "image/jpeg"
+  if (starts(0x47, 0x49, 0x46, 0x38)) return "image/gif"
+  // RIFF....WEBP — the four-byte size sits between the two tags, so both are checked.
+  if (starts(0x52, 0x49, 0x46, 0x46) && bytes.subarray(8, 12).toString("ascii") === "WEBP") return "image/webp"
+  return undefined
+}
+
 type Inline = {
   icon: string
   title: string
@@ -330,7 +352,24 @@ export const RunCommand = effectCmd({
           }
 
           const content = await (async () => {
-            if (!args.attach) return
+            // 🔴 **This used to read `if (!args.attach) return`, and it broke `-f` on every LOCAL
+            // run** (measured 2026-08-20, owner: *"the cli should be fixed too"*). Without
+            // `--attach` the file was sent as a bare `file://` URL on the theory that a
+            // same-machine server can open the path itself — but nothing ever materializes one.
+            // `to-llm-message`'s `attachment()` says so in its own comment ("only data: URIs can be
+            // decoded in this pure function"), and the messenger, the only other producer of
+            // attachments, inlines a `data:` URI for exactly this reason.
+            //
+            // So the bytes never arrived and the shape died at the provider boundary:
+            // `nova-cli run "describe this" -f x.png` → **"OpenAI Chat media must contain valid
+            // base64"** (`protocols/shared.ts`), because `file:///C:/…png` is not base64. It was
+            // not image-specific either — a text attachment took the same path and failed as
+            // "does not support media type text/plain", since the text arm needs a data: URI to
+            // decode and falls through to media when it cannot.
+            //
+            // Reading is the same work the remote arm already did, under the same 10 MiB cap, and a
+            // directory still takes the branch below rather than being slurped.
+            if (isDirectory) return
             const handle = await open(resolvedPath, "r")
             try {
               const opened = await handle.stat()
@@ -351,15 +390,16 @@ export const RunCommand = effectCmd({
               await handle.close()
             }
           })()
-          const detected = FSUtil.mimeType(resolvedPath)
+          const detected = await FSUtil.mimeType(resolvedPath)
           const text = content?.toString("utf8")
-          const mime = !args.attach
-            ? isDirectory
-              ? "application/x-directory"
-              : "text/plain"
-            : content && text !== undefined && Buffer.from(text, "utf8").equals(content)
-              ? "text/plain"
-              : detected
+          // ⚠️ The local arm used to force `text/plain` for every file, so even once the bytes were
+          // read a PNG would have been announced as text and rejected as an unsupported media type.
+          // One rule now serves both arms: a directory is a directory, bytes that round-trip as
+          // UTF-8 are text, and anything else is what the file actually IS.
+          const mime = isDirectory
+            ? "application/x-directory"
+            : (content && sniffImageMime(content)) ??
+              (content && text !== undefined && Buffer.from(text, "utf8").equals(content) ? "text/plain" : detected)
 
           files.push({
             type: "file",
