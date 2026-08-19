@@ -19,10 +19,15 @@ import { debugPresenceBusy, debugPresenceCell, debugPresenceOrphanText, debugPre
 import { VIEWER_TTL_SECONDS } from "./session/session-presence"
 import { useSettingsDialog } from "@/components/settings-dialog"
 import { AppPage } from "@/components/app-page"
+import { ExpertiseGate } from "@/components/expertise-gate"
+import { RequiresLevel } from "@/context/expertise"
+import { useLanguage } from "@/context/language"
 
 // The Debug app (dependability P5) — the Developer-mode diagnostic surface. Most panels are
 // observational; the capability panel has one explicit recovery action that retries a cached startup
-// failure. Strings stay untranslated on purpose — a Developer-only surface, like Registry.
+// failure. Strings inside the app stay untranslated on purpose — a Developer-only surface, like
+// Registry. The GATE below is the exception and has to be: the only person who ever reads it is a
+// user who is NOT in Developer mode, i.e. exactly the audience the English-only rule is wrong for.
 
 const STATUS_TONE: Record<ServerStreamStatus, string> = {
   connected: "text-v2-state-fg-success",
@@ -33,7 +38,44 @@ const STATUS_TONE: Record<ServerStreamStatus, string> = {
 
 const PS_LIMIT = 100
 
+// ── the ROUTE gate ────────────────────────────────────────────────────────────────────────────────
+//
+// The home tile in `apps/builtins.tsx` carries `minLevel: "developer"`, and that hides the ICON —
+// nothing more. It never defended the ADDRESS: measured 2026-08-19 in the running web app, `/debug`
+// at `general.expertiseLevel = "normal"` rendered this whole page — connection panel, error log,
+// instance log, and the `ps` table with raw session ids — for a user whose home screen had correctly
+// hidden the tile. A tile is a suggestion; a typed URL, an OS notification and a pasted link all
+// reach a page without one, so the gate has to live on the page.
+//
+// It EXPLAINS instead of bouncing (AGENTS.md principle 8, and `app-routes.test.ts`, which forbids the
+// `fallback={<Navigate href="/" />}` that `/terminal` once shipped): the deep link is the one moment
+// this product can teach what expertise levels are, and a silent redirect says nothing.
+//
+// The split into an outer gate and an inner page is load-bearing, not tidiness. `DebugAppPage` polls
+// on mount — scheduler snapshot, capabilities, session executions, the instance log — so wrapping
+// only its returned JSX in `RequiresLevel` would keep every one of those timers running for a user
+// who is not permitted to see a single result.
 export function DebugPage() {
+  const language = useLanguage()
+  return (
+    <RequiresLevel
+      min="developer"
+      fallback={
+        <AppPage class="flex">
+          <ExpertiseGate
+            glyph="debug"
+            title={language.t("home.app.debug.name")}
+            description={language.t("debug.gate.description")}
+          />
+        </AppPage>
+      }
+    >
+      <DebugAppPage />
+    </RequiresLevel>
+  )
+}
+
+function DebugAppPage() {
   const global = useGlobal()
   const server = useServer()
   const showModels = useSettingsDialog("models")

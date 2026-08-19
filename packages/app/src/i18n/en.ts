@@ -555,7 +555,6 @@ export const dict = {
   "dialog.mcp.description": "{{enabled}} of {{total}} enabled",
   "dialog.mcp.empty": "No connections yet. Connect an external tool or service to let your agents use it.",
 
-  "dialog.plugins.empty": "Add-ons that extend NovaClaw. None are installed yet — ask an agent to set one up for you.",
 
   // The five MCP connection statuses, one label each — the set is closed by `MCPStatus` in
   // `packages/novaclaw/src/mcp/index.ts`. These render as a small label beside the server's name,
@@ -1091,7 +1090,6 @@ export const dict = {
   "status.popover.ariaLabel": "Server configurations",
   "status.popover.tab.servers": "Servers",
   "status.popover.tab.mcp": "Connections",
-  "status.popover.tab.plugins": "Plugins",
   "status.popover.action.manageServers": "Manage servers",
 
   "session.share.popover.title": "Publish on web",
@@ -1115,6 +1113,10 @@ export const dict = {
   "expertise.gate.home": "Back to home",
   "terminal.gate.description":
     "A terminal is a place to type commands directly to the machine this instance runs on — handy for checking on a service or fixing something by hand, and easy to get wrong if you have never used one. It appears once you switch to the Advanced level.",
+  "debug.gate.description":
+    "Debug is the view under the hood: which servers are connected, the error log, the instance's own log, and every session that is running right now with its internal id. Nothing here is needed to use NovaClaw — it is for working out why something misbehaved. It appears once you switch to the Developer level.",
+  "registry.gate.description":
+    "The Registry opens the database this instance keeps — your settings, sessions and records — as raw tables you can edit directly. Nothing asks you to confirm, and one wrong row can stop the instance from starting, so it appears once you switch to the Developer level.",
   "terminal.clear": "Clear",
   "terminal.find.label": "Find",
   "terminal.find.close": "Close find",

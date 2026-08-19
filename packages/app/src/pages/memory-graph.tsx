@@ -8,8 +8,11 @@ import { memoryGraph, type MemoryGraph, type MemoryRow } from "@/utils/memory-ap
 import { layoutGraph, type Vec } from "./memory-graph/layout"
 
 // The Memory graph viewer (notes/kb-graph-plan.md §5 — the advanced, node-link surface for
-// path-tracing) — a Developer-mode page (the home tile is minLevel-gated) that renders the graph
-// memory as an interactive node-link diagram over /memory/graph + /memory/neighbors. Dependency-free
+// path-tracing) — renders the graph memory as an interactive node-link diagram over /memory/graph +
+// /memory/neighbors. ⚠️ It is NOT gated: this header claimed "a Developer-mode page (the home tile is
+// minLevel-gated)" until 2026-08-19, but the owner moved the tile to Normal on 2026-08-12 — "what
+// NovaClaw remembers about you is not an expert topic" (`apps/builtins.tsx`). The tile carries no
+// `minLevel`, so `app-routes.test.ts` asks nothing of this page, correctly. Dependency-free
 // (custom deterministic layout + inline SVG); local-first/airgap-friendly and no npm graph lib. Strings
 // stay untranslated on purpose — a Developer diagnostic surface, like Registry/Debug.
 

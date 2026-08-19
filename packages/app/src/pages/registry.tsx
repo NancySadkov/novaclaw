@@ -14,12 +14,16 @@ import {
   type RegistryRow,
 } from "@/utils/registry-api"
 import { AppPage } from "@/components/app-page"
+import { ExpertiseGate } from "@/components/expertise-gate"
+import { RequiresLevel } from "@/context/expertise"
+import { useLanguage } from "@/context/language"
 
 // The Registry app (owner directive 2026-07-15) — a Regedit-style editor over the instance
-// SQLite database. Developer expertise only (the home tile is minLevel-gated); this is the
-// sanctioned re-homing of the raw `db` shell (todo.md tie-break #3: raw diagnostics live in
-// Developer-mode apps, not terminal surfaces). Strings stay untranslated on purpose — a
-// Developer-only diagnostic surface, like the debug bar.
+// SQLite database. Developer expertise only — gated on the ROUTE below, not merely on the home
+// tile; this is the sanctioned re-homing of the raw `db` shell (todo.md tie-break #3: raw
+// diagnostics live in Developer-mode apps, not terminal surfaces). Strings inside the app stay
+// untranslated on purpose — a Developer-only diagnostic surface, like the debug bar — but the gate
+// is read only by users who are NOT developers, so it speaks their language.
 
 const PAGE_SIZE = 100
 
@@ -34,7 +38,38 @@ function cellText(value: unknown): string {
   return String(value)
 }
 
+// ── the ROUTE gate ────────────────────────────────────────────────────────────────────────────────
+//
+// `minLevel: "developer"` on the home tile hides the ICON and nothing else. Measured 2026-08-19 in
+// the running web app: at `general.expertiseLevel = "normal"` the tile was correctly gone from the
+// home screen while `/registry` still rendered the full table browser over the live instance
+// database — where a delete is immediate and unguarded, and one bad `runtime_setting` row makes the
+// instance unbootable (see CONFIG_BACKED_TABLES above). The gate belongs on the route.
+//
+// It explains rather than redirecting (principle 8; `app-routes.test.ts` pins the shape), and the
+// outer/inner split keeps `RegistryPage` from opening the table list and the row resource for a user
+// who may not see them.
 export function RegistryPage() {
+  const language = useLanguage()
+  return (
+    <RequiresLevel
+      min="developer"
+      fallback={
+        <AppPage class="flex">
+          <ExpertiseGate
+            glyph="registry"
+            title={language.t("home.app.registry.name")}
+            description={language.t("registry.gate.description")}
+          />
+        </AppPage>
+      }
+    >
+      <RegistryAppPage />
+    </RequiresLevel>
+  )
+}
+
+function RegistryAppPage() {
   const global = useGlobal()
   const server = useServer()
   const confirm = useConfirm()

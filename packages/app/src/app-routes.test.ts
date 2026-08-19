@@ -70,31 +70,150 @@ describe("the legacy directory URL shape still resolves", () => {
   })
 })
 
-describe("a level-gated ROUTE explains itself instead of bouncing", () => {
-  // `RequiresLevel` HIDES its children below the level, which is right for a section INSIDE a page —
-  // progressive disclosure, nothing asked, nothing to answer. A route is the opposite situation: the
-  // user typed the address or followed a link somebody shared, so the question was asked out loud.
-  // `/terminal` used to answer it with `fallback={<Navigate href="/" />}` — a silent bounce to the
-  // home screen with no statement that anything was gated and no way to reach it (measured in the
-  // running app, 2026-08-05). terminal.md T4 requires the expertise explainer; AGENTS.md principle 8
-  // is the reason: that bounce is the single moment the product could teach what expertise levels
-  // are, and it said nothing.
-  //
-  // Violating this compiles green and renders "fine" — standing decision 1's defect class exactly,
-  // which is why the check is here rather than in a review comment.
-  const pages = sourceFiles().filter((rel) => rel.startsWith("pages/"))
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// A HOME TILE'S `minLevel` MUST BE MIRRORED ON ITS ROUTE.
+//
+// `RequiresLevel` HIDES its children below the level, which is right for a section INSIDE a page —
+// progressive disclosure, nothing asked, nothing to answer. A route is the opposite situation: the
+// user typed the address or followed a link somebody shared, so the question was asked out loud.
+// `/terminal` used to answer it with `fallback={<Navigate href="/" />}` — a silent bounce to the home
+// screen with no statement that anything was gated and no way to reach it (measured in the running
+// app, 2026-08-05). terminal.md T4 requires the expertise explainer; AGENTS.md principle 8 is the
+// reason: that bounce is the single moment the product could teach what expertise levels are, and it
+// said nothing.
+//
+// ⚠️ WHY THIS BLOCK WAS REWRITTEN (2026-08-19). The version before it filtered the page list with
+//
+//     if (!source.includes("RequiresLevel")) return false
+//
+// i.e. a page with NO gate at all was excluded from the check and passed VACUOUSLY. The test could
+// not fail for the exact defect it exists to prevent, and two pages shipped through the hole:
+// `/debug` and `/registry` carry `minLevel: "developer"` on their tiles and rendered in full at
+// `expertiseLevel: "normal"` when deep-linked (measured in the running web app, 2026-08-19 — the
+// Debug app served its error log, instance log and the `ps` table of raw session ids). The tile hid
+// the icon; nothing guarded the address.
+//
+// So the check now runs the other way round: the REQUIREMENT is derived from `apps/builtins.tsx` —
+// the same table the home screen filters on — and every gated tile's page is then required to gate.
+// A page cannot opt out by omission, because it is never the page that decides it is in scope.
+//
+// ⚠️ And the list is DERIVED, never hand-written. A hand-listed set of pages is the same defect one
+// level up: it passes while the thing it names has moved (this repo has already paid for that once,
+// with a boot-node checklist that named three nodes by hand and stayed green over a dead feature).
+// The derivation is itself controlled below — parse failures and unresolvable routes FAIL rather
+// than shrinking the list silently, which is the only way a derived list is safer than a typed one.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-  test("pages exist that gate on expertise", () => {
-    // Negative control: if this list empties the assertion below passes vacuously forever.
-    expect(pages.filter((rel) => read(rel).includes("RequiresLevel")).length).toBeGreaterThan(0)
+/**
+ * A file's source with comments removed.
+ *
+ * ⚠️ Load-bearing, and it cost a red run to learn: the redirect check below matches
+ * `fallback={<Navigate`, and the first draft of this block went red naming `pages/debug.tsx` — whose
+ * only `Navigate` is the sentence in its header comment EXPLAINING that it must not redirect. A
+ * regex over source counts prose; documenting a rule would have been enough to violate it.
+ *
+ * `//` is left alone when preceded by `:` so a URL inside a string keeps its tail.
+ */
+function code(rel: string): string {
+  return read(rel)
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1")
+}
+
+/** A home tile that declares a minimum expertise level, and the route its `open()` navigates to. */
+type GatedTile = { id: string; level: string; route: string | undefined }
+
+/**
+ * Every `minLevel`-carrying entry of the built-in app table. Entries are sliced between consecutive
+ * `id:` lines so a `minLevel` can never be attributed to a neighbouring tile.
+ */
+function gatedTiles(): GatedTile[] {
+  const source = code("apps/builtins.tsx")
+  const starts = [...source.matchAll(/^\s*id: "([a-z0-9-]+)",$/gm)]
+  return starts.flatMap((match, index) => {
+    const body = source.slice(match.index, starts[index + 1]?.index ?? source.length)
+    const level = /^\s*minLevel: "(\w+)",$/m.exec(body)?.[1]
+    if (!level) return []
+    return [{ id: match[1]!, level, route: /navigate\("(\/[^"]*)"\)/.exec(body)?.[1] }]
+  })
+}
+
+/**
+ * The source file behind a route: `app.tsx` maps `path` → component, and its own import maps that
+ * component → a `@/pages/...` module. Returns undefined when either hop fails — which the test
+ * treats as a FAILURE, not as "nothing to check". A gated page moved behind `lazy()` or into a
+ * component this cannot follow must announce itself here rather than quietly leaving the set.
+ */
+function pageFileForRoute(route: string): string | undefined {
+  const app = code("app.tsx")
+  const escaped = route.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  const component = new RegExp(`<Route path="${escaped}" component=\\{(\\w+)\\}`).exec(app)?.[1]
+  if (!component) return undefined
+  for (const entry of app.matchAll(/^import\s+(?:\{([^}]+)\}|(\w+))\s+from\s+"@\/(pages\/[^"]+)"/gm)) {
+    const names = (entry[1] ?? entry[2] ?? "")
+      .split(",")
+      .map((name) => name.trim().split(/\s+as\s+/).pop()?.trim() ?? "")
+    if (!names.includes(component)) continue
+    for (const candidate of [`${entry[3]}.tsx`, `${entry[3]}.ts`, `${entry[3]}/index.tsx`]) {
+      if (fs.existsSync(path.join(SRC, candidate))) return candidate
+    }
+  }
+  return undefined
+}
+
+/** Levels declared by `<RequiresLevel … min="x">` in a page. */
+function declaredLevels(source: string): string[] {
+  return [...source.matchAll(/<RequiresLevel[^>]*?min="(\w+)"/g)].map((match) => match[1]!)
+}
+
+describe("a level-gated ROUTE explains itself instead of bouncing", () => {
+  const tiles = gatedTiles()
+
+  test("the derivation still finds the gated tiles", () => {
+    // Controls on the parser, so a regex that stops matching cannot empty the requirement set and
+    // turn every assertion below green. The second one is an INDEPENDENT count of the same fact:
+    // occurrences of the property in the raw file, which does not go through the slicing above.
+    expect(tiles.length, "no minLevel tile parsed out of apps/builtins.tsx — the parser broke").toBeGreaterThan(0)
+    expect(tiles.length, "sliced tiles disagree with the raw count of `minLevel:` in apps/builtins.tsx").toBe(
+      code("apps/builtins.tsx").match(/^\s*minLevel: "\w+",$/gm)?.length ?? 0,
+    )
+  })
+
+  test("every gated tile resolves to a page file", () => {
+    const unresolved = tiles.filter((tile) => !tile.route || !pageFileForRoute(tile.route))
+    expect(
+      unresolved.map((tile) => `${tile.id} -> ${tile.route ?? "(no navigate)"}`),
+      "a gated tile whose page cannot be located is NOT exempt — it is unchecked. Point the tile at a " +
+        "route registered in app.tsx with a statically imported page component, or extend this resolver.",
+    ).toEqual([])
+  })
+
+  test("every page behind a gated tile gates the route itself", () => {
+    const ungated = tiles.flatMap((tile) => {
+      const file = tile.route ? pageFileForRoute(tile.route) : undefined
+      if (!file) return [] // reported by the test above
+      const source = code(file)
+      const levels = declaredLevels(source)
+      if (!levels.includes(tile.level)) return [`${file} (tile ${tile.id}) has no <RequiresLevel min="${tile.level}">`]
+      if (!source.includes("ExpertiseGate")) return [`${file} (tile ${tile.id}) gates without an explainer`]
+      return []
+    })
+    expect(
+      ungated,
+      "a tile's minLevel only hides the ICON. The route is reachable by typed URL, OS notification and " +
+        "shared link, so the page must gate itself at the same level and render @/components/expertise-gate.",
+    ).toEqual([])
   })
 
   test("no page falls back to a redirect", () => {
-    const bouncing = pages.filter((rel) => {
-      const source = read(rel)
-      if (!source.includes("RequiresLevel")) return false
-      return /fallback=\{\s*<Navigate/.test(source)
-    })
+    // Broader than the tile-derived set on purpose: this one asks about EVERY page that gates,
+    // including sections gated for reasons no tile records.
+    const bouncing = sourceFiles()
+      .filter((rel) => rel.startsWith("pages/"))
+      .filter((rel) => {
+        const source = code(rel)
+        return source.includes("RequiresLevel") && /fallback=\{\s*<Navigate/.test(source)
+      })
     expect(
       bouncing,
       "a level-gated page must render an explainer (see @/components/expertise-gate), never redirect: " +
