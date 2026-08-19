@@ -1,7 +1,17 @@
 import { Schema } from "effect"
 import { ModelID, ProviderID, ProviderMetadata, RouteID } from "./ids"
 
-export const ProviderFailureClassification = Schema.Literal("context-overflow")
+/**
+ * Why a provider refused, when the refusal is EVIDENCE ABOUT THE ENDPOINT rather than about us.
+ *
+ * ⚠️ A classification is a claim the runner acts on, so a new arm must name a condition the runner
+ * can actually recover from. Both arms here are 4xx bodies that state their own cause:
+ *  · `context-overflow` — the prompt is longer than the window; recovered by compaction.
+ *  · `media-limit`      — more images in one request than the endpoint accepts; recovered by
+ *                         re-lowering with a budget (`budgetImages`). Measured 2026-08-19 on
+ *                         vLLM's `--limit-mm-per-prompt`, which dead-ended the session at image N+1.
+ */
+export const ProviderFailureClassification = Schema.Literals(["context-overflow", "media-limit"])
 export type ProviderFailureClassification = typeof ProviderFailureClassification.Type
 
 export class HttpRequestDetails extends Schema.Class<HttpRequestDetails>("LLM.HttpRequestDetails")({

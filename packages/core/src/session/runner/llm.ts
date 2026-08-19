@@ -8,6 +8,7 @@ import {
   Message,
   SystemPart,
   isContextOverflowFailure,
+  mediaLimitFailure,
   type FinishReason,
   type ProviderErrorEvent,
 } from "@novaclaw/llm"
@@ -613,11 +614,34 @@ export const layer = Layer.effect(
     const isQuestionRejected = (cause: Cause.Cause<unknown>) =>
       cause.reasons.some((reason) => Cause.isDieReason(reason) && reason.defect instanceof QuestionV2.RejectedError)
 
+    /**
+     * What an endpoint told us about its per-request IMAGE CAP, keyed `providerID/modelID`.
+     *
+     * 🔴 Measured 2026-08-19: a session that read four images died on the fourth with
+     * `At most 3 image(s) may be provided in one prompt`, and — this is the defect — every LATER turn
+     * re-lowered the same history and re-failed identically. A dead-end, which "the UI never crashes
+     * to a dead-end" forbids.
+     *
+     * ⚠️ **In-process, deliberately, and this is a bounded claim rather than a shortcut.** A
+     * persisted verdict is a claim about an ENDPOINT, and `provider-capability.ts` spells out what
+     * that costs to get right: a fingerprint over endpoint+model+protocol, a three-state discipline,
+     * and a rule for forgetting it when the server moves. A cap learned here is worth exactly one
+     * process lifetime — it saves every later turn in the session one rejected request, and a
+     * restart re-learns it at the price of a single 400 that costs no prefill. Promoting it to the
+     * capability store is `todo/vision.md` work; guessing a default for a stranger's endpoint is not.
+     */
+    const discoveredImageLimits = new Map<string, number>()
+    const imageLimitKey = (reference: { readonly providerID: string; readonly id: string }) =>
+      `${reference.providerID}/${reference.id}`
+
     type TurnTransition =
       // Automatic compaction completed; rebuild the request from compacted history.
       | { readonly _tag: "ContinueAfterCompaction"; readonly step: number }
       // Overflow compaction completed; rebuild once through the path without overflow recovery.
       | { readonly _tag: "ContinueAfterOverflowCompaction"; readonly step: number }
+      // The endpoint named its image cap; re-lower this same turn under it. Distinct from the
+      // overflow arm because the recovery differs: compaction summarises TEXT and removes no image.
+      | { readonly _tag: "RetryUnderImageBudget"; readonly step: number }
 
     class TurnTransitionError extends Error {
       constructor(readonly transition: TurnTransition) {
@@ -626,6 +650,7 @@ export const layer = Layer.effect(
     }
 
     const continueAfterCompaction = (step: number) => new TurnTransitionError({ _tag: "ContinueAfterCompaction", step })
+    const retryUnderImageBudget = (step: number) => new TurnTransitionError({ _tag: "RetryUnderImageBudget", step })
     const continueAfterOverflowCompaction = (step: number) =>
       new TurnTransitionError({ _tag: "ContinueAfterOverflowCompaction", step })
 
@@ -900,7 +925,10 @@ export const layer = Layer.effect(
       // How many images this endpoint takes in one request; `undefined` = unlimited. Without it a
       // session that looked at more images than the server allows DEAD-ENDS — every later turn
       // re-lowers the same history and re-fails the same 400. See `budgetImages`.
-      const modelImageLimit = yield* models.imageLimit(modelSession)
+      const declaredImageLimit = yield* models.imageLimit(modelSession)
+      // The DECLARED cap wins when there is one — a catalog entry is the operator's statement and a
+      // learned value is an inference. Otherwise use whatever this endpoint told us it allows.
+      const modelImageLimit = declaredImageLimit ?? discoveredImageLimits.get(imageLimitKey(modelRef))
       const unreadable = unreadableTurnAttachments(context, modelCapabilities)
       if (unreadable.length > 0) {
         // Name the model the USER picked, not the wire id: `model.id` is the API-side id
@@ -1210,6 +1238,7 @@ export const layer = Layer.effect(
       const publish = (event: LLMEvent, outputPaths: ReadonlyArray<string> = []) =>
         withPublication(publisher.publish(event, outputPaths))
       let overflowFailure: ProviderErrorEvent | undefined
+      let mediaLimitFailureEvent: ProviderErrorEvent | undefined
       // 1D: an attempt that produced durable ASSISTANT output is never replayed (that could
       // duplicate text or tool side effects). Protocol bookkeeping such as `step-start` alone
       // is safe to discard, so failures before the assistant begins reconnect in-place below.
@@ -1288,6 +1317,13 @@ export const layer = Layer.effect(
             if (LLMEvent.is.providerError(event)) {
               if (isContextOverflowFailure(event) && !publisher.hasAssistantStarted()) {
                 overflowFailure = event
+                return
+              }
+              // The endpoint named its image cap. Swallow the event exactly as the overflow arm does
+              // — publishing it would put a raw `parameter=image` 400 in the user's chat for a fault
+              // the product is about to recover from by itself.
+              if (mediaLimitFailure(event) !== undefined && !publisher.hasAssistantStarted()) {
+                mediaLimitFailureEvent = event
                 return
               }
             }
@@ -1397,6 +1433,27 @@ export const layer = Layer.effect(
         Effect.gen(function* () {
           const failure =
             stream._tag === "Failure" ? Option.getOrUndefined(Cause.findErrorOption(stream.cause)) : undefined
+          // ⚠️ AHEAD of the overflow arm, and the order is the decision. Compaction summarises TEXT
+          // and removes not one image, so recovering an image-cap refusal that way would burn a
+          // compaction and then fail again identically — with the history now shorter and the same
+          // four images still in it.
+          const discovered = mediaLimitFailure(mediaLimitFailureEvent ?? failure)
+          if (discovered !== undefined && !publisher.hasAssistantStarted()) {
+            const key = imageLimitKey(modelRef)
+            const known = discoveredImageLimits.get(key)
+            // Only re-run when this is NEWS. A cap we already applied and still hit is a different
+            // fault (or a cap that does not mean what its message says), and re-running on it would
+            // be an unbounded loop dressed as a recovery.
+            if (known === undefined || discovered < known) {
+              discoveredImageLimits.set(key, discovered)
+              yield* Log.event("session.media.limit.learned", {
+                "session.id": session.id,
+                "media.limit": discovered,
+              })
+              return yield* Effect.die(retryUnderImageBudget(currentStep))
+            }
+            if (mediaLimitFailureEvent) yield* publish(mediaLimitFailureEvent)
+          }
           if (
             recoverOverflow &&
             !publisher.hasAssistantStarted() &&
@@ -1727,6 +1784,9 @@ export const layer = Layer.effect(
         Effect.catchDefect(
           Effect.fnUntraced(function* (defect) {
             if (!(defect instanceof TurnTransitionError)) return yield* Effect.die(defect)
+            // A learned cap is applied by REBUILDING the request, which the ordinary re-entry does.
+            if (defect.transition._tag === "RetryUnderImageBudget")
+              return yield* runAfterOverflowCompaction(sessionID, harness, undefined, defect.transition.step, timing)
             if (defect.transition._tag === "ContinueAfterOverflowCompaction")
               return yield* Effect.die("Post-compaction provider attempt cannot recover another overflow")
             yield* Effect.yieldNow

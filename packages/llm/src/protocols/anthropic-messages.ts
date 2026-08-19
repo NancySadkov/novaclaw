@@ -20,7 +20,7 @@ import {
   type ToolResultPart,
 } from "../schema"
 import { JsonObject, optionalArray, optionalNull, ProviderShared } from "./shared"
-import { isContextOverflow } from "../provider-error"
+import { classify } from "../provider-error"
 import * as Cache from "./utils/cache"
 import { Lifecycle } from "./utils/lifecycle"
 import { PromptedTools } from "./utils/prompted-tools"
@@ -821,7 +821,7 @@ const onError = (state: ParserState, event: AnthropicEvent): StepResult => [
   [
     LLMEvent.providerError({
       message: providerErrorMessage(event),
-      classification: isContextOverflow(event.error?.message ?? "") ? "context-overflow" : undefined,
+      classification: classify(event.error?.message ?? ""),
     }),
   ],
 ]

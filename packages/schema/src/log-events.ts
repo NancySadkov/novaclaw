@@ -1767,6 +1767,23 @@ export const EVENTS = {
    * vocabulary `id` promises. See `session/runner/footprint.ts` for why the struct is richer than the
    * event.
    */
+  /**
+   * The endpoint told us its per-request image cap, and we learned it.
+   *
+   * 🔴 Measured 2026-08-19: untreated, an image cap DEAD-ENDS the session — every later turn
+   * re-lowers the same history and re-fails. This event is how a reader sees the recovery happen
+   * rather than inferring it from a turn that took two provider attempts.
+   */
+  "session.media.limit.learned": {
+    level: "info",
+    message: "endpoint image cap learned from its own refusal",
+    attributes: {
+      "session.id": "correlate",
+      "media.limit": "count",
+    },
+    content: "correlated",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   "session.request.footprint": {
     level: "debug",
     message: "outgoing request footprint",

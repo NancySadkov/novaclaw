@@ -26,7 +26,78 @@ const patterns = [
 export const isContextOverflow = (message: string) =>
   patterns.some((pattern) => pattern.test(message)) || /^4(00|13)\s*(status code)?\s*\(no body\)/i.test(message)
 
+/**
+ * A per-request IMAGE CAP, and the NUMBER it allows — the second 4xx that is evidence about the
+ * endpoint rather than about the request being malformed.
+ *
+ * 🔴 Measured 2026-08-19 (`notes/reports/vision-on-disk-2026-08-19.md`): the first run in which a
+ * model actually read a folder of images died on the fourth with
+ * `At most 3 image(s) may be provided in one prompt. (parameter=image)` — vLLM's
+ * `--limit-mm-per-prompt`, a sparkrun default. Untreated it is a DEAD-END, not a hiccup: every later
+ * turn re-lowers the same history and re-fails identically.
+ *
+ * ⭐ **The number is in the message, so this does not have to be guessed.** `provider-capability.ts`
+ * already records the principle — *"the one place a failure IS evidence: a 4xx whose body names the
+ * offending parameter"* — and this is that case exactly.
+ *
+ * Returns the allowed count, or `undefined` when the message is not an image-cap refusal. A cap we
+ * can detect but not read the number from returns `0`: still actionable (send no images) and
+ * distinguishable from "not this kind of failure".
+ */
+const IMAGE_LIMIT_PATTERNS = [
+  /at most (\d+) image\(?s?\)? may be provided/i,
+  /at most (\d+) image/i,
+  /too many images.*?maximum (?:of )?(\d+)/i,
+  /image count (?:of )?\d+ exceeds (?:the )?(?:maximum|limit) (?:of )?(\d+)/i,
+  /number of images.*?exceeds.*?(\d+)/i,
+]
+export const imageLimitFrom = (message: string): number | undefined => {
+  for (const pattern of IMAGE_LIMIT_PATTERNS) {
+    const match = pattern.exec(message)
+    if (match) {
+      const value = Number(match[1])
+      return Number.isFinite(value) && value >= 0 ? value : 0
+    }
+  }
+  // Detected but unreadable: an endpoint that names images as the offending parameter without
+  // stating a count. Sending none is the only safe reading, and it is still a real answer.
+  // ⚠️ The word boundaries are load-bearing: without them "imagery" and "imagine" match, and a
+  // healthy reply mentioning either reads as a cap of 0 — which would strip every image from a
+  // working session. They were once written as literal 0x08 bytes by a shell that ate the
+  // backslashes; the regex still compiled, the happy path still passed, and only the NEGATIVE
+  // case noticed. That is why the negative case is in the test file.
+  if (/\bimages?\b/i.test(message) && /(too many|limit|at most|exceed)/i.test(message)) return 0
+  return undefined
+}
+
+export const isMediaLimit = (message: string) => imageLimitFrom(message) !== undefined
+
+export const mediaLimitFailure = (failure: unknown): number | undefined => {
+  const classified =
+    failure instanceof LLMError
+      ? failure.reason._tag === "InvalidRequest" && failure.reason.classification === "media-limit"
+        ? failure.reason.message
+        : undefined
+      : Schema.is(ProviderErrorEvent)(failure) && failure.classification === "media-limit"
+        ? failure.message
+        : undefined
+  return classified === undefined ? undefined : (imageLimitFrom(classified) ?? 0)
+}
+
 export const isContextOverflowFailure = (failure: unknown) =>
   failure instanceof LLMError
     ? failure.reason._tag === "InvalidRequest" && failure.reason.classification === "context-overflow"
     : Schema.is(ProviderErrorEvent)(failure) && failure.classification === "context-overflow"
+
+/**
+ * The ONE place a provider's 4xx body becomes a classification, so the three protocol sites cannot
+ * drift apart about the same message.
+ *
+ * ⚠️ ORDER MATTERS: an endpoint that refuses a request carrying many large images can word the
+ * refusal as a length problem, and a message naming images is the more specific reading — treating
+ * it as an overflow would trigger COMPACTION, which summarises text and removes not one image.
+ * The recovery that fits the fault is the budget, so the media test runs first.
+ */
+export const classify = (message: string): "context-overflow" | "media-limit" | undefined =>
+  isMediaLimit(message) ? "media-limit" : isContextOverflow(message) ? "context-overflow" : undefined
+

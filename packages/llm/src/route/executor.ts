@@ -24,7 +24,7 @@ import {
   UnknownProviderReason,
   isEgressBlocked,
 } from "../schema"
-import { isContextOverflow } from "../provider-error"
+import { classify } from "../provider-error"
 
 export interface Interface {
   readonly execute: (
@@ -261,7 +261,7 @@ const statusReason = (input: {
   ) {
     return new InvalidRequestReason({
       message: input.message,
-      classification: isContextOverflow(body) ? "context-overflow" : undefined,
+      classification: classify(body),
       http: input.http,
     })
   }

@@ -19,7 +19,7 @@ import {
   type ToolResultPart,
 } from "../schema"
 import { JsonObject, optionalArray, optionalNull, ProviderShared } from "./shared"
-import { isContextOverflow } from "../provider-error"
+import { classify } from "../provider-error"
 import { OpenAIOptions } from "./utils/openai-options"
 import { Lifecycle } from "./utils/lifecycle"
 import { PromptedTools } from "./utils/prompted-tools"
@@ -915,7 +915,7 @@ const providerError = (event: OpenAIResponsesEvent, fallback: string) => {
   const message = providerErrorMessage(event, fallback)
   return LLMEvent.providerError({
     message,
-    classification: code === "context_length_exceeded" || isContextOverflow(message) ? "context-overflow" : undefined,
+    classification: code === "context_length_exceeded" ? "context-overflow" : classify(message),
   })
 }
 
