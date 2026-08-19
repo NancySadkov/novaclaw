@@ -39102,6 +39102,9 @@
           },
           "output": {
             "type": "integer"
+          },
+          "images": {
+            "type": "integer"
           }
         },
         "additionalProperties": false
@@ -40426,6 +40429,9 @@
                 "type": "integer"
               },
               "output": {
+                "type": "integer"
+              },
+              "images": {
                 "type": "integer"
               }
             },

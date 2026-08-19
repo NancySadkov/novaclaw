@@ -4131,6 +4131,7 @@ export type ConfigV2ModelLimit = {
   context?: number
   input?: number
   output?: number
+  images?: number
 }
 
 export type ConfigV2Model = {
@@ -4564,6 +4565,7 @@ export type ModelV2Info = {
     context: number
     input?: number
     output: number
+    images?: number
   }
 }
 
