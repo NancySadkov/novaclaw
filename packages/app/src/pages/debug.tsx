@@ -1,6 +1,7 @@
 import { A } from "@solidjs/router"
-import { createMemo, createResource, createSignal, For, Show } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, onMount, Show } from "solid-js"
 import type { LogReadResult } from "@novaclaw/sdk/v2/types"
+import type { SessionPresenceSnapshot } from "@novaclaw/sdk/v2/client"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { GoldGlyph } from "@/components/gold-glyph"
 import { instanceFetch } from "@/utils/instance-fetch"
@@ -14,6 +15,8 @@ import { schedulerSnapshot } from "@/utils/scheduler-api"
 import { capabilities, retryCapability } from "@/utils/capability-api"
 import { retrySessionExecution, sessionExecutions, stopSessionExecution } from "@/utils/session-execution-api"
 import { contextTurns, formatContextFinding, formatContextTokens } from "./debug-context"
+import { debugPresenceBusy, debugPresenceCell, debugPresenceOrphanText, debugPresenceOrphans } from "./debug-presence"
+import { VIEWER_TTL_SECONDS } from "./session/session-presence"
 import { useSettingsDialog } from "@/components/settings-dialog"
 import { AppPage } from "@/components/app-page"
 
@@ -53,11 +56,90 @@ export function DebugPage() {
         agent: s.agent,
         parentID: s.parentID,
         status: status[s.id]?.type ?? "idle",
+        // The presence column's busy half. Read from the session-status signal through its ONE
+        // owner — never from the `status` column above, which shows the durable EXECUTION state
+        // when there is one and would report an exited worker as busy.
+        busy: debugPresenceBusy(status[s.id]),
         href: sessionHref(key, s.id),
       }))
     // working first, then newest ids first (ids are time-sortable)
     return rows.sort((a, b) => Number(b.status !== "idle") - Number(a.status !== "idle") || (a.id < b.id ? 1 : -1))
   })
+
+  // ── presence: the `ps` metaphor's "who is attached / who is driving" half ────────────────────
+  //
+  // AGENTS.md's table asks `ps` for agent · model · parent · status · tokens — and the dependability
+  // half of that is *who is looking at this chat*. Everything here READS the shipped presence
+  // component: the same `session_presence` store the Chats row and the chat header render from, fed
+  // by `GET /api/presence` + `session.presence.updated`. No second store, no second endpoint, and
+  // nothing that would give presence a server: `all()` answers only for this instance's own
+  // sessions, exactly as it does for every other surface.
+  //
+  // ⚠️ It re-reads on a timer, which the chat view does not need and this one does. The instance
+  // publishes only on report/claim/detach and runs no sweeper, so a room whose LAST viewer died
+  // silently is collected by the next `all()` and by nothing else. A chat has an attached viewer by
+  // construction, so its rooms self-heal on the next heartbeat; a `ps` table is a list of rooms
+  // nobody may be in, so without this it would show ghosts indefinitely. Half the expiry budget
+  // keeps a healthy row verified between reads.
+  const PRESENCE_REREAD_MS = (VIEWER_TTL_SECONDS / 2) * 1000
+  const [presenceReadAt, setPresenceReadAt] = createSignal<number | undefined>(undefined)
+  const [presenceClock, setPresenceClock] = createSignal(Date.now())
+
+  const refreshPresence = () => {
+    const conn = focused()
+    if (!conn) return
+    void global
+      .ensureServerCtx(conn)
+      .sync.session.loadPresence()
+      // Only a read that ANSWERED may reset the clock — see `loadPresence`'s note. A failed read
+      // leaves the previous stamp, so the column ages into "unverified" instead of lying.
+      .then((ok) => {
+        if (ok) setPresenceReadAt(Date.now())
+      })
+  }
+
+  // A different instance is a different set of rooms: forget the stamp rather than carrying one
+  // server's freshness onto another's rows.
+  createEffect(
+    on(focused, () => {
+      setPresenceReadAt(undefined)
+      refreshPresence()
+    }),
+  )
+
+  onMount(() => {
+    const timer = setInterval(() => {
+      setPresenceClock(Date.now())
+      const at = presenceReadAt()
+      if (at === undefined || Date.now() - at >= PRESENCE_REREAD_MS) refreshPresence()
+    }, 5_000)
+    onCleanup(() => clearInterval(timer))
+  })
+
+  const presenceMap = createMemo(() => {
+    const conn = focused()
+    if (!conn) return {} as Record<string, SessionPresenceSnapshot | undefined>
+    return global.ensureServerCtx(conn).sync.session.data.session_presence
+  })
+
+  const presenceFor = (sessionID: string, busy: boolean) =>
+    debugPresenceCell({
+      snapshot: presenceMap()[sessionID],
+      // Busy has exactly one owner — the `session.status` signal. Presence carries no busy flag and
+      // must not grow one; the row already carries the answer and this only composes the two.
+      busy,
+      readAt: presenceReadAt(),
+      now: presenceClock(),
+    })
+
+  const presenceOrphans = createMemo(() =>
+    debugPresenceOrphans(presenceMap(), new Set(sessions().map((row) => row.id))),
+  )
+  // The orphan line reads the same cached map as the cells, so it inherits the same doubt.
+  const presenceUnverified = () => {
+    const at = presenceReadAt()
+    return at === undefined || presenceClock() - at > VIEWER_TTL_SECONDS * 1000
+  }
 
   const config = createMemo(() => {
     const conn = focused()
@@ -824,13 +906,19 @@ export function DebugPage() {
         <div class={section}>
           <div class={heading}>
             <span class={title}>Sessions</span>
+            {/* Naming the scope is the honest move, the same way the log panel says whose ring it
+                shows: presence answers for THIS instance's own sessions and is not a directory of
+                who is online — a developer view does not widen that. */}
             <span class={hint}>
-              durable execution and recovery state for {sessions().length} cached session
-              {sessions().length === 1 ? "" : "s"}
+              durable execution, recovery and attendance state for {sessions().length} cached session
+              {sessions().length === 1 ? "" : "s"} on this instance
             </span>
             <button
               class="ml-auto text-[11px] text-v2-text-text-muted hover:underline"
-              onClick={() => setExecutionTick((v) => v + 1)}
+              onClick={() => {
+                setExecutionTick((v) => v + 1)
+                refreshPresence()
+              }}
             >
               Refresh
             </button>
@@ -844,6 +932,7 @@ export function DebugPage() {
                   <tr class="text-left text-v2-text-text-faint">
                     <th class="py-1 pr-2 font-medium">id</th>
                     <th class="py-1 pr-2 font-medium">status</th>
+                    <th class="py-1 pr-2 font-medium">presence</th>
                     <th class="py-1 pr-2 font-medium">phase / recovery</th>
                     <th class="py-1 pr-2 font-medium">agent</th>
                     <th class="py-1 pr-2 font-medium">parent</th>
@@ -868,6 +957,28 @@ export function DebugPage() {
                           }}
                         >
                           {executionBySession()[row.id]?.state ?? row.status}
+                        </td>
+                        {/* Attendance, composed with the status column's busy signal. The ids ride
+                            the tooltip because two windows of one browser are honestly both "a
+                            browser window" and only the opaque per-surface id separates them. */}
+                        <td class="max-w-72 py-0.5 pr-2">
+                          {(() => {
+                            const cell = presenceFor(row.id, row.busy)
+                            return (
+                              <span
+                                data-slot="debug-session-presence"
+                                data-session={row.id}
+                                data-attached={String(cell.attached)}
+                                data-unverified={cell.unverified ? "true" : "false"}
+                                class={
+                                  cell.attached > 0 ? "text-v2-text-text-muted" : "text-v2-text-text-faint"
+                                }
+                                title={cell.title}
+                              >
+                                {cell.text}
+                              </span>
+                            )
+                          })()}
                         </td>
                         <td class="max-w-72 py-0.5 pr-2 text-v2-text-text-muted">
                           <Show when={executionBySession()[row.id]} fallback="—">
@@ -919,6 +1030,17 @@ export function DebugPage() {
               <Show when={sessions().length > PS_LIMIT}>
                 <div class={hint}>+{sessions().length - PS_LIMIT} more not shown</div>
               </Show>
+            </Show>
+            {/* A room outlives the session row when the session is deleted (or was never cached
+                here) while a surface was attached. The table is driven by the session list, so
+                those rooms would be invisible — and a diagnostic panel that silently drops state is
+                the thing it exists to prevent. Reported, never faked into a session row. */}
+            <Show when={debugPresenceOrphanText(presenceOrphans(), presenceUnverified())}>
+              {(text) => (
+                <div class={hint} data-slot="debug-presence-orphans">
+                  {text()}
+                </div>
+              )}
             </Show>
           </div>
         </div>

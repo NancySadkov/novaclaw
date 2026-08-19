@@ -23,6 +23,18 @@ export const HANDOFF_NOTICE_SECONDS = 20
 export const HEARTBEAT_SECONDS = 10
 
 /**
+ * How long the instance keeps a viewer it has not heard from. Mirrors
+ * `SessionPresenceState.VIEWER_TTL_SECONDS` in core (three missed beats).
+ *
+ * ⚠️ The client never applies this to a viewer ROW — the wire deliberately carries no `lastSeenAt`,
+ * so a surface cannot tell a long-attached viewer from a dead one. What it bounds is how long a
+ * CACHED snapshot may still be believed: the instance publishes nothing when a room's last viewer
+ * dies silently (expiry is evaluated on read/write, and there is no sweeper fiber), so a store entry
+ * older than this may describe someone who is gone. See `debug-presence.ts`.
+ */
+export const VIEWER_TTL_SECONDS = 40
+
+/**
  * The i18n keys presence can produce, spelled out rather than typed as `string`.
  *
  * ⚠️ Not pedantry: `language.t` takes a key union, so a widened `string` here would compile the

@@ -451,12 +451,18 @@ export function createServerSession(
       .catch(() => undefined)
 
   // Bootstrap who is attached where (live updates arrive via `session.presence.updated`).
+  //
+  // ⚠️ Resolves to whether the instance actually ANSWERED. A failed read still resolves (callers
+  // `void` this), so a surface that stamps "presence as of now" on completion would vouch for rows
+  // it never re-read. The Debug app's `ps` column uses this to decide between asserting attendance
+  // and marking it unverified.
   const loadPresence = () =>
     retryRequest(() => client.v2.session.presence.all())
       .then((result) => {
         setData("session_presence", reconcile((result.data?.data ?? {}) as Record<string, SessionPresenceSnapshot>))
+        return true
       })
-      .catch(() => undefined)
+      .catch(() => false)
 
   /**
    * Attach / heartbeat / take over / detach, in one idempotent call.
