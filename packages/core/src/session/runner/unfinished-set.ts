@@ -48,13 +48,23 @@ export const asksForSet = (userText: string): boolean => {
 }
 
 /**
- * The largest set this steer will try to drive to completion.
+ * How many files ONE steer asks for.
  *
- * One image per turn is what the per-request cap forces, and a turn is a whole model call — so 25 is
- * already minutes of work. Beyond it the steer would be issuing an instruction that cannot land in
- * any reasonable time, which is worse than staying silent.
+ * 🔴 The first version asked for everything remaining, and against a 400-file folder that read
+ * "Open each remaining one" with 399 outstanding — an instruction that cannot land. A batch can:
+ * the model opens ten, the drain ends, and the next steer asks for the next ten.
  */
-export const MAX_STEERABLE_SET = 25
+export const STEER_BATCH = 10
+
+/**
+ * How many times the harness will steer one request.
+ *
+ * ⚠️ A bound, not a target. This is an automatic drive — the user asked once and the harness keeps
+ * going — so it must have a visible ceiling for the same reason `MAX_DRIVE_ROUNDS` does. At
+ * `STEER_BATCH` files a round it covers 200 files, which is past every set measured here and short
+ * of an unbounded loop over a photo library.
+ */
+export const MAX_STEER_ROUNDS = 20
 
 export interface Coverage {
   /** Files the harness listed for this folder — the set the user could have meant. */
@@ -94,19 +104,17 @@ export const untouched = (coverage: Coverage): ReadonlyArray<string> => {
 export const shouldContinue = (input: {
   readonly asked: boolean
   readonly coverage: Coverage
-  readonly alreadyNudged: boolean
+  /** How many times this request has already been steered. Bounded by `MAX_STEER_ROUNDS`. */
+  readonly rounds: number
 }): boolean => {
-  if (input.alreadyNudged || !input.asked) return false
+  if (!input.asked) return false
+  // ⚠️ The ceiling on an AUTOMATIC drive. The user asked once; everything after the first steer is
+  // the harness deciding to continue, so it stops at a stated bound rather than running while files
+  // remain. A set larger than the drive can cover ends partially done and SAYS so — which is a
+  // better answer than either an unbounded loop or the silence this used to give.
+  if (input.rounds >= MAX_STEER_ROUNDS) return false
   if (input.coverage.available.length <= 1) return false
   if (input.coverage.opened.length === 0) return false
-  // 🔴 A set this steer cannot honestly ask a model to FINISH. Measured 2026-08-20 against the
-  // owner's 400-icon folder: the first version fired there and said "Open each remaining one" with
-  // 399 outstanding — an instruction that drives ~400 sequential reads (hours) off a nudge the user
-  // never asked for. One image per turn is the shape the per-request cap forces, so the completable
-  // size is small, and the honest answer above it is silence rather than a command that cannot land.
-  // ⚠️ The right mechanism at that scale is the multi-turn fan-out (`todo/vision.md`), which is not
-  // built. Until it is, this stays quiet rather than pretending.
-  if (input.coverage.available.length > MAX_STEERABLE_SET) return false
   return untouched(input.coverage).length > 0
 }
 
@@ -115,12 +123,14 @@ export const shouldContinue = (input: {
  * measured failure is a model that believed it was finished.
  */
 export const continueMessage = (remaining: ReadonlyArray<string>, opened: number): string => {
-  const shown = remaining.slice(0, 12)
-  const more = remaining.length - shown.length
+  // ⭐ The NEXT BATCH, not the whole remainder. A model asked for ten files opens ten; asked for 399
+  // it stops, argues, or invents — all three were measured on 2026-08-20.
+  const batch = remaining.slice(0, STEER_BATCH)
+  const after = remaining.length - batch.length
   return (
-    `You have opened ${opened} file${opened === 1 ? "" : "s"}, but the request covers ${opened + remaining.length}. ` +
-    `These have not been opened yet: ${shown.join(", ")}${more > 0 ? `, and ${more} more` : ""}. ` +
-    `Open each remaining one and say what it shows, then give your final answer. ` +
-    `Do not describe a file you have not opened.`
+    `Not finished: you have opened ${opened} file${opened === 1 ? "" : "s"} and ${remaining.length} remain. ` +
+    `Open these ${batch.length} next, one at a time, and say what each shows: ${batch.join(", ")}. ` +
+    (after > 0 ? `Then continue with the remaining ${after}. ` : "") +
+    `Do not describe a file you have not opened, and do not stop to ask which files to do — they are named above.`
   )
 }

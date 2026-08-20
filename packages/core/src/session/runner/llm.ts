@@ -2060,9 +2060,10 @@ export const layer = Layer.effect(
       let runawayNudged = false
       let consecutiveEmpty = 0
       let regrounded = false
-      /** The set-completion steer has fired. Once per drain, like `regrounded` — a nudge that
-       *  repeats is a loop, and this one names files the model can simply re-open. */
-      let setContinued = false
+      /** How many times this drain has steered the turn back to the rest of a set. Bounded by
+       *  `UnfinishedSet.MAX_STEER_ROUNDS` — an automatic drive needs a visible ceiling, exactly as
+       *  the self-drive's own round cap does. */
+      let setRounds = 0
       // Silent-no-op guard: one steer per drain when a no-tool-call turn looks like an attempted call.
       let textualNudged = false
       // F2 output-token truncation ledger — PER-DRAIN, like every latch above it (see
@@ -2367,7 +2368,7 @@ export const layer = Layer.effect(
             // asked for and partly covered. `groundingListing` itself lives in the per-provider-turn
             // scope and is not visible here.
             // `lastRealUserText` answers undefined for a files-only prompt (no words to read a set from).
-            const askedForSet = !setContinued && UnfinishedSet.asksForSet(lastRealUserText(context) ?? "")
+            const askedForSet = UnfinishedSet.asksForSet(lastRealUserText(context) ?? "")
             const openedThisTurn = askedForSet
               ? toolCallsSinceLastUser(context).flatMap((call) => {
                   // ⚠️ `input` is a STRING — `JSON.stringify` of the tool input, or whatever raw text
@@ -2393,14 +2394,19 @@ export const layer = Layer.effect(
                 available: (listing?.entries ?? []).filter((entry) => !entry.directory).map((entry) => entry.name),
                 opened: openedThisTurn,
               }
+              // ⚠️ Logged at the DECISION, not after it. This check has now failed to fire twice on
+              // runs it was built for, and each time the cause was invisible afterwards — the same
+              // trap that cost this programme two days on the fan-out. One line names every clause.
+              yield* Log.event("session.finish.set.considered", {
+                "session.id": input.sessionID,
+                "session.set.available": setCoverage.available.length,
+                "session.set.opened": setCoverage.opened.length,
+                "session.set.rounds": setRounds,
+              })
               if (
-                UnfinishedSet.shouldContinue({
-                  asked: true,
-                  coverage: setCoverage,
-                  alreadyNudged: setContinued,
-                })
+                UnfinishedSet.shouldContinue({ asked: true, coverage: setCoverage, rounds: setRounds })
               ) {
-                setContinued = true
+                setRounds += 1
                 const remaining = UnfinishedSet.untouched(setCoverage)
                 yield* Log.event("session.finish.set.continue", {
                   "session.id": input.sessionID,

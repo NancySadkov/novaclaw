@@ -2,11 +2,14 @@ import { describe, expect, test } from "bun:test"
 import { UnfinishedSet } from "@novaclaw/core/session/runner/unfinished-set"
 
 /**
- * The harness steers a turn back to the rest of a set it enumerated itself.
+ * The harness drives a turn back to the rest of a set it enumerated itself.
  *
- * Measured 2026-08-20: asked "please describe each glyph here", the model opened ONE of six images,
- * described it correctly, and stopped. `shouldReground` could not catch it — that backstop needs 8
- * tool calls and exists for a long turn ending over-confidently, where this is a turn that quits.
+ * Two measured failures, one mechanism:
+ *  · six glyphs, "please describe each glyph here" — the model opened ONE, described it, and stopped;
+ *  · 400 icons, "describe the first 40" — it described ~23 and stopped mid-task, saying "I need to
+ *    complete the remaining 18".
+ * `shouldReground` catches neither: it needs 8 tool calls and exists for a LONG turn ending
+ * over-confidently, where both of these are turns that quit.
  */
 
 const coverage = (available: string[], opened: string[]) => ({ available, opened })
@@ -33,10 +36,11 @@ describe("untouched — compared by BASENAME", () => {
   test("a listing name matches a read's absolute path", () => {
     // The two sides come from different places: the harness lists bare names, the model writes
     // whatever path it likes. Comparing full strings would report every file as untouched.
-    const remaining = UnfinishedSet.untouched(
-      coverage(SIX, ["C:\\Users\\nangl\\d\\code\\test\\glyphs\\icon_001.png", "./icon_002.PNG"]),
-    )
-    expect(remaining).toEqual(["icon_003.png", "icon_004.png", "icon_005.png", "icon_006.png"])
+    expect(
+      UnfinishedSet.untouched(
+        coverage(SIX, ["C:\\Users\\nangl\\d\\code\\test\\glyphs\\icon_001.png", "./icon_002.PNG"]),
+      ),
+    ).toEqual(["icon_003.png", "icon_004.png", "icon_005.png", "icon_006.png"])
   })
 
   test("nothing left when every file was opened", () => {
@@ -46,86 +50,71 @@ describe("untouched — compared by BASENAME", () => {
 
 describe("shouldContinue — every clause is a case that must NOT fire", () => {
   test("the measured failure fires: asked for each, opened 1 of 6", () => {
-    expect(
-      UnfinishedSet.shouldContinue({ asked: true, coverage: coverage(SIX, ["icon_001.png"]), alreadyNudged: false }),
-    ).toBe(true)
+    expect(UnfinishedSet.shouldContinue({ asked: true, coverage: coverage(SIX, ["icon_001.png"]), rounds: 0 })).toBe(
+      true,
+    )
   })
 
   test("a single-item request never fires, however many files exist", () => {
-    expect(
-      UnfinishedSet.shouldContinue({ asked: false, coverage: coverage(SIX, ["icon_001.png"]), alreadyNudged: false }),
-    ).toBe(false)
+    expect(UnfinishedSet.shouldContinue({ asked: false, coverage: coverage(SIX, ["icon_001.png"]), rounds: 0 })).toBe(
+      false,
+    )
   })
 
   test("a turn that opened NOTHING is a different fault", () => {
     // It never started; that belongs to the tool-discovery nudges, not to "you are half done".
-    expect(UnfinishedSet.shouldContinue({ asked: true, coverage: coverage(SIX, []), alreadyNudged: false })).toBe(false)
+    expect(UnfinishedSet.shouldContinue({ asked: true, coverage: coverage(SIX, []), rounds: 0 })).toBe(false)
   })
 
   test("a finished turn does not fire", () => {
-    expect(UnfinishedSet.shouldContinue({ asked: true, coverage: coverage(SIX, SIX), alreadyNudged: false })).toBe(false)
+    expect(UnfinishedSet.shouldContinue({ asked: true, coverage: coverage(SIX, SIX), rounds: 0 })).toBe(false)
   })
 
   test("one file is not a set", () => {
     expect(
-      UnfinishedSet.shouldContinue({
-        asked: true,
-        coverage: coverage(["only.png"], ["only.png"]),
-        alreadyNudged: false,
-      }),
+      UnfinishedSet.shouldContinue({ asked: true, coverage: coverage(["only.png"], ["only.png"]), rounds: 0 }),
     ).toBe(false)
   })
 
-  test("it fires at most ONCE — a nudge that repeats is a loop", () => {
+  test("the round bound is exact, so a re-pricing is a visible decision", () => {
+    // ⚠️ This is an AUTOMATIC drive — the user asked once and the harness keeps going — so it stops
+    // at a stated ceiling rather than running while files remain.
+    const partial = coverage(SIX, ["icon_001.png"])
     expect(
-      UnfinishedSet.shouldContinue({ asked: true, coverage: coverage(SIX, ["icon_001.png"]), alreadyNudged: true }),
-    ).toBe(false)
+      UnfinishedSet.shouldContinue({ asked: true, coverage: partial, rounds: UnfinishedSet.MAX_STEER_ROUNDS - 1 }),
+    ).toBe(true)
+    expect(UnfinishedSet.shouldContinue({ asked: true, coverage: partial, rounds: UnfinishedSet.MAX_STEER_ROUNDS })).toBe(
+      false,
+    )
   })
 })
 
-describe("continueMessage", () => {
-  test("names the files, and forbids describing what was not opened", () => {
+describe("continueMessage — one BATCH at a time", () => {
+  test("names the batch, and forbids the two measured escapes", () => {
     const message = UnfinishedSet.continueMessage(["icon_002.png", "icon_003.png"], 1)
     expect(message).toContain("opened 1 file")
-    expect(message).toContain("covers 3")
+    expect(message).toContain("2 remain")
     expect(message).toContain("icon_002.png, icon_003.png")
-    // ⭐ The clause that answers the OTHER failure mode this programme measured: told to continue,
-    // the model has previously invented the files it had not opened (a crown, a shield, a helmet).
+    // ⭐ Told to continue, the model has previously INVENTED the files it had not opened (a crown, a
+    // shield and a helmet for three glyphs that are none of those)…
     expect(message).toContain("Do not describe a file you have not opened")
+    // …and it has stopped to ask which files were meant, with the names already on screen.
+    expect(message).toContain("do not stop to ask which files")
   })
 
-  test("a long remainder is truncated and SAYS so", () => {
-    const many = Array.from({ length: 20 }, (_, i) => `f${i}.png`)
+  test("399 remaining: ten names, not three hundred and ninety-nine", () => {
+    // 🔴 The first version said "Open each remaining one" with 399 outstanding — an instruction that
+    // cannot land. The second refused sets over 25, so it could not drive the owner's measured
+    // 40-icon failure at all. A batch does both jobs.
+    const many = Array.from({ length: 399 }, (_, i) => `icon_${i + 1}.png`)
     const message = UnfinishedSet.continueMessage(many, 1)
-    expect(message).toContain("and 8 more")
-    expect(message).not.toContain("f19.png")
-  })
-})
-
-describe("scale — a set too large to finish", () => {
-  test("400 files: the steer stays SILENT rather than commanding 399 reads", () => {
-    // 🔴 The first version fired here and said "Open each remaining one" with 399 outstanding —
-    // ~400 sequential model turns, off a nudge the user never asked for. Measured against the
-    // owner's own 400-icon folder on 2026-08-20.
-    const available = Array.from({ length: 400 }, (_, i) => `icon_${i}.png`)
-    expect(
-      UnfinishedSet.shouldContinue({
-        asked: true,
-        coverage: { available, opened: ["icon_0.png"] },
-        alreadyNudged: false,
-      }),
-    ).toBe(false)
+    expect(message).toContain("399 remain")
+    expect(message).toContain(`Open these ${UnfinishedSet.STEER_BATCH} next`)
+    expect(message).toContain("Then continue with the remaining 389")
+    expect(message).not.toContain("icon_50.png")
   })
 
-  test("the boundary is exact, so a re-pricing is a visible decision", () => {
-    const set = (n: number) => Array.from({ length: n }, (_, i) => `f${i}.png`)
-    const fires = (n: number) =>
-      UnfinishedSet.shouldContinue({
-        asked: true,
-        coverage: { available: set(n), opened: ["f0.png"] },
-        alreadyNudged: false,
-      })
-    expect(fires(UnfinishedSet.MAX_STEERABLE_SET)).toBe(true)
-    expect(fires(UnfinishedSet.MAX_STEERABLE_SET + 1)).toBe(false)
+  test("the last batch does not promise more work", () => {
+    expect(UnfinishedSet.continueMessage(["a.png", "b.png"], 4)).not.toContain("Then continue with the remaining")
   })
 })

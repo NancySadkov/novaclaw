@@ -1877,6 +1877,20 @@ export const EVENTS = {
   // calling a tool is ordinary, and the whole point of the settle is that it is not a fault.
   // The harness steered a turn back to the rest of a set it had enumerated itself. INFO: a model
   // stopping half way through a folder is ordinary, and the steer is the harness doing its job.
+  // The set-completion check RAN — with the numbers behind its verdict. Distinct from `.continue`,
+  // which only fires when it steers: a check that silently does not fire is the failure mode here.
+  "session.finish.set.considered": {
+    level: "info",
+    message: "set-completion check ran",
+    attributes: {
+      "session.id": "correlate",
+      "session.set.available": "count",
+      "session.set.opened": "count",
+      "session.set.rounds": "count",
+    },
+    content: "correlated",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   "session.finish.set.continue": {
     level: "info",
     message: "steered back to the rest of the set",
