@@ -1875,6 +1875,15 @@ export const EVENTS = {
   // A spawned child settled at drain-end WITHOUT calling `exit`, so the harness completed the join
   // on its behalf with its own last words. INFO rather than warn: the model answering instead of
   // calling a tool is ordinary, and the whole point of the settle is that it is not a fault.
+  // The harness steered a turn back to the rest of a set it had enumerated itself. INFO: a model
+  // stopping half way through a folder is ordinary, and the steer is the harness doing its job.
+  "session.finish.set.continue": {
+    level: "info",
+    message: "steered back to the rest of the set",
+    attributes: { "session.id": "correlate", "session.set.remaining": "count" },
+    content: "correlated",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   "session.drive.settle": {
     level: "info",
     message: "sub-agent settled without exit",

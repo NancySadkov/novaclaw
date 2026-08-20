@@ -118,6 +118,8 @@ import { AttachmentPaths } from "./attachment-paths"
 import { TodoReminder } from "./todo-reminder"
 import { CalloutPolicy } from "../../callout-policy"
 import { ProjectGrounding } from "./project-grounding"
+import { UnfinishedSet } from "./unfinished-set"
+import { lastRealUserText } from "../steer-provenance"
 import { VisionCopy } from "./vision-copy"
 
 // Ordering can only choose among retrieved candidates — fetch wider than the recall budget.
@@ -2058,6 +2060,9 @@ export const layer = Layer.effect(
       let runawayNudged = false
       let consecutiveEmpty = 0
       let regrounded = false
+      /** The set-completion steer has fired. Once per drain, like `regrounded` — a nudge that
+       *  repeats is a loop, and this one names files the model can simply re-open. */
+      let setContinued = false
       // Silent-no-op guard: one steer per drain when a no-tool-call turn looks like an attempted call.
       let textualNudged = false
       // F2 output-token truncation ledger — PER-DRAIN, like every latch above it (see
@@ -2349,6 +2354,64 @@ export const layer = Layer.effect(
                   "session.tool.detail": attempted.detail,
                 })
                 yield* SessionInput.steer(db, events, input.sessionID, TextualCall.recoveryMessage(attempted))
+              }
+            }
+            // 🔴 The turn answered about SOME of a set the HARNESS enumerated and stopped. Measured
+            // 2026-08-20: "please describe each glyph here" opened 1 of 6 images and ended. Checked
+            // BEFORE `shouldReground` because that backstop needs 8 tool calls and this failure has
+            // one — and because naming the unopened files is a stronger instruction than asking the
+            // model to walk its own acceptance criteria. See `unfinished-set.ts` for why every clause
+            // is a case that must not fire.
+            // ⚠️ Ordered so an ordinary turn does NO work: the user's wording and the turn's own
+            // tool calls are both in memory, and the folder is only read once both say a set was
+            // asked for and partly covered. `groundingListing` itself lives in the per-provider-turn
+            // scope and is not visible here.
+            // `lastRealUserText` answers undefined for a files-only prompt (no words to read a set from).
+            const askedForSet = !setContinued && UnfinishedSet.asksForSet(lastRealUserText(context) ?? "")
+            const openedThisTurn = askedForSet
+              ? toolCallsSinceLastUser(context).flatMap((call) => {
+                  // ⚠️ `input` is a STRING — `JSON.stringify` of the tool input, or whatever raw text
+                  // the model sent. Treating it as an object is why the first version of this check
+                  // typechecked, ran, and never fired once.
+                  if (call.name !== "read") return []
+                  try {
+                    const parsed: unknown = JSON.parse(call.input)
+                    const path =
+                      typeof parsed === "object" && parsed !== null && "path" in parsed
+                        ? String((parsed as { readonly path?: unknown }).path ?? "")
+                        : ""
+                    return path.length > 0 ? [path] : []
+                  } catch {
+                    // A malformed argument is not a read we can attribute to a file.
+                    return []
+                  }
+                })
+              : []
+            if (openedThisTurn.length > 0) {
+              const listing = yield* Effect.promise(() => ProjectGrounding.readListing(location.directory))
+              const setCoverage = {
+                available: (listing?.entries ?? []).filter((entry) => !entry.directory).map((entry) => entry.name),
+                opened: openedThisTurn,
+              }
+              if (
+                UnfinishedSet.shouldContinue({
+                  asked: true,
+                  coverage: setCoverage,
+                  alreadyNudged: setContinued,
+                })
+              ) {
+                setContinued = true
+                const remaining = UnfinishedSet.untouched(setCoverage)
+                yield* Log.event("session.finish.set.continue", {
+                  "session.id": input.sessionID,
+                  "session.set.remaining": remaining.length,
+                })
+                yield* SessionInput.steer(
+                  db,
+                  events,
+                  input.sessionID,
+                  UnfinishedSet.continueMessage(remaining, setCoverage.opened.length),
+                )
               }
             }
             if (!regrounded && shouldReground(finalText, toolCallsSinceLastUser(context).length)) {
