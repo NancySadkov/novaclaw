@@ -1882,6 +1882,29 @@ export const EVENTS = {
   // The set-completion branch was ENTERED. Distinct from `.considered`, which fires only after the
   // request-shape and opened-file gates pass: without this, "the branch never ran" and "it ran and
   // declined" produce the same silence.
+  // WHICH finish arm a turn took. The arms are mutually exclusive else-ifs, so without this a run
+  // that reaches none of them looks identical to one that reached a single arm and declined.
+  "session.finish.arm": {
+    level: "info",
+    message: "finish chain reached",
+    attributes: {
+      "session.id": "correlate",
+      "session.finish.empty": "flag",
+      "session.finish.announced": "flag",
+      "session.finish.calls": "count",
+    },
+    content: "correlated",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
+  // The turn described files it never opened. Counted, because the SCALE is the finding: 331 of 351
+  // lines in the run that prompted this.
+  "session.finish.set.ungrounded": {
+    level: "warn",
+    message: "described files that were never opened",
+    attributes: { "session.id": "correlate", "session.set.invented": "count", "session.set.opened": "count" },
+    content: "correlated",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   "session.finish.set.branch": {
     level: "info",
     message: "set-completion branch entered",

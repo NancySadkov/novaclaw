@@ -2104,6 +2104,9 @@ export const layer = Layer.effect(
        *  the self-drive's own round cap does. */
       // Latched per drain: one re-prompt for a narrated-but-uncalled tool. A second would mean the
       // call cannot get through at all, which is the empty-turn diagnostic's territory.
+      // Latched per drain: one correction for describing files that were never opened. A second
+      // would be arguing with a model that has already been told plainly.
+      let groundingCorrected = false
       let announcedRecovered = false
       let setRounds = 0
       // Rounds in a row that opened nothing new — the drive's real stop condition. Tracked here
@@ -2503,6 +2506,25 @@ export const layer = Layer.effect(
               // ⚠️ Logged at the DECISION, not after it. This check has now failed to fire twice on
               // runs it was built for, and each time the cause was invisible afterwards — the same
               // trap that cost this programme two days on the fan-out. One line names every clause.
+              // 🔴 GROUNDING FIRST — before asking for more files, check what was claimed about the
+              // ones already "done". Measured 2026-08-20: denied `spawn`, the model globbed the folder
+              // and emitted 351 description lines from 20 reads — 331 files it never opened, each
+              // rendered as its own filename plus a grid position. Steering that turn toward the
+              // REMAINING files would have asked it to fabricate more, faster.
+              //
+              // ⚠️ Ahead of the coverage check on purpose: a fabricated line makes a file look done,
+              // so coverage read after it is measuring the invention.
+              const invented = UnfinishedSet.describedWithoutOpening(openedThisTurn, finalText)
+              if (invented.length > 0 && !groundingCorrected) {
+                groundingCorrected = true
+                yield* Log.event("session.finish.set.ungrounded", {
+                  "session.id": input.sessionID,
+                  "session.set.invented": invented.length,
+                  "session.set.opened": openedThisTurn.length,
+                })
+                yield* SessionInput.steer(db, events, input.sessionID, UnfinishedSet.groundingMessage(invented))
+                needsContinuation = true
+              }
               yield* Log.event("session.finish.set.considered", {
                 "session.id": input.sessionID,
                 "session.set.available": setCoverage.available.length,

@@ -189,6 +189,54 @@ export const shouldContinue = (input: {
 }
 
 /**
+ * Files the turn DESCRIBED without ever opening them.
+ *
+ * 🔴 Measured 2026-08-20: a run that opened 20 files emitted 351 description lines, 331 of them for
+ * images it never saw — the filename restated as a grid position, which reads as a completed table.
+ * The run that opened 100 described exactly those 100. So this is not a rare edge: it is what the
+ * model does when finishing the set honestly looks expensive.
+ *
+ * ⚠️ Every clause here exists to avoid firing on an HONEST line. A model names files it is about to
+ * open, files it failed to open, and files in plans and headings; none of those are claims about what
+ * a picture shows. A line qualifies only when it names an unopened file AND carries a separator with
+ * real content after it.
+ *
+ * @param opened Basenames actually opened this request (same source the coverage check uses).
+ * @param text   The assistant's prose for the turn.
+ */
+export const describedWithoutOpening = (opened: ReadonlyArray<string>, text: string): ReadonlyArray<string> => {
+  const seen = new Set(opened.map((name) => leaf(name)))
+  const claimed = new Set<string>()
+  for (const line of text.split("\n")) {
+    const match = line.match(/[\w-]+\.(?:png|jpe?g|gif|webp)/i)
+    if (!match) continue
+    const name = leaf(match[0])
+    if (seen.has(name)) continue
+    // The claim has to come AFTER the name — a heading or a plan mentions the file and stops.
+    const after = line.slice(line.indexOf(match[0]) + match[0].length)
+    const body = after.replace(/^[\s:|\-–—>.]+/, "")
+    if (body.length < 12) continue
+    // ⚠️ An announced or failed read is not a fabrication. Both are honest, and both put a filename
+    // on a line with words after it.
+    if (/\b(?:will|going to|next|let me|about to|cannot|could not|failed|unable|does not exist|missing)\b/i.test(line))
+      continue
+    claimed.add(name)
+  }
+  return [...claimed]
+}
+
+/** The correction. Names the files, because "you invented some" is not actionable. */
+export const groundingMessage = (invented: ReadonlyArray<string>): string => {
+  const batch = invented.slice(0, STEER_BATCH)
+  return (
+    `You described ${invented.length} file${invented.length === 1 ? "" : "s"} you never opened, including ` +
+    `${batch.join(", ")}. A filename is not a picture: nothing you wrote about those is based on ` +
+    `anything you saw. Open them one at a time and say what each actually shows, or remove those ` +
+    `lines from your answer. Do not restate the filename or its grid position as a description.`
+  )
+}
+
+/**
  * What the model is told. Names the files, because "you missed some" is not actionable and the
  * measured failure is a model that believed it was finished.
  */
