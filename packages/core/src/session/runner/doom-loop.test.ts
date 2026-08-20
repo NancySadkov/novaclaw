@@ -315,3 +315,28 @@ describe("isEmptyAssistantTurn", () => {
     expect(isEmptyAssistantTurn([userMsg("go")])).toBe(false)
   })
 })
+
+describe("the runaway budget grows with harness-driven work", () => {
+  // 🔴 Measured 2026-08-20: "describe the first 100 png files" made 96 legitimate calls, tripped the
+  // 75-call detector, and the nudge — self-assessment, "if you're stuck, tell the user where things
+  // stand" — invited the model to wrap up at ~78 of 100. A detector built to break REPETITION was
+  // ending honest bulk work. The runner raises the threshold by exactly what it asked for.
+  const STEER_BATCH = 10
+  const budget = (rounds: number) => RUNAWAY_THRESHOLD + rounds * STEER_BATCH
+
+  test("with no drive in progress the threshold is unchanged", () => {
+    expect(detectRunaway(RUNAWAY_THRESHOLD, budget(0))).toBe(true)
+    expect(detectRunaway(RUNAWAY_THRESHOLD - 1, budget(0))).toBe(false)
+  })
+
+  test("the measured run no longer trips it", () => {
+    // 96 calls after 5 rounds of steering: the harness asked for 50 of those files itself.
+    expect(detectRunaway(96, budget(5))).toBe(false)
+  })
+
+  test("a genuine loop is still caught, however long the drive has run", () => {
+    // ⚠️ The clause that keeps this honest: the budget grows by what was REQUESTED, so a model
+    // spinning far past it still trips.
+    expect(detectRunaway(500, budget(5))).toBe(true)
+  })
+})

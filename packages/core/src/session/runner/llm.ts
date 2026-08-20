@@ -90,6 +90,7 @@ import {
   detectFailureStreak,
   failureStreakMessage,
   detectRunaway,
+  RUNAWAY_THRESHOLD,
   runawayMessage,
   toolCallsSinceLastUser,
   isEmptyAssistantTurn,
@@ -2263,7 +2264,18 @@ export const layer = Layer.effect(
               })
               yield* SessionInput.steer(db, events, input.sessionID, failureStreakMessage(streak))
             }
-            if (!runawayNudged && detectRunaway(sinceUser.length)) {
+            // 🔴 The runaway threshold RISES with the work the harness itself asked for. Measured
+            // 2026-08-20: a legitimate "describe the first 100 png files" made 96 calls, tripped the
+            // 75-call detector, and the nudge — deliberately self-assessment, "if you're stuck, tell
+            // the user where things stand" — invited the model to wrap up at ~78 of 100. A detector
+            // built to break repetition was ending honest bulk work.
+            //
+            // ⚠️ Proportional, not disabled: each set-drive round explicitly asked for `STEER_BATCH`
+            // more files, so the budget grows by exactly what was requested and by nothing else. With
+            // no drive in progress (`setRounds === 0`) the threshold is unchanged, so a genuine loop
+            // is caught exactly as before — which is the case this detector exists for.
+            const runawayThreshold = RUNAWAY_THRESHOLD + setRounds * UnfinishedSet.STEER_BATCH
+            if (!runawayNudged && detectRunaway(sinceUser.length, runawayThreshold)) {
               runawayNudged = true
               yield* Log.event("session.doom.runaway.detected", {
                 "session.id": input.sessionID,
