@@ -654,6 +654,19 @@ export const layer = Layer.effect(
      */
     const setRequests = new Map<string, { readonly asked: boolean; readonly limit?: number }>()
     /**
+     * Every file this SESSION has opened for the current set request, accumulated across drains.
+     *
+     * 🔴 `toolCallsSinceLastUser` counts from the last real user turn, and compaction moves that
+     * boundary — so the coverage the drive reads collapses to the last few reads. Measured run 13:
+     * `opened` went 12 → 1 → 3 → 38 → 1 → 36, and the drive told a model that had already described
+     * ~100 icons that 399 remained, sending it back to `icon_001`. 180 read calls, 100 distinct.
+     *
+     * ⚠️ A half-corrected controller is worse than a stopped one. With the request latched but
+     * coverage still per-window, the drive kept steering — backwards — and scored WORSE than the run
+     * where it went quiet (67 grounded against 192).
+     */
+    const setOpened = new Map<string, Set<string>>()
+    /**
      * ⚠️ **`models.ref` is declared `… | undefined` and really is undefined in practice**, so this
      * takes an optional and answers `undefined` rather than dereferencing.
      *
@@ -2533,13 +2546,20 @@ export const layer = Layer.effect(
               // toward the folder — measured 2026-08-20, "the first 100 of 400" drove toward 200
               // names — and a harness that keeps working after the job is done is as wrong as one
               // that stops early. An unnamed count means the whole enumerated set, as before.
+              // Union this turn's opens into the request's running total BEFORE computing coverage.
+              // Compaction cannot take these back: they are what the session has actually done.
+              const opened = setOpened.get(input.sessionID) ?? new Set<string>()
+              for (const name of openedThisTurn) opened.add(name)
+              setOpened.set(input.sessionID, opened)
               const allNames = (listing?.entries ?? []).filter((entry) => !entry.directory).map((entry) => entry.name)
               // From the same latch, for the same reason — a count read after compaction would
               // silently widen the job to the whole folder, or narrow it to nothing.
               const requested = setRequest?.limit
               const setCoverage = {
                 available: requested === undefined ? allNames : allNames.slice(0, requested),
-                opened: openedThisTurn,
+                // ⚠️ The accumulated set, never `openedThisTurn` — that is one window's worth and it
+                // shrinks under compaction. See `setOpened`.
+                opened: [...opened],
               }
               // ⚠️ Logged at the DECISION, not after it. This check has now failed to fire twice on
               // runs it was built for, and each time the cause was invisible afterwards — the same

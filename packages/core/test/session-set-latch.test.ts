@@ -88,3 +88,34 @@ describe("the runner latches it", () => {
     expect(inline).toBe(1)
   })
 })
+
+describe("coverage accumulates across the whole request", () => {
+  const source = fs.readFileSync(path.join(import.meta.dir, "../src/session/runner/llm.ts"), "utf8")
+
+  test("the drive reads an accumulated set, not one window's opens", () => {
+    // 🔴 Run 13. The request latch worked — asked:true, rounds 0..6, steering throughout — and the run
+    // scored WORSE than the one where the drive went quiet: 67 grounded against 192. `opened` went
+    // 12 → 1 → 3 → 38 → 1 → 36 because `toolCallsSinceLastUser` counts from a boundary compaction
+    // moves, so the drive told a model that had described ~100 icons that 399 remained and sent it
+    // back to icon_001. 180 read calls, 100 distinct.
+    expect(source).toContain("const setOpened = new Map<string, Set<string>>()")
+    expect(source).toContain("for (const name of openedThisTurn) opened.add(name)")
+    expect(source).toContain("opened: [...opened],")
+  })
+
+  test("it is keyed by session, like the request latch", () => {
+    expect(source).toContain("setOpened.get(input.sessionID)")
+    expect(source).toContain("setOpened.set(input.sessionID, opened)")
+  })
+
+  test("⚠️ a half-corrected controller is worse than a stopped one", () => {
+    // Kept as a statement of the lesson, pinned to the thing that makes it true: coverage must be
+    // accumulated in the SAME place the request is latched, or the drive steers backwards.
+    const latch = source.indexOf("const setRequests = new Map")
+    const opened = source.indexOf("const setOpened = new Map")
+    expect(latch).toBeGreaterThan(-1)
+    expect(opened).toBeGreaterThan(-1)
+    // Declared together, so neither can be fixed without the other being visible.
+    expect(Math.abs(opened - latch)).toBeLessThan(1400)
+  })
+})
