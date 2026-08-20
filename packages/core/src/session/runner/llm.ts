@@ -1386,6 +1386,23 @@ export const layer = Layer.effect(
             }
             needsContinuation = true
             const assistantMessageID = yield* publisher.assistantMessageID(event.id)
+            // ⭐ A TOOL IS NOT GENERATION — free the device before running one.
+            //
+            // 🔴 Measured 2026-08-20. A parent called `wait` on the child it had just spawned. A
+            // sub-agent is BATCH class, admitted only while no interactive turn holds the device;
+            // the parent is interactive and held it for the whole tool call. The child's first step
+            // landed 599.3 s later, released by the join's own 600 s timeout — on a warm model that
+            // cold-loads in 288 s. Its every later step took 0–3 s.
+            //
+            // ⚠️ Releasing before the dispatch's SETTLEMENT callback was not enough and shipped as a
+            // fix that did nothing: tools run here, inside the stream, strictly earlier. The unit
+            // tests passed throughout because their `settle` blocked — faithful to the documented
+            // design, wrong about the system. This is the real boundary.
+            //
+            // No re-admit: a tool call ends the step, and the next step's dispatch admits again
+            // (`step.ended → provider-attempt.started` in any session's events). Re-acquiring here
+            // would mean blocking inside a finalizer.
+            yield* scheduler.release(dispatchSlot)
             yield* Effect.uninterruptibleMask((restore) =>
               restore(
                 toolMaterialization.settle({

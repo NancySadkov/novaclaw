@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test"
+import fs from "node:fs"
+import path from "node:path"
 import { Deferred, Effect, Fiber } from "effect"
 import { ProviderDispatch } from "@novaclaw/core/session/runner/provider-dispatch"
 import { MAX_BATCH, make } from "@novaclaw/core/session/scheduler"
@@ -237,5 +239,27 @@ describe("re-entrancy — the same session admitted twice", () => {
     await run(gate.admit(slotFor("bg", "sub-agent")))
     const [after] = await run(gate.snapshot())
     expect(after?.inFlightBatch).toContain("bg")
+  })
+})
+
+describe("the release sits where tools ACTUALLY run", () => {
+  test("llm.ts frees the device BEFORE it settles a tool call", () => {
+    // ⚠️ A source pin, deliberately. Everything else in this file drives `ProviderDispatch` with a
+    // blocking `settle` — the boundary the dispatch header describes — and all of it stayed green
+    // through a fix that did nothing in production. Tools are invoked from the provider stream at
+    // `toolMaterialization.settle(...)`, which no unit test here can reach without a real model, a
+    // real registry and a real stream.
+    //
+    // Measured in production either side of this line: a spawned child's first step went from
+    // 599.3 s (released by its parent's 600 s join timeout) to 0.7 s.
+    const source = fs.readFileSync(path.join(import.meta.dir, "../src/session/runner/llm.ts"), "utf8")
+    const release = source.indexOf("scheduler.release(dispatchSlot)")
+    const settle = source.indexOf("toolMaterialization.settle({")
+    expect(release).toBeGreaterThan(-1)
+    expect(settle).toBeGreaterThan(-1)
+    // Order is the whole assertion: after the tool, it would hold the device across the call again.
+    expect(release).toBeLessThan(settle)
+    // …and they must be in the same branch, not merely both present somewhere in a 2600-line file.
+    expect(settle - release).toBeLessThan(1500)
   })
 })
