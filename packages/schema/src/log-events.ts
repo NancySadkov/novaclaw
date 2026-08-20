@@ -1879,6 +1879,16 @@ export const EVENTS = {
   // stopping half way through a folder is ordinary, and the steer is the harness doing its job.
   // The set-completion check RAN — with the numbers behind its verdict. Distinct from `.continue`,
   // which only fires when it steers: a check that silently does not fire is the failure mode here.
+  // The set-completion branch was ENTERED. Distinct from `.considered`, which fires only after the
+  // request-shape and opened-file gates pass: without this, "the branch never ran" and "it ran and
+  // declined" produce the same silence.
+  "session.finish.set.branch": {
+    level: "info",
+    message: "set-completion branch entered",
+    attributes: { "session.id": "correlate", "session.set.asked": "flag", "session.set.calls": "count" },
+    content: "correlated",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   "session.finish.set.considered": {
     level: "info",
     message: "set-completion check ran",

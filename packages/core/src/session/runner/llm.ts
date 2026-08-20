@@ -2381,6 +2381,14 @@ export const layer = Layer.effect(
             // scope and is not visible here.
             // `lastRealUserText` answers undefined for a files-only prompt (no words to read a set from).
             const askedForSet = UnfinishedSet.asksForSet(lastRealUserText(context) ?? "")
+            // ⚠️ Logged BEFORE either gate. `set.considered` fires only after both pass, so a run that
+            // logs it once cannot tell "the branch never ran" from "it ran and declined" — which is
+            // exactly the question the 100-icon run left open.
+            yield* Log.event("session.finish.set.branch", {
+              "session.id": input.sessionID,
+              "session.set.asked": askedForSet,
+              "session.set.calls": toolCallsSinceLastUser(context).length,
+            })
             const openedThisTurn = askedForSet
               ? toolCallsSinceLastUser(context).flatMap((call) => {
                   // ⚠️ `input` is a STRING — `JSON.stringify` of the tool input, or whatever raw text
