@@ -1,4 +1,4 @@
-import { type Component, createMemo, createResource, createSignal, For, Show } from "solid-js"
+import { type Component, createMemo, createSignal, Show } from "solid-js"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
@@ -16,12 +16,12 @@ import { SettingsRowV2 } from "./parts/row"
 import {
   memoryClearScope,
   memoryIngest,
-  memoryInvalidate,
   memoryList,
   memoryRemember,
   type MemoryRow,
 } from "@/utils/memory-api"
 import { buildMemoryBundle, importScope, parseMemoryBundle } from "./memory-bundle"
+import { MemoryRemembered } from "@/components/memory-remembered"
 import { SettingsProfileSection } from "./profile"
 
 // The Memory tab (notes/kb-graph-plan.md §5) — the lay-first home for "what NovaClaw remembers".
@@ -146,20 +146,6 @@ export const SettingsMemoryV2: Component<{ sessionID?: string }> = (props) => {
 
   const sessionScope = () => (props.sessionID ? `session:${props.sessionID}` : undefined)
 
-  const [memories] = createResource(
-    () => {
-      const cn = conn()
-      return cn ? { cn, dir: directory(), t: tick() } : undefined
-    },
-    ({ cn, dir }) => memoryList(cn.http, { directory: dir, limit: 500 }).catch(() => [] as MemoryRow[]),
-  )
-
-  const scopeLabel = (scope: string): string => {
-    if (scope === sessionScope()) return language.t("settings.memory.scope.chat")
-    if (scope === "global") return language.t("settings.memory.scope.global")
-    if (scope.startsWith("session:")) return language.t("settings.memory.scope.otherChat")
-    return language.t("settings.memory.scope.global")
-  }
 
   const failed = (error: unknown) =>
     showToast({
@@ -322,15 +308,6 @@ export const SettingsMemoryV2: Component<{ sessionID?: string }> = (props) => {
     await clearScopes([scope])
     showToast({ variant: "success", icon: "circle-check", title: language.t("settings.memory.clearChat.toast") })
   }
-
-  const forget = async (row: MemoryRow) => {
-    const cn = conn()
-    if (!cn) return
-    await memoryInvalidate(cn.http, { directory: directory(), id: row.id }).catch(failed)
-    refresh()
-  }
-
-  const count = () => memories()?.length ?? 0
 
   return (
     <>
@@ -500,38 +477,18 @@ export const SettingsMemoryV2: Component<{ sessionID?: string }> = (props) => {
         </div>
 
         <div class="settings-v2-section">
-          <div class="settings-v2-section-title">
-            {count() > 0
-              ? language.t("settings.memory.list.title", { count: count() })
-              : language.t("settings.memory.list.titleEmpty")}
-          </div>
-          <Show
-            when={count() > 0}
-            fallback={<p class="settings-v2-field-description">{language.t("settings.memory.list.empty")}</p>}
-          >
-            <div class="flex flex-col gap-1.5 max-h-[320px] overflow-y-auto pr-1">
-              <For each={memories()}>
-                {(row) => (
-                  <div class="flex items-start justify-between gap-3 rounded-md border border-[var(--nc-border-subtle,rgba(255,255,255,0.08))] px-3 py-2">
-                    <div class="flex min-w-0 flex-col gap-0.5">
-                      <span class="text-sm leading-snug break-words">{row.text}</span>
-                      <span class="text-xs opacity-60">{scopeLabel(row.scope)}</span>
-                    </div>
-                    <RequiresLevel min="advanced">
-                      <ButtonV2
-                        size="small"
-                        variant="ghost-muted"
-                        icon="close-small"
-                        aria-label={language.t("settings.memory.forget.action")}
-                        title={language.t("settings.memory.forget.action")}
-                        onClick={() => void forget(row)}
-                      />
-                    </RequiresLevel>
-                  </div>
-                )}
-              </For>
-            </div>
-          </Show>
+          {/* 🔴 The SHARED list, not a second copy of it (2026-08-20). This tab used to re-implement
+            the whole Remembered list — the same rows, its own `forget`, and its own
+            `RequiresLevel min="advanced"` gate. That duplication went wrong exactly as duplication
+            does: when the owner reported the Memory APP had "no way to remove memories", the fix
+            (drop the expertise gate, confirm before deleting) landed on the shared component and
+            this copy kept the gate AND kept deleting on a single click with no confirmation. Two
+            surfaces disagreeing about who may erase a memory is worse than either answer. */}
+        <MemoryRemembered
+          class="settings-v2-section"
+          {...(props.sessionID === undefined ? {} : { sessionID: props.sessionID })}
+          revision={tick()}
+        />
         </div>
       </div>
     </>
