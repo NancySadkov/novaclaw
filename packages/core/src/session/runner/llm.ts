@@ -56,6 +56,7 @@ import { Offline } from "../../offline"
 import { PermissionV2 } from "../../permission"
 import { PluginV2 } from "../../plugin"
 import { SessionScheduler } from "../scheduler"
+import { SpawnTool } from "../../tool/spawn"
 import { type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
 import { SessionMaintenance } from "./maintenance"
@@ -1063,11 +1064,26 @@ export const layer = Layer.effect(
       // sampling overlay, and the request itself.
       yield* timingStart("request-build")
       const isLastStep = agent.info?.steps !== undefined && currentStep >= agent.info.steps
+      // 🔴 The harness is the controller for a set request, so a sub-agent is a SECOND controller
+      // over the same work — with its own context, coverage the parent cannot see, and a join the
+      // parent blocks on. Measured over nine runs of one 400-icon prompt (2026-08-20): the run that
+      // did NOT delegate covered 100 files in ~7 minutes; every run that DID lost 10–30 minutes to
+      // stalls around spawn/wait and covered less (83 in 58 minutes, 31, and 7).
+      //
+      // ⚠️ Mechanical, because the informational version did not convert. The fan-out advice was
+      // rewritten the same day to key on image SIZE and to say small images should not be delegated,
+      // and the model kept spawning — the third informational lever here to fail. Withholding the
+      // tool is the lever that decides it.
+      //
+      // Narrow by construction: only while THIS request asks for a set, and only `spawn`. Every
+      // other turn keeps it.
+      const drivingASet = UnfinishedSet.asksForSet(lastRealUserText(context) ?? "")
       const toolMaterialization = isLastStep
         ? undefined
         : yield* tools.materialize(
             agent.info?.permissions,
             (name) =>
+              !(drivingASet && name === SpawnTool.name) &&
               ShortChat.offered(config.shortChat, name) &&
               ConfigToolRouting.offered(harness.toolRouting, {
                 mode: config.permissionMode,
@@ -2346,6 +2362,21 @@ export const layer = Layer.effect(
                     }),
                   ),
                 )
+          } else if (
+            // ⚠️ Logged BEFORE the arms, so a run says which one it took. Measured 2026-08-20: a
+            // parent made 66 read calls across 29 steps and `set.branch` never fired ONCE, and
+            // nothing in the logs could say whether the drive declined or was never reached. The
+            // arms are mutually exclusive `else if`s, so silence from all of them is indistinguishable
+            // from silence from one — which is the same trap that cost this programme two days on
+            // the fan-out. `false` so the chain below is unchanged.
+            (yield* Log.event("session.finish.arm", {
+              "session.id": input.sessionID,
+              "session.finish.empty": isEmptyAssistantTurn(context),
+              "session.finish.announced": announcedToolButCalledNone(context),
+              "session.finish.calls": toolCallsSinceLastUser(context).length,
+            }).pipe(Effect.as(false)))
+          ) {
+            // unreachable — the log arm above always yields false
           } else if (isEmptyAssistantTurn(context)) {
             // 1N/A3: the turn produced no text AND no tool call — typically a tool call streamed
             // into the reasoning channel and dropped by the server's parser. Inject ONE synthetic
