@@ -119,3 +119,30 @@ describe("coverage accumulates across the whole request", () => {
     expect(Math.abs(opened - latch)).toBeLessThan(1400)
   })
 })
+
+describe("the STOP condition must outlive a drain too", () => {
+  const source = fs.readFileSync(path.join(import.meta.dir, "../src/session/runner/llm.ts"), "utf8")
+
+  test("barren rounds are counted per session, not per drain", () => {
+    // 🔴 The third value in this drive found in a drain local, failing identically. Measured run 15:
+    // `opened` stuck at 199 while the drive kept steering through rounds 96, 97, 98. Every steer
+    // starts a new drain, so the counter reset each round and never reached MAX_BARREN_ROUNDS —
+    // spending the remaining budget on a model that had stopped opening files.
+    expect(source).toContain("const setBarrenBySession = new Map<string, { barren: number; lastOpened: number }>()")
+    expect(source).toContain("setBarrenBySession.get(input.sessionID)")
+    expect(source).toContain("setBarrenBySession.set(input.sessionID, barrenState)")
+    // …and the drain locals are gone.
+    expect(source).not.toContain("let setBarren = 0")
+    expect(source).not.toContain("let setLastOpened = 0")
+  })
+
+  test("⚠️ all three of the drive's cross-turn values are session-scoped", () => {
+    // The pattern this task kept re-learning: the request, the coverage, and the stop condition are
+    // properties of the REQUEST, and every one of them was originally read from something a drain or
+    // a context window could reset. They are declared together so the next addition is obvious.
+    for (const store of ["setRequests", "setOpened", "setBarrenBySession"]) {
+      expect(source).toContain(`const ${store} = new Map<`)
+      expect(source).toContain(`${store}.get(input.sessionID)`)
+    }
+  })
+})

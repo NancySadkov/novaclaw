@@ -667,6 +667,20 @@ export const layer = Layer.effect(
      */
     const setOpened = new Map<string, Set<string>>()
     /**
+     * Consecutive steer rounds that opened nothing new, per session.
+     *
+     * 🔴 The THIRD value in this drive to be found in a drain local, and it failed the same way: every
+     * steer admits a prompt and starts a new drain, so `barren` reset to 0 each round and never
+     * reached `MAX_BARREN_ROUNDS`. Measured run 15 — `opened` stuck at 199 while the drive kept
+     * steering through rounds 96, 97, 98, spending the remaining budget on a model that had stopped
+     * opening files.
+     *
+     * ⚠️ The stop condition is the one piece of this drive that MUST outlive a drain: it exists
+     * precisely to notice that several rounds in a row achieved nothing, and a per-drain counter can
+     * only ever see one.
+     */
+    const setBarrenBySession = new Map<string, { barren: number; lastOpened: number }>()
+    /**
      * ⚠️ **`models.ref` is declared `… | undefined` and really is undefined in practice**, so this
      * takes an optional and answers `undefined` rather than dereferencing.
      *
@@ -2148,8 +2162,6 @@ export const layer = Layer.effect(
       let setRounds = 0
       // Rounds in a row that opened nothing new — the drive's real stop condition. Tracked here
       // beside `setRounds` because both are per-request state that must survive a turn boundary.
-      let setBarren = 0
-      let setLastOpened = 0
       // Silent-no-op guard: one steer per drain when a no-tool-call turn looks like an attempted call.
       let textualNudged = false
       // F2 output-token truncation ledger — PER-DRAIN, like every latch above it (see
@@ -2591,14 +2603,18 @@ export const layer = Layer.effect(
               })
               // Counted BEFORE the decision: a round that opened nothing new is barren whether or not
               // the drive goes on to steer again.
-              setBarren = setCoverage.opened.length > setLastOpened ? 0 : setBarren + 1
-              setLastOpened = Math.max(setLastOpened, setCoverage.opened.length)
+              // Session-scoped: a drain-local counter resets on every steer and can never reach the
+              // bound. See `setBarrenBySession`.
+              const barrenState = setBarrenBySession.get(input.sessionID) ?? { barren: 0, lastOpened: 0 }
+              barrenState.barren = setCoverage.opened.length > barrenState.lastOpened ? 0 : barrenState.barren + 1
+              barrenState.lastOpened = Math.max(barrenState.lastOpened, setCoverage.opened.length)
+              setBarrenBySession.set(input.sessionID, barrenState)
               if (
                 UnfinishedSet.shouldContinue({
                   asked: true,
                   coverage: setCoverage,
                   rounds: setRounds,
-                  barren: setBarren,
+                  barren: barrenState.barren,
                 })
               ) {
                 setRounds += 1
