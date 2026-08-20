@@ -61,9 +61,32 @@ describe("shouldContinue — every clause is a case that must NOT fire", () => {
     )
   })
 
-  test("a turn that opened NOTHING is a different fault", () => {
-    // It never started; that belongs to the tool-discovery nudges, not to "you are half done".
-    expect(UnfinishedSet.shouldContinue({ asked: true, coverage: coverage(SIX, []), rounds: 0 })).toBe(false)
+  test("a turn that opened NOTHING now FIRES — it is the case that most needs steering", () => {
+    // 🔴 Reversed 2026-08-20. This used to expect `false`, reasoning that a turn which never started
+    // belonged to the tool-discovery nudges rather than to "you are half done". Measured twice that
+    // day: asked for 400 icons, the model ran `glob` and `bash ls`, listed the folder, and finished
+    // with ZERO reads. It had found its tools — it simply never opened one — and nothing else in the
+    // harness reacted. The run produced nothing at all.
+    expect(UnfinishedSet.shouldContinue({ asked: true, coverage: coverage(SIX, []), rounds: 0 })).toBe(true)
+    // ⚠️ What keeps this from nagging a model that genuinely cannot start: three barren rounds stop
+    // it. The old clause ASSUMED that case; this one detects it.
+    expect(
+      UnfinishedSet.shouldContinue({
+        asked: true,
+        coverage: coverage(SIX, []),
+        rounds: 3,
+        barren: UnfinishedSet.MAX_BARREN_ROUNDS,
+      }),
+    ).toBe(false)
+  })
+
+  test("the zero case gets its own sentence, not \"you have opened 0 files\"", () => {
+    // "You have opened 0 files" invites an argument about whether it was supposed to. Naming the
+    // listing it just made, and the files to open, does not.
+    const message = UnfinishedSet.continueMessage(SIX, 0)
+    expect(message).toContain("listed the files but have not opened any")
+    expect(message).toContain("a listing never shows what a picture contains")
+    expect(message).not.toContain("opened 0 file")
   })
 
   test("a finished turn does not fire", () => {

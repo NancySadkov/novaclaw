@@ -175,7 +175,16 @@ export const shouldContinue = (input: {
   // tenth of the job and reported itself partially done.
   if (input.rounds >= roundCeiling(input.coverage.available.length)) return false
   if (input.coverage.available.length <= 1) return false
-  if (input.coverage.opened.length === 0) return false
+  // 🔴 The zero case is IN, changed 2026-08-20. This used to `return false` when nothing had been
+  // opened, reasoning that a turn which never started belongs to the tool-discovery nudges. Measured
+  // twice that day: asked for 400 icons the model ran `glob` and `bash ls`, listed the folder, and
+  // finished with zero reads — it had found its tools, it simply never opened one, and no other
+  // check in the harness reacted. The run produced nothing.
+  //
+  // ⚠️ What made the old clause defensible was the fear of nagging a model that CANNOT start. That
+  // case is now DETECTED rather than assumed: three rounds opening nothing new trips
+  // `MAX_BARREN_ROUNDS` above and the drive stops. Enumeration is the precondition that makes this
+  // safe — `available` naming the files means the world is known and only the opening is missing.
   return untouched(input.coverage).length > 0
 }
 
@@ -188,6 +197,17 @@ export const continueMessage = (remaining: ReadonlyArray<string>, opened: number
   // it stops, argues, or invents — all three were measured on 2026-08-20.
   const batch = remaining.slice(0, STEER_BATCH)
   const after = remaining.length - batch.length
+  // ⚠️ Opening NOTHING needs a different sentence. "You have opened 0 files" invites the model to
+  // argue about whether it was supposed to; naming the listing it just made and the files to open
+  // does not. Measured: the model globbed the folder, said what it would do, and stopped.
+  if (opened === 0)
+    return (
+      `You listed the files but have not opened any of them yet, and a listing never shows what a ` +
+      `picture contains. Open these ${batch.length} now, one at a time, and say what each shows: ` +
+      `${batch.join(", ")}. ` +
+      (after > 0 ? `Then continue with the remaining ${after}. ` : "") +
+      `Do not describe a file you have not opened, and do not stop to ask which files to do — they are named above.`
+    )
   return (
     `Not finished: you have opened ${opened} file${opened === 1 ? "" : "s"} and ${remaining.length} remain. ` +
     `Open these ${batch.length} next, one at a time, and say what each shows: ${batch.join(", ")}. ` +

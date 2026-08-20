@@ -2447,7 +2447,11 @@ export const layer = Layer.effect(
                   }
                 })
               : []
-            if (openedThisTurn.length > 0) {
+            // 🔴 Was `openedThisTurn.length > 0`, which meant a turn that listed the folder and
+            // opened nothing never even reached `shouldContinue` — measured twice on 2026-08-20,
+            // `set.branch` fired and `set.considered` never did. The zero case is the one that most
+            // needs steering; `MAX_BARREN_ROUNDS` bounds it.
+            if (askedForSet) {
               // ⚠️ NOT the prompt's 40-name cap — that bound exists so a grounding MESSAGE stays
               // small, and this check pays no prompt cost per name. It asks for exactly as many
               // as the drive could ever complete, so the set it reasons about is the set it can
