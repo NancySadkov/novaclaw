@@ -52,6 +52,25 @@ export type DriveDecision =
   | { readonly kind: "continue"; readonly message: string }
   | { readonly kind: "complete"; readonly result: string }
   | { readonly kind: "cap"; readonly notice: string }
+  /**
+   * 🔴 **A SUB-AGENT that finished without calling `exit` still completes** (owner, 2026-08-20:
+   * *"they should be bulletproof, since we never know how agents are going to invoke them"*).
+   *
+   * Measured the same day: a spawned child whose `read` failed wrote an answer and stopped. It never
+   * called `exit`, so nothing published `SessionEvent.Completed`, so the parent's `wait` blocked for
+   * its full two-minute timeout and then reported `completed: false` — and the child's answer, which
+   * was sitting in its transcript the whole time, was discarded. Five children, five hangs.
+   *
+   * ⚠️ **The join must be TOTAL.** `exit` is a cooperative act by a model, and a model that answers
+   * a question instead of calling a tool is doing the most ordinary thing it can do. A primitive
+   * whose completion depends on the model remembering a call is not a primitive, it is a hope — and
+   * `spawn`/`wait` are the whole basis of "an OS whose processes are sessions".
+   *
+   * So the caller settles it: at drain-end, a `sub-agent` with no `exit` result completes with its
+   * own last words. `kind` is distinct from `complete` because the RESULT comes from the caller (the
+   * transcript), not from here — this module stays pure and says only that settlement is due.
+   */
+  | { readonly kind: "settle" }
   | { readonly kind: "stop" }
 
 /** The session's own drive type, if it declares one (undefined row/type = no drive). */
@@ -101,9 +120,14 @@ export const decide = (
   context?: GoalContext,
 ): DriveDecision => {
   const type = driveType(session)
-  if (type === undefined) return { kind: "stop" }
   // exit(result) called — the terminal test (exit records "" for a bare exit, so `!== undefined`).
+  // Checked BEFORE the sub-agent arm: a child that DID exit has already published its completion,
+  // and settling it again would publish a second `Completed` for one session.
   if (session !== undefined && session.result !== undefined) return { kind: "stop" }
+  // A spawned child that ran out of input without exiting. Its parent may be blocked on `wait`, so
+  // the drain-end is the moment to settle it rather than leave the join to time out. See `settle`.
+  if (type === undefined && session?.type === "sub-agent") return { kind: "settle" }
+  if (type === undefined) return { kind: "stop" }
   if (
     type === "goal-oriented" &&
     context?.goal !== undefined &&

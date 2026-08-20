@@ -1872,6 +1872,16 @@ export const EVENTS = {
     content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  // A spawned child settled at drain-end WITHOUT calling `exit`, so the harness completed the join
+  // on its behalf with its own last words. INFO rather than warn: the model answering instead of
+  // calling a tool is ordinary, and the whole point of the settle is that it is not a fault.
+  "session.drive.settle": {
+    level: "info",
+    message: "sub-agent settled without exit",
+    attributes: { "session.id": "correlate", "session.settled.chars": "count" },
+    content: "correlated",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   "session.drive.goal.unavailable": {
     level: "warn",
     message: "durable self-drive goal unavailable",

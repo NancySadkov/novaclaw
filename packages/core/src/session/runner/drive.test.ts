@@ -13,7 +13,11 @@ describe("SessionDrive.decide", () => {
     expect(SessionDrive.decide({ type: "auto-prompting" }, state, t0).kind).toBe("continue")
     expect(SessionDrive.decide({ type: "goal-oriented" }, state, t0).kind).toBe("continue")
     expect(SessionDrive.decide({ type: "interactive" }, state, t0).kind).toBe("stop")
-    expect(SessionDrive.decide({ type: "sub-agent" }, state, t0).kind).toBe("stop")
+    // ⚠️ CHANGED 2026-08-20: a sub-agent no longer stops, it SETTLES. It still does not self-drive —
+    // that is what this test is about, and `settle` injects no prompt — but a spawned child whose
+    // queue ran dry has a parent that may be blocked on `wait`, and leaving it unsettled meant the
+    // join timed out while the child's answer sat in its transcript. See `session-drive-settle.test.ts`.
+    expect(SessionDrive.decide({ type: "sub-agent" }, state, t0).kind).toBe("settle")
     expect(SessionDrive.decide({}, state, t0).kind).toBe("stop") // undefined type = interactive default
     expect(SessionDrive.decide(undefined, state, t0).kind).toBe("stop") // missing row = never drive
   })

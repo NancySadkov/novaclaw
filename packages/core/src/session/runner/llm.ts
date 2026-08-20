@@ -2425,6 +2425,35 @@ export const layer = Layer.effect(
                 text: decision.notice,
               })
             }).pipe(Effect.ignore)
+          } else if (decision.kind === "settle") {
+            // 🔴 A spawned child that answered and stopped WITHOUT calling `exit`. Its parent may be
+            // blocked on `wait`, and before this it stayed blocked for the whole timeout while the
+            // child's answer sat in its transcript (measured 2026-08-20: five children, five hangs,
+            // five discarded answers). The join is made TOTAL here — `exit` is a cooperative act by
+            // a model, and a primitive that only completes when the model remembers a tool call is
+            // not a primitive.
+            //
+            // The result is the child's OWN last words, which is what a supervisor would have read
+            // anyway. An empty transcript still completes: the parent gets an honest "it produced
+            // nothing" instead of a two-minute wait for the same answer.
+            const timestamp = yield* DateTime.now
+            // `lastAssistantText` reads a MESSAGE LIST, not a session id — the child's own transcript
+            // is the only place its answer exists, since it never called `exit` to record one.
+            const settled = yield* getContext(input.sessionID).pipe(Effect.catch(() => Effect.succeed([])))
+            const said = lastAssistantText(settled).trim()
+            yield* Log.event("session.drive.settle", {
+              "session.id": input.sessionID,
+              "session.settled.chars": said.length,
+            })
+            yield* events.publish(SessionEvent.Completed, {
+              sessionID: input.sessionID,
+              timestamp,
+              result: said.length > 0 ? said : "(the helper session ended without an answer)",
+            })
+            yield* events.publish(SessionStatusEvent.Status, {
+              sessionID: input.sessionID,
+              status: { type: "exited" },
+            })
           } else if (decision.kind === "complete") {
             const timestamp = yield* DateTime.now
             yield* events.publish(SessionEvent.Completed, {
