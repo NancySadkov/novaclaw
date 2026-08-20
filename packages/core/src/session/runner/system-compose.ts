@@ -213,6 +213,20 @@ export const perceptionSection = (input: {
       "tool result, for you to look at. That is how you answer any question about what a file LOOKS " +
       "like: what a photo contains, what an icon depicts, what a screenshot shows, how two images " +
       "differ, what name a picture deserves.",
+    // 🔴 Measured 2026-08-20, and it is the last gap the harness can address by saying something.
+    // With the folder listing in place the model reads and describes correctly — but only when the
+    // task SPELLS OUT that there are several: "Look at every png in this folder … Read them all"
+    // scored 6/6 twice, while "please describe each glyph here" read ONE image and stopped, twice.
+    // A plural request is not self-evidently a loop to this model, so the loop is stated.
+    //
+    // ⚠️ Informational, and the fourth of its kind here — three earlier ones did not convert. It is
+    // cheap and precisely aimed at an observed failure, so it is worth one measurement; it is NOT a
+    // substitute for the fan-out, which makes completeness the harness's property instead of the
+    // phrasing's. If the A/B does not move it, this comes out rather than accumulating as folklore.
+    "When a task covers SEVERAL images — a folder, a set, 'each of these' — work through them one at " +
+      "a time: open one, write down what it shows, then open the next, until every one is done. " +
+      "Describing the first image is not the answer to a question about all of them, and stopping " +
+      "after it leaves the task unfinished.",
     // 🔴 This paragraph used to end "…no listing can answer a question about what a picture shows.
     // When the task is about images, open the images." — and measured 2026-08-20 on the six-glyph
     // corpus, that overshot into discouraging the listing STEP. Asked "please describe each glyph
