@@ -1077,6 +1077,15 @@ export const layer = Layer.effect(
       //
       // Narrow by construction: only while THIS request asks for a set, and only `spawn`. Every
       // other turn keeps it.
+      // ⚠️ Derived from the live context, and therefore SUBJECT to the compaction defect that
+      // `session-set-latch.test.ts` documents: once the original prompt leaves the window this reads
+      // false and `spawn` is re-offered mid-set. The drive's own latch lives in the drain scope,
+      // which this per-step builder cannot see, so sharing it needs a parameter threaded through the
+      // request build — worth doing, not worth doing carelessly.
+      //
+      // Tolerable in the meantime because the failure is benign in one direction: the worst case is
+      // that delegation becomes available again late in a long run, which is the behaviour that
+      // shipped before the gate existed.
       const drivingASet = UnfinishedSet.asksForSet(lastRealUserText(context) ?? "")
       const toolMaterialization = isLastStep
         ? undefined
@@ -2106,6 +2115,13 @@ export const layer = Layer.effect(
       // call cannot get through at all, which is the empty-turn diagnostic's territory.
       // Latched per drain: one correction for describing files that were never opened. A second
       // would be arguing with a model that has already been told plainly.
+      // 🔴 The REQUEST, decided once. `asksForSet`/`requestedLimit` describe what the user asked for,
+      // and that cannot change while the drive runs — but the CONTEXT it was read from can, and does:
+      // compaction removes the original prompt, `lastRealUserText` stops returning it, and the drive
+      // silently concludes it was never a set request. Measured run 11: steered 3 times, then
+      // `asked: false` immediately after two compactions, with ~290 files still to go.
+      let setAsked: boolean | undefined
+      let setLimit: number | undefined
       let groundingCorrected = false
       let announcedRecovered = false
       let setRounds = 0
@@ -2453,7 +2469,15 @@ export const layer = Layer.effect(
             // asked for and partly covered. `groundingListing` itself lives in the per-provider-turn
             // scope and is not visible here.
             // `lastRealUserText` answers undefined for a files-only prompt (no words to read a set from).
-            const askedForSet = UnfinishedSet.asksForSet(lastRealUserText(context) ?? "")
+            // Latch on the first turn that HAS a real user text, and never re-derive: after
+            // compaction the honest answer to "what did the user ask?" is not in the window any more,
+            // and asking again gets a confident wrong answer rather than an absent one.
+            const realUserText = lastRealUserText(context)
+            if (setAsked === undefined && realUserText !== undefined) {
+              setAsked = UnfinishedSet.asksForSet(realUserText)
+              setLimit = UnfinishedSet.requestedLimit(realUserText)
+            }
+            const askedForSet = setAsked ?? false
             // ⚠️ Logged BEFORE either gate. `set.considered` fires only after both pass, so a run that
             // logs it once cannot tell "the branch never ran" from "it ran and declined" — which is
             // exactly the question the 100-icon run left open.
@@ -2498,7 +2522,9 @@ export const layer = Layer.effect(
               // names — and a harness that keeps working after the job is done is as wrong as one
               // that stops early. An unnamed count means the whole enumerated set, as before.
               const allNames = (listing?.entries ?? []).filter((entry) => !entry.directory).map((entry) => entry.name)
-              const requested = UnfinishedSet.requestedLimit(lastRealUserText(context) ?? "")
+              // From the same latch, for the same reason — a count read after compaction would
+              // silently widen the job to the whole folder, or narrow it to nothing.
+              const requested = setLimit
               const setCoverage = {
                 available: requested === undefined ? allNames : allNames.slice(0, requested),
                 opened: openedThisTurn,
