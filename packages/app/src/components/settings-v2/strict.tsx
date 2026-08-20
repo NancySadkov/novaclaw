@@ -7,6 +7,7 @@ import { type TranslationKey, useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
+import { SettingsExplainV2 } from "./explain"
 
 // The Strict-mode settings tab (taxonomy E6 — every JH option user-surfaced). Strict mode is the
 // Juvenile Harness posture for weak/local models (jh.md): the HARNESS owns decomposition, per-step
@@ -146,7 +147,12 @@ export const SettingsStrictV2: Component = () => {
     <>
       <div class="settings-v2-tab-header settings-v2-tab-header--stacked">
         <h2 class="settings-v2-tab-title">{language.t("settings.strict.title")}</h2>
-        <p class="settings-v2-tab-description">{language.t("settings.strict.description")}</p>
+        <p class="settings-v2-tab-description">
+          {language.t("settings.strict.description")}
+          <SettingsExplainV2 label={language.t("settings.strict.title")}>
+            {language.t("settings.strict.description.more")}
+          </SettingsExplainV2>
+        </p>
       </div>
 
       <div class="settings-v2-tab-body">
@@ -182,7 +188,14 @@ export const SettingsStrictV2: Component = () => {
 
             <SettingsRowV2
               title={language.t("settings.strict.row.attempts.title")}
-              description={language.t("settings.strict.row.attempts.description")}
+              description={
+                <>
+                  {language.t("settings.strict.row.attempts.description")}
+                  <SettingsExplainV2 label={language.t("settings.strict.row.attempts.title")}>
+                    {language.t("settings.strict.row.attempts.description.more")}
+                  </SettingsExplainV2>
+                </>
+              }
             >
               <div class="w-full sm:w-[100px]">
                 <TextInputV2

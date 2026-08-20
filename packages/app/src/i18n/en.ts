@@ -2409,8 +2409,12 @@ export const dict = {
   "settings.affective.row.extended.description":
     "Also modulate top_k — for local engines (vLLM, llama.cpp) that accept it.",
   "settings.strict.title": "Strict mode",
+  // 373 characters as a section blurb until 2026-08-20. The line says what Strict IS; how it works and
+  // what it buys are one gesture away.
   "settings.strict.description":
-    "The training-wheels harness for small local models: instead of trusting the model to plan a long task, the system breaks work into tiny steps, verifies each one by actually compiling and running things, and recovers from mistakes automatically — so a modest model on your own hardware can finish jobs that normally need a frontier model. Applies to Strict-harness sessions.",
+    "The training-wheels harness for small local models, applied to Strict-harness sessions.",
+  "settings.strict.description.more":
+    "Instead of trusting the model to plan a long task, the system breaks work into tiny steps, verifies each one by actually compiling and running things, and recovers from mistakes automatically — so a modest model on your own hardware can finish jobs that normally need a frontier model.",
   "settings.strict.toast.failed": "Saving Strict-mode settings failed",
   "settings.strict.row.enabled.title": "Enable Strict mode",
   "settings.strict.row.enabled.description":
@@ -2428,8 +2432,13 @@ export const dict = {
   "settings.strict.row.budgetSteering.description":
     "At 50% and 75% of the time budget, calmly steer the model to simplify and land an end-to-end result.",
   "settings.strict.row.attempts.title": "Parallel attempts (race)",
+  // 377 characters under one control. The line is what the setting does and how to turn it off; the
+  // trade and the size limit are on demand — and the limit is kept WORD FOR WORD, because "~5000
+  // files / 256 MB" is a fact a user plans around and a paraphrase would promise more than the code.
   "settings.strict.row.attempts.description":
-    "Run several isolated attempts at the same task on separate copies of your project and keep the first one that verifiably succeeds — a lost race leaves your folder untouched. More attempts = better odds and more compute; your local hardware runs them nearly in parallel. Works for folders up to ~5000 files / 256 MB (larger ones fall back to a single attempt). Empty or 1 = off.",
+    "Race several isolated attempts and keep the first that verifiably succeeds. Empty or 1 = off.",
+  "settings.strict.row.attempts.description.more":
+    "Each attempt runs on its own copy of your project, so a lost race leaves your folder untouched. More attempts = better odds and more compute; your local hardware runs them nearly in parallel. Works for folders up to ~5000 files / 256 MB (larger ones fall back to a single attempt).",
   "settings.strict.budget.off": "Off",
   "settings.strict.budget.tight": "Tight",
   "settings.strict.budget.standard": "Standard",
