@@ -65,6 +65,16 @@ export const DESCRIPTION =
  *  keep. `read` still opens the file; it simply does not claim the bytes come back as a picture. */
 export const DESCRIPTION_TEXT_ONLY = "Read a file, page through large UTF-8 text, or list a directory. " + SHARED_TAIL
 
+/**
+ * What `read` returns INSTEAD of an image the current request cannot carry.
+ *
+ * States the fact, the cause, and the one action that resolves it — and asks for the descriptions
+ * FIRST, because that is the whole point: what the model says now is what survives when the older
+ * pictures are elided to make room for this one.
+ */
+export const heldImageNotice = (path: string, limit: number): string =>
+  `[Not opened: ${path}. This model accepts only ${limit} image${limit === 1 ? "" : "s"} per request, and you are already holding ${limit} that you have not described yet. Opening another would push one of them out of this conversation, and it would be gone. FIRST write down what each image you are holding shows — one line each is enough — then read this file again; the pictures you have described survive as your own text even after the pixels go.]`
+
 export const IMAGE_NOTE =
   "Image read successfully. Write one line now saying what it shows, before you read anything else — " +
   "images are dropped from context once this model's per-request limit is reached, and only what you " +
@@ -198,6 +208,32 @@ export const layer = Layer.effectDiscard(
               })
               const observation = yield* observeText(observations, context.sessionID, target, content)
               if ("encoding" in content && content.encoding === "base64" && SUPPORTED_IMAGE_MIMES.has(content.mime)) {
+                // 🔴 **THE MECHANICAL HALF.** Within one assistant turn there is no text between
+                // tool calls, so an image opened after the endpoint's cap is reached cannot have
+                // been described — and `budgetImages` will elide something to make room. Measured
+                // 2026-08-20 on the six-glyph corpus: the model read all six, three were evicted,
+                // and it did not report a gap — it invented a crown, a shield and a helmet that do
+                // not exist. Three informational levers were tried first and none converted.
+                //
+                // So the pixels are WITHHELD rather than handed over and then silently dropped. The
+                // model receives a sentence instead, which ends the turn and makes it speak; what it
+                // says about the images it already holds is what survives eviction as text. Then it
+                // reads this file again with the budget reset.
+                //
+                // ⚠️ A refusal, not a failure: the tool SUCCEEDS with text, so the drain continues and
+                // nothing in the transcript reads as an error the user has to care about.
+                const budget = context.imageBudget
+                if (budget !== undefined && budget.held >= budget.limit)
+                  // The same shape a TEXT read returns, so the notice reaches the model the way every
+                  // other text does — through `structured` — instead of inventing a result kind that
+                  // `toModelOutput` would then have to learn about.
+                  return {
+                    uri: resource,
+                    name: input.path,
+                    content: heldImageNotice(input.path, budget.limit),
+                    encoding: "utf8" as const,
+                    mime: "text/plain",
+                  }
                 return yield* image
                   .normalize(resource, { ...content, encoding: "base64" })
                   .pipe(Effect.catchTag("Image.ResizerUnavailableError", () => Effect.succeed(content)))

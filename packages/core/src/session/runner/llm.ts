@@ -877,6 +877,13 @@ export const layer = Layer.effect(
       let needsContinuation = false
       /** A pre-action policy returned `halt` for one of this turn's tool calls. See `tool-policy.ts`. */
       let policyHalted = false
+      /**
+       * How many images this ASSISTANT TURN has been handed. Declared here so its lifetime IS the
+       * turn — the scope resets on the next provider turn without anyone remembering to clear it,
+       * which is the property the whole mechanism rests on: a fresh turn means the model has just
+       * spoken, so its budget genuinely starts again. See `tool/tool.ts` → `imageBudget`.
+       */
+      let imagesHeldThisTurn = 0
       // A promoted user message restarts the step allowance: what the agent is answering changed.
       let currentStep = prepared.promoted > 0 ? 1 : step
       const maxProviderAttempts = ProviderRetry.maxAttempts(yield* models.retryAttempts(modelSession))
@@ -1374,6 +1381,15 @@ export const layer = Layer.effect(
                   agent: agent.id,
                   assistantMessageID,
                   attachmentPaths,
+                  // The mechanical half of the vision fix (`tool/tool.ts` → `imageBudget`). Counted
+                  // PER ASSISTANT TURN, which is what makes it sound: within one turn there is no
+                  // assistant text between tool calls, so every image past the cap is necessarily
+                  // undescribed and `budgetImages` would elide one to fit it. `read` returns a
+                  // sentence instead, the turn ends, the model describes what it holds — and the
+                  // descriptions are what survive when the pixels later go.
+                  ...(modelImageLimit === undefined
+                    ? {}
+                    : { imageBudget: { limit: modelImageLimit, held: imagesHeldThisTurn } }),
                   timing: {
                     begin: (phase) =>
                       Effect.gen(function* () {
@@ -1391,6 +1407,13 @@ export const layer = Layer.effect(
                     // tool result the model sees, and this latch is the half a `deny` does not have —
                     // it ends the drain rather than letting the model route around the refusal.
                     if (settlement.halted === true) policyHalted = true
+                    // Count the images this turn has actually been handed, so the NEXT call in the
+                    // same turn sees an accurate `held`. Counting the settled RESULT rather than the
+                    // call is deliberate: a read that failed, was denied, or returned the withheld
+                    // notice hands over no pixels and must not consume the budget.
+                    if (settlement.result.type === "content")
+                      for (const entry of settlement.result.value)
+                        if (entry.type === "file" && entry.mime.toLowerCase().startsWith("image/")) imagesHeldThisTurn++
                     // A missing file is authoritative negative evidence. If recalled memory led this
                     // exact step to that path, invalidate the claim before the next step recalls again.
                     // Re-stat instead of parsing the generic tool error: permission, binary, size, and

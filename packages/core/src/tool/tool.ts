@@ -36,6 +36,26 @@ export interface Context {
   readonly deferredTools?: ReadonlyArray<ToolCatalogue.Source>
   /** Invoke a schema already disclosed by tool_search through the resident, cache-stable dispatcher. */
   readonly invokeDeferred?: (name: string, input: Record<string, unknown>) => Effect.Effect<ToolOutput, ToolFailure>
+  /**
+   * How many images this ASSISTANT TURN has already been handed, and how many the endpoint accepts
+   * in one request. Absent when the endpoint declares no cap.
+   *
+   * 🔴 **Why a tool needs to know this.** Within one assistant turn there is no assistant text
+   * between tool calls, so an image read after the cap is reached is *guaranteed* to be undescribed
+   * — the model has had no opportunity to say what the earlier ones showed. `budgetImages` then
+   * elides the oldest, and measured 2026-08-20 the model does not merely lose them, it CONFABULATES:
+   * asked to describe six glyphs it read all six, three were evicted, and it invented a crown, a
+   * shield and a helmet that do not exist.
+   *
+   * Three informational levers were tried first and none converted (the `read` note, the perception
+   * wording, the path in the eviction notice). This is the mechanical one: a tool that would hand
+   * over pixels the request cannot carry returns TEXT instead, which ends the turn and makes the
+   * model speak — and speaking is what makes the images it already holds survive as descriptions.
+   */
+  readonly imageBudget?: {
+    readonly limit: number
+    readonly held: number
+  }
 }
 
 export type SchemaType<A> = Schema.Codec<A, any, never, never>
