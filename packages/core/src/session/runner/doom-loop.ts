@@ -188,6 +188,58 @@ export const EMPTY_TURN_DIAGNOSTIC =
   "server is dropping tool calls emitted on the reasoning channel — enable a reasoning parser (e.g. " +
   "vLLM `--reasoning-parser`) or disable thinking for tool turns."
 
+/**
+ * A turn that PROMISED a tool call and never made one.
+ *
+ * 🔴 Measured 2026-08-20 on holo3.1, asked for 400 icons: *"First, let me get a complete listing of
+ * all files in the folder:"* — then `finish=stop`, no tool call, nine events, nothing done. The run
+ * produced zero output and the session sat idle for twenty minutes.
+ *
+ * Distinct from `isEmptyAssistantTurn`, which needs no text AND no tool call; this turn is entirely
+ * text. Same underlying fault (the call never reached the harness) with the narration still attached,
+ * so it reads to every existing check as a normal, finished answer.
+ *
+ * ⚠️ Both clauses are required, because a text heuristic that fires on a finished answer would nag
+ * the user on every completed turn. A real summary ends on a statement; this ends on a promise.
+ */
+export const announcedToolButCalledNone = (context: readonly SessionMessage.Message[]): boolean => {
+  let lastAssistant: SessionMessage.Assistant | undefined
+  for (let i = context.length - 1; i >= 0; i--) {
+    const message = context[i]!
+    if (message.type === "assistant") {
+      lastAssistant = message
+      break
+    }
+  }
+  if (!lastAssistant || lastAssistant.error !== undefined) return false
+  if (lastAssistant.content.some((part) => part.type === "tool")) return false
+  const text = lastAssistant.content
+    .filter((part): part is Extract<typeof part, { type: "text" }> => part.type === "text")
+    .map((part) => part.text)
+    .join("\n")
+    .trim()
+  if (text === "") return false
+  // A trailing colon is the dangling lead-in itself — the model stopped exactly where the call goes.
+  if (text.endsWith(":")) return true
+  // Otherwise look only at the LAST sentence: an intent clause earlier in a long answer is normal
+  // narration, and only a promise at the very end means the turn stopped short of acting.
+  const tail = text.slice(-160).toLowerCase()
+  // The clause may or may not carry its closing full stop — "Let me open the first one." and
+  // "…a complete listing of all files:" are the same stop. What must NOT match is an intent clause
+  // buried mid-answer, which is why this is anchored to the FINAL sentence.
+  return /(?:^|[.!?]\s|\n)\s*(?:first,?\s+)?(?:let me|i'll|i will|i am going to|i'm going to|next,? i)\b[^.!?]*[.!?]?\s*$/.test(
+    tail,
+  )
+}
+
+/**
+ * The re-prompt. Names what happened and asks for the call itself, with no apology and no new task —
+ * the model already knows what it meant to do, and restating the goal invites it to re-plan instead.
+ */
+export const ANNOUNCED_TOOL_RECOVERY =
+  "Your last turn said what you were about to do but did not actually call a tool, so nothing ran. " +
+  "Issue that tool call now as a real tool call — do not describe it, and do not restate the plan."
+
 // 2E (codehamr A7) — the deterministic finish re-grounding backstop. When a SUBSTANTIAL turn
 // (≥ this many tool calls since the last real user message) is about to end with a clean,
 // confident summary, one re-prompt walks the model through its own acceptance criteria. Zero

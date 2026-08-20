@@ -2247,6 +2247,15 @@ export const EVENTS = {
     content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  // A turn that NARRATED a tool call and never emitted one. Distinct from `empty.recovered`, whose
+  // turn had no text either — this one reads as a normal finished answer to every other check.
+  "session.turn.announced.recovered": {
+    level: "info",
+    message: "announced-but-uncalled tool re-prompted",
+    attributes: { "session.id": "correlate" },
+    content: "correlated",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   "session.turn.empty.recovered": {
     level: "info",
     message: "empty-turn recovery",

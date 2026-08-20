@@ -93,9 +93,11 @@ import {
   RUNAWAY_THRESHOLD,
   runawayMessage,
   toolCallsSinceLastUser,
+  announcedToolButCalledNone,
   isEmptyAssistantTurn,
   lastAssistantText,
   shouldReground,
+  ANNOUNCED_TOOL_RECOVERY,
   EMPTY_TURN_RECOVERY,
   EMPTY_TURN_DIAGNOSTIC,
   REGROUND_NUDGE,
@@ -2084,6 +2086,9 @@ export const layer = Layer.effect(
       /** How many times this drain has steered the turn back to the rest of a set. Bounded by
        *  `UnfinishedSet.MAX_STEER_ROUNDS` — an automatic drive needs a visible ceiling, exactly as
        *  the self-drive's own round cap does. */
+      // Latched per drain: one re-prompt for a narrated-but-uncalled tool. A second would mean the
+      // call cannot get through at all, which is the empty-turn diagnostic's territory.
+      let announcedRecovered = false
       let setRounds = 0
       // Rounds in a row that opened nothing new — the drive's real stop condition. Tracked here
       // beside `setRounds` because both are per-request state that must survive a turn boundary.
@@ -2365,6 +2370,16 @@ export const layer = Layer.effect(
                   })
                 }).pipe(Effect.ignore)
             }
+          } else if (announcedToolButCalledNone(context) && !announcedRecovered) {
+            // 🔴 Measured 2026-08-20: "First, let me get a complete listing of all files in the
+            // folder:" — then finish=stop, no tool call, nothing done, and the harness recorded a
+            // completed turn. `isEmptyAssistantTurn` cannot see it (that needs no text AND no call);
+            // this turn is all text. Steer ONCE per drain: the model narrated the call instead of
+            // making it, and asking for the call is the whole recovery.
+            announcedRecovered = true
+            consecutiveEmpty = 0
+            yield* Log.event("session.turn.announced.recovered", { "session.id": input.sessionID })
+            yield* SessionInput.steer(db, events, input.sessionID, ANNOUNCED_TOOL_RECOVERY)
           } else {
             consecutiveEmpty = 0
             // 2E/A7: finish re-grounding — a substantial turn ending with a clean, confident
