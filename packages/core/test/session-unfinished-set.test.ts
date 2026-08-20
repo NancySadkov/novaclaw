@@ -89,6 +89,46 @@ describe("shouldContinue — every clause is a case that must NOT fire", () => {
   })
 })
 
+describe("the bound scales with the work, and stops when steering stops working", () => {
+  const many = Array.from({ length: 400 }, (_, i) => `icon_${i + 1}.png`)
+  const partial = { available: many, opened: many.slice(0, 44) }
+
+  test("a 400-file set is not stopped at the small-set ceiling", () => {
+    // 🔴 The measured failure. The image floor is 1, so a turn ends after one picture and a round
+    // yields about one file — a flat 40 rounds finishes a tenth of a 400-file request. Round 40 used
+    // to be the end; it must now be the middle.
+    expect(UnfinishedSet.shouldContinue({ asked: true, coverage: partial, rounds: 40 })).toBe(true)
+    expect(UnfinishedSet.shouldContinue({ asked: true, coverage: partial, rounds: 399 })).toBe(true)
+  })
+
+  test("but it is still BOUNDED — an automatic drive never runs unbounded", () => {
+    // The reason the old ceiling existed is unchanged: the user asked once, and everything after the
+    // first steer is the harness deciding to continue. Proportional is not the same as infinite.
+    const ceiling = UnfinishedSet.roundCeiling(many.length)
+    expect(ceiling).toBe(800)
+    expect(UnfinishedSet.shouldContinue({ asked: true, coverage: partial, rounds: ceiling })).toBe(false)
+  })
+
+  test("a small set keeps exactly the old ceiling, so nothing about six glyphs changes", () => {
+    expect(UnfinishedSet.roundCeiling(6)).toBe(UnfinishedSet.MAX_STEER_ROUNDS)
+    expect(UnfinishedSet.roundCeiling(1)).toBe(UnfinishedSet.MAX_STEER_ROUNDS)
+  })
+
+  test("three barren rounds stop the drive however much work remains", () => {
+    // ⭐ The real safety, and why the ceiling can afford to scale. A count ceiling cannot tell a
+    // stuck model from a busy one and stops both at the same arbitrary number; this stops the stuck
+    // one in three rounds and never touches the busy one.
+    expect(UnfinishedSet.shouldContinue({ asked: true, coverage: partial, rounds: 5, barren: 2 })).toBe(true)
+    expect(UnfinishedSet.shouldContinue({ asked: true, coverage: partial, rounds: 5, barren: 3 })).toBe(false)
+  })
+
+  test("barren defaults to zero, so an omitted count never silently stops the drive", () => {
+    // ⚠️ A caller that has not been updated must fail OPEN — dropping the field must not read as
+    // "barren", which would stop every drive on its first round.
+    expect(UnfinishedSet.shouldContinue({ asked: true, coverage: partial, rounds: 5 })).toBe(true)
+  })
+})
+
 describe("continueMessage — one BATCH at a time", () => {
   test("names the batch, and forbids the two measured escapes", () => {
     const message = UnfinishedSet.continueMessage(["icon_002.png", "icon_003.png"], 1)

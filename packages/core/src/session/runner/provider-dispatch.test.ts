@@ -125,7 +125,11 @@ describe("ProviderDispatch", () => {
     )
     expect(result._tag).toBe("Success")
     expect(attempts).toBe(2)
-    expect(calls).toEqual(["admit", "report:12", "release"])
+    // TWO releases, and the order is the point: charge the ledger, release the device IN BAND, then
+    // the `ensuring` net fires a second, idempotent release. The in-band one is what stops a parent
+    // holding the device through settlement — see the deadlock repro in
+    // `test/session-scheduler-concurrency.test.ts`.
+    expect(calls).toEqual(["admit", "report:12", "release", "release"])
     expect(timing).toEqual(["queued", "admitted", "start:1", "end:1:retry", "start:2", "end:2:completed"])
   })
 
@@ -197,6 +201,8 @@ describe("ProviderDispatch", () => {
     )
     expect(result._tag).toBe("Failure")
     expect(attempts).toBe(1)
-    expect(calls).toEqual(["admit", "release"])
+    // Same two releases here. `scheduler.release` is gated on `held`, so the net is a no-op after the
+    // in-band call — the duplicate is deliberate, not a leak.
+    expect(calls).toEqual(["admit", "release", "release"])
   })
 })

@@ -71,6 +71,33 @@ export const STEER_BATCH = 10
 export const MAX_STEER_ROUNDS = 40
 
 /**
+ * Consecutive rounds opening NOTHING new before the drive gives up.
+ *
+ * ⭐ This is the real safety, and it is why the round ceiling below can afford to scale. A count
+ * ceiling cannot distinguish a model that is stuck from one that is merely busy — it stops both, at
+ * the same arbitrary number. This stops the stuck one in three rounds and never stops the busy one.
+ */
+export const MAX_BARREN_ROUNDS = 3
+
+/**
+ * The most files this drive will ever enumerate, and the cap on the listing it reasons about.
+ *
+ * ⚠️ Was `MAX_STEER_ROUNDS * STEER_BATCH` = 400 — which happened to equal the size of the folder that
+ * exposed all this, so a 400-file set sat exactly on a bound derived from something unrelated. The
+ * enumeration limit is its own decision and now says so.
+ */
+export const MAX_ENUMERATED_SET = 1_000
+
+/**
+ * How many rounds this drive may take for a set of `available` files.
+ *
+ * One round yields roughly one file (the image floor is 1, so a turn ends after one picture), hence
+ * a per-file ceiling with headroom for rounds that re-read or stall. Small sets keep the old flat 40
+ * so nothing about the six-glyph case changes.
+ */
+export const roundCeiling = (available: number): number => Math.max(MAX_STEER_ROUNDS, available * 2)
+
+/**
  * How many items the user asked for, when they said a number.
  *
  * 🔴 Measured 2026-08-20: told "describe each of the first 100 png files" in a folder of 400, the
@@ -133,15 +160,20 @@ export const untouched = (coverage: Coverage): ReadonlyArray<string> => {
 export const shouldContinue = (input: {
   readonly asked: boolean
   readonly coverage: Coverage
-  /** How many times this request has already been steered. Bounded by `MAX_STEER_ROUNDS`. */
+  /** How many times this request has already been steered. Bounded by `roundCeiling`. */
   readonly rounds: number
+  /** Consecutive rounds that opened nothing new. Bounded by `MAX_BARREN_ROUNDS`. */
+  readonly barren?: number
 }): boolean => {
   if (!input.asked) return false
+  // ⭐ Stop when steering stops WORKING, which is a different question from how long it has run. A
+  // model that has ignored three consecutive batches will ignore the fourth.
+  if ((input.barren ?? 0) >= MAX_BARREN_ROUNDS) return false
   // ⚠️ The ceiling on an AUTOMATIC drive. The user asked once; everything after the first steer is
   // the harness deciding to continue, so it stops at a stated bound rather than running while files
-  // remain. A set larger than the drive can cover ends partially done and SAYS so — which is a
-  // better answer than either an unbounded loop or the silence this used to give.
-  if (input.rounds >= MAX_STEER_ROUNDS) return false
+  // remain. The bound is proportional to the set now: a flat 40 meant a 400-file request finished a
+  // tenth of the job and reported itself partially done.
+  if (input.rounds >= roundCeiling(input.coverage.available.length)) return false
   if (input.coverage.available.length <= 1) return false
   if (input.coverage.opened.length === 0) return false
   return untouched(input.coverage).length > 0

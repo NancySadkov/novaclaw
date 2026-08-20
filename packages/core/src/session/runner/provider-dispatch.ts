@@ -164,6 +164,20 @@ const dispatch = <E, R, A, E2, R2>(
               ...input.slot,
               costTokens,
             })
+          // ⭐ THE IN-BAND RELEASE. Generation is over; settlement — which is where tools RUN — must
+          // not hold the device. Without this the `ensuring` net below was the only release, and it
+          // fires after settlement: a parent blocked in the `wait` tool held the device against its
+          // own child, which is batch class and admitted only while no interactive turn is in
+          // flight. Measured 2026-08-20: the child's first step landed 599.3 s later, released by
+          // the join's own 600 s timeout rather than by anything going right.
+          //
+          // ⚠️ Charge the ledger BEFORE releasing: `report` and `release` both address the slot, and
+          // releasing first would drain a waiter that then races the charge for this turn's cost.
+          //
+          // The net below stays. `release` is idempotent (gated on `held`), so the second call is a
+          // no-op on the success path and remains the only release on the failure and interrupt
+          // paths, where this line is never reached.
+          yield* input.scheduler.release(input.slot)
           return yield* settle(result, restore)
         }),
       ),

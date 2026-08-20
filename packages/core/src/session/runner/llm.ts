@@ -2068,6 +2068,10 @@ export const layer = Layer.effect(
        *  `UnfinishedSet.MAX_STEER_ROUNDS` — an automatic drive needs a visible ceiling, exactly as
        *  the self-drive's own round cap does. */
       let setRounds = 0
+      // Rounds in a row that opened nothing new — the drive's real stop condition. Tracked here
+      // beside `setRounds` because both are per-request state that must survive a turn boundary.
+      let setBarren = 0
+      let setLastOpened = 0
       // Silent-no-op guard: one steer per drain when a no-tool-call turn looks like an attempted call.
       let textualNudged = false
       // F2 output-token truncation ledger — PER-DRAIN, like every latch above it (see
@@ -2417,10 +2421,7 @@ export const layer = Layer.effect(
               // as the drive could ever complete, so the set it reasons about is the set it can
               // actually finish, and no file is silently outside the world.
               const listing = yield* Effect.promise(() =>
-                ProjectGrounding.readListing(
-                  location.directory,
-                  UnfinishedSet.MAX_STEER_ROUNDS * UnfinishedSet.STEER_BATCH,
-                ),
+                ProjectGrounding.readListing(location.directory, UnfinishedSet.MAX_ENUMERATED_SET),
               )
               // ⚠️ Bounded by the REQUEST when the user named a count. Without this the drive works
               // toward the folder — measured 2026-08-20, "the first 100 of 400" drove toward 200
@@ -2441,8 +2442,17 @@ export const layer = Layer.effect(
                 "session.set.opened": setCoverage.opened.length,
                 "session.set.rounds": setRounds,
               })
+              // Counted BEFORE the decision: a round that opened nothing new is barren whether or not
+              // the drive goes on to steer again.
+              setBarren = setCoverage.opened.length > setLastOpened ? 0 : setBarren + 1
+              setLastOpened = Math.max(setLastOpened, setCoverage.opened.length)
               if (
-                UnfinishedSet.shouldContinue({ asked: true, coverage: setCoverage, rounds: setRounds })
+                UnfinishedSet.shouldContinue({
+                  asked: true,
+                  coverage: setCoverage,
+                  rounds: setRounds,
+                  barren: setBarren,
+                })
               ) {
                 setRounds += 1
                 const remaining = UnfinishedSet.untouched(setCoverage)
