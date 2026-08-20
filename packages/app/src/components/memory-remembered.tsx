@@ -6,7 +6,7 @@ import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
-import { memoryInvalidate, memoryList, memoryStats, type MemoryRow } from "@/utils/memory-api"
+import { memoryClearScope, memoryInvalidate, memoryList, memoryStats, type MemoryRow } from "@/utils/memory-api"
 import { instanceDiagnosis } from "@/utils/resource-api"
 
 /**
@@ -121,6 +121,35 @@ export const MemoryRemembered: Component<{
     return language.t("settings.memory.scope.global")
   }
 
+  /**
+   * Forget EVERY memory in one scope — the batch half the owner found missing (2026-08-20: *"no way
+   * to remove memories, either specific or in batches"*).
+   *
+   * ⚠️ It lives beside the list rather than only in Settings because that is where a person is when
+   * they decide the answer is "all of it": they are looking at the rows. The Settings tab keeps its
+   * own copy until the whole tab migrates here, and both call the same `memory/clearScope`.
+   */
+  const forgetScope = async (scope: string, confirmTitle: string) => {
+    const cn = conn()
+    if (!cn) return
+    const proceed = await confirm({
+      title: confirmTitle,
+      description: language.t("settings.memory.clearAll.confirm.description"),
+      confirmLabel: language.t("memory.forgetAll.confirm.action"),
+      destructive: true,
+    })
+    if (!proceed) return
+    await memoryClearScope(cn.http, { directory: directory(), scope }).catch((error: unknown) =>
+      showToast({
+        variant: "error",
+        title: language.t("settings.memory.toast.failed"),
+        description: error instanceof Error ? error.message : String(error),
+      }),
+    )
+    setLocalTick((value) => value + 1)
+    void refetch()
+  }
+
   const forget = async (row: MemoryRow) => {
     const cn = conn()
     if (!cn) return
@@ -147,10 +176,36 @@ export const MemoryRemembered: Component<{
 
   return (
     <div class={props.class} data-component="memory-remembered">
-      <div class="settings-v2-section-title">
-        {count() > 0
-          ? language.t("settings.memory.list.title", { count: count() })
-          : language.t("settings.memory.list.titleEmpty")}
+      <div class="flex items-center justify-between gap-2">
+        <div class="settings-v2-section-title">
+          {count() > 0
+            ? language.t("settings.memory.list.title", { count: count() })
+            : language.t("settings.memory.list.titleEmpty")}
+        </div>
+        {/* Batch removal, where the rows are. Hidden when there is nothing to clear, so the app does
+            not offer a destructive action against an empty set. */}
+        <Show when={count() > 0}>
+          <div class="flex shrink-0 gap-1.5" data-slot="memory-batch">
+            <Show when={sessionScope()}>
+              {(scope) => (
+                <ButtonV2
+                  size="small"
+                  variant="ghost-muted"
+                  onClick={() => void forgetScope(scope(), language.t("memory.forgetChat.confirm.title"))}
+                >
+                  {language.t("settings.memory.clearChat.action")}
+                </ButtonV2>
+              )}
+            </Show>
+            <ButtonV2
+              size="small"
+              variant="ghost-muted"
+              onClick={() => void forgetScope("global", language.t("memory.forgetAll.confirm.title"))}
+            >
+              {language.t("settings.memory.clearAll.action")}
+            </ButtonV2>
+          </div>
+        </Show>
       </div>
       <Show
         when={!unavailable()}
