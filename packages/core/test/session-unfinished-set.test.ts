@@ -118,3 +118,22 @@ describe("continueMessage — one BATCH at a time", () => {
     expect(UnfinishedSet.continueMessage(["a.png", "b.png"], 4)).not.toContain("Then continue with the remaining")
   })
 })
+
+describe("requestedLimit — the set the USER asked for, not what is on disk", () => {
+  test("an explicit count is read", () => {
+    // 🔴 Measured: "the first 100 png files" in a folder of 400 drove toward 200 names. A harness
+    // that keeps working after the job is done is as wrong as one that stops early.
+    expect(UnfinishedSet.requestedLimit("Describe each of the first 100 png files in this folder")).toBe(100)
+    expect(UnfinishedSet.requestedLimit("describe the first 40 png files, in filename order")).toBe(40)
+    expect(UnfinishedSet.requestedLimit("describe 10 images from here")).toBe(10)
+    expect(UnfinishedSet.requestedLimit("top 12 icons please")).toBe(12)
+  })
+
+  test("no count means the whole set — the previous behaviour exactly", () => {
+    expect(UnfinishedSet.requestedLimit("please describe each glyph here")).toBeUndefined()
+    expect(UnfinishedSet.requestedLimit("describe all the icons")).toBeUndefined()
+    // ⚠️ A number that is not a COUNT of the things asked for must not be read as one.
+    expect(UnfinishedSet.requestedLimit("describe icon_004_r01_c04.png")).toBeUndefined()
+    expect(UnfinishedSet.requestedLimit("what is in the 256 folder?")).toBeUndefined()
+  })
+})

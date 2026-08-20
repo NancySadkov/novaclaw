@@ -2399,8 +2399,14 @@ export const layer = Layer.effect(
                   UnfinishedSet.MAX_STEER_ROUNDS * UnfinishedSet.STEER_BATCH,
                 ),
               )
+              // ⚠️ Bounded by the REQUEST when the user named a count. Without this the drive works
+              // toward the folder — measured 2026-08-20, "the first 100 of 400" drove toward 200
+              // names — and a harness that keeps working after the job is done is as wrong as one
+              // that stops early. An unnamed count means the whole enumerated set, as before.
+              const allNames = (listing?.entries ?? []).filter((entry) => !entry.directory).map((entry) => entry.name)
+              const requested = UnfinishedSet.requestedLimit(lastRealUserText(context) ?? "")
               const setCoverage = {
-                available: (listing?.entries ?? []).filter((entry) => !entry.directory).map((entry) => entry.name),
+                available: requested === undefined ? allNames : allNames.slice(0, requested),
                 opened: openedThisTurn,
               }
               // ⚠️ Logged at the DECISION, not after it. This check has now failed to fire twice on

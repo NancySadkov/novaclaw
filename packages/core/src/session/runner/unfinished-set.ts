@@ -60,11 +60,40 @@ export const STEER_BATCH = 10
  * How many times the harness will steer one request.
  *
  * ⚠️ A bound, not a target. This is an automatic drive — the user asked once and the harness keeps
- * going — so it must have a visible ceiling for the same reason `MAX_DRIVE_ROUNDS` does. At
- * `STEER_BATCH` files a round it covers 200 files, which is past every set measured here and short
- * of an unbounded loop over a photo library.
+ * going — so it must have a visible ceiling for the same reason `MAX_DRIVE_ROUNDS` does.
+ *
+ * 🔴 Raised 20 → 40 on 2026-08-20, against a measurement rather than a feeling: asked for 100 icons
+ * the drive reached **71** and stopped at the ceiling, because the model opens ~3–4 files per steer
+ * where the steer asks for ten. Twenty rounds therefore buys ~70 files, not 200. The primary bound is
+ * now `requestedLimit` — the drive stops when the REQUEST is covered — which is what makes a higher
+ * backstop safe rather than merely longer.
  */
-export const MAX_STEER_ROUNDS = 20
+export const MAX_STEER_ROUNDS = 40
+
+/**
+ * How many items the user asked for, when they said a number.
+ *
+ * 🔴 Measured 2026-08-20: told "describe each of the first 100 png files" in a folder of 400, the
+ * drive worked toward the FOLDER — 200 drivable names — not toward the hundred that were asked for.
+ * Even with rounds to spare it would have overshot the request, and a harness that keeps working
+ * after the job is done is as wrong as one that stops early.
+ *
+ * ⚠️ Narrow on purpose. It reads an explicit COUNT ("the first 40 files", "10 images") and nothing
+ * else — no inference from folder size, no guessing at "a few". An unparsed request means the whole
+ * enumerated set, which is the previous behaviour exactly.
+ */
+export const requestedLimit = (userText: string): number | undefined => {
+  const text = userText.toLowerCase()
+  // "first 40", "first 100 png", "top 12"
+  const ordinal = /\b(?:first|top|initial)\s+(\d{1,4})\b/.exec(text)
+  if (ordinal?.[1]) return Number(ordinal[1])
+  // "describe 10 images", "10 files" — a bare count immediately qualifying the things being asked for
+  const bare = /\b(\d{1,4})\s+(?:of\s+the\s+)?(?:png|jpe?g|image|images|file|files|icon|icons|picture|pictures)\b/.exec(
+    text,
+  )
+  if (bare?.[1]) return Number(bare[1])
+  return undefined
+}
 
 export interface Coverage {
   /** Files the harness listed for this folder — the set the user could have meant. */
