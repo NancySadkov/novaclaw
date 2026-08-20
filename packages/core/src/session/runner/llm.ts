@@ -2389,7 +2389,16 @@ export const layer = Layer.effect(
                 })
               : []
             if (openedThisTurn.length > 0) {
-              const listing = yield* Effect.promise(() => ProjectGrounding.readListing(location.directory))
+              // ⚠️ NOT the prompt's 40-name cap — that bound exists so a grounding MESSAGE stays
+              // small, and this check pays no prompt cost per name. It asks for exactly as many
+              // as the drive could ever complete, so the set it reasons about is the set it can
+              // actually finish, and no file is silently outside the world.
+              const listing = yield* Effect.promise(() =>
+                ProjectGrounding.readListing(
+                  location.directory,
+                  UnfinishedSet.MAX_STEER_ROUNDS * UnfinishedSet.STEER_BATCH,
+                ),
+              )
               const setCoverage = {
                 available: (listing?.entries ?? []).filter((entry) => !entry.directory).map((entry) => entry.name),
                 opened: openedThisTurn,

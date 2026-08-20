@@ -142,13 +142,23 @@ export const render = (
  */
 export const readListing = async (
   directory: string,
+  /**
+   * How many entries to return. Defaults to the PROMPT's cap.
+   *
+   * ⚠️ The two callers want different things and conflating them cost a real limitation. The
+   * grounding MESSAGE is bounded because every name costs prompt tokens on a message the model reads.
+   * The set-completion check is internal, pays nothing per name, and needs to see the whole set it is
+   * driving — measured 2026-08-20, it drove 40 of 40 only because this cap happened to equal the
+   * request, and a request for the first 100 would have silently become 40.
+   */
+  limit: number = MAX_LISTED_ENTRIES,
 ): Promise<{ readonly entries: ReadonlyArray<Entry>; readonly total: number } | undefined> => {
   try {
     const found = await fs.readdir(directory, { withFileTypes: true })
     const entries = found
       .map((entry) => ({ name: entry.name, directory: entry.isDirectory() }))
       .sort((left, right) => left.name.localeCompare(right.name))
-    return { entries: entries.slice(0, MAX_LISTED_ENTRIES), total: entries.length }
+    return { entries: entries.slice(0, Math.max(0, limit)), total: entries.length }
   } catch {
     return undefined
   }
