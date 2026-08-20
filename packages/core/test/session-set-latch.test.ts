@@ -146,3 +146,31 @@ describe("the STOP condition must outlive a drain too", () => {
     }
   })
 })
+
+describe("WHEN the latch fires decides whether it works at all", () => {
+  const source = fs.readFileSync(path.join(import.meta.dir, "../src/session/runner/llm.ts"), "utf8")
+
+  test("it latches at the per-turn context fetch, not only at the finish branch", () => {
+    // 🔴 Measured run 16. The latch existed and was session-scoped and correct — and it captured
+    // nothing, because it only ran inside the set-completion branch, which fires when a turn ENDS.
+    // That run compacted BEFORE its first turn ended, so the prompt was already summarised away:
+    // asked:false, one branch entry, the drive never engaged, 81 files. Run 15's turns ended sooner,
+    // its latch caught the prompt, and it reached 220. The difference was entirely WHEN it looked.
+    const fetchAt = source.indexOf("const context = yield* getContext(input.sessionID)")
+    const latchAt = source.indexOf("if (!setRequests.has(input.sessionID)) {")
+    expect(fetchAt).toBeGreaterThan(-1)
+    expect(latchAt).toBeGreaterThan(-1)
+    // Immediately after the fetch — turn one, before any compaction can run.
+    expect(latchAt).toBeGreaterThan(fetchAt)
+    expect(latchAt - fetchAt).toBeLessThan(1200)
+  })
+
+  test("⚠️ a latch that fires late has not been latched — it has moved the race", () => {
+    // The guard is what makes running it every turn free: first write wins, the rest are no-ops.
+    expect(source).toContain("if (!setRequests.has(input.sessionID)) {")
+    const guards = source.split("!setRequests.has(input.sessionID)").length - 1
+    // One at the turn-start latch, one at the branch's own (harmless, and the fallback if a turn
+    // somehow reaches the branch first).
+    expect(guards).toBeGreaterThanOrEqual(1)
+  })
+})

@@ -2318,6 +2318,27 @@ export const layer = Layer.effect(
             break
           }
           const context = yield* getContext(input.sessionID)
+          // 🔴 LATCH THE REQUEST HERE — on every turn, not at the finish branch.
+          //
+          // Measured run 16: the latch lived only in the set-completion branch, which runs when a
+          // turn ENDS. That run compacted before its first turn ended, so by the time the branch
+          // looked, the prompt was already summarised away: `asked: false`, one branch entry, the
+          // drive never engaged, 81 files. Run 15's turns ended sooner, its latch caught the prompt
+          // in time, and it reached 220 — the difference was entirely WHEN the latch got to look.
+          //
+          // ⚠️ A latch that only fires at a late point has not been latched at all; it has merely
+          // moved the race. Here it runs on turn one, while the prompt is certainly present, and the
+          // `has` guard keeps every later turn a no-op.
+          if (!setRequests.has(input.sessionID)) {
+            const firstText = lastRealUserText(context)
+            if (firstText !== undefined)
+              setRequests.set(input.sessionID, {
+                asked: UnfinishedSet.asksForSet(firstText),
+                ...(UnfinishedSet.requestedLimit(firstText) === undefined
+                  ? {}
+                  : { limit: UnfinishedSet.requestedLimit(firstText) }),
+              })
+          }
           // 1E doom-loop break: only while the model is still acting (made a tool call).
           // If its last few tool calls are byte-identical, inject a one-shot redirect as a
           // steer so the next turn is nudged to change approach.
