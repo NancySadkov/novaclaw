@@ -51,19 +51,29 @@ describe("the runner latches it", () => {
     "utf8",
   )
 
-  test("the decision is stored, not recomputed each turn", () => {
-    // A source pin, like the scheduler's: the real path needs a live model, a real context and a
-    // compaction to reproduce. What is asserted is that the value is LATCHED and read from the latch.
-    expect(source).toContain("let setAsked: boolean | undefined")
-    expect(source).toContain("let setLimit: number | undefined")
-    expect(source).toContain("const askedForSet = setAsked ?? false")
-    expect(source).toContain("const requested = setLimit")
+  test("the decision is stored per SESSION, not in a drain local", () => {
+    // 🔴 The first version of this fix used drain locals and did nothing. Run 12: one `set.branch`
+    // for a 36-minute run, `asked: false`, `calls: 0`. Every steer admits a prompt and starts a NEW
+    // drain with fresh locals — that run had three — so after compaction each new drain re-derived
+    // from the compacted window and never latched. The lifetime has to outlive the drain.
+    expect(source).toContain("const setRequests = new Map<string, { readonly asked: boolean; readonly limit?: number }>()")
+    expect(source).toContain("const askedForSet = setRequest?.asked ?? false")
+    expect(source).toContain("const requested = setRequest?.limit")
+    // …and NOT the drain locals it replaced.
+    expect(source).not.toContain("let setAsked: boolean | undefined")
   })
 
   test("it is written only when unset, so a shrinking window cannot overwrite it", () => {
-    // ⭐ The load-bearing clause. Without `setAsked === undefined` the latch would be re-stamped every
-    // turn and would inherit exactly the failure it exists to prevent.
-    expect(source).toContain("if (setAsked === undefined && realUserText !== undefined)")
+    // ⭐ The load-bearing clause. Without the `has` guard the latch would be re-stamped every turn and
+    // would inherit exactly the failure it exists to prevent.
+    expect(source).toContain("if (!setRequests.has(input.sessionID) && realUserText !== undefined)")
+  })
+
+  test("it is keyed by session, so two sessions cannot inherit each other's request", () => {
+    // A process-wide map with no key would let one session's "describe each" latch drive another's
+    // unrelated turn — the same shape as the memory-recall contamination this project has hit before.
+    expect(source).toContain("setRequests.set(input.sessionID,")
+    expect(source).toContain("setRequests.get(input.sessionID)")
   })
 
   test("the DRIVE no longer re-derives either decision from the live context", () => {

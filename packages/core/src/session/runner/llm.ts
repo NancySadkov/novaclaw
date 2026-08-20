@@ -639,6 +639,21 @@ export const layer = Layer.effect(
      */
     const discoveredImageLimits = new Map<string, number>()
     /**
+     * What the user asked for, decided ONCE per session and kept for the life of the process.
+     *
+     * 🔴 `asksForSet`/`requestedLimit` describe the user's words, which cannot change while the drive
+     * runs — but the context they were read from shrinks. Compaction removes the original prompt,
+     * `lastRealUserText` stops returning it, and the drive concludes it was never a set request:
+     * measured run 11 as `asked: false` with ~290 files still to go, and it is the ~100 ceiling every
+     * run in that task hit.
+     *
+     * ⚠️ Session-scoped rather than drain-scoped, because a drain local does NOT survive this. Every
+     * steer admits a prompt and starts a new drain; run 12 had three, and a per-drain latch re-derived
+     * from the compacted window each time and never fired. Same lifetime as `discoveredImageLimits`
+     * above: this process, no schema, and a restart simply re-derives while the prompt is still there.
+     */
+    const setRequests = new Map<string, { readonly asked: boolean; readonly limit?: number }>()
+    /**
      * ⚠️ **`models.ref` is declared `… | undefined` and really is undefined in practice**, so this
      * takes an optional and answers `undefined` rather than dereferencing.
      *
@@ -2115,13 +2130,6 @@ export const layer = Layer.effect(
       // call cannot get through at all, which is the empty-turn diagnostic's territory.
       // Latched per drain: one correction for describing files that were never opened. A second
       // would be arguing with a model that has already been told plainly.
-      // 🔴 The REQUEST, decided once. `asksForSet`/`requestedLimit` describe what the user asked for,
-      // and that cannot change while the drive runs — but the CONTEXT it was read from can, and does:
-      // compaction removes the original prompt, `lastRealUserText` stops returning it, and the drive
-      // silently concludes it was never a set request. Measured run 11: steered 3 times, then
-      // `asked: false` immediately after two compactions, with ~290 files still to go.
-      let setAsked: boolean | undefined
-      let setLimit: number | undefined
       let groundingCorrected = false
       let announcedRecovered = false
       let setRounds = 0
@@ -2469,15 +2477,19 @@ export const layer = Layer.effect(
             // asked for and partly covered. `groundingListing` itself lives in the per-provider-turn
             // scope and is not visible here.
             // `lastRealUserText` answers undefined for a files-only prompt (no words to read a set from).
-            // Latch on the first turn that HAS a real user text, and never re-derive: after
-            // compaction the honest answer to "what did the user ask?" is not in the window any more,
-            // and asking again gets a confident wrong answer rather than an absent one.
+            // Latched on the first turn that HAS a real user text, then never re-derived: after
+            // compaction the honest answer to "what did the user ask?" is no longer in the window,
+            // and asking again returns a confident wrong answer rather than an absent one.
             const realUserText = lastRealUserText(context)
-            if (setAsked === undefined && realUserText !== undefined) {
-              setAsked = UnfinishedSet.asksForSet(realUserText)
-              setLimit = UnfinishedSet.requestedLimit(realUserText)
-            }
-            const askedForSet = setAsked ?? false
+            if (!setRequests.has(input.sessionID) && realUserText !== undefined)
+              setRequests.set(input.sessionID, {
+                asked: UnfinishedSet.asksForSet(realUserText),
+                ...(UnfinishedSet.requestedLimit(realUserText) === undefined
+                  ? {}
+                  : { limit: UnfinishedSet.requestedLimit(realUserText) }),
+              })
+            const setRequest = setRequests.get(input.sessionID)
+            const askedForSet = setRequest?.asked ?? false
             // ⚠️ Logged BEFORE either gate. `set.considered` fires only after both pass, so a run that
             // logs it once cannot tell "the branch never ran" from "it ran and declined" — which is
             // exactly the question the 100-icon run left open.
@@ -2524,7 +2536,7 @@ export const layer = Layer.effect(
               const allNames = (listing?.entries ?? []).filter((entry) => !entry.directory).map((entry) => entry.name)
               // From the same latch, for the same reason — a count read after compaction would
               // silently widen the job to the whole folder, or narrow it to nothing.
-              const requested = setLimit
+              const requested = setRequest?.limit
               const setCoverage = {
                 available: requested === undefined ? allNames : allNames.slice(0, requested),
                 opened: openedThisTurn,
