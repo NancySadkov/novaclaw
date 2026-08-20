@@ -1683,8 +1683,12 @@ export const dict = {
     "Right now: {{file}} governs this folder from a folder above it. Saving here creates a separate novaclaw.json for THIS folder — the file above is not modified, but it stops applying here, because the nearest one wins.",
   "settings.permissions.project.inForce.ancestorEdit":
     "So a rule you save here replaces everything that file was contributing to this folder, not just its permissions. Edit {{file}} itself if you meant to change the whole checkout.",
+  // The line names the FILE — the actionable half, since the fix is editing it. Why a local edit
+  // would replace rather than extend is the reasoning, and it goes behind the disclosure.
   "settings.project.exclude.elsewhere":
-    "This list comes from {{file}}, in a folder above this one. Editing it here would not extend that list — it would create a second novaclaw.json for this folder that takes over from it completely. Open that file to change the list, or use the Permissions section above if you really do want this folder to have its own declaration.",
+    "This list comes from {{file}}, in a folder above this one — open that file to change it.",
+  "settings.project.exclude.elsewhere.more":
+    "Editing it here would not extend that list: it would create a second novaclaw.json for this folder that takes over from it completely. Use the Permissions section above if you really do want this folder to have its own declaration.",
   "settings.project.exclude.import.elsewhere":
     "Not offered here: this folder's settings come from {{file}}, one or more folders up. Importing would create a second novaclaw.json here that replaces it rather than adding to it.",
   "settings.permissions.project.origin.project": "This folder",
@@ -2396,8 +2400,13 @@ export const dict = {
   "settings.introspection.row.interjection.description":
     "Text injected into the session when the judge answers YES. Empty = the default redirect.",
   "settings.affective.title": "Affective",
+  // ⚠️ The visible line keeps "around the model's baseline": a user reading only the short form must
+  // not think this replaces their sampling settings. The inputs to the mood and the unattended-only
+  // redirect are the mechanism, and move behind the disclosure.
   "settings.affective.description":
-    "Emotion-modulated sampling: a per-session mood (derived from tool errors, repeated actions, and time-on-task) nudges temperature and related sampling parameters around the model's baseline. Unattended agent runs additionally get a redirect nudge when frustration or urgency runs high — attended chats never do.",
+    "Emotion-modulated sampling: a per-session mood nudges temperature around the model's baseline.",
+  "settings.affective.description.more":
+    "The mood is derived from tool errors, repeated actions and time-on-task, and it moves temperature and related sampling parameters. Unattended agent runs additionally get a redirect nudge when frustration or urgency runs high — attended chats never do.",
   "settings.affective.toast.failed": "Saving affective settings failed",
   "settings.affective.row.enabled.title": "Enable affective mode",
   "settings.affective.row.enabled.description":

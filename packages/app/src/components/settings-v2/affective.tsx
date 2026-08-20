@@ -6,6 +6,7 @@ import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
+import { SettingsExplainV2 } from "./explain"
 
 // P3 (3D) — the Affective settings tab. When enabled, a per-session mood (appraised from tool
 // errors, repeats, time-on-task) modulates sampling around the model's configured baseline and
@@ -45,7 +46,12 @@ export const SettingsAffectiveV2: Component = () => {
     <>
       <div class="settings-v2-tab-header settings-v2-tab-header--stacked">
         <h2 class="settings-v2-tab-title">{language.t("settings.affective.title")}</h2>
-        <p class="settings-v2-tab-description">{language.t("settings.affective.description")}</p>
+        <p class="settings-v2-tab-description">
+          {language.t("settings.affective.description")}
+          <SettingsExplainV2 label={language.t("settings.affective.title")}>
+            {language.t("settings.affective.description.more")}
+          </SettingsExplainV2>
+        </p>
       </div>
 
       <div class="settings-v2-tab-body">

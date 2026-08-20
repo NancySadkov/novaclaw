@@ -3,6 +3,7 @@ import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { useLanguage } from "@/context/language"
+import { SettingsExplainV2 } from "./explain"
 import type { ServerConnection } from "@/context/server"
 import type { ProjectPermissionRule, ProjectState, ProjectWriteResult } from "@/utils/project-api"
 import { projectWrite } from "@/utils/project-api"
@@ -494,6 +495,11 @@ export const ProjectExcludeSection: Component<ProjectPermissionsProps> = (props)
         {(file) => (
           <span class="text-[11px] leading-4 break-all text-v2-text-text-faint" data-exclude-elsewhere>
             {language.t("settings.project.exclude.elsewhere", { file: file() })}
+            {/* uix.md §1.4 — the line names the FILE, which is the actionable half; why a local edit
+                would REPLACE rather than extend it is one gesture away. */}
+            <SettingsExplainV2 label={language.t("settings.project.excludeLabel")}>
+              {language.t("settings.project.exclude.elsewhere.more")}
+            </SettingsExplainV2>
           </span>
         )}
       </Show>
