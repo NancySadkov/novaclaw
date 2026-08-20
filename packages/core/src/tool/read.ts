@@ -66,12 +66,52 @@ const SHARED_TAIL =
  * enough, and the consequence of misreporting it bad enough, that one predicate covering both beats
  * a tidy one covering the case we happen to have seen.
  */
-const isNotFound = (error: unknown): boolean => {
-  const reason = (error as { readonly reason?: unknown } | undefined)?.reason
-  if (reason === "NotFound") return true
-  const code = (error as { readonly code?: unknown } | undefined)?.code
-  if (code === "ENOENT") return true
-  return /\bENOENT\b|\bNotFound\b/.test(String((error as { readonly message?: unknown } | undefined)?.message ?? ""))
+/**
+ * Turn a filesystem failure into a sentence that says what happened AND what to do next.
+ *
+ * 🔴 Owner ruling 2026-08-20. Every one of these used to render as `Unable to read <path>`, which is
+ * true of a hallucinated name, a permission problem and a locked file alike — three causes with three
+ * different next actions. Measured the same day: the model invented `icon_400_r20_c17.png`, read the
+ * undifferentiated message as "this file is broken", and guessed four more names.
+ *
+ * ⚠️ The UNKNOWN case must stay honest. It is where every errno we did not anticipate lands, and
+ * dressing it in the wording of a cause we merely suspect is how a wrong steer becomes confident. It
+ * says it does not know and offers both checks.
+ */
+export const readFailureMessage = (error: unknown, path: string): string => {
+  const reason = String((error as { readonly reason?: unknown } | undefined)?.reason ?? "")
+  const code = String((error as { readonly code?: unknown } | undefined)?.code ?? "")
+  const text = String((error as { readonly message?: unknown } | undefined)?.message ?? "")
+  const matches = (pattern: RegExp, ...literals: readonly string[]) =>
+    literals.includes(reason) || literals.includes(code) || pattern.test(text)
+
+  // Missing — the only cause the model itself can have created, so it gets the explicit "do not
+  // guess" that the perception section also carries.
+  if (matches(/\bENOENT\b|\bNotFound\b/, "NotFound", "ENOENT"))
+    return (
+      `${path} does not exist. If you have not listed this folder yet, list it (\`glob\` or ` +
+      `\`bash ls\`) and read one of the names it returns — do not guess or invent a filename.`
+    )
+
+  // Refused — the path is real; the process may not open it.
+  if (matches(/\bEACCES\b|\bEPERM\b|permission denied/i, "PermissionDenied", "EACCES", "EPERM"))
+    return (
+      `${path} exists but could not be opened: permission denied. Check whether this session is ` +
+      `allowed to read that location before trying again — re-reading it will fail the same way.`
+    )
+
+  // Held — real, permitted, and busy. Retrying can genuinely work here, which is why it is the one
+  // case that says so.
+  if (matches(/\bEBUSY\b|\bETXTBSY\b|being used by another process/i, "Busy", "EBUSY", "ETXTBSY"))
+    return `${path} is locked by another process. Wait a moment and read it again, or continue with another file.`
+
+  // A directory handed to a file read — a mistake with an obvious correction.
+  if (matches(/\bEISDIR\b/, "EISDIR")) return `${path} is a directory, not a file. List it instead to see what it holds.`
+
+  return (
+    `Unable to read ${path}${text ? ` (${text})` : ""}. The cause is not one this tool recognises: ` +
+    `check that the path exists by listing its folder, and that this session may read that location.`
+  )
 }
 
 export const DESCRIPTION =
@@ -298,15 +338,10 @@ export const layer = Layer.effectDiscard(
                   error instanceof Image.DecodeError ||
                   error instanceof Image.SizeError
                     ? error.message
-                    : // ⚠️ A MISSING file is not an unreadable one, and only the missing case has a fix
-                      // the model can act on. Measured 2026-08-20: told "Unable to read <path>" for a
-                      // filename it had invented, the model read it as "this file is broken" and
-                      // guessed another name — four times. Naming the cause and the next action is
-                      // what converts it. See `perceptionSection`, which forbids inventing a name.
-                      isNotFound(error)
-                      ? `${input.path} does not exist. Do not guess filenames — list the folder ` +
-                        `(\`glob\` or \`bash ls\`) and read one of the names it returns.`
-                      : `Unable to read ${input.path}`
+                    : // Missing / refused / locked / a directory each get their own next action —
+                      // see `readFailureMessage`, and `perceptionSection` for the "never invent a
+                      // filename" rule the missing case restates.
+                      readFailureMessage(error, input.path)
                 return new ToolFailure({ message })
               }),
             )
