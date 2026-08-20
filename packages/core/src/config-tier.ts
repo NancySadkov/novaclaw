@@ -149,6 +149,11 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   // silently cannot act. Not privileged — it grants no capability the model did not already have,
   // and the self-healing law wants a still-working model able to repair a stale verdict.
   provider_capability: "consequential",
+  // The measured per-request image cap. OPERATIONAL, not consequential: a wrong value costs images
+  // in one request and is undone by deleting the entry, where a wrong tool channel costs an agent
+  // that silently cannot act.
+  provider_media_limit: "operational",
+
 
   // ── consequential: one card, savable per key ────────────────────────────────────────────────
   // Sampling numbers plus an enable flag. The nudge TEXT is compiled, not configured.

@@ -644,6 +644,28 @@ export class Info extends Schema.Class<Info>("Config.Info")({
    * crash loop. Measured the hard way on 2026-08-13: one probe made the instance unbootable while
    * the whole test suite stayed green, because nothing in it boots a server with the row present.
    */
+  /**
+   * The per-request IMAGE CAP an endpoint enforces, keyed "providerID/modelID" — learned from the
+   * endpoint's own 400 and kept so the next process does not have to re-learn it.
+   *
+   * 🔴 Why it is persisted at all (measured 2026-08-20). The cap lives in a per-process map, so a
+   * fresh process spends its entire first turn not knowing it — and `read`'s withholding gate, the
+   * mechanism that stops an undescribed image being evicted, cannot fire without it. A long-lived
+   * server learns the cap once and is fine; a cold CLI run loses images on its first image-heavy
+   * turn, every time.
+   *
+   * ⚠️ A LEARNED value, never a guess: absent means "no cap known", which lowers byte-identically to
+   * an endpoint that never had one. We do not invent a number for a stranger's server.
+   */
+  provider_media_limit: Schema.Record(Schema.String, Schema.Number)
+    .pipe(Schema.optional)
+    .annotate({
+      description:
+        'How many images each model accepts in one request, keyed "providerID/modelID" — e.g. ' +
+        '{"spark-holo/holo3.1":3}. Learned from the endpoint\'s own refusal; absent means no cap ' +
+        "is known and every image is sent.",
+    }),
+
   provider_capability: Schema.Record(
     Schema.String,
     Schema.Struct({

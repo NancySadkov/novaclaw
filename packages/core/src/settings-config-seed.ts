@@ -83,6 +83,7 @@ export const SETTINGS_KEYS = [
   // store like every other operational key, which is what lets a still-working model repair a stale
   // verdict over HTTP — and what stops an undeclared key crash-looping the instance at boot.
   "provider_capability",
+  "provider_media_limit",
   // Per-skill invocation choices (`todo/projects.md` → skill invocation controls). A settings key
   // rather than a per-subsystem store: it is a sparse map of user DECISIONS, not a resource the
   // skill loader materialises, and `command/list.ts` reads it through `config.entries()` on every

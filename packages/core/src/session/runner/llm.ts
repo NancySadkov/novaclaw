@@ -949,8 +949,14 @@ export const layer = Layer.effect(
       // The DECLARED cap wins when there is one — a catalog entry is the operator's statement and a
       // learned value is an inference. Otherwise use whatever this endpoint told us it allows.
       const learnedKey = imageLimitKey(modelRef)
+      // A cold process has an empty map, so consult what a PREVIOUS one learned. Order is deliberate:
+      // a DECLARED catalog value is the operator's statement and outranks any measurement; the
+      // in-process map is this run's own newer knowledge; the persisted value is the last resort.
+      const persistedImageLimit = modelRef === undefined ? undefined : yield* models.learnedImageLimit(modelRef)
       const modelImageLimit =
-        declaredImageLimit ?? (learnedKey === undefined ? undefined : discoveredImageLimits.get(learnedKey))
+        declaredImageLimit ??
+        (learnedKey === undefined ? undefined : discoveredImageLimits.get(learnedKey)) ??
+        persistedImageLimit
       const unreadable = unreadableTurnAttachments(context, modelCapabilities)
       if (unreadable.length > 0) {
         // Name the model the USER picked, not the wire id: `model.id` is the API-side id
@@ -1498,6 +1504,13 @@ export const layer = Layer.effect(
             // be an unbounded loop dressed as a recovery.
             if (known === undefined || discovered < known) {
               if (key !== undefined) discoveredImageLimits.set(key, discovered)
+              // ⭐ PERSIST it through the model seam, so the NEXT process starts warm. The
+              // in-process map is why a cold run still loses images: its whole first turn runs with
+              // the cap unknown, so `read`'s withholding gate has no number to fire on.
+              // ⚠️ Best-effort — a store that will not write must not fail the turn that just
+              // recovered, and the map still holds it for this process either way.
+              if (modelRef !== undefined)
+                yield* models.rememberImageLimit(modelRef, discovered).pipe(Effect.ignore)
               yield* Log.event("session.media.limit.learned", {
                 "session.id": session.id,
                 "media.limit": discovered,

@@ -16,6 +16,7 @@ import { Credential } from "../../credential"
 import { Integration } from "../../integration"
 import { LocalModelManager } from "../../local-model-manager"
 import { ModelV2 } from "../../model"
+import { SettingsConfigStore } from "../../settings-config-store"
 import { PluginV2 } from "../../plugin"
 import { ProbeWindow } from "../../probe-window"
 import { ProviderCapability } from "../../provider-capability"
@@ -179,6 +180,19 @@ export interface Interface {
    * never had this cap wants. See `budgetImages` for why a guessed default would be wrong.
    */
   readonly imageLimit: (session: SessionSchema.Info) => Effect.Effect<number | undefined>
+  /**
+   * The per-request image cap a PREVIOUS process learned from this endpoint's own refusal.
+   *
+   * 🔴 The in-process map is why a cold run still loses images: its whole first turn runs with the
+   * cap unknown, so `read`'s withholding gate cannot fire. A long-lived server learns once and is
+   * fine; a fresh CLI process never was (measured 2026-08-20).
+   *
+   * ⚠️ Ranked BELOW a declared catalog limit, which is the operator's statement rather than a
+   * measurement, and below this process's own map, which is newer.
+   */
+  readonly learnedImageLimit: (model: ModelV2.Ref) => Effect.Effect<number | undefined>
+  /** Remember a cap learned this run. Best-effort: a failed write must never fail a recovered turn. */
+  readonly rememberImageLimit: (model: ModelV2.Ref, limit: number) => Effect.Effect<void>
   /** Catalog identity of the model `resolve` selects. Unlike the wire route's `model.id`, this is
    * the stable user-facing id and is therefore the identity model-routing config matches. */
   readonly ref: (session: SessionSchema.Info) => Effect.Effect<ModelV2.Ref | undefined>
@@ -218,12 +232,17 @@ export const layerWith = (
   observeServing: Interface["observeServing"] = () => Effect.void,
   /** ⚠️ Added LAST for the reason above. `undefined` = unlimited, the pass-everything answer. */
   imageLimit: Interface["imageLimit"] = () => Effect.succeed(undefined),
+  /** ⚠️ Added LAST for the reason above. A seam with no store simply remembers nothing. */
+  learnedImageLimit: Interface["learnedImageLimit"] = () => Effect.succeed(undefined),
+  rememberImageLimit: Interface["rememberImageLimit"] = () => Effect.void,
 ) =>
   Layer.succeed(
     Service,
     Service.of({
       resolve,
       resolveDefault,
+      learnedImageLimit,
+      rememberImageLimit,
       tier,
       prePrompt,
       retryAttempts,
@@ -518,6 +537,10 @@ export const locationLayer = Layer.effect(
     const localModels = yield* LocalModelManager.Service
     const plugins = yield* PluginV2.Service
     const capabilities = yield* ProviderCapabilityStore.Service
+    // The same store `ProviderCapabilityStore` sits on. Resolved HERE, in a service layer —
+    // never inside the runner's per-request path, which is the shape that abandoned every
+    // tool-call turn on 2026-08-06.
+    const settings = yield* SettingsConfigStore.Service
 
     const select = Effect.fnUntraced(function* (session: SessionSchema.Info) {
       const defaultModel = session.model ? undefined : yield* catalog.model.default()
@@ -660,6 +683,33 @@ export const locationLayer = Layer.effect(
       imageLimit: Effect.fn("SessionRunnerModel.imageLimit")(function* (session) {
         return (yield* select(session).pipe(Effect.orElseSucceed(() => undefined)))?.limit?.images
       }),
+      /**
+       * What a PREVIOUS process learned from this endpoint's own 400.
+       *
+       * ⚠️ Defensive by construction: a malformed row yields `undefined`, not a throw. This value
+       * decides whether images are withheld, and a decode failure must degrade to "no cap known"
+       * (send everything, exactly as before the store existed) rather than fail a turn.
+       */
+      learnedImageLimit: Effect.fn("SessionRunnerModel.learnedImageLimit")(function* (model) {
+        const all: Record<string, unknown> = yield* settings
+          .all()
+          .pipe(Effect.orElseSucceed(() => ({}) as Record<string, unknown>))
+        const stored = all["provider_media_limit"]
+        if (typeof stored !== "object" || stored === null) return undefined
+        const value = (stored as Record<string, unknown>)[`${model.providerID}/${model.id}`]
+        return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined
+      }),
+      /** Remember a cap learned this run, merging rather than replacing the other models' rows. */
+      rememberImageLimit: Effect.fn("SessionRunnerModel.rememberImageLimit")(function* (model, limit) {
+        const all: Record<string, unknown> = yield* settings
+          .all()
+          .pipe(Effect.orElseSucceed(() => ({}) as Record<string, unknown>))
+        const current = all["provider_media_limit"]
+        const rows = typeof current === "object" && current !== null ? (current as Record<string, unknown>) : {}
+        yield* settings
+          .set("provider_media_limit", { ...rows, [`${model.providerID}/${model.id}`]: limit })
+          .pipe(Effect.ignore)
+      }),
       capabilities: Effect.fn("SessionRunnerModel.capabilities")(function* (session) {
         return (yield* select(session).pipe(Effect.orElseSucceed(() => undefined)))?.capabilities
       }),
@@ -703,5 +753,6 @@ export const node = makeLocationNode({
     // What the capability probe measured. A global node, so this adds a reference rather than a
     // per-location subsystem.
     ProviderCapabilityStore.node,
+    SettingsConfigStore.node,
   ],
 })

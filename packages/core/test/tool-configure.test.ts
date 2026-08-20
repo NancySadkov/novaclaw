@@ -182,6 +182,10 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       "folder_bookmarks",
       "log",
       "provider_connection",
+      // The measured per-request IMAGE CAP per model. Operational: a wrong value costs images in one
+      // request and is undone by deleting the entry, where a wrong TOOL CHANNEL (consequential,
+      // below) leaves an agent that silently cannot act.
+      "provider_media_limit",
       "tool_output",
     ])
 
