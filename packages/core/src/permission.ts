@@ -141,6 +141,15 @@ export const DenialReason = Schema.Literals([
   "unattended-unanswerable",
   "unanswerable-chain-unreadable",
   /**
+   * Asking was REMOVED as an outcome (owner, 2026-08-20: "Ask considered harmful").
+   *
+   * ⚠️ Distinct from the two above, and the distinction is ruling 2. Those say "we could not find
+   * anyone to answer"; this says "we do not ask anyone". Attributing a policy decision to an
+   * attendance check would send the operator to look at their schedule for something their settings
+   * decided.
+   */
+  "ask-removed",
+  /**
    * This folder's `novaclaw.json` refused it, and nothing else would have.
    *
    * ⚠️ Its own literal because the ADVICE differs from every other reason here: the others describe
@@ -252,6 +261,21 @@ export function denialMessage(error: unknown): string | undefined {
     // this run is unattended; we failed to read the chain that would have told us. Saying "this is an
     // UNATTENDED session" here would be a claim about something we never checked, and it would point
     // the operator at the schedule instead of at the broken session records.
+    // Owner 2026-08-20. The wording carries the ruling: consent is granted in ADVANCE or not at all,
+    // scratch work belongs in the project folder, and only a genuinely blocked task should stop.
+    // The measured failure was a model reaching one folder up for a notes file — it had somewhere
+    // perfectly good to put it and no reason to think so.
+    if (error.reason === "ask-removed")
+      return (
+        `Permission denied: action '${actions}' on '${resources}' is outside what this session may touch, ` +
+        `and no standing rule grants it. This instance does not interrupt anyone to ask — the refusal ` +
+        `arrives immediately so you can adapt instead of waiting, and retrying will not change it. ` +
+        `If you need somewhere for notes, a plan, a draft or any other scratch work, use YOUR OWN ` +
+        `PROJECT FOLDER — that is what it is for, and writing there needs no permission. ` +
+        `If the task genuinely cannot be done inside it, say so in your result and name '${actions}' ` +
+        `rather than trying again. Widening this is the operator's decision, made in advance in the ` +
+        `permission settings.`
+      )
     if (error.reason === "unanswerable-chain-unreadable")
       return (
         `Permission denied: action '${actions}' on '${resources}' needs a human's approval and no standing ` +
@@ -986,16 +1010,27 @@ export const layer = Layer.effect(
       // by definition) and the message would report the action AND the resource as "unknown" — ruling
       // 2 broken by the very text written to satisfy it. Per-resource rather than `*` so the model is
       // told WHICH url/command/path was refused, not just which verb.
-      if (effect === "ask" && !attendedRoot(rootType))
+      // 🔴 The attendance condition is GONE (owner ruling 2026-08-20). It read
+      // `effect === "ask" && !attendedRoot(rootType)` and did not fire on the failure that prompted
+      // this: a headless HTTP session is created as `interactive`, so `attendedRoot` said a human was
+      // present when none was, and the run blocked on the ask for good. Attendance is a property of
+      // who is WATCHING, and the session type cannot know it.
+      //
+      // The three reasons stay separate because they prescribe different actions: an unattended run
+      // wants a grant made in advance, an unreadable chain wants its session records fixed, and this
+      // one is simply the policy.
+      if (effect === "ask")
         return {
           effect: "deny" as const,
           rules: [
             ...all,
             ...input.resources.map((resource) => ({ action: input.action, resource, effect: "deny" as const })),
           ],
-          reason: (rootType === "unknown" ? "unanswerable-chain-unreadable" : "unattended-unanswerable") as
-            | DenialReason
-            | undefined,
+          reason: (attendedRoot(rootType)
+            ? "ask-removed"
+            : rootType === "unknown"
+              ? "unanswerable-chain-unreadable"
+              : "unattended-unanswerable") as DenialReason | undefined,
         }
       return {
         effect,
@@ -1047,7 +1082,10 @@ export const layer = Layer.effect(
     const ask = EffectRuntime.fn("PermissionV2.ask")(function* (input: AssertInput) {
       const result = yield* evaluateInput(input)
       const value = request(input, result.attachment)
-      if (result.effect === "ask") yield* create(value, input.agent, false)
+      // No pending record is created any more: `evaluateInput` cannot return "ask" (owner ruling
+      // 2026-08-20), so there is never anything for a human to answer. The typechecker proved it —
+      // the `if (result.effect === "ask")` that stood here stopped compiling the moment the arm
+      // above began denying, which is the tidiest possible confirmation the outcome is gone.
       return { id: value.id, effect: result.effect }
     })
 

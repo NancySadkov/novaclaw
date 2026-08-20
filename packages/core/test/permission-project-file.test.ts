@@ -216,7 +216,7 @@ describe("a project file constrains the live evaluator", () => {
 })
 
 describe("a project file's TUNE reaches the live evaluator", () => {
-  it.effect("🔴 `askBeforeChanges` in the folder turns a write into an ask", () =>
+  it.effect("🔴 `askBeforeChanges` in the folder narrows an allowed write to a refusal", () =>
     Effect.gen(function* () {
       // The payoff claim for the whole layer: a component NO session declared, supplied by the
       // folder, changing a real verdict. Unit tests pin the fold; only this pins that anything
@@ -228,7 +228,11 @@ describe("a project file's TUNE reaches the live evaluator", () => {
       yield* seed([{ action: "write", resource: "*", effect: "allow" }])
       const service = yield* PermissionV2.Service
       // The operator allows every write; the folder asks to be consulted first, which NARROWS it.
-      expect((yield* service.ask(assertion("write", "notes.md"))).effect).toBe("ask")
+      // ⚠️ Narrowing now lands on `deny` rather than `ask` (owner ruling 2026-08-20 removed asking as
+      // an outcome). The CLAIM this test exists for is untouched and is about the fold, not the
+      // verdict name: a component NO session declared, supplied by the folder, changed a real answer
+      // from allow to not-allow. It would still fail if the project file were ignored.
+      expect((yield* service.ask(assertion("write", "notes.md"))).effect).toBe("deny")
     }),
   )
 

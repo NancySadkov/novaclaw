@@ -19,7 +19,6 @@ import { MessengerTool } from "./messenger"
 import { PermissionTool } from "./permission"
 import { ProfileTool } from "./profile"
 import { QualityProvisionTool } from "./quality-provision"
-import { QuestionTool } from "./question"
 import { ReadTool } from "./read"
 import { SessionTool } from "./session"
 import { ResourceStatusTool } from "./resource-status"
@@ -95,7 +94,6 @@ export const locationLayer = Layer.mergeAll(
   PermissionTool.layer,
   ProfileTool.layer,
   QualityProvisionTool.layer,
-  QuestionTool.layer,
   ReadTool.layer.pipe(Layer.provide(ReadToolFileSystem.layer)),
   ReadHexTool.layer,
   // Registered under its own name with no `Tool.withPermission` wrap: the permission fallback in
@@ -144,7 +142,6 @@ export const node = makeLocationNode({
     PermissionTool.node,
     ProfileTool.node,
     QualityProvisionTool.node,
-    QuestionTool.node,
     ReadTool.node,
     ReadHexTool.node,
     RecipeTool.node,

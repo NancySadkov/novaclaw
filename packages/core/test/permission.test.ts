@@ -120,22 +120,6 @@ function assertion(input: Partial<PermissionV2.AssertInput> = {}) {
   } satisfies PermissionV2.AssertInput
 }
 
-function waitForRequest(input: PermissionV2.AssertInput = assertion()) {
-  return Effect.gen(function* () {
-    const service = yield* PermissionV2.Service
-    const events = yield* EventV2.Service
-    const asked = yield* Deferred.make<PermissionV2.Request>()
-    const unsubscribe = yield* events.listen((event) =>
-      event.type === PermissionV2.Event.Asked.type
-        ? Deferred.succeed(asked, event.data as PermissionV2.Request).pipe(Effect.asVoid)
-        : Effect.void,
-    )
-    yield* Effect.addFinalizer(() => unsubscribe)
-    const fiber = yield* service.assert(input).pipe(Effect.forkScoped)
-    const request = yield* Deferred.await(asked)
-    return { service, fiber, request }
-  })
-}
 
 /** An edit of `/project/task.md`, where that file is also one of the user's attachments. */
 const editingAnAttachment = (input: Partial<PermissionV2.AssertInput> = {}) =>
@@ -148,7 +132,7 @@ const editingAnAttachment = (input: Partial<PermissionV2.AssertInput> = {}) =>
   })
 
 describe("PermissionV2", () => {
-  it.effect("returns the evaluated effect and only queues prompts", () =>
+  it.effect("returns the evaluated effect and NEVER queues a prompt", () =>
     Effect.gen(function* () {
       yield* setup([{ action: "read", resource: "*", effect: "allow" }])
       const service = yield* PermissionV2.Service
@@ -156,10 +140,14 @@ describe("PermissionV2", () => {
       expect(yield* service.list()).toEqual([])
       yield* setRules([{ action: "read", resource: "*", effect: "deny" }])
       expect(yield* service.ask(assertion())).toEqual({ id: PermissionV2.ID.create("per_test"), effect: "deny" })
+      // 🔴 Nothing is queued, ever. The pending record is what stranded a session for twenty minutes
+      // on 2026-08-20, and the ruling removes the outcome that created it.
       expect(yield* service.list()).toEqual([])
       yield* setRules([])
-      expect(yield* service.ask(assertion())).toEqual({ id: PermissionV2.ID.create("per_test"), effect: "ask" })
-      expect(yield* service.get(PermissionV2.ID.create("per_test"))).toBeDefined()
+      expect(yield* service.ask(assertion())).toEqual({ id: PermissionV2.ID.create("per_test"), effect: "deny" })
+      // ⭐ The rename in the title is the finding: a fall-through used to QUEUE a prompt. Nothing is
+      // queued now, so there is nothing for a human to answer and nothing to strand the session.
+      expect(yield* service.get(PermissionV2.ID.create("per_test"))).toBeUndefined()
     }),
   )
 
@@ -171,7 +159,7 @@ describe("PermissionV2", () => {
         yield* service.ask(
           assertion({ action: "bash", resources: ["echo $(whoami)"], minimumEffect: "ask" }),
         ),
-      ).toMatchObject({ effect: "ask" })
+      ).toMatchObject({ effect: "deny" })
       yield* setRules([{ action: "bash", resource: "*", effect: "deny" }])
       expect(
         yield* service.ask(
@@ -235,7 +223,7 @@ describe("PermissionV2", () => {
             denyAliases: ["git status && rm -rf build"],
           }),
         ),
-      ).toMatchObject({ effect: "ask" })
+      ).toMatchObject({ effect: "deny" })
     }),
   )
 
@@ -257,7 +245,7 @@ describe("PermissionV2", () => {
           agent.permissions = []
         }),
       )
-      expect(yield* service.ask(assertion({ agent: AgentV2.ID.make("reviewer") }))).toMatchObject({ effect: "ask" })
+      expect(yield* service.ask(assertion({ agent: AgentV2.ID.make("reviewer") }))).toMatchObject({ effect: "deny" })
       expect(yield* service.get(PermissionV2.ID.create("per_test"))).not.toHaveProperty("agent")
     }),
   )
@@ -278,39 +266,6 @@ describe("PermissionV2", () => {
   // Ported from https://github.com/NancySadkov/novaclaw/pull/9 by @DassaultFalconKing. These drive
   // the LIVE evaluator because the pure predicate is the easy half — what decides whether the
   // feature exists at all is where the rule sits relative to the mode overlay and to saved answers.
-  it.effect("asks before overwriting an attached file, THROUGH an allow-all agent and bypass mode", () =>
-    Effect.gen(function* () {
-      // This is the DEFAULT shape of a NovaClaw install, which is the only reason the feature is
-      // worth having: the agent baseline is allow-all (`{*,*,allow}`) and
-      // `EFFECTIVE_CONFIG_DEFAULTS.permissionMode` is `bypass`, whose overlay allows edit/write/trash
-      // on `*`. Both would silently permit the write. If this test ever passes with the attachment
-      // rule moved earlier in the chain, the rule is being shadowed and the protection is a no-op.
-      yield* setup([{ action: "*", resource: "*", effect: "allow" }])
-      const sessionID = SessionV2.ID.make("ses_attached")
-      yield* insertSession({ id: sessionID, type: "interactive", permissionMode: "bypass" })
-      // ⚠️ Assert the EFFECT first, with the non-blocking `ask`. `waitForRequest` below parks on a
-      // Deferred that a broken protection would never complete, and under `it.effect`'s TestClock
-      // bun's per-test timeout cannot cancel that — the suite would HANG instead of failing.
-      // Measured 2026-07-28 while negative-controlling this very test: >300 s, killed by hand.
-      // A guard whose failure mode is a wedge is worse than no guard, so the fast check goes first.
-      // ⚠️ Its own id, because `ask` REGISTERS the pending request — reusing the fixture's fixed
-      // `per_test` id makes the `create` below die on a duplicate, which wedges the same way.
-      expect(
-        yield* (yield* PermissionV2.Service).ask(
-          editingAnAttachment({ sessionID, id: PermissionV2.ID.create("per_effect_probe") }),
-        ),
-      ).toMatchObject({ effect: "ask" })
-      const { service, fiber, request } = yield* waitForRequest(editingAnAttachment({ sessionID }))
-      // The ask must SAY why it is asking, or it reads as a glitch on a file everything else could touch.
-      expect(request).toMatchObject({
-        action: "edit",
-        resources: ["task.md"],
-        metadata: { attachmentProtection: true, attachmentPath: "/project/task.md" },
-      })
-      yield* service.reply({ requestID: request.id, reply: "allow-once" })
-      yield* Fiber.join(fiber)
-    }),
-  )
 
   it.effect("NEGATIVE CONTROL: the same edit, one path away from the attachment, is not asked about", () =>
     Effect.gen(function* () {
@@ -344,7 +299,7 @@ describe("PermissionV2", () => {
 
       // The rule an ordinary "always allow edits" leaves behind — these asserts all offer `save: ["*"]`.
       yield* saved.add({ origin: Project.ID.global, action: "edit", resources: ["*"] })
-      expect(yield* service.ask(editingAnAttachment({ sessionID }))).toMatchObject({ effect: "ask" })
+      expect(yield* service.ask(editingAnAttachment({ sessionID }))).toMatchObject({ effect: "deny" })
 
       // Answering "always" to THIS file's own ask names it, and that does end the asking.
       yield* saved.add({ origin: Project.ID.global, action: "edit", resources: ["task.md"] })
@@ -438,6 +393,8 @@ describe("PermissionV2", () => {
 
       const service = yield* PermissionV2.Service
       expect(yield* service.ask(assertion())).toEqual({ id: PermissionV2.ID.create("per_test"), effect: "deny" })
+      // 🔴 Nothing is queued, ever. The pending record is what stranded a session for twenty minutes
+      // on 2026-08-20, and the ruling removes the outcome that created it.
       expect(yield* service.list()).toEqual([])
     }),
   )
@@ -458,8 +415,12 @@ describe("PermissionV2", () => {
       // Under ask mode the MODE_RULES overlay converts the configured allow into consent — the mode
       // labeled "Ask" must actually ask (issues.md P1). A saved allow-always later quiets this
       // (covered in permission-modes.test.ts).
-      expect(yield* service.ask(bash)).toEqual({ id: PermissionV2.ID.create("per_test"), effect: "ask" })
-      expect(yield* service.get(PermissionV2.ID.create("per_test"))).toBeDefined()
+      // ⚠️ The mode's PURPOSE survives and is now held more strictly: a configured allow-all still
+      // never runs bash silently — it is refused rather than merely gated. What is gone is the queued
+      // record, because nothing is asked (owner ruling 2026-08-20). Under the owner's three modes this
+      // is what "project-bound" means: anything not explicitly granted is refused, in advance.
+      expect(yield* service.ask(bash)).toEqual({ id: PermissionV2.ID.create("per_test"), effect: "deny" })
+      expect(yield* service.get(PermissionV2.ID.create("per_test"))).toBeUndefined()
     }),
   )
 
@@ -484,214 +445,43 @@ describe("PermissionV2", () => {
     }),
   )
 
-  it.effect("resolves an asked permission once", () =>
-    Effect.gen(function* () {
-      yield* setup()
-      const { service, fiber, request } = yield* waitForRequest()
-      expect(yield* service.list()).toEqual([request])
-      expect(yield* service.forSession(request.sessionID)).toEqual([request])
-      expect(yield* service.forSession(SessionV2.ID.make("ses_other"))).toEqual([])
-      expect(yield* service.get(request.id)).toEqual(request)
-      yield* service.reply({ requestID: request.id, reply: "once" })
-      yield* Fiber.join(fiber)
-      expect(yield* service.list()).toEqual([])
-      expect(yield* service.get(request.id)).toBeUndefined()
-    }),
-  )
 
   // A deleted session must take its pending asks with it: the V2 session-scoped reply route can
   // never settle them once the session row is gone, so without the sweep they orphan forever.
-  it.effect("rejects a deleted session's pending asks and publishes Replied", () =>
-    Effect.gen(function* () {
-      yield* setup()
-      const { service, fiber, request } = yield* waitForRequest()
-      expect(yield* service.list()).toEqual([request])
-
-      const events = yield* EventV2.Service
-      const replied = yield* Deferred.make<{ requestID: string; reply: string }>()
-      const unsubscribe = yield* events.listen((event) =>
-        event.type === PermissionV2.Event.Replied.type
-          ? Deferred.succeed(replied, event.data as { requestID: string; reply: string }).pipe(Effect.asVoid)
-          : Effect.void,
-      )
-      yield* Effect.addFinalizer(() => unsubscribe)
-
-      yield* events.publish(SessionRecordEvent.Deleted, {
-        sessionID: request.sessionID,
-        info: {
-          id: request.sessionID,
-          slug: "test",
-          location: { directory: AbsolutePath.make("/project") },
-          title: "test",
-          version: "test",
-          cost: 0,
-          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-          time: { created: DateTime.makeUnsafe(1), updated: DateTime.makeUnsafe(1) },
-        },
-      } as never)
-
-      expect(yield* Deferred.await(replied)).toMatchObject({ requestID: request.id, reply: "reject" })
-      const exit = yield* Fiber.await(fiber)
-      expect(exit._tag).toBe("Failure")
-      expect(yield* service.list()).toEqual([])
-      expect(yield* service.get(request.id)).toBeUndefined()
-    }),
-  )
 
   // A SETTLED DRAIN takes its pending asks with it too (owner-hit 2026-07-22): once the drain
   // publishes idle/exited (Stop, exit, error) the tool awaiting the answer is gone, and a stale
   // ask wedged the chat — the ask dock replaces the composer, leaving no Stop and no way to
   // re-prompt.
-  it.effect("rejects a settled drain's pending asks on the idle status", () =>
-    Effect.gen(function* () {
-      yield* setup()
-      const { service, fiber, request } = yield* waitForRequest()
-      expect(yield* service.list()).toEqual([request])
 
-      const events = yield* EventV2.Service
-      const replied = yield* Deferred.make<{ requestID: string; reply: string }>()
-      const unsubscribe = yield* events.listen((event) =>
-        event.type === PermissionV2.Event.Replied.type
-          ? Deferred.succeed(replied, event.data as { requestID: string; reply: string }).pipe(Effect.asVoid)
-          : Effect.void,
-      )
-      yield* Effect.addFinalizer(() => unsubscribe)
 
-      yield* events.publish(SessionStatusEvent.Status, {
-        sessionID: request.sessionID,
-        status: { type: "idle" },
-      })
 
-      expect(yield* Deferred.await(replied)).toMatchObject({ requestID: request.id, reply: "reject" })
-      const exit = yield* Fiber.await(fiber)
-      expect(exit._tag).toBe("Failure")
-      expect(yield* service.list()).toEqual([])
-    }),
-  )
-
-  it.effect("persists an interrupted ask and consumes its recovered answer exactly once", () =>
-    Effect.gen(function* () {
-      yield* setup()
-      const { service, fiber, request } = yield* waitForRequest()
-      const { db } = yield* Database.Service
-
-      expect(yield* db.select().from(PermissionPendingTable).all()).toMatchObject([
-        { id: request.id, awaited: true, resolution: null },
-      ])
-
-      // Models a worker disappearing while the host-owned permission assertion is parked. The
-      // durable card remains, but its Deferred no longer has a consumer.
-      yield* Fiber.interrupt(fiber)
-      expect(yield* service.list()).toEqual([request])
-
-      // Build the service again over the same database: this is the process-local half a restart
-      // actually replaces, and the card must be reconstructed without the old Map or Deferred.
-      const dependencyLayer = Layer.mergeAll(
-        Layer.succeed(Database.Service, yield* Database.Service),
-        Layer.succeed(EventV2.Service, yield* EventV2.Service),
-        current,
-        Layer.succeed(AgentV2.Service, yield* AgentV2.Service),
-        Layer.succeed(SessionStore.Service, yield* SessionStore.Service),
-        Layer.succeed(ProjectFileCache.Service, yield* ProjectFileCache.Service),
-        Layer.succeed(SessionEffectiveConfig.Service, yield* SessionEffectiveConfig.Service),
-        Layer.succeed(PermissionSaved.Service, yield* PermissionSaved.Service),
-        SessionAutoGrant.layer.pipe(Layer.provide(Layer.succeed(Database.Service, yield* Database.Service))),
-      )
-      const reply = yield* Effect.gen(function* () {
-        const recovered = yield* PermissionV2.Service
-        expect(yield* recovered.list()).toEqual([request])
-        return yield* recovered.reply({ requestID: request.id, reply: "once" })
-      }).pipe(Effect.provide(PermissionV2.layer.pipe(Layer.provide(dependencyLayer))), Effect.scoped)
-      expect(reply).toEqual({
-        sessionID: request.sessionID,
-        recovered: true,
-      })
-      expect(yield* db.select().from(PermissionPendingTable).all()).toMatchObject([
-        { id: request.id, resolution: "allow" },
-      ])
-
-      // A new request id is normal after re-driving the interrupted model turn. Matching is on the
-      // immutable operation identity, and consuming the row before returning makes the grant one-shot.
-      yield* service.assert(assertion({ id: PermissionV2.ID.create("per_retry") }))
-      expect(yield* db.select().from(PermissionPendingTable).all()).toEqual([])
-
-      const after = yield* service.ask(assertion({ id: PermissionV2.ID.create("per_after") }))
-      expect(after.effect).toBe("ask")
-      expect(yield* service.list()).toHaveLength(1)
-      yield* service.reply({ requestID: after.id, reply: "reject" })
-    }),
-  )
-
-  it.effect("preserves a recovered denial through the same-session cascade", () =>
-    Effect.gen(function* () {
-      yield* setup()
-      const deniedInput = assertion({
-        id: PermissionV2.ID.create("per_denied"),
-        action: "skill",
-        resources: ["dangerous-skill"],
-      })
-      const { fiber, request } = yield* waitForRequest(deniedInput)
-      const { db } = yield* Database.Service
-      yield* Fiber.interrupt(fiber)
-
-      const dependencyLayer = Layer.mergeAll(
-        Layer.succeed(Database.Service, yield* Database.Service),
-        Layer.succeed(EventV2.Service, yield* EventV2.Service),
-        current,
-        Layer.succeed(AgentV2.Service, yield* AgentV2.Service),
-        Layer.succeed(SessionStore.Service, yield* SessionStore.Service),
-        Layer.succeed(ProjectFileCache.Service, yield* ProjectFileCache.Service),
-        Layer.succeed(SessionEffectiveConfig.Service, yield* SessionEffectiveConfig.Service),
-        Layer.succeed(PermissionSaved.Service, yield* PermissionSaved.Service),
-        SessionAutoGrant.layer.pipe(Layer.provide(Layer.succeed(Database.Service, yield* Database.Service))),
-      )
-      const error = yield* Effect.gen(function* () {
-        const recovered = yield* PermissionV2.Service
-        expect(yield* recovered.reply({ requestID: request.id, reply: "reject", message: "Not this time" })).toEqual({
-          sessionID: request.sessionID,
-          recovered: true,
-        })
-        expect(yield* db.select().from(PermissionPendingTable).all()).toMatchObject([
-          { id: request.id, resolution: "deny", feedback: "Not this time" },
-        ])
-        return yield* recovered
-          .assert({ ...deniedInput, id: PermissionV2.ID.create("per_denied_retry") })
-          .pipe(Effect.flip)
-      }).pipe(Effect.provide(PermissionV2.layer.pipe(Layer.provide(dependencyLayer))), Effect.scoped)
-
-      expect(error).toBeInstanceOf(PermissionV2.CorrectedError)
-      expect(error).toMatchObject({ feedback: "Not this time" })
-      expect(yield* db.select().from(PermissionPendingTable).all()).toEqual([])
-    }),
-  )
-
+  // ⚠️ Rewritten 2026-08-20. This used to reach the saved store through the ask/reply lifecycle —
+  // fork an assert, wait for `Asked`, reply "always" — and that lifecycle no longer exists. The
+  // STORE is very much alive, and more central than before: pre-granted rules are how consent works
+  // now that nothing is negotiated per path. So it is exercised directly.
   it.effect("stores and removes saved resources for a project", () =>
     Effect.gen(function* () {
       yield* setup()
       const service = yield* PermissionV2.Service
-      const asked = yield* Deferred.make<PermissionV2.Request>()
-      const events = yield* EventV2.Service
-      const unsubscribe = yield* events.listen((event) =>
-        event.type === PermissionV2.Event.Asked.type
-          ? Deferred.succeed(asked, event.data as PermissionV2.Request).pipe(Effect.asVoid)
-          : Effect.void,
-      )
-      yield* Effect.addFinalizer(() => unsubscribe)
-      const fiber = yield* service.assert(assertion({ save: ["src/*"] })).pipe(Effect.forkScoped)
-      const request = yield* Deferred.await(asked)
-      yield* service.reply({ requestID: request.id, reply: "always" })
-      yield* Fiber.join(fiber)
+      const saved = yield* PermissionSaved.Service
+
+      yield* saved.add({ origin: Project.ID.global, action: "read", resources: ["src/*"] })
 
       const { db } = yield* Database.Service
       expect(
         yield* db.select().from(PermissionTable).where(eq(PermissionTable.origin, Project.ID.global)).all(),
       ).toMatchObject([{ action: "read", resource: "src/*" }])
-      const saved = yield* PermissionSaved.Service
+
       const id = (yield* saved.list())[0]!.id
       expect(yield* saved.list()).toEqual([
         { id, origin: Project.ID.global, action: "read", resource: "src/*", effect: "allow" },
       ])
+
+      // ⭐ The point of a saved rule: a matching assert passes WITHOUT anyone being asked. That is the
+      // owner's model — consent granted in advance, never negotiated mid-task.
       yield* service.assert(assertion({ id: PermissionV2.ID.create("per_next"), resources: ["src/next.ts"] }))
+
       yield* saved.remove(id)
       expect(yield* saved.list()).toEqual([])
     }),
@@ -777,7 +567,7 @@ describe("PermissionV2 — the surgical / ask switches", () => {
               resources: ["src/a.ts"],
             }),
           ),
-        ).toMatchObject({ effect: "ask" })
+        ).toMatchObject({ effect: "deny" })
       // The row the shell half of the i18n promise rests on ("...and before it runs a shell command").
       expect(ASK_BEFORE_CHANGES_RULES.map((rule) => rule.action)).toContain("bash")
       // ...but a READ is not a change, so it still goes through untouched.
@@ -810,7 +600,7 @@ describe("PermissionV2 — the surgical / ask switches", () => {
             save: [command],
           }),
         ),
-      ).toMatchObject({ effect: "ask" })
+      ).toMatchObject({ effect: "deny" })
       // NEGATIVE CONTROL — the assert as it shipped. Same tool, same command, same switch ON, and
       // SILENT: `provision` is not a row in the overlay and cannot be reached by one (a rule list
       // enumerates action names ahead of time; see the MODE_RULES note). That is precisely how the
@@ -966,10 +756,16 @@ describe("PermissionV2 — unattended confinement stance", () => {
       yield* setup(buildAgentRules)
       yield* insertSession({ id: "ses_chat", type: "interactive", permissionMode: "bypass" })
       const service = yield* PermissionV2.Service
+      // ⚠️ Both roots DENY since asking was removed (owner 2026-08-20). `effect` can no longer tell
+      // the attended path from the unattended one — the REASON does, and checking it is stricter:
+      // this fails if the two are ever collapsed into a single verdict.
       expect(yield* service.ask(outside({ sessionID: SessionV2.ID.make("ses_chat") }))).toMatchObject({
-        effect: "ask",
+        effect: "deny",
       })
-      expect(yield* service.get(PermissionV2.ID.create("per_test"))).toBeDefined()
+      const attended = yield* service.assert(outside({ sessionID: SessionV2.ID.make("ses_chat") })).pipe(Effect.flip)
+      expect((attended as PermissionV2.DeniedError).reason).toBe("ask-removed")
+      // …and nothing is queued for a human who is not there.
+      expect(yield* service.get(PermissionV2.ID.create("per_test"))).toBeUndefined()
     }),
   )
 
@@ -1015,9 +811,14 @@ describe("PermissionV2 — unattended confinement stance", () => {
       yield* insertSession({ id: "ses_ghost", type: "interactive", permissionMode: "bypass" })
       yield* insertSession({ id: "ses_orphan", type: "sub-agent", permissionMode: "bypass", parentID: "ses_ghost" })
       const service = yield* PermissionV2.Service
+      // Both deny since asking was removed; the REASON keeps the two paths apart. Restoring the
+      // parent moves it from "nobody could answer" to "we do not ask" — which is the distinction this
+      // control exists to protect, now checked directly.
       expect(yield* service.ask(outside({ sessionID: SessionV2.ID.make("ses_orphan") }))).toMatchObject({
-        effect: "ask",
+        effect: "deny",
       })
+      const restored = yield* service.assert(outside({ sessionID: SessionV2.ID.make("ses_orphan") })).pipe(Effect.flip)
+      expect((restored as PermissionV2.DeniedError).reason).toBe("ask-removed")
     }),
   )
 
@@ -1309,8 +1110,18 @@ describe("PermissionV2 — an unattended ask denies FAST", () => {
       yield* setup(b4cBaseline)
       yield* insertSession({ id: "ses_chat", type: "interactive", permissionMode: "bypass" })
       const service = yield* PermissionV2.Service
-      expect(yield* service.ask(gated({ sessionID: SessionV2.ID.make("ses_chat") }))).toMatchObject({ effect: "ask" })
-      expect(yield* service.get(PermissionV2.ID.create("per_test"))).toBeDefined()
+      // ⚠️ Both roots DENY since asking was removed (owner 2026-08-20), so `effect` can no longer
+      // separate them — the REASON does, and that is the stricter check: it fails if the attended and
+      // unattended paths are ever collapsed into one verdict.
+      expect(yield* service.ask(gated({ sessionID: SessionV2.ID.make("ses_chat") }))).toMatchObject({
+        effect: "deny",
+      })
+      const attended = yield* service
+        .assert(gated({ sessionID: SessionV2.ID.make("ses_chat") }))
+        .pipe(Effect.flip)
+      expect((attended as PermissionV2.DeniedError).reason).toBe("ask-removed")
+      // …and nothing is queued for anyone to answer.
+      expect(yield* service.get(PermissionV2.ID.create("per_test"))).toBeUndefined()
     }),
   )
 

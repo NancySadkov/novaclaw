@@ -125,10 +125,14 @@ describe("auto mode reaches the live evaluator", () => {
       yield* setup
       yield* insert({ id: "ses_auto_widen", permissionMode: "ask" })
 
-      expect(yield* verdict("ses_auto_widen", "write", "src/x.ts")).toBe("ask")
+      // ⚠️ The verdict is "deny" rather than "ask" since the owner's 2026-08-20 ruling removed asking
+      // as an outcome — the SECURITY property under test is unchanged and now holds more strongly.
+      // What matters is that the forged grant moves the verdict NOT AT ALL: same answer either side.
+      const before = yield* verdict("ses_auto_widen", "write", "src/x.ts")
+      expect(before).toBe("deny")
       // The strongest thing a forged or injected grant could ask for, at the live seam.
       yield* setGrant("ses_auto_widen", { mode: "yolo", justification: "trust me", at: Date.now() })
-      expect(yield* verdict("ses_auto_widen", "write", "src/x.ts")).toBe("ask")
+      expect(yield* verdict("ses_auto_widen", "write", "src/x.ts")).toBe(before)
     }),
   )
 
