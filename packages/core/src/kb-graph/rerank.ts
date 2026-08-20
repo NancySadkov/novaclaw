@@ -43,6 +43,12 @@ export function buildRerankPrompt(query: string, candidates: ReadonlyArray<Searc
     '  A) 400d old: "Official policy: three days a week in the office."',
     '  B) 3d old: "I think nobody really checks the office days anymore."',
     "  Correct order: A, B. B is newer but it is one person speculating; A is the actual policy.",
+    // 🔴 The DROP-ALL escape (owner's instance, 2026-08-20). Rule 1 ranks an off-topic fact LAST, and
+    // `parseRerankOrder` never drops a candidate — so when EVERY candidate is off-topic they were all
+    // still injected. Measured: asked to describe six PNGs, the model answered about "Eldath Scrolls",
+    // a "Codex of the Pale Eclipse" and an `add.js` JSDoc note, with the images nowhere in the reply.
+    // Ranking cannot fix that, because the problem is not the order — it is that nothing belonged.
+    "If NONE of the candidates helps answer this question, reply with exactly: none",
     "Reply with ONLY the candidate numbers, best first, comma-separated. No words, no explanation.",
   ].join("\n")
   const lines = candidates.map((hit, i) => `${i + 1}. (${describe(hit, nowMs)}`).join("\n")
@@ -56,6 +62,15 @@ export function buildRerankPrompt(query: string, candidates: ReadonlyArray<Searc
  *  back at all — which routes the caller to the deterministic fallback. */
 export function parseRerankOrder(reply: string, count: number): number[] | undefined {
   if (count <= 0) return undefined
+  // ⚠️ "none" means DROP ALL, and it is deliberately only honoured when the reply carries no digits.
+  // A model that answers "none of 3, so: 1, 2" is ordering, not refusing — reading the word alone
+  // would silently discard the memories it just ranked. An empty array is a decision ("nothing here
+  // helps"); `undefined` remains "unusable reply", which routes the caller to the deterministic
+  // ranker and keeps everything. The two must not collapse.
+  // ⚠️ The word boundaries are load-bearing: without them "nonexistent" reads as a refusal.
+  // They were lost once already — a heredoc turned the escapes into literal BACKSPACE characters,
+  // giving a regex that could never match and a fix that silently did nothing.
+  if (/\bnone\b/i.test(reply) && !/\d/.test(reply)) return []
   const picked: number[] = []
   const seen = new Set<number>()
   for (const match of reply.matchAll(/\d+/g)) {

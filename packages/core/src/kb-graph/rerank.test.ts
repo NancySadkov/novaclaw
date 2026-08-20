@@ -105,3 +105,41 @@ describe("rerank", () => {
     expect(out?.map((h) => h.id)).toEqual(["c", "a", "b"])
   })
 })
+
+describe("the reranker can refuse every candidate", () => {
+  // 🔴 Measured on the owner's own instance, 2026-08-20: asked to describe six PNGs, the model
+  // answered about "Eldath Scrolls", a "Codex of the Pale Eclipse" and an `add.js` JSDoc note. Rule 1
+  // ranks an off-topic fact LAST and the parser never dropped one, so when EVERY candidate was
+  // off-topic they were all injected anyway. Ordering cannot fix "nothing here belongs".
+  test("a bare `none` drops everything", () => {
+    expect(parseRerankOrder("none", 3)).toEqual([])
+    expect(parseRerankOrder("None.", 5)).toEqual([])
+    expect(parseRerankOrder("  NONE  ", 2)).toEqual([])
+  })
+
+  test("`none` alongside numbers is ORDERING, not refusal", () => {
+    // ⚠️ The case that makes the word alone unsafe. "none of 3, so 1, 2" is a model ranking, and
+    // reading the refusal would silently discard the memories it just ranked.
+    // ⚠️ [2,0,1], not [0,1,2]: the parser reads EVERY digit as a pick, so the "3" in "none of 3" is
+    // itself a selection. Tolerant by design — and the reason the drop-all escape must require a
+    // reply with NO digits at all, rather than trusting the word.
+    expect(parseRerankOrder("none of 3, so: 1, 2", 3)).toEqual([2, 0, 1])
+    expect(parseRerankOrder("2, 1 — none of the others", 2)).toEqual([1, 0])
+  })
+
+  test("word boundaries: a word CONTAINING none is not a refusal", () => {
+    // The boundaries were lost once to a mangled escape, leaving a regex that could never match.
+    // Without them these read as "drop everything".
+    expect(parseRerankOrder("nonexistent", 2)).toBeUndefined()
+    expect(parseRerankOrder("nonsense", 2)).toBeUndefined()
+  })
+
+  test("refusal and unusable stay DISTINCT", () => {
+    // `[]` is a decision — nothing here helps, inject nothing. `undefined` is "unusable reply", which
+    // routes the caller to the deterministic ranker and keeps everything. Collapsing them would turn
+    // every garbled reply into silent memory loss.
+    expect(parseRerankOrder("none", 3)).toEqual([])
+    expect(parseRerankOrder("", 3)).toBeUndefined()
+    expect(parseRerankOrder("I cannot help with that", 3)).toBeUndefined()
+  })
+})
