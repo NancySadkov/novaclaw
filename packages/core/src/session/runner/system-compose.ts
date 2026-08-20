@@ -243,13 +243,23 @@ export const perceptionSection = (input: {
       "first to learn the real filenames, then `read` each image you were asked about. Never guess " +
       "or invent a filename, and never answer from names alone — if a read fails, list the folder " +
       "and use the names it returns.",
+    // 🔴 Rewritten 2026-08-20 from "for more than a handful of images, spawn a child session per
+    // batch". That rule keyed on COUNT, and measured against 400 icons the model obeyed it exactly:
+    // it spawned, waited ten minutes on the child, and after 25 minutes had read 8 files and named
+    // 1 of 400. The premise it acted on — "a large folder will not fit in this conversation" — is
+    // false for small images. Anything up to 256×256 costs 66 tokens, so 400 glyphs are ~26K of a
+    // 131K window, while a single 12-megapixel photo is ~11,700 and nine of them fill it.
+    // Nine files can need the fan-out and four hundred can not, so the trigger is SIZE, not number.
     ...(input.canSpawn
       ? [
-          "An image costs far more context than its filename — a photo or a screenshot can cost as " +
-            "much as several pages of text, so a large folder will not fit in this conversation. " +
-            "For more than a handful of images, `spawn` a child session per batch, let it look and " +
-            "return its findings as TEXT through `exit`, and join the results. The pixels stay in " +
-            "the children; your own context keeps the task.",
+          "Images differ hugely in cost: a small icon costs about as much as a sentence, while a " +
+            "photo or a screenshot can cost several pages of text — nine large photos can fill this " +
+            "whole conversation, and several hundred icons need not. So judge by how big the " +
+            "pictures are, never by how many. When the images are LARGE and there are enough of " +
+            "them to crowd out the task, `spawn` a child session per batch, let it look and return " +
+            "its findings as TEXT through `exit`, and join the results — the pixels stay in the " +
+            "children while your own context keeps the task. When they are small, do not delegate: " +
+            "reading them yourself, one at a time, is faster and finishes.",
         ]
       : []),
   ].join("\n\n")

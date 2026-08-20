@@ -57,6 +57,23 @@ const SHARED_TAIL =
   "Prefer this over bash cat/head/tail. Continue paged reads with `offset` until complete; never conclude from a partial view. A complete lossless text read returns the observation token `write` needs to replace that existing file; pages accumulate only while its version is unchanged. Binary files give a `read-hex` hint. Relative paths use the current location; absolute paths may read anywhere the host account permits. An observation proves freshness, not write permission."
 
 /** Advertised to a model whose catalog declares an `image` input modality. UNCHANGED wording. */
+/**
+ * Does this error mean "there is no such file"?
+ *
+ * Effect's filesystem raises a `PlatformError` carrying `reason: "NotFound"` (the shape `bash.ts`
+ * catches with `Effect.catchReason("PlatformError", "NotFound", …)`). The raw `ENOENT` check is a
+ * second net for anything that reaches here without having been wrapped — a missing file is common
+ * enough, and the consequence of misreporting it bad enough, that one predicate covering both beats
+ * a tidy one covering the case we happen to have seen.
+ */
+const isNotFound = (error: unknown): boolean => {
+  const reason = (error as { readonly reason?: unknown } | undefined)?.reason
+  if (reason === "NotFound") return true
+  const code = (error as { readonly code?: unknown } | undefined)?.code
+  if (code === "ENOENT") return true
+  return /\bENOENT\b|\bNotFound\b/.test(String((error as { readonly message?: unknown } | undefined)?.message ?? ""))
+}
+
 export const DESCRIPTION =
   "Read a file, LOOK AT an image, page through large UTF-8 text, or list a directory. An image (png/jpeg/gif/webp) arrives as a picture you can see — use it for what a file LOOKS like. " +
   SHARED_TAIL
@@ -281,7 +298,15 @@ export const layer = Layer.effectDiscard(
                   error instanceof Image.DecodeError ||
                   error instanceof Image.SizeError
                     ? error.message
-                    : `Unable to read ${input.path}`
+                    : // ⚠️ A MISSING file is not an unreadable one, and only the missing case has a fix
+                      // the model can act on. Measured 2026-08-20: told "Unable to read <path>" for a
+                      // filename it had invented, the model read it as "this file is broken" and
+                      // guessed another name — four times. Naming the cause and the next action is
+                      // what converts it. See `perceptionSection`, which forbids inventing a name.
+                      isNotFound(error)
+                      ? `${input.path} does not exist. Do not guess filenames — list the folder ` +
+                        `(\`glob\` or \`bash ls\`) and read one of the names it returns.`
+                      : `Unable to read ${input.path}`
                 return new ToolFailure({ message })
               }),
             )

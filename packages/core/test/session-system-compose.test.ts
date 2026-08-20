@@ -221,6 +221,36 @@ describe("perceptionSection — the model must know it can see", () => {
     expect(withSpawn.startsWith(without)).toBe(true)
   })
 
+  // 🔴 Measured 2026-08-20, and the reason this test exists. The paragraph used to say "for more
+  // than a handful of images, spawn a child session per batch", justified by "a large folder will
+  // not fit in this conversation". Asked to describe 400 icons the model OBEYED it: it spawned,
+  // waited ten minutes on the child, and after 25 minutes had read 8 files and named 1 of 400.
+  //
+  // The premise is false for small images. Up to 256×256 costs 66 tokens, so 400 glyphs are ~26K of
+  // a 131K window, while ONE 12-megapixel photo is ~11,700 and nine fill it. Nine files can need the
+  // fan-out and four hundred can not — so a COUNT rule cannot express the thing that matters.
+  //
+  // ⚠️ This suite passed unchanged through the rewrite, because the only assertion on this paragraph
+  // was the canSpawn gate. The rule it states was untested while it was deciding real runs.
+  it("triggers the fan-out on how BIG the images are, never on how many", () => {
+    const section = SystemCompose.perceptionSection({ capabilities: seeing, canSpawn: true })!
+
+    // The count-based trigger must not return. "a handful" is the exact wording that misfired.
+    expect(section).not.toContain("handful")
+    // Nor the false premise that justified it — a folder of icons fits perfectly well.
+    expect(section).not.toContain("a large folder will not fit")
+
+    // The size contrast has to be present, because it is what lets the model tell the two cases
+    // apart: an icon is cheap, a photo is not.
+    expect(section.toLowerCase()).toContain("icon")
+    expect(section.toLowerCase()).toContain("photo")
+
+    // ⭐ The load-bearing half. Without an explicit "do not delegate when they are small", the model
+    // has a fan-out instruction and no stated case for reading images itself — which is how a
+    // 400-icon task became a planning exercise.
+    expect(section).toContain("do not delegate")
+  })
+
   // The literal in llm.ts (`tool.name === "spawn"`) cannot import SpawnTool without closing an
   // import cycle through session/spawner. This is the pin that fails if the tool is ever renamed.
   it("pins the spawn tool name the runner matches on", () => {
