@@ -1,6 +1,7 @@
 import { A } from "@solidjs/router"
 import { createMemo, createResource, createSignal, For, Show } from "solid-js"
 import { MemoryRemembered } from "@/components/memory-remembered"
+import { SettingsMemoryV2 } from "@/components/settings-v2/memory"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { useGlobal } from "@/context/global"
 import { useServer, ServerConnection } from "@/context/server"
@@ -198,7 +199,7 @@ export function MemoryGraphPage() {
    * LIST first. "What do you know about me" is answered in sentences; the graph answers "how does
    * it connect", which is the second question. Opening on the graph led with the harder view.
    */
-  const [appView, setAppView] = createSignal<"list" | "graph">("list")
+  const [appView, setAppView] = createSignal<"list" | "graph" | "settings">("list")
 
   const count = () => graph()?.nodes.length ?? 0
   /**
@@ -224,7 +225,18 @@ export function MemoryGraphPage() {
           <h1 class="text-sm font-medium">Memory</h1>
         </div>
         <div class="flex items-center gap-0.5 rounded-md bg-v2-background-bg-layer-01 p-0.5 text-[11px]">
-          <For each={[{ id: "list", label: "Remembered" }, { id: "graph", label: "Graph" }] as const}>
+          <For
+            each={
+              [
+                { id: "list", label: "Remembered" },
+                { id: "graph", label: "Graph" },
+                // Everything that used to be Settings → Memory. The app is where a person asks
+                // "what do you know about me", so it is where they should be able to answer
+                // "and stop knowing it" — including the on/off switch and the import/export.
+                { id: "settings", label: "Settings" },
+              ] as const
+            }
+          >
             {(entry) => (
               <button
                 type="button"
@@ -313,6 +325,16 @@ export function MemoryGraphPage() {
       <Show when={appView() === "list"}>
         <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
           <MemoryRemembered />
+        </div>
+      </Show>
+
+      {/* The retired Settings → Memory tab, hosted here verbatim (`embedded` drops its tab header).
+          Same component the dialog used, so consent, embedding, the judge model, export/import and
+          document ingest all keep working exactly as they did — this MOVED the surface, it did not
+          reimplement it. */}
+      <Show when={appView() === "settings"}>
+        <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3" data-slot="memory-app-settings">
+          <SettingsMemoryV2 embedded />
         </div>
       </Show>
 

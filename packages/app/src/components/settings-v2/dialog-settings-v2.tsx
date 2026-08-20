@@ -10,7 +10,6 @@ import { ServerSyncProvider } from "@/context/server-sync"
 import { useExpertise } from "@/context/expertise"
 import type { ExpertiseLevel } from "@/context/settings"
 import { SettingsGeneralV2 } from "./general"
-import { SettingsMemoryV2 } from "./memory"
 import { SettingsAboutV2 } from "./about"
 import { SettingsStorageV2 } from "./storage"
 import { SettingsAppearanceV2 } from "./appearance"
@@ -105,12 +104,12 @@ export const DialogSettings: Component<{
                             <Icon name="sliders" size="large" />
                             {language.t("settings.tab.general")}
                           </TabsV2.Trigger>
-                          {/* Profile lives inside Memory: both are one lay "what Nova knows about me"
-                        surface, with consent plus Export/Import/Clear. Normal level (everyone). */}
-                          <TabsV2.Trigger value="memory">
-                            <Icon name="archive" size="large" />
-                            {language.t("settings.memory.title")}
-                          </TabsV2.Trigger>
+                          {/* 🔴 The Memory tab is RETIRED (owner, 2026-08-20: *"we still have Memory
+                        tab in the settings, instead of everything migrated to the app"*). Everything it
+                        held — consent, the embedding and judge rows, export/import, document ingest,
+                        the Remembered list — now lives in the Memory APP as its third view, rendered
+                        from the same component. Settings keeps what is instance CONFIGURATION; what
+                        Nova knows about you is a thing you go and look at, not a preference. */}
                           {/* Models sits right under General — adding/configuring/importing models is the
                         high-value task while local hardware can't run the best model out of the box. */}
                           <TabsV2.Trigger value="models">
@@ -218,9 +217,6 @@ export const DialogSettings: Component<{
                     health report moved to Health & recovery (see general.tsx's header block); this
                     one click is part of what keeps a worried user's path as short as it was. */}
                 <SettingsGeneralV2 sessionID={props.sessionID} onOpenTab={setTab} />
-              </TabsV2.Content>
-              <TabsV2.Content value="memory" class="settings-v2-panel">
-                <SettingsMemoryV2 sessionID={props.sessionID} />
               </TabsV2.Content>
               <TabsV2.Content value="appearance" class="settings-v2-panel">
                 <SettingsAppearanceV2 />

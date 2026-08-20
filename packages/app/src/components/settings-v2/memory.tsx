@@ -48,7 +48,14 @@ function downloadText(filename: string, text: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
-export const SettingsMemoryV2: Component<{ sessionID?: string }> = (props) => {
+/**
+ * ⚠️ `embedded` renders this WITHOUT the settings-tab header, so the Memory app can host it as a
+ * third view beside Remembered and Graph (owner, 2026-08-20: *"we still have Memory tab in the
+ * settings, instead of everything migrated to the app"*). One component, two hosts — the alternative
+ * was a second copy, and this file already proved where that leads: its duplicate Remembered list
+ * silently kept an expertise gate and a missing confirm after the shared one was fixed.
+ */
+export const SettingsMemoryV2: Component<{ sessionID?: string; embedded?: boolean }> = (props) => {
   const language = useLanguage()
   const server = useServer()
   const global = useGlobal()
@@ -311,10 +318,12 @@ export const SettingsMemoryV2: Component<{ sessionID?: string }> = (props) => {
 
   return (
     <>
-      <div class="settings-v2-tab-header settings-v2-tab-header--stacked">
-        <h2 class="settings-v2-tab-title">{language.t("settings.memory.title")}</h2>
-        <p class="settings-v2-tab-description">{language.t("settings.memory.description")}</p>
-      </div>
+      <Show when={!props.embedded}>
+        <div class="settings-v2-tab-header settings-v2-tab-header--stacked">
+          <h2 class="settings-v2-tab-title">{language.t("settings.memory.title")}</h2>
+          <p class="settings-v2-tab-description">{language.t("settings.memory.description")}</p>
+        </div>
+      </Show>
 
       <div class="settings-v2-tab-body">
         <SettingsProfileSection />
