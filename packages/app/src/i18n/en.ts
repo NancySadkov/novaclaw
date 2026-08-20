@@ -464,8 +464,12 @@ export const dict = {
     "Adapts the model's sampling to its appraised mood — steadier when frustrated, freer when exploring.",
 
   "prompt.features.safeMode.title": "Safe mode",
+  // 531 characters inline in a popover until 2026-08-20. The visible line is what the switch DOES;
+  // the trade, the default and the two cases it does not affect are on demand.
   "prompt.features.safeMode.description":
-    "When this chat works unattended, only let it run shell commands inside a sandbox — and refuse them outright on a computer that has no sandbox yet, rather than running them with your full account. Off by default, so the agent can install packages, build and run tests on its own. Turning it on trades some of that away for a harder boundary. It does not change anything while you are here answering: chats you drive yourself run the same either way, and commands from an untrusted messenger contact stay confined whatever this says.",
+    "Unattended, run shell commands only inside a sandbox — and refuse them where there is none.",
+  "prompt.features.safeMode.description.more":
+    "Off by default, so the agent can install packages, build and run tests on its own. Turning it on trades some of that away for a harder boundary. It changes nothing while you are here answering: chats you drive yourself run the same either way, and commands from an untrusted messenger contact stay confined whatever this says.",
   "prompt.features.askBeforeChanges.title": "Ask before every change",
   "prompt.features.askBeforeChanges.description":
     "Stop and ask you before the agent edits, creates or deletes anything, and before it runs a shell command. Off by default — the permission mode already decides where it may work.",

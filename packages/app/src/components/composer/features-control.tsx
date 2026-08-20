@@ -4,6 +4,7 @@ import { useDialog } from "@novaclaw/ui/context/dialog"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { Switch as SwitchToggle } from "@novaclaw/ui/v2/switch-v2"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
+import { SettingsExplainV2 } from "@/components/settings-v2/explain"
 import { useLanguage } from "@/context/language"
 import { pathKey } from "@/utils/path-key"
 import { inForceState, makeDefaultPayload, planMakeDefault } from "./make-default"
@@ -919,6 +920,14 @@ function TuningPanel(props: { state: ComposerFeaturesControlState; onDismiss: ()
               <span class="text-[13px] text-v2-text-text-base">{language.t(`prompt.features.${feature}.title`)}</span>
               <span class="text-[12px] leading-4 text-v2-text-text-faint">
                 {language.t(`prompt.features.${feature}.description`)}
+                {/* uix.md §1.4 — the line states what the switch does; the trade and the cases it
+                    does not affect are one gesture away. Conditional because only some features have
+                    a second half, and a `?` with nothing behind it is a dead control. */}
+                <Show when={feature === "safeMode"}>
+                  <SettingsExplainV2 label={language.t(`prompt.features.${feature}.title`)}>
+                    {language.t("prompt.features.safeMode.description.more")}
+                  </SettingsExplainV2>
+                </Show>
               </span>
               <span class="text-[11px] leading-4 text-v2-text-text-faint" data-feature-source>
                 {featureSource(feature)}
