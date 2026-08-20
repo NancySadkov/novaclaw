@@ -12,6 +12,7 @@ export type VariantID = typeof VariantID.Type
 export const Family = Model.Family
 export type Family = Model.Family
 export const DEFAULT_LIMIT = Model.DEFAULT_LIMIT
+export const DEFAULT_IMAGE_LIMIT = Model.DEFAULT_IMAGE_LIMIT
 
 export const Tier = Model.Tier
 export type Tier = Model.Tier

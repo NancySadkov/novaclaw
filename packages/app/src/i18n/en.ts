@@ -2057,6 +2057,10 @@ export const dict = {
   "settings.models.config.context.name": "Context window",
   "settings.models.config.context.desc":
     "How many tokens of the conversation the model can see at once. Match the model's real limit.",
+  "settings.models.config.images.name": "Images per request",
+  // Short because the number is the point: what to type, and what blank does. The reason a cap
+  // exists at all belongs to whoever hits it, not to everyone who opens this dialog.
+  "settings.models.config.images.desc": "How many images this model takes at once. Blank assumes 1.",
   "settings.models.config.maxTokens.name": "Max response length",
   "settings.models.config.maxTokens.desc": "The most tokens the model may generate in a single reply.",
   "settings.models.config.thinkingBudget.name": "Thinking budget",

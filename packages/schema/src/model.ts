@@ -28,6 +28,18 @@ export type Family = typeof Family.Type
 // inherited the server's arbitrary generation default and could occupy a device for minutes.
 export const DEFAULT_LIMIT = { context: 65_536, output: 16_384 } as const
 
+// How many images we assume an endpoint takes in ONE request when nothing says otherwise.
+//
+// ONE, deliberately. A model that accepts more loses only speed under this floor; a model that
+// accepts fewer than we assumed 400s the request, and the recovery elides images that may never have
+// been described — measured 2026-08-20 on holo3.1, whose vLLM caps `--limit-mm-per-prompt` at 3.
+// The asymmetry is the whole argument: guess low and it degrades, guess high and it dead-ends.
+//
+// Raise it per model with `limit.images` (ConfigV2.Model.Limit), which is the operator's statement
+// and outranks this. Hosted vision endpoints generally take many; declare it there rather than
+// lifting this floor.
+export const DEFAULT_IMAGE_LIMIT = 1
+
 // Models-primary capability tier (notes/models-primary-plan.md): scaffolds the harness harder for
 // weaker models (Micro..Frontier). Distinct from the COST context-tier on `Cost.tier`. "guess"
 // stays a CLIENT-only sentinel (app context/models.tsx), never on the wire.

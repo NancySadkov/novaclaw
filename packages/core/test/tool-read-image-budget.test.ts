@@ -12,10 +12,10 @@ import { ReadTool } from "@novaclaw/core/tool/read"
  * confabulates (it invented a crown, a shield and a helmet for three evicted glyphs). So the tool
  * returns a sentence instead of the bytes, the turn ends, and the model describes what it holds.
  *
- * ⚠️ This file pins the NOTICE and its trigger arithmetic. The end-to-end conversion additionally
- * needs the cap to be KNOWN before the turn — it is currently learned from the endpoint's own
- * refusal, so a fresh session's first turn runs with `limit === undefined` and this gate cannot
- * fire. That prerequisite is `todo/vision.md`'s "persist the learned cap".
+ * ⚠️ This file pins the NOTICE and its trigger arithmetic. The prerequisite it used to name — the
+ * cap being unknown on a cold turn, so this gate could never fire — is CLOSED as of 2026-08-20:
+ * `resolveImageLimit` floors an unknown cap at 1 (owner ruling), so every turn now carries a number.
+ * `undefined` below is therefore the helper's own tri-state, not a state the runner still reaches.
  */
 describe("read withholds an image the request cannot carry", () => {
   test("the notice states the cause and asks for descriptions FIRST", () => {

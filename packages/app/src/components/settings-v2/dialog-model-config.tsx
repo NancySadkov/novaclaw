@@ -27,7 +27,7 @@ type ModelConfig = {
   api?: { id?: string; [k: string]: unknown }
   reasoning?: boolean
   tool_call?: boolean
-  limit?: { context?: number; output?: number }
+  limit?: { context?: number; output?: number; images?: number }
   retry?: { attempts?: number }
   modalities?: { input?: string[]; output?: string[] }
   options?: Record<string, unknown>
@@ -62,7 +62,13 @@ const SAMPLING = [
   "presence_penalty",
   "frequency_penalty",
 ] as const
-type FieldKey = (typeof SAMPLING)[number] | "context" | "maxTokens" | "thinkingBudget" | "retryAttempts"
+type FieldKey =
+  | (typeof SAMPLING)[number]
+  | "context"
+  | "maxTokens"
+  | "images"
+  | "thinkingBudget"
+  | "retryAttempts"
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 // MindControl thinking budget is stored in request.body (the free-form record the runtime reads),
@@ -154,6 +160,9 @@ const PRESETS: Record<FieldKey, RawPreset[]> = {
     { size: "128K", num: 131072 },
     { size: "256K", num: 262144 },
   ],
+  // A count of pictures, so the presets are small and literal. 3 is holo3.1's vLLM cap and the
+  // reason this row exists; 1 is what the harness assumes when this is blank.
+  images: [{}, { size: "1", num: 1 }, { size: "2", num: 2 }, { size: "3", num: 3 }, { size: "4", num: 4 }, { size: "8", num: 8 }, { size: "16", num: 16 }, { size: "32", num: 32 }],
   maxTokens: [
     {},
     { size: "512", num: 512 },
@@ -291,6 +300,7 @@ export const DialogModelConfig: Component<{
     frequency_penalty: optNum("frequency_penalty"),
     context: nstr(init.limit?.context ?? d.limit?.context),
     maxTokens: nstr(init.limit?.output ?? d.limit?.output),
+    images: nstr(init.limit?.images ?? d.limit?.images),
     thinkingBudget: nstr(bodyBudget(init) ?? bodyBudget(d)),
     retryAttempts: nstr(init.retry?.attempts ?? d.retry?.attempts ?? 3),
     reasoning: init.reasoning ?? d.reasoning ?? false,
@@ -333,9 +343,12 @@ export const DialogModelConfig: Component<{
       const v = num(form[k])
       if (v !== undefined) options[k] = v
     }
-    const limit: { context?: number; output?: number } = {}
+    const limit: { context?: number; output?: number; images?: number } = {}
     if (num(form.context) !== undefined) limit.context = num(form.context)
     if (num(form.maxTokens) !== undefined) limit.output = num(form.maxTokens)
+    // Left blank the key is OMITTED, not written as 1 — so the model keeps NO declared cap and the
+    // runner's learned value can still outrank the floor. Writing 1 here would pin it forever.
+    if (num(form.images) !== undefined) limit.images = num(form.images)
     const input = MODALITIES.filter((m) => form[`in${cap(m)}` as "inText" | "inImage" | "inAudio"])
     const output = MODALITIES.filter((m) => form[`out${cap(m)}` as "outText" | "outImage" | "outAudio"])
 
@@ -595,6 +608,9 @@ export const DialogModelConfig: Component<{
           <SettingsListV2>
             {paramRow("context")}
             {paramRow("maxTokens")}
+            {/* Only for a model that declares image input — a picture cap on a text-only model is a
+                row the reader has to read and then dismiss. */}
+            <Show when={form.inImage}>{paramRow("images")}</Show>
             {paramRow("thinkingBudget")}
           </SettingsListV2>
 

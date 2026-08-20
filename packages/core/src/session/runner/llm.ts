@@ -956,10 +956,13 @@ export const layer = Layer.effect(
       // a DECLARED catalog value is the operator's statement and outranks any measurement; the
       // in-process map is this run's own newer knowledge; the persisted value is the last resort.
       const persistedImageLimit = modelRef === undefined ? undefined : yield* models.learnedImageLimit(modelRef)
-      const modelImageLimit =
-        declaredImageLimit ??
-        (learnedKey === undefined ? undefined : discoveredImageLimits.get(learnedKey)) ??
-        persistedImageLimit
+      // Precedence and the one-image floor both live in `resolveImageLimit`, where a test can reach
+      // them — restating the chain inline is how it went uncovered through a change of default.
+      const modelImageLimit = SessionRunnerModel.resolveImageLimit({
+        declared: declaredImageLimit,
+        discovered: learnedKey === undefined ? undefined : discoveredImageLimits.get(learnedKey),
+        persisted: persistedImageLimit,
+      })
       const unreadable = unreadableTurnAttachments(context, modelCapabilities)
       if (unreadable.length > 0) {
         // Name the model the USER picked, not the wire id: `model.id` is the API-side id

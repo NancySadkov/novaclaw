@@ -392,6 +392,25 @@ const withDefaults = (model: ModelV2.Info, route: AnyRoute) => {
  * clamp is to what is reachable, NOT to the default's `context/4`: asking for more thinking than the default
  * is a legitimate choice, asking for more than the model can emit is not.
  */
+/**
+ * How many images ONE request may carry, from every source that could know, in precedence order.
+ *
+ * The floor is LAST on purpose. Owner ruling 2026-08-20: assume a model takes one image unless
+ * something says otherwise, because the two wrong guesses do not cost the same — guessing low costs
+ * extra requests, guessing high costs a 400 and then elides images the model may never have
+ * described. Any higher in this list and the harness would freeze at 1, unable to learn that an
+ * endpoint takes more.
+ *
+ * @param declared   `limit.images` from the catalog — the OPERATOR's statement, so it wins outright.
+ * @param discovered What THIS process learned from the endpoint's own 400 this run.
+ * @param persisted  What a PREVIOUS process learned. Older than `discovered`, so it ranks below it.
+ */
+export const resolveImageLimit = (input: {
+  readonly declared?: number | undefined
+  readonly discovered?: number | undefined
+  readonly persisted?: number | undefined
+}): number => input.declared ?? input.discovered ?? input.persisted ?? ModelV2.DEFAULT_IMAGE_LIMIT
+
 export const defaultThinkingBudget = (configured: number | undefined, context: number, output: number): number => {
   const reachable = output > 0 ? (context > 0 ? Math.min(output, context) : output) : context
   if (configured !== undefined) {
