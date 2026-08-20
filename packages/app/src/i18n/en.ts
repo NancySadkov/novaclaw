@@ -1527,8 +1527,13 @@ export const dict = {
   "settings.project.rulesLabel": "Permission rules",
   "settings.project.rulesValue": "From this folder. They can only narrow your settings, never widen them.",
   "settings.project.fileDetail": "The file that makes this folder a Project.",
-  "settings.project.excludeDetail":
-    "Nova will refuse to open these, and says so instead of pretending they are missing. Two reasons to use it: privacy — keys, credentials and personal files stay out of the model — and focus, since skipping bulky folders leaves more room in Nova's context and makes searches quicker. This is separate from what the file watcher and your build ignore; those are about speed, this is about permission. It matches on paths, so a file that is also reachable under a second name it does not list can still be opened; for a folder you do not trust, use a sandbox rather than this list.",
+  // 576 characters inline until 2026-08-20 — the longest string in the product. The visible line is
+  // the FACT (refused, and said out loud); the why, the distinction from build-ignores, and the
+  // hardlink caveat are on demand. The caveat is kept word for word: principle 13 requires this
+  // surface to promise no more than the mechanism delivers.
+  "settings.project.excludeDetail": "Nova refuses to open these, and says so rather than pretending they are missing.",
+  "settings.project.excludeDetail.more":
+    "Two reasons to use it: privacy — keys, credentials and personal files stay out of the model — and focus, since skipping bulky folders leaves more room in Nova's context and makes searches quicker. This is separate from what the file watcher and your build ignore; those are about speed, this is about permission. It matches on paths, so a file that is also reachable under a second name it does not list can still be opened; for a folder you do not trust, use a sandbox rather than this list.",
   "settings.project.rulesNone": "None — this file changes no permissions",
   "settings.project.excludeNone":
     "Nothing — Nova may read any file in this folder. Add an `exclude` list to novaclaw.json to keep keys, credentials or bulky folders out of its reach.",
@@ -2850,10 +2855,15 @@ export const dict = {
   // ⚠️ These two sentences changed WITH the control below them (principle 12's own lesson from its
   // first sweep). They used to end "editing that file can", because hand-editing novaclaw.json was
   // the only way; "This folder" at the bottom of this section is that edit now.
+  // The visible half is the FACT plus the one control that answers it; the law about what a folder
+  // may and may not do is on demand. Named and unnamed keep their own line because "which file" is
+  // the actionable part — the fix is editing that file.
   "skills.invocation.project.hidden":
-    "This folder keeps this skill out of your slash menu. That comes from the folder's own novaclaw.json rather than from you, so the “Show it for me to run” switch cannot bring it back — the folder switch at the bottom of this section can. Nothing here changes what your agents may do: a folder can take a skill off your menu, and it can never put one back on it.",
+    "This folder keeps this skill out of your slash menu — the folder switch below can bring it back.",
   "skills.invocation.project.hiddenNamed":
-    "This folder keeps this skill out of your slash menu — that is {{file}} talking, not you, so the “Show it for me to run” switch cannot bring it back. The folder switch at the bottom of this section can. Nothing here changes what your agents may do: a folder can take a skill off your menu, and it can never put one back on it.",
+    "{{file}} keeps this skill out of your slash menu — the folder switch below can bring it back.",
+  "skills.invocation.project.detail":
+    "That comes from the folder's own novaclaw.json rather than from you, so the “Show it for me to run” switch cannot bring it back. Nothing here changes what your agents may do: a folder can take a skill off your menu, and it can never put one back on it.",
   // ── The folder control. `apps/project-skills.ts` owns the law these sentences describe. ──
   "skills.invocation.project.hide.label": "Hide it in this folder",
   "skills.invocation.project.hide.help":
@@ -2889,8 +2899,12 @@ export const dict = {
     "This skill's name contains * or ?, which are the “match anything” characters in a permission rule. A rule written for this name would also cover other skills, so NovaClaw refuses to write one.",
   "skills.invocation.locked.unnormalized":
     "This skill's name is spelled with combining accents rather than the ordinary single letters, so two names that look identical would be saved as two different ones. NovaClaw refuses rather than guess which you meant.",
-  "skills.invocation.unknowns":
-    "These switches decide when the skill is offered — they are not a safety verdict. NovaClaw cannot tell you what a skill is allowed to do, whether it fits this version, or who really wrote it: the skill format has nowhere to say any of it. What is above — where the file came from, what it says about itself, and the words in its instructions — is everything NovaClaw actually knows.",
+  // Split 2026-08-20 under uix.md §1.4 (*teach on demand, state on sight*): the line is what is in
+  // force, the caveat is one tap away. It used to be 381 characters of permanent paragraph under a
+  // pair of switches.
+  "skills.invocation.unknowns": "These switches decide when the skill is offered — not whether it is safe.",
+  "skills.invocation.unknowns.detail":
+    "NovaClaw cannot tell you what a skill is allowed to do, whether it fits this version, or who really wrote it: the skill format has nowhere to say any of it. What is above — where the file came from, what it says about itself, and the words in its instructions — is everything NovaClaw actually knows.",
   "skills.invocation.orphans.title": "Saved choices for skills that are not here",
   "skills.invocation.orphans.text":
     "You decided something about these, and NovaClaw no longer finds a skill by that name. They are kept in case the skill comes back — a source can be offline, or a folder temporarily moved.",

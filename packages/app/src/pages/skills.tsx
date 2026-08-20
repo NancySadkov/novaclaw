@@ -15,6 +15,7 @@ import {
   type FolderWritability,
 } from "@/apps/project-skills"
 import { AppPage } from "@/components/app-page"
+import { SettingsExplainV2 } from "@/components/settings-v2/explain"
 import {
   authorText,
   filterViews,
@@ -336,6 +337,11 @@ export function SkillDetail(props: {
                 {props.projectFile
                   ? t("skills.invocation.project.hiddenNamed", { file: props.projectFile })
                   : t("skills.invocation.project.hidden")}
+                {/* The fact and its control stay on the line; the law a folder operates under —
+                    narrow-only, never widen — is behind the disclosure. */}
+                <SettingsExplainV2 label={t("skills.invocation.title")}>
+                  {t("skills.invocation.project.detail")}
+                </SettingsExplainV2>
               </p>
             </Show>
 
@@ -474,8 +480,14 @@ export function SkillDetail(props: {
               </p>
             </Show>
 
+            {/* One line, with the caveat on demand (uix.md §1.4). The sentence still refuses to let a
+                pair of switches imply the page has vetted anything — which is what this paragraph was
+                always for — while the four-clause account of what NovaClaw cannot know is a tap away. */}
             <p class="mt-3 text-[11px] text-v2-text-text-faint" data-slot="skill-invocation-unknowns">
               {t("skills.invocation.unknowns")}
+              <SettingsExplainV2 label={t("skills.invocation.title")}>
+                {t("skills.invocation.unknowns.detail")}
+              </SettingsExplainV2>
             </p>
           </section>
         )}

@@ -8,6 +8,7 @@ import type { ProjectPermissionRule, ProjectState } from "@/utils/project-api"
 import { projectState } from "@/utils/project-api"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
+import { SettingsExplainV2 } from "./explain"
 import { projectSectionCopy } from "./project-copy"
 import { ProjectExcludeSection, ProjectGitignoreImport, ProjectPermissionsSection } from "./project-permissions-section"
 
@@ -192,9 +193,16 @@ export const SettingsProjectSection: Component = () => {
                     <SettingsRowV2
                       title={language.t("settings.project.excludeLabel")}
                       description={
-                        info().exclude.length === 0
-                          ? language.t("settings.project.excludeNone")
-                          : language.t("settings.project.excludeDetail")
+                        info().exclude.length === 0 ? (
+                          language.t("settings.project.excludeNone")
+                        ) : (
+                          <>
+                            {language.t("settings.project.excludeDetail")}
+                            <SettingsExplainV2 label={language.t("settings.project.excludeLabel")}>
+                              {language.t("settings.project.excludeDetail.more")}
+                            </SettingsExplainV2>
+                          </>
+                        )
                       }
                     >
                       <Value>
