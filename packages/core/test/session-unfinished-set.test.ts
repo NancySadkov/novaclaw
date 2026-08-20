@@ -101,3 +101,31 @@ describe("continueMessage", () => {
     expect(message).not.toContain("f19.png")
   })
 })
+
+describe("scale — a set too large to finish", () => {
+  test("400 files: the steer stays SILENT rather than commanding 399 reads", () => {
+    // 🔴 The first version fired here and said "Open each remaining one" with 399 outstanding —
+    // ~400 sequential model turns, off a nudge the user never asked for. Measured against the
+    // owner's own 400-icon folder on 2026-08-20.
+    const available = Array.from({ length: 400 }, (_, i) => `icon_${i}.png`)
+    expect(
+      UnfinishedSet.shouldContinue({
+        asked: true,
+        coverage: { available, opened: ["icon_0.png"] },
+        alreadyNudged: false,
+      }),
+    ).toBe(false)
+  })
+
+  test("the boundary is exact, so a re-pricing is a visible decision", () => {
+    const set = (n: number) => Array.from({ length: n }, (_, i) => `f${i}.png`)
+    const fires = (n: number) =>
+      UnfinishedSet.shouldContinue({
+        asked: true,
+        coverage: { available: set(n), opened: ["f0.png"] },
+        alreadyNudged: false,
+      })
+    expect(fires(UnfinishedSet.MAX_STEERABLE_SET)).toBe(true)
+    expect(fires(UnfinishedSet.MAX_STEERABLE_SET + 1)).toBe(false)
+  })
+})

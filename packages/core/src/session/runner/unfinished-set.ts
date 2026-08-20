@@ -47,6 +47,15 @@ export const asksForSet = (userText: string): boolean => {
   return COLLECTION_CUES.some((cue) => text.includes(cue))
 }
 
+/**
+ * The largest set this steer will try to drive to completion.
+ *
+ * One image per turn is what the per-request cap forces, and a turn is a whole model call — so 25 is
+ * already minutes of work. Beyond it the steer would be issuing an instruction that cannot land in
+ * any reasonable time, which is worse than staying silent.
+ */
+export const MAX_STEERABLE_SET = 25
+
 export interface Coverage {
   /** Files the harness listed for this folder — the set the user could have meant. */
   readonly available: ReadonlyArray<string>
@@ -90,6 +99,14 @@ export const shouldContinue = (input: {
   if (input.alreadyNudged || !input.asked) return false
   if (input.coverage.available.length <= 1) return false
   if (input.coverage.opened.length === 0) return false
+  // 🔴 A set this steer cannot honestly ask a model to FINISH. Measured 2026-08-20 against the
+  // owner's 400-icon folder: the first version fired there and said "Open each remaining one" with
+  // 399 outstanding — an instruction that drives ~400 sequential reads (hours) off a nudge the user
+  // never asked for. One image per turn is the shape the per-request cap forces, so the completable
+  // size is small, and the honest answer above it is silence rather than a command that cannot land.
+  // ⚠️ The right mechanism at that scale is the multi-turn fan-out (`todo/vision.md`), which is not
+  // built. Until it is, this stays quiet rather than pretending.
+  if (input.coverage.available.length > MAX_STEERABLE_SET) return false
   return untouched(input.coverage).length > 0
 }
 
