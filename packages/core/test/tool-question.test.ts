@@ -169,7 +169,11 @@ describe("QuestionTool", () => {
     }),
   )
 
-  it.effect("registers question and projects user answers without a permission assertion", () =>
+  // 🔴 Owner ruling 2026-08-20: "we no longer bother the user". The tool used to call
+  // `question.ask` and BLOCK until someone answered. Measured run 19: the model asked at 21 files of
+  // 400 and the session sat on it for the remaining twenty minutes — the third surface that day whose
+  // failure was a blocking wait for a human in a session that has none.
+  it.effect("answers itself instead of waiting for a person", () =>
     Effect.gen(function* () {
       assertions.length = 0
       captured = undefined
@@ -177,84 +181,70 @@ describe("QuestionTool", () => {
       assertFailure = undefined
       const registry = yield* ToolRegistry.Service
       const questions = [
-        {
-          question: "What should happen?",
-          header: "Action",
-          options: [{ label: "Build", description: "Build it" }],
-        },
-        {
-          question: "Which environment?",
-          header: "Environment",
-          options: [{ label: "Dev", description: "Development" }],
-        },
+        { question: "What should happen?", header: "Action", options: [{ label: "Build", description: "Build it" }] },
       ]
 
-      expect((yield* toolDefinitions(registry)).map((definition) => definition.name)).toEqual(["question"])
-      expect(
-        yield* settleTool(registry, {
-          sessionID,
-          ...toolIdentity,
-          call: { type: "tool-call", id: "call-question", name: "question", input: { questions } },
-        }),
-      ).toEqual({
-        result: {
-          type: "text",
-          value:
-            'User has answered your questions: "What should happen?"="Build", "Which environment?"="Unanswered". You can now continue with the user\'s answers in mind.',
-        },
-        output: {
-          structured: { answers: [["Build"], []] },
-          content: [
-            {
-              type: "text",
-              text: 'User has answered your questions: "What should happen?"="Build", "Which environment?"="Unanswered". You can now continue with the user\'s answers in mind.',
-            },
-          ],
-        },
-      })
-      expect(assertions).toMatchObject([{ sessionID, action: "question", resources: ["*"] }])
-      expect(capturedInput()).toEqual({
+      const settled = yield* settleTool(registry, {
         sessionID,
-        questions,
-        tool: { messageID: toolIdentity.assistantMessageID, callID: "call-question" },
+        ...toolIdentity,
+        call: { type: "tool-call", id: "call-question", name: "question", input: { questions } },
       })
+
+      // ⚠️ Answers stay EMPTY. Putting the guidance in the answer slot would render as
+      // `"What should happen?"="No one is available…"` — i.e. the harness's words attributed to the
+      // owner, which is ruling 2 in the one sentence the model actually reads.
+      expect(settled.output?.structured).toEqual({ answers: [[]] })
+
+      const text = String((settled.result as { value?: string }).value ?? "")
+      expect(text).toContain("No one answered")
+      expect(text).toContain("What should happen?")
+      // The three things the ruling asks for: decide, use your own folder, and surface only a real
+      // blocker (the registry-edit case).
+      expect(text).toContain("Choose the most reasonable option yourself")
+      expect(text).toContain("your own project folder")
+      expect(text).toContain("genuinely cannot be finished")
+      // ⭐ It must NOT claim the user replied.
+      expect(text).not.toContain("User has answered")
     }),
   )
 
-  it.effect("does not invent tool ownership metadata without a durable registry source", () =>
+  it.effect("never registers anything for a human to answer", () =>
     Effect.gen(function* () {
       captured = undefined
       reject = false
       assertFailure = undefined
       const registryService = yield* ToolRegistry.Service
-
       yield* executeTool(registryService, {
         sessionID,
         ...toolIdentity,
         call: { type: "tool-call", id: "call-question", name: "question", input: { questions: [] } },
       })
-      expect(capturedInput()).toEqual({
-        sessionID,
-        questions: [],
-        tool: { messageID: toolIdentity.assistantMessageID, callID: "call-question" },
-      })
+      // 🔴 The pending record is what used to strand the session. Nothing may be left waiting.
+      expect(capturedInput()).toBeUndefined()
     }),
   )
 
-  it.effect("keeps dismissed questions out of model-facing output", () =>
+  it.effect("the permission gate still applies — a denial still refuses the call", () =>
     Effect.gen(function* () {
+      // The ruling removes the WAIT, not the gate. An agent whose ruleset denies `question` still
+      // cannot use it, and the model gets the denial's own text — not a silent success, and not the
+      // new "no one answered" guidance, which would read as though the call had gone through.
       captured = undefined
-      reject = true
-      assertFailure = undefined
-      const registryService = yield* ToolRegistry.Service
-      const fiber = yield* executeTool(registryService, {
+      reject = false
+      const failure = new PermissionV2.DeniedError({
+        rules: [{ action: "question", resource: "*", effect: "deny" }],
+      })
+      assertFailure = failure
+      const registry = yield* ToolRegistry.Service
+
+      const result = yield* executeTool(registry, {
         sessionID,
         ...toolIdentity,
-        call: { type: "tool-call", id: "call-question", name: "question", input: { questions: [] } },
-      }).pipe(Effect.forkScoped)
-
-      const exit = yield* Fiber.await(fiber)
-      expect(Exit.isFailure(exit)).toBe(true)
+        call: { type: "tool-call", id: "call-question-denied", name: "question", input: { questions: [] } },
+      })
+      expect(result).toEqual({ type: "error", value: PermissionV2.denialMessage(failure) })
+      expect(capturedInput()).toBeUndefined()
+      assertFailure = undefined
     }),
   )
 })

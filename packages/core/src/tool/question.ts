@@ -41,6 +41,18 @@ export const toModelOutput = (
         `"${question.question}"="${answers[index]?.length ? answers[index].join(", ") : "Unanswered"}"`,
     )
     .join(", ")
+  // ⚠️ When NOTHING was answered, saying "User has answered your questions" attributes the harness's
+  // own words to the owner — ruling 2, in the one sentence the model actually reads. Since the tool
+  // stopped waiting for a person (owner 2026-08-20), that is now the common case, and it has to say
+  // so plainly rather than render empty answers as if they were replies.
+  if (questions.length > 0 && answers.every((answer) => !answer?.length))
+    return (
+      `No one answered — this session runs without a person watching, and waiting would stall it. ` +
+      `You asked: ${questions.map((question) => `"${question.question}"`).join(", ")}. ` +
+      `Choose the most reasonable option yourself and carry on, saying which you chose. Put any notes, ` +
+      `drafts or working files in your own project folder, which needs no permission. Only if the task ` +
+      `genuinely cannot be finished without an answer, stop and name what you needed.`
+    )
   return `User has answered your questions: ${formatted}. You can now continue with the user's answers in mind.`
 }
 
@@ -52,6 +64,11 @@ export const layer = Layer.effectDiscard(
 
     yield* tools
       .register({
+        // What the model is told instead of an answer. Three things, in the order it needs them:
+        // nobody is coming, decide anyway, and where to put working files — the owner's "use scratch
+        // for such menial tasks". The last clause is the escape for the case the ruling carves out:
+        // a task that genuinely cannot proceed (editing the registry, say) should END with the
+        // blocker named, not loop asking.
         [name]: Tool.make({
           description,
           input: Input,
@@ -86,16 +103,23 @@ export const layer = Layer.effectDiscard(
                   if (denial) return new ToolFailure({ message: denial })
                   return new ToolFailure({ message: "Unable to ask the user" })
                 }),
-                Effect.andThen(
-                  question
-                    .ask({
-                      sessionID: context.sessionID,
-                      questions: input.questions,
-                      tool: { messageID: context.assistantMessageID, callID: context.toolCallID },
-                    })
-                    .pipe(Effect.orDie),
-                ),
-                Effect.map((answers) => ({ answers })),
+                // 🔴 NO LONGER WAITS FOR A PERSON (owner, 2026-08-20: "we no longer bother the
+                // user"). This used to call `question.ask` and block until someone answered. Measured
+                // run 19: the model asked at 21 files of 400 and the session sat on it for the
+                // remaining twenty minutes — the third surface today whose failure is a blocking wait
+                // for a human in a session that has none.
+                //
+                // The question itself is not lost: this tool call and its text are already in the
+                // transcript, so anyone reading the session sees what the model wanted to ask. What is
+                // gone is the stall.
+                //
+                // ⚠️ No timeout, deliberately. A bounded wait was tried earlier the same day and
+                // wedged `permission.test.ts` — the timer fiber outlived the test body. An immediate
+                // answer has no timer and no race.
+                // Empty answers, because nothing WAS answered. `toModelOutput` turns that into a
+                // sentence saying so and telling the model to decide — putting the guidance in the
+                // answer slot would have rendered as "User has answered … = <our text>".
+                Effect.map(() => ({ answers: input.questions.map(() => []) })),
               ),
         }),
       })
