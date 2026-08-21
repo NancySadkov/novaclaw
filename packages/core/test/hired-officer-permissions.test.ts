@@ -81,10 +81,11 @@ describe("a colleague the user hired", () => {
       // ambient-safe: the membership of that baseline is not this file's claim, and a hand-copied
       // list would go stale the day it changes.
       //
-      // Two deliberate differences are excluded: `colleague` (an officer may address peers, `build`
-      // may not — its own test below) and `plan_enter` (a colleague that switched the user's mode
-      // under them would be a surprise; the person has a mode picker, and `build` is the agent that
-      // picker drives).
+      // Three deliberate differences are excluded: `colleague` (an officer may address peers, `build`
+      // may not — its own test below), `plan_enter` (a colleague that switched the user's mode under
+      // them would be a surprise; the person has a mode picker, and `build` is the agent that picker
+      // drives), and `question` — denied for officers under principle 14, *the chat IS the channel*,
+      // while `build` keeps a grant for an action whose tool no longer exists.
       for (const action of [
         "read",
         "explore",
@@ -93,7 +94,6 @@ describe("a colleague the user hired", () => {
         "webfetch",
         "js",
         "kb",
-        "question",
         "external_directory_write",
       ])
         expect({ action, hired: effectFor(hired, action) }).toEqual({ action, hired: effectFor(builtin, action) })
@@ -115,6 +115,9 @@ describe("a colleague the user hired", () => {
       // Inheriting a baseline must not become inheriting a catch-all: hiring a colleague cannot be a
       // privilege-escalation move, so the floor's own denies have to survive the copy.
       expect(effectFor(roster.get("theron")!, "plan_enter")).toBe("deny")
+      // Principle 14: a colleague that needs a decision says so in its REPLY. It never opens a side
+      // channel and waits — so the action stays denied even for the agents a person chats with.
+      expect(effectFor(roster.get("theron")!, "question")).toBe("deny")
       expect(PermissionV2.catchAllAllowRules(roster.get("theron")!)).toEqual([])
     }),
   )

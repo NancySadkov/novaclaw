@@ -86,8 +86,19 @@ describe("SessionOrigin.badge (transcript sender chip)", () => {
       detail: "Support",
       tone: "client",
     })
+    // ⚠️ The agent chip carries a VERB as well as a name, changed 2026-08-21 (owner: *"the user who
+    // reads the chat should clearly see that the agent got distracted and answered another agent"*).
+    // A bare `plan` reads as a person writing in — the same shape as the user's own messages — and the
+    // fact a reader needs is that this turn was not theirs. `colleague-tool.test.ts` covers the peer
+    // half and the nameless fallbacks; this one keeps the chip's SHAPE honest beside the messenger
+    // cases, which is what this file is for.
     expect(SessionOrigin.badge({ via: "agent", sessionID: "ses_x", label: "plan" })).toEqual({
-      label: "plan",
+      label: "plan delegated",
+      detail: "ses_x",
+      tone: "agent",
+    })
+    expect(SessionOrigin.badge({ via: "agent", sessionID: "ses_x", label: "aris", relation: "peer" })).toEqual({
+      label: "aris asked",
       detail: "ses_x",
       tone: "agent",
     })

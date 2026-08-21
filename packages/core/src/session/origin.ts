@@ -148,7 +148,17 @@ export const badge = (origin: Origin | undefined): Badge | undefined => {
   if (origin === undefined) return undefined
   if (origin.via === "agent")
     return {
-      label: origin.label ?? (origin.relation === "peer" ? "colleague" : "parent agent"),
+      // 🔴 The RELATIONSHIP is in the label, not just the name (owner, 2026-08-21: *"the user who
+      // reads the chat should clearly see that the agent got distracted and answered another
+      // agent"*). A bare `doriel` reads as a person writing in — the same shape as the user's own
+      // messages — and the one fact a reader needs is that this turn was NOT theirs. `Nova asked`
+      // and `Nova delegated` say who and in what capacity, in the width a badge has.
+      label:
+        origin.label === undefined
+          ? origin.relation === "peer"
+            ? "a colleague asked"
+            : "a parent agent delegated"
+          : `${origin.label} ${origin.relation === "peer" ? "asked" : "delegated"}`,
       detail: origin.sessionID,
       tone: "agent",
     }

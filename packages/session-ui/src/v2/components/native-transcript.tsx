@@ -30,6 +30,7 @@ import { SessionOrigin } from "@novaclaw/core/session/origin"
 import { isOptimistic, unqueuedPending } from "../message-fold"
 import { answerStart, groupTurns, stableGroups, type TurnGroup } from "../turn-group"
 import { reasoningTokenLabel } from "./reasoning-count"
+import { colleagueRow } from "./colleague-row"
 import { Markdown } from "../../components/markdown"
 import { reasoningOpenDefault, toolOpenDefault, type ReasoningFoldMode } from "../reasoning-fold"
 import { turnOutcome } from "./turn-receipt"
@@ -1056,7 +1057,7 @@ interface ToolMeta {
   args?: string[]
 }
 
-/** Per-tool label/subtitle/args, ported from the V1 `getToolInfo` switch. */
+/** Per-tool label/subtitle/args, ported from the V1 `getToolInfo` switch.*/
 function toolMeta(part: SessionMessageAssistantTool): ToolMeta {
   const input = toolInput(part.state)
   switch (part.name) {
@@ -1101,6 +1102,10 @@ function toolMeta(part: SessionMessageAssistantTool): ToolMeta {
     }
     case "question":
       return { title: "Question" }
+    // The agent turning aside to talk to ANOTHER agent — see `colleague-row.ts`, which holds the
+    // rule and the test that runs it (this file cannot be imported by `bun test`).
+    case "colleague":
+      return colleagueRow(input)
     case "skill":
       return { title: str(input.name) ?? "Skill" }
     default:

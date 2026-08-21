@@ -1,4 +1,8 @@
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
+import path from "node:path"
+import { fileURLToPath } from "node:url"
+import { ColleagueNote } from "@novaclaw/core/session/colleague-note"
 import { ColleagueTool } from "@novaclaw/core/tool/colleague"
 import { SessionOrigin } from "@novaclaw/core/session/origin"
 import type { AgentV2 } from "@novaclaw/core/agent"
@@ -80,11 +84,97 @@ describe("what the receiver is told about who is asking", () => {
     expect(header).toContain("delegated task")
   })
 
-  test("the transcript badge names the relationship too", () => {
-    expect(SessionOrigin.badge({ via: "agent", sessionID: "ses_1", relation: "peer" })).toMatchObject({
-      label: "colleague",
+  test("the transcript badge names WHO and in what capacity", () => {
+    // 🔴 Owner, 2026-08-21: *"the user who reads the chat should clearly see that the agent got
+    // distracted and answered another agent"*. A bare name reads as a person writing in — the same
+    // shape as the user's own messages — and the one fact a reader needs is that this turn was not
+    // theirs. So the VERB is in the badge, not only the name.
+    expect(SessionOrigin.badge({ via: "agent", sessionID: "ses_1", relation: "peer", label: "doriel" })).toMatchObject({
+      label: "doriel asked",
       tone: "agent",
     })
-    expect(SessionOrigin.badge({ via: "agent", sessionID: "ses_1" })).toMatchObject({ label: "parent agent" })
+    expect(SessionOrigin.badge({ via: "agent", sessionID: "ses_1", label: "nova" })).toMatchObject({
+      label: "nova delegated",
+    })
+    // Nameless is still legible: a colleague whose label never made it through is not "unknown".
+    expect(SessionOrigin.badge({ via: "agent", sessionID: "ses_1", relation: "peer" })).toMatchObject({
+      label: "a colleague asked",
+      tone: "agent",
+    })
+    expect(SessionOrigin.badge({ via: "agent", sessionID: "ses_1" })).toMatchObject({
+      label: "a parent agent delegated",
+    })
+  })
+})
+
+// What the SENDER is told after a hand-off lands (`tool/colleague.ts`, the `ask` branch).
+//
+// 🔴 Measured on a live officer-to-officer hand-off 2026-08-21: told only that the colleague "answers
+// there, in their own time", the sender told the USER *"Once they respond in their chat, I'll relay
+// the answer to you"* — and at that moment nothing could deliver it. A tool result has to rule out
+// the inference it does not support, not merely avoid asserting it.
+//
+// The route back exists now — the delivered message carries a return address
+// (`session/colleague-note.ts`) — so the sentence has to do two jobs at once: promise the answer
+// WILL come here, and forbid waiting for it. A turn that stalls on a peer is the defect principle 14
+// forbids, and two officers stalling on each other is that defect twice.
+//
+// ⚠️ A source ledger, and it has to be: the behaviour it guards is a model's inference, which no
+// deterministic test can assert. What CAN be checked is that both halves of the sentence survive the
+// next edit — and "do not wait" is exactly what an editor trims as redundant.
+describe("the hand-off result promises the answer AND forbids waiting", () => {
+  const source = readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "tool", "colleague.ts"),
+    "utf8",
+  )
+
+  test("both delivery outcomes say the answer comes back here", () => {
+    // Two arms — started and dormant — and a model that only ever reads one of them.
+    expect((source.match(/arrive HERE|arrive here/g) ?? []).length).toBe(2)
+  })
+
+  test("and both forbid waiting for it", () => {
+    expect((source.match(/[Dd]o (?:NOT|not) wait/g) ?? []).length).toBe(2)
+  })
+
+  test("NEGATIVE CONTROL: the reader would notice if the sentences went away", () => {
+    expect(/arrive HERE/.test("Left it with theron. Their answer will arrive HERE as a message.")).toBe(true)
+    expect(/arrive HERE|arrive here/.test("Left it with theron, in their own chat.")).toBe(false)
+  })
+})
+
+// The RETURN ADDRESS the receiver gets (`session/colleague-note.ts`).
+describe("a delivered peer message says how to answer it", () => {
+  test("a question names the tool, the op and the recipient", () => {
+    const note = ColleagueNote.compose({ message: "Where is the ledger?", from: "doriel", turn: "ask" })
+    expect(note).toContain("Where is the ledger?")
+    // All three, because a model told only "you may reply" has to guess the shape of the call.
+    expect(note).toContain("`colleague`")
+    expect(note).toContain('op "ask"')
+    expect(note).toContain('colleague "doriel"')
+    // …and that nobody is blocked on it: principle 14 is structural, so the note must not read as a
+    // summons the receiver has to drop everything for.
+    expect(note).toContain("not waiting")
+  })
+
+  test("an ANSWER stops the exchange instead of inviting another", () => {
+    // The bound. Two symmetric notes would keep two colleagues talking to each other for as long as
+    // the budget lasts, paid for by the user.
+    const note = ColleagueNote.compose({ message: "Behind the clock.", from: "aris", turn: "answer" })
+    expect(note).toContain("ANSWER")
+    expect(note).toContain("Nothing further is expected")
+    expect(note).not.toContain('op "ask", colleague "aris"')
+  })
+
+  test("the turn is decided by who spoke last, not by the caller", () => {
+    expect(ColleagueNote.turnFor({ askedByRecipient: true })).toBe("answer")
+    expect(ColleagueNote.turnFor({ askedByRecipient: false })).toBe("ask")
+  })
+
+  test("the colleague's own words come FIRST — the note is an appendix, not a preamble", () => {
+    // A note that led would push the actual message below the fold of a model's attention, and the
+    // message is the point.
+    const note = ColleagueNote.compose({ message: "Two shillings.", from: "aris", turn: "ask" })
+    expect(note.indexOf("Two shillings.")).toBe(0)
   })
 })

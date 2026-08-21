@@ -159,10 +159,15 @@ export const floor = (input: { readonly scratchDirs: readonly string[]; readonly
     { action: "external_directory_read", resource, effect: "allow" },
     { action: "external_directory_write", resource, effect: "allow" },
   ]),
-  // An OFFICER may ask the person a question, exactly as `build` does — it is an agent a human
-  // chats with, and a colleague that cannot ask "which invoice did you mean?" has to guess instead.
-  // The machinery agents (title, summary, compaction) stay denied: nobody is watching them.
-  { action: "question", resource: "*", effect: input.officer ? "allow" : "deny" },
+  // ⚠️ DENIED for everyone, officers included — and this reverses a grant made earlier the same day.
+  //
+  // The reasoning behind that grant was "a colleague that cannot ask *which invoice did you mean?*
+  // has to guess", which is precisely the shape principle 14 rejects: **the chat IS the channel**. A
+  // model that needs a decision ends its turn and says so in its reply, where asking costs nothing,
+  // works in every client and cannot strand a session. There is no `question` TOOL in the tree any
+  // more (`bf39088eb` retired ASK as an outcome and took it off the horizon), so the grant was also
+  // dead weight — but the reason it stays denied is the principle, not the absence.
+  { action: "question", resource: "*", effect: "deny" },
   // DENIED unless this is an officer, which is what keeps the hand-off tool OFF the horizon for
   // agents that may not use it — `ToolRegistry.materialize` withdraws a wholly-denied tool rather
   // than advertising it and refusing. Measured 2026-08-21: resident tool schemas were 32,822 bytes

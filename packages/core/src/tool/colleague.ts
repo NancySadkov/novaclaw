@@ -260,14 +260,24 @@ export const layer = Layer.effectDiscard(
 
               return {
                 ok: true,
+                // 🔴 What the sender may promise, and what it may not.
+                //
+                // Measured on a live officer-to-officer hand-off 2026-08-21: told only that the
+                // colleague "answers there, in their own time", the sender told the USER *"Once they
+                // respond in their chat, I'll relay the answer to you"* — and at that point nothing
+                // could deliver it. The route back exists now (`colleague-note.ts` rides a return
+                // address in with the message), so the honest sentence is neither the old promise nor
+                // the flat denial that replaced it: the answer arrives HERE, LATER, as a message from
+                // them, and this turn must not wait for it.
                 message: outcome.started
-                  ? `Left it with ${target}, in their own chat, and they have started on it. They answer there, in ` +
-                    `their own time — this does not wait for them, so finish what you can and tell the user who ` +
-                    `has it.`
+                  ? `Left it with ${target}, in their own chat, and they have started on it. Their answer will ` +
+                    `arrive HERE as a message from them — later, in their own time. Do NOT wait for it and do not ` +
+                    `stall this turn: finish what you can do yourself and tell the user who has the rest.`
                   : // Durable but dormant, and SAID so: nothing is running their chat, so a caller
                     // reporting "handed over" would promise a reply nobody is going to write.
-                    `Left it with ${target}, but nothing is running their chat right now, so it will wait until ` +
-                    `someone opens it. Tell the user it is queued rather than under way.`,
+                    `Left it with ${target}, but nothing is running their chat right now, so it waits until someone ` +
+                    `opens it. Their answer will arrive here if and when they write it. Tell the user it is queued ` +
+                    `with that colleague rather than under way, and do not wait for it.`,
               } satisfies Output
             }).pipe(
               Effect.mapError((error) => {

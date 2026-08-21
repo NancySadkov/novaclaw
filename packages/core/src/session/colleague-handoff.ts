@@ -1,5 +1,6 @@
 export * as ColleagueHandoff from "./colleague-handoff"
 
+import { and, desc, eq } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
 import { AgentConfigStore } from "../agent-config-store"
 import { AgentRetire } from "../agent/retire"
@@ -9,7 +10,9 @@ import { Database } from "../database/database"
 import { EventV2 } from "../event"
 import { Memory } from "../kb-graph/memory"
 import { makeLocationNode } from "../effect/app-node"
+import { ColleagueNote } from "./colleague-note"
 import { RosterChat } from "./roster-chat"
+import { SessionMessageTable } from "./sql"
 import { SessionInput } from "./input"
 import { SessionMessage } from "./message"
 import { SessionRunCoordinator } from "./run-coordinator"
@@ -30,6 +33,42 @@ import { SessionStore } from "./store"
 // So this module holds the DELIVERY, and the two callers reach it differently: the tool inside a
 // worker goes over `colleague-ask`, while a host-side caller (or a session running in-process) calls
 // it directly. One implementation either way — the split is transport, never behaviour.
+
+/**
+ * Which colleague last wrote INTO this chat as a peer, if any.
+ *
+ * ⚠️ Reads the transcript, because the transcript is the record. The alternative — a "pending reply"
+ * row keyed on a pair of sessions — is exactly the sideband the owner ruled out (2026-08-21: one chat
+ * stream per agent, never several, so an agent's memory of a conversation is not split across places
+ * that can disagree). It also cannot go stale: a message that is in the stream happened.
+ *
+ * `undefined` when nothing peer-shaped has arrived, which is the ordinary case for a first hand-off.
+ */
+const lastPeerLabel = (db: Database.Interface["db"], session: SessionSchema.ID): Effect.Effect<string | undefined> =>
+  db
+    .select({ data: SessionMessageTable.data })
+    .from(SessionMessageTable)
+    .where(and(eq(SessionMessageTable.session_id, session), eq(SessionMessageTable.type, "user")))
+    .orderBy(desc(SessionMessageTable.seq))
+    .limit(PEER_LOOKBACK)
+    .all()
+    .pipe(
+      Effect.map((rows) => {
+        for (const row of rows) {
+          const origin = (row.data as { readonly origin?: { readonly via?: string; readonly label?: string } })?.origin
+          // The FIRST peer message walking backwards wins, and the user's own messages in between are
+          // skipped rather than ending the search: a person interjecting in the middle of a colleague
+          // exchange does not make the colleague's question stop being unanswered.
+          if (origin?.via === "agent" && typeof origin.label === "string") return origin.label
+        }
+        return undefined
+      }),
+      Effect.orDie,
+    )
+
+/** How far back to look for the last peer message. Bounded so a long chat costs a fixed read; past
+ *  this many of the sender's own turns, an exchange is not one round trip any more. */
+const PEER_LOOKBACK = 12
 
 export interface Delivery {
   /** False when that colleague has no open chat to leave this in — a fact, not a failure. */
@@ -138,11 +177,27 @@ export const fromParts = (input: {
     // would make the attribution worthless.
     const sender = yield* input.session(request.from)
     const label = sender?.agent
+    // ANSWER or QUESTION, read from the SENDER'S OWN CHAT rather than from a flag the caller sets or
+    // a side table: if the last peer message that arrived in the sender's stream came from the
+    // colleague it is now writing to, this is the reply to it. One stream is the record (owner,
+    // 2026-08-21: everything goes through the normal chat, never a sideband), so the stream is also
+    // where the question "who spoke last?" is answered.
+    const askedByRecipient = yield* lastPeerLabel(input.db, request.from).pipe(
+      Effect.map((last) => last === request.colleague),
+    )
+    const turn = ColleagueNote.turnFor({ askedByRecipient })
     yield* SessionInput.admit(input.db, input.events, {
       id: SessionMessage.ID.create(),
       sessionID: chat.id as SessionSchema.ID,
       prompt: {
-        text: request.message,
+        // The colleague's words, plus HOW TO ANSWER — the note is the entire reply channel, and an
+        // answer's note differs from a question's so the exchange stops at one round trip
+        // (`colleague-note.ts` holds the argument).
+        text: ColleagueNote.compose({
+          message: request.message,
+          from: label ?? String(request.from),
+          turn,
+        }),
         files: [],
         agents: [],
         // PEER, not parent — `session/origin.ts` renders the two differently, and the difference is
