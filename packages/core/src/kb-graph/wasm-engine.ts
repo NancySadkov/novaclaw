@@ -590,17 +590,23 @@ export class WasmMemory {
     const ordered = [...ranks.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id)
     const scopeFilter = input.scopes ? `AND m.scope IN $scopes` : ``
     const kindFilter = input.kinds ? `AND m.kind IN $kinds` : ``
-    const props = await this.rows(
+    // The filter pass carries NO long string: the ranked ids are checked for validity, scope and kind
+    // here, and the bodies come back by primary key below (`hydrate` holds the why). Keeping `text`
+    // in this projection is what made every hit render blank.
+    const allowed = await this.rows(
       `MATCH (m:Memory) WHERE m.id IN $ids AND m.t_invalid IS NULL ${scopeFilter} ${kindFilter}
-       RETURN m.id AS id, m.kind AS kind, m.text AS text, m.name AS name, m.scope AS scope,
-              m.source AS source, m.confidence AS confidence, m.relation AS relation,
-              m.t_valid AS validAt`,
+       RETURN m.id AS id, m.t_valid AS validAt`,
       {
         ids: ordered,
         ...(input.scopes ? { scopes: input.scopes } : {}),
         ...(input.kinds ? { kinds: input.kinds } : {}),
       },
     )
+    const validAtOf = new Map(allowed.map((row) => [String(row.id), row.validAt]))
+    // Only as many as the caller asked for — hydration costs one lookup per row, so the `k` cut moves
+    // ahead of it rather than after it.
+    const wanted = ordered.filter((id) => validAtOf.has(id)).slice(0, k)
+    const props = await this.hydrate(wanted)
     const byId = new Map(props.map((p) => [String(p.id), p]))
     const hits: SearchHit[] = []
     for (const id of ordered) {
@@ -619,7 +625,7 @@ export class WasmMemory {
         // VALID time (when the fact became true — e.g. the date of the statement), not ingestion time:
         // the recency signal a ranker should weigh. Optional — an engine row predating this projection
         // simply has none, and the ranker treats a missing time as neutral.
-        ...(isoTime(p.validAt) === undefined ? {} : { validAt: isoTime(p.validAt)! }),
+        ...(isoTime(validAtOf.get(id)) === undefined ? {} : { validAt: isoTime(validAtOf.get(id))! }),
       })
       if (hits.length >= k) break
     }
@@ -635,10 +641,12 @@ export class WasmMemory {
       const rows = await this.rows(
         `MATCH (m:Memory {id: $id})-[r:Rel]->(n:Memory)
          WHERE r.t_invalid IS NULL AND n.t_invalid IS NULL ${scopeFilter}
-         RETURN n.id AS id, r.type AS type, n.text AS text LIMIT ${opts.k ?? 25}`,
+         RETURN n.id AS id, r.type AS type LIMIT ${opts.k ?? 25}`,
         { id, ...(opts.scopes ? { scopes: opts.scopes } : {}) },
       )
-      return rows.map((r) => ({ id: String(r.id), type: String(r.type), text: String(r.text ?? "") }))
+      // Same rule as `list`: the traversal picks the neighbours, the bodies come back by key.
+      const bodies = new Map((await this.hydrate(rows.map((r) => String(r.id)))).map((row) => [row.id, row.text]))
+      return rows.map((r) => ({ id: String(r.id), type: String(r.type), text: bodies.get(String(r.id)) ?? "" }))
     })
   }
 
@@ -690,6 +698,42 @@ export class WasmMemory {
 
   /** Enumerate memories (for the viewer/editor), newest first, filterable by scope/kind/validity and
    *  paginated. Unlike `search` this needs no query — it's the "show me everything" list. */
+  /**
+   * Fetch full rows for ids the caller already selected — BY PRIMARY KEY, one at a time.
+   *
+   * 🔴 **A table scan on this engine can return an empty string for `text` while the row is intact.**
+   * Measured on the owner's store 2026-08-21: a scan found text on 64 of 745 rows, and **40 of 40**
+   * rows it reported as empty came back complete through `MATCH (m:Memory {id: $id})`. New writes
+   * enter that state about a second after they are stored (the snapshot debounce); a from-scratch
+   * store does not reproduce it at 100 rows × 20 KB. Ids, kinds and scopes survive scans — only the
+   * long string comes back blank — so the selection can stay a scan and only the bodies move.
+   *
+   * ⚠️ Per id, deliberately. `WHERE m.id IN $ids` HANGS on that store, pinning gigabytes before it is
+   * killed, and so does `WITH m ORDER BY … RETURN …`. A page of single-key lookups is the shape that
+   * works.
+   *
+   * A row that has vanished between the scan and the hydration is skipped rather than faked: the
+   * caller asked what is there now.
+   *
+   * **Cost, measured on that store (745 rows):** a 25-row page 319 ms, 100 rows 478 ms, a full
+   * 200-row page 756 ms — ~4 ms/row amortised, and it replaces one scan that returned nothing worth
+   * showing. `search` hydrates only `k` rows (10 by default), so per-turn recall pays ~50 ms.
+   */
+  private async hydrate(ids: readonly string[]): Promise<MemoryRow[]> {
+    const out: MemoryRow[] = []
+    for (const id of ids) {
+      const rows = await this.rows(
+        `MATCH (m:Memory {id: $id})
+         RETURN m.id AS id, m.kind AS kind, m.text AS text, m.name AS name, m.scope AS scope,
+                m.source AS source, m.confidence AS confidence, m.relation AS relation`,
+        { id },
+      )
+      const row = rows[0]
+      if (row) out.push(toRow(row))
+    }
+    return out
+  }
+
   list(opts: ListInput = {}): Promise<MemoryRow[]> {
     return this.serialize(async () => {
       const validity = opts.includeInvalid ? `` : `AND m.t_invalid IS NULL`
@@ -697,17 +741,18 @@ export class WasmMemory {
       const kindFilter = opts.kinds ? `AND m.kind IN $kinds` : ``
       const limit = Math.max(1, Math.min(opts.limit ?? 200, 2000))
       const offset = Math.max(0, opts.offset ?? 0)
-      const rows = await this.rows(
+      // Select ids with the scan (ordering and pagination unchanged), then hydrate by key — see
+      // `hydrate`. The projection here carries no long string, which is the column a scan loses.
+      const selected = await this.rows(
         `MATCH (m:Memory) WHERE true ${validity} ${scopeFilter} ${kindFilter}
-         RETURN m.id AS id, m.kind AS kind, m.text AS text, m.name AS name, m.scope AS scope,
-                m.source AS source, m.confidence AS confidence, m.relation AS relation
+         RETURN m.id AS id
          ORDER BY m.t_created DESC SKIP ${offset} LIMIT ${limit}`,
         {
           ...(opts.scopes ? { scopes: opts.scopes } : {}),
           ...(opts.kinds ? { kinds: opts.kinds } : {}),
         },
       )
-      return rows.map(toRow)
+      return this.hydrate(selected.map((row) => String(row.id)))
     })
   }
 
@@ -716,14 +761,13 @@ export class WasmMemory {
     return this.serialize(async () => {
       const scopeFilter = opts.scopes ? `AND m.scope IN $scopes` : ``
       const limit = Math.max(1, Math.min(opts.limit ?? 500, 5000))
-      const nodeRows = await this.rows(
+      const selected = await this.rows(
         `MATCH (m:Memory) WHERE m.t_invalid IS NULL ${scopeFilter}
-         RETURN m.id AS id, m.kind AS kind, m.text AS text, m.name AS name, m.scope AS scope,
-                m.source AS source, m.confidence AS confidence, m.relation AS relation
+         RETURN m.id AS id
          ORDER BY m.t_created DESC LIMIT ${limit}`,
         { ...(opts.scopes ? { scopes: opts.scopes } : {}) },
       )
-      const nodes = nodeRows.map(toRow)
+      const nodes = await this.hydrate(selected.map((row) => String(row.id)))
       const ids = new Set(nodes.map((n) => n.id))
       // Edges among the returned nodes only (so the client never gets a dangling endpoint).
       const edgeRows = await this.rows(
