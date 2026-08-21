@@ -61,6 +61,20 @@ export const Origin = Schema.Union([
     via: Schema.Literal("agent"),
     sessionID: Schema.String,
     label: Schema.String.pipe(optional),
+    /**
+     * HOW the sender stands to the receiver (AGENTS.md — the structural metaphor).
+     *
+     * 🔴 `parent` is a delegation: a sub-agent's work was assigned to it, and its own turn ends by
+     * handing a result back up. `peer` is a colleague asking a colleague — nobody is above anybody,
+     * and the receiver answers in its own chat on its own terms. The distinction is not cosmetic:
+     * the rendered header tells the receiving MODEL which it is, and this attribution is durable in
+     * the transcript. Calling a peer a parent teaches the receiver that the sender outranks it —
+     * the same class of misattribution `compaction.ts`'s STEER_LABEL exists to prevent.
+     *
+     * Absent means `parent`, which is what every writer meant before officers could talk to each
+     * other.
+     */
+    relation: Schema.Literals(["parent", "peer"]).pipe(optional),
   }),
   Schema.Struct({
     via: Schema.Literal("messenger"),

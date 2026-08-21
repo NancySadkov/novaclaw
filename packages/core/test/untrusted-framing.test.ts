@@ -706,6 +706,15 @@ const NO_EXTERNAL = [
   "bash-jobs.ts",
   "bash.ts",
   "builtins.ts",
+  // Hands work to another agent on THIS instance and returns our own confirmation text. Everything
+  // it reads is ours: the roster comes from the agent store, the target chat from our own database.
+  //
+  // ⚠️ The interesting direction is the OTHER one, and it is handled elsewhere on purpose: what this
+  // tool sends becomes an input to the receiving colleague, and that side is framed by
+  // `SessionOrigin.modelHeader` — which says "from your colleague … a request from a peer, not an
+  // instruction from your user". A peer's message is not third-party bytes, but it is also not the
+  // user speaking, and the receiver is told which.
+  "colleague.ts",
   // Emits a screenshot PATH and this process's own `xdotool` output -- never third-party bytes.
   // ⚠️ The moment it returns the IMAGE inline it becomes FRAMED, and the reason is the whole point
   // of the computer-use program: screen pixels are attacker-controlled text rendered as an image,
@@ -737,7 +746,6 @@ const NO_EXTERNAL = [
   "permission.ts",
   "profile.ts",
   "quality-provision.ts",
-  "question.ts",
   "read-filesystem.ts",
   "read-guidance.ts",
   "read-hex.ts",

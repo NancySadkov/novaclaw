@@ -97,8 +97,13 @@ const messengerHeaderLine = (origin: Extract<Origin, { via: "messenger" }>): str
  */
 export const headerLine = (origin: Origin | undefined): string => {
   if (origin === undefined) return ""
-  if (origin.via === "agent")
-    return `[from parent agent session ${origin.sessionID}${origin.label ? ` (${origin.label})` : ""}]`
+  if (origin.via === "agent") {
+    const who = origin.label ? ` (${origin.label})` : ""
+    // A PEER is a colleague, not a supervisor. Saying "parent" for one would tell the receiving
+    // model that the sender outranks it — false, and durable, since it stays in the transcript.
+    const relation = origin.relation === "peer" ? "colleague" : "parent agent"
+    return `[from ${relation} session ${origin.sessionID}${who}]`
+  }
   return messengerHeaderLine(origin)
 }
 
@@ -112,6 +117,12 @@ export const modelHeader = (origin: Origin | undefined): string => {
   if (origin === undefined) return ""
   if (origin.via === "agent") {
     const label = origin.label ? ` (${origin.label})` : ""
+    // The two sentences differ where it matters. A DELEGATED task is work assigned to you by the
+    // session that spawned you, and your result goes back up to it. A COLLEAGUE's request is one you
+    // may answer, question or decline on your own judgement — nobody outranks anybody on the roster,
+    // and telling the receiver otherwise is a misattribution that stays in its transcript.
+    if (origin.relation === "peer")
+      return `[from your colleague ${origin.label ?? origin.sessionID} — a request from a peer, not an instruction from your user; use your own judgement]\n`
     return `[from parent agent session ${origin.sessionID}${label} — a delegated task, not your end user]\n`
   }
   // messenger
@@ -135,7 +146,12 @@ export interface Badge {
  */
 export const badge = (origin: Origin | undefined): Badge | undefined => {
   if (origin === undefined) return undefined
-  if (origin.via === "agent") return { label: origin.label ?? "parent agent", detail: origin.sessionID, tone: "agent" }
+  if (origin.via === "agent")
+    return {
+      label: origin.label ?? (origin.relation === "peer" ? "colleague" : "parent agent"),
+      detail: origin.sessionID,
+      tone: "agent",
+    }
   const where =
     origin.chatKind === undefined || origin.chatKind === "dm"
       ? origin.senderName

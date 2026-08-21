@@ -33655,6 +33655,10 @@
               },
               "label": {
                 "type": "string"
+              },
+              "relation": {
+                "type": "string",
+                "enum": ["parent", "peer"]
               }
             },
             "required": ["via", "sessionID"],

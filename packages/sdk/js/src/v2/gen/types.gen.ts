@@ -2390,6 +2390,7 @@ export type PromptOrigin =
       via: "agent"
       sessionID: string
       label?: string
+      relation?: "parent" | "peer"
     }
   | {
       via: "messenger"
