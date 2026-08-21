@@ -6,6 +6,9 @@ import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
 import { ConfigCommand } from "@novaclaw/core/config/command"
 import { ConfigReference } from "@novaclaw/core/config/reference"
 import { Database } from "@novaclaw/core/database/database"
+import { EventV2 } from "@novaclaw/core/event"
+import { Memory } from "@novaclaw/core/kb-graph/memory"
+import { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { Effect, Layer, Schema } from "effect"
 import { Authorization } from "@novaclaw/protocol/middleware/authorization"
@@ -32,8 +35,33 @@ const decodeAgent = Schema.decodeUnknownSync(ConfigAgent.Info)
 const decodeCommand = Schema.decodeUnknownSync(ConfigCommand.Info)
 const decodeReference = Schema.decodeUnknownSync(ConfigReference.Entry)
 
-const stores = Layer.mergeAll(AgentConfigStore.layer, CommandConfigStore.layer, ReferenceConfigStore.layer).pipe(
-  Layer.provide(Database.layerFromPath(":memory:")),
+// ⚠️ The database is MERGED, not only provided underneath. `agent.remove` reads `Database.Service`
+// itself — it forgets the colleague's per-minute series and clears its memory scope — and a layer
+// that only feeds the stores leaves that resolution unsatisfied at RUN time, which bun reports as
+// `Service not found: @novaclaw/v2/storage/Database` from inside the handler. Found 2026-08-21 by
+// running the tree: the handler grew that dependency in an earlier slice and this file, which only
+// ever exercised the store, was never re-run against it.
+const database = Database.layerFromPath(":memory:")
+
+// Retiring a colleague also clears its memory scope (`core/agent/retire.ts`), so the handler resolves
+// the memory CAPABILITY. A stub client behind a ready capability keeps this file's claim where it
+// belongs — on the routes — while still exercising the real call: `AgentRetire.everything` runs
+// against a live in-memory engine here, not against a mock of itself.
+const memoryStub = MemoryClient.stub()
+const memory = Layer.succeed(Memory.node.service, {
+  name: "memory",
+  get: Effect.succeed({ ok: true as const, value: memoryStub }),
+  status: Effect.succeed({ state: "ready" as const, since: 0 }),
+  retry: Effect.succeed({ state: "ready" as const, since: 0 }),
+})
+
+const stores = Layer.mergeAll(
+  database,
+  EventV2.layer.pipe(Layer.provide(database)),
+  memory,
+  Layer.mergeAll(AgentConfigStore.layer, CommandConfigStore.layer, ReferenceConfigStore.layer).pipe(
+    Layer.provide(database),
+  ),
 )
 
 type RegisteredHandler = (request: { readonly params: Record<string, string> }) => Effect.Effect<unknown, unknown, any>

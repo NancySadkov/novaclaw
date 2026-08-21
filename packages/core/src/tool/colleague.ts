@@ -199,8 +199,12 @@ export const layer = Layer.effectDiscard(
                 return {
                   ok: true,
                   message:
-                    `Retired ${target}. Their chat and what they remembered go with them; tell the user what they ` +
-                    `used to own, in case it needs a new owner.`,
+                    // Precise, because this sentence is the only account of the act the user gets and
+                    // the two halves genuinely differ: the transcript is archived (recoverable), the
+                    // private memories are deleted (not). Saying "goes with them" of both was true of
+                    // neither until 2026-08-21, and remains wrong about the chat.
+                    `Retired ${target}. Their chat is archived and everything they remembered is deleted — the ` +
+                    `name goes back into the pool. Tell the user what they used to own, in case it needs a new owner.`,
                 } satisfies Output
               }
 

@@ -49,6 +49,16 @@ const residentTools = [
   "application_context",
   "apply_patch",
   "bash",
+  // Present HERE because this materialize runs with no agent, and the floor that denies `colleague`
+  // is an AGENT ruleset (`plugin/agent.ts`) — every real session has one. A `build` session is
+  // wholly denied and never sees the tool; Nova re-allows it and pays for it. This list is the
+  // worst case, which is the right thing for a ratchet to measure.
+  "colleague",
+  // RESIDENT on purpose, and the ratchet's question was answered before it was added: a colleague
+  // that must first DISCOVER it can delegate will not delegate. Deferred disclosure costs one
+  // `tool_search` round-trip in the sessions that need a tool — but nothing prompts a model to go
+  // looking for a capability it has no reason to suspect, and the whole corporate metaphor
+  // (AGENTS.md) rests on officers reaching for each other unprompted.
   "define_tool",
   // Resident by design (batch plan 4.2): the manual's topic names ARE the prompt-visible index.
   "docs",
@@ -57,7 +67,10 @@ const residentTools = [
   "glob",
   "grep",
   "js",
-  "question",
+  // ⚠️ `question` is NOT here any more — removed by `bf39088eb` ("a refusal is instant"), which took
+  // ASK out as a permission outcome. This ledger kept listing it for days afterwards and went red
+  // unnoticed, because the change was verified by its own changed-area suites: exactly the failure
+  // `changed-area suites are not the TREE` names.
   "read",
   "skill",
   "spawn",
@@ -208,6 +221,20 @@ describe("LocationServiceMap", () => {
           // (`notes/reports/vision-on-disk-2026-08-19.md`). Codex closed the identical bug the same
           // way (openai/codex#23949): a hedged capability description reads as a prohibition.
           //
+          // RAISED 2026-08-21, 32,750 → 33,000, for `colleague` — the hand-off tool the corporate
+          // metaphor rests on. The ratchet's question was answered by A/B before the number moved:
+          // **30,744 bytes with the tool deferred, 32,822 with it resident — a 2,078-byte cost.**
+          //
+          // *Why not deferred, then?* Because nothing prompts a model to search for a capability it
+          // has no reason to suspect. Deferred disclosure works for tools a session reaches for after
+          // something happens (`log` after a failure, `kb` when recall falls short); delegation has no
+          // such trigger — an officer that must first DISCOVER it can ask a colleague simply will not.
+          //
+          // *Who pays?* Only agents allowed to use it. The compiled floor denies `colleague`, and a
+          // wholly-denied tool is WITHDRAWN from the horizon rather than advertised and refused, so a
+          // `build` session's prompt is unchanged and Nova's carries the 2,078 bytes that make it a
+          // CEO. This measurement is the agentless worst case.
+          //
           // *Could it be cheaper?* It was trimmed twice first — 122 characters out of the new
           // wording, dropping the illustrative examples and the long MIME list — which took it from
           // 32,699 to 32,577. What remains is the clause that does the work. The ask for a
@@ -223,7 +250,7 @@ describe("LocationServiceMap", () => {
           // mechanically — a page body leaking into the description turns it red.
           const fullAgentTools = blockedState.tools.filter((tool) => ShortChat.offered(undefined, tool.name))
           const residentBytes = Buffer.byteLength(JSON.stringify(fullAgentTools))
-          expect(residentBytes).toBeLessThan(32_750) // observed 32,577 on 2026-08-19 (99.5% of 32,750)
+          expect(residentBytes).toBeLessThan(33_000) // observed 32,822 on 2026-08-21 (99.5% of 33,000)
           const chatTools = blockedState.tools.filter((tool) => ShortChat.offered(true, tool.name))
           expect(chatTools.map((tool) => tool.name)).toEqual(["upgrade_chat"])
           expect(Buffer.byteLength(JSON.stringify(chatTools))).toBeLessThan(1_500)

@@ -230,7 +230,10 @@ const reportArchiveFailure =
           // "(none)" rather than an omitted key: a colleague-less session is a real case (the
           // archive skips it), and an absent attribute would read as "we did not record which".
           "agent.id": agentID ?? "(none)",
-          "archive.reason": Cause.pretty(cause).slice(0, 300),
+          // `Log.fault`, not `Cause.pretty(...).slice(...)`: seam 1 of `log-attributes.test.ts` —
+          // one normalization for every fault column, so a reader never has to know which site
+          // truncated and which did not.
+          "archive.reason": Log.fault(cause),
         }),
       ),
       Effect.asVoid,

@@ -1,5 +1,6 @@
 import { createMemo, createResource, createSignal, For, Show, type JSX } from "solid-js"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
+import { useConfirm } from "@/components/dialog-confirm"
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
@@ -43,6 +44,7 @@ export function AgentConfigDialog(props: {
   tuning?: () => JSX.Element
 }) {
   const language = useLanguage()
+  const confirm = useConfirm()
   const global = useGlobal()
   const server = useServer()
   const sync = useServerSync()
@@ -161,11 +163,25 @@ export function AgentConfigDialog(props: {
   }
 
   /** Retire the colleague. Refused by the API for the governing agent, which is why the control is
-   *  not rendered for it — the roster must not offer what the endpoint will decline. */
+   *  not rendered for it — the roster must not offer what the endpoint will decline.
+   *
+   *  🔴 CONFIRMED, unlike Clear chat: retiring destroys the colleague's private memory scope as well
+   *  as its chat (`core/agent/retire.ts` — the id returns to the name pool, so nothing may be left
+   *  keyed on it). An irreversible delete one click deep, sitting in the same row as Clone, is a
+   *  misclick away from erasing months of a colleague's memory. */
   const retire = async () => {
     const id = props.agentID
     const client = sdk()
     if (id === undefined || client === undefined || governing()) return
+    if (
+      !(await confirm({
+        title: language.t("agentConfig.retire.confirm.title", { name: name() }),
+        description: language.t("agentConfig.retire.confirm.description"),
+        confirmLabel: language.t("agentConfig.retire.confirm.action"),
+        destructive: true,
+      }))
+    )
+      return
     setBusy("retire")
     try {
       await (client as never as { agent: { remove: (input: unknown) => Promise<{ error?: unknown }> } }).agent

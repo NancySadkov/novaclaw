@@ -1,0 +1,98 @@
+export * as AgentRetire from "./retire"
+
+import { DateTime, Effect } from "effect"
+import { Log } from "@novaclaw/schema/log"
+import type { Database } from "../database/database"
+import type { EventV2 } from "../event"
+import type { MemoryClient } from "../kb-graph/memory-client"
+import { RosterChat } from "../session/roster-chat"
+import { SessionPatch } from "../session/patch"
+import { SessionSchema } from "../session/schema"
+import { KbTool } from "../tool/kb"
+import { AgentUsage } from "./usage"
+
+// What it MEANS to retire a colleague — in one place, because there are two doors.
+//
+// 🔴 **A retired id comes back.** Officer names are drawn from a fixed Greek pool
+// (`officer-name.ts`), so the name a retired colleague gave back is one a future colleague can draw.
+// Anything left keyed on that id is inherited by a stranger: their per-minute rate on the roster
+// row, and — far worse — their private cabinet. Measured 2026-08-21 on the owner's instance: a probe
+// colleague `ghost` was retired through `DELETE /api/agent/ghost` and its `agent:ghost` memory row
+// came back byte-identical afterwards, while the retire tool's own message told the user
+// *"their chat and what they remembered go with them"*. The message was the honest half.
+//
+// ⚠️ The two doors are `handlers/agent.ts` (the person presses Retire) and `ColleagueHandoff.retire`
+// (Nova retires through the `colleague` tool). Splitting the rule across them is exactly the
+// "one rule, two doors" shape that has already produced five defects in this program, so it lives
+// here and they both call it.
+
+/**
+ * Archive every live root chat belonging to an id.
+ *
+ * ⚠️ **The set is read ONCE, up front.** The obvious shape — ask for the newest chat, archive it, ask
+ * again — is a spin waiting to happen: archiving is EVENT-SOURCED (`patchSessionRecord` publishes,
+ * the projector writes), so a re-read that runs before the projection lands returns the same chat and
+ * the loop publishes the same update again. Reading the list first makes the work finite and the
+ * lagging projection harmless.
+ */
+const archiveChats = (input: {
+  readonly db: Database.Interface["db"]
+  readonly events: EventV2.Interface
+  readonly agent: string
+}): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    const at = DateTime.makeUnsafe(Date.now())
+    for (const chat of yield* RosterChat.liveChatsFor(input.db, input.agent))
+      yield* SessionPatch.patchSessionRecord(
+        { db: input.db, events: input.events },
+        SessionSchema.ID.make(chat.id),
+        (info) => ({ ...info, time: { ...info.time, archived: at } }),
+      )
+  })
+
+/**
+ * The scope a colleague's private memories are written under.
+ *
+ * ⚠️ It DELEGATES rather than repeating the template. A second `agent:${id}` spelled out here would
+ * be a key that is really a spelling — the two would agree until one changed, and the failure would
+ * be a cabinet nobody clears rather than an error anybody sees. `undefined` is impossible for a real
+ * id and is treated as "nothing to clear" rather than being forced.
+ */
+export const cabinetOf = (agent: string): string | undefined => KbTool.agentScope(agent)
+
+/**
+ * Erase everything keyed on a retired colleague's id.
+ *
+ * ⚠️ **Best-effort on the memory half, and LOUD about it.** An unreachable embedder must not turn a
+ * retirement into a failed request — the role is already gone from the store by the time we get
+ * here, so failing now would leave the user with a colleague that is half-retired and no way to
+ * finish the job. But best-effort means the ACT survives, not that nobody is told: the failure is
+ * logged with the scope that still holds rows, which is the one thing an operator needs to clean up
+ * by hand. (`Effect.ignore` here was the mistake `session.compaction.archive.failed` documents.)
+ */
+export const everything = (input: {
+  readonly db: Database.Interface["db"]
+  readonly events: EventV2.Interface
+  readonly memory: MemoryClient.Interface
+  readonly agent: string
+}): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    yield* AgentUsage.forget(input.db, input.agent)
+    // The CHAT goes too — archived, exactly as "Clear chat" archives it, and for the same reason
+    // scaled up. `RosterChat.chatFor` finds a colleague's chat by AGENT ID and ignores nothing else,
+    // so a live root session left behind is a transcript the next holder of that id would open into:
+    // months of somebody else's conversation, presented as their own. Archived rather than deleted —
+    // the user may still want the history, and a retirement is not a purge of the record.
+    yield* archiveChats({ db: input.db, events: input.events, agent: input.agent })
+    const scope = cabinetOf(input.agent)
+    if (scope === undefined) return
+    yield* input.memory.clearScope(scope).pipe(
+      Effect.catch((error) =>
+        Log.event("kb.scope.clear.failed", {
+          "agent.id": input.agent,
+          "kb.scope": scope,
+          "kb.fault": Log.fault(error),
+        }),
+      ),
+    )
+  })

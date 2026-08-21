@@ -9,6 +9,8 @@ import { EventV2 } from "@novaclaw/core/event"
 import { Log } from "@novaclaw/schema/log"
 import { SessionPatch } from "@novaclaw/core/session/patch"
 import { Location } from "@novaclaw/core/location"
+import { AgentRetire } from "@novaclaw/core/agent/retire"
+import { Memory } from "@novaclaw/core/kb-graph/memory"
 import { LocationServiceMap } from "@novaclaw/core/location-service-map"
 import { PermissionV2 } from "@novaclaw/core/permission"
 import { QuestionV2 } from "@novaclaw/core/question"
@@ -103,6 +105,10 @@ export const layer = Layer.effect(
     // the live roster is this process's snapshot, so both are resolved here, once, at layer build —
     // never inside the per-request handler, which is the trap `SessionJoin` warns about above.
     const agentConfig = yield* AgentConfigStore.Service
+    // Retiring a colleague clears its cabinet, so this seam needs a memory client too. Resolved at
+    // layer build like everything else here — `Memory.client` wraps a CAPABILITY that acquires per
+    // call, so holding it costs nothing when memory is disabled and never blocks the handler.
+    const memory = Memory.client(yield* Memory.node.service)
     const ownerID = `server_${crypto.randomUUID()}`
     const command = SessionWorkerCommand.current()
 
@@ -242,6 +248,8 @@ export const layer = Layer.effect(
                       // returns false only when no executor is attached at all, which cannot be the
                       // case inside a live worker host.
                       wake: (id) => coordinator.wake(id).pipe(Effect.as(true)),
+                      forget: (colleague) =>
+                        AgentRetire.everything({ db: database.db, events, memory, agent: colleague }),
                     }),
                     lease,
                     message,

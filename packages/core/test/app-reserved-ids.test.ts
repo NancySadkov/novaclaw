@@ -78,13 +78,18 @@ describe("the reader found all three declarations", () => {
     // the same asymmetry `processes` has. These bounds only guard against a parser that silently
     // returns nothing; the real comparisons are below.
     expect(tiles!.length).toBeGreaterThanOrEqual(13)
-    // `tasks` is the canary: a live tile, so it must appear in all three lists.
-    for (const list of [core!, app!, tiles!]) expect(list).toContain("tasks")
-    // …and `chats`, its id before 2026-08-13, must stay reserved on BOTH halves while being a tile
-    // on neither. A retired id that quietly stops being reserved is squattable by a plugin, which
-    // is the whole failure this file exists to prevent.
-    for (const list of [core!, app!]) expect(list).toContain("chats")
-    expect(tiles!).not.toContain("chats")
+    // `contacts` is the canary: the live tile, so it must appear in all three lists. It was `tasks`
+    // until 2026-08-21 and `chats` before that — and the canary MOVED with the tile rather than the
+    // assertion being deleted, because a ledger that loses its live-tile case still passes while the
+    // tile is missing entirely.
+    for (const list of [core!, app!, tiles!]) expect(list).toContain("contacts")
+    // …and BOTH retired ids must stay reserved on the two halves while being a tile on neither. A
+    // retired id that quietly stops being reserved is squattable by a plugin, which is the whole
+    // failure this file exists to prevent — and there are two of them now, one rename apart.
+    for (const retired of ["chats", "tasks"]) {
+      for (const list of [core!, app!]) expect(list).toContain(retired)
+      expect(tiles!).not.toContain(retired)
+    }
   })
 
   test("no duplicates in either list", () => {

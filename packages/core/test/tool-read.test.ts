@@ -607,7 +607,17 @@ describe("ReadTool", () => {
           ...toolIdentity,
           call: { type: "tool-call", id: "call-missing-path", name: "read", input: { path: missingPath } },
         }),
-      ).toEqual({ type: "error", value: `Unable to read ${missingPath}` })
+        // The fixture fails this path with `non_directory_ancestor` — raised by `LocationMutation`
+        // before the filesystem is touched, so it carries no errno. Under the 2026-08-20 ruling that
+        // is a NAMED cause with its own correction, not the unknown bucket: this assertion used to
+        // read `Unable to read <path>` and went stale the day the messages grew, which is how a red
+        // ledger entry stops describing the product.
+      ).toEqual({
+        type: "error",
+        value:
+          `${missingPath} cannot exist: something on the way to it is a file, not a folder. List the folder ` +
+          "you meant (`glob` or `bash ls`) and read a name it returns.",
+      })
       expect(assertions).toEqual([])
       expect(readCalls).toEqual([])
     }),

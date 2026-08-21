@@ -2622,6 +2622,13 @@ export const dict = {
   "agentConfig.cloneFailed": "Could not clone this colleague",
   "agentConfig.retire": "Retire",
   "agentConfig.retiring": "Retiring…",
+  "agentConfig.retire.confirm.title": "Retire {{name}}?",
+  // Names what is DESTROYED, in the order it will be missed. Retiring used to take the role and the
+  // chat; it now takes the private memories too, and a control that quietly grew teeth is worse than
+  // one that never had them.
+  "agentConfig.retire.confirm.description":
+    "Everything they remember is deleted and their chat is archived. Their memories cannot be recovered, and the name goes back into the pool for a future colleague.",
+  "agentConfig.retire.confirm.action": "Retire",
   "agentConfig.retiredTitle": "{{name}} has been retired",
   "agentConfig.retireFailed": "Could not retire this colleague",
   "agentConfig.cancel": "Cancel",

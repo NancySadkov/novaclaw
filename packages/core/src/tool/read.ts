@@ -105,6 +105,16 @@ export const readFailureMessage = (error: unknown, path: string): string => {
   if (matches(/\bEBUSY\b|\bETXTBSY\b|being used by another process/i, "Busy", "EBUSY", "ETXTBSY"))
     return `${path} is locked by another process. Wait a moment and read it again, or continue with another file.`
 
+  // A path whose PARENT is not a folder — `a/b.txt/c.txt`, which is what a model produces when it
+  // appends to a filename it already had. The correction is specific and the model can act on it
+  // alone, so it does not belong in the unknown bucket: `LocationMutation` raises this reason before
+  // the filesystem is ever touched, which is why it arrives with no errno attached.
+  if (matches(/\bENOTDIR\b/, "non_directory_ancestor", "ENOTDIR"))
+    return (
+      `${path} cannot exist: something on the way to it is a file, not a folder. List the folder you ` +
+      `meant (\`glob\` or \`bash ls\`) and read a name it returns.`
+    )
+
   // A directory handed to a file read — a mistake with an obvious correction.
   if (matches(/\bEISDIR\b/, "EISDIR")) return `${path} is a directory, not a file. List it instead to see what it holds.`
 

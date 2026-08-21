@@ -973,9 +973,32 @@ export const EVENTS = {
   "session.compaction.archive.failed": {
     level: "warn",
     message: "could not archive the compacted conversation",
-    attributes: { "session.id": "correlate", "agent.id": "correlate", "archive.reason": "text" },
-    content: "correlated",
+    // `archive.reason` is our own error text, which routinely embeds paths and payloads — so the
+    // class is `fault` and the content is `user`. It said "correlated" until 2026-08-21, which the
+    // drift check caught the first time this file's ledger was run against the tree rather than
+    // against the changed area: a key that under-declares its content is a key that could EGRESS.
+    attributes: { "session.id": "correlate", "agent.id": "correlate", "archive.reason": "fault" },
+    content: "user",
     file: "packages/core/src/session/runner/llm.ts",
+  },
+  /**
+   * A retired colleague's private memories could NOT be cleared, so the cabinet outlived its owner.
+   *
+   * Filed under `kb` rather than the retirement that triggered it, because the SUBSYSTEM decides the
+   * level an operator can turn up: somebody chasing "my colleague's memories were not cleared" is
+   * debugging the knowledge tier, and should not have to raise agent-lifecycle logging to see it.
+   *
+   * This is an IDENTITY-BLEED warning, not a housekeeping note. Officer names are drawn from a fixed
+   * pool, so the retired id can be drawn again — and a colleague opening with a stranger's private
+   * memories is the one failure the per-agent partition exists to prevent. The scope is in the
+   * attributes precisely so an operator can clear it by hand.
+   */
+  "kb.scope.clear.failed": {
+    level: "warn",
+    message: "could not clear a retired agent's memory scope",
+    attributes: { "agent.id": "correlate", "kb.scope": "id", "kb.fault": "fault" },
+    content: "user",
+    file: "packages/core/src/agent/retire.ts",
   },
   /** A directory had no instance yet, so one is being created. 1146 lines. */
   "instance.store.create": {

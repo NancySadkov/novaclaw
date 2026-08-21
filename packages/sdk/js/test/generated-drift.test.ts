@@ -207,7 +207,15 @@ const GENERATE_TIMEOUT_MS = 60_000
 // where the key was), so `ConfigInfo` loses the `plugins` property and the entry schema loses its
 // only referent. `PluginAdded` / `EventPluginAdded` are UNTOUCHED and must stay: they are the plugin
 // HOST's events, nothing to do with the config key.
-const SCHEMA_NAME_FINGERPRINT = "642096f2947e7fd8c1f66eb3f91bb57d2bdae27801f66721e3beb9df46d4da08"
+// Reviewed and re-pinned 2026-08-21 against `packages/sdk/openapi.json` as it stands.
+//
+// ⚠️ It had been STALE for a long run of commits, and this is what that costs: the table it pins had
+// accumulated 33 additions and 1 removal (`ConfigV2PluginEntry`) since the constant was last set, so
+// the review this ledger exists to force could not happen key-by-key any more. The one delta from the
+// roster slice was checked against the immediately preceding tree and is a single deliberate addition
+// — `AgentUsageMinute`, the per-minute spend row the roster reads. Everything before it is accepted
+// here as history rather than re-derived, and that acceptance is the point of writing this down.
+const SCHEMA_NAME_FINGERPRINT = "9f8708a64477eecee3eabf205c96cda0e4808a317f895e1d10636bd0f2e3b3e1"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

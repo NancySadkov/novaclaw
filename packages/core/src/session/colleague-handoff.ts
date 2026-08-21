@@ -2,11 +2,12 @@ export * as ColleagueHandoff from "./colleague-handoff"
 
 import { Context, Effect, Layer, Schema } from "effect"
 import { AgentConfigStore } from "../agent-config-store"
-import { AgentUsage } from "../agent/usage"
+import { AgentRetire } from "../agent/retire"
 import { ConfigAgent } from "../config/agent"
 import { OfficerName } from "../agent/officer-name"
 import { Database } from "../database/database"
 import { EventV2 } from "../event"
+import { Memory } from "../kb-graph/memory"
 import { makeLocationNode } from "../effect/app-node"
 import { RosterChat } from "./roster-chat"
 import { SessionInput } from "./input"
@@ -56,7 +57,15 @@ export interface Interface {
     readonly brief: string
     readonly personality?: string | undefined
   }) => Effect.Effect<Hired>
-  /** Retire a colleague, and refresh the live roster so they actually disappear. */
+  /**
+   * Retire a colleague: remove the role, forget what it spent, and CLEAR ITS CABINET.
+   *
+   * 🔴 The memory goes because the id comes back. A retired name returns to the Greek pool, so a
+   * future colleague drawn as `theron` would open holding the old Theron's private memories —
+   * identity bleed of the worst kind, and the same hazard the per-minute series was cleared for.
+   * Measured 2026-08-21: before this, a retired colleague's `agent:<id>` rows survived while the
+   * tool's own message said "what they remembered goes with them". The message was the honest half.
+   */
   readonly retire: (colleague: string) => Effect.Effect<boolean>
   /**
    * Leave a message in a colleague's own chat, attributed to the sender.
@@ -93,6 +102,9 @@ export const fromParts = (input: {
    *  invisible — measured: `Procius` was in the store and absent from `GET /api/agent`. */
   readonly refresh: Effect.Effect<void>
   readonly takenNames: Effect.Effect<ReadonlyArray<string>>
+  /** Erase everything keyed on the retired id — `AgentRetire.everything`. Passed in rather than
+   *  built here because the per-request host handler cannot resolve a memory service (see above). */
+  readonly forget: (colleague: string) => Effect.Effect<void>
 }): Interface => ({
   hire: Effect.fn("ColleagueHandoff.hire")(function* (request) {
     // The name is DRAWN, never chosen by a model: a roster sits in an address book beside real
@@ -114,7 +126,7 @@ export const fromParts = (input: {
   }),
   retire: Effect.fn("ColleagueHandoff.retire")(function* (colleague) {
     yield* input.store.removeAgent(colleague)
-    yield* AgentUsage.forget(input.db, colleague)
+    yield* input.forget(colleague)
     yield* input.refresh
     return true
   }),
@@ -162,6 +174,7 @@ export const layer = Layer.effect(
     // build time; `fromParts` is for the per-request handler that cannot.
     const store = yield* AgentConfigStore.Service
     const agents = yield* AgentV2.Service
+    const memory = Memory.client(yield* Memory.node.service)
     return Service.of(
       fromParts({
         db,
@@ -170,6 +183,7 @@ export const layer = Layer.effect(
         wake: (id) => wake.wake(id),
         store,
         refresh: agents.reload(),
+        forget: (colleague) => AgentRetire.everything({ db, events, memory, agent: colleague }),
         takenNames: agents.all().pipe(Effect.map((all) => all.flatMap((one) => [String(one.id), one.name ?? ""]))),
       }),
     )
@@ -186,5 +200,6 @@ export const node = makeLocationNode({
     SessionRunCoordinator.wakeNode,
     AgentConfigStore.node,
     AgentV2.node,
+    Memory.node,
   ],
 })

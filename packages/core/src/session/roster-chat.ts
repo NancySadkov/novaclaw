@@ -53,3 +53,20 @@ export const chatFor = (db: Db, agentID: string) =>
       Effect.map((rows): Chat | undefined => rows[0]),
       Effect.orDie,
     )
+
+/**
+ * EVERY live root chat of a colleague, newest first — the set `chatFor` picks its one answer from.
+ *
+ * Retirement needs the whole set, not the newest: a colleague accumulates roots across "Clear chat",
+ * and one left live is a transcript the next holder of that id would open into.
+ */
+export const liveChatsFor = (db: Db, agentID: string) =>
+  db
+    .select({ id: SessionTable.id, title: SessionTable.title })
+    .from(SessionTable)
+    .where(
+      and(eq(SessionTable.agent, agentID), isNull(SessionTable.parent_id), isNull(SessionTable.time_archived)),
+    )
+    .orderBy(desc(SessionTable.time_updated))
+    .all()
+    .pipe(Effect.map((rows): ReadonlyArray<Chat> => rows), Effect.orDie)

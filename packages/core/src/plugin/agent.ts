@@ -155,6 +155,13 @@ export const Plugin = define({
       ...PermissionV2.AMBIENT_SAFE_BASELINE,
       ...readonlyExternalDirectory,
       { action: "question", resource: "*", effect: "deny" },
+      // DENIED in the floor, which is what keeps the hand-off tool OFF the horizon for agents that
+      // may not use it — `ToolRegistry.materialize` withdraws a wholly-denied tool rather than
+      // advertising it and refusing. Measured 2026-08-21: resident tool schemas were 32,822 bytes
+      // with `colleague` on every horizon and 30,744 without it — 2,078 bytes on every turn of every
+      // session, for a capability only the governing agent is granted. Nova re-allows it below; an
+      // officer that should delegate is granted it deliberately, and pays the bytes then.
+      { action: "colleague", resource: "*", effect: "deny" },
       { action: "plan_enter", resource: "*", effect: "deny" },
       { action: "plan_exit", resource: "*", effect: "deny" },
     ]

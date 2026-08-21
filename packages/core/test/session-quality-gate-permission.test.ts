@@ -109,12 +109,18 @@ describe("the quality gate's command is spent as `bash`", () => {
     }),
   )
 
-  it.effect("`ask` asks — and it is the same grant `bash` and quality_provision spend", () =>
+  it.effect("`ask` REFUSES — and a standing grant is the same one `bash` and quality_provision spend", () =>
     Effect.gen(function* () {
-      // One vocabulary: an "always allow" answered for this command string covers it whichever
-      // surface runs it (`tool/bash.ts`, `quality-provision.ts`'s verify loop, and now the harness).
-      // That is why `resources`/`save` are the command STRING and not a label.
-      expect(yield* verdict(yield* session("ses_ask", "ask"))).toMatchObject({ effect: "ask" })
+      // ⚠️ This used to expect `ask`, and stopped being true on 2026-08-20 (`bf39088eb`, owner ruling
+      // *Ask considered harmful*): the assert path converts an `ask` verdict into a refusal with
+      // reason `ask-removed`, because a question nobody answers blocks a run forever while a denial
+      // is something the model can act on. The mode's RULE is still `ask` — `permission-baseline`
+      // pins that — but no surface asks any more, so a ledger over the SERVICE must say deny.
+      expect(yield* verdict(yield* session("ses_ask", "ask"))).toMatchObject({ effect: "deny" })
+      // One vocabulary, and this is the half that survived the ruling intact: consent is PRE-granted.
+      // An "always allow" for this command string covers it whichever surface runs it
+      // (`tool/bash.ts`, `quality-provision.ts`'s verify loop, and the harness). That is why
+      // `resources`/`save` are the command STRING and not a label.
       const saved = yield* PermissionSaved.Service
       yield* saved.add({ origin: "global", action: "bash", resources: [COMMAND] })
       expect(yield* verdict(SessionV2.ID.make("ses_ask"))).toMatchObject({ effect: "allow" })

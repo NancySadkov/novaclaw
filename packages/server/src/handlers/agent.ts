@@ -1,10 +1,13 @@
 import { AgentV2 } from "@novaclaw/core/agent"
 import { InvalidRequestError } from "@novaclaw/protocol/errors"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
+import { AgentRetire } from "@novaclaw/core/agent/retire"
 import { AgentUsage } from "@novaclaw/core/agent/usage"
+import { Memory } from "@novaclaw/core/kb-graph/memory"
 import { Database } from "@novaclaw/core/database/database"
 import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
 import { Effect } from "effect"
+import { EventV2 } from "@novaclaw/core/event"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { AgentApi, handlerLayer } from "../handler-api"
 import { response } from "../location"
@@ -63,10 +66,17 @@ export const AgentHandler = handlerLayer(
           // `default agent "…" not found` (`novaclaw/src/agent/agent.ts:425`).
           //
           // Conditional, never blanket: removing some OTHER agent must leave the default alone.
-          // Its per-minute series goes with it: a retired name returns to the pool, and a future
-          // colleague drawing it must not open with the old one's rate on its row.
+          // Everything keyed on the id goes with it — the per-minute series AND the private cabinet.
+          // ONE rule, shared with Nova's `colleague retire` (`agent/retire.ts` holds the why): a
+          // retired name returns to the pool, and a future colleague drawing it must not open with
+          // the old one's rate on its row, let alone the old one's memories in its head.
           const { db } = yield* Database.Service
-          yield* AgentUsage.forget(db, ctx.params.agentID)
+          yield* AgentRetire.everything({
+            db,
+            events: yield* EventV2.Service,
+            memory: Memory.client(yield* Memory.node.service),
+            agent: ctx.params.agentID,
+          })
           const fallback = yield* store.getDefault()
           if (fallback === ctx.params.agentID) yield* store.clearDefault()
           // 🔴 …and the LIVE snapshot is re-materialised, or the delete is durable but invisible.

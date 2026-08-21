@@ -166,6 +166,20 @@ describe("the built-in agents the plugin actually builds", () => {
     }),
   )
 
+  it.effect("only the governing agent may hand work to a colleague — and only it pays for the tool", () =>
+    Effect.gen(function* () {
+      const agents = yield* builtinAgents
+      // 🔴 This is a PROMPT-COST assertion as much as a permission one. `ToolRegistry.materialize`
+      // withdraws a wholly-denied tool from the horizon instead of advertising it and refusing, so
+      // `deny` here is what keeps `colleague`'s 2,078 resident bytes (measured 2026-08-21,
+      // `location-layer.test.ts`) out of every ordinary session's prompt. If this flips to `ask`,
+      // nothing refuses — but every agent starts paying for a tool it may not use.
+      for (const id of ["build", "plan", "explore", "general", "summary", "title", "compaction"])
+        expect({ id, effect: effectFor(agents.get(id)!, "colleague") }).toEqual({ id, effect: "deny" })
+      expect(effectFor(agents.get("nova")!, "colleague")).toBe("allow")
+    }),
+  )
+
   it.effect("a DEFAULT install is unchanged for the mutation/exec cluster — the mode grants it now", () =>
     Effect.gen(function* () {
       const build = (yield* builtinAgents).get("build")!
