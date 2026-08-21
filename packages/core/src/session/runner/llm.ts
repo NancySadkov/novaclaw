@@ -2083,6 +2083,18 @@ export const layer = Layer.effect(
         { sessionID: session.id, entries, model, request },
         "manual",
       )
+      // The archive runs on BOTH compaction paths, and it did not until now — the automatic branch
+      // had it and this one did not, so a user who pressed Compact lost the older half of the
+      // conversation to a summary while the same conversation compacted automatically kept it. One
+      // rule, two doors: the same class of gap as `agent.remove` missing the refresh the config path
+      // already had.
+      if (compacted)
+        yield* archiveCompactedChat({
+          entries,
+          agent: yield* agents.select(prepared.config.agent as typeof session.agent),
+          memory,
+          session,
+        }).pipe(Effect.ignore)
       yield* Log.event("session.compaction.manual.settled", { "session.id": session.id, compacted })
       if (!compacted)
         yield* events.publish(SessionEvent.Synthetic, {
