@@ -11,6 +11,9 @@ import { AppPage } from "@/components/app-page"
 import { agentColor } from "@/utils/agent"
 import { memoryDisclosure, roster, searchRoster, type AgentLike, type ContactView } from "@/apps/contacts"
 import { listAgents, listSessions, listUsage } from "@/apps/agent-list"
+import { planHire } from "@/apps/agent-hire"
+import { useServerSync } from "@/context/server-sync"
+import { showToast } from "@/utils/toast"
 import { formatRate, liveFor, ratePerMinute, type RosterLive, type SessionLike, type UsageMinute } from "@/apps/roster-live"
 import { compactTokens } from "@/pages/home-session-meta"
 import { ServerConnection } from "@/context/server"
@@ -45,6 +48,8 @@ export function ContactsPage() {
   const language = useLanguage()
   const [query, setQuery] = createSignal("")
   const [selected, setSelected] = createSignal<string | undefined>(undefined)
+  const [hiring, setHiring] = createSignal(false)
+  const sync = useServerSync()
 
   const conn = createMemo(() => server.current ?? global.servers.list()[0])
   const ctx = createMemo(() => {
@@ -57,7 +62,7 @@ export function ContactsPage() {
   // organization is empty rather than that we could not read it. Measured the hard way: the first
   // draft of this page called the wrong client namespace, the catch turned a TypeError into an empty
   // roster, and the screen looked like a working feature with nobody hired.
-  const [agents] = createResource(ctx, (current) => listAgents(current.sdk.client.v2))
+  const [agents, { refetch: refetchAgents }] = createResource(ctx, (current) => listAgents(current.sdk.client.v2))
   // What each colleague is WORKING ON — the half the roster inherits from the chat list it replaces.
   // A failure here dims the work column; it must never blank the roster, because "who works here"
   // and "what are they doing" are two questions and only one of them just failed.
@@ -80,6 +85,23 @@ export function ContactsPage() {
     return current ? ServerConnection.key(current) : undefined
   })
 
+  const hire = async () => {
+    setHiring(true)
+    try {
+      const plan = planHire({ roster: agents() ?? [], random: Math.random })
+      await sync().updateConfig({ agents: { [plan.id]: plan.fragment } } as never)
+      // Straight into their config, on an empty job title — which is the question the user is
+      // actually being asked. A colleague hired and left unopened is a name with no job.
+      setSelected(plan.id)
+      void refetchAgents()
+    } catch (error) {
+      // Said, never swallowed: a hire that silently failed leaves the user pressing the button again.
+      showToast({ variant: "error", title: language.t("contacts.hireFailed"), description: String(error) })
+    } finally {
+      setHiring(false)
+    }
+  }
+
   const views = createMemo(() => roster(agents() ?? []))
   const shown = createMemo(() => searchRoster(views(), query()))
   const open = createMemo(() => views().find((view) => view.id === selected()))
@@ -92,7 +114,18 @@ export function ContactsPage() {
         <span class="min-w-0 flex-1 truncate text-xs text-v2-text-text-faint">{language.t("contacts.hint")}</span>
       </div>
 
-      <div class="border-b border-v2-border-border-base px-4 py-2">
+      <div class="flex items-center gap-2 border-b border-v2-border-border-base px-4 py-2">
+        {/* The user's own half of the CEO's power (owner: "user can create new agents on demand").
+            Nova can hire through her tool; this is the same act performed by the person, sharing the
+            same naming rule so the roster never reads like a list of people. */}
+        <button
+          type="button"
+          class="shrink-0 rounded-md bg-v2-background-bg-layer-03 px-2.5 py-1.5 text-xs font-medium disabled:opacity-40"
+          disabled={hiring() || agents.loading}
+          onClick={() => void hire()}
+        >
+          {hiring() ? language.t("contacts.hiring") : language.t("contacts.hire")}
+        </button>
         <TextInputV2
           value={query()}
           onInput={(event) => setQuery(event.currentTarget.value)}

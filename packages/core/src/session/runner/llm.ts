@@ -2074,7 +2074,20 @@ export const layer = Layer.effect(
     ) {
       const prepared = yield* prepareTurn(sessionID)
       // Not ours: another location owns this session and will run its own compaction.
-      if (prepared === undefined) return
+      //
+      // ⚠️ It SAYS so. This used to return in silence, which is the same nothing the Compact button
+      // produced before the marker became durable — and a user cannot tell "another location has
+      // this" from "the button is broken" by looking at an unchanged screen. Every other outcome of
+      // this cycle already speaks; this one was the last mute path.
+      if (prepared === undefined) {
+        yield* events.publish(SessionEvent.Synthetic, {
+          sessionID,
+          messageID: SessionMessage.ID.create(),
+          timestamp: yield* DateTime.now,
+          text: "⚠️ Compaction didn't run here — another window or instance owns this chat right now. Try again from there, or once it is idle.",
+        })
+        return
+      }
       const { session, model, entries } = prepared
       // The compactor reads only `generation?.maxTokens` (else the model's own output limit)
       // from the request — a minimal envelope is enough.
