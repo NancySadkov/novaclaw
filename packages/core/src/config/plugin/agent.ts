@@ -145,6 +145,13 @@ function applyItem(draft: AgentDraft, agentID: AgentV2.ID, item: ConfigAgent.Inf
     if (item.archiveChats !== undefined) agent.archiveChats = item.archiveChats
     if (item.description !== undefined) agent.description = item.description
     if (item.directory !== undefined) agent.directory = item.directory
+    // The standing work choices. Mapped onto the RECORD as well as read from the store by
+    // `SessionEffectiveConfig`: the store is what a headless turn resolves through, the record is
+    // what the config dialog renders — and a dialog that cannot show the current value is the same
+    // defect `directory` had.
+    if (item.permissionMode !== undefined) agent.permissionMode = item.permissionMode
+    if (item.strict !== undefined) agent.strict = item.strict
+    if (item.shortChat !== undefined) agent.shortChat = item.shortChat
     if (item.mode !== undefined) agent.mode = item.mode
     if (item.hidden !== undefined) agent.hidden = item.hidden
     if (item.color !== undefined) agent.color = item.color

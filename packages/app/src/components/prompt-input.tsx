@@ -41,9 +41,7 @@ import {
   type ComposerAgentControlState,
   type ComposerAgentOption,
   type ComposerModelControlState,
-  type ComposerPermissionModeControlState,
   type ComposerRemoteChatState,
-  type ComposerStrictControlState,
 } from "@/components/composer"
 import { usePlatform } from "@/context/platform"
 import { createSessionTabs } from "@/pages/session/helpers"
@@ -796,24 +794,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }))
 
   const newSession = () => props.variant === "new-session"
-  const permissionModeControlState = createMemo<ComposerPermissionModeControlState>(() => ({
-    title: language.t("prompt.permissionMode.title"),
-    current: props.controls.permissionMode.current,
-    label: (mode) => language.t(`prompt.permissionMode.${mode}`),
-    style: control(),
-    onSelect: (value) => {
-      props.controls.permissionMode.select(value)
-      restoreFocus()
-    },
-  }))
-  const strictControlState = createMemo<ComposerStrictControlState>(() => ({
-    current: props.controls.strict.current,
-    permissionBelowFloor:
-      props.controls.permissionMode.current !== "bypass" && props.controls.permissionMode.current !== "yolo",
-    style: control(),
-    set: (value) => props.controls.strict.set(value),
-    onClose: restoreFocus,
-  }))
   const featuresControlState = createMemo<ComposerFeaturesControlState>(() => ({
     current: props.controls.features.current,
     override: props.controls.features.override,
@@ -978,13 +958,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 sessionControls: newSession() || !!props.controls.session?.id,
                 agentVisible: props.controls.agent.visible,
                 model: modelControlState(),
-                posture: {
-                  current: props.controls.features.current.shortChat ? "chat" : "agent",
-                  style: control(),
-                  onSelect: (posture) => props.controls.features.set("shortChat", posture === "chat"),
-                },
-                permissionMode: permissionModeControlState(),
-                strict: strictControlState(),
                 features: featuresControlState(),
                 agent: agentControlState(),
               }}

@@ -101,6 +101,9 @@ export function AgentConfigDialog(props: {
   // means "the user has not touched this field". Collapsing the two would make Clear indistinguishable
   // from Cancel.
   const [directory, setDirectory] = createSignal<string | undefined>()
+  const [posture, setPosture] = createSignal<boolean | undefined>()
+  const [permissionMode, setPermissionMode] = createSignal<string | undefined>()
+  const [strict, setStrict] = createSignal<boolean | undefined>()
   const models = useModels()
   const [saving, setSaving] = createSignal(false)
 
@@ -114,6 +117,14 @@ export function AgentConfigDialog(props: {
     const stored = (agent()?.config?.["directory"] as string | undefined)?.trim()
     return stored ? stored : undefined
   }
+  // Each reads the DRAFT first, then the colleague's stored value, then the shipped baseline — the
+  // same "absent means inherit" the config layer itself uses, so the dialog shows what a chat with
+  // this colleague would actually start with.
+  const postureValue = () => posture() ?? (agent()?.config?.["shortChat"] as boolean | undefined) ?? false
+  const permissionModeValue = () =>
+    permissionMode() ?? (agent()?.config?.["permissionMode"] as string | undefined) ?? "bypass"
+  const strictValue = () =>
+    strict() ?? ((agent()?.config?.["strict"] as { enabled?: boolean } | undefined)?.enabled ?? false)
   const folderLabel = () => {
     const folder = directoryValue()
     return folder ? folderDisplayName({ worktree: folder }) : language.t("agentConfig.folderScratch")
@@ -158,6 +169,9 @@ export function AgentConfigDialog(props: {
     personality() !== undefined ||
     memory() !== undefined ||
     directory() !== undefined ||
+    posture() !== undefined ||
+    permissionMode() !== undefined ||
+    strict() !== undefined ||
     archive() !== undefined ||
     model() !== undefined
 
@@ -274,6 +288,9 @@ export function AgentConfigDialog(props: {
             // Sent as `""` when cleared, which the config decoder stores as "no folder" — the field is
             // optional, so an empty string is how a UI says "unset" through a merge patch.
             ...(directory() === undefined ? {} : { directory: directory()!.trim() }),
+            ...(posture() === undefined ? {} : { shortChat: posture()! }),
+            ...(permissionMode() === undefined ? {} : { permissionMode: permissionMode()! }),
+            ...(strict() === undefined ? {} : { strict: { enabled: strict()! } }),
             archiveChats: archiveValue(),
             // An empty choice means INHERIT. Writing "" would store an unparseable ref, so the key
             // is simply not sent — `undefined` is how this config says "ask the chain above me".
@@ -286,6 +303,9 @@ export function AgentConfigDialog(props: {
       setPersonality(undefined)
       setMemory(undefined)
       setDirectory(undefined)
+      setPosture(undefined)
+      setPermissionMode(undefined)
+      setStrict(undefined)
       setArchive(undefined)
       setModel(undefined)
       props.onChanged?.()
@@ -440,6 +460,66 @@ export function AgentConfigDialog(props: {
           <Show when={mindTooSmall()}>
             <p class="mt-1 text-[11px] text-v2-state-fg-warning">{language.t("agentConfig.modelTooSmall")}</p>
           </Show>
+        </section>
+
+        <section class="mt-5">
+          <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
+            {language.t("agentConfig.work")}
+          </h3>
+          {/* 🔴 The three standing WORK choices, moved off the composer 2026-08-21 (owner: the
+              Chat/Agent drop-down, Strict and permissions "should be part of the agent too"). They
+              describe the ROLE: a bookkeeper that needs Analyze mode needs it every time you talk to
+              it, and re-choosing per chat is a question asked again for a decision that never
+              changes. A chat can still differ — these are a LAYER, and the chat's own row wins. */}
+          <div class="mt-2 flex flex-col gap-2">
+            <label class="flex items-center justify-between gap-2 text-xs">
+              <span>{language.t("agentConfig.posture")}</span>
+              <select
+                class="rounded-md bg-v2-background-bg-layer-03 px-2 py-1 text-xs"
+                disabled={governing()}
+                onChange={(event) => setPosture(event.currentTarget.value === "chat")}
+              >
+                <For each={["agent", "chat"] as const}>
+                  {(value) => (
+                    <option value={value} selected={(postureValue() ? "chat" : "agent") === value}>
+                      {language.t(value === "chat" ? "prompt.posture.chat.title" : "prompt.posture.agent.title")}
+                    </option>
+                  )}
+                </For>
+              </select>
+            </label>
+            <p class="text-[11px] text-v2-text-text-faint">
+              {language.t(postureValue() ? "prompt.posture.chat.description" : "prompt.posture.agent.description")}
+            </p>
+
+            <label class="flex items-center justify-between gap-2 text-xs">
+              <span>{language.t("prompt.permissionMode.title")}</span>
+              <select
+                class="rounded-md bg-v2-background-bg-layer-03 px-2 py-1 text-xs"
+                disabled={governing()}
+                onChange={(event) => setPermissionMode(event.currentTarget.value)}
+              >
+                <For each={["plan", "bypass", "yolo"] as const}>
+                  {(mode) => (
+                    <option value={mode} selected={permissionModeValue() === mode}>
+                      {language.t(`prompt.permissionMode.${mode}`)}
+                    </option>
+                  )}
+                </For>
+              </select>
+            </label>
+
+            <label class="flex items-start gap-2 text-xs">
+              <input
+                type="checkbox"
+                class="mt-0.5"
+                checked={strictValue()}
+                disabled={governing()}
+                onChange={(event) => setStrict(event.currentTarget.checked)}
+              />
+              <span>{language.t("agentConfig.strict")}</span>
+            </label>
+          </div>
         </section>
 
         <section class="mt-5">

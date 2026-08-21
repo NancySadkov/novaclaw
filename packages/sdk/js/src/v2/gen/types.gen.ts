@@ -3798,6 +3798,13 @@ export type ConfigV2Agent = {
   memory?: "own" | "none"
   archiveChats?: boolean
   directory?: string
+  permissionMode?: "plan" | "ask" | "bypass" | "yolo"
+  strict?: {
+    enabled?: boolean
+    attempts?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    wallMinutes?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+  shortChat?: boolean
   description?: string
   mode?: "subagent" | "primary" | "all"
   hidden?: boolean
@@ -4652,6 +4659,13 @@ export type AgentV2Info = {
   archiveChats?: boolean
   description?: string
   directory?: string
+  permissionMode?: "plan" | "ask" | "bypass" | "yolo"
+  strict?: {
+    enabled?: boolean
+    attempts?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    wallMinutes?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+  shortChat?: boolean
   mode: "subagent" | "primary" | "all"
   hidden: boolean
   color?: AgentColor

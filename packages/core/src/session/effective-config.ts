@@ -6,6 +6,9 @@ import { makeGlobalNode } from "../effect/app-node"
 import { MemorySetting } from "../kb-graph/memory-setting"
 import { ProjectFileCache } from "../project-file-cache"
 import { EFFECTIVE_CONFIG_DEFAULTS, resolveSessionConfig, type EffectiveConfig } from "./config-resolve"
+import { AgentConfigStore } from "../agent-config-store"
+import { AgentDefaults } from "./agent-defaults"
+import type { ConfigAgent } from "../config/agent"
 import { ProjectDefaults } from "./project-defaults"
 import type { SessionSchema } from "./schema"
 import { SessionStore } from "./store"
@@ -155,6 +158,18 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const sessions = yield* SessionStore.Service
     const projects = yield* ProjectFileCache.Service
+    const agents = yield* AgentConfigStore.Service
+
+    /**
+     * The colleague's own config layers, folded last-wins — the same fold every other reader of the
+     * agent store uses, so a later layer overriding an earlier one means what it means everywhere.
+     */
+    const declaredFor = Effect.fn("SessionEffectiveConfig.agent")(function* (agentID: string) {
+      const stored = yield* agents.agents()
+      const layers = stored[agentID] ?? []
+      if (layers.length === 0) return undefined
+      return layers.reduce((carry, layer) => ({ ...carry, ...layer }) as ConfigAgent.Info)
+    })
 
     const resolution = Effect.fn("SessionEffectiveConfig.resolution")(function* (sessionID: SessionSchema.ID) {
       const session = yield* sessions.get(sessionID)
@@ -162,7 +177,11 @@ export const layer = Layer.effect(
       // is the shipped defaults. Resolving anyway (rather than short-circuiting) keeps this method's
       // result identical to what the readers computed before, for a session that vanished mid-turn.
       const found = session ? yield* projects.read(session.location.directory) : ProjectFileCache.EMPTY
-      const folded = ProjectDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, found.tune)
+      // 🔴 The COLLEAGUE's standing choices, folded UNDER the folder (see `agent-defaults.ts` for why
+      // that order is a security decision, not a preference). Read from the store rather than from
+      // the live roster so this resolves the same way on a headless turn as in the app.
+      const colleague = session?.agent === undefined ? undefined : yield* declaredFor(session.agent)
+      const folded = ProjectDefaults.fold(AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, colleague), found.tune)
       const config = clampToCeilings(
         yield* resolveSessionConfig(folded.defaults, sessionID, (id) => sessions.get(id as SessionSchema.ID)),
         currentCeilings(),
@@ -191,5 +210,5 @@ export const layer = Layer.effect(
 export const node = makeGlobalNode({
   service: Service,
   layer,
-  deps: [SessionStore.node, ProjectFileCache.node],
+  deps: [SessionStore.node, ProjectFileCache.node, AgentConfigStore.node],
 })

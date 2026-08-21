@@ -42,6 +42,14 @@ export const Info = Schema.Struct({
   description: Schema.String.pipe(optional),
   /** The FOLDER this colleague works on. Absent = its own scratch (`AgentWorkspace.folderFor`). */
   directory: Schema.String.pipe(optional),
+  /** Standing WORK choices — folded as a layer by `AgentDefaults`, absent = inherit. */
+  permissionMode: Schema.Literals(["plan", "ask", "bypass", "yolo"]).pipe(optional),
+  strict: Schema.Struct({
+    enabled: Schema.Boolean.pipe(optional),
+    attempts: Schema.Number.pipe(optional),
+    wallMinutes: Schema.Number.pipe(optional),
+  }).pipe(optional),
+  shortChat: Schema.Boolean.pipe(optional),
   mode: Schema.Literals(["subagent", "primary", "all"]),
   hidden: Schema.Boolean,
   color: Color.pipe(optional),

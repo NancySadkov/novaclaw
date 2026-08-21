@@ -2661,6 +2661,11 @@ export const dict = {
     "This colleague has a long standing brief for a model this small — it may lose the end of its own instructions. It will still try.",
   // The colleague's PROJECT. Named for the relationship ("works on"), not for the mechanism ("cwd"):
   // the user is assigning a person to a job, and the folder is how that is expressed.
+  // The standing WORK choices — how this colleague operates, every time. Moved off the composer
+  // 2026-08-21: re-choosing per chat is a question asked again for a decision that never changes.
+  "agentConfig.work": "How it works",
+  "agentConfig.posture": "Mode",
+  "agentConfig.strict": "Strict — verify each step, and retry a step that fails",
   "agentConfig.folder": "What it works on",
   "agentConfig.folderScratch": "Its own workspace",
   "agentConfig.folderOwn": "Back to its own",

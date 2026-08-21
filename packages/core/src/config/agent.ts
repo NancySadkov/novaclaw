@@ -64,6 +64,37 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
    * than an interruption.
    */
   directory: Schema.String.pipe(Schema.optional),
+  /**
+   * How this colleague WORKS — three standing choices that were per-chat chips until 2026-08-21
+   * (owner: *"the Chat/Agent drop down… same with Strict… and with permissions, which should be part
+   * of the agent too"*).
+   *
+   * 🔴 They belong to the ROLE, not to a conversation. A bookkeeper that needs Analyze mode needs it
+   * every time you talk to it, and re-choosing on every chat is the same defect the folder chip had:
+   * a question the user answers again for a decision that never changes. Absent = inherit, exactly as
+   * a session's own row does, so a chat can still differ when the user says so in that chat.
+   *
+   * ⚠️ Folded as a LAYER (`AgentDefaults.fold`), never stamped onto a session row — a colleague
+   * reconfigured today changes what its next turn resolves, and a chat still distinguishes "you chose
+   * this here" from "this is how this colleague works".
+   */
+  permissionMode: Schema.Literals(["plan", "ask", "bypass", "yolo"]).pipe(Schema.optional),
+  /**
+   * Strict, as the same OVERRIDE the session row carries — `{ enabled, attempts, wallMinutes }`,
+   * every field optional.
+   *
+   * ⚠️ NOT a bare boolean, and the typecheck is what said so: the resolved config's `strict` is an
+   * object, so a colleague declaring `true` would have folded a boolean into a field every reader
+   * treats as a record. A colleague's standing choice has to speak the same language as the layer it
+   * sits in, or the layering is a type error waiting for a caller.
+   */
+  strict: Schema.Struct({
+    enabled: Schema.Boolean.pipe(Schema.optional),
+    attempts: Schema.Number.pipe(Schema.optional),
+    wallMinutes: Schema.Number.pipe(Schema.optional),
+  }).pipe(Schema.optional),
+  /** The Chat/Agent posture: `true` = the fast local Chat stance, no project access or memory. */
+  shortChat: Schema.Boolean.pipe(Schema.optional),
   description: Schema.String.pipe(Schema.optional),
   mode: Schema.Literals(["subagent", "primary", "all"]).pipe(Schema.optional),
   hidden: Schema.Boolean.pipe(Schema.optional),
