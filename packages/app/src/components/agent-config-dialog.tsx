@@ -30,6 +30,14 @@ export function AgentConfigDialog(props: {
   /** Which colleague. `undefined` while a chat is still resolving its agent. */
   agentID: string | undefined
   onDismiss: () => void
+  /**
+   * Something about the roster CHANGED — a hire, a retirement, a cleared chat, a saved profile.
+   *
+   * ⚠️ The dialog cannot refetch the list it was opened from, and without this it does not try:
+   * measured 2026-08-21, retiring a colleague removed it from the server and left its row on screen
+   * until a manual reload. The durable change with the stale view, one more time.
+   */
+  onChanged?: () => void
   /** The chat-scoped controls, when this was opened from a conversation. Absent from Contacts: there
    *  is no chat to tune, and rendering an empty section would imply one. */
   tuning?: () => JSX.Element
@@ -115,6 +123,7 @@ export function AgentConfigDialog(props: {
       })
       await sync().updateConfig({ agents: { [plan.id]: plan.fragment } } as never)
       showToast({ variant: "success", title: language.t("agentConfig.clonedTitle", { name: plan.name }) })
+      props.onChanged?.()
       props.onDismiss()
     } catch (error) {
       showToast({ variant: "error", title: language.t("agentConfig.cloneFailed"), description: String(error) })
@@ -142,6 +151,7 @@ export function AgentConfigDialog(props: {
         archived: Date.now(),
       })
       showToast({ variant: "success", title: language.t("agentConfig.clearedTitle") })
+      props.onChanged?.()
       props.onDismiss()
     } catch (error) {
       showToast({ variant: "error", title: language.t("agentConfig.clearFailed"), description: String(error) })
@@ -164,6 +174,7 @@ export function AgentConfigDialog(props: {
           if (response.error) throw response.error
         })
       showToast({ variant: "success", title: language.t("agentConfig.retiredTitle", { name: name() }) })
+      props.onChanged?.()
       props.onDismiss()
     } catch (error) {
       showToast({ variant: "error", title: language.t("agentConfig.retireFailed"), description: String(error) })
@@ -200,6 +211,7 @@ export function AgentConfigDialog(props: {
       setMemory(undefined)
       setArchive(undefined)
       setModel(undefined)
+      props.onChanged?.()
       props.onDismiss()
     } catch (error) {
       // A failed save is SAID, never swallowed: the fields still hold the user's words, and telling

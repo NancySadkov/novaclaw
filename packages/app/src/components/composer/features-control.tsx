@@ -731,6 +731,8 @@ export function ComposerFeaturesControl(props: { state: ComposerFeaturesControlS
       () => (
         <AgentConfigDialog
           agentID={props.state.agent}
+          // No `onChanged` here on purpose: opened from a CHAT, there is no roster on screen to
+          // refresh, and the config's own fields re-read the agent list themselves.
           onDismiss={() => props.state.onClose()}
           tuning={() => <TuningPanel state={props.state} onDismiss={() => props.state.onClose()} embedded />}
         />

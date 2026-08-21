@@ -68,7 +68,7 @@ export function ContactsPage() {
   // What each colleague is WORKING ON — the half the roster inherits from the chat list it replaces.
   // A failure here dims the work column; it must never blank the roster, because "who works here"
   // and "what are they doing" are two questions and only one of them just failed.
-  const [sessions] = createResource(ctx, (current) =>
+  const [sessions, { refetch: refetchSessions }] = createResource(ctx, (current) =>
     listSessions(current.sdk.client.v2).catch(() => [] as SessionLike[]),
   )
   // How fast each colleague is going, from the per-minute series the projector writes. Refetched on
@@ -191,7 +191,17 @@ export function ContactsPage() {
           and how it behaves. Contacts passes no `tuning` section: there is no chat here to tune, and
           an empty section would imply one. */}
       <Show when={open()}>
-        {(view) => <AgentConfigDialog agentID={view().id} onDismiss={() => setSelected(undefined)} />}
+        {(view) => (
+          <AgentConfigDialog
+            agentID={view().id}
+            onDismiss={() => setSelected(undefined)}
+            // Both lists: a retirement changes WHO is here, a cleared chat changes what they are on.
+            onChanged={() => {
+              void refetchAgents()
+              void refetchSessions()
+            }}
+          />
+        )}
       </Show>
     </AppPage>
   )
