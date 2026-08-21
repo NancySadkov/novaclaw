@@ -59,6 +59,10 @@ export function useBuiltinApps(): () => HomeApp[] {
       // tile's accessible description and its tooltip, so it stays a sentence about what opens.
       subtitle: sub("tasks"),
       source: "builtin",
+      // ⚠️ The hero opens the ROSTER now, not a chat list — one door, because a second tile onto the
+      // same page is the "separate Contacts app" the owner ruled out. Its id stays `tasks` so an
+      // existing launcher keeps the hero in place (`RENAMED_IDS` exists for real renames, and this
+      // is not one); its NAME is an owner call, asked and not yet answered.
       // The hero IS the system monitor: threads running, combined throughput, memory pressure.
       stats: () => systemLoadStats(systemLoad(), language.t),
       open: () => navigate("/tasks"),
@@ -170,19 +174,6 @@ export function useBuiltinApps(): () => HomeApp[] {
       // banner/ErrorPage stay clean, the detail lives here).
       minLevel: "developer",
       open: () => navigate("/debug"),
-    },
-    {
-      // The Contacts roster (AGENTS.md — the structural metaphor). NORMAL level: an address book of
-      // colleagues is the least expert-shaped surface in the product, and it is where a new user is
-      // meant to meet Nova.
-      id: "contacts",
-      title: name("contacts"),
-      icon: "user",
-      tile: "/assets/skin/tiles/social.png",
-      accent: "#e0a33e",
-      subtitle: sub("contacts"),
-      source: "builtin",
-      open: () => navigate("/contacts"),
     },
     {
       id: "memory-graph",

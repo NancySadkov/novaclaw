@@ -2610,8 +2610,6 @@ export const dict = {
   "home.app.debug.subtitle": "Connection, error log, sessions — under the hood",
   "home.app.memory-graph.name": "Memory",
   "home.app.memory-graph.subtitle": "What NovaClaw remembers about you, and how it connects",
-  "home.app.contacts.name": "Contacts",
-  "home.app.contacts.subtitle": "The colleagues this NovaClaw employs, and what each one remembers",
   "agentConfig.close": "Close",
   "agentConfig.clearChat": "Clear chat",
   "agentConfig.clearing": "Clearing…",

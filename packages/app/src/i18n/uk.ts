@@ -725,8 +725,6 @@ export const dict = {
   "home.app.registry.subtitle": "База даних екземпляра, її можна редагувати — обережно",
   "home.app.debug.name": "Зневадження",
   "home.app.debug.subtitle": "З'єднання, журнал помилок, сесії — під капотом",
-  "home.app.contacts.name": "Контакти",
-  "home.app.contacts.subtitle": "Колеги, яких найняв цей NovaClaw, і що пам'ятає кожен із них",
   "home.app.memory-graph.name": "Граф пам'яті",
   "home.app.memory-graph.subtitle": "Досліджуйте, що пам'ятає NovaClaw, як граф",
   "home.app.trash.name": "Кошик",

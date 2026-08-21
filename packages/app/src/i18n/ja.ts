@@ -631,8 +631,6 @@ export const dict = {
   "home.app.registry.subtitle": "インスタンスのデータベース。編集可能 — 取り扱い注意",
   "home.app.debug.name": "デバッグ",
   "home.app.debug.subtitle": "接続、エラーログ、セッション — 内部の様子",
-  "home.app.contacts.name": "連絡先",
-  "home.app.contacts.subtitle": "この NovaClaw が雇っている同僚と、それぞれが覚えていること",
   "home.app.memory-graph.name": "メモリグラフ",
   "home.app.memory-graph.subtitle": "NovaClaw が覚えていることをグラフで見る",
   "home.app.trash.name": "ゴミ箱",

@@ -622,8 +622,6 @@ export const dict = {
   "home.app.registry.subtitle": "قاعدة بيانات النسخة، قابلة للتحرير — تعامل معها بحذر",
   "home.app.debug.name": "تصحيح الأخطاء",
   "home.app.debug.subtitle": "الاتصال، سجل الأخطاء، الجلسات — خلف الكواليس",
-  "home.app.contacts.name": "جهات الاتصال",
-  "home.app.contacts.subtitle": "الزملاء الذين يعملون في نوفاكلو هذا، وما يتذكره كل منهم",
   "home.app.memory-graph.name": "رسم الذاكرة",
   "home.app.memory-graph.subtitle": "استكشف ما يتذكره NovaClaw على شكل رسم بياني",
   "home.app.trash.name": "المهملات",
