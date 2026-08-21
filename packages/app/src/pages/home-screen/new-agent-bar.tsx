@@ -1,4 +1,4 @@
-import { createMemo, createSignal, Show, startTransition } from "solid-js"
+import { createMemo, createResource, createSignal, Show, startTransition } from "solid-js"
 import { SessionTitle } from "@novaclaw/core/session/title"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { Spinner } from "@novaclaw/ui/spinner"
@@ -7,9 +7,12 @@ import { useGlobal } from "@/context/global"
 import { useServerSync } from "@/context/server-sync"
 import { useTabs } from "@/context/tabs"
 import { useLanguage } from "@/context/language"
-import { useDirectoryPicker } from "@/components/directory-picker"
-import { displayName, errorMessage } from "@/pages/layout/helpers"
+import { errorMessage } from "@/pages/layout/helpers"
 import { showToast } from "@/utils/toast"
+import { ComposerAgentControl } from "@/components/composer/agent-control"
+import { listAgents } from "@/apps/agent-list"
+import type { AgentLike } from "@/apps/contacts"
+import { roster } from "@/apps/contacts"
 
 /**
  * The shared "spawn a new agent chat" flow: create (or reuse a truly-empty draft) in the given
@@ -39,9 +42,16 @@ export function useNewAgentSpawn() {
 
   const [spawning, setSpawning] = createSignal(false)
 
-  async function spawn(target?: string) {
+  // 🔴 Takes a COLLEAGUE, not a folder (owner, 2026-08-21). The server resolves where that colleague
+  // works — its configured project, or its own scratch — so the client never joins a scratch path
+  // itself, and "which folder does this chat run in" stops being a question the user answers twice.
+  //
+  // ⚠️ The reuse probe below still needs a directory, so it is read from the roster row the chip is
+  // already holding rather than re-derived: the client knows where the colleague works because the
+  // chip had to show it.
+  async function spawn(agentID?: string, agentFolder?: string) {
     const c = conn()
-    const directory = target ?? scratchDir()
+    const directory = agentFolder ?? scratchDir()
     if (!c || !directory || spawning()) return
     setSpawning(true)
     try {
@@ -75,7 +85,11 @@ export function useNewAgentSpawn() {
           return
         }
       }
-      const created = await cx.sdk.client.v2.session.create({ location: { directory } })
+      // No `location`: the server resolves the colleague's own folder (`agentLocation`), which is the
+      // ONE place that rule lives. Sending a directory computed here would be a second copy of it.
+      const created = await cx.sdk.client.v2.session.create(
+        agentID ? ({ agent: agentID } as never) : { location: { directory } },
+      )
       const sessionID = created.data?.data.id
       if (created.error || !sessionID) throw created.error ?? new Error("session create returned no id")
       cx.projects.open(directory)
@@ -109,32 +123,40 @@ export function useNewAgentSpawn() {
 export function NewAgentBar() {
   const server = useServer()
   const language = useLanguage()
-  const pickDirectory = useDirectoryPicker()
   const agent = useNewAgentSpawn()
 
+  const global = useGlobal()
   const conn = createMemo(() => server.current)
-  const spawning = agent.spawning
-  const [targetFolder, setTargetFolder] = createSignal<string | undefined>()
-  const canSpawn = createMemo(() => (targetFolder() ? !!conn() : agent.ready()))
-  const folderLabel = createMemo(() => {
-    const folder = targetFolder()
-    if (!folder) return language.t("home.newAgent.folder.scratch")
-    return displayName({ worktree: folder })
+  const barCtx = createMemo(() => {
+    const current = conn()
+    return current ? global.ensureServerCtx(current) : undefined
   })
-
-  function pickFolder() {
-    const c = conn()
-    if (!c) return
-    pickDirectory({
-      server: c,
-      title: language.t("command.project.open"),
-      onSelect: (result) => {
-        const directory = Array.isArray(result) ? result[0] : result
-        if (directory) setTargetFolder(directory)
-      },
-    })
+  const spawning = agent.spawning
+  const [chosenAgent, setChosenAgent] = createSignal<string | undefined>()
+  const [agents] = createResource(barCtx, (current) => listAgents(current.sdk.client.v2))
+  // The roster, as the chip needs it: who, and where each one works. `folderFor` is resolved here
+  // ONLY for the reuse probe and the chip's own label — the session's actual folder is decided by the
+  // server, so the two can never disagree about a colleague the client has not re-read.
+  const agentOptions = createMemo(() =>
+    roster(agents() ?? []).map((view) => {
+      const configured = (agents() ?? []).find((row: AgentLike) => row.id === view.id)?.config?.["directory"]
+      const folder = typeof configured === "string" && configured.trim() !== "" ? configured : undefined
+      return {
+        id: view.id,
+        name: view.name,
+        avatar: view.avatar,
+        folder: folder ?? language.t("agentConfig.folderScratch"),
+        ownScratch: folder === undefined,
+      }
+    }),
+  )
+  const chosenFolder = () => {
+    const id = chosenAgent() ?? agentOptions()[0]?.id
+    const row = (agents() ?? []).find((entry: AgentLike) => entry.id === id)
+    const configured = row?.config?.["directory"]
+    return typeof configured === "string" && configured.trim() !== "" ? configured : undefined
   }
-
+  const canSpawn = createMemo(() => (chosenFolder() ? !!conn() : agent.ready()))
   // Owner call 2026-07-14: the CLICK creates the chat — no typing here. The bar sits at the
   // bottom of the launcher, the same screen position as the chat composer, so activating it
   // transitions straight into the new chat's composer without the input appearing to move.
@@ -149,7 +171,7 @@ export function NewAgentBar() {
       })
       return
     }
-    void agent.spawn(targetFolder())
+    void agent.spawn(chosenAgent() ?? agentOptions()[0]?.id, chosenFolder())
   }
 
   return (
@@ -180,26 +202,18 @@ export function NewAgentBar() {
       <Show when={spawning()}>
         <Spinner class="size-4 shrink-0 text-v2-icon-icon-muted" />
       </Show>
-      <button
-        type="button"
-        data-slot="home-new-agent-folder"
-        class="flex shrink-0 items-center gap-1 rounded-full bg-v2-background-bg-layer-02 px-2 py-1 text-[11px] leading-none text-v2-text-text-muted transition-colors hover:text-v2-text-text-base"
-        title={language.t("home.newAgent.folder.pick")}
-        onClick={pickFolder}
-      >
-        <Icon name="folder" size="normal" />
-        {folderLabel()}
-      </button>
-      <Show when={targetFolder() !== undefined}>
-        <button
-          type="button"
-          aria-label={language.t("home.newAgent.folder.reset")}
-          class="shrink-0 text-[13px] leading-none text-v2-text-text-faint hover:text-v2-text-text-base"
-          onClick={() => setTargetFolder(undefined)}
-        >
-          ×
-        </button>
-      </Show>
+      {/* 🔴 WHO, not where (owner, 2026-08-21). The folder chip that stood here asked which directory
+          a new chat should run in — a question the user answered again for every conversation, and
+          one that left a named officer with no project of its own. The folder is part of the
+          colleague's configuration now, so this asks the question that is actually left. */}
+      <ComposerAgentControl
+        state={{
+          options: agentOptions(),
+          selectedID: chosenAgent(),
+          working: spawning(),
+          onSelect: setChosenAgent,
+        }}
+      />
     </div>
   )
 }

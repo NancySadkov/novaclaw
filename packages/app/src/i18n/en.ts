@@ -531,6 +531,11 @@ export const dict = {
   "prompt.remote.back": "Back",
   "prompt.remote.toast.failed": "Messenger link failed",
 
+  // WHO the prompt is for. The folder chip that stood here asked which directory a chat runs in —
+  // a question the user answered again for every conversation. The folder belongs to the colleague
+  // now, so this asks the one that is actually left.
+  "prompt.agent.tooltip": "Which colleague this is for — they bring their own project and memory",
+  "prompt.agent.tooltip.working": "This colleague is working — you can hand it to someone else once it is idle",
   "prompt.folder.tooltip": "This chat's working folder — click to move the chat somewhere else",
   "prompt.folder.tooltip.working": "The agent is working — you can move the chat once it's idle",
   "prompt.folder.pick.title": "Move this chat to a folder",

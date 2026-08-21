@@ -42,3 +42,20 @@ describe("which colleague the chip is addressing", () => {
     expect(selectedOption(state({ options: [] }))).toBeUndefined()
   })
 })
+
+describe("the chip's two shapes", () => {
+  test("in a CHAT it is identity, not a picker", () => {
+    // 🔴 A chat belongs to one colleague ("a single compactable chat per agent"), so a mid-chat agent
+    // switch would hand somebody else's transcript to a different officer — the confusion the roster
+    // removed. The flag is what makes that structural rather than a convention.
+    const chat = state({ selectedID: "theron", readOnly: true })
+    expect(chat.readOnly).toBe(true)
+    expect(selectedOption(chat)?.name).toBe("Theron")
+  })
+
+  test("on the HOME bar it is a choice, and defaults to somebody", () => {
+    const bar = state({})
+    expect(bar.readOnly).toBeUndefined()
+    expect(selectedOption(bar)?.id).toBe("nova")
+  })
+})

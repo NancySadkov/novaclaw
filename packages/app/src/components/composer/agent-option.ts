@@ -20,6 +20,15 @@ export type ComposerAgentControlState = {
   readonly selectedID: string | undefined
   /** Disabled mid-turn: switching who is answering while they are answering is a race, not a choice. */
   readonly working: boolean
+  /**
+   * IDENTITY, not a picker — the shape the chip takes inside an existing chat.
+   *
+   * 🔴 A chat belongs to ONE colleague (owner: "a single compactable chat per agent"), so a
+   * mid-conversation agent switch would hand somebody else's transcript to a different officer —
+   * exactly the confusion the roster removed. In a chat the question "who is this for" is already
+   * answered; the chip says who, and changing who works on something happens in Contacts.
+   */
+  readonly readOnly?: boolean | undefined
   readonly onSelect: (id: string) => void
 }
 

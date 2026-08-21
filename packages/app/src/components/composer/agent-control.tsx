@@ -31,6 +31,13 @@ export function ComposerAgentControl(props: { state: ComposerAgentControlState }
           <Show when={current()?.avatar} fallback={<Icon name="user" class="size-3.5 shrink-0" />}>
             {(avatar) => <span class="shrink-0">{avatar()}</span>}
           </Show>
+          <Show when={props.state.readOnly}>
+            {/* Whose chat this is. No control, because there is nothing to choose: see `readOnly`. */}
+            <span data-slot="prompt-agent-name" class="max-w-[12rem] truncate">
+              {current()?.name}
+            </span>
+          </Show>
+          <Show when={!props.state.readOnly}>
           <select
             data-action="prompt-agent"
             disabled={props.state.working}
@@ -50,6 +57,7 @@ export function ComposerAgentControl(props: { state: ComposerAgentControlState }
               )}
             </For>
           </select>
+          </Show>
         </label>
       </TooltipV2>
     </Show>
