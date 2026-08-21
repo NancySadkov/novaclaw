@@ -214,6 +214,12 @@ export function createPromptInputController(input: {
    * previous wording. Failures degrade to `undefined` for the same reason: a line explaining where a
    * value came from is worth having and never worth a toast.
    */
+  /** The agent the SESSION carries, per the record the app already holds. Undefined for a draft. */
+  const sessionAgent = () => {
+    const value = (sessionView.record() as { agent?: unknown } | undefined)?.agent
+    return typeof value === "string" && value !== "" ? value : undefined
+  }
+
   const [resolvedConfig, resolvedConfigRes] = createResource(
     () => input.sessionID(),
     async (sessionID: string) => {
@@ -408,15 +414,19 @@ export function createPromptInputController(input: {
     // control. `available` still feeds the composer's @-mention subagent list.
     agents: {
       available: sync().data.agent,
-      // The SAME value the composer already prints beside "Agent", so the chip and the config Tune
-      // opens can never name two different colleagues.
+      // WHOSE chat this is. The SESSION's own agent first, and the local pick only as a fallback
+      // for a draft that has no session yet.
       //
-      // ⚠️ Measured 2026-08-21, and worth keeping: the obvious source — `session.config`'s `resolved`
-      // bag — does NOT carry the agent. It resolves `type`, `priority`, `responder` and
-      // `permissionMode`, so reading `resolved.agent` returned `undefined` on every live chat and
-      // Tune opened a nameless profile. The guard degraded exactly as designed and the feature was
-      // still inert, which is the failure a green typecheck cannot see.
-      current: local.agent.current()?.name,
+      // 🔴 The order is the whole fix. `local.agent` is what this BROWSER last picked and defaults
+      // to `build`; under the roster every chat is created bound to a colleague, so trusting the
+      // local pick made the composer chip — and the config Tune opened — name the wrong one.
+      // Measured 2026-08-21: opening Plan from the roster produced Plan's session server-side while
+      // the composer said "Build" and Tune opened BUILD's profile on PLAN's chat.
+      //
+      // ⚠️ And the obvious third source is still wrong: `session.config`'s `resolved` bag does NOT
+      // carry the agent (it resolves `type`, `priority`, `responder`, `permissionMode`), which is
+      // what sent this to the local pick in the first place.
+      current: sessionAgent() ?? local.agent.current()?.name,
     },
     model: {
       selection: local.model,

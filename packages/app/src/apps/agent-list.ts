@@ -119,3 +119,24 @@ export const listUsage = async (
   )
   return Object.fromEntries(entries)
 }
+
+/**
+ * Start a colleague's chat.
+ *
+ * 🔴 The roster row says "No chat yet — open to start one", so opening MUST start one. The first
+ * version of that row opened the config instead, which made the copy a small lie — and a product
+ * whose own words do not match its buttons is the thing this UI is written against.
+ *
+ * The session is bound to the colleague at CREATION (`agent`), which is what makes it theirs: the
+ * roster finds a chat by agent id, the memory scope keys on the same id, and a chat created without
+ * it would belong to nobody.
+ */
+export const startChat = async (
+  sdk: { session: { create: (input: Record<string, unknown>) => Promise<{ data?: unknown }> } },
+  input: { readonly agentID: string; readonly title: string },
+): Promise<string | undefined> => {
+  const response = await sdk.session.create({ agent: input.agentID, title: input.title })
+  const body = response.data as { readonly data?: { readonly id?: unknown }; readonly id?: unknown } | undefined
+  const id = body?.data?.id ?? body?.id
+  return typeof id === "string" ? id : undefined
+}

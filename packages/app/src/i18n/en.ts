@@ -2667,6 +2667,8 @@ export const dict = {
   "contacts.governing": "CEO",
   "contacts.noTitle": "No job title yet",
   "contacts.noChat": "No chat yet — open to start one",
+  "contacts.starting": "Starting a chat…",
+  "contacts.startFailed": "Could not start a chat with this colleague",
   "contacts.untitled": "Working…",
   "contacts.spend": "Tokens this colleague and its helpers have produced",
   "contacts.rate": "{{tokens}}/min",

@@ -1,4 +1,4 @@
-import { A } from "@solidjs/router"
+import { A, useNavigate } from "@solidjs/router"
 import { Dynamic } from "solid-js/web"
 import { createMemo, createResource, createSignal, For, Show } from "solid-js"
 import { Icon } from "@novaclaw/ui/v2/icon"
@@ -10,7 +10,7 @@ import { useLanguage } from "@/context/language"
 import { AppPage } from "@/components/app-page"
 import { agentColor } from "@/utils/agent"
 import { memoryDisclosure, roster, searchRoster, type AgentLike, type ContactView } from "@/apps/contacts"
-import { listAgents, listSessions, listUsage } from "@/apps/agent-list"
+import { listAgents, listSessions, listUsage, startChat } from "@/apps/agent-list"
 import { planHire } from "@/apps/agent-hire"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
@@ -49,6 +49,8 @@ export function ContactsPage() {
   const [query, setQuery] = createSignal("")
   const [selected, setSelected] = createSignal<string | undefined>(undefined)
   const [hiring, setHiring] = createSignal(false)
+  const [starting, setStarting] = createSignal<string | undefined>()
+  const navigate = useNavigate()
   const sync = useServerSync()
 
   const conn = createMemo(() => server.current ?? global.servers.list()[0])
@@ -99,6 +101,24 @@ export function ContactsPage() {
       showToast({ variant: "error", title: language.t("contacts.hireFailed"), description: String(error) })
     } finally {
       setHiring(false)
+    }
+  }
+
+  /** Open a colleague who has no chat yet: create theirs, then go to it. */
+  const startTheirChat = async (agentID: string, name: string) => {
+    const current = ctx()
+    const key = serverKey()
+    if (current === undefined || key === undefined) return
+    setStarting(agentID)
+    try {
+      const id = await startChat(current.sdk.client.v2 as never, { agentID, title: name })
+      if (id === undefined) throw new Error("no session id came back")
+      navigate(sessionHref(key, id))
+    } catch (error) {
+      // Said, never swallowed: a row that quietly refuses to open reads as a broken product.
+      showToast({ variant: "error", title: language.t("contacts.startFailed"), description: String(error) })
+    } finally {
+      setStarting(undefined)
     }
   }
 
@@ -156,6 +176,8 @@ export function ContactsPage() {
               <ContactRow
                 view={view}
                 live={liveFor(sessions() ?? [], view.id)}
+                starting={starting() === view.id}
+                onStart={() => void startTheirChat(view.id, view.name)}
                 usage={usage()?.[view.id] ?? []}
                 serverKey={serverKey()}
                 onOpen={() => setSelected(view.id)}
@@ -179,6 +201,8 @@ function ContactRow(props: {
   view: ContactView
   live: RosterLive
   usage: readonly UsageMinute[]
+  starting: boolean
+  onStart: () => void
   serverKey: ServerConnection.Key | undefined
   onOpen: () => void
 }) {
@@ -203,7 +227,11 @@ function ContactRow(props: {
       </span>
       <Dynamic
         component={chatHref() ? A : "button"}
-        {...(chatHref() ? { href: chatHref()! } : { type: "button" as const, onClick: props.onOpen })}
+        {...(chatHref()
+          ? { href: chatHref()! }
+          : // No chat yet, so opening STARTS one — the row says so in words, and a button that did
+            // something else would make its own label a lie.
+            { type: "button" as const, onClick: props.onStart, disabled: props.starting })}
         class="min-w-0 flex-1 text-left"
       >
         <span class="flex items-center gap-2">
@@ -225,7 +253,11 @@ function ContactRow(props: {
             when={props.live.title}
             fallback={
               <span class="text-v2-text-text-faint">
-                {props.live.sessionID ? language.t("contacts.untitled") : language.t("contacts.noChat")}
+                {props.live.sessionID
+                  ? language.t("contacts.untitled")
+                  : props.starting
+                    ? language.t("contacts.starting")
+                    : language.t("contacts.noChat")}
               </span>
             }
           >
