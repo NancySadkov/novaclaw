@@ -7,19 +7,20 @@ import { ComposerPermissionModeControl, type ComposerPermissionModeControlState 
 import { ComposerPostureControl, type ComposerPostureControlState } from "./posture-control"
 import { ComposerStrictControl, type ComposerStrictControlState } from "./strict-control"
 import { ComposerFeaturesControl, type ComposerFeaturesControlState } from "./features-control"
-import { ComposerFolderControl, type ComposerFolderControlState } from "./folder-control"
+import { ComposerAgentControl } from "./agent-control"
+import type { ComposerAgentControlState } from "./agent-option"
 
 export type ComposerControlsRowState = {
   /** New-session composer OR an active session id — gates the per-chat controls cluster (1K). */
   sessionControls: boolean
-  /** The folder chip only renders mid-session (folder.visible). */
-  folderVisible: boolean
+  /** The agent chip only renders mid-session (agent.visible). */
+  agentVisible: boolean
   model: ComposerModelControlState
   posture: ComposerPostureControlState
   permissionMode: ComposerPermissionModeControlState
   strict: ComposerStrictControlState
   features: ComposerFeaturesControlState
-  folder: ComposerFolderControlState
+  agent: ComposerAgentControlState
 }
 
 export function ComposerControlsRow(props: { state: ComposerControlsRowState }) {
@@ -36,8 +37,10 @@ export function ComposerControlsRow(props: { state: ComposerControlsRowState }) 
             2026-07-14: per-chat helpers must be discoverable, not hidden behind an
             expertise level; the helpers' INTERNALS stay in Settings). */}
         <ComposerFeaturesControl state={props.state.features} />
-        <Show when={props.state.folderVisible}>
-          <ComposerFolderControl state={props.state.folder} />
+        {/* WHOSE chat this is — the folder chip's replacement. A chat's folder is its colleague's
+            folder now, so the question the composer can still usefully answer is who owns this work. */}
+        <Show when={props.state.agentVisible}>
+          <ComposerAgentControl state={props.state.agent} />
         </Show>
       </Show>
     </>

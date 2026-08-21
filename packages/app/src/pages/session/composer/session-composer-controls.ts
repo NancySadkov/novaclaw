@@ -17,6 +17,8 @@ import {
 } from "@/utils/messenger-api"
 import type { PromptProjectControls } from "@/components/prompt-project-selector"
 import { useDirectoryPicker } from "@/components/directory-picker"
+import { listAgents } from "@/apps/agent-list"
+import type { ComposerAgentOption } from "@/components/composer/agent-option"
 import { useLanguage } from "@/context/language"
 import { displayName, errorMessage } from "@/pages/layout/helpers"
 import { showToast } from "@/utils/toast"
@@ -58,6 +60,29 @@ export function createPromptInputController(input: {
   const sessionView = useSessionView(input.sessionID)
   const view = layout.view(sessionView.sessionKey)
   const agentsQuery = createQuery(() => input.queryOptions.agents(pathKey(sessionView.directory())))
+  // 🔴 The ROSTER's own loader, not `agentsQuery`. The two answer different questions and return
+  // different shapes: `queryOptions.agents` reads `sdk.app.agents()` — the app-level list, which
+  // carries no display NAME — while the roster reads `v2.agent.list`. Measured 2026-08-21: the chip
+  // rendered the id `zenon` where every other surface says `Zenon`. One roster, one loader.
+  const [rosterAgents] = createResource(
+    () => (input.sessionID() ? sdk() : undefined),
+    (client) => listAgents(client.client.v2),
+  )
+  /** Whose chat this is, as the chip needs it: the name a person sees, and where they work. */
+  const rosterOption = createMemo<ComposerAgentOption | undefined>(() => {
+    const id = (sessionView.record() as { agent?: string } | undefined)?.agent
+    if (!id) return undefined
+    const row = (rosterAgents() ?? []).find((agent) => agent.id === id)
+    const configured = row?.config?.["directory"]
+    const folder = typeof configured === "string" && configured.trim() !== "" ? configured : undefined
+    return {
+      id,
+      name: row?.name?.trim() || id,
+      ...(row?.avatar ? { avatar: row.avatar } : {}),
+      folder: folder ?? language.t("agentConfig.folderScratch"),
+      ownScratch: folder === undefined,
+    }
+  })
   const globalProvidersQuery = createQuery(() => input.queryOptions.providers(null))
   const providersQuery = createQuery(() => input.queryOptions.providers(pathKey(sessionView.directory())))
 
@@ -459,41 +484,19 @@ export function createPromptInputController(input: {
         }
       },
     },
-    // Owner call 2026-07-14: a chat's working folder is changeable while the agent is idle —
-    // the session MIGRATES to the picked directory (the control-plane move; children unaffected).
-    // Disabled while the agent works: a mid-turn move would yank the cwd out from under tools.
-    folder: {
-      name: displayName({ worktree: sessionView.directory() }),
+    // 🔴 WHOSE chat this is — replacing the folder chip that stood here (owner, 2026-08-21).
+    //
+    // The old chip MIGRATED the session to another directory, and that is now the wrong affordance:
+    // a chat's folder IS its colleague's folder, so moving one chat elsewhere would leave the two
+    // disagreeing about where that colleague works. Reassigning the colleague is the move that exists
+    // now, it happens in Contacts, and it tells the colleague (`AgentReassignment`).
+    //
+    // ⚠️ IDENTITY, not a picker. A colleague has one chat ("a single compactable chat per agent"), so
+    // switching agent mid-conversation would hand this transcript to a different officer — the
+    // confusion the roster removed. The chip says who; the roster is where you choose.
+    agent: {
       visible: !!input.sessionID(),
-      working: sessionView.working(),
-      pick: () => {
-        const id = input.sessionID()
-        const conn = server.current
-        if (!id || !conn) return
-        pickDirectory({
-          server: conn,
-          title: language.t("prompt.folder.pick.title"),
-          onSelect: (result) => {
-            const directory = Array.isArray(result) ? result[0] : result
-            if (!directory || directory === sessionView.directory()) return
-            void sdk()
-              .client.experimental.controlPlane.moveSession({ sessionID: id, destination: { directory } })
-              .then((moved) => {
-                if (moved.error) throw moved.error
-                // P3 view rebind, no reload: the `session.next.moved` event folds the new
-                // directory onto the client record (P2), and the target-session route re-derives
-                // its directory-scoped contexts from that record reactively. Nothing to navigate:
-                // the canonical route is `/server/<key>/session/<id>`, which carries no directory.
-              })
-              .catch((error: unknown) => {
-                showToast({
-                  title: language.t("prompt.folder.moveFailed"),
-                  description: errorMessage(error, language.t("common.requestFailed")),
-                })
-              })
-          },
-        })
-      },
+      option: rosterOption(),
     },
     features: {
       current: featureState().current,

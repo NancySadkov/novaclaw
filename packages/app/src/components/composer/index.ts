@@ -15,7 +15,8 @@ export {
   type ComposerRemoteChatState,
   type ComposerRemoteTrust,
 } from "./features-control"
-export { ComposerFolderControl, type ComposerFolderControlState } from "./folder-control"
 export { ComposerVariantControl, type ComposerVariantControlState } from "./variant-control"
 export { ComposerAttachmentsTray, type ComposerAttachmentsTrayState } from "./attachments-tray"
 export { ComposerEditorSurface, type ComposerEditorSurfaceState } from "./editor-surface"
+export { ComposerAgentControl } from "./agent-control"
+export type { ComposerAgentControlState, ComposerAgentOption } from "./agent-option"

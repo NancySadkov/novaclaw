@@ -38,7 +38,8 @@ import {
   ComposerVariantControl,
   type ComposerAttachmentsTrayState,
   type ComposerFeaturesControlState,
-  type ComposerFolderControlState,
+  type ComposerAgentControlState,
+  type ComposerAgentOption,
   type ComposerModelControlState,
   type ComposerPermissionModeControlState,
   type ComposerRemoteChatState,
@@ -95,13 +96,12 @@ export type PromptInputControls = {
     current: PermissionMode
     select: (value: PermissionMode) => void
   }
-  // The chat's working folder (mid-session only): shows where the agent works; picking a new
-  // folder MIGRATES the session there (control-plane move). Disabled while the agent is working.
-  folder: {
-    name: string
+  // WHOSE chat this is (mid-session only). Replaced the folder chip on 2026-08-21: a chat's folder
+  // is its COLLEAGUE's folder now, so a per-chat move would leave the two disagreeing. Identity, not
+  // a picker — see `agent-option.ts`.
+  agent: {
     visible: boolean
-    working: boolean
-    pick: () => void
+    option: ComposerAgentOption | undefined
   }
   // The per-chat Tuning toggles: current = the EFFECTIVE stance per feature (draft → session
   // record → global config); set writes this chat's explicit stance (and persists it live).
@@ -829,12 +829,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     setMode: (value) => props.controls.mode.set(value),
     onClose: restoreFocus,
   }))
-  const folderControlState = createMemo<ComposerFolderControlState>(() => ({
-    name: props.controls.folder.name,
-    working: props.controls.folder.working,
-    style: control(),
-    pick: () => props.controls.folder.pick(),
-  }))
+  const agentControlState = createMemo<ComposerAgentControlState>(() => {
+    const option = props.controls.agent.option
+    return {
+      options: option ? [option] : [],
+      selectedID: option?.id,
+      working: false,
+      readOnly: true,
+      onSelect: () => {},
+    }
+  })
   const attachmentsTrayState = createMemo<ComposerAttachmentsTrayState>(() => ({
     dragging: store.draggingType,
     contextItems: contextItems(),
@@ -972,7 +976,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             <ComposerControlsRow
               state={{
                 sessionControls: newSession() || !!props.controls.session?.id,
-                folderVisible: props.controls.folder.visible,
+                agentVisible: props.controls.agent.visible,
                 model: modelControlState(),
                 posture: {
                   current: props.controls.features.current.shortChat ? "chat" : "agent",
@@ -982,7 +986,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 permissionMode: permissionModeControlState(),
                 strict: strictControlState(),
                 features: featuresControlState(),
-                folder: folderControlState(),
+                agent: agentControlState(),
               }}
             />
             <Show when={!providersLoading() && store.mode !== "shell" && showVariantControl()}>
