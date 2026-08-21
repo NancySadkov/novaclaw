@@ -26,6 +26,17 @@ export interface AgentLike {
   readonly system?: string | undefined
   /** The model this colleague thinks with. Absent = it inherits the instance default. */
   readonly model?: { readonly providerID: string; readonly id: string } | undefined
+  /**
+   * The colleague's config fields, verbatim from the API row — everything `ConfigAgent.Info` declares
+   * that this row actually had.
+   *
+   * 🔴 The typed fields above are what the ROSTER renders; this is what a CLONE copies, and the two
+   * are different jobs. Measured 2026-08-21: both were hand-written lists, in series, and a clone
+   * silently lost `steps` because the loader never carried it — after the clone's own list had already
+   * been fixed to carry it. One hand-kept projection is a list that goes stale; two in a row is a list
+   * that goes stale twice and blames the wrong file.
+   */
+  readonly config?: Record<string, unknown> | undefined
   readonly avatar?: string | undefined
   readonly memory?: "own" | "none" | undefined
   /** Keep compacted conversations in this colleague's own memory (default on). */

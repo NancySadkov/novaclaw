@@ -2,6 +2,7 @@
 // each, because several surfaces now ask the same two questions and a second copy is how they start
 // disagreeing about who exists.
 
+import { ConfigAgent } from "@novaclaw/core/config/agent"
 import type { AgentLike } from "./contacts"
 import type { SessionLike, UsageMinute } from "./roster-live"
 
@@ -45,6 +46,14 @@ export const listAgents = async (sdk: { agent: { list: () => Promise<{ data?: un
         color: text("color"),
         memory,
         ...(typeof row["archiveChats"] === "boolean" ? { archiveChats: row["archiveChats"] } : {}),
+        // Everything the CONFIG schema declares, verbatim — the clone's source of truth. Derived from
+        // the schema rather than listed here, because a hand-kept projection is exactly what dropped
+        // `steps` on the way to a clone (see `AgentLike.config`).
+        config: Object.fromEntries(
+          Object.keys(ConfigAgent.Info.fields)
+            .filter((key) => row[key] !== undefined && row[key] !== null)
+            .map((key) => [key, row[key]]),
+        ),
       } satisfies AgentLike,
     ]
   })

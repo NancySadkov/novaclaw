@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { planClone } from "./agent-clone"
+import { ConfigAgent } from "@novaclaw/core/config/agent"
+import { clonedFields, NOT_CLONED, planClone } from "./agent-clone"
 import type { AgentLike } from "./contacts"
 
 const source: AgentLike = {
@@ -49,7 +50,9 @@ describe("what a clone inherits", () => {
 
   test("an absent field stays absent rather than becoming an empty string", () => {
     // "No title" and "a blank title" are different facts, and the roster renders them differently.
-    const bare: AgentLike = { id: "kallias", mode: "primary", hidden: false }
+    // ⚠️ Genuinely bare: a source carrying `hidden: false` is carrying a VALUE, and the clone takes it
+    // — which is the point of the derived set. Only what the source does not have stays away.
+    const bare = { id: "kallias", mode: "primary" } as unknown as AgentLike
     const clone = planClone({ source: bare, taken: [], random: () => 0 })
     expect(Object.keys(clone.fragment).sort()).toEqual(["mode", "name"])
   })
@@ -64,5 +67,82 @@ describe("what a clone inherits", () => {
   test("a throwaway's memory setting is inherited too", () => {
     const joe: AgentLike = { id: "crashtest-joe", memory: "none", mode: "primary", hidden: false }
     expect(planClone({ source: joe, taken: [], random: () => 0 }).fragment["memory"]).toBe("none")
+  })
+
+  test("the BEHAVIOUR fields come too — model, archiving, step budget", () => {
+    // 🔴 Measured 2026-08-21: the carried set was a hand-written array that had drifted from the
+    // schema, and a clone silently dropped all four of these. A colleague tuned to a capable model
+    // cloned into one running the default; a colleague told NOT to archive its chats cloned into one
+    // that does. Neither is visible to the user until the copy behaves differently from the original.
+    // ⚠️ The API SHAPE, which is what the roster actually holds — an object with the variant nested.
+    // The first version of this test used the config's string and passed while the live path wrote an
+    // object into a string field; a fixture that is not the real shape tests the fixture.
+    const tuned = {
+      ...source,
+      model: { providerID: "spark-holo", id: "holo3.1", variant: "high" },
+      archiveChats: false,
+      color: "#ff0000",
+      steps: 12,
+      description: "Keeps the books.",
+    } as unknown as AgentLike
+    expect(planClone({ source: tuned, taken: [], random: () => 0 }).fragment).toMatchObject({
+      model: "spark-holo/holo3.1",
+      variant: "high",
+      archiveChats: false,
+      color: "#ff0000",
+      steps: 12,
+      description: "Keeps the books.",
+    })
+  })
+
+  test("the CONFIG BAG wins over the rendered view — it is the whole brief", () => {
+    // 🔴 Measured 2026-08-21, after the clone's own field list was already fixed: the ROSTER LOADER is
+    // a second hand-written projection, and it did not carry `steps`, so a clone still lost the step
+    // budget. Two hand-kept lists in series go stale twice and blame the wrong file. `config` is
+    // derived from the schema at the loader, and the clone reads it in preference to the view object.
+    const viewOnly = { ...source, title: "Rendered title" } as unknown as AgentLike
+    const withBag = {
+      ...viewOnly,
+      config: { title: "Real title", steps: 12, system: "You keep the books.", mode: "primary" },
+    } as unknown as AgentLike
+    expect(planClone({ source: withBag, taken: [], random: () => 0 }).fragment).toMatchObject({
+      title: "Real title",
+      steps: 12,
+    })
+    // …and with no bag it still works, so a caller that has only the view is not broken.
+    expect(planClone({ source: viewOnly, taken: [], random: () => 0 }).fragment["title"]).toBe("Rendered title")
+  })
+
+  test("false and 0 survive — a falsy value is a SETTING, not an absence", () => {
+    // The old loop copied only non-empty strings, booleans and numbers, so this passed by accident.
+    // Stated on purpose now: `archiveChats: false` is the whole point of the field.
+    const off = { ...source, archiveChats: false, hidden: false } as unknown as AgentLike
+    const fragment = planClone({ source: off, taken: [], random: () => 0 }).fragment
+    expect(fragment["archiveChats"]).toBe(false)
+    expect(fragment["hidden"]).toBe(false)
+  })
+})
+
+// The ledger that keeps the two in step. A hand-kept subset of a schema that grows is a list that is
+// wrong the first time somebody adds a field, and says nothing when it happens.
+describe("every config field is carried or deliberately excluded", () => {
+  test("no field of ConfigAgent.Info is unaccounted for", () => {
+    const schema = Object.keys(ConfigAgent.Info.fields).sort()
+    const accounted = [...clonedFields(), ...Object.keys(NOT_CLONED)].sort()
+    expect(accounted).toEqual(schema)
+  })
+
+  test("each exclusion carries its REASON, not just its name", () => {
+    // A deny-list of bare keys decays into "somebody must have had a reason"; the reason is the thing
+    // a later reader needs in order to change it.
+    for (const [field, why] of Object.entries(NOT_CLONED)) {
+      expect({ field, hasReason: why.length > 12 }).toEqual({ field, hasReason: true })
+    }
+  })
+
+  test("NEGATIVE CONTROL: the schema really does expose its keys", () => {
+    // Without this the comparison above would pass forever on an empty set.
+    expect(Object.keys(ConfigAgent.Info.fields).length).toBeGreaterThan(10)
+    expect(clonedFields()).toContain("model")
   })
 })
