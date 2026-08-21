@@ -9,6 +9,8 @@ import { SessionLocationRecovery } from "@novaclaw/core/session/location-recover
 import { SessionTags } from "@novaclaw/core/session/tags"
 import { SessionPresence } from "@novaclaw/core/session/presence"
 import { AgentV2 } from "@novaclaw/core/agent"
+import { AgentWorkspace } from "@novaclaw/core/agent/workspace"
+import { Scratch } from "@novaclaw/core/scratch"
 import { ModelV2 } from "@novaclaw/core/model"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { DateTime, Effect, Layer, Stream } from "effect"
@@ -162,10 +164,16 @@ const SessionCatalogHandler = handlerLayer(
                   // `locationMiddleware` (see `protocol/groups/session.ts`). Resolving a service that no
                   // middleware provides typechecks and then fails on every request — measured: this exact
                   // line returned 500 on every create before the endpoint carried the middleware.
-                  location: ctx.payload.location ?? {
-                    directory: (yield* Location.Service).directory,
-                    workspaceID: (yield* Location.Service).workspaceID,
-                  },
+                  // 🔴 An AGENT names its own folder (owner, 2026-08-21: *"the folder an agent works
+                  // on is now part of its configuration"*). With no explicit location, a create FOR A
+                  // COLLEAGUE lands in that colleague's project — or in its own scratch when it has
+                  // none — so the prompt area can ask which colleague and never which folder.
+                  //
+                  // ⚠️ Resolved HERE rather than in the client. The client would have to join
+                  // `<scratchRoot>/<agentID>` itself, which means a path separator decision on the
+                  // wrong side of the wire and a second copy of a rule that already exists in
+                  // `AgentWorkspace.folderFor`.
+                  location: ctx.payload.location ?? (yield* agentLocation(ctx.payload.agent)),
                 }),
               }
             }),
@@ -1023,6 +1031,35 @@ const SessionObservationHandler = handlerLayer(
     }),
   ),
 )
+
+/**
+ * Where a new chat for `agentID` should run: the colleague's configured project, or its own scratch.
+ *
+ * Falls back to the REQUEST's location when there is no agent, or when the agent has no row yet —
+ * the pre-existing behaviour, and the right one: a create that names nobody is the caller's own
+ * directory, and inventing a scratch folder for an id that does not exist would file the session
+ * somewhere the user could not find it.
+ */
+const agentLocation = (agentID: string | undefined) =>
+  Effect.gen(function* () {
+    const requested = {
+      directory: (yield* Location.Service).directory,
+      workspaceID: (yield* Location.Service).workspaceID,
+    }
+    if (agentID === undefined || agentID === "") return requested
+    const agent = yield* AgentV2.Service.use((service) => service.get(AgentV2.ID.make(agentID)))
+    if (agent === undefined) return requested
+    const configured = (agent as unknown as Record<string, unknown>)["directory"]
+    const folder = AgentWorkspace.folderFor({
+      agentID,
+      directory: typeof configured === "string" ? configured : undefined,
+    })
+    // The colleague's own scratch may not exist yet — a first chat for a newly hired officer is the
+    // ordinary case. Creating it here keeps "every agent always has a real folder" true rather than
+    // aspirational; a failure falls back rather than refusing the create.
+    yield* Effect.promise(() => Scratch.ensureForAgent(agentID, agent.name ?? agentID)).pipe(Effect.ignore)
+    return { directory: AbsolutePath.make(folder), workspaceID: requested.workspaceID }
+  })
 
 export const SessionHandler = Layer.mergeAll(
   SessionCatalogHandler,

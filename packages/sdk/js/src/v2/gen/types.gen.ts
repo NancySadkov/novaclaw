@@ -4651,6 +4651,7 @@ export type AgentV2Info = {
   memory?: AgentMemory
   archiveChats?: boolean
   description?: string
+  directory?: string
   mode: "subagent" | "primary" | "all"
   hidden: boolean
   color?: AgentColor

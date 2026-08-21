@@ -1,6 +1,9 @@
 import { createMemo, createResource, createSignal, For, Show, type JSX } from "solid-js"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { useConfirm } from "@/components/dialog-confirm"
+import { useDirectoryPicker } from "@/components/directory-picker"
+import { displayName as folderDisplayName } from "@/pages/layout/helpers"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
@@ -50,6 +53,7 @@ export function AgentConfigDialog(props: {
   const language = useLanguage()
   const confirm = useConfirm()
   const navigate = useNavigate()
+  const pickDirectory = useDirectoryPicker()
   const global = useGlobal()
   const server = useServer()
   const sync = useServerSync()
@@ -93,6 +97,10 @@ export function AgentConfigDialog(props: {
   const [memory, setMemory] = createSignal<"own" | "none" | undefined>()
   const [archive, setArchive] = createSignal<boolean | undefined>()
   const [model, setModel] = createSignal<string | undefined>()
+  // `""` is a real value here and means "back to its own scratch" — distinct from `undefined`, which
+  // means "the user has not touched this field". Collapsing the two would make Clear indistinguishable
+  // from Cancel.
+  const [directory, setDirectory] = createSignal<string | undefined>()
   const models = useModels()
   const [saving, setSaving] = createSignal(false)
 
@@ -100,6 +108,28 @@ export function AgentConfigDialog(props: {
   const titleValue = () => title() ?? agent()?.title ?? ""
   const personalityValue = () => personality() ?? agent()?.personality ?? ""
   const memoryValue = () => memory() ?? agent()?.memory ?? "own"
+  const directoryValue = () => {
+    const draft = directory()
+    if (draft !== undefined) return draft.trim() === "" ? undefined : draft
+    const stored = (agent()?.config?.["directory"] as string | undefined)?.trim()
+    return stored ? stored : undefined
+  }
+  const folderLabel = () => {
+    const folder = directoryValue()
+    return folder ? folderDisplayName({ worktree: folder }) : language.t("agentConfig.folderScratch")
+  }
+  const pickFolder = () => {
+    const current = conn()
+    if (current === undefined) return
+    pickDirectory({
+      server: current,
+      title: language.t("agentConfig.folderPick"),
+      onSelect: (result) => {
+        const picked = Array.isArray(result) ? result[0] : result
+        if (picked) setDirectory(picked)
+      },
+    })
+  }
   // Default ON — `undefined` means on, per the owner's "unless the settings disable it".
   const archiveValue = () => archive() ?? agent()?.archiveChats ?? true
   // "" is the INHERIT choice, and it is a real value rather than a missing one: a colleague with no
@@ -127,6 +157,7 @@ export function AgentConfigDialog(props: {
     title() !== undefined ||
     personality() !== undefined ||
     memory() !== undefined ||
+    directory() !== undefined ||
     archive() !== undefined ||
     model() !== undefined
 
@@ -240,6 +271,9 @@ export function AgentConfigDialog(props: {
             title: titleValue(),
             personality: personalityValue(),
             memory: memoryValue(),
+            // Sent as `""` when cleared, which the config decoder stores as "no folder" — the field is
+            // optional, so an empty string is how a UI says "unset" through a merge patch.
+            ...(directory() === undefined ? {} : { directory: directory()!.trim() }),
             archiveChats: archiveValue(),
             // An empty choice means INHERIT. Writing "" would store an unparseable ref, so the key
             // is simply not sent — `undefined` is how this config says "ask the chain above me".
@@ -251,6 +285,7 @@ export function AgentConfigDialog(props: {
       setTitle(undefined)
       setPersonality(undefined)
       setMemory(undefined)
+      setDirectory(undefined)
       setArchive(undefined)
       setModel(undefined)
       props.onChanged?.()
@@ -405,6 +440,39 @@ export function AgentConfigDialog(props: {
           <Show when={mindTooSmall()}>
             <p class="mt-1 text-[11px] text-v2-state-fg-warning">{language.t("agentConfig.modelTooSmall")}</p>
           </Show>
+        </section>
+
+        <section class="mt-5">
+          <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
+            {language.t("agentConfig.folder")}
+          </h3>
+          {/* 🔴 The colleague's PROJECT, and it lives here rather than in the prompt area (owner,
+              2026-08-21). Asking which folder a chat runs in made "where does this work happen" a
+              per-conversation question and left a named officer with no project of its own; under the
+              roster it is part of the job — you assign the bookkeeper to the books once. */}
+          <div class="mt-2 flex items-center gap-2">
+            <button
+              type="button"
+              class="flex min-w-0 flex-1 items-center gap-1.5 rounded-md bg-v2-background-bg-layer-03 px-2 py-1.5 text-left text-xs disabled:opacity-40"
+              disabled={governing()}
+              onClick={() => pickFolder()}
+            >
+              <Icon name="folder" class="size-3.5 shrink-0" />
+              <span class="truncate">{folderLabel()}</span>
+            </button>
+            <Show when={directoryValue() !== undefined}>
+              {/* Back to its own workspace — the one way out of a project, and it is a change like any
+                  other: the colleague is told (`AgentReassignment`). */}
+              <button
+                type="button"
+                class="shrink-0 rounded-md px-2 py-1.5 text-xs text-v2-text-text-faint hover:bg-v2-background-bg-layer-03"
+                onClick={() => setDirectory("")}
+              >
+                {language.t("agentConfig.folderOwn")}
+              </button>
+            </Show>
+          </div>
+          <p class="mt-1 text-[11px] text-v2-text-text-faint">{language.t("agentConfig.folderHint")}</p>
         </section>
 
         <section class="mt-5">

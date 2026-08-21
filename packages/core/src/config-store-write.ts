@@ -4,6 +4,8 @@ import { Cause, Effect, Exit, Option, Schema } from "effect"
 import { Log } from "@novaclaw/schema/log"
 import { AgentV2 } from "./agent"
 import { AgentConfigStore } from "./agent-config-store"
+import { AgentReassignment } from "./agent/reassignment"
+import { AgentWorkspace } from "./agent/workspace"
 import { CatalogSeed } from "./catalog-seed"
 import { CatalogStore } from "./catalog-store"
 import { CommandConfigStore } from "./command-config-store"
@@ -886,9 +888,39 @@ const refreshDomains = (domains: readonly ReloadDomain[]) =>
  * one and ruling 5 / step 17 deleted it, so `RESTART_REQUIRED_KEYS` is empty and stays a ledger for
  * the next confession rather than a live one.
  */
+/**
+ * Where each of these colleagues works right now, folded from its stored layers.
+ *
+ * ⚠️ Resolved through `AgentWorkspace.folderFor`, so "unset" and "the scratch path spelled out"
+ * compare equal — a user who picks the scratch folder explicitly has not moved anybody, and a notice
+ * about nothing teaches them to ignore the ones that mean something.
+ */
+const agentFolders = (names: readonly string[]): Effect.Effect<Map<string, string>, never, AgentConfigStore.Service> =>
+  Effect.gen(function* () {
+    const folders = new Map<string, string>()
+    if (names.length === 0) return folders
+    const store = yield* AgentConfigStore.Service
+    const stored = yield* store.agents()
+    for (const name of names) {
+      const layers = stored[name] ?? []
+      // LAST layer wins, matching the fold every other reader uses: a later layer overriding an
+      // earlier one is what layering means.
+      const directory = layers.reduce<string | undefined>((carry, layer) => layer.directory ?? carry, undefined)
+      folders.set(name, AgentWorkspace.folderFor({ agentID: name, directory }))
+    }
+    return folders
+  })
+
 export const apply = (patch: Config.Info) =>
   Effect.gen(function* () {
     const { db } = yield* Database.Service
+    // 🔴 Read the folders BEFORE the write, because a colleague whose project changed has to be told
+    // (owner, 2026-08-21: *"reassigning agent to another folder should auto send a message to it, so
+    // it won't be thinking it still works on the old project"*). This is the one door every config
+    // write passes — the dialog's Save, the `configure` tool, Nova editing a colleague — so it is the
+    // only place that can see the change whoever made it. `apply` cannot DELIVER (a store module
+    // holds no sessions); it announces, and whatever graph owns sessions has registered to deliver.
+    const foldersBefore = yield* agentFolders(Object.keys(patch.agents ?? {}))
     // Same shape as `remove`: succeed WITH the refusal so `orDie` cannot reach it, then re-fail.
     // A caller's refused write is a 400, not a 500 — blaming us for a rule we chose is the
     // `rejectUnknownConfigKeys`-versus-`unroutedKeys` distinction again.
@@ -940,6 +972,21 @@ export const apply = (patch: Config.Info) =>
       })
     }
     if (consumed.has("watcher")) yield* Watcher.reload()
+    // AFTER the commit and after the domain reloads: the colleague is told once its new folder is
+    // both durable and live, so a turn woken by the notice reads the folder the notice describes.
+    if (consumed.has("agents")) {
+      const foldersAfter = yield* agentFolders([...foldersBefore.keys()])
+      for (const [agentID, from] of foldersBefore) {
+        const to = foldersAfter.get(agentID)
+        if (to === undefined || to === from) continue
+        yield* AgentReassignment.announce({
+          agentID,
+          from,
+          to,
+          ownScratch: AgentWorkspace.isOwnScratch({ agentID, directory: to }),
+        })
+      }
+    }
     // Ruling 2 BEFORE the reloads, not after: the reloads can die ("committed, not live"), and a key
     // this process was never going to apply is a fact the operator needs either way.
     const stuck = restartRequired(consumed)

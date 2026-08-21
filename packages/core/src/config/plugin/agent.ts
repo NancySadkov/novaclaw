@@ -144,6 +144,7 @@ function applyItem(draft: AgentDraft, agentID: AgentV2.ID, item: ConfigAgent.Inf
     if (item.memory !== undefined) agent.memory = item.memory
     if (item.archiveChats !== undefined) agent.archiveChats = item.archiveChats
     if (item.description !== undefined) agent.description = item.description
+    if (item.directory !== undefined) agent.directory = item.directory
     if (item.mode !== undefined) agent.mode = item.mode
     if (item.hidden !== undefined) agent.hidden = item.hidden
     if (item.color !== undefined) agent.color = item.color

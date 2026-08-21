@@ -40860,6 +40860,9 @@
           "description": {
             "type": "string"
           },
+          "directory": {
+            "type": "string"
+          },
           "mode": {
             "type": "string",
             "enum": ["subagent", "primary", "all"]

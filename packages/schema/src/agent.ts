@@ -40,6 +40,8 @@ export const Info = Schema.Struct({
   /** Keep compacted conversations in this agent's own memory (default on). */
   archiveChats: Schema.Boolean.pipe(optional),
   description: Schema.String.pipe(optional),
+  /** The FOLDER this colleague works on. Absent = its own scratch (`AgentWorkspace.folderFor`). */
+  directory: Schema.String.pipe(optional),
   mode: Schema.Literals(["subagent", "primary", "all"]),
   hidden: Schema.Boolean,
   color: Color.pipe(optional),

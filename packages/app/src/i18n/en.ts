@@ -2654,6 +2654,14 @@ export const dict = {
   "agentConfig.modelInherit": "Whatever this NovaClaw uses by default",
   "agentConfig.modelTooSmall":
     "This colleague has a long standing brief for a model this small — it may lose the end of its own instructions. It will still try.",
+  // The colleague's PROJECT. Named for the relationship ("works on"), not for the mechanism ("cwd"):
+  // the user is assigning a person to a job, and the folder is how that is expressed.
+  "agentConfig.folder": "What it works on",
+  "agentConfig.folderScratch": "Its own workspace",
+  "agentConfig.folderOwn": "Back to its own",
+  "agentConfig.folderPick": "Choose the folder this colleague works on",
+  "agentConfig.folderHint":
+    "Change this and the colleague is told, so it does not carry on thinking it works on the old project.",
   "agentConfig.archive": "When the chat gets long",
   "agentConfig.archiveKeep":
     "Keep the older conversation in this colleague's memory, so it can look things up later instead of only having the summary.",
