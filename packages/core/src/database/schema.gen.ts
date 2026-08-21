@@ -100,6 +100,12 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`session_compaction_request\` (
+          \`session_id\` text PRIMARY KEY,
+          \`requested_at\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`session_quality_check\` (
           \`id\` text PRIMARY KEY,
           \`session_id\` text NOT NULL,

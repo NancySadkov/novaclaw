@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "a830d767-7c72-438e-97d7-613e59fef7ff",
+  "id": "c9d81d55-ae00-4c63-b161-b4813025b265",
   "prevIds": [
-    "3dcf826f-152c-4354-b69a-c4884b3f26d5"
+    "a830d767-7c72-438e-97d7-613e59fef7ff"
   ],
   "ddl": [
     {
@@ -40,6 +40,10 @@
     },
     {
       "name": "calendar_schedule",
+      "entityType": "tables"
+    },
+    {
+      "name": "session_compaction_request",
       "entityType": "tables"
     },
     {
@@ -813,6 +817,26 @@
       "name": "permission_mode",
       "entityType": "columns",
       "table": "calendar_schedule"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "session_id",
+      "entityType": "columns",
+      "table": "session_compaction_request"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "requested_at",
+      "entityType": "columns",
+      "table": "session_compaction_request"
     },
     {
       "type": "text",
@@ -4760,6 +4784,15 @@
       "nameExplicit": false,
       "name": "calendar_schedule_pk",
       "table": "calendar_schedule",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "session_id"
+      ],
+      "nameExplicit": false,
+      "name": "session_compaction_request_pk",
+      "table": "session_compaction_request",
       "entityType": "pks"
     },
     {

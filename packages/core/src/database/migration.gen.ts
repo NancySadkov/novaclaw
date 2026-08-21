@@ -112,5 +112,6 @@ export const migrations = (
     import("./migration/20260818192520_add_session_policy_decision"),
     import("./migration/20260819032112_drop_plugin_config"),
     import("./migration/20260821035115_add_agent_token_minute"),
+    import("./migration/20260821070238_add_session_compaction_request"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]
