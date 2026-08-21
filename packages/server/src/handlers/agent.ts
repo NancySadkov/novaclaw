@@ -1,6 +1,7 @@
 import { AgentV2 } from "@novaclaw/core/agent"
 import { InvalidRequestError } from "@novaclaw/protocol/errors"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
+import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { AgentApi, handlerLayer } from "../handler-api"
@@ -22,8 +23,7 @@ export const AgentHandler = handlerLayer(
         "agent.remove",
         Effect.fn(function* (ctx) {
           // The store row goes away instance-wide (self-healing: `PATCH /config` merges `agents`
-          // and can never delete one). The live per-location AgentV2 snapshot still holds the agent
-          // until the next boot; the store is the durable truth. Follows `provider.remove`.
+          // and can never delete one). Follows `provider.remove` — including its refresh, see below.
           // The governing agent is not deletable through ANY door (AGENTS.md — the structural
           // metaphor). Checked before the store call rather than inside it, so the caller gets a 400
           // with a reason instead of a silent 204 for a delete that did nothing: an endpoint that
@@ -48,6 +48,16 @@ export const AgentHandler = handlerLayer(
           // Conditional, never blanket: removing some OTHER agent must leave the default alone.
           const fallback = yield* store.getDefault()
           if (fallback === ctx.params.agentID) yield* store.clearDefault()
+          // 🔴 …and the LIVE snapshot is re-materialised, or the delete is durable but invisible.
+          // This route writes the store directly, so it never passed through `apply`'s own
+          // `refreshDomains` — the same gap `provider.remove` closed on 2026-08-06, whose handler
+          // used to carry the note "the live per-location snapshot still holds it until the next
+          // boot". Harmless while agents were a settings detail; under the roster it read as
+          // **Retire appears to do nothing** — measured in the app on 2026-08-21: the toast said
+          // retired and the colleague was still on the list. AFTER the writes, never inside them:
+          // the reload re-reads the store.
+          // A/B: commenting this line drops config-remove.test.ts to 8 pass / 1 fail.
+          yield* ConfigStoreWrite.refreshDomain("agents")
         }),
       ),
   ),

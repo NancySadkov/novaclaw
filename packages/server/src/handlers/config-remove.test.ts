@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
 import { CommandConfigStore } from "@novaclaw/core/command-config-store"
 import { ConfigAgent } from "@novaclaw/core/config/agent"
+import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
 import { ConfigCommand } from "@novaclaw/core/config/command"
 import { ConfigReference } from "@novaclaw/core/config/reference"
 import { Database } from "@novaclaw/core/database/database"
@@ -131,6 +132,36 @@ describe("the config remove routes", () => {
         // Cleared to NO row, so the jsonc/seed path can seed a default again.
         yield* store.setDefaultIfEmpty("build")
         expect(yield* store.getDefault()).toBe("build")
+      }),
+    )
+  })
+
+  test("agent.remove REFRESHES the live roster, or the delete is durable but invisible", async () => {
+    const handler = await registeredHandler("server.agent", "agent.remove")
+    await run(
+      Effect.gen(function* () {
+        const store = yield* AgentConfigStore.Service
+        yield* store.setLayers("reviewer", [decodeAgent({ description: "review things" })])
+        // A REGISTERED listener, not the dispatch counter: with nothing registered the counter
+        // cannot tell "fired into an empty room" from "never called", which is the distinction this
+        // test exists to make.
+        let reloaded = 0
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            yield* ConfigStoreWrite.registerReload("agents", () =>
+              Effect.sync(() => {
+                reloaded++
+              }),
+            )
+
+            yield* handler({ params: { agentID: "reviewer" } })
+          }),
+        )
+
+        // Measured in the app 2026-08-21 before this line existed: the toast said retired and the
+        // colleague stayed on the roster until the next boot, because this route writes the store
+        // directly and never passed through `apply`'s own refresh.
+        expect(reloaded).toBe(1)
       }),
     )
   })

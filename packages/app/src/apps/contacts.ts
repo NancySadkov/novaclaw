@@ -21,6 +21,9 @@ export interface AgentLike {
   readonly title?: string | undefined
   readonly description?: string | undefined
   readonly personality?: string | undefined
+  /** The standing brief. Not shown on a row — it can be pages long — but a CLONE must carry it, or
+   *  the copy shares a job title with the original and none of its instructions. */
+  readonly system?: string | undefined
   readonly avatar?: string | undefined
   readonly memory?: "own" | "none" | undefined
   readonly mode: "primary" | "subagent" | "all"

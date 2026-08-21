@@ -5,7 +5,9 @@ import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
-import { listAgents } from "@/apps/agent-list"
+import { listAgents, listSessions } from "@/apps/agent-list"
+import { planClone } from "@/apps/agent-clone"
+import { chatFor } from "@/apps/roster-live"
 import { GOVERNING_ID, displayName, memoryDisclosure, type AgentLike } from "@/apps/contacts"
 
 // ONE agent configuration dialog, opened from two places (AGENTS.md → *the structural metaphor*;
@@ -60,6 +62,83 @@ export function AgentConfigDialog(props: {
   const memoryValue = () => memory() ?? agent()?.memory ?? "own"
   const dirty = () =>
     renamed() !== undefined || title() !== undefined || personality() !== undefined || memory() !== undefined
+
+  const [busy, setBusy] = createSignal<"clone" | "clear" | "retire" | undefined>()
+
+  const sdk = () => ctx()?.sdk.client.v2
+
+  /** Hire a copy: same brief, new identity (`apps/agent-clone.ts`). */
+  const clone = async () => {
+    const source = agent()
+    if (source === undefined) return
+    setBusy("clone")
+    try {
+      const roster = agents() ?? []
+      const plan = planClone({
+        source,
+        // Ids AND display names, both — a second colleague READING as "Theron" is the collision that
+        // matters, not a key clash.
+        taken: roster.flatMap((row) => [row.id, row.name ?? ""]),
+        random: Math.random,
+      })
+      await sync().updateConfig({ agents: { [plan.id]: plan.fragment } } as never)
+      showToast({ variant: "success", title: language.t("agentConfig.clonedTitle", { name: plan.name }) })
+      props.onDismiss()
+    } catch (error) {
+      showToast({ variant: "error", title: language.t("agentConfig.cloneFailed"), description: String(error) })
+    } finally {
+      setBusy(undefined)
+    }
+  }
+
+  /** Clear this colleague's chat: the conversation is archived and the NEXT one starts empty. The
+   *  colleague, its brief and its memory all survive — this is a new session, not a retirement. */
+  const clearChat = async () => {
+    const id = props.agentID
+    const client = sdk()
+    if (id === undefined || client === undefined) return
+    setBusy("clear")
+    try {
+      const sessions = await listSessions(client)
+      const chat = chatFor(sessions, id)
+      if (chat === undefined) {
+        showToast({ variant: "default", title: language.t("agentConfig.clearNothing") })
+        return
+      }
+      await (client as never as { session: { update: (input: unknown) => Promise<unknown> } }).session.update({
+        sessionID: chat.id,
+        archived: Date.now(),
+      })
+      showToast({ variant: "success", title: language.t("agentConfig.clearedTitle") })
+      props.onDismiss()
+    } catch (error) {
+      showToast({ variant: "error", title: language.t("agentConfig.clearFailed"), description: String(error) })
+    } finally {
+      setBusy(undefined)
+    }
+  }
+
+  /** Retire the colleague. Refused by the API for the governing agent, which is why the control is
+   *  not rendered for it — the roster must not offer what the endpoint will decline. */
+  const retire = async () => {
+    const id = props.agentID
+    const client = sdk()
+    if (id === undefined || client === undefined || governing()) return
+    setBusy("retire")
+    try {
+      await (client as never as { agent: { remove: (input: unknown) => Promise<{ error?: unknown }> } }).agent
+        .remove({ agentID: id })
+        .then((response) => {
+          if (response.error) throw response.error
+        })
+      showToast({ variant: "success", title: language.t("agentConfig.retiredTitle", { name: name() }) })
+      props.onDismiss()
+    } catch (error) {
+      showToast({ variant: "error", title: language.t("agentConfig.retireFailed"), description: String(error) })
+    } finally {
+      setBusy(undefined)
+    }
+  }
 
   const save = async () => {
     const id = props.agentID
@@ -198,6 +277,36 @@ export function AgentConfigDialog(props: {
         </Show>
       </div>
 
+      {/* Lifecycle, kept apart from the profile fields: these do something the moment they are
+          pressed, while everything above waits for Save. */}
+      <div class="flex flex-wrap items-center gap-2 border-t border-v2-border-border-faint px-4 py-2.5">
+        <button
+          type="button"
+          class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
+          disabled={busy() !== undefined || props.agentID === undefined}
+          onClick={() => void clearChat()}
+        >
+          {busy() === "clear" ? language.t("agentConfig.clearing") : language.t("agentConfig.clearChat")}
+        </button>
+        <button
+          type="button"
+          class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
+          disabled={busy() !== undefined || agent() === undefined}
+          onClick={() => void clone()}
+        >
+          {busy() === "clone" ? language.t("agentConfig.cloning") : language.t("agentConfig.clone")}
+        </button>
+        <Show when={!governing()}>
+          <button
+            type="button"
+            class="ml-auto rounded-md px-2.5 py-1.5 text-xs text-v2-state-fg-danger hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
+            disabled={busy() !== undefined || props.agentID === undefined}
+            onClick={() => void retire()}
+          >
+            {busy() === "retire" ? language.t("agentConfig.retiring") : language.t("agentConfig.retire")}
+          </button>
+        </Show>
+      </div>
       <Show when={!governing()}>
         <div class="flex items-center justify-end gap-2 border-t border-v2-border-border-base px-4 py-2.5">
           <button
