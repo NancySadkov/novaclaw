@@ -1,3 +1,5 @@
+import { A } from "@solidjs/router"
+import { Dynamic } from "solid-js/web"
 import { createMemo, createResource, createSignal, For, Show } from "solid-js"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
@@ -8,7 +10,11 @@ import { useLanguage } from "@/context/language"
 import { AppPage } from "@/components/app-page"
 import { agentColor } from "@/utils/agent"
 import { memoryDisclosure, roster, searchRoster, type AgentLike, type ContactView } from "@/apps/contacts"
-import { listAgents } from "@/apps/agent-list"
+import { listAgents, listSessions } from "@/apps/agent-list"
+import { liveFor, type RosterLive, type SessionLike } from "@/apps/roster-live"
+import { compactTokens } from "@/pages/home-session-meta"
+import { ServerConnection } from "@/context/server"
+import { sessionHref } from "@/utils/session-route"
 import { AgentConfigDialog } from "@/components/agent-config-dialog"
 
 // The Contacts app — the roster of colleagues this instance employs (AGENTS.md → *the structural
@@ -48,6 +54,16 @@ export function ContactsPage() {
   // draft of this page called the wrong client namespace, the catch turned a TypeError into an empty
   // roster, and the screen looked like a working feature with nobody hired.
   const [agents] = createResource(ctx, (current) => listAgents(current.sdk.client.v2))
+  // What each colleague is WORKING ON — the half the roster inherits from the chat list it replaces.
+  // A failure here dims the work column; it must never blank the roster, because "who works here"
+  // and "what are they doing" are two questions and only one of them just failed.
+  const [sessions] = createResource(ctx, (current) =>
+    listSessions(current.sdk.client.v2).catch(() => [] as SessionLike[]),
+  )
+  const serverKey = createMemo(() => {
+    const current = conn()
+    return current ? ServerConnection.key(current) : undefined
+  })
 
   const views = createMemo(() => roster(agents() ?? []))
   const shown = createMemo(() => searchRoster(views(), query()))
@@ -87,7 +103,16 @@ export function ContactsPage() {
             </p>
           }
         >
-          <For each={shown()}>{(view) => <ContactRow view={view} onOpen={() => setSelected(view.id)} />}</For>
+          <For each={shown()}>
+            {(view) => (
+              <ContactRow
+                view={view}
+                live={liveFor(sessions() ?? [], view.id)}
+                serverKey={serverKey()}
+                onOpen={() => setSelected(view.id)}
+              />
+            )}
+          </For>
         </Show>
       </div>
 
@@ -101,22 +126,35 @@ export function ContactsPage() {
   )
 }
 
-function ContactRow(props: { view: ContactView; onOpen: () => void }) {
+function ContactRow(props: {
+  view: ContactView
+  live: RosterLive
+  serverKey: ServerConnection.Key | undefined
+  onOpen: () => void
+}) {
   const language = useLanguage()
   const disclosure = createMemo(() => memoryDisclosure(props.view.memory))
+  // The row IS the way into the colleague's one chat — that is what replacing the chat list means.
+  // Its config is the gear beside it, so "talk to them" and "change them" are different gestures.
+  // ⚠️ Through `sessionHref`, never hand-built. The route segment is BASE64 of the server key, and
+  // interpolating the raw key produced `/server/http://localhost:4096/session/…` — a link that looks
+  // right in the DOM and cannot resolve. Caught by reading the rendered hrefs, not by the typecheck.
+  const chatHref = createMemo(() =>
+    props.live.sessionID && props.serverKey ? sessionHref(props.serverKey, props.live.sessionID) : undefined,
+  )
   return (
-    <button
-      type="button"
-      onClick={props.onOpen}
-      class="flex w-full items-center gap-3 border-b border-v2-border-border-base px-4 py-3 text-left transition-colors hover:bg-v2-background-bg-layer-02"
-    >
+    <div class="flex w-full items-center gap-3 border-b border-v2-border-border-base px-4 py-3 transition-colors hover:bg-v2-background-bg-layer-02">
       <span
         class="flex size-9 shrink-0 items-center justify-center rounded-full text-base"
         style={{ "background-color": agentColor(props.view.id, props.view.color) }}
       >
         {props.view.avatar ?? props.view.name.charAt(0)}
       </span>
-      <span class="min-w-0 flex-1">
+      <Dynamic
+        component={chatHref() ? A : "button"}
+        {...(chatHref() ? { href: chatHref()! } : { type: "button" as const, onClick: props.onOpen })}
+        class="min-w-0 flex-1 text-left"
+      >
         <span class="flex items-center gap-2">
           <span class="truncate text-sm font-medium">{props.view.name}</span>
           <Show when={props.view.kind === "governing"}>
@@ -124,16 +162,47 @@ function ContactRow(props: { view: ContactView; onOpen: () => void }) {
               {language.t("contacts.governing")}
             </span>
           </Show>
+          <span class="truncate text-xs text-v2-text-text-muted">
+            {props.view.title ?? language.t("contacts.noTitle")}
+          </span>
         </span>
-        <span class="block truncate text-xs text-v2-text-text-muted">
-          {props.view.title ?? language.t("contacts.noTitle")}
+        {/* WHAT IT IS ON — the chat list's own auto-generated title, reused rather than a second
+            title algorithm growing beside the first. A colleague with no chat yet says so plainly
+            instead of showing an empty line that reads like a missing value. */}
+        <span class="block truncate text-xs">
+          <Show
+            when={props.live.title}
+            fallback={
+              <span class="text-v2-text-text-faint">
+                {props.live.sessionID ? language.t("contacts.untitled") : language.t("contacts.noChat")}
+              </span>
+            }
+          >
+            {(title) => <span class="text-v2-text-text-base">{title()}</span>}
+          </Show>
         </span>
-        {/* Both halves, on the row itself — not behind the detail view. */}
+        {/* Both halves of the memory disclosure, on the row itself — not behind the detail view. */}
         <span class="block truncate text-[11px] text-v2-text-text-faint">
           {language.t(disclosure().privateKey)} · {language.t(disclosure().sharedKey)}
         </span>
-      </span>
-      <Icon name="chevron-right" class="size-4 shrink-0 text-v2-text-text-faint" />
-    </button>
+      </Dynamic>
+      {/* Spend, rolled up over this colleague's chat AND the nameless staff it spawned — they spend
+          on their officer's behalf. Absent rather than "0" when nothing has been produced: a zero
+          reads as a measurement, and no work is not a measurement. */}
+      <Show when={props.live.tokens.generated > 0}>
+        <span class="shrink-0 text-[11px] tabular-nums text-v2-text-text-faint" title={language.t("contacts.spend")}>
+          {compactTokens(props.live.tokens.generated)}
+        </span>
+      </Show>
+      <button
+        type="button"
+        onClick={props.onOpen}
+        class="shrink-0 rounded-md p-1.5 text-v2-text-text-faint hover:bg-v2-background-bg-layer-03 hover:text-v2-text-text-base"
+        title={language.t("contacts.configure")}
+        aria-label={language.t("contacts.configure")}
+      >
+        <Icon name="settings-gear" class="size-4" />
+      </button>
+    </div>
   )
 }

@@ -1,7 +1,9 @@
-// Loading the roster from the instance. ONE loader, because two surfaces now ask the same question
-// ("who works here?") and a second copy is how they start disagreeing about who exists.
+// Loading the roster from the instance — WHO works here, and WHAT they are working on. One loader
+// each, because several surfaces now ask the same two questions and a second copy is how they start
+// disagreeing about who exists.
 
 import type { AgentLike } from "./contacts"
+import type { SessionLike } from "./roster-live"
 
 /** The V2 agent list, which is the ONE shape carrying the roster profile.
  *
@@ -39,6 +41,42 @@ export const listAgents = async (sdk: { agent: { list: () => Promise<{ data?: un
         color: text("color"),
         memory,
       } satisfies AgentLike,
+    ]
+  })
+}
+
+/** Every session this instance holds, for the roster's work column.
+ *
+ *  ⚠️ Deliberately NOT the Tasks page's loader. That one is folder-scoped — it walks project
+ *  directories, the scratch dir and a child-session hydration pass — because a CHAT LIST is
+ *  organised by where the work happens. A roster is organised by WHO does it, so it asks the
+ *  instance for its sessions once and groups them by agent. */
+export const listSessions = async (sdk: {
+  session: { list: () => Promise<{ data?: unknown }> }
+}): Promise<SessionLike[]> => {
+  const response = await sdk.session.list()
+  const body = response.data as { readonly data?: unknown } | undefined
+  const rows = (Array.isArray(body) ? body : (body?.data ?? [])) as ReadonlyArray<Record<string, unknown>>
+  if (!Array.isArray(rows)) return []
+  return rows.flatMap((row) => {
+    const id = typeof row["id"] === "string" ? row["id"] : undefined
+    const time = row["time"] as { created?: unknown; updated?: unknown; archived?: unknown } | undefined
+    if (id === undefined || typeof time?.created !== "number") return []
+    const text = (key: string) => (typeof row[key] === "string" ? (row[key] as string) : undefined)
+    const number = (value: unknown) => (typeof value === "number" ? value : undefined)
+    return [
+      {
+        id,
+        parentID: text("parentID"),
+        agent: text("agent"),
+        title: text("title"),
+        tokens: row["tokens"] as SessionLike["tokens"],
+        time: {
+          created: time.created,
+          ...(number(time.updated) === undefined ? {} : { updated: number(time.updated) }),
+          ...(number(time.archived) === undefined ? {} : { archived: number(time.archived) }),
+        },
+      } satisfies SessionLike,
     ]
   })
 }

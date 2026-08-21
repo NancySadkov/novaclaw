@@ -59,7 +59,6 @@ import { isSessionNotFoundError } from "./utils/server-errors"
 import { showToast } from "@/utils/toast"
 
 import Session from "@/pages/session"
-import { NewHome } from "@/pages/home"
 import { HomeScreen } from "@/pages/home-screen/home-screen"
 import { FilesPage } from "@/pages/files"
 import { NotesPage } from "@/pages/notes"
@@ -743,7 +742,12 @@ function Routes() {
   return (
     <>
       <Route path="/" component={HomeScreen} />
-      <Route path="/tasks" component={NewHome} />
+      {/* 🔴 The chat list is RETIRED (owner, 2026-08-21). `/tasks` — the id the shell, the titlebar's
+          "All tasks" and every user's muscle memory reach for — now lands on the ROSTER: one row per
+          colleague, one chat each, instead of a list that only ever grew. `pages/home.tsx` is no
+          longer routed; deleting its 900 lines and its tests is its own slice, so it is unreferenced
+          rather than half-removed. */}
+      <Route path="/tasks" component={ContactsPage} />
       {/* The app was renamed Chats → Tasks on 2026-08-13. A dead address is a dead end, and the
           catch-all below would otherwise try to base64-decode "chats" as a directory. */}
       <Route path="/chats" component={() => <Navigate href="/tasks" />} />
@@ -754,6 +758,7 @@ function Routes() {
       <Route path="/skills" component={SkillsPage} />
       <Route path="/registry" component={RegistryPage} />
       <Route path="/debug" component={DebugPage} />
+      {/* The roster answers to both names while people learn the new one. */}
       <Route path="/contacts" component={ContactsPage} />
       <Route path="/memory-graph" component={MemoryGraphPage} />
       <Route path="/trash" component={TrashPage} />
