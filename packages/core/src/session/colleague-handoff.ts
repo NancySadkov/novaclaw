@@ -238,7 +238,7 @@ export const layer = Layer.effect(
         wake: (id) => wake.wake(id),
         store,
         refresh: agents.reload(),
-        forget: (colleague) => AgentRetire.everything({ db, events, memory, agent: colleague }),
+        forget: (colleague) => AgentRetire.everything({ db, events, memory, agent: colleague, at: Date.now() }),
         takenNames: agents.all().pipe(Effect.map((all) => all.flatMap((one) => [String(one.id), one.name ?? ""]))),
       }),
     )

@@ -190,10 +190,11 @@ export function AgentConfigDialog(props: {
   /** Retire the colleague. Refused by the API for the governing agent, which is why the control is
    *  not rendered for it — the roster must not offer what the endpoint will decline.
    *
-   *  🔴 CONFIRMED, unlike Clear chat: retiring destroys the colleague's private memory scope as well
-   *  as its chat (`core/agent/retire.ts` — the id returns to the name pool, so nothing may be left
-   *  keyed on it). An irreversible delete one click deep, sitting in the same row as Clone, is a
-   *  misclick away from erasing months of a colleague's memory. */
+   *  🔴 CONFIRMED even though nothing is destroyed. Retiring archives the chat and SETS ASIDE the
+   *  private memories (`core/agent/retire.ts` — the id returns to the name pool, so nothing may be
+   *  left keyed on it), which is recoverable in principle and not through any surface a user has.
+   *  A control that removes a colleague from the roster and empties its cabinet, one click deep and
+   *  in the same row as Clone, still deserves the sentence that says so. */
   const retire = async () => {
     const id = props.agentID
     const client = sdk()

@@ -47,6 +47,7 @@ describe("MemoryClient.fromEngine", () => {
     const engine: MemoryClient.Engine = {
       addMemory: async (i) => void calls.push(`add:${i.id}`),
       addEdge: async () => {},
+      moveScope: async (from, to) => void calls.push(`move:${from}->${to}`),
       search: async () => [
         {
           id: "z",

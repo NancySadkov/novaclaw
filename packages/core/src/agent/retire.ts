@@ -75,6 +75,9 @@ export const everything = (input: {
   readonly events: EventV2.Interface
   readonly memory: MemoryClient.Interface
   readonly agent: string
+  /** When the retirement happened, in epoch millis — it names the set-aside scope. Passed in rather
+   *  than read from the clock so a caller can make the name deterministic in a test. */
+  readonly at: number
 }): Effect.Effect<void> =>
   Effect.gen(function* () {
     yield* AgentUsage.forget(input.db, input.agent)
@@ -86,7 +89,18 @@ export const everything = (input: {
     yield* archiveChats({ db: input.db, events: input.events, agent: input.agent })
     const scope = cabinetOf(input.agent)
     if (scope === undefined) return
-    yield* input.memory.clearScope(scope).pipe(
+    // 🔴 SET ASIDE, not destroyed — changed 2026-08-21 once Nova could retire on its own judgement.
+    //
+    // Clearing satisfied the anti-bleed rule and nothing else: it also made a retirement final, and a
+    // model holding a delete key with no undo is precisely the thing that breaks in your hands. The
+    // move satisfies the same rule for free — `agent:<id>` ends up empty either way, so a future
+    // colleague drawn on that name inherits nothing — while the bytes survive under a scope no recall
+    // path reads (`recallScopes` reads session, agent and global; never `retired:`).
+    //
+    // ⚠️ It is also the asymmetry this function had against itself: the CHAT was archived and the
+    // memories deleted, so a mistaken retire took back half of what it left. One rule now.
+    const setAside = `retired:${input.agent}:${input.at}`
+    yield* input.memory.moveScope(scope, setAside).pipe(
       Effect.catch((error) =>
         Log.event("kb.scope.clear.failed", {
           "agent.id": input.agent,

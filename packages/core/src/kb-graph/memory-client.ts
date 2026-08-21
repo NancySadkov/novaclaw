@@ -123,6 +123,8 @@ export interface Interface {
   readonly path: (from: string, to: string, maxHops?: number) => Effect.Effect<PathResult | null, MemoryError>
   readonly invalidate: (id: string, at?: string) => Effect.Effect<void, MemoryError>
   readonly purge: (id: string) => Effect.Effect<void, MemoryError>
+  /** Move a whole scope's memories elsewhere — what a retirement does instead of deleting them. */
+  readonly moveScope: (from: string, to: string) => Effect.Effect<void, MemoryError>
   readonly clearScope: (scope: string) => Effect.Effect<void, MemoryError>
   readonly stats: () => Effect.Effect<Stats, MemoryError>
   /** Enumerate memories (viewer/editor) — no query, newest first, filterable + paginated. */
@@ -146,6 +148,7 @@ export interface Engine {
   path(from: string, to: string, maxHops?: number): Promise<PathResult | null>
   invalidate(id: string, at?: string): Promise<void>
   purge(id: string): Promise<void>
+  moveScope(from: string, to: string): Promise<void>
   clearScope(scope: string): Promise<void>
   stats(): Promise<Stats>
   list(input?: ListInput): Promise<ReadonlyArray<MemoryRow>>
@@ -167,6 +170,7 @@ export const fromEngine = (engine: Engine): Interface => {
     path: (from, to, maxHops) => wrap(() => engine.path(from, to, maxHops)),
     invalidate: (id, at) => wrap(() => engine.invalidate(id, at)),
     purge: (id) => wrap(() => engine.purge(id)),
+    moveScope: (from, to) => wrap(() => engine.moveScope(from, to)),
     clearScope: (scope) => wrap(() => engine.clearScope(scope)),
     stats: () => wrap(() => engine.stats()),
     list: (input) => wrap(() => engine.list(input)),
@@ -186,6 +190,7 @@ export const proxy = (get: () => Interface): Interface => ({
   path: (from, to, maxHops) => Effect.suspend(() => get().path(from, to, maxHops)),
   invalidate: (id, at) => Effect.suspend(() => get().invalidate(id, at)),
   purge: (id) => Effect.suspend(() => get().purge(id)),
+  moveScope: (from, to) => Effect.suspend(() => get().moveScope(from, to)),
   clearScope: (scope) => Effect.suspend(() => get().clearScope(scope)),
   stats: () => Effect.suspend(() => get().stats()),
   list: (input) => Effect.suspend(() => get().list(input)),
@@ -210,6 +215,7 @@ export const disabled = (reason = "memory is not available"): Interface => {
     path: fail,
     invalidate: fail,
     purge: fail,
+    moveScope: fail,
     clearScope: fail,
     stats: fail,
     list: fail,
@@ -274,6 +280,12 @@ export const stub = (): Interface => {
         if (m) m.valid = false
       }),
     purge: (id) => Effect.sync(() => void mems.delete(id)),
+    moveScope: (from, to) =>
+      Effect.sync(() => {
+        // Re-inserted rather than mutated: the stub's rows are readonly, and a retirement's move must
+        // keep the id (the engine does it with one `SET`, so the ids, vectors and edges survive).
+        for (const [id, m] of [...mems]) if (m.scope === from) mems.set(id, { ...m, scope: to })
+      }),
     clearScope: (scope) =>
       Effect.sync(() => {
         for (const [id, m] of mems) if (m.scope === scope) mems.delete(id)

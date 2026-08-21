@@ -2630,7 +2630,7 @@ export const dict = {
   // chat; it now takes the private memories too, and a control that quietly grew teeth is worse than
   // one that never had them.
   "agentConfig.retire.confirm.description":
-    "Everything they remember is deleted and their chat is archived. Their memories cannot be recovered, and the name goes back into the pool for a future colleague.",
+    "Their chat is archived and everything they remember is set aside, so no future colleague inherits it. The name goes back into the pool.",
   "agentConfig.retire.confirm.action": "Retire",
   "agentConfig.retiredTitle": "{{name}} has been retired",
   "agentConfig.retireFailed": "Could not retire this colleague",

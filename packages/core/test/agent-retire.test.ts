@@ -1,9 +1,10 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
 import { AgentRetire } from "@novaclaw/core/agent/retire"
+import { KbTool } from "@novaclaw/core/tool/kb"
 import { RosterChat } from "@novaclaw/core/session/roster-chat"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionSchema } from "@novaclaw/core/session/schema"
@@ -56,18 +57,29 @@ const events = Effect.gen(function* () {
 const remember = (memory: MemoryClient.Interface, scope: string, text: string) =>
   memory.addMemory({ id: `mem_${scope}_${text.length}`, kind: "entity", text, scope })
 
+/** A fixed retirement instant, so the set-aside scope name is deterministic. */
+const AT = 1_787_000_000_000
+
 describe("retiring a colleague", () => {
-  it.effect("clears the cabinet that is keyed on its id", () =>
+  it.effect("SETS ASIDE the cabinet rather than destroying it", () =>
     Effect.gen(function* () {
       const { db } = yield* Database.Service
       const memory = MemoryClient.stub()
       yield* remember(memory, "agent:ghost", "The ghost knows where the bodies are buried.")
       yield* AgentUsage.record(db, { agent: "ghost", at: Date.now(), generated: 120 })
 
-      yield* AgentRetire.everything({ db, events: yield* events, memory, agent: "ghost" })
+      yield* AgentRetire.everything({ db, events: yield* events, memory, agent: "ghost" , at: AT })
 
+      // The anti-bleed rule, unchanged: the id's own scope is empty, so a future colleague drawn on
+      // that name inherits nothing.
       expect(yield* memory.search({ query: "bodies", scopes: ["agent:ghost"] })).toEqual([])
       expect(yield* AgentUsage.since(db, { agent: "ghost", minute: 0 })).toEqual([])
+      // 🔴 …and the bytes are still THERE, under a scope nothing recalls from. Deleting satisfied the
+      // rule and nothing else — it also made a retirement final, and Nova retires on its own
+      // judgement. A model with a delete key and no undo is what "breaks in your hands" means.
+      const setAside = yield* memory.search({ query: "bodies", scopes: [`retired:ghost:${AT}`] })
+      expect(setAside.length).toBe(1)
+      expect(setAside[0]!.text).toContain("bodies are buried")
     }),
   )
 
@@ -80,7 +92,7 @@ describe("retiring a colleague", () => {
       yield* openChat(db, { id: SessionSchema.ID.make("ses_ghost_chat"), agent: "ghost" })
       expect(yield* RosterChat.chatFor(db, "ghost")).toBeDefined()
 
-      yield* AgentRetire.everything({ db, events: yield* events, memory: MemoryClient.stub(), agent: "ghost" })
+      yield* AgentRetire.everything({ db, events: yield* events, memory: MemoryClient.stub(), agent: "ghost" , at: AT })
 
       // Archived, not deleted: the record survives for the user, and the lookup no longer finds it.
       expect(yield* RosterChat.chatFor(db, "ghost")).toBeUndefined()
@@ -100,7 +112,7 @@ describe("retiring a colleague", () => {
       yield* AgentUsage.record(db, { agent: "theron", at: Date.now(), generated: 7 })
       yield* openChat(db, { id: SessionSchema.ID.make("ses_theron_chat"), agent: "theron" })
 
-      yield* AgentRetire.everything({ db, events: yield* events, memory, agent: "ghost" })
+      yield* AgentRetire.everything({ db, events: yield* events, memory, agent: "ghost" , at: AT })
 
       // The negative that gives the positive its meaning: a retirement that took the household's
       // shared memory with it would be a far worse defect than the one being fixed.
@@ -122,6 +134,7 @@ describe("retiring a colleague", () => {
         events: yield* events,
         memory: MemoryClient.disabled("engine down"),
         agent: "ghost",
+        at: AT,
       })
     }),
   )
@@ -129,7 +142,29 @@ describe("retiring a colleague", () => {
   it.effect("retiring a colleague that remembered nothing is not an error", () =>
     Effect.gen(function* () {
       const { db } = yield* Database.Service
-      yield* AgentRetire.everything({ db, events: yield* events, memory: MemoryClient.stub(), agent: "never_spoke" })
+      yield* AgentRetire.everything({ db, events: yield* events, memory: MemoryClient.stub(), agent: "never_spoke" , at: AT })
     }),
   )
+})
+
+// The set-aside cabinet must be out of reach of every AGENT, or "set aside" is just a rename of a
+// leak: the point of retiring is that nobody inherits what that colleague knew.
+describe("a set-aside cabinet is unreachable from any agent's own search", () => {
+  test("no value of the kb tool's scope parameter can name it", () => {
+    // `all` is the widest an agent can ask for, and it is still an EXPLICIT list — session, its own
+    // cabinet, the household. There is no unscoped search on the agent-facing door, which is what
+    // makes `retired:*` invisible without a rule that has to be remembered.
+    for (const scope of ["session", "agent", "global", "all", undefined] as const) {
+      const scopes = KbTool.scopesForSearch("ses_1", "theron", scope)
+      expect(scopes.every((entry) => !entry.startsWith("retired:"))).toBe(true)
+      expect(scopes.length).toBeGreaterThan(0)
+    }
+  })
+
+  test("NEGATIVE CONTROL: the widest ask really does widen", () => {
+    // Without this, the assertion above would pass just as happily on a function that returned one
+    // scope forever.
+    expect(KbTool.scopesForSearch("ses_1", "theron", "all")).toEqual(["ses_1", "agent:theron", "global"])
+    expect(KbTool.scopesForSearch("ses_1", "theron", "agent")).toEqual(["agent:theron"])
+  })
 })

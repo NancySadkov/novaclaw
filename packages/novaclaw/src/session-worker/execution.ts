@@ -249,7 +249,7 @@ export const layer = Layer.effect(
                       // case inside a live worker host.
                       wake: (id) => coordinator.wake(id).pipe(Effect.as(true)),
                       forget: (colleague) =>
-                        AgentRetire.everything({ db: database.db, events, memory, agent: colleague }),
+                        AgentRetire.everything({ db: database.db, events, memory, agent: colleague, at: Date.now() }),
                     }),
                     lease,
                     message,

@@ -203,8 +203,9 @@ export const layer = Layer.effectDiscard(
                     // the two halves genuinely differ: the transcript is archived (recoverable), the
                     // private memories are deleted (not). Saying "goes with them" of both was true of
                     // neither until 2026-08-21, and remains wrong about the chat.
-                    `Retired ${target}. Their chat is archived and everything they remembered is deleted — the ` +
-                    `name goes back into the pool. Tell the user what they used to own, in case it needs a new owner.`,
+                    `Retired ${target}. Their chat is archived and what they remembered is set aside, so nobody ` +
+                    `inherits it — the name goes back into the pool. Tell the user what they used to own, in case ` +
+                    `it needs a new owner.`,
                 } satisfies Output
               }
 

@@ -679,6 +679,26 @@ export class WasmMemory {
     })
   }
 
+  /**
+   * Move every memory from one scope to another, keeping ids, embeddings and edges.
+   *
+   * 🔴 What a RETIREMENT does to a colleague's cabinet (`agent/retire.ts`). Deleting it satisfied the
+   * anti-bleed rule — a retired id returns to the name pool, so `agent:<id>` must not still hold the
+   * old holder's memories — but it made a retirement UNRECOVERABLE, and Nova may retire on its own
+   * judgement. A model with a delete key and no undo is the thing that breaks in your hands.
+   *
+   * Moving satisfies the same rule for free: `agent:<id>` ends up empty either way, and the bytes are
+   * still there under a scope nothing recalls from (`recallScopes` reads session, agent and global —
+   * never `retired:`). One `SET`, so ids, vectors and relationships survive; a read-and-rewrite would
+   * have minted new ids and dropped the graph edges between them.
+   */
+  moveScope(from: string, to: string): Promise<void> {
+    return this.serialize(async () => {
+      await this.q(`MATCH (m:Memory) WHERE m.scope = $from SET m.scope = $to`, { from, to })
+      this.touch()
+    })
+  }
+
   clearScope(scope: string): Promise<void> {
     return this.serialize(async () => {
       await this.q(`MATCH (m:Memory) WHERE m.scope = $scope DETACH DELETE m`, { scope })

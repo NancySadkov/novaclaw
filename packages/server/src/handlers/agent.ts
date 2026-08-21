@@ -76,6 +76,7 @@ export const AgentHandler = handlerLayer(
             events: yield* EventV2.Service,
             memory: Memory.client(yield* Memory.node.service),
             agent: ctx.params.agentID,
+            at: Date.now(),
           })
           const fallback = yield* store.getDefault()
           if (fallback === ctx.params.agentID) yield* store.clearDefault()
