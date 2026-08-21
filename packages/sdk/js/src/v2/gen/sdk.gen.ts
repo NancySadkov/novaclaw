@@ -3610,6 +3610,31 @@ class ApiV2Agent extends NovaClawApiClient {
   }
 
   /**
+   * An agent's per-minute output
+   *
+   * Tokens this agent GENERATED (output + reasoning), bucketed by minute, newest first, for the last 24 hours. Sparse on purpose: a minute in which the agent produced nothing has no row at all, so an absent minute means nothing happened rather than 'measured, and it was zero'. A sub-agent's output is attributed to the agent that owns it.
+   */
+  public usage<ThrowOnError extends boolean = false>(
+    parameters: {
+      agentID: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { agentID: parameters?.["agentID"] }
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).get<T.V2AgentUsageResponses, T.V2AgentUsageErrors, ThrowOnError>({
+      url: "/api/agent/{agentID}/usage",
+      ...options,
+      path,
+      query,
+    })
+  }
+
+  /**
    * Remove agent
    *
    * Delete a config-defined agent from the instance agent store, and clear `default_agent` when it pointed at that agent. Takes effect fully on the next serve boot. The instance's governing agent (`nova`) cannot be removed and returns 400.

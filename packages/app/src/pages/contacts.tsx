@@ -10,8 +10,8 @@ import { useLanguage } from "@/context/language"
 import { AppPage } from "@/components/app-page"
 import { agentColor } from "@/utils/agent"
 import { memoryDisclosure, roster, searchRoster, type AgentLike, type ContactView } from "@/apps/contacts"
-import { listAgents, listSessions } from "@/apps/agent-list"
-import { liveFor, type RosterLive, type SessionLike } from "@/apps/roster-live"
+import { listAgents, listSessions, listUsage } from "@/apps/agent-list"
+import { formatRate, liveFor, ratePerMinute, type RosterLive, type SessionLike, type UsageMinute } from "@/apps/roster-live"
 import { compactTokens } from "@/pages/home-session-meta"
 import { ServerConnection } from "@/context/server"
 import { sessionHref } from "@/utils/session-route"
@@ -34,6 +34,10 @@ import { AgentConfigDialog } from "@/components/agent-config-dialog"
 //      refuses it too — the UI is not the enforcement, it is the honest face of it.
 //
 // The ordering, filtering and disclosure decisions live in `@/apps/contacts` where tests reach them.
+
+/** The rate window. Ten minutes is long enough that a pause between steps does not blank the badge,
+ *  and short enough that "busy" means now rather than this afternoon. */
+const RATE_WINDOW_MINUTES = 10
 
 export function ContactsPage() {
   const global = useGlobal()
@@ -60,6 +64,17 @@ export function ContactsPage() {
   const [sessions] = createResource(ctx, (current) =>
     listSessions(current.sdk.client.v2).catch(() => [] as SessionLike[]),
   )
+  // How fast each colleague is going, from the per-minute series the projector writes. Refetched on
+  // the same beat the page is looked at rather than polled: a roster is a glance, not a dashboard.
+  const [usage] = createResource(
+    () => {
+      const current = ctx()
+      const ids = (agents() ?? []).map((row) => row.id)
+      return current && ids.length > 0 ? { current, ids } : undefined
+    },
+    ({ current, ids }) => listUsage(current.sdk.client.v2 as never, ids),
+  )
+
   const serverKey = createMemo(() => {
     const current = conn()
     return current ? ServerConnection.key(current) : undefined
@@ -108,6 +123,7 @@ export function ContactsPage() {
               <ContactRow
                 view={view}
                 live={liveFor(sessions() ?? [], view.id)}
+                usage={usage()?.[view.id] ?? []}
                 serverKey={serverKey()}
                 onOpen={() => setSelected(view.id)}
               />
@@ -129,11 +145,13 @@ export function ContactsPage() {
 function ContactRow(props: {
   view: ContactView
   live: RosterLive
+  usage: readonly UsageMinute[]
   serverKey: ServerConnection.Key | undefined
   onOpen: () => void
 }) {
   const language = useLanguage()
   const disclosure = createMemo(() => memoryDisclosure(props.view.memory))
+  const rate = createMemo(() => ratePerMinute(props.usage, { now: Date.now(), window: RATE_WINDOW_MINUTES }))
   // The row IS the way into the colleague's one chat — that is what replacing the chat list means.
   // Its config is the gear beside it, so "talk to them" and "change them" are different gestures.
   // ⚠️ Through `sessionHref`, never hand-built. The route segment is BASE64 of the server key, and
@@ -189,6 +207,19 @@ function ContactRow(props: {
       {/* Spend, rolled up over this colleague's chat AND the nameless staff it spawned — they spend
           on their officer's behalf. Absent rather than "0" when nothing has been produced: a zero
           reads as a measurement, and no work is not a measurement. */}
+      {/* The RATE, when there is one. Absent — never "0/min" — when the colleague produced nothing
+          in the window: the series is sparse, so no rows means not working, and a zero badge would
+          read as a measurement of its speed rather than of our decision to render it. */}
+      <Show when={rate()}>
+        {(perMinute) => (
+          <span
+            class="shrink-0 text-[11px] tabular-nums text-v2-text-text-base"
+            title={language.t("contacts.rateTitle", { window: RATE_WINDOW_MINUTES })}
+          >
+            {language.t("contacts.rate", { tokens: formatRate(perMinute()) })}
+          </span>
+        )}
+      </Show>
       <Show when={props.live.tokens.generated > 0}>
         <span class="shrink-0 text-[11px] tabular-nums text-v2-text-text-faint" title={language.t("contacts.spend")}>
           {compactTokens(props.live.tokens.generated)}

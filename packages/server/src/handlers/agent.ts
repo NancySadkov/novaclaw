@@ -1,6 +1,8 @@
 import { AgentV2 } from "@novaclaw/core/agent"
 import { InvalidRequestError } from "@novaclaw/protocol/errors"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
+import { AgentUsage } from "@novaclaw/core/agent/usage"
+import { Database } from "@novaclaw/core/database/database"
 import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
@@ -18,6 +20,21 @@ export const AgentHandler = handlerLayer(
         Effect.gen(function* () {
           return yield* response(AgentV2.Service.use((agent) => agent.all()))
         }),
+      )
+      .handle("agent.usage", (ctx) =>
+        // The roster's work column. `Database.Service` rather than a per-location store: spend
+        // belongs to the COLLEAGUE, not to whichever folder a chat happened to run in — a rate that
+        // changed when you switched directories would be describing the directory, not the agent.
+        response(
+          Effect.gen(function* () {
+            const { db } = yield* Database.Service
+            // A fixed 24-hour window (see the endpoint's note). `Date.now()` here rather than a
+            // stored "latest" so an idle colleague's window still slides — otherwise a series that
+            // stopped growing would keep answering with its last busy day forever.
+            const since = AgentUsage.minuteOf(Date.now()) - 24 * 60
+            return yield* AgentUsage.since(db, { agent: ctx.params.agentID, minute: since })
+          }),
+        ),
       )
       .handle(
         "agent.remove",
@@ -46,6 +63,10 @@ export const AgentHandler = handlerLayer(
           // `default agent "…" not found` (`novaclaw/src/agent/agent.ts:425`).
           //
           // Conditional, never blanket: removing some OTHER agent must leave the default alone.
+          // Its per-minute series goes with it: a retired name returns to the pool, and a future
+          // colleague drawing it must not open with the old one's rate on its row.
+          const { db } = yield* Database.Service
+          yield* AgentUsage.forget(db, ctx.params.agentID)
           const fallback = yield* store.getDefault()
           if (fallback === ctx.params.agentID) yield* store.clearDefault()
           // 🔴 …and the LIVE snapshot is re-materialised, or the delete is durable but invisible.

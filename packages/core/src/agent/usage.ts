@@ -62,3 +62,15 @@ export const since = (db: Db, input: { readonly agent: string; readonly minute: 
     .orderBy(desc(AgentTokenMinuteTable.minute))
     .all()
     .pipe(Effect.orDie)
+
+/**
+ * Drop everything recorded for a colleague.
+ *
+ * 🔴 Called when an agent is RETIRED, and the reason is identity bleed rather than tidiness: a
+ * retired name returns to the pool, so a future "Theron" would otherwise open with the old Theron's
+ * rate on its row — a measurement of work it never did, under a name it did not do it under. The
+ * session rows keep their own totals, so nothing about what the instance spent is lost here; what
+ * goes is the attribution to a colleague that no longer exists.
+ */
+export const forget = (db: Db, agent: string) =>
+  db.delete(AgentTokenMinuteTable).where(eq(AgentTokenMinuteTable.agent, agent)).run().pipe(Effect.orDie)

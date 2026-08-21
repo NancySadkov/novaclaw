@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { chatFor, liveFor, threadOf, type SessionLike } from "./roster-live"
+import { chatFor, formatRate, liveFor, ratePerMinute, threadOf, type SessionLike } from "./roster-live"
 
 const session = (over: Partial<SessionLike> & { id: string }): SessionLike => ({
   time: { created: 1 },
@@ -87,5 +87,54 @@ describe("what a colleague with no chat yet reports", () => {
   test("the auto-generated title is reused verbatim", () => {
     const live = liveFor([session({ id: "a", agent: "theron", title: "Glyph description request" })], "theron")
     expect(live.title).toBe("Glyph description request")
+  })
+})
+
+describe("the rate on the row", () => {
+  const now = 1_000 * 60_000 // minute 1000
+
+  test("averages over the WINDOW, not over the minutes that happen to have rows", () => {
+    // 600 tokens in one minute of the last ten is 60/min of sustained work, not 600. Dividing by
+    // rows present would answer "how fast while working", which flatters every colleague to roughly
+    // the same number and tells the user nothing about who is busy.
+    expect(ratePerMinute([{ minute: 998, generated: 600 }], { now, window: 10 })).toBe(60)
+  })
+
+  test("sums every minute inside the window and ignores what falls outside it", () => {
+    const series = [
+      { minute: 1000, generated: 100 },
+      { minute: 995, generated: 100 },
+      { minute: 980, generated: 9999 }, // older than the window
+    ]
+    expect(ratePerMinute(series, { now, window: 10 })).toBe(20)
+  })
+
+  test("a quiet window is UNDEFINED, never 0", () => {
+    // The series is sparse: no rows means "not working". A "0/min" badge reads as a measurement of
+    // the colleague's speed, when what it measures is our decision to render it.
+    expect(ratePerMinute([], { now, window: 10 })).toBeUndefined()
+    expect(ratePerMinute([{ minute: 900, generated: 500 }], { now, window: 10 })).toBeUndefined()
+  })
+
+  test("a future row cannot inflate the rate", () => {
+    // Clock skew between the writer and this reader is real; a bucket from the future would
+    // otherwise be counted in a window it does not belong to.
+    expect(ratePerMinute([{ minute: 1005, generated: 500 }], { now, window: 10 })).toBeUndefined()
+  })
+})
+
+describe("printing the rate", () => {
+  test("a rate below one per minute is `<1`, NEVER `0`", () => {
+    // The trap this exists for: a real turn produced 2 tokens over a ten-minute window — 0.2/min —
+    // and rounding printed the exact "0/min" badge the sparse series refuses to store. Measured on a
+    // live turn, 2026-08-21.
+    expect(formatRate(0.2)).toBe("<1")
+    expect(formatRate(0.9)).toBe("<1")
+  })
+
+  test("small rates keep a decimal, larger ones round", () => {
+    expect(formatRate(1)).toBe("1")
+    expect(formatRate(2.5)).toBe("2.5")
+    expect(formatRate(42.4)).toBe("42")
   })
 })

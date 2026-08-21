@@ -3,7 +3,7 @@
 // disagreeing about who exists.
 
 import type { AgentLike } from "./contacts"
-import type { SessionLike } from "./roster-live"
+import type { SessionLike, UsageMinute } from "./roster-live"
 
 /** The V2 agent list, which is the ONE shape carrying the roster profile.
  *
@@ -80,4 +80,38 @@ export const listSessions = async (sdk: {
       } satisfies SessionLike,
     ]
   })
+}
+
+/** Every colleague's per-minute output, keyed by agent id.
+ *
+ *  ⚠️ One request PER COLLEAGUE, and deliberately so: the endpoint is per-agent because spend
+ *  belongs to a colleague, and a roster holds a handful of them by design (that is the whole point
+ *  of replacing a list that grew forever). A batch endpoint would be the right answer for a hundred
+ *  agents, and a hundred agents is the thing this product says no to.
+ *
+ *  A failure for one colleague dims that colleague's rate and nothing else — the roster still lists
+ *  everyone, because "who works here" did not fail. */
+export const listUsage = async (
+  sdk: { agent: { usage: (input: { agentID: string }) => Promise<{ data?: unknown }> } },
+  agentIDs: readonly string[],
+): Promise<Record<string, readonly UsageMinute[]>> => {
+  const entries = await Promise.all(
+    agentIDs.map(async (agentID) => {
+      try {
+        const response = await sdk.agent.usage({ agentID })
+        const body = response.data as { readonly data?: unknown } | undefined
+        const rows = (Array.isArray(body) ? body : (body?.data ?? [])) as ReadonlyArray<Record<string, unknown>>
+        if (!Array.isArray(rows)) return [agentID, [] as UsageMinute[]] as const
+        const series = rows.flatMap((row) =>
+          typeof row["minute"] === "number" && typeof row["generated"] === "number"
+            ? [{ minute: row["minute"], generated: row["generated"] }]
+            : [],
+        )
+        return [agentID, series] as const
+      } catch {
+        return [agentID, [] as UsageMinute[]] as const
+      }
+    }),
+  )
+  return Object.fromEntries(entries)
 }

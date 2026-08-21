@@ -51,3 +51,13 @@ export const Info = Schema.Struct({
         schema.make({ id, request: { headers: {}, body: {} }, mode: "all", hidden: false, permissions: [] }),
     })),
   )
+
+/** One minute of a colleague's output. The series that carries these is SPARSE — a minute with no
+ *  output has no entry, so an absent minute means nothing happened rather than "measured zero". */
+export interface UsageMinute extends Schema.Schema.Type<typeof UsageMinute> {}
+export const UsageMinute = Schema.Struct({
+  /** Epoch MINUTES (ms / 60000) — the bucket is the key, so the key is the bucket. */
+  minute: Schema.Int,
+  /** Tokens GENERATED in that minute: output + reasoning, what the model actually produced. */
+  generated: Schema.Int,
+}).annotate({ identifier: "Agent.UsageMinute" })

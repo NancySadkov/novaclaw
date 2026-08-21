@@ -13732,6 +13732,95 @@
         ]
       }
     },
+    "/api/agent/{agentID}/usage": {
+      "get": {
+        "tags": ["novaclaw HttpApi"],
+        "operationId": "v2.agent.usage",
+        "parameters": [
+          {
+            "name": "agentID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "location",
+            "in": "query",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "directory": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "required": false,
+            "style": "deepObject",
+            "explode": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "location": {
+                      "$ref": "#/components/schemas/LocationInfo"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AgentUsageMinute"
+                      }
+                    }
+                  },
+                  "required": ["location", "data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Tokens this agent GENERATED (output + reasoning), bucketed by minute, newest first, for the last 24 hours. Sparse on purpose: a minute in which the agent produced nothing has no row at all, so an absent minute means nothing happened rather than 'measured, and it was zero'. A sub-agent's output is attributed to the agent that owns it.",
+        "summary": "An agent's per-minute output",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.agent.usage({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/agent/{agentID}": {
       "delete": {
         "tags": ["novaclaw HttpApi"],
@@ -40777,6 +40866,19 @@
           }
         },
         "required": ["id", "request", "mode", "hidden", "permissions"],
+        "additionalProperties": false
+      },
+      "AgentUsageMinute": {
+        "type": "object",
+        "properties": {
+          "minute": {
+            "type": "integer"
+          },
+          "generated": {
+            "type": "integer"
+          }
+        },
+        "required": ["minute", "generated"],
         "additionalProperties": false
       },
       "SessionExecution": {

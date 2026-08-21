@@ -101,3 +101,51 @@ export const liveFor = (sessions: readonly SessionLike[], agentID: string): Rost
     updatedAt: touchedAt(chat),
   }
 }
+
+/** One minute of a colleague's output, as the wire carries it. */
+export interface UsageMinute {
+  readonly minute: number
+  readonly generated: number
+}
+
+/**
+ * Tokens per minute over the last `window` minutes, or `undefined` when the colleague produced
+ * nothing in that window.
+ *
+ * 🔴 **`undefined`, never `0`.** The series is sparse on purpose — a minute with no output has no
+ * row — so a window with no rows means "not working", which the roster says in words rather than by
+ * printing a zero rate. A "0/min" badge beside a colleague reads as a measurement of its speed, and
+ * the thing it would actually be measuring is our decision to render it.
+ *
+ * ⚠️ The divisor is the WINDOW, not the number of rows present. Dividing by rows would answer "how
+ * fast when it was working", which flatters every colleague to roughly the same number; dividing by
+ * the window answers "how much of the last ten minutes was work", which is what a rate on a roster
+ * is for.
+ */
+export const ratePerMinute = (
+  series: readonly UsageMinute[],
+  input: { readonly now: number; readonly window: number },
+): number | undefined => {
+  if (input.window <= 0) return undefined
+  const nowMinute = Math.floor(input.now / 60_000)
+  const oldest = nowMinute - input.window + 1
+  let total = 0
+  for (const entry of series) if (entry.minute >= oldest && entry.minute <= nowMinute) total += entry.generated
+  if (total <= 0) return undefined
+  return total / input.window
+}
+
+/**
+ * The rate as the row prints it.
+ *
+ * 🔴 **A rate below one token per minute renders as `<1`, never as `0`.** Rounding is where the
+ * sparse-series rule quietly dies: a real turn that produced two tokens over a ten-minute window is
+ * 0.2/min, and `Math.round` turns that into the exact "0/min" badge the series went out of its way
+ * never to store. Measured on a live turn 2026-08-21 — the first render of this badge said 0 for a
+ * colleague that had just answered.
+ */
+export const formatRate = (perMinute: number): string => {
+  if (perMinute >= 10) return String(Math.round(perMinute))
+  if (perMinute >= 1) return perMinute.toFixed(1).replace(/\.0$/, "")
+  return "<1"
+}

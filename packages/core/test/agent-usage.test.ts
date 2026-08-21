@@ -68,6 +68,22 @@ describe("AgentUsage", () => {
     }),
   )
 
+  it.effect("retiring a colleague forgets its series, so a re-drawn name starts clean", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      yield* AgentUsage.record(db, { agent: "theron", generated: 500, at: at(600) })
+      yield* AgentUsage.record(db, { agent: "kallias", generated: 10, at: at(600) })
+
+      yield* AgentUsage.forget(db, "theron")
+
+      // The name goes back in the pool; the next colleague to draw it must not inherit a rate for
+      // work it never did.
+      expect(yield* AgentUsage.since(db, { agent: "theron", minute: 0 })).toEqual([])
+      // And nobody else is touched.
+      expect(yield* AgentUsage.since(db, { agent: "kallias", minute: 0 })).toHaveLength(1)
+    }),
+  )
+
   it.effect("an unnamed colleague records nothing rather than a blank bucket", () =>
     Effect.gen(function* () {
       const { db } = yield* Database.Service

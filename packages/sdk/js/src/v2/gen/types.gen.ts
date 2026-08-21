@@ -4654,6 +4654,11 @@ export type AgentV2Info = {
   permissions: PermissionV2Ruleset
 }
 
+export type AgentUsageMinute = {
+  minute: number
+  generated: number
+}
+
 export type SessionExecution = {
   sessionID: string
   attemptID: string
@@ -13373,6 +13378,45 @@ export type V2AgentListResponses = {
 }
 
 export type V2AgentListResponse = V2AgentListResponses[keyof V2AgentListResponses]
+
+export type V2AgentUsageData = {
+  body?: never
+  path: {
+    agentID: string
+  }
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/agent/{agentID}/usage"
+}
+
+export type V2AgentUsageErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2AgentUsageError = V2AgentUsageErrors[keyof V2AgentUsageErrors]
+
+export type V2AgentUsageResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: Array<AgentUsageMinute>
+  }
+}
+
+export type V2AgentUsageResponse = V2AgentUsageResponses[keyof V2AgentUsageResponses]
 
 export type V2AgentRemoveData = {
   body?: never

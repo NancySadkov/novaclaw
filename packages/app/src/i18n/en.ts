@@ -2681,6 +2681,8 @@ export const dict = {
   "contacts.noChat": "No chat yet — open to start one",
   "contacts.untitled": "Working…",
   "contacts.spend": "Tokens this colleague and its helpers have produced",
+  "contacts.rate": "{{tokens}}/min",
+  "contacts.rateTitle": "Tokens produced per minute, averaged over the last {{window}} minutes",
   "contacts.configure": "Configure this colleague",
   "contacts.close": "Close",
   "contacts.memory.own": "Remembers its own chats, privately.",
