@@ -1,4 +1,4 @@
-import { createMemo, createResource, createSignal, Show, type JSX } from "solid-js"
+import { createMemo, createResource, createSignal, For, Show, type JSX } from "solid-js"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
@@ -6,6 +6,8 @@ import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
 import { listAgents, listSessions } from "@/apps/agent-list"
+import { briefTooBigForTier, isTier, modelRef, parseModelRef } from "@/apps/agent-model"
+import { useModels } from "@/context/models"
 import { planClone } from "@/apps/agent-clone"
 import { chatFor } from "@/apps/roster-live"
 import { GOVERNING_ID, displayName, memoryDisclosure, type AgentLike } from "@/apps/contacts"
@@ -55,6 +57,8 @@ export function AgentConfigDialog(props: {
   const [personality, setPersonality] = createSignal<string | undefined>()
   const [memory, setMemory] = createSignal<"own" | "none" | undefined>()
   const [archive, setArchive] = createSignal<boolean | undefined>()
+  const [model, setModel] = createSignal<string | undefined>()
+  const models = useModels()
   const [saving, setSaving] = createSignal(false)
 
   const nameValue = () => renamed() ?? agent()?.name ?? (props.agentID ? displayName(props.agentID) : "")
@@ -63,12 +67,33 @@ export function AgentConfigDialog(props: {
   const memoryValue = () => memory() ?? agent()?.memory ?? "own"
   // Default ON — `undefined` means on, per the owner's "unless the settings disable it".
   const archiveValue = () => archive() ?? agent()?.archiveChats ?? true
+  // "" is the INHERIT choice, and it is a real value rather than a missing one: a colleague with no
+  // model of its own follows the instance default, which is a decision the user can return to.
+  const modelValue = () => {
+    const chosen = model()
+    if (chosen !== undefined) return chosen
+    const bound = agent()?.model
+    return bound ? modelRef({ providerID: bound.providerID, modelID: bound.id }) : ""
+  }
+  const boundTier = createMemo(() => {
+    const ref = parseModelRef(modelValue())
+    if (ref === undefined) return undefined
+    const found = models
+      .list()
+      .find((item) => item.id === ref.modelID && item.provider.id === ref.providerID) as { tier?: unknown } | undefined
+    return isTier(found?.tier) ? found.tier : undefined
+  })
+  // The one thing a product whose user picks the model can say, and a vendor-chosen one cannot.
+  const mindTooSmall = createMemo(() =>
+    briefTooBigForTier({ brief: personalityValue() || agent()?.system, personality: personalityValue(), tier: boundTier() }),
+  )
   const dirty = () =>
     renamed() !== undefined ||
     title() !== undefined ||
     personality() !== undefined ||
     memory() !== undefined ||
-    archive() !== undefined
+    archive() !== undefined ||
+    model() !== undefined
 
   const [busy, setBusy] = createSignal<"clone" | "clear" | "retire" | undefined>()
 
@@ -163,6 +188,9 @@ export function AgentConfigDialog(props: {
             personality: personalityValue(),
             memory: memoryValue(),
             archiveChats: archiveValue(),
+            // An empty choice means INHERIT. Writing "" would store an unparseable ref, so the key
+            // is simply not sent — `undefined` is how this config says "ask the chain above me".
+            ...(modelValue() === "" ? {} : { model: modelValue() }),
           },
         },
       } as never)
@@ -171,6 +199,7 @@ export function AgentConfigDialog(props: {
       setPersonality(undefined)
       setMemory(undefined)
       setArchive(undefined)
+      setModel(undefined)
       props.onDismiss()
     } catch (error) {
       // A failed save is SAID, never swallowed: the fields still hold the user's words, and telling
@@ -269,6 +298,35 @@ export function AgentConfigDialog(props: {
             </label>
             <p class="text-[11px] text-v2-text-text-faint">{language.t(memoryDisclosure("own").sharedKey)}</p>
           </div>
+        </section>
+
+        <section class="mt-5">
+          <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
+            {language.t("agentConfig.mind")}
+          </h3>
+          {/* 🔴 The model belongs to the COLLEAGUE, not to the chat. A chat-scoped model made the
+              same colleague clever in one conversation and poor in the next, for reasons the user
+              could not see. A colleague has one mind. */}
+          <select
+            class="mt-2 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+            value={modelValue()}
+            disabled={governing()}
+            onChange={(event) => setModel(event.currentTarget.value)}
+          >
+            <option value="">{language.t("agentConfig.modelInherit")}</option>
+            <For each={models.list()}>
+              {(item) => (
+                <option value={modelRef({ providerID: item.provider.id, modelID: item.id })}>
+                  {item.name ?? item.id}
+                </option>
+              )}
+            </For>
+          </select>
+          {/* WARNS, never refuses: a small model doing a big job badly is the user's call, and
+              sometimes the right one. */}
+          <Show when={mindTooSmall()}>
+            <p class="mt-1 text-[11px] text-v2-state-fg-warning">{language.t("agentConfig.modelTooSmall")}</p>
+          </Show>
         </section>
 
         <section class="mt-5">

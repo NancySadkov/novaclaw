@@ -38,6 +38,9 @@ export const listAgents = async (sdk: { agent: { list: () => Promise<{ data?: un
         description: text("description"),
         personality: text("personality"),
         system: text("system"),
+        ...(typeof (row["model"] as { providerID?: unknown } | undefined)?.providerID === "string"
+          ? { model: row["model"] as { providerID: string; id: string } }
+          : {}),
         avatar: text("avatar"),
         color: text("color"),
         memory,

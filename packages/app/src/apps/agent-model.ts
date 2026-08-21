@@ -1,0 +1,55 @@
+// WHICH MODEL a colleague thinks with, and whether it is up to the job it was given.
+//
+// 🔴 **The model belongs to the COLLEAGUE, not to the chat** (owner: the picker moves into the
+// agent's configuration). A chat-scoped model was coherent when a chat was the unit; under the
+// roster it means the same colleague answers cleverly in one conversation and poorly in the next,
+// for reasons the user cannot see. A colleague has one mind.
+//
+// ⚠️ And because the user picks the model, we can say something no vendor-chosen-model product can:
+// that this colleague's mind may be too small for the job it was handed. It WARNS and never refuses
+// — a small model doing a big job badly is the user's call to make, and sometimes the right one.
+
+/** The capability ladder, smallest first (`ModelV2.Tier`). */
+export const TIERS = ["micro", "tiny", "small", "medium", "large", "frontier"] as const
+export type Tier = (typeof TIERS)[number]
+
+export const isTier = (value: unknown): value is Tier => TIERS.includes(value as Tier)
+
+/** How the model is written in config: `providerID/modelID`. */
+export const modelRef = (input: { readonly providerID: string; readonly modelID: string }): string =>
+  `${input.providerID}/${input.modelID}`
+
+export const parseModelRef = (value: string | undefined): { providerID: string; modelID: string } | undefined => {
+  if (value === undefined) return undefined
+  const slash = value.indexOf("/")
+  if (slash <= 0 || slash === value.length - 1) return undefined
+  return { providerID: value.slice(0, slash), modelID: value.slice(slash + 1) }
+}
+
+/**
+ * Is this colleague's brief bigger than its mind?
+ *
+ * The signal is deliberately CRUDE and deliberately explained: a long standing brief — pages of
+ * rules, exceptions and standing policy — is what small models drop first, and it is the one thing
+ * about a role we can measure without asking a model to judge another model. It is a hint, not a
+ * verdict: `undefined` means "no opinion", which is the honest answer most of the time.
+ *
+ * ⚠️ Never fires without a tier. An unknown model is unknown, and inventing a warning from silence
+ * would teach the user to ignore the ones that mean something.
+ */
+export const briefTooBigForTier = (input: {
+  readonly brief: string | undefined
+  readonly personality: string | undefined
+  readonly tier: Tier | undefined
+}): boolean | undefined => {
+  if (input.tier === undefined) return undefined
+  const written = `${input.brief ?? ""}\n${input.personality ?? ""}`.trim()
+  if (written === "") return false
+  // ~250 words of standing instruction is where a floor-tier model starts losing the tail of its
+  // own brief. Round numbers, honestly labelled: this is a rule of thumb the UI states as one.
+  const long = written.length > 1_500
+  const veryLong = written.length > 4_000
+  if (input.tier === "micro" || input.tier === "tiny") return long
+  if (input.tier === "small") return veryLong
+  return false
+}

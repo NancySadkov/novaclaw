@@ -2665,6 +2665,10 @@ export const dict = {
   "agentConfig.personalityHint":
     "This stays with the colleague, not with a chat — it survives every conversation and never gets summarised away.",
   "agentConfig.memory": "What it remembers",
+  "agentConfig.mind": "What it thinks with",
+  "agentConfig.modelInherit": "Whatever this NovaClaw uses by default",
+  "agentConfig.modelTooSmall":
+    "This colleague has a long standing brief for a model this small — it may lose the end of its own instructions. It will still try.",
   "agentConfig.archive": "When the chat gets long",
   "agentConfig.archiveKeep":
     "Keep the older conversation in this colleague's memory, so it can look things up later instead of only having the summary.",
