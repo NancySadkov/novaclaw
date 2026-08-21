@@ -38174,6 +38174,9 @@
             "type": "string",
             "enum": ["own", "none"]
           },
+          "archiveChats": {
+            "type": "boolean"
+          },
           "description": {
             "type": "string"
           },
@@ -40843,6 +40846,9 @@
           },
           "memory": {
             "$ref": "#/components/schemas/AgentMemory"
+          },
+          "archiveChats": {
+            "type": "boolean"
           },
           "description": {
             "type": "string"

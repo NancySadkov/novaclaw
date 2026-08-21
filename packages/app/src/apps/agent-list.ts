@@ -41,6 +41,7 @@ export const listAgents = async (sdk: { agent: { list: () => Promise<{ data?: un
         avatar: text("avatar"),
         color: text("color"),
         memory,
+        ...(typeof row["archiveChats"] === "boolean" ? { archiveChats: row["archiveChats"] } : {}),
       } satisfies AgentLike,
     ]
   })

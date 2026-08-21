@@ -26,6 +26,8 @@ export interface AgentLike {
   readonly system?: string | undefined
   readonly avatar?: string | undefined
   readonly memory?: "own" | "none" | undefined
+  /** Keep compacted conversations in this colleague's own memory (default on). */
+  readonly archiveChats?: boolean | undefined
   readonly mode: "primary" | "subagent" | "all"
   readonly hidden: boolean
   readonly color?: string | undefined

@@ -330,6 +330,17 @@ export const CORRELATION_ATTRIBUTES = {
   "question.request": "correlate",
   /** The legacy on-disk project id — derived from the user's own directory. */
   "storage.project": "correlate",
+  /**
+   * A colleague on the roster (AGENTS.md — the structural metaphor).
+   *
+   * ⚠️ **`correlate`, and the argument is worth stating because "build" and "plan" look like a
+   * closed vocabulary we control.** They are not the whole set: the user names their own colleagues,
+   * and every hire draws a name they can then change to anything. So an agent id is a value the USER
+   * chose — "expenses-for-the-divorce" is a legal id — and it correlates every line about that
+   * colleague's work. It names a unit of the user's own organization, which is precisely what this
+   * class is for.
+   */
+  "agent.id": "correlate",
 
   // ── the two arguable exceptions, argued ────────────────────────────────────────────────────
   /**
@@ -936,6 +947,19 @@ export const EVENTS = {
     attributes: { "session.id": "correlate" },
     content: "correlated",
     file: "packages/core/src/session/compaction.ts",
+  },
+  /**
+   * A compacted conversation was written into the colleague's own memory as searchable passages
+   * (`session/compaction-archive.ts`). Informational: the compaction itself is already durable, and
+   * this line is what tells an operator that the older half of a never-ending chat is still
+   * reachable rather than only summarised.
+   */
+  "session.compaction.archived": {
+    level: "info",
+    message: "compacted conversation archived to agent memory",
+    attributes: { "session.id": "correlate", "agent.id": "correlate", "archive.passages": "count" },
+    content: "correlated",
+    file: "packages/core/src/session/runner/llm.ts",
   },
   /** A directory had no instance yet, so one is being created. 1146 lines. */
   "instance.store.create": {

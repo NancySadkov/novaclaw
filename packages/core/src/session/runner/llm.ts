@@ -35,6 +35,7 @@ import { ToolRegistry } from "../../tool/registry"
 import { ToolOutputStore } from "../../tool-output-store"
 import { SessionContextEpoch } from "../context-epoch"
 import { SessionCompaction } from "../compaction"
+import { SessionCompactionArchive } from "../compaction-archive"
 import { SessionCompactionRequest } from "../compaction-request"
 import { SessionEvent } from "../event"
 import { SessionHistory } from "../history"
@@ -204,6 +205,67 @@ const SLOW_STAGE_MS = 10_000
  * a model ignoring `enable_thinking:false`, a cold server, a device under load.
  */
 const RERANK_DEADLINE = "4 seconds"
+
+/**
+ * Write the just-compacted conversation into the colleague's own memory as searchable passages.
+ *
+ * 🔴 One chat per colleague means the chat never ends, so compaction is the only moment the older
+ * half of its working life would otherwise stop being reachable — the summary is a paragraph, the
+ * conversation was hours. The decisions (whether to archive at all, what the passages are called,
+ * what counts as content) live in `session/compaction-archive.ts` where tests reach them; this is
+ * the wiring.
+ *
+ * ⚠️ Best-effort by design, and the caller ignores its failure: the compaction is already durable
+ * when this runs, and an unreachable embedder or a slow store must not turn a successful compaction
+ * into a failed turn. A missing archive costs recall; a thrown one would cost the turn.
+ */
+const archiveCompactedChat = Effect.fn("SessionRunner.archiveCompactedChat")(function* (input: {
+  readonly entries: readonly SessionCompaction.Entry[]
+  readonly agent: AgentV2.Selection
+  readonly memory: MemoryClient.Interface
+  readonly session: { readonly id: SessionSchema.ID; readonly title?: string | undefined }
+}) {
+  const agentID = input.agent.id
+  if (!agentID) return
+  if (
+    !SessionCompactionArchive.shouldArchive({
+      memory: input.agent.info?.memory,
+      archiveChats: input.agent.info?.archiveChats,
+    })
+  )
+    return
+  const passages = SessionCompactionArchive.plan({
+    messages: input.entries.map((entry) => entry.message),
+    title: input.session.title,
+    at: new Date(),
+  })
+  if (passages.length === 0) return
+  for (const passage of passages) {
+    // Embedded on write so the vector leg can reach it later; degrades to FTS-only when no device is
+    // configured, exactly as `kb ingest` does.
+    const embedding = yield* Effect.promise(() => KbEmbedder.embedOne(passage.text))
+    yield* input.memory
+      .addMemory({
+        id: passage.id,
+        kind: "passage",
+        text: passage.text,
+        name: passage.label,
+        // The colleague's OWN cabinet — not `global`. An archived conversation is the most personal
+        // thing a colleague holds, and putting it in the household scope would hand every other
+        // agent a transcript of work they were not part of.
+        scope: `agent:${agentID}`,
+        relation: "staged",
+        source: "chat-archive",
+        ...(embedding === undefined ? {} : { embedding }),
+      })
+      .pipe(Effect.ignore)
+  }
+  yield* Log.event("session.compaction.archived", {
+    "session.id": input.session.id,
+    "agent.id": agentID,
+    "archive.passages": passages.length,
+  })
+})
 
 /**
  * May the generation loop check for (and cut on) a steer right now?
@@ -1292,6 +1354,12 @@ export const layer = Layer.effect(
         model,
         request: fullRequest,
       })
+      // The conversation that just got compressed away is written into this colleague's OWN memory
+      // as passages, so `kb search` can find it later (`session/compaction-archive.ts` holds the
+      // why). Best-effort and AFTER the compaction is durable: an archive that failed must never
+      // turn a successful compaction into a failed turn — the summary is already committed, and the
+      // transcript rows are still in the database either way.
+      if (compacted) yield* archiveCompactedChat({ entries, agent, memory, session }).pipe(Effect.ignore)
       if (compacted) yield* timingEnd("compaction")
       else yield* Effect.sync(() => timing.discard("compaction")).pipe(Effect.andThen(publishLiveTiming()))
       if (compacted) return yield* Effect.die(continueAfterCompaction(currentStep))

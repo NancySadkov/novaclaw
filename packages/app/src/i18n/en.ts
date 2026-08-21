@@ -2665,6 +2665,10 @@ export const dict = {
   "agentConfig.personalityHint":
     "This stays with the colleague, not with a chat — it survives every conversation and never gets summarised away.",
   "agentConfig.memory": "What it remembers",
+  "agentConfig.archive": "When the chat gets long",
+  "agentConfig.archiveKeep":
+    "Keep the older conversation in this colleague's memory, so it can look things up later instead of only having the summary.",
+  "agentConfig.archiveThrowaway": "A throwaway keeps nothing, so there is nothing to archive.",
   "agentConfig.governingLocked":
     "Nova runs this NovaClaw. Its name, brief and memory setting are fixed, so nothing you type here could take effect.",
   "agentConfig.thisChat": "How this chat runs",

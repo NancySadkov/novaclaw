@@ -37,6 +37,8 @@ export const Info = Schema.Struct({
   avatar: Schema.String.pipe(optional),
   /** `own` = private `agent:<id>` scope + `global`; `none` = a throwaway with no memory at all. */
   memory: Memory.pipe(optional),
+  /** Keep compacted conversations in this agent's own memory (default on). */
+  archiveChats: Schema.Boolean.pipe(optional),
   description: Schema.String.pipe(optional),
   mode: Schema.Literals(["subagent", "primary", "all"]),
   hidden: Schema.Boolean,

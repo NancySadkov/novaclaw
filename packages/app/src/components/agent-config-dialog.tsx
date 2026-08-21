@@ -54,14 +54,21 @@ export function AgentConfigDialog(props: {
   const [title, setTitle] = createSignal<string | undefined>()
   const [personality, setPersonality] = createSignal<string | undefined>()
   const [memory, setMemory] = createSignal<"own" | "none" | undefined>()
+  const [archive, setArchive] = createSignal<boolean | undefined>()
   const [saving, setSaving] = createSignal(false)
 
   const nameValue = () => renamed() ?? agent()?.name ?? (props.agentID ? displayName(props.agentID) : "")
   const titleValue = () => title() ?? agent()?.title ?? ""
   const personalityValue = () => personality() ?? agent()?.personality ?? ""
   const memoryValue = () => memory() ?? agent()?.memory ?? "own"
+  // Default ON — `undefined` means on, per the owner's "unless the settings disable it".
+  const archiveValue = () => archive() ?? agent()?.archiveChats ?? true
   const dirty = () =>
-    renamed() !== undefined || title() !== undefined || personality() !== undefined || memory() !== undefined
+    renamed() !== undefined ||
+    title() !== undefined ||
+    personality() !== undefined ||
+    memory() !== undefined ||
+    archive() !== undefined
 
   const [busy, setBusy] = createSignal<"clone" | "clear" | "retire" | undefined>()
 
@@ -155,6 +162,7 @@ export function AgentConfigDialog(props: {
             title: titleValue(),
             personality: personalityValue(),
             memory: memoryValue(),
+            archiveChats: archiveValue(),
           },
         },
       } as never)
@@ -162,6 +170,7 @@ export function AgentConfigDialog(props: {
       setTitle(undefined)
       setPersonality(undefined)
       setMemory(undefined)
+      setArchive(undefined)
       props.onDismiss()
     } catch (error) {
       // A failed save is SAID, never swallowed: the fields still hold the user's words, and telling
@@ -259,6 +268,31 @@ export function AgentConfigDialog(props: {
               <span>{language.t(memoryDisclosure("none").privateKey)}</span>
             </label>
             <p class="text-[11px] text-v2-text-text-faint">{language.t(memoryDisclosure("own").sharedKey)}</p>
+          </div>
+        </section>
+
+        <section class="mt-5">
+          <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
+            {language.t("agentConfig.archive")}
+          </h3>
+          <div class="mt-2 flex flex-col gap-1.5">
+            {/* A chat that never ends gets compacted; this decides whether the compressed-away half
+                stays searchable or is gone but for a summary. */}
+            <label class="flex items-start gap-2 text-xs">
+              <input
+                type="checkbox"
+                class="mt-0.5"
+                checked={archiveValue()}
+                disabled={governing() || memoryValue() === "none"}
+                onChange={(event) => setArchive(event.currentTarget.checked)}
+              />
+              <span>{language.t("agentConfig.archiveKeep")}</span>
+            </label>
+            <Show when={memoryValue() === "none"}>
+              {/* Said rather than silently ignored: a throwaway keeps nothing, so the control above
+                  would be a promise this colleague cannot make. */}
+              <p class="text-[11px] text-v2-text-text-faint">{language.t("agentConfig.archiveThrowaway")}</p>
+            </Show>
           </div>
         </section>
 

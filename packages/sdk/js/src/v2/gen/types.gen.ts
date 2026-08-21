@@ -3795,6 +3795,7 @@ export type ConfigV2Agent = {
   personality?: string
   avatar?: string
   memory?: "own" | "none"
+  archiveChats?: boolean
   description?: string
   mode?: "subagent" | "primary" | "all"
   hidden?: boolean
@@ -4646,6 +4647,7 @@ export type AgentV2Info = {
   personality?: string
   avatar?: string
   memory?: AgentMemory
+  archiveChats?: boolean
   description?: string
   mode: "subagent" | "primary" | "all"
   hidden: boolean
