@@ -339,12 +339,6 @@ export const dict = {
   "home.empty.title": "没有最近项目",
   "home.empty.description": "通过打开本地项目开始使用",
   "home.title": "主页",
-  "home.sessions.search.placeholder": "搜索会话",
-  "home.sessions.empty": "这里还没有内容",
-  "home.sessions.empty.description": "创建一个会话以开始。",
-  "home.sessions.group.today": "今天",
-  "home.sessions.group.yesterday": "昨天",
-  "home.sessions.group.older": "更早",
 
   "session.tab.session": "会话",
   "session.tab.review": "审查",

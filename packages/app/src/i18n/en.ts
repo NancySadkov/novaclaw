@@ -178,14 +178,6 @@ export const dict = {
   // Confirm dialogs on destructive/whole-config actions (uix.md §3.4 / P1).
   "settings.tools.confirm.title": "Delete this tool?",
   "settings.tools.confirm.description": "This permanently removes the “{{name}}” tool recipe. This can’t be undone.",
-  "home.sessions.new": "New Session",
-  "home.sessions.select": "Select",
-  "home.sessions.selectAll": "Select all",
-  "home.sessions.selectedCount": "{{count}} selected",
-  "home.sessions.bulk.delete.title": "Delete the selected chats ({{count}})?",
-  "home.sessions.bulk.archive.title": "Archive the selected chats ({{count}})?",
-  "home.sessions.bulk.archive.description":
-    "Archived chats leave this list. Their transcripts are kept on the instance.",
   "settings.general.row.configIO.title": "Configuration file",
   "settings.general.row.configIO.description":
     "Export this instance's full configuration as a file, or import one. Model API keys ride along — treat exports as secrets.",
@@ -909,13 +901,6 @@ export const dict = {
   "help.tour.step.done.title": "You’re all set",
   "help.tour.step.done.body":
     "Open Chats and say hi. Hover any tile for a hint of what it does, and reopen this tour anytime from the Help app.",
-  "home.sessions.search.placeholder": "Search chats",
-  "home.sessions.empty": "Nothing here yet",
-  "home.sessions.empty.description": "Start a chat to get going.",
-  "home.sessions.group.today": "Today",
-  "home.sessions.group.yesterday": "Yesterday",
-  "home.sessions.group.older": "Older",
-  "home.sessions.group.attention": "Needs attention",
   "home.session.info": "Details",
   "home.session.stop": "Stop this chat's current run",
   "home.session.export": "Export as Markdown",
@@ -932,10 +917,6 @@ export const dict = {
   "session.info.tags": "Tags",
   "common.remove": "Remove",
   "session.info.tags.placeholder": "Add a tag and press Enter",
-  "home.sessions.filter.all": "All",
-  "home.sessions.sort.recent": "Recent",
-  "home.sessions.sort.active": "Active",
-  "home.sessions.sort.tokens": "Generated",
   "home.newAgent.placeholder": "Tell a new agent what to do — Enter opens its chat, ready to configure",
   "home.newAgent.folder.scratch": "Scratch",
   "home.newAgent.folder.pick": "Choose the agent's working folder",
@@ -966,10 +947,6 @@ export const dict = {
   "session.info.prompt.placeholder": "Extra standing instructions for this chat…",
   "session.info.prompt.hint":
     "Standing instructions layered on top of the agent's base prompt — for this chat only (chats spawned from it inherit them). Applies from the next reply; the base prompt is never changed.",
-  "home.sessions.attention.waiting": "Waiting for you",
-  "home.sessions.attention.working": "Working",
-  "home.sessions.attention.error": "Something went wrong",
-  "home.sessions.attention.unseen": "New activity",
 
   "session.tab.session": "Chat",
   "session.tab.review": "Review",

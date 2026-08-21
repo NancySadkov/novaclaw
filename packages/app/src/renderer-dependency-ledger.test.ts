@@ -102,7 +102,17 @@ const NODE_BUILTINS = new Set([
  * unanchored pattern reads that as a real undeclared dependency.
  */
 const SPECIFIER_PATTERNS: RegExp[] = [
-  /^[ \t]*(?:import|export)\s+(?:type\s+)?[^'";]*?from\s*["']([^"']+)["']/gm,
+  // ⚠️ The `import` and `export` arms are SEPARATE, and the export one requires `*` or `{`. The char
+  // class deliberately spans newlines so a multi-line import list still reaches its `from` — which
+  // also means a lone `export const foo = (input: {` swallows everything until the next `from "…"`
+  // ANYWHERE below it, comments included. Measured 2026-08-21: a sentence reading `a blank title is
+  // a different fact from "no title"` was counted as an import of the package `no title`, forty
+  // lines below the `export const` that started the match. Fifth instance of the "writing ABOUT a
+  // pattern trips the guard against it" trap this file already names four times — and the first
+  // where the prose was innocent English rather than a quoted specifier. `export … from` is only
+  // legal as a RE-EXPORT, so requiring `*` or `{` costs nothing and closes it.
+  /^[ \t]*import\s+(?:type\s+)?[^'";]*?from\s*["']([^"']+)["']/gm,
+  /^[ \t]*export\s+(?:type\s+)?(?:\*|\{)[^'";]*?from\s*["']([^"']+)["']/gm,
   /^[ \t]*import\s*["']([^"']+)["']/gm,
   /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g,
   /\brequire\s*\(\s*["']([^"']+)["']\s*\)/g,
