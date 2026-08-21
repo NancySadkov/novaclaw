@@ -625,6 +625,8 @@ export const dict = {
   "home.app.registry.subtitle": "인스턴스 데이터베이스, 편집 가능 — 주의해서 다루세요",
   "home.app.debug.name": "디버그",
   "home.app.debug.subtitle": "연결, 오류 로그, 세션 — 내부 들여다보기",
+  "home.app.contacts.name": "연락처",
+  "home.app.contacts.subtitle": "이 NovaClaw가 고용한 동료와 각자가 기억하는 것",
   "home.app.memory-graph.name": "메모리 그래프",
   "home.app.memory-graph.subtitle": "NovaClaw가 기억하는 것을 그래프로 살펴보기",
   "home.app.trash.name": "휴지통",

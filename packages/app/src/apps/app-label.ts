@@ -111,6 +111,12 @@ export const BUILTIN_APP_LABELS = {
   terminal: { name: "Terminal", subtitle: "A shell, for when you want one" },
   registry: { name: "Registry", subtitle: "The instance database, editable — handle with care" },
   debug: { name: "Debug", subtitle: "Connection, error log, sessions — under the hood" },
+  // The roster (AGENTS.md — the structural metaphor). Named for the address book it is, not for the
+  // machinery underneath: the user meets colleagues, not agent records.
+  contacts: {
+    name: "Contacts",
+    subtitle: "The colleagues this NovaClaw employs, and what each one remembers",
+  },
   "memory-graph": { name: "Memory", subtitle: "What NovaClaw remembers about you, and how it connects" },
   trash: { name: "Trash", subtitle: "Restore anything deleted in the last 2 days" },
   social: { name: "Community", subtitle: "Discord, Reddit and the website — other people who run NovaClaw" },

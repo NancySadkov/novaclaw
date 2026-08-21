@@ -1,0 +1,108 @@
+import { describe, expect, test } from "bun:test"
+import { displayName, isColleague, memoryDisclosure, roster, searchRoster, type AgentLike } from "./contacts"
+
+const agent = (over: Partial<AgentLike> & { id: string }): AgentLike => ({
+  mode: "primary",
+  hidden: false,
+  ...over,
+})
+
+describe("who appears in the roster", () => {
+  test("sub-agents and hidden machinery are NOT colleagues", () => {
+    // The nameless staff an officer spawns, and the internal agents (compaction/title/summary), are
+    // not people you can call. Listing them would be the session list again in different words.
+    expect(isColleague(agent({ id: "general", mode: "subagent" }))).toBe(false)
+    expect(isColleague(agent({ id: "compaction", hidden: true }))).toBe(false)
+    expect(isColleague(agent({ id: "nova" }))).toBe(true)
+    expect(isColleague(agent({ id: "trader", mode: "all" }))).toBe(true)
+  })
+
+  test("the roster drops them, so a kernel full of agents is still a short address book", () => {
+    const views = roster([
+      agent({ id: "trader" }),
+      agent({ id: "general", mode: "subagent" }),
+      agent({ id: "title", hidden: true }),
+      agent({ id: "nova" }),
+    ])
+    expect(views.map((view) => view.id)).toEqual(["nova", "trader"])
+  })
+})
+
+describe("order and standing", () => {
+  test("the CEO is first, then colleagues by name", () => {
+    const views = roster([agent({ id: "zoe" }), agent({ id: "trader" }), agent({ id: "nova" }), agent({ id: "alice" })])
+    expect(views.map((view) => view.id)).toEqual(["nova", "alice", "trader", "zoe"])
+  })
+
+  test("the governing agent is marked, and offers no Retire control", () => {
+    const [nova, trader] = roster([agent({ id: "nova" }), agent({ id: "trader" })])
+    expect(nova).toMatchObject({ kind: "governing", removable: false })
+    // The floor is under ONE identity — every other colleague stays removable, or the roster is a
+    // frozen org chart rather than the user's own organization.
+    expect(trader).toMatchObject({ kind: "officer", removable: true })
+  })
+})
+
+describe("a slug is not a name", () => {
+  test("ids become readable names on the row", () => {
+    expect(displayName("talent-scout")).toBe("Talent Scout")
+    expect(displayName("crashtest_joe")).toBe("Crashtest Joe")
+    expect(displayName("nova")).toBe("Nova")
+  })
+
+  test("a degenerate id still renders as something", () => {
+    // Never an empty row: a blank name is indistinguishable from a broken list.
+    expect(displayName("-")).toBe("-")
+    expect(displayName("")).toBe("")
+  })
+
+  test("the job title is the line under the name, and blank is absent rather than empty", () => {
+    const [view] = roster([agent({ id: "scout", title: "  Talent Scout  " })])
+    expect(view).toMatchObject({ name: "Scout", title: "Talent Scout" })
+    expect(roster([agent({ id: "scout", title: "   " })])[0]!.title).toBeUndefined()
+  })
+})
+
+describe("memory disclosure", () => {
+  test("defaults to its own cabinet when the profile says nothing", () => {
+    expect(roster([agent({ id: "trader" })])[0]!.memory).toBe("own")
+  })
+
+  test("a throwaway colleague is shown as remembering nothing", () => {
+    expect(roster([agent({ id: "crashtest-joe", memory: "none" })])[0]!.memory).toBe("none")
+  })
+
+  test("BOTH halves are always disclosed — what is private AND what is shared", () => {
+    // The competitor's roster names only the private half and shares the machine underneath. A row
+    // that says "its own memory" without saying what every colleague still sees is the same lie.
+    for (const memory of ["own", "none"] as const) {
+      const disclosure = memoryDisclosure(memory)
+      expect(disclosure.sharedKey).toBe("contacts.memory.shared")
+      expect(disclosure.privateKey).toBe(memory === "none" ? "contacts.memory.none" : "contacts.memory.own")
+    }
+  })
+})
+
+describe("search", () => {
+  const views = roster([
+    agent({ id: "nova", title: "Chief Executive" }),
+    agent({ id: "talent-scout", title: "Recruiting" }),
+    agent({ id: "trader", title: "Markets" }),
+  ])
+
+  test("finds a colleague by name, by job title, or by id", () => {
+    expect(searchRoster(views, "talent").map((view) => view.id)).toEqual(["talent-scout"])
+    expect(searchRoster(views, "recruit").map((view) => view.id)).toEqual(["talent-scout"])
+    expect(searchRoster(views, "TRADER").map((view) => view.id)).toEqual(["trader"])
+  })
+
+  test("an empty query is not a filter", () => {
+    expect(searchRoster(views, "   ")).toHaveLength(3)
+  })
+
+  test("no match returns nothing rather than everything", () => {
+    // A filter that silently falls back to the full list tells the user the thing they searched for
+    // exists somewhere in what they are looking at.
+    expect(searchRoster(views, "zzz")).toHaveLength(0)
+  })
+})

@@ -68,6 +68,7 @@ import { RecipesPage } from "@/pages/recipes"
 import { SkillsPage } from "@/pages/skills"
 import { DebugPage } from "@/pages/debug"
 import { RegistryPage } from "@/pages/registry"
+import { ContactsPage } from "@/pages/contacts"
 import { MemoryGraphPage } from "@/pages/memory-graph"
 import { TrashPage } from "@/pages/trash"
 import { TerminalPage } from "@/pages/terminal"
@@ -753,6 +754,7 @@ function Routes() {
       <Route path="/skills" component={SkillsPage} />
       <Route path="/registry" component={RegistryPage} />
       <Route path="/debug" component={DebugPage} />
+      <Route path="/contacts" component={ContactsPage} />
       <Route path="/memory-graph" component={MemoryGraphPage} />
       <Route path="/trash" component={TrashPage} />
       <Route path="/terminal" component={TerminalPage} />

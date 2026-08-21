@@ -172,6 +172,19 @@ export function useBuiltinApps(): () => HomeApp[] {
       open: () => navigate("/debug"),
     },
     {
+      // The Contacts roster (AGENTS.md — the structural metaphor). NORMAL level: an address book of
+      // colleagues is the least expert-shaped surface in the product, and it is where a new user is
+      // meant to meet Nova.
+      id: "contacts",
+      title: name("contacts"),
+      icon: "user",
+      tile: "/assets/skin/tiles/social.png",
+      accent: "#e0a33e",
+      subtitle: sub("contacts"),
+      source: "builtin",
+      open: () => navigate("/contacts"),
+    },
+    {
       id: "memory-graph",
       title: name("memory-graph"),
       icon: "branch",
