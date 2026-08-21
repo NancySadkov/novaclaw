@@ -19,7 +19,7 @@ import { HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import * as Sse from "effect/unstable/encoding/Sse"
 import { RootHttpApi } from "../api"
-import { rejectNullConfigValues, rejectUnknownConfigKeys } from "../groups/config"
+import { CONFIG_WRITE_REFUSED_KIND, rejectNullConfigValues, rejectUnknownConfigKeys } from "../groups/config"
 import { Log } from "@novaclaw/schema/log"
 
 function eventData(data: unknown): Sse.Event {
@@ -181,7 +181,16 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       // And a `null` VALUE, which decodes to ABSENT on the wire and would answer 200 for a
       // deletion that never happened. Deletion is POST /api/config/remove; see the guard's header.
       yield* rejectNullConfigValues(ctx.request)
-      const consumed = yield* ConfigStoreWrite.apply(ctx.payload)
+      // A write naming the governing agent is refused by the store (AGENTS.md — the structural
+      // metaphor). It is CALLER input, so it answers 400 with the offender named, never a 500 — and
+      // never the 200-then-discard this route used to give, which made its own honesty claim false.
+      // This is the route the roster's Save button takes, so the dialog gets a real error to show.
+      const consumed = yield* ConfigStoreWrite.apply(ctx.payload).pipe(
+        Effect.catchTag(
+          "ConfigStoreWrite.ConfigWriteRefused",
+          (error) => new InvalidRequestError({ kind: CONFIG_WRITE_REFUSED_KIND, message: error.message }),
+        ),
+      )
       if (consumed.size > 0) {
         yield* config.invalidate()
         bridge.fork(disposeAllInstancesAndEmitGlobalDisposed({ swallowErrors: true }))

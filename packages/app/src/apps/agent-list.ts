@@ -31,6 +31,7 @@ export const listAgents = async (sdk: { agent: { list: () => Promise<{ data?: un
         id,
         mode,
         hidden: row["hidden"] === true,
+        name: text("name"),
         title: text("title"),
         description: text("description"),
         personality: text("personality"),

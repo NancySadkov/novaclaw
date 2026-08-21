@@ -81,6 +81,9 @@ export type PromptInputControls = {
   // droplist is the one mode control. `available` stays: it feeds the @-mention subagent list.
   agents: {
     available: { name: string; hidden?: boolean; mode: string }[]
+    /** WHO this chat is talking to. Tune opens this colleague's config (AGENTS.md — the structural
+     *  metaphor), so it is the composer's business now, not only the runner's. */
+    current: string | undefined
   }
   model: {
     selection: ReturnType<typeof useLocal>["model"]
@@ -818,6 +821,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     project: props.controls.features.project,
     makeDefault: props.controls.features.makeDefault,
     mode: props.controls.mode.current,
+    agent: props.controls.agents.current,
     remote: props.controls.remote,
     style: control(),
     set: (feature, enabled) => props.controls.features.set(feature, enabled),

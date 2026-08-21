@@ -205,6 +205,7 @@ export const Plugin = define({
       // CODE, not in the store, so a corrupted or emptied store still boots with a governing agent:
       // "the charter is not editable from inside" is only true if the charter cannot be deleted.
       draft.update(AgentV2.NOVA_ID, (item) => {
+        item.name = "Nova"
         item.title = "Chief Executive"
         item.description =
           "Nova, the CEO. Talk to Nova about what you want done; Nova routes it to the colleague who owns that work, or hires one when nobody does."

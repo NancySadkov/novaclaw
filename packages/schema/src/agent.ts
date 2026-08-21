@@ -29,6 +29,9 @@ export const Info = Schema.Struct({
   system: Schema.String.pipe(optional),
   /** Roster profile — the durable half of a named agent's identity (AGENTS.md, the structural metaphor).
    *  These ride the PROFILE, never the transcript, which is what makes them survive compaction. */
+  /** The display name. The `id` keys the memory scope and never changes; this is what people read
+   *  and may rename. */
+  name: Schema.String.pipe(optional),
   title: Schema.String.pipe(optional),
   personality: Schema.String.pipe(optional),
   avatar: Schema.String.pipe(optional),

@@ -612,7 +612,12 @@ export const layer = Layer.effect(
         Effect.sync(() => {
           selfWrites++
         }),
-        () => provideConfigStores(ConfigStoreWrite.apply(patch)),
+        () =>
+          // The patch built above carries `mcp` and nothing else, so the governing-agent write
+          // refusal is unreachable from here. Dying rather than widening this function's error
+          // channel is the honest encoding of that: if the patch shape ever grows an `agents` key,
+          // this crashes loudly instead of quietly dropping an MCP server.
+          provideConfigStores(ConfigStoreWrite.apply(patch)).pipe(Effect.orDie),
         () =>
           Effect.sync(() => {
             selfWrites--

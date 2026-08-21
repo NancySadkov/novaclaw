@@ -4,6 +4,7 @@ import { useDialog } from "@novaclaw/ui/context/dialog"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { Switch as SwitchToggle } from "@novaclaw/ui/v2/switch-v2"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
+import { AgentConfigDialog } from "@/components/agent-config-dialog"
 import { SettingsExplainV2 } from "@/components/settings-v2/explain"
 import { useLanguage } from "@/context/language"
 import { pathKey } from "@/utils/path-key"
@@ -164,6 +165,9 @@ export type ComposerFeaturesControlState = {
   /** Writing this chat's stance into the folder's own `novaclaw.json`. */
   makeDefault: ComposerMakeDefaultState | undefined
   mode: ComposerMode
+  /** The colleague this chat is talking to. Tune opens ITS config, so a chat whose agent has not
+   *  resolved yet opens the dialog on the chat section alone rather than on the wrong profile. */
+  agent: string | undefined
   remote: ComposerRemoteChatState
   style: JSX.CSSProperties | undefined
   set: (feature: ComposerFeature, enabled: boolean) => void
@@ -716,9 +720,21 @@ export function ComposerFeaturesControl(props: { state: ComposerFeaturesControlS
   // "This folder has no project file yet. Saving creates one here.", and pressing Save as folder
   // default creates `novaclaw.json` in the OLD folder while the new one stays empty. `showScoped`
   // binds the panel's life to this composer, so a route change takes it with it.
+  // 🔴 Tune now opens the COLLEAGUE'S CONFIG, with this chat's controls as a section inside it
+  // (AGENTS.md — the structural metaphor). The old panel said settings belong to a conversation;
+  // under the roster they belong to whoever you are talking to, and only "how this chat runs" is
+  // the conversation's own. Same dialog the Contacts app opens, so there is one place to learn.
+  //
+  // `showScoped` is unchanged and still load-bearing — see the note below on the mis-targeted write.
   const openPanel = () =>
     void dialog.showScoped(
-      () => <TuningPanel state={props.state} onDismiss={() => props.state.onClose()} />,
+      () => (
+        <AgentConfigDialog
+          agentID={props.state.agent}
+          onDismiss={() => props.state.onClose()}
+          tuning={() => <TuningPanel state={props.state} onDismiss={() => props.state.onClose()} embedded />}
+        />
+      ),
       () => props.state.onClose(),
     )
   return (
@@ -752,7 +768,7 @@ export function ComposerFeaturesControl(props: { state: ComposerFeaturesControlS
  * the remote-chat section and six switches do not fit in an anchored panel, and on a phone a popover that
  * tall is unusable. A centered dialog scrolls and can be dismissed the ordinary way.
  */
-function TuningPanel(props: { state: ComposerFeaturesControlState; onDismiss: () => void }) {
+function TuningPanel(props: { state: ComposerFeaturesControlState; onDismiss: () => void; embedded?: boolean }) {
   /**
    * The one line under each switch that says WHY it reads the way it does.
    *
@@ -777,12 +793,18 @@ function TuningPanel(props: { state: ComposerFeaturesControlState; onDismiss: ()
       ? language.t(`prompt.features.${name as ComposerFeature}.title`)
       : name
   const language = useLanguage()
-  return (
-    <Dialog size="content">
+  // EMBEDDED = this panel is a section inside the colleague's config dialog, so it renders neither
+  // its own modal shell (a dialog inside a dialog) nor its own title (the section already carries
+  // one). Standalone is kept for any caller that still wants the panel on its own.
+  const body = (
       <div
         data-component="prompt-features-panel"
-        class="flex max-h-[80vh] w-[min(30rem,calc(100vw-2rem))] flex-col gap-3 overflow-y-auto p-5"
+        classList={{
+          "flex flex-col gap-3": true,
+          "max-h-[80vh] w-[min(30rem,calc(100vw-2rem))] overflow-y-auto p-5": !props.embedded,
+        }}
       >
+        <Show when={!props.embedded}>
         <div class="flex flex-col gap-1">
           <span class="text-[13px] font-[560] text-v2-text-text-base">
             {language.t("prompt.features.popover.title")}
@@ -791,6 +813,7 @@ function TuningPanel(props: { state: ComposerFeaturesControlState; onDismiss: ()
             {language.t("prompt.features.popover.description")}
           </span>
         </div>
+        </Show>
         <div class="flex flex-col gap-1.5" data-section="posture">
           <span class="text-[13px] font-[560] text-v2-text-text-base">
             {language.t("prompt.posture.section.title")}
@@ -965,6 +988,6 @@ function TuningPanel(props: { state: ComposerFeaturesControlState; onDismiss: ()
           )}
         </Show>
       </div>
-    </Dialog>
   )
+  return props.embedded ? body : <Dialog size="content">{body}</Dialog>
 }

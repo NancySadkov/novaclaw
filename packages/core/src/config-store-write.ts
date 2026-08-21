@@ -373,6 +373,21 @@ const LIST_ARMS = [
  */
 const applyToStores = (patch: Config.Info) =>
   Effect.gen(function* () {
+    // 🔴 PRE-FLIGHT, before a single store is touched: a fragment naming the governing agent is
+    // refused rather than written-and-ignored. One place, no per-arm plumbing, and all-or-nothing —
+    // the rest of the patch is NOT applied, matching the remove verb's rule that a refused request
+    // never half-lands.
+    const protectedAgents = Object.keys(patch.agents ?? {}).filter((name) => AgentV2.isProtected(name))
+    if (protectedAgents.length > 0)
+      return yield* Effect.fail(
+        new ConfigWriteRefused({
+          keys: protectedAgents,
+          message:
+            `config: NOTHING was written — ${protectedAgents.map((name) => `"${name}"`).join(", ")} ` +
+            `is this instance's governing agent and its profile is fixed in code. Every other agent ` +
+            `on the roster can be edited, and you can create your own.`,
+        }),
+      )
     const consumed = new Set<string>()
     const plain = encodeInfo(patch)
 
@@ -874,7 +889,17 @@ const refreshDomains = (domains: readonly ReloadDomain[]) =>
 export const apply = (patch: Config.Info) =>
   Effect.gen(function* () {
     const { db } = yield* Database.Service
-    const consumed = yield* db.transaction(() => applyToStores(patch)).pipe(Effect.orDie)
+    // Same shape as `remove`: succeed WITH the refusal so `orDie` cannot reach it, then re-fail.
+    // A caller's refused write is a 400, not a 500 — blaming us for a rule we chose is the
+    // `rejectUnknownConfigKeys`-versus-`unroutedKeys` distinction again.
+    const outcome = yield* db
+      .transaction(() => applyToStores(patch))
+      .pipe(
+        Effect.catchTag("ConfigStoreWrite.ConfigWriteRefused", (error) => Effect.succeed(error)),
+        Effect.orDie,
+      )
+    if (outcome instanceof ConfigWriteRefused) return yield* Effect.fail(outcome)
+    const consumed = outcome
     // Logging's hot path is synchronous, so its Config read-through is a tiny in-memory projection.
     // Refresh only AFTER commit: doing it in SettingsConfigStore.set would let a later router fault
     // roll SQLite back while the live logger kept the rejected value.
@@ -1009,6 +1034,25 @@ export class ConfigRemoveRefused extends Schema.TaggedErrorClass<ConfigRemoveRef
   },
 ) {}
 
+/**
+ * A WRITE naming something this surface refuses to store.
+ *
+ * 🔴 Today that is exactly one thing: the governing agent (AGENTS.md — *"the charter is not editable
+ * from inside"*). It exists because the alternative shipped and was measured: `PATCH /config` with
+ * `{"agents":{"nova":{"title":"HIJACKED"}}}` answered **200**, stored a row, and the materialiser
+ * dropped it — so the route reported success for a change it discarded, and the handler's own
+ * comment ("a 200 here means every key in the patch either landed or is a ledgered no-op") became a
+ * false description of itself.
+ *
+ * ⚠️ Refused BEFORE anything is written, so the store never holds the row at all. The drop at
+ * materialisation stays as defence in depth — a row can still arrive from a markdown agent file —
+ * but a defence that runs after a successful-looking write is not the place to tell the user no.
+ */
+export class ConfigWriteRefused extends Schema.TaggedErrorClass<ConfigWriteRefused>()(
+  "ConfigStoreWrite.ConfigWriteRefused",
+  { message: Schema.String, keys: Schema.Array(Schema.String) },
+) {}
+
 /** The one place the refusal message is written, so the wire, the log and a test all read the same
  *  sentence — and every offending path is named, because "some path was wrong" is not actionable. */
 export const refusalMessage = (refusals: readonly RemovalRefusal[]): string =>
@@ -1084,17 +1128,14 @@ const removeOne = (
           "refused",
           `removing all of "${key}" at once is not expressible — name the entry, e.g. ["${key}", "<name>"]`,
         )
-      // 🔴 The governing agent cannot be deleted (AGENTS.md — the structural metaphor: *"the charter
-      // is not editable from inside"*). Refused HERE, at the one door every config write and removal
-      // passes through, rather than in the roster UI — the UI is not the only caller, and a rule
-      // enforced only where it is displayed is a rule an agent's own `reconfigure` walks around.
-      // The reason names what DOES work, as every refusal in this map must.
-      if (key === "agents" && rest.length === 1 && AgentV2.isProtected(rest[0]!))
-        return refuse(
-          "refused",
-          `"${rest[0]}" is this instance's governing agent and cannot be removed — every other agent ` +
-            `on the roster can be, and you can always stop talking to this one.`,
-        )
+      // 🔴 Removing a PROTECTED agent's stored row is deliberately ALLOWED here, and the distinction
+      // is worth stating because it looks like a hole. Nova is seeded in CODE, so deleting its
+      // config row does not delete Nova — it RESTORES it to the shipped brief. Refusing that would
+      // make a stale override permanently unremovable through the API, which is the self-healing law
+      // failing quietly ("restorable by asking an agent, never by hand-editing config files"). The
+      // identity is protected by the three things that actually protect it: the WRITE is refused
+      // above, the materialiser drops any row that arrives another way, and `DELETE /api/agent/:id`
+      // — where the user's intent really is "get rid of this colleague" — answers 400.
       return (yield* layered.remove(rest)) ? { key } : refuse("missing", `no such ${key} entry`)
     }
 

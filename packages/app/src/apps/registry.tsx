@@ -95,6 +95,10 @@ const RESERVED_IDS = new Set([
   "processes",
   "registry",
   "debug",
+  // The roster (AGENTS.md — the structural metaphor). Reserved on both sides before it can be
+  // squatted: an app that could impersonate the place a user goes to meet their colleagues is the
+  // last id to leave open.
+  "contacts",
   "memory-graph",
   "search",
   "terminal",

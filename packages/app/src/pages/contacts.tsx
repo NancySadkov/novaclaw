@@ -9,6 +9,7 @@ import { AppPage } from "@/components/app-page"
 import { agentColor } from "@/utils/agent"
 import { memoryDisclosure, roster, searchRoster, type AgentLike, type ContactView } from "@/apps/contacts"
 import { listAgents } from "@/apps/agent-list"
+import { AgentConfigDialog } from "@/components/agent-config-dialog"
 
 // The Contacts app — the roster of colleagues this instance employs (AGENTS.md → *the structural
 // metaphor*; `todo/named-agents.md`).
@@ -90,7 +91,12 @@ export function ContactsPage() {
         </Show>
       </div>
 
-      <Show when={open()}>{(view) => <ContactConfig view={view()} onClose={() => setSelected(undefined)} />}</Show>
+      {/* The SAME dialog the composer's Tune button opens — one place to learn what a colleague is
+          and how it behaves. Contacts passes no `tuning` section: there is no chat here to tune, and
+          an empty section would imply one. */}
+      <Show when={open()}>
+        {(view) => <AgentConfigDialog agentID={view().id} onDismiss={() => setSelected(undefined)} />}
+      </Show>
     </AppPage>
   )
 }
@@ -129,36 +135,5 @@ function ContactRow(props: { view: ContactView; onOpen: () => void }) {
       </span>
       <Icon name="chevron-right" class="size-4 shrink-0 text-v2-text-text-faint" />
     </button>
-  )
-}
-
-/** The agent's configuration — the destination the composer's Tune button is being moved onto
- *  (`todo/named-agents.md`). Today it shows identity and memory; the model/agent picker and the Tune
- *  toggles land here next, so that one dialog answers "who is this colleague and how does it work". */
-function ContactConfig(props: { view: ContactView; onClose: () => void }) {
-  const language = useLanguage()
-  const disclosure = createMemo(() => memoryDisclosure(props.view.memory))
-  return (
-    <div class="border-t border-v2-border-border-base bg-v2-background-bg-layer-01 px-4 py-3">
-      <div class="flex items-center gap-2">
-        <span class="text-sm font-semibold">{props.view.name}</span>
-        <span class="min-w-0 flex-1 truncate text-xs text-v2-text-text-muted">{props.view.title ?? ""}</span>
-        <button type="button" class="text-xs text-v2-text-text-muted hover:underline" onClick={props.onClose}>
-          {language.t("contacts.close")}
-        </button>
-      </div>
-      <p class="mt-2 text-xs text-v2-text-text-muted">
-        {language.t(disclosure().privateKey)} {language.t(disclosure().sharedKey)}
-      </p>
-      <Show
-        when={props.view.removable}
-        fallback={
-          // Stated, not merely omitted: a missing button is a puzzle, a sentence is an explanation.
-          <p class="mt-2 text-xs text-v2-text-text-faint">{language.t("contacts.governingLocked")}</p>
-        }
-      >
-        <p class="mt-2 text-xs text-v2-text-text-faint">{language.t("contacts.retireHint")}</p>
-      </Show>
-    </div>
   )
 }

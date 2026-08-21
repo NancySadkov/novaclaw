@@ -9,9 +9,10 @@ import { Location } from "@novaclaw/core/location"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import * as InstanceState from "@/effect/instance-state"
 import { Effect, Layer, Schema } from "effect"
+import { InvalidRequestError } from "../errors"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
-import { rejectNullConfigValues, rejectUnknownConfigKeys } from "../groups/config"
+import { CONFIG_WRITE_REFUSED_KIND, rejectNullConfigValues, rejectUnknownConfigKeys } from "../groups/config"
 
 export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (handlers) =>
   Effect.gen(function* () {
@@ -77,7 +78,16 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
       // And a `null` VALUE, which decodes to ABSENT on the wire and would answer 200 for a
       // deletion that never happened. Deletion is POST /api/config/remove; see the guard's header.
       yield* rejectNullConfigValues(ctx.request)
-      const consumed = yield* ConfigStoreWrite.apply(ctx.payload)
+      // A refused write is CALLER input — the governing agent's profile is fixed in code — so it is a
+      // 400 that names the offender, never a 500. Without this the sentence below ("a 200 here means
+      // every key in the patch either landed") was false: `agents.nova` answered 200 and was
+      // discarded at materialisation. Measured 2026-08-21.
+      const consumed = yield* ConfigStoreWrite.apply(ctx.payload).pipe(
+        Effect.catchTag(
+          "ConfigStoreWrite.ConfigWriteRefused",
+          (error) => new InvalidRequestError({ kind: CONFIG_WRITE_REFUSED_KIND, message: error.message }),
+        ),
+      )
       if (consumed.size > 0) yield* configSvc.invalidate()
       // Answer with what the STORES hold, never an echo of the request (ruling 2: a failed mutation
       // never reports success). An echo claims success for a key that did not route — `models` was

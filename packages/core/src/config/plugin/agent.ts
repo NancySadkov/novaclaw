@@ -122,6 +122,7 @@ function applyItem(draft: AgentDraft, agentID: AgentV2.ID, item: ConfigAgent.Inf
       Object.assign(agent.request.body, item.request.body ?? {})
     }
     if (item.system !== undefined) agent.system = item.system
+    if (item.name !== undefined) agent.name = item.name
     if (item.title !== undefined) agent.title = item.title
     if (item.personality !== undefined) agent.personality = item.personality
     if (item.avatar !== undefined) agent.avatar = item.avatar

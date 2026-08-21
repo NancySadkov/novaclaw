@@ -408,6 +408,15 @@ export function createPromptInputController(input: {
     // control. `available` still feeds the composer's @-mention subagent list.
     agents: {
       available: sync().data.agent,
+      // The SAME value the composer already prints beside "Agent", so the chip and the config Tune
+      // opens can never name two different colleagues.
+      //
+      // ⚠️ Measured 2026-08-21, and worth keeping: the obvious source — `session.config`'s `resolved`
+      // bag — does NOT carry the agent. It resolves `type`, `priority`, `responder` and
+      // `permissionMode`, so reading `resolved.agent` returned `undefined` on every live chat and
+      // Tune opened a nameless profile. The guard degraded exactly as designed and the feature was
+      // still inert, which is the failure a green typecheck cannot see.
+      current: local.agent.current()?.name,
     },
     model: {
       selection: local.model,

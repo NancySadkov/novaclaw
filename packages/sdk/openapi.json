@@ -38069,6 +38069,9 @@
           "system": {
             "type": "string"
           },
+          "name": {
+            "type": "string"
+          },
           "title": {
             "type": "string"
           },
@@ -40735,6 +40738,9 @@
             "$ref": "#/components/schemas/ProviderRequest"
           },
           "system": {
+            "type": "string"
+          },
+          "name": {
             "type": "string"
           },
           "title": {

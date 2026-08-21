@@ -4,6 +4,7 @@ import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
 import { CatalogStore } from "@novaclaw/core/catalog-store"
 import { CommandConfigStore } from "@novaclaw/core/command-config-store"
 import { Config } from "@novaclaw/core/config"
+import { ConfigAgent } from "@novaclaw/core/config/agent"
 import { ConfigProvider } from "@novaclaw/core/config/provider"
 import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
 import { Database } from "@novaclaw/core/database/database"
@@ -165,20 +166,42 @@ describe("ConfigStoreWrite.remove — layer semantics", () => {
     }),
   )
 
-  it.effect("refuses to remove the GOVERNING agent, and says what does work", () =>
+  it.effect("REMOVING the governing agent's stored row is a repair, not a deletion", () =>
     Effect.gen(function* () {
-      // AGENTS.md — the structural metaphor: *"the charter is not editable from inside."* The rule
-      // is enforced at this door, not in the roster UI, because this is the door an agent's own
-      // config write reaches. A stored `nova` row is written first so the refusal cannot be passing
-      // merely because there is nothing there to delete.
-      yield* ConfigStoreWrite.apply(decodeInfo({ agents: { nova: { description: "n" }, builder: { description: "b" } } }))
-      const refused = yield* refusalOf([["agents", "nova"]])
-      expect(refused.refusals[0]!.kind).toBe("refused")
-      expect(refused.message).toContain("governing agent")
-      // Every other agent stays removable — this is a floor under one identity, not a frozen roster.
-      yield* ConfigStoreWrite.remove([["agents", "builder"]])
+      // The distinction that makes this safe: Nova is seeded in CODE, so dropping a stored override
+      // row restores the shipped brief rather than deleting the colleague. Refusing it would leave a
+      // stale row permanently unremovable through the API — the self-healing law failing quietly.
+      // The identity is protected by the write refusal, by the materialiser, and by
+      // `DELETE /api/agent/:id`; it does not need a fourth lock that only blocks repairs.
       const agents = yield* AgentConfigStore.Service
-      expect(Object.keys(yield* agents.agents())).toEqual(["nova"])
+      // Written straight to the STORE: the write path now refuses this patch, which is the point —
+      // the only way a `nova` row still exists is one that predates the refusal, and that is exactly
+      // the row this repair has to be able to clear.
+      yield* agents.setLayers("nova", [Schema.decodeUnknownSync(ConfigAgent.Info)({ description: "a stale override" })])
+
+      yield* ConfigStoreWrite.remove([["agents", "nova"]])
+
+      expect(Object.keys(yield* agents.agents())).not.toContain("nova")
+    }),
+  )
+
+  it.effect("REFUSES a write naming the governing agent, and writes NOTHING", () =>
+    Effect.gen(function* () {
+      // The defect this closes, measured against a live instance 2026-08-21: the same patch answered
+      // 200, stored a row, and had it dropped at materialisation — success reported for a change
+      // that was discarded.
+      const agents = yield* AgentConfigStore.Service
+      const outcome = yield* Effect.exit(
+        ConfigStoreWrite.apply(
+          decodeInfo({ agents: { nova: { title: "HIJACKED" }, scribe: { description: "write things" } } }),
+        ),
+      )
+
+      expect(outcome._tag).toBe("Failure")
+      expect(JSON.stringify(outcome)).toContain("governing agent")
+      // ALL-OR-NOTHING: the innocent sibling in the same patch must not have landed either, or a
+      // refused request half-applies and the caller cannot tell which half.
+      expect(Object.keys(yield* agents.agents())).toEqual([])
     }),
   )
 

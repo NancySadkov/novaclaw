@@ -59,6 +59,11 @@ const root = "/config"
  */
 export const UNKNOWN_CONFIG_KEY_KIND = "unknown-config-key"
 
+/** `kind` for a write the store REFUSES to hold — today, one naming the governing agent, whose
+ *  profile is fixed in code (AGENTS.md — the structural metaphor). Discriminated like the two guards
+ *  above so a client can tell "you may not write this" from "this key does not exist". */
+export const CONFIG_WRITE_REFUSED_KIND = "config-write-refused"
+
 /**
  * ─── the wire REFUSES a `null` VALUE, for the same reason and by the same mechanism ─────────────
  *

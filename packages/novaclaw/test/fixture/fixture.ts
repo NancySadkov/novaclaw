@@ -310,9 +310,13 @@ const configStores = LayerNode.compile(
   ]),
 )
 
-/** Decode the literal a test wrote and route it into the stores. Throws on an invalid literal. */
+/** Decode the literal a test wrote and route it into the stores. Throws on an invalid literal.
+ *
+ *  ⚠️ A REFUSED write dies here rather than widening every fixture's error channel: a fixture that
+ *  hands the store `agents.nova` has written a test against a rule the product does not have, and
+ *  the loud crash is the correct answer. `config-remove.test.ts` covers the refusal itself. */
 const applyConfig = (config: Partial<Config.Info>) =>
-  ConfigStoreWrite.apply(Schema.decodeUnknownSync(ConfigV2.Info)(config))
+  ConfigStoreWrite.apply(Schema.decodeUnknownSync(ConfigV2.Info)(config)).pipe(Effect.orDie)
 
 /**
  * Effect flavour: build the store layers in the AMBIENT memo map.

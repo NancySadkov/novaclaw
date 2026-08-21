@@ -43,6 +43,19 @@ describe("order and standing", () => {
   })
 })
 
+describe("names", () => {
+  test("a stored name wins over the id — that is what renaming means", () => {
+    // Nova hires "theron"; the user later renames it "Bookkeeper". The id (and therefore the memory
+    // scope) must not move, so the row shows the new name over the unchanged key.
+    const [view] = roster([agent({ id: "theron", name: "Bookkeeper" })])
+    expect(view).toMatchObject({ id: "theron", name: "Bookkeeper" })
+  })
+
+  test("a blank stored name falls back rather than rendering an empty row", () => {
+    expect(roster([agent({ id: "theron", name: "   " })])[0]!.name).toBe("Theron")
+  })
+})
+
 describe("a slug is not a name", () => {
   test("ids become readable names on the row", () => {
     expect(displayName("talent-scout")).toBe("Talent Scout")

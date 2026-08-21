@@ -17,6 +17,7 @@
  *  tested without the wire type, and so a field added there does not force a change here. */
 export interface AgentLike {
   readonly id: string
+  readonly name?: string | undefined
   readonly title?: string | undefined
   readonly description?: string | undefined
   readonly personality?: string | undefined
@@ -53,8 +54,11 @@ export const GOVERNING_ID = "nova"
 /** A slug is not a name. Agent ids are lowercase and hyphenated (`talent-scout`) because they are
  *  keys; the roster shows a person, so the row reads "Talent Scout".
  *
- *  ⚠️ Deliberately NOT a second stored field. A display name beside an id is two names for one thing
- *  and they drift — the one this product would regret is the one on the row the user clicks. */
+ *  This is the FALLBACK. A colleague normally carries a stored `name` — a Greek name drawn when Nova
+ *  hires it (`core/src/agent/officer-name.ts`), which the user may then change. The id stays fixed
+ *  because it keys the memory scope: renaming an id would orphan a colleague from everything it
+ *  remembers. So the two exist for different reasons rather than by accident, and the stored name
+ *  always wins. */
 export const displayName = (id: string): string =>
   id
     .split(/[-_\s]+/)
@@ -69,7 +73,7 @@ const view = (agent: AgentLike): ContactView => {
   const governing = agent.id === GOVERNING_ID
   return {
     id: agent.id,
-    name: displayName(agent.id),
+    name: agent.name?.trim() || displayName(agent.id),
     title: agent.title?.trim() || undefined,
     avatar: agent.avatar?.trim() || undefined,
     color: agent.color,

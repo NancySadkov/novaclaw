@@ -28,6 +28,14 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
   variant: Schema.String.pipe(Schema.optional),
   request: ConfigProvider.Request.pipe(Schema.optional),
   system: Schema.String.pipe(Schema.optional),
+  /** What this colleague is CALLED. Defaults to a Greek name drawn from `agent/officer-name.ts` when
+   *  Nova hires someone, and the user may rename it freely afterwards.
+   *
+   *  🔴 Separate from the id ON PURPOSE, and this is the whole reason the field exists: the id keys
+   *  the agent's memory scope (`agent:<id>`), so it must never change, while a name is something a
+   *  person should be free to change their mind about. Renaming an id would orphan a colleague from
+   *  everything it remembers. */
+  name: Schema.String.pipe(Schema.optional),
   /** The role's job title, shown under its name in the roster ("Talent Scout", not "General Helper"). */
   title: Schema.String.pipe(Schema.optional),
   /** Who the agent IS, as opposed to what it does — layered into the prompt ahead of the job. Kept a

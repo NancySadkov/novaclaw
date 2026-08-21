@@ -3790,6 +3790,7 @@ export type ConfigV2Agent = {
   variant?: string
   request?: ConfigV2ProviderRequest
   system?: string
+  name?: string
   title?: string
   personality?: string
   avatar?: string
@@ -4640,6 +4641,7 @@ export type AgentV2Info = {
   model?: ModelRef
   request: ProviderRequest
   system?: string
+  name?: string
   title?: string
   personality?: string
   avatar?: string
