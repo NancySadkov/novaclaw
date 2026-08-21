@@ -13390,7 +13390,7 @@ export type V2AgentRemoveErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError
+  400: InvalidRequestError | InvalidRequestError
   /**
    * UnauthorizedError
    */

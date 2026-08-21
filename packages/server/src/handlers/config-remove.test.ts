@@ -135,6 +135,28 @@ describe("the config remove routes", () => {
     )
   })
 
+  // The governing agent is refused HERE, at the endpoint that writes the store directly — the
+  // refusal in `ConfigStoreWrite` never sees this door (AGENTS.md — the structural metaphor).
+  test("agent.remove REFUSES the governing agent, with a 400 and the row intact", async () => {
+    const handler = await registeredHandler("server.agent", "agent.remove")
+    await run(
+      Effect.gen(function* () {
+        const store = yield* AgentConfigStore.Service
+        // A stored row exists, so the refusal cannot be passing merely because there is nothing to
+        // delete — and a default pointing at it must survive too.
+        yield* store.setLayers("nova", [decodeAgent({ description: "the CEO" })])
+        yield* store.setDefault("nova")
+
+        const outcome = yield* Effect.exit(handler({ params: { agentID: "nova" } }))
+
+        expect(outcome._tag).toBe("Failure")
+        expect(JSON.stringify(outcome)).toContain("governing agent")
+        expect(Object.keys(yield* store.agents())).toContain("nova")
+        expect(yield* store.getDefault()).toBe("nova")
+      }),
+    )
+  })
+
   // THE NEGATIVE CONTROL. A handler that just called `clearDefault()` unconditionally would pass
   // the test above and silently unset the user's default every time they deleted any agent.
   test("agent.remove leaves a default alone when it pointed at a DIFFERENT agent", async () => {

@@ -3612,7 +3612,7 @@ class ApiV2Agent extends NovaClawApiClient {
   /**
    * Remove agent
    *
-   * Delete a config-defined agent from the instance agent store, and clear `default_agent` when it pointed at that agent. Takes effect fully on the next serve boot.
+   * Delete a config-defined agent from the instance agent store, and clear `default_agent` when it pointed at that agent. Takes effect fully on the next serve boot. The instance's governing agent (`nova`) cannot be removed and returns 400.
    */
   public remove<ThrowOnError extends boolean = false>(
     parameters: {

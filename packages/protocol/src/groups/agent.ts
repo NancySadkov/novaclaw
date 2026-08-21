@@ -1,4 +1,5 @@
 import { Agent } from "@novaclaw/schema/agent"
+import { InvalidRequestError } from "../errors"
 import { Location } from "@novaclaw/schema/location"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
@@ -29,6 +30,10 @@ export const AgentGroup = HttpApiGroup.make("server.agent")
       params: { agentID: Agent.ID },
       query: LocationQuery,
       success: HttpApiSchema.NoContent,
+      // 🔴 400 for the GOVERNING agent. This endpoint writes the store DIRECTLY, so the refusal in
+      // `ConfigStoreWrite` does not cover it — one rule with two doors is one rule enforced at one
+      // door. AGENTS.md, the structural metaphor: *"the charter is not editable from inside."*
+      error: InvalidRequestError,
     })
       .annotateMerge(locationQueryOpenApi)
       .annotateMerge(
@@ -36,7 +41,7 @@ export const AgentGroup = HttpApiGroup.make("server.agent")
           identifier: "v2.agent.remove",
           summary: "Remove agent",
           description:
-            "Delete a config-defined agent from the instance agent store, and clear `default_agent` when it pointed at that agent. Takes effect fully on the next serve boot.",
+            "Delete a config-defined agent from the instance agent store, and clear `default_agent` when it pointed at that agent. Takes effect fully on the next serve boot. The instance's governing agent (`nova`) cannot be removed and returns 400.",
         }),
       ),
   )
