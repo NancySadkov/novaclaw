@@ -2589,11 +2589,11 @@ export const dict = {
   // Home launcher tiles. `home.app.<id>.name` / `.subtitle`, resolved by `apps/app-label.ts`.
   // Built-in tiles have a key here; plugin and agent-contributed apps do not, and keep their own
   // label — a contributed app is never required to have a key, and never renders one.
-  "home.app.tasks.name": "Tasks",
-  "home.app.tasks.subtitle": "Everything your agents are running, and everything they have finished",
-  "home.app.tasks.stat.running": "running",
-  "home.app.tasks.stat.throughput": "t/s",
-  "home.app.tasks.stat.memory": "memory",
+  "home.app.contacts.name": "Contacts",
+  "home.app.contacts.subtitle": "The colleagues this NovaClaw employs, and what each one remembers",
+  "home.app.contacts.stat.running": "running",
+  "home.app.contacts.stat.throughput": "t/s",
+  "home.app.contacts.stat.memory": "memory",
   "home.app.notes.name": "Notes",
   "home.app.notes.subtitle": "Everyday notes, shared with your agents",
   "home.app.calendar.name": "Calendar",

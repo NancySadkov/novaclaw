@@ -61,7 +61,7 @@ describe("home tile labels", () => {
     // was deleted is dead weight 19 bundles would carry forever.
     //
     // ⚠️ Ownership is by ID, not by the two label fields. A tile may carry more than a name and a
-    // subtitle — the hero's readout ships `home.app.tasks.stat.*` — and pinning the field list here
+    // subtitle — the hero's readout ships `home.app.contacts.stat.*` — and pinning the field list here
     // would mean every new hero string had to edit this test, which is how a ratchet turns into a
     // rubber stamp. What must never happen is a key for a tile that no longer exists, and that is
     // exactly what this checks: the id segment has to be one the launcher registers.
@@ -96,14 +96,14 @@ describe("home tile labels", () => {
 
   describe("resolution", () => {
     test("a built-in renders the active locale's text", () => {
-      const { t } = translator(merged({ "home.app.tasks.name": "Задачи", "home.app.tasks.subtitle": "Ваши задачи" }))
-      expect(appName(t, "tasks", BUILTIN_APP_LABELS.tasks.name)).toBe("Задачи")
-      expect(appSubtitle(t, "tasks", BUILTIN_APP_LABELS.tasks.subtitle)).toBe("Ваши задачи")
+      const { t } = translator(merged({ "home.app.contacts.name": "Задачи", "home.app.contacts.subtitle": "Ваши задачи" }))
+      expect(appName(t, "contacts", BUILTIN_APP_LABELS.contacts.name)).toBe("Задачи")
+      expect(appSubtitle(t, "contacts", BUILTIN_APP_LABELS.contacts.subtitle)).toBe("Ваши задачи")
     })
 
     test("a locale that has not translated the tile falls back to English, not to a key", () => {
       const { t } = translator(merged({}))
-      expect(appName(t, "tasks", BUILTIN_APP_LABELS.tasks.name)).toBe("Tasks")
+      expect(appName(t, "contacts", BUILTIN_APP_LABELS.contacts.name)).toBe("Contacts")
       expect(appSubtitle(t, "memory-graph", BUILTIN_APP_LABELS["memory-graph"].subtitle)).toBe(
         "What NovaClaw remembers about you, and how it connects",
       )
@@ -131,8 +131,8 @@ describe("home tile labels", () => {
 
     test("starts translating for free the day someone contributes a key for it", () => {
       // `hasAppLabel` is membership in `en`, so this is what would happen after a key is added.
-      const { t } = translator(merged({ "home.app.tasks.name": "Görevler" }))
-      expect(appName(t, "tasks", "Tasks")).toBe("Görevler")
+      const { t } = translator(merged({ "home.app.contacts.name": "Görevler" }))
+      expect(appName(t, "contacts", "Tasks")).toBe("Görevler")
     })
 
     test("a title that is really an i18n key degrades to a legible name, never renders raw", () => {

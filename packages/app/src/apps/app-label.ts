@@ -100,10 +100,16 @@ export function appSubtitle(t: Translate, id: string, supplied?: string): string
  * and this id set equals the ids `builtins.tsx` actually registers.
  */
 export const BUILTIN_APP_LABELS = {
-  // ⚠️ `tasks`, not `chats` (owner, 2026-08-13): "many of these could be running unattended". The
-  // app lists agent threads — a conversation is only the ones you happen to be watching — and the
-  // tab strip already called them tasks (`nav.tasks.*`), so this settles the split name.
-  tasks: { name: "Tasks", subtitle: "Everything your agents are running, and everything they have finished" },
+  // ⚠️ `contacts`, not `tasks` and not `chats` — the third name this one tile has had, and the
+  // reason each rename happened is the reason for this one. `chats` → `tasks` (owner, 2026-08-13)
+  // because "many of these could be running unattended" and a conversation is only the ones you
+  // happen to be watching. `tasks` → `contacts` (owner, 2026-08-21) because the list is no longer of
+  // THREADS at all: it is the colleagues this instance employs, one row each, and the work is
+  // something a colleague is currently doing rather than the thing being listed.
+  contacts: {
+    name: "Contacts",
+    subtitle: "The colleagues this NovaClaw employs, and what each one remembers",
+  },
   notes: { name: "Notes", subtitle: "Everyday notes, shared with your agents" },
   calendar: { name: "Calendar", subtitle: "Schedule agents to run on a repeating date" },
   recipes: { name: "Recipes", subtitle: "Ready-made prompts your agents can cook" },

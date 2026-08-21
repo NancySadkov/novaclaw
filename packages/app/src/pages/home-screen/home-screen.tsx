@@ -33,7 +33,9 @@ const ORDER_KEY = "novaclaw.home.order"
 // Tiles that changed id, old → new. `applyOrder` drops ids it does not recognise and appends ids it
 // has never seen, so without this a rename would silently move the renamed tile to the END of an
 // existing user's launcher — the hero landing last is not a thing anyone would ask for.
-const RENAMED_IDS: Readonly<Record<string, string>> = { chats: "tasks" }
+// ⚠️ BOTH old ids map to the CURRENT one, not to each other: this is a lookup, not a chain, so
+// `chats` must point at where the tile lives today rather than at the name it had in between.
+const RENAMED_IDS: Readonly<Record<string, string>> = { chats: "contacts", tasks: "contacts" }
 
 function loadOrder(): string[] {
   try {

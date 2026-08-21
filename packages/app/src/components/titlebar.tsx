@@ -359,7 +359,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                 other app pages (Notes, Files, Settings…), where nothing else leads back. */}
             {/* Home lives on the brand badge now (Start-button style) — no separate Home button. */}
             <Show when={location.pathname !== "/" && layout.route().type !== "session"}>
-              <TooltipV2 placement="bottom" value={language.t("home.app.tasks.name")} class="shrink-0">
+              <TooltipV2 placement="bottom" value={language.t("home.app.contacts.name")} class="shrink-0">
                 <IconButtonV2
                   type="button"
                   variant="ghost-muted"
@@ -367,7 +367,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                   class="!w-9 shrink-0"
                   icon={<IconV2 name="tab" />}
                   onClick={() => navigate("/tasks")}
-                  aria-label={language.t("home.app.tasks.name")}
+                  aria-label={language.t("home.app.contacts.name")}
                 />
               </TooltipV2>
             </Show>

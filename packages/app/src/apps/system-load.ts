@@ -116,7 +116,7 @@ const UNKNOWN = "—"
  * compile is exactly the hole `app-label.ts` exists to close: it lets an unshipped key reach the
  * translator and render raw at the user. Naming the three keys keeps the compiler checking them.
  */
-type StatKey = "home.app.tasks.stat.running" | "home.app.tasks.stat.throughput" | "home.app.tasks.stat.memory"
+type StatKey = "home.app.contacts.stat.running" | "home.app.contacts.stat.throughput" | "home.app.contacts.stat.memory"
 
 /**
  * The three numbers, formatted for the tile.
@@ -131,7 +131,7 @@ export function systemLoadStats(load: SystemLoad, t: (key: StatKey) => string): 
     {
       id: "running",
       value: String(load.running),
-      label: t("home.app.tasks.stat.running"),
+      label: t("home.app.contacts.stat.running"),
       tone: idle ? "idle" : undefined,
     },
     {
@@ -139,13 +139,13 @@ export function systemLoadStats(load: SystemLoad, t: (key: StatKey) => string): 
       // A running agent between steps (a tool call) legitimately reports 0 t/s, and printing "0"
       // there reads as stalled — the dash says "nothing to report" instead.
       value: load.tps > 0 ? String(load.tps) : UNKNOWN,
-      label: t("home.app.tasks.stat.throughput"),
+      label: t("home.app.contacts.stat.throughput"),
       tone: load.tps > 0 ? undefined : "idle",
     },
     {
       id: "memory",
       value: load.memory ? `${Math.round(load.memory.fraction * 100)}%` : UNKNOWN,
-      label: t("home.app.tasks.stat.memory"),
+      label: t("home.app.contacts.stat.memory"),
       tone: load.memory?.strained ? "warn" : undefined,
     },
   ]

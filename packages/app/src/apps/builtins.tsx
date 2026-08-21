@@ -46,8 +46,8 @@ export function useBuiltinApps(): () => HomeApp[] {
 
   return () => [
     {
-      id: "tasks",
-      title: name("tasks"),
+      id: "contacts",
+      title: name("contacts"),
       icon: "speech-bubble",
       tile: "/assets/skin/tiles/tasks.png",
       // The hero's accent IS the preset's primary accent, so the one eye-anchor re-themes with the
@@ -57,7 +57,7 @@ export function useBuiltinApps(): () => HomeApp[] {
       hero: true,
       // Not rendered ON the hero any more — the tile shows live numbers instead — but still the
       // tile's accessible description and its tooltip, so it stays a sentence about what opens.
-      subtitle: sub("tasks"),
+      subtitle: sub("contacts"),
       source: "builtin",
       // ⚠️ The hero opens the ROSTER now, not a chat list — one door, because a second tile onto the
       // same page is the "separate Contacts app" the owner ruled out. Its id stays `tasks` so an
