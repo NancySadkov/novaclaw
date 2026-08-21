@@ -1,0 +1,64 @@
+export * as AgentUsage from "./usage"
+
+import { and, desc, eq, gte, sql } from "drizzle-orm"
+import { Effect } from "effect"
+import type { Database } from "../database/database"
+
+/** The drizzle handle the projector and the stores share. */
+type Db = Database.Interface["db"]
+import { AgentTokenMinuteTable } from "./usage.sql"
+
+// Reading and writing a colleague's per-minute spend (`usage.sql.ts` holds the why).
+
+/** The bucket a moment belongs to. ONE definition, so a writer and a reader can never disagree
+ *  about which minute a step landed in. */
+export const minuteOf = (epochMillis: number): number => Math.floor(epochMillis / 60_000)
+
+/** Generated tokens = what the model PRODUCED. Prompt ingestion is not work a person recognises. */
+export const generatedOf = (tokens: { readonly output?: number; readonly reasoning?: number }): number =>
+  (tokens.output ?? 0) + (tokens.reasoning ?? 0)
+
+/**
+ * Add one step's spend to a colleague's minute.
+ *
+ * 🔴 **Nothing is written for a zero.** A step that produced no tokens (a pure tool call, a refusal,
+ * an interrupted turn) leaves no row, so an absent minute keeps meaning "nothing happened" rather
+ * than "observed, and it was zero". Guarded here rather than at the call site so every future caller
+ * inherits the rule instead of having to remember it.
+ */
+export const record = (
+  db: Db,
+  input: { readonly agent: string; readonly generated: number; readonly at: number },
+) =>
+  Effect.suspend(() => {
+    if (input.generated <= 0 || input.agent === "") return Effect.void
+    const minute = minuteOf(input.at)
+    return db
+      .insert(AgentTokenMinuteTable)
+      .values({ agent: input.agent, minute, generated: input.generated })
+      .onConflictDoUpdate({
+        target: [AgentTokenMinuteTable.agent, AgentTokenMinuteTable.minute],
+        // Several steps can finish inside one minute, and sub-agents finish concurrently with their
+        // officer — so the row ACCUMULATES rather than being replaced. A last-writer-wins update
+        // here would silently under-report exactly when a colleague is busiest.
+        set: { generated: sql`${AgentTokenMinuteTable.generated} + ${input.generated}` },
+      })
+      .run()
+      .pipe(Effect.orDie)
+  })
+
+export interface Minute {
+  readonly minute: number
+  readonly generated: number
+}
+
+/** A colleague's spend since a given minute, newest first. Sparse by construction — the gaps are
+ *  the quiet minutes, and a caller that wants a dense series fills them itself. */
+export const since = (db: Db, input: { readonly agent: string; readonly minute: number }) =>
+  db
+    .select({ minute: AgentTokenMinuteTable.minute, generated: AgentTokenMinuteTable.generated })
+    .from(AgentTokenMinuteTable)
+    .where(and(eq(AgentTokenMinuteTable.agent, input.agent), gte(AgentTokenMinuteTable.minute, input.minute)))
+    .orderBy(desc(AgentTokenMinuteTable.minute))
+    .all()
+    .pipe(Effect.orDie)

@@ -1,11 +1,15 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "3dcf826f-152c-4354-b69a-c4884b3f26d5",
+  "id": "a830d767-7c72-438e-97d7-613e59fef7ff",
   "prevIds": [
-    "c62e3625-b915-44ab-a89b-3203fa4cc229"
+    "3dcf826f-152c-4354-b69a-c4884b3f26d5"
   ],
   "ddl": [
+    {
+      "name": "agent_token_minute",
+      "entityType": "tables"
+    },
     {
       "name": "community_channel",
       "entityType": "tables"
@@ -229,6 +233,36 @@
     {
       "name": "tool_catalogue",
       "entityType": "tables"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "agent",
+      "entityType": "columns",
+      "table": "agent_token_minute"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "minute",
+      "entityType": "columns",
+      "table": "agent_token_minute"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "generated",
+      "entityType": "columns",
+      "table": "agent_token_minute"
     },
     {
       "type": "text",
@@ -4544,6 +4578,16 @@
       "name": "fk_todo_session_id_session_id_fk",
       "entityType": "fks",
       "table": "todo"
+    },
+    {
+      "columns": [
+        "agent",
+        "minute"
+      ],
+      "nameExplicit": false,
+      "name": "agent_token_minute_pk",
+      "entityType": "pks",
+      "table": "agent_token_minute"
     },
     {
       "columns": [

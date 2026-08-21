@@ -1,6 +1,7 @@
 import { describe, expect } from "bun:test"
 import { DateTime, Effect, Schema } from "effect"
 import { asc, eq } from "drizzle-orm"
+import { AgentUsage } from "@novaclaw/core/agent/usage"
 import { Database } from "@novaclaw/core/database/database"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
@@ -575,6 +576,50 @@ describe("SessionProjector", () => {
         },
         time: { completed: DateTime.makeUnsafe(1) },
       })
+    }),
+  )
+
+  it.effect("a finished step lands in the colleague's per-minute series — and a quiet one does not", () =>
+    Effect.gen(function* () {
+      // The roster's work column is fed from HERE (owner, 2026-08-21). The store's own rules are
+      // pinned in `agent-usage.test.ts`; this asserts the projector actually calls it, with the
+      // right owner, on the real event — the half a store test cannot see.
+      const { db } = yield* Database.Service
+      const sessionID = SessionV2.ID.make("ses_minute_series")
+      yield* db
+        .insert(SessionTable)
+        .values({
+          id: sessionID,
+          slug: "test",
+          directory: "/project",
+          title: "test",
+          version: "test",
+          agent: "theron",
+        })
+        .run()
+        .pipe(Effect.orDie)
+
+      const service = yield* EventV2.Service
+      const step = (output: number, reasoning: number) =>
+        service.publish(SessionEvent.Step.Ended, {
+          sessionID,
+          timestamp: DateTime.makeUnsafe(1),
+          assistantMessageID: SessionMessage.ID.make("msg_assistant_1"),
+          finish: "stop",
+          cost: 0,
+          tokens: { input: 500, output, reasoning, cache: { read: 0, write: 0 } },
+          context: { window: 32_000, estimatedTokens: 1, droppedMessages: 0, elidedOutputs: 0, findings: [] },
+          timing: { startedAt: 10, completedAt: 40, phases: [], providerAttempts: [] },
+        })
+
+      yield* step(40, 2)
+      // A pure tool call: prompt tokens went in, nothing came out. It must leave NO row — an absent
+      // minute means nothing happened, and a stored zero would make it a measurement.
+      yield* step(0, 0)
+
+      const series = yield* AgentUsage.since(db, { agent: "theron", minute: 0 })
+      expect(series).toHaveLength(1)
+      expect(series[0]!.generated).toBe(42)
     }),
   )
 

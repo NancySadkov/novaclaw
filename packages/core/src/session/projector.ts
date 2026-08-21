@@ -2,6 +2,7 @@ export * as SessionProjector from "./projector"
 
 import { and, desc, eq, gt, or, sql } from "drizzle-orm"
 import { DateTime, Effect, Layer, Schema } from "effect"
+import { AgentUsage } from "../agent/usage"
 import { Database } from "../database/database"
 import { EventV2 } from "../event"
 import { makeGlobalNode } from "../effect/app-node"
@@ -113,6 +114,32 @@ function applyUsage(db: DatabaseService, sessionID: SessionSchema.ID, value: Usa
     .where(eq(SessionTable.id, sessionID))
     .run()
     .pipe(Effect.orDie)
+}
+
+/** Fold one finished step into the per-minute series of whichever colleague owns the session.
+ *
+ *  ⚠️ Best-effort by construction: an unknown session (or one with no agent bound) records nothing
+ *  rather than guessing an owner. A spend row attributed to the wrong colleague is worse than a
+ *  missing one — the roster's whole promise is that each number belongs to the name beside it. */
+function recordAgentMinute(
+  db: DatabaseService,
+  sessionID: SessionSchema.ID,
+  tokens: { readonly output: number; readonly reasoning: number },
+  at: number,
+) {
+  return Effect.gen(function* () {
+    const generated = AgentUsage.generatedOf(tokens)
+    if (generated <= 0) return
+    const row = yield* db
+      .select({ agent: SessionTable.agent })
+      .from(SessionTable)
+      .where(eq(SessionTable.id, sessionID))
+      .get()
+      .pipe(Effect.orDie)
+    const agent = row?.agent
+    if (!agent) return
+    yield* AgentUsage.record(db, { agent, generated, at })
+  })
 }
 
 function run(db: DatabaseService, event: SessionEvent.Event) {
@@ -490,6 +517,21 @@ export const layer = Layer.effectDiscard(
             },
           }),
         ),
+        // …and the same step lands in the colleague's PER-MINUTE series (owner, 2026-08-21). The
+        // session row keeps a running TOTAL, which can answer "how much" and never "when" — a
+        // roster that shows a rate needs buckets, and a total cannot be turned back into them.
+        //
+        // Attributed to the session's own `agent`, which a sub-agent inherits through the config
+        // walk: the nameless staff spend on their officer's behalf, so the officer's row is where
+        // that spend belongs.
+        //
+        // 🔴 A zero writes NOTHING — the rule lives in `AgentUsage.record` so every future caller
+        // inherits it. A step that produced no tokens (a pure tool call, a refusal, an interrupted
+        // turn) leaves no row, and an absent minute keeps meaning "nothing happened" rather than
+        // "observed, and it was zero".
+        // A/B: removing this line drops session-projector.test.ts to 10 pass / 1 fail.
+        Effect.andThen(recordAgentMinute(db, event.data.sessionID, event.data.tokens, Date.now())),
+
       ),
     )
     yield* events.project(SessionEvent.Step.Failed, (event) => run(db, event))
