@@ -2622,6 +2622,11 @@ export const dict = {
   "agentConfig.cloneFailed": "Could not clone this colleague",
   "agentConfig.retire": "Retire",
   "agentConfig.retiring": "Retiring…",
+  // The door into ONE colleague's cabinet, opened from that colleague. Two spellings because a count
+  // is only worth showing once there is something to count — "remembers 0 things" reads as a fault,
+  // and a new hire that has learned nothing yet is not faulty.
+  "agentConfig.memoryOpen": "See what {{name}} remembers",
+  "agentConfig.memoryOpenCount": "See what {{name}} remembers ({{count}})",
   "agentConfig.retire.confirm.title": "Retire {{name}}?",
   // Names what is DESTROYED, in the order it will be missed. Retiring used to take the role and the
   // chat; it now takes the private memories too, and a control that quietly grew teeth is worse than

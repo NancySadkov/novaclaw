@@ -1,4 +1,4 @@
-import { A } from "@solidjs/router"
+import { A, useSearchParams } from "@solidjs/router"
 import { createMemo, createResource, createSignal, For, Show } from "solid-js"
 import { MemoryRemembered } from "@/components/memory-remembered"
 import { SettingsMemoryV2 } from "@/components/settings-v2/memory"
@@ -6,7 +6,7 @@ import { Icon } from "@novaclaw/ui/v2/icon"
 import { useGlobal } from "@/context/global"
 import { useServer, ServerConnection } from "@/context/server"
 import { memoryGraph, type MemoryGraph, type MemoryRow } from "@/utils/memory-api"
-import { defaultOwner, ownersFor, scopeOwnerName, type MemoryOwner } from "@/apps/memory-owner"
+import { ownerFromKey, ownersFor, scopeOwnerName, type MemoryOwner } from "@/apps/memory-owner"
 import { type AgentLike } from "@/apps/contacts"
 import { listAgents } from "@/apps/agent-list"
 import { layoutGraph, type Vec } from "./memory-graph/layout"
@@ -102,8 +102,15 @@ export function MemoryGraphPage() {
   // disagree about who exists.
   const [agents] = createResource(ctx, (current) => listAgents(current.sdk.client.v2))
   const owners = createMemo(() => ownersFor(agents() ?? ([] as AgentLike[]), "Shared with everyone"))
+  // WHOSE memory, taken from the URL first.
+  //
+  // 🔴 This is the door a colleague's own config opens (`agent-config-dialog.tsx` → `ownerRoute`).
+  // Under the roster, "what does this colleague remember" is a question you ask ABOUT A COLLEAGUE,
+  // so it must be reachable from that colleague — not only by opening a global app and hunting for
+  // the name in a picker, which is the same shape as the chat list the roster replaced.
+  const [params, setParams] = useSearchParams<{ owner?: string }>()
   const [ownerKey, setOwnerKey] = createSignal<string | undefined>()
-  const owner = createMemo(() => owners().find((entry) => entry.key === ownerKey()) ?? defaultOwner(owners()))
+  const owner = createMemo(() => ownerFromKey(owners(), ownerKey() ?? params.owner))
 
   const [graph] = createResource(
     () => {
@@ -257,11 +264,23 @@ export function MemoryGraphPage() {
           <select
             class="rounded bg-v2-background-bg-layer-01 px-1.5 py-1 text-[11px]"
             value={owner()?.key ?? ""}
-            onChange={(event) => setOwnerKey(event.currentTarget.value)}
+            onChange={(event) => {
+              setOwnerKey(event.currentTarget.value)
+              // The URL follows the picker, so this view is linkable and the back button means
+              // something. `replace` — switching whose cabinet you are reading is not a navigation
+              // step a user wants to walk back through one colleague at a time.
+              setParams({ owner: event.currentTarget.value }, { replace: true })
+            }}
           >
             <For each={owners()}>
               {(entry) => (
-                <option value={entry.key}>
+                // ⚠️ `selected` per option, not only `value` on the select. The options arrive with
+                // the roster — AFTER the element is created — and a browser keeps `selectedIndex`
+                // at 0 when children appear later, so the control read "Nova" while the page drew
+                // somebody else's memories. Measured 2026-08-21 by following the link this slice
+                // adds: URL `owner=agent:lysander`, graph showing Lysander's three memories, picker
+                // saying Nova. A control that names the wrong owner is worse than no control.
+                <option value={entry.key} selected={entry.key === owner()?.key}>
                   {entry.avatar ? `${entry.avatar} ${entry.label}` : entry.label}
                 </option>
               )}

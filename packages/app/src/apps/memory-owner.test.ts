@@ -1,6 +1,16 @@
 import { describe, expect, test } from "bun:test"
 import type { AgentLike } from "./contacts"
-import { defaultOwner, ownersFor, scopeLabelKey, scopeOwnerName, SHARED_KEY } from "./memory-owner"
+import {
+  defaultOwner,
+  MEMORY_COUNT_CAP,
+  memoryCountLabel,
+  ownerFromKey,
+  ownerRoute,
+  ownersFor,
+  scopeLabelKey,
+  scopeOwnerName,
+  SHARED_KEY,
+} from "./memory-owner"
 
 const agent = (over: Partial<AgentLike> & { id: string }): AgentLike => ({ mode: "primary", hidden: false, ...over })
 
@@ -42,5 +52,42 @@ describe("what a scope means, in words", () => {
     // A chat scope belongs to no colleague: claiming otherwise would misstate who can read it.
     expect(scopeOwnerName("session:ses_1", owners)).toBeUndefined()
     expect(scopeOwnerName("global", owners)).toBeUndefined()
+  })
+})
+
+// The link a colleague's own config opens. Under the roster, "what does this colleague remember" is a
+// question about a COLLEAGUE, so it is asked from that colleague — not by opening a global app and
+// hunting for the name in a picker, which is the shape of the chat list the roster replaced.
+describe("opening ONE colleague's cabinet by link", () => {
+  test("an explicit colleague wins", () => {
+    expect(ownerFromKey(owners, "agent:trader")?.scopes).toEqual(["agent:trader"])
+    expect(ownerFromKey(owners, SHARED_KEY)?.scopes).toEqual(["global"])
+  })
+
+  test("an unknown key falls back to the DEFAULT, never to everything", () => {
+    // A retired colleague's old link is the live case: answering a question about one colleague with
+    // everybody's memories would undo the partition through a stale URL.
+    expect(ownerFromKey(owners, "agent:retired_last_week")?.key).toBe("agent:nova")
+    expect(ownerFromKey(owners, undefined)?.key).toBe("agent:nova")
+    expect(ownerFromKey([], "agent:trader")).toBeUndefined()
+  })
+
+  test("the route the dialog writes is the key the page reads", () => {
+    const route = ownerRoute("trader")
+    const key = new URLSearchParams(route.slice(route.indexOf("?"))).get("owner")
+    expect(ownerFromKey(owners, key ?? undefined)?.label).toBe("Trader")
+  })
+})
+
+describe("the count beside the door", () => {
+  test("zero shows no number — a new hire is not a fault", () => {
+    expect(memoryCountLabel(0)).toBeUndefined()
+    expect(memoryCountLabel(undefined)).toBeUndefined()
+  })
+
+  test("a real count shows itself, and the cap stops counting rather than inventing a total", () => {
+    expect(memoryCountLabel(7)).toBe("7")
+    expect(memoryCountLabel(MEMORY_COUNT_CAP)).toBe("200+")
+    expect(memoryCountLabel(MEMORY_COUNT_CAP + 500)).toBe("200+")
   })
 })

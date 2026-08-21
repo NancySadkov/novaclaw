@@ -44,6 +44,23 @@ export const ownersFor = (agents: readonly AgentLike[], sharedLabel: string): re
  *  because the CEO is the colleague every instance has and the one a new user has already met. */
 export const defaultOwner = (owners: readonly MemoryOwner[]): MemoryOwner | undefined => owners[0]
 
+/**
+ * Resolve a REQUESTED owner — the `?owner=` a colleague's config dialog links to.
+ *
+ * 🔴 Falls back to the default rather than to "everything". An unknown key means the colleague was
+ * retired, renamed away, or the link is old; showing the whole graph instead would answer a question
+ * about ONE colleague with everybody's memories, which is the exact confusion the partition exists
+ * to prevent. The fallback is a different colleague's page, and the picker says whose.
+ */
+export const ownerFromKey = (
+  owners: readonly MemoryOwner[],
+  key: string | undefined,
+): MemoryOwner | undefined => owners.find((owner) => owner.key === key) ?? defaultOwner(owners)
+
+/** The link a colleague's own memory lives behind. ONE spelling, so the dialog that writes it and
+ *  the page that reads it cannot drift. */
+export const ownerRoute = (agentID: string): string => `/memory-graph?owner=${encodeURIComponent(`agent:${agentID}`)}`
+
 /** What a stored scope string means, in words a non-expert can act on. Keys, so the page translates.
  *
  *  ⚠️ `session:<id>` stays "one chat" rather than naming the chat: a memory scoped to a conversation
@@ -55,3 +72,16 @@ export const scopeLabelKey = (scope: string): "memory.scope.shared" | "memory.sc
  *  than the raw `agent:talent-scout` key the store holds. */
 export const scopeOwnerName = (scope: string, owners: readonly MemoryOwner[]): string | undefined =>
   owners.find((owner) => owner.kind === "agent" && owner.key === scope)?.label
+
+/** How many of a colleague's memories are counted before the label gives up and says "200+". */
+export const MEMORY_COUNT_CAP = 200
+
+/**
+ * The number to show beside the door, or `undefined` for no number at all.
+ *
+ * ⚠️ Zero shows NOTHING rather than "(0)". A colleague that has remembered nothing yet is the
+ * ordinary state of a new hire, and a zero on a control reads as a fault report. At the cap the
+ * label says `200+` — the list was capped, so any exact number past it would be invented.
+ */
+export const memoryCountLabel = (count: number | undefined): string | undefined =>
+  count === undefined || count === 0 ? undefined : count >= MEMORY_COUNT_CAP ? `${MEMORY_COUNT_CAP}+` : String(count)

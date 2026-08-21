@@ -12,6 +12,10 @@ import { useModels } from "@/context/models"
 import { planClone } from "@/apps/agent-clone"
 import { chatFor } from "@/apps/roster-live"
 import { GOVERNING_ID, displayName, memoryDisclosure, type AgentLike } from "@/apps/contacts"
+import { MEMORY_COUNT_CAP, memoryCountLabel, ownerRoute } from "@/apps/memory-owner"
+import { memoryList } from "@/utils/memory-api"
+import { useNavigate } from "@solidjs/router"
+
 
 // ONE agent configuration dialog, opened from two places (AGENTS.md → *the structural metaphor*;
 // `todo/named-agents.md`).
@@ -45,6 +49,7 @@ export function AgentConfigDialog(props: {
 }) {
   const language = useLanguage()
   const confirm = useConfirm()
+  const navigate = useNavigate()
   const global = useGlobal()
   const server = useServer()
   const sync = useServerSync()
@@ -58,6 +63,26 @@ export function AgentConfigDialog(props: {
   const agent = createMemo<AgentLike | undefined>(() => (agents() ?? []).find((row) => row.id === props.agentID))
 
   const governing = createMemo(() => props.agentID === GOVERNING_ID)
+
+  /**
+   * How much this colleague remembers, for the door below.
+   *
+   * ⚠️ Capped and COUNTED HERE rather than asked for as a statistic: `memory/stats` is instance-wide
+   * and would answer with the household's total, which on this surface reads as "Spectre remembers
+   * 4,000 things". A capped list is the honest cheap answer — past the cap the label says "many",
+   * and no number on this dialog is ever larger than the colleague's own cabinet.
+   */
+  const [remembered] = createResource(
+    () => {
+      const current = conn()
+      const id = props.agentID
+      return current && id ? { cn: current, id, dir: sync().data.path?.directory ?? "" } : undefined
+    },
+    ({ cn, id, dir }) =>
+      memoryList(cn.http, { directory: dir, scopes: [`agent:${id}`], limit: MEMORY_COUNT_CAP })
+        .then((rows) => rows.length)
+        .catch(() => undefined),
+  )
   const name = createMemo(() => agent()?.name?.trim() || (props.agentID ? displayName(props.agentID) : ""))
 
   // Drafts start empty and fall back to the stored value at render, so an edit survives a re-read of
@@ -325,6 +350,30 @@ export function AgentConfigDialog(props: {
               <span>{language.t(memoryDisclosure("none").privateKey)}</span>
             </label>
             <p class="text-[11px] text-v2-text-text-faint">{language.t(memoryDisclosure("own").sharedKey)}</p>
+
+            {/* 🔴 The DOOR into this colleague's own cabinet.
+                Under the roster, "what does this colleague remember" is a question about a
+                COLLEAGUE, so it is asked here — the same move that brought Tune into this dialog.
+                Before it, the only way in was to open a global Memory app and find the name in a
+                picker: the shape of the chat list the roster replaced.
+                The count is live and says the honest thing when it is zero: a colleague that has
+                remembered nothing yet is the ordinary state of a new hire, not an error. */}
+            <Show when={memoryValue() === "own"}>
+              <button
+                type="button"
+                class="mt-1 self-start text-xs text-v2-text-text-accent hover:underline"
+                onClick={() => {
+                  const id = props.agentID
+                  if (id === undefined) return
+                  props.onDismiss()
+                  navigate(ownerRoute(id))
+                }}
+              >
+                {memoryCountLabel(remembered()) === undefined
+                  ? language.t("agentConfig.memoryOpen", { name: name() })
+                  : language.t("agentConfig.memoryOpenCount", { name: name(), count: memoryCountLabel(remembered())! })}
+              </button>
+            </Show>
           </div>
         </section>
 
