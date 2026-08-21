@@ -24,28 +24,33 @@ export * as UnfinishedSet from "./unfinished-set"
  */
 
 /** Words that mean "all of them" rather than "one of them". Matched on the USER's own message. */
-const COLLECTION_CUES = [
-  "each",
-  "every",
-  "all of",
-  "all the",
-  "all ",
-  "both",
-  "them all",
-  "one by one",
-  "list the",
-] as const
+const COLLECTION_CUES = ["each", "every", "all of", "all the", "all", "both", "them all", "one by one", "list the"] as const
+
+/** One matcher per cue, anchored at WORD BOUNDARIES on both ends — see `asksForSet`. Every cue is
+ *  letters and spaces, so nothing here needs regex-escaping and none is applied: a cue that ever
+ *  carries punctuation must add it. */
+const CUE_MATCHERS: readonly RegExp[] = COLLECTION_CUES.map((cue) => new RegExp(String.raw`\b${cue}\b`, "i"))
 
 /**
  * Did the user ask about a SET?
  *
  * ⚠️ Read from the user's words only. Inferring it from the folder having many files would fire on
  * every question asked in a populated directory, which is most of them.
+ *
+ * 🔴 **Matched on WORDS, never on substrings, and this cost 835,145 input tokens to learn.** The cue
+ * list was tested with `text.includes(cue)`, so `"all "` matched the middle of *"**C**all the"*,
+ * *"Inst**all** the"*, *"Rec**all** the"*. Measured on the owner's instance 2026-08-21: a probe whose
+ * whole prompt was *Call the colleague tool with op "list"…* was read as a request to describe a
+ * folder, and the steer drove that session through twenty unrelated repository files —
+ * `.oxlintrc.json`, `LICENSE`, `package.json` — before it was interrupted.
+ *
+ * ⚠️ The cost is not "one wrong nudge". `continueMessage` names files and says *do not stop to ask*,
+ * so a false positive does not read as a suggestion the model may decline — it reads as the user's
+ * own instruction, again each turn, until the steer budget is spent. `call the`, `install the` and
+ * `recall the` are ordinary phrasing for a coding agent, which is what made a substring test
+ * expensive rather than merely imprecise.
  */
-export const asksForSet = (userText: string): boolean => {
-  const text = userText.toLowerCase()
-  return COLLECTION_CUES.some((cue) => text.includes(cue))
-}
+export const asksForSet = (userText: string): boolean => CUE_MATCHERS.some((matcher) => matcher.test(userText))
 
 /**
  * How many files ONE steer asks for.

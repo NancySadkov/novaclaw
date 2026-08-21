@@ -5,6 +5,7 @@ import type { PluginContext } from "@novaclaw/plugin/v2/effect"
 import path from "path"
 import { Effect, Option, Schema } from "effect"
 import { AgentV2 } from "../../agent"
+import { AgentPlugin } from "../../plugin/agent"
 import { AgentConfigStore } from "../../agent-config-store"
 import { Config } from "../../config"
 import { ConfigStoreWrite } from "../../config-store-write"
@@ -109,7 +110,21 @@ function applyItem(draft: AgentDraft, agentID: AgentV2.ID, item: ConfigAgent.Inf
 
   const exists = draft.get(agentID) !== undefined
   draft.update(agentID, (agent) => {
-    if (!exists) agent.permissions.push(...global)
+    if (!exists) {
+      // 🔴 A hired colleague stands on the SAME floor as a built-in. Without this it starts from
+      // `permissions: []` (`schema/agent.ts`) and every unmatched action falls to the evaluator's
+      // `ask`, which the assert path turns into a refusal — measured 2026-08-21 through both real
+      // plugins: `read` came back `ask` while the shipped mode still granted `bash`, i.e. an officer
+      // that could run a shell command and could not look at a file.
+      //
+      // `officer` = a PRIMARY agent, which is what a roster colleague is. It widens the floor by one
+      // action — addressing a peer — because "top level executive agents who can communicate with
+      // each other" is the metaphor's own sentence. Config-defined SUB-agents are nameless staff and
+      // get the floor without it. Staffing stays Nova's regardless (`tool/colleague.ts` → mayStaff).
+      const officer = (item.mode ?? agent.mode) === "primary"
+      agent.permissions.push(...AgentPlugin.floor({ scratchDirs: AgentPlugin.SCRATCH_DIRS, officer }))
+      agent.permissions.push(...global)
+    }
     if (item.model !== undefined) {
       const model = ModelV2.parse(item.model)
       agent.model = { id: model.modelID, providerID: model.providerID, variant: agent.model?.variant }

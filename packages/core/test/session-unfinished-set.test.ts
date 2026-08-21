@@ -23,6 +23,25 @@ describe("asksForSet — read from the USER's words, never from the folder", () 
     expect(UnfinishedSet.asksForSet("read them all")).toBe(true)
   })
 
+  test("a WORD, never a substring — the 835k-token lesson", () => {
+    // 🔴 Measured on the owner's instance 2026-08-21. The cue `"all "` was tested with `includes`,
+    // so it matched the middle of "C-all the", and a probe whose whole prompt was
+    // `Call the colleague tool with op "list"…` was read as a request to describe a folder. The
+    // steer then drove that session through twenty unrelated repository files — 835,145 input
+    // tokens — because `continueMessage` names files and says "do not stop to ask", which reads as
+    // the user's own instruction rather than a suggestion the model may decline.
+    expect(UnfinishedSet.asksForSet('Call the colleague tool with op "list"')).toBe(false)
+    expect(UnfinishedSet.asksForSet("Install the dependencies and run the build")).toBe(false)
+    expect(UnfinishedSet.asksForSet("Recall the decision we made about naming")).toBe(false)
+    expect(UnfinishedSet.asksForSet("please call the API and show me the response")).toBe(false)
+    // …while the words themselves still count, including as a whole message.
+    expect(UnfinishedSet.asksForSet("open all")).toBe(true)
+    expect(UnfinishedSet.asksForSet("describe all of them")).toBe(true)
+    // A cue must not swallow a longer word that merely contains it: "reach", "beach", "overall".
+    expect(UnfinishedSet.asksForSet("reach the server")).toBe(false)
+    expect(UnfinishedSet.asksForSet("what is the overall shape")).toBe(false)
+  })
+
   test("a question about ONE thing does not", () => {
     // ⚠️ The clause that keeps this from being a nuisance. A user asking about one picture in a
     // folder of six must never be told they missed five.

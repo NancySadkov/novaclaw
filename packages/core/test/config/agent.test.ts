@@ -135,14 +135,22 @@ describe("ConfigAgentPlugin.Plugin", () => {
         hidden: true,
         model: { providerID: "openrouter", id: "openai/gpt-5", variant: "high" },
       })
-      expect(reviewer.permissions).toEqual([
+      // ⚠️ A config-borne agent now opens with the shared FLOOR (`plugin/agent.ts` → `floor`), added
+      // 2026-08-21 because a hired colleague started from `permissions: []` and could not read a file
+      // while the shipped mode still granted it `bash`. So these assert the ORDER — floor, then the
+      // document's globals, then the agent's own rules, last wins — rather than a literal list that
+      // would have to be re-copied every time the floor changes.
+      const tail = (rules: PermissionV2.Ruleset, n: number) => rules.slice(-n)
+      expect(tail(reviewer.permissions, 4)).toEqual([
         { action: "bash", resource: "*", effect: "ask" },
         { action: "read", resource: "*", effect: "allow" },
         { action: "edit", resource: "*", effect: "deny" },
         { action: "read", resource: "*", effect: "deny" },
       ])
+      // The floor is BENEATH them: it allows `read`, and the agent's own deny still wins.
+      expect(reviewer.permissions[0]).toEqual({ action: "read", resource: "*", effect: "allow" })
       expect(PermissionV2.evaluate("read", "README.md", reviewer.permissions).effect).toBe("deny")
-      expect((yield* agents.get(AgentV2.ID.make("late")))?.permissions).toEqual([
+      expect(tail((yield* agents.get(AgentV2.ID.make("late")))!.permissions, 3)).toEqual([
         { action: "bash", resource: "*", effect: "ask" },
         { action: "read", resource: "*", effect: "allow" },
         { action: "edit", resource: "*", effect: "allow" },
@@ -292,13 +300,22 @@ Use native v2 fields.`,
             system: "Review carefully.",
             description: "Markdown description",
             request: { body: { temperature: 0.5 } },
-            permissions: [{ action: "edit", resource: "*", effect: "deny" }],
+          })
+          // The file's own rule is the LAST word, on top of the shared floor (see the note above).
+          expect((yield* agents.get(AgentV2.ID.make("reviewer")))!.permissions.at(-1)).toEqual({
+            action: "edit",
+            resource: "*",
+            effect: "deny",
           })
           expect(yield* agents.get(AgentV2.ID.make("team/helper"))).toMatchObject({ system: "Help the team." })
           expect(yield* agents.get(AgentV2.ID.make("native"))).toMatchObject({
             system: "Use native v2 fields.",
             request: { headers: { "x-agent": "native" }, body: { effort: "high" } },
-            permissions: [{ action: "edit", resource: "*", effect: "deny" }],
+          })
+          expect((yield* agents.get(AgentV2.ID.make("native")))!.permissions.at(-1)).toEqual({
+            action: "edit",
+            resource: "*",
+            effect: "deny",
           })
           expect(yield* agents.get(AgentV2.ID.make("disabled"))).toBeUndefined()
           expect(yield* agents.get(AgentV2.ID.make("plan"))).toMatchObject({ system: "Make a plan.", mode: "primary" })

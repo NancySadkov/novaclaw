@@ -128,43 +128,63 @@ does.
 Speak plainly. You are the first colleague a new user meets, and nothing about an organization of
 agents should feel like operating machinery.`
 
+/**
+ * The floor EVERY agent stands on — built-in or hired.
+ *
+ * 🔴 It is exported because there are two doors. `plugin/agent.ts` builds the built-ins; a colleague
+ * the user hires is a config row applied by `config/plugin/agent.ts`, and that door pushed nothing.
+ * Measured 2026-08-21 through both real plugins: a hired colleague's `read` resolved to `ask`, which
+ * the assert path turns into a refusal — so an officer could run `bash` (the shipped mode grants it)
+ * and could not LOOK AT A FILE. A roster whose whole premise is user-created officers cannot have its
+ * floor live in the built-ins' constructor.
+ *
+ * `officer` widens it by exactly one action: addressing a PEER. "Top level executive agents who can
+ * communicate with each other" is the owner's sentence, and staffing stays Nova's alone — enforced by
+ * `tool/colleague.ts` → `mayStaff`, independently of this dial.
+ */
+export const floor = (input: { readonly scratchDirs: readonly string[]; readonly officer: boolean }): PermissionV2.Ruleset => [
+  // v0.2.0 B4c: the compiled floor is an explicit ALLOWLIST of ambient-safe actions — never a
+  // catch-all `{ action: "*", resource: "*", effect: "allow" }` again. Anything absent from it
+  // falls through to the evaluator's `ask` default, which is what makes a per-action gate added
+  // later an actual gate rather than a formality. The membership and the reasoning that decides
+  // it live with the constant (`permission.ts` → AMBIENT_SAFE_BASELINE), so this list is never
+  // a second place to keep in sync; `test/permission-baseline.test.ts` fails if a catch-all
+  // allow reappears in ANY built-in agent's ruleset.
+  ...PermissionV2.AMBIENT_SAFE_BASELINE,
+  // 1I: external access is CLASSED — read grants never authorize writes. Reading any host-readable
+  // path is the evaluator's mode-independent baseline. WRITING outside the folder defaults to ask
+  // here; the whitelisted scratch dirs allow both because Nova owns those locations.
+  { action: "external_directory_write", resource: "*", effect: "ask" },
+  ...input.scratchDirs.flatMap((resource): PermissionV2.Rule[] => [
+    { action: "external_directory_read", resource, effect: "allow" },
+    { action: "external_directory_write", resource, effect: "allow" },
+  ]),
+  // An OFFICER may ask the person a question, exactly as `build` does — it is an agent a human
+  // chats with, and a colleague that cannot ask "which invoice did you mean?" has to guess instead.
+  // The machinery agents (title, summary, compaction) stay denied: nobody is watching them.
+  { action: "question", resource: "*", effect: input.officer ? "allow" : "deny" },
+  // DENIED unless this is an officer, which is what keeps the hand-off tool OFF the horizon for
+  // agents that may not use it — `ToolRegistry.materialize` withdraws a wholly-denied tool rather
+  // than advertising it and refusing. Measured 2026-08-21: resident tool schemas were 32,822 bytes
+  // with `colleague` on every horizon and 30,744 without it — 2,078 bytes on every turn of every
+  // session. An officer pays them because delegation is its job; the machinery agents do not.
+  { action: "colleague", resource: "*", effect: input.officer ? "allow" : "deny" },
+  { action: "plan_enter", resource: "*", effect: "deny" },
+  { action: "plan_exit", resource: "*", effect: "deny" },
+]
+
+/** The scratch locations both floors whitelist. */
+export const SCRATCH_DIRS: readonly string[] = [TRUNCATION_GLOB, path.join(Global.Path.tmp, "*")]
+
 export const Plugin = define({
   id: "agent",
   effect: Effect.fn(function* (ctx) {
     const location = yield* Location.Service
     const worktree = location.directory
-    const whitelistedDirs = [TRUNCATION_GLOB, path.join(Global.Path.tmp, "*")]
-    // 1I: external access is CLASSED — read grants never authorize writes. Reading any host-readable
-    // path is the evaluator's mode-independent baseline. WRITING outside the folder defaults to ask
-    // here; the whitelisted scratch dirs allow both because Nova owns those locations.
-    const readonlyExternalDirectory: PermissionV2.Ruleset = [
-      { action: "external_directory_write", resource: "*", effect: "ask" },
-      ...whitelistedDirs.flatMap((resource): PermissionV2.Rule[] => [
-        { action: "external_directory_read", resource, effect: "allow" },
-        { action: "external_directory_write", resource, effect: "allow" },
-      ]),
-    ]
-    const defaults: PermissionV2.Ruleset = [
-      // v0.2.0 B4c: the compiled floor is an explicit ALLOWLIST of ambient-safe actions — never a
-      // catch-all `{ action: "*", resource: "*", effect: "allow" }` again. Anything absent from it
-      // falls through to the evaluator's `ask` default, which is what makes a per-action gate added
-      // later an actual gate rather than a formality. The membership and the reasoning that decides
-      // it live with the constant (`permission.ts` → AMBIENT_SAFE_BASELINE), so this list is never
-      // a second place to keep in sync; `test/permission-baseline.test.ts` fails if a catch-all
-      // allow reappears in ANY built-in agent's ruleset.
-      ...PermissionV2.AMBIENT_SAFE_BASELINE,
-      ...readonlyExternalDirectory,
-      { action: "question", resource: "*", effect: "deny" },
-      // DENIED in the floor, which is what keeps the hand-off tool OFF the horizon for agents that
-      // may not use it — `ToolRegistry.materialize` withdraws a wholly-denied tool rather than
-      // advertising it and refusing. Measured 2026-08-21: resident tool schemas were 32,822 bytes
-      // with `colleague` on every horizon and 30,744 without it — 2,078 bytes on every turn of every
-      // session, for a capability only the governing agent is granted. Nova re-allows it below; an
-      // officer that should delegate is granted it deliberately, and pays the bytes then.
-      { action: "colleague", resource: "*", effect: "deny" },
-      { action: "plan_enter", resource: "*", effect: "deny" },
-      { action: "plan_exit", resource: "*", effect: "deny" },
-    ]
+    // The built-ins stand on the SAME floor a hired colleague does (`floor` above). They are not
+    // officers: `build` and `plan` are the machinery a person drives, not colleagues on the roster,
+    // so they do not carry the hand-off tool. Nova re-allows it for itself below.
+    const defaults: PermissionV2.Ruleset = floor({ scratchDirs: SCRATCH_DIRS, officer: false })
 
     yield* ctx.agent.transform((draft) => {
       draft.update(AgentV2.defaultID, (item) => {
@@ -284,7 +304,11 @@ export const Plugin = define({
               { action: "websearch", resource: "*", effect: "allow" },
               { action: "read", resource: "*", effect: "allow" },
             ],
-            readonlyExternalDirectory,
+            // The external-directory half of the floor, re-applied AFTER the explore grants above so
+            // a read-only agent keeps the whitelisted scratch dirs it needs to write its report into.
+            floor({ scratchDirs: SCRATCH_DIRS, officer: false }).filter((rule) =>
+              rule.action.startsWith("external_directory"),
+            ),
           ),
         )
       })

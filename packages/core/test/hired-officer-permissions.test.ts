@@ -1,0 +1,162 @@
+import { describe, expect } from "bun:test"
+import { Effect, Schema } from "effect"
+import { AgentV2 } from "@novaclaw/core/agent"
+import type { ConfigAgent } from "@novaclaw/core/config/agent"
+import { ConfigAgent as ConfigAgentSchema } from "@novaclaw/core/config/agent"
+import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
+import { Config } from "@novaclaw/core/config"
+import { ConfigAgentPlugin } from "@novaclaw/core/config/plugin/agent"
+import { FSUtil } from "@novaclaw/core/fs-util"
+import { LayerNode } from "@novaclaw/core/effect/layer-node"
+import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
+import { Location } from "@novaclaw/core/location"
+import { PermissionV2 } from "@novaclaw/core/permission"
+import { AgentPlugin } from "@novaclaw/core/plugin/agent"
+import { AbsolutePath } from "@novaclaw/core/schema"
+import { EFFECTIVE_CONFIG_DEFAULTS, MODE_RULES } from "@novaclaw/core/session/config-resolve"
+import { location } from "./fixture/location"
+import { testEffect } from "./lib/effect"
+import { agentHost, host } from "./plugin/host"
+
+// What a HIRED colleague may actually do (AGENTS.md — the structural metaphor).
+//
+// 🔴 The roster's whole premise is officers the USER creates. They are config rows, not built-ins,
+// and `plugin/agent.ts` pushes `AMBIENT_SAFE_BASELINE` into the agents IT builds — so a hired
+// colleague starts from `permissions: []` (`schema/agent.ts`) plus whatever the config files carry.
+// Everything unmatched falls to the evaluator's `ask`, which the assert path turns into a REFUSAL
+// (`bf39088eb`, *Ask considered harmful*).
+//
+// ⚠️ This file MEASURES that rather than asserting it from the source, because reading a permission
+// chain and running one have disagreed here before. It builds the real built-ins with the real
+// plugin and applies a real config fragment through the real `applyItem`.
+
+const it = testEffect(AppNodeBuilder.build(LayerNode.group([AgentV2.node, FSUtil.node])))
+
+/** The instance-wide agent store, in memory — the same shape `test/config/agent.test.ts` uses. */
+const memoryStore = () => {
+  const layers = new Map<string, ConfigAgent.Info[]>()
+  let defaultAgent: string | undefined
+  return AgentConfigStore.Service.of({
+    agents: () => Effect.sync(() => Object.fromEntries(layers)),
+    setLayers: (name, next) => Effect.sync(() => void layers.set(name, [...next])),
+    removeAgent: (name) => Effect.sync(() => void layers.delete(name)),
+    getDefault: () => Effect.sync(() => defaultAgent),
+    setDefault: (name) => Effect.sync(() => void (defaultAgent = name)),
+    clearDefault: () => Effect.sync(() => void (defaultAgent = undefined)),
+    setDefaultIfEmpty: (name) => Effect.sync(() => void (defaultAgent ??= name)),
+    isEmpty: () => Effect.sync(() => layers.size === 0),
+  })
+}
+
+const at = Location.Service.of(location({ directory: AbsolutePath.make("/project") }))
+
+/** Build the built-ins with the real plugin, then hire `theron` the way the roster's Hire button
+ *  does — a store layer, applied by the real config plugin. No hand-written fixture of either. */
+const rosterWith = (fragment: Record<string, unknown>) =>
+  Effect.gen(function* () {
+    const agent = yield* AgentV2.Service
+    yield* AgentPlugin.Plugin.effect(host({ agent: agentHost(agent) })).pipe(Effect.provideService(Location.Service, at))
+    const store = memoryStore()
+    yield* store.setLayers("theron", [Schema.decodeUnknownSync(ConfigAgentSchema.Info)(fragment)])
+    yield* ConfigAgentPlugin.Plugin.effect(host({ agent: agentHost(agent) })).pipe(
+      Effect.provideService(Config.Service, Config.Service.of({ entries: () => Effect.succeed([]) })),
+      Effect.provideService(AgentConfigStore.Service, store),
+    )
+    return new Map((yield* agent.all()).map((item) => [String(item.id), item.permissions as PermissionV2.Ruleset]))
+  })
+
+const effectFor = (rules: PermissionV2.Ruleset, action: string, resource = "src/x.ts") =>
+  PermissionV2.evaluate(action, resource, [
+    ...rules,
+    ...MODE_RULES[EFFECTIVE_CONFIG_DEFAULTS.permissionMode],
+  ]).effect
+
+describe("a colleague the user hired", () => {
+  it.effect("stands on the SAME floor as a built-in, action for action", () =>
+    Effect.gen(function* () {
+      const roster = yield* rosterWith({ name: "Theron", mode: "primary" })
+      const hired = roster.get("theron")!
+      const builtin = roster.get("build")!
+      // Compared against `build` rather than against a list of actions this file believes are
+      // ambient-safe: the membership of that baseline is not this file's claim, and a hand-copied
+      // list would go stale the day it changes.
+      //
+      // Two deliberate differences are excluded: `colleague` (an officer may address peers, `build`
+      // may not — its own test below) and `plan_enter` (a colleague that switched the user's mode
+      // under them would be a surprise; the person has a mode picker, and `build` is the agent that
+      // picker drives).
+      for (const action of [
+        "read",
+        "explore",
+        "todowrite",
+        "resource_status",
+        "webfetch",
+        "js",
+        "kb",
+        "question",
+        "external_directory_write",
+      ])
+        expect({ action, hired: effectFor(hired, action) }).toEqual({ action, hired: effectFor(builtin, action) })
+    }),
+  )
+
+  it.effect("can address its PEERS — that is what makes them colleagues", () =>
+    Effect.gen(function* () {
+      const roster = yield* rosterWith({ name: "Theron", mode: "primary" })
+      // "Top level executive agents who can communicate with each other" (owner). Staffing stays
+      // Nova's alone, and `tool/colleague.ts` → `mayStaff` enforces that independently of this dial.
+      expect(effectFor(roster.get("theron")!, "colleague")).toBe("allow")
+    }),
+  )
+
+  it.effect("is still bound by the floor's refusals", () =>
+    Effect.gen(function* () {
+      const roster = yield* rosterWith({ name: "Theron", mode: "primary" })
+      // Inheriting a baseline must not become inheriting a catch-all: hiring a colleague cannot be a
+      // privilege-escalation move, so the floor's own denies have to survive the copy.
+      expect(effectFor(roster.get("theron")!, "plan_enter")).toBe("deny")
+      expect(PermissionV2.catchAllAllowRules(roster.get("theron")!)).toEqual([])
+    }),
+  )
+
+  it.effect("nameless STAFF get the floor without the hand-off tool", () =>
+    Effect.gen(function* () {
+      // A config-defined sub-agent is staff, not a colleague: it should be able to read, and it has
+      // nobody to hand work to.
+      const roster = yield* rosterWith({ name: "Helper", mode: "subagent" })
+      const staff = roster.get("theron")!
+      expect(effectFor(staff, "read")).toBe("allow")
+      expect(effectFor(staff, "colleague")).toBe("deny")
+    }),
+  )
+
+  it.effect("an explicit rule in the fragment still beats the floor", () =>
+    Effect.gen(function* () {
+      // The floor is a FLOOR, not a ceiling the user cannot edit: a colleague configured to refuse
+      // something must refuse it, even though the floor allows it.
+      const roster = yield* rosterWith({
+        name: "Theron",
+        mode: "primary",
+        permissions: [{ action: "read", resource: "*", effect: "deny" }],
+      })
+      expect(effectFor(roster.get("theron")!, "read")).toBe("deny")
+    }),
+  )
+
+  it.effect("MEASURED, not assumed: the session MODE still outranks an agent's own rule", () =>
+    Effect.gen(function* () {
+      // Pre-existing and worth stating rather than discovering twice: `evaluateInput` appends the
+      // mode overlay AFTER the agent's ruleset and `evaluate` takes the LAST match, so a colleague
+      // configured `bash: deny` still runs shell commands under the shipped `bypass` mode. Not
+      // changed here — pinned so the next person reads it as a decision rather than a surprise.
+      const roster = yield* rosterWith({
+        name: "Theron",
+        mode: "primary",
+        permissions: [{ action: "bash", resource: "*", effect: "deny" }],
+      })
+      const rules = roster.get("theron")!
+      expect(PermissionV2.evaluate("bash", "ls", rules).effect).toBe("deny")
+      expect(effectFor(rules, "bash")).toBe("allow")
+    }),
+  )
+})
