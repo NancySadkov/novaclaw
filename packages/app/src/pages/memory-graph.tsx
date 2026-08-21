@@ -6,6 +6,9 @@ import { Icon } from "@novaclaw/ui/v2/icon"
 import { useGlobal } from "@/context/global"
 import { useServer, ServerConnection } from "@/context/server"
 import { memoryGraph, type MemoryGraph, type MemoryRow } from "@/utils/memory-api"
+import { defaultOwner, ownersFor, scopeOwnerName, type MemoryOwner } from "@/apps/memory-owner"
+import { type AgentLike } from "@/apps/contacts"
+import { listAgents } from "@/apps/agent-list"
 import { layoutGraph, type Vec } from "./memory-graph/layout"
 
 // The Memory graph viewer (notes/kb-graph-plan.md §5 — the advanced, node-link surface for
@@ -21,12 +24,21 @@ const W = 1000
 const H = 700
 const GRAPH_LIMIT = 600
 
-// Node colour by scope: durable global memory vs a single chat's private memory.
-const SCOPE_GLOBAL = "#8b5cf6" // violet — durable, cross-chat
+// Node colour by scope. THREE now, since memory belongs to colleagues (AGENTS.md — the structural
+// metaphor): the household's shared facts, one colleague's own cabinet, and one chat.
+const SCOPE_GLOBAL = "#8b5cf6" // violet — shared with every colleague
+const SCOPE_AGENT = "#e0a33e" // gold — this colleague's own
 const SCOPE_SESSION = "#22d3ee" // cyan — this chat only
-const scopeColor = (scope: string) => (scope === "global" ? SCOPE_GLOBAL : SCOPE_SESSION)
-const scopeLabel = (scope: string) =>
-  scope === "global" ? "Always (global)" : scope.startsWith("session:") ? "One chat" : scope
+const scopeColor = (scope: string) =>
+  scope === "global" ? SCOPE_GLOBAL : scope.startsWith("agent:") ? SCOPE_AGENT : SCOPE_SESSION
+/** ⚠️ Says WHO CAN READ IT, never the raw key. `agent:talent-scout` is a store key; "Talent Scout's
+ *  own" is the fact the user needs, and the difference is whether the badge can be acted on. */
+const scopeLabel = (scope: string, owners: readonly MemoryOwner[]) => {
+  if (scope === "global") return "Shared with everyone"
+  if (scope.startsWith("session:")) return "One chat"
+  const name = scopeOwnerName(scope, owners)
+  return name ? `${name}'s own` : scope
+}
 
 /**
  * What to write beside a node.
@@ -86,13 +98,24 @@ export function MemoryGraphPage() {
   }
   const [tick, setTick] = createSignal(0)
 
+  // WHO works here — the same loader the Contacts roster uses, so the two surfaces can never
+  // disagree about who exists.
+  const [agents] = createResource(ctx, (current) => listAgents(current.sdk.client.v2))
+  const owners = createMemo(() => ownersFor(agents() ?? ([] as AgentLike[]), "Shared with everyone"))
+  const [ownerKey, setOwnerKey] = createSignal<string | undefined>()
+  const owner = createMemo(() => owners().find((entry) => entry.key === ownerKey()) ?? defaultOwner(owners()))
+
   const [graph] = createResource(
     () => {
       const cn = conn()
-      return cn ? { cn, dir: directory(), t: tick() } : undefined
+      const scopes = owner()?.scopes
+      // No owner resolved yet = the roster has not loaded. Querying now would draw the WHOLE graph
+      // for a moment and then swap it for one colleague's — a flash of everyone's memories in a view
+      // whose entire promise is that they are separate.
+      return cn && scopes ? { cn, dir: directory(), scopes, t: tick() } : undefined
     },
-    ({ cn, dir }) =>
-      memoryGraph(cn.http, { directory: dir, limit: GRAPH_LIMIT }).catch(
+    ({ cn, dir, scopes }) =>
+      memoryGraph(cn.http, { directory: dir, limit: GRAPH_LIMIT, scopes }).catch(
         () => ({ nodes: [], edges: [] }) as MemoryGraph,
       ),
   )
@@ -224,6 +247,27 @@ export function MemoryGraphPage() {
           <Icon name="branch" size="large" />
           <h1 class="text-sm font-medium">Memory</h1>
         </div>
+        {/* WHOSE memory. The app used to show one undifferentiated pile, which was the only honest
+            rendering while there was one pile; now every memory belongs to a colleague, to one chat
+            or to the household, and a view that hid that would be the last place still claiming the
+            old model. Nova is included like anyone else — it is not a super-user of its colleagues'
+            cabinets, it just has one of its own. */}
+        <label class="flex items-center gap-1.5 text-[11px] opacity-80" data-slot="memory-owner-picker">
+          <span class="opacity-70">Whose</span>
+          <select
+            class="rounded bg-v2-background-bg-layer-01 px-1.5 py-1 text-[11px]"
+            value={owner()?.key ?? ""}
+            onChange={(event) => setOwnerKey(event.currentTarget.value)}
+          >
+            <For each={owners()}>
+              {(entry) => (
+                <option value={entry.key}>
+                  {entry.avatar ? `${entry.avatar} ${entry.label}` : entry.label}
+                </option>
+              )}
+            </For>
+          </select>
+        </label>
         <div class="flex items-center gap-0.5 rounded-md bg-v2-background-bg-layer-01 p-0.5 text-[11px]">
           <For
             each={
@@ -305,11 +349,17 @@ export function MemoryGraphPage() {
           {count()} {count() === 1 ? "memory" : "memories"} · {graph()?.edges.length ?? 0} links
         </span>
         <div class="ml-auto flex items-center gap-3 text-xs">
+          {/* Three scopes, three marks. The legend used to name two because there WERE two; leaving
+              it at two after the roster landed would be the one place still describing the old model
+              — and a colour with no legend entry is a mystery, not a hint. */}
           <span class="flex items-center gap-1">
-            <span class="inline-block h-2.5 w-2.5 rounded-full" style={{ background: SCOPE_GLOBAL }} /> Global
+            <span class="inline-block h-2.5 w-2.5 rounded-full" style={{ background: SCOPE_GLOBAL }} /> Shared
           </span>
           <span class="flex items-center gap-1">
-            <span class="inline-block h-2.5 w-2.5 rounded-full" style={{ background: SCOPE_SESSION }} /> Chat
+            <span class="inline-block h-2.5 w-2.5 rounded-full" style={{ background: SCOPE_AGENT }} /> Its own
+          </span>
+          <span class="flex items-center gap-1">
+            <span class="inline-block h-2.5 w-2.5 rounded-full" style={{ background: SCOPE_SESSION }} /> One chat
           </span>
           <button class="opacity-70 hover:opacity-100" title="Reset view" onClick={resetView}>
             <Icon name="expand" size="large" />
@@ -324,7 +374,9 @@ export function MemoryGraphPage() {
           It owns its own fetch, so switching views does not depend on the graph having loaded. */}
       <Show when={appView() === "list"}>
         <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-          <MemoryRemembered />
+          {/* The list obeys the same picker as the graph: two views of ONE colleague's memory,
+              never one scoped and one not. */}
+          <MemoryRemembered scopes={owner()?.scopes} />
         </div>
       </Show>
 
@@ -467,7 +519,7 @@ export function MemoryGraphPage() {
                     class="rounded px-1.5 py-0.5 text-xs"
                     style={{ background: scopeColor(sel().scope) + "33", color: scopeColor(sel().scope) }}
                   >
-                    {scopeLabel(sel().scope)}
+                    {scopeLabel(sel().scope, owners())}
                   </span>
                   <button class="opacity-60 hover:opacity-100" onClick={() => setSelected(undefined)}>
                     <Icon name="close-small" size="large" />

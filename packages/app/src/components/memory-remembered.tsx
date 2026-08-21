@@ -26,6 +26,12 @@ export const MemoryRemembered: Component<{
   sessionID?: string
   /** Bumped by a caller that has just changed the set, to force a re-read. */
   revision?: number
+  /**
+   * WHOSE memory to list (AGENTS.md — the structural metaphor). Absent = everything this instance
+   * holds, which is what the in-session panel wants; the Memory app passes one colleague's cabinet
+   * or the household's shared facts, because "what do you know about me" now has a subject.
+   */
+  scopes?: readonly string[]
   class?: string
 }> = (props) => {
   const language = useLanguage()
@@ -42,17 +48,22 @@ export const MemoryRemembered: Component<{
   const [memories, { refetch }] = createResource(
     () => {
       const cn = conn()
-      return cn ? { cn, dir: directory(), t: (props.revision ?? 0) + localTick() } : undefined
+      return cn
+        ? { cn, dir: directory(), scopes: props.scopes, t: (props.revision ?? 0) + localTick() }
+        : undefined
     },
-    ({ cn, dir }) =>
+    ({ cn, dir, scopes }) =>
       // ⚠️ Entities and episodes only — NOT passages. "Remembered" answers *what do you know*, and a
       // passage is the raw source text a document was cut into, not something learned. Measured
       // 2026-08-12: ingesting one rulebook put 302 chunks here, so the honest answer to that question
       // became a wall of unreadable fragments. The graph already hides passages by default for the
       // same reason; this keeps the two surfaces telling the same story.
-      memoryList(cn.http, { directory: dir, limit: 500, kinds: ["entity", "episode"] }).catch(
-        () => [] as MemoryRow[],
-      ),
+      memoryList(cn.http, {
+        directory: dir,
+        limit: 500,
+        kinds: ["entity", "episode"],
+        ...(scopes === undefined ? {} : { scopes }),
+      }).catch(() => [] as MemoryRow[]),
   )
 
   /**
