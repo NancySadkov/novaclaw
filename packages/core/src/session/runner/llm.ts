@@ -219,6 +219,23 @@ const RERANK_DEADLINE = "4 seconds"
  * when this runs, and an unreachable embedder or a slow store must not turn a successful compaction
  * into a failed turn. A missing archive costs recall; a thrown one would cost the turn.
  */
+/** Swallow an archive failure so the compaction stands — but SAY it happened. */
+const reportArchiveFailure =
+  (sessionID: SessionSchema.ID, agentID: string | undefined) =>
+  <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    effect.pipe(
+      Effect.catchCause((cause) =>
+        Log.event("session.compaction.archive.failed", {
+          "session.id": sessionID,
+          // "(none)" rather than an omitted key: a colleague-less session is a real case (the
+          // archive skips it), and an absent attribute would read as "we did not record which".
+          "agent.id": agentID ?? "(none)",
+          "archive.reason": Cause.pretty(cause).slice(0, 300),
+        }),
+      ),
+      Effect.asVoid,
+    )
+
 const archiveCompactedChat = Effect.fn("SessionRunner.archiveCompactedChat")(function* (input: {
   readonly entries: readonly SessionCompaction.Entry[]
   readonly agent: AgentV2.Selection
@@ -1359,7 +1376,13 @@ export const layer = Layer.effect(
       // why). Best-effort and AFTER the compaction is durable: an archive that failed must never
       // turn a successful compaction into a failed turn — the summary is already committed, and the
       // transcript rows are still in the database either way.
-      if (compacted) yield* archiveCompactedChat({ entries, agent, memory, session }).pipe(Effect.ignore)
+      if (compacted)
+        yield* archiveCompactedChat({ entries, agent, memory, session }).pipe(
+          // Best-effort means the TURN survives, not that nobody is told. `Effect.ignore` here made
+          // an empty archive indistinguishable from an archive that was never attempted — which is
+          // exactly the question a person debugging one would be asking.
+          reportArchiveFailure(session.id, agent.id),
+        )
       if (compacted) yield* timingEnd("compaction")
       else yield* Effect.sync(() => timing.discard("compaction")).pipe(Effect.andThen(publishLiveTiming()))
       if (compacted) return yield* Effect.die(continueAfterCompaction(currentStep))
@@ -2107,7 +2130,7 @@ export const layer = Layer.effect(
           agent: yield* agents.select(prepared.config.agent as typeof session.agent),
           memory,
           session,
-        }).pipe(Effect.ignore)
+        }).pipe(reportArchiveFailure(session.id, prepared.config.agent))
       yield* Log.event("session.compaction.manual.settled", { "session.id": session.id, compacted })
       if (!compacted)
         yield* events.publish(SessionEvent.Synthetic, {

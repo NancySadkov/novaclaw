@@ -961,6 +961,22 @@ export const EVENTS = {
     content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  /**
+   * The compacted conversation could NOT be archived into the colleague's memory.
+   *
+   * ⚠️ This event exists because the failure was originally swallowed. The call site is best-effort
+   * on purpose — an unreachable embedder must not turn a successful compaction into a failed turn —
+   * but "best-effort" was implemented as `Effect.ignore`, which is indistinguishable from "never
+   * ran" when you are trying to find out why an archive is empty. Best-effort means the TURN
+   * survives, not that nobody is told.
+   */
+  "session.compaction.archive.failed": {
+    level: "warn",
+    message: "could not archive the compacted conversation",
+    attributes: { "session.id": "correlate", "agent.id": "correlate", "archive.reason": "text" },
+    content: "correlated",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   /** A directory had no instance yet, so one is being created. 1146 lines. */
   "instance.store.create": {
     level: "info",
