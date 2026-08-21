@@ -104,8 +104,11 @@ describe("home tile labels", () => {
     test("a locale that has not translated the tile falls back to English, not to a key", () => {
       const { t } = translator(merged({}))
       expect(appName(t, "contacts", BUILTIN_APP_LABELS.contacts.name)).toBe("Contacts")
-      expect(appSubtitle(t, "memory-graph", BUILTIN_APP_LABELS["memory-graph"].subtitle)).toBe(
-        "What NovaClaw remembers about you, and how it connects",
+      // `memory-graph` used to be the example here and was RETIRED as a tile 2026-08-21 (its id
+      // stays reserved). Any surviving tile makes the same point, and the point is the FALLBACK: a
+      // locale with no translation must render English rather than the key.
+      expect(appSubtitle(t, "trash", BUILTIN_APP_LABELS.trash.subtitle)).toBe(
+        "Restore anything deleted in the last 2 days",
       )
     })
 

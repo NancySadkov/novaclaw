@@ -2608,8 +2608,6 @@ export const dict = {
   "home.app.registry.subtitle": "The instance database, editable — handle with care",
   "home.app.debug.name": "Debug",
   "home.app.debug.subtitle": "Connection, error log, sessions — under the hood",
-  "home.app.memory-graph.name": "Memory",
-  "home.app.memory-graph.subtitle": "What NovaClaw remembers about you, and how it connects",
   "agentConfig.close": "Close",
   "agentConfig.clearChat": "Clear chat",
   "agentConfig.clearing": "Clearing…",
@@ -2666,6 +2664,11 @@ export const dict = {
   "agentConfig.thisChatHint": "Above is who this colleague is everywhere. Below is just this conversation.",
   "contacts.title": "Contacts",
   "contacts.hint": "Your colleagues. Nova hires, briefs and retires them; you decide who you need.",
+  // The household row at the foot of the roster — everything every colleague can read. Named for WHO
+  // can see it, not for where it is stored: "shared" is the fact a user needs before they write
+  // something into it.
+  "contacts.shared": "Shared with everyone",
+  "contacts.sharedHint": "What every colleague can read — your household's facts, not any one agent's",
   "contacts.search": "Search by name or job",
   "contacts.hire": "Hire",
   "contacts.hiring": "Hiring…",

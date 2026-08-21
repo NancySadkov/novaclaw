@@ -714,8 +714,6 @@ export const dict = {
   "home.app.registry.subtitle": "Baza podataka instance, izmjenjiva — rukujte pažljivo",
   "home.app.debug.name": "Otklanjanje grešaka",
   "home.app.debug.subtitle": "Veza, dnevnik grešaka, sesije — ispod haube",
-  "home.app.memory-graph.name": "Graf memorije",
-  "home.app.memory-graph.subtitle": "Istražite čega se NovaClaw sjeća, kao graf",
   "home.app.trash.name": "Smeće",
   "home.app.trash.subtitle": "Vratite sve obrisano u posljednja 2 dana",
   "home.app.social.name": "Zajednica",

@@ -61,6 +61,11 @@ export const ownerFromKey = (
  *  the page that reads it cannot drift. */
 export const ownerRoute = (agentID: string): string => `/memory-graph?owner=${encodeURIComponent(`agent:${agentID}`)}`
 
+/** The household's shared facts, which belong to no colleague. Reached from the ROSTER's own row
+ *  rather than from a top-level app: under the metaphor the roster is the index of who remembers
+ *  what, and the household is one of those whos. */
+export const SHARED_ROUTE = `/memory-graph?owner=${SHARED_KEY}`
+
 /** What a stored scope string means, in words a non-expert can act on. Keys, so the page translates.
  *
  *  ⚠️ `session:<id>` stays "one chat" rather than naming the chat: a memory scoped to a conversation

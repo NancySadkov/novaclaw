@@ -711,8 +711,6 @@ export const dict = {
   "home.app.registry.subtitle": "Instansdatabasen, redigerbar — behandles med omhu",
   "home.app.debug.name": "Feilsøking",
   "home.app.debug.subtitle": "Tilkobling, feillogg, økter — under panseret",
-  "home.app.memory-graph.name": "Minnegraf",
-  "home.app.memory-graph.subtitle": "Utforsk hva NovaClaw husker, som en graf",
   "home.app.trash.name": "Papirkurv",
   "home.app.trash.subtitle": "Gjenopprett alt som er slettet de siste 2 dagene",
   "home.app.social.name": "Fellesskap",

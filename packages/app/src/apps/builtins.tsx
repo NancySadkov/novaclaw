@@ -176,20 +176,6 @@ export function useBuiltinApps(): () => HomeApp[] {
       open: () => navigate("/debug"),
     },
     {
-      id: "memory-graph",
-      title: name("memory-graph"),
-      icon: "branch",
-      tile: "/assets/skin/tiles/memory.png",
-      accent: "#8b5cf6",
-      subtitle: sub("memory-graph"),
-      source: "builtin",
-      // NORMAL level (owner, 2026-08-12): what NovaClaw remembers about you is not an expert topic,
-      // and hiding it behind Developer meant the people most likely to ask "what does it know about
-      // me?" were the ones who could not look. Nodes now carry their KIND as a shape with a legend,
-      // so the view is readable without knowing the data model.
-      open: () => navigate("/memory-graph"),
-    },
-    {
       id: "trash",
       title: name("trash"),
       icon: "trash",

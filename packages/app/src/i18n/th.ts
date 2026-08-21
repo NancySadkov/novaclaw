@@ -702,8 +702,6 @@ export const dict = {
   "home.app.registry.subtitle": "ฐานข้อมูลของอินสแตนซ์ แก้ไขได้ — ใช้ด้วยความระมัดระวัง",
   "home.app.debug.name": "ดีบัก",
   "home.app.debug.subtitle": "การเชื่อมต่อ บันทึกข้อผิดพลาด เซสชัน — เบื้องหลัง",
-  "home.app.memory-graph.name": "กราฟความจำ",
-  "home.app.memory-graph.subtitle": "สำรวจสิ่งที่ NovaClaw จดจำ ในรูปแบบกราฟ",
   "home.app.trash.name": "ถังขยะ",
   "home.app.trash.subtitle": "กู้คืนสิ่งที่ลบไปใน 2 วันที่ผ่านมา",
   "home.app.social.name": "ชุมชน",

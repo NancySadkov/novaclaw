@@ -716,8 +716,6 @@ export const dict = {
   "home.app.registry.subtitle": "La base de datos de la instancia, editable — manéjala con cuidado",
   "home.app.debug.name": "Depuración",
   "home.app.debug.subtitle": "Conexión, registro de errores, sesiones — bajo el capó",
-  "home.app.memory-graph.name": "Grafo de memoria",
-  "home.app.memory-graph.subtitle": "Explora lo que NovaClaw recuerda, como un grafo",
   "home.app.trash.name": "Papelera",
   "home.app.trash.subtitle": "Restaura cualquier cosa borrada en los últimos 2 días",
   "home.app.social.name": "Comunidad",

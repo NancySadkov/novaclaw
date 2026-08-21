@@ -117,7 +117,11 @@ export const BUILTIN_APP_LABELS = {
   terminal: { name: "Terminal", subtitle: "A shell, for when you want one" },
   registry: { name: "Registry", subtitle: "The instance database, editable — handle with care" },
   debug: { name: "Debug", subtitle: "Connection, error log, sessions — under the hood" },
-  "memory-graph": { name: "Memory", subtitle: "What NovaClaw remembers about you, and how it connects" },
+  // ⚠️ `memory-graph` is NOT here any more — RETIRED as a tile 2026-08-21, id still reserved.
+  // A top-level Memory app was the same shape as the Chats list the roster replaced: a global pile of
+  // something that now belongs to a COLLEAGUE. What a colleague remembers is opened from that
+  // colleague (`agent-config-dialog.tsx`), and the household's shared facts from the roster's own
+  // "Shared with everyone" row. The page and the route stay; only the tile is gone.
   trash: { name: "Trash", subtitle: "Restore anything deleted in the last 2 days" },
   social: { name: "Community", subtitle: "Discord, Reddit and the website — other people who run NovaClaw" },
   help: { name: "Help", subtitle: "A short tour of what NovaClaw can do" },

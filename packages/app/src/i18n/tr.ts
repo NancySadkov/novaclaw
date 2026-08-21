@@ -711,8 +711,6 @@ export const dict = {
   "home.app.registry.subtitle": "Örnek veritabanı, düzenlenebilir — dikkatli kullanın",
   "home.app.debug.name": "Hata ayıklama",
   "home.app.debug.subtitle": "Bağlantı, hata günlüğü, oturumlar — kaputun altı",
-  "home.app.memory-graph.name": "Bellek grafiği",
-  "home.app.memory-graph.subtitle": "NovaClaw'ın hatırladıklarını grafik olarak keşfedin",
   "home.app.trash.name": "Çöp kutusu",
   "home.app.trash.subtitle": "Son 2 günde silinen her şeyi geri yükleyin",
   "home.app.social.name": "Topluluk",

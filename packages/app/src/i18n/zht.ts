@@ -691,8 +691,6 @@ export const dict = {
   "home.app.registry.subtitle": "執行個體資料庫，可編輯 — 請小心操作",
   "home.app.debug.name": "偵錯",
   "home.app.debug.subtitle": "連線、錯誤紀錄、工作階段 — 幕後細節",
-  "home.app.memory-graph.name": "記憶圖譜",
-  "home.app.memory-graph.subtitle": "以圖譜方式瀏覽 NovaClaw 記住的內容",
   "home.app.trash.name": "資源回收筒",
   "home.app.trash.subtitle": "還原最近 2 天內刪除的任何項目",
   "home.app.social.name": "社群",

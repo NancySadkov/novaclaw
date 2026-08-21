@@ -10,6 +10,7 @@ import { useLanguage } from "@/context/language"
 import { AppPage } from "@/components/app-page"
 import { agentColor } from "@/utils/agent"
 import { memoryDisclosure, roster, searchRoster, type AgentLike, type ContactView } from "@/apps/contacts"
+import { SHARED_ROUTE } from "@/apps/memory-owner"
 import { listAgents, listSessions, listUsage, startChat } from "@/apps/agent-list"
 import { planHire } from "@/apps/agent-hire"
 import { useServerSync } from "@/context/server-sync"
@@ -184,6 +185,31 @@ export function ContactsPage() {
               />
             )}
           </For>
+        </Show>
+
+        {/* The HOUSEHOLD, at the foot of the roster and visibly not a colleague.
+            🔴 It is here because the top-level Memory app is gone (2026-08-21): a global pile of
+            memories was the same shape as the Chats list this roster replaced. What a colleague
+            remembers is opened from that colleague; what EVERY colleague can read has no colleague to
+            hang off, so it hangs off the list of them. Rendered as a plain row rather than a contact
+            card on purpose — the household is not someone you can chat to, hire or retire, and a row
+            that looked like a colleague would invite all three. */}
+        <Show when={agents.error === undefined && !agents.loading}>
+          <button
+            type="button"
+            class="flex w-full items-center gap-3 border-t border-v2-border-border-subtle px-4 py-3 text-left hover:bg-v2-background-bg-layer-02"
+            onClick={() => navigate(SHARED_ROUTE)}
+          >
+            <span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-v2-background-bg-layer-03 text-sm">
+              🏠
+            </span>
+            <span class="min-w-0">
+              <span class="block truncate text-sm">{language.t("contacts.shared")}</span>
+              <span class="block truncate text-[11px] text-v2-text-text-faint">
+                {language.t("contacts.sharedHint")}
+              </span>
+            </span>
+          </button>
         </Show>
       </div>
 

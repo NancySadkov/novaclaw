@@ -696,8 +696,6 @@ export const dict = {
   "home.app.registry.subtitle": "实例数据库，可编辑 — 请谨慎操作",
   "home.app.debug.name": "调试",
   "home.app.debug.subtitle": "连接、错误日志、会话 — 幕后细节",
-  "home.app.memory-graph.name": "记忆图谱",
-  "home.app.memory-graph.subtitle": "以图谱方式浏览 NovaClaw 记住的内容",
   "home.app.trash.name": "回收站",
   "home.app.trash.subtitle": "恢复最近 2 天内删除的任何内容",
   "home.app.social.name": "社区",
