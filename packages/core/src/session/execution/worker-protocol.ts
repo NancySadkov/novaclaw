@@ -96,6 +96,23 @@ export const AwaitChildResult = Schema.Struct({
   result: Schema.String.pipe(Schema.optional),
 }).annotate({ identifier: "SessionWorker.AwaitChildResult" })
 
+/**
+ * The host's answer to a `colleague-ask`.
+ *
+ * The three outcomes are three different facts and are deliberately not flattened: `delivered` means
+ * it landed in their chat, `no-chat` means that colleague has no open conversation to leave it in
+ * (the model must say so rather than retry), and `rejected` means the request never got that far —
+ * a stale lease. Collapsing them would tell a model to retry a thing that cannot succeed.
+ */
+export const ColleagueResultMessage = Schema.Struct({
+  ...Identity,
+  type: Schema.Literal("colleague-result"),
+  requestID: Schema.String,
+  outcome: Schema.Literals(["delivered", "no-chat", "rejected"]),
+  /** Whether anything is actually running their chat — `false` means durable but dormant. */
+  started: Schema.Boolean.pipe(Schema.optional),
+}).annotate({ identifier: "SessionWorker.ColleagueResult" })
+
 export const SpawnResultMessage = Schema.Struct({
   ...Identity,
   type: Schema.Literal("spawn-result"),
@@ -147,6 +164,7 @@ export const HostMessage = Schema.Union([
   PermissionResult,
   QuestionResult,
   SpawnResultMessage,
+  ColleagueResultMessage,
   AwaitChildResult,
   ExecutionResult,
 ]).annotate({ identifier: "SessionWorker.HostMessage" })
@@ -251,6 +269,35 @@ export const AwaitChild = Schema.Struct({
   requestID: Schema.String,
   input: Schema.Struct({ childID: SessionSchema.ID, timeoutMs: Schema.Finite }),
 }).annotate({ identifier: "SessionWorker.AwaitChild" })
+
+/**
+ * Hand work to a COLLEAGUE — the third worker→host operation, and a sibling of `SpawnChild` for the
+ * same reason it exists at all.
+ *
+ * 🔴 A colleague's chat is not this worker's session, so admitting its input publishes an event
+ * carrying an id that is not the lease — which `event-bridge.ts` rejects by design, and correctly: a
+ * worker must not be able to write into anyone else's transcript. Measured on a live turn
+ * 2026-08-21, before this message existed, the tool came back *"session event does not belong to
+ * this worker"*. So the worker ASKS and the host delivers, under host authority.
+ *
+ * ⚠️ There is no sender field, and that is structural rather than a check: the host stamps the
+ * origin from the LEASE, so a worker can speak as itself and as nobody else. The same discipline as
+ * `SpawnChild`'s absent `parentID`.
+ *
+ * ⚠️ It does NOT block. A peer is not a subroutine — the receiver answers in its own chat, in its own
+ * time, and a sender that waited would be one half of a deadlock over a question either could have
+ * answered alone.
+ */
+export const ColleagueAsk = Schema.Struct({
+  ...Identity,
+  type: Schema.Literal("colleague-ask"),
+  requestID: Schema.String,
+  input: Schema.Struct({
+    /** Which colleague, by agent id. The host resolves their chat; the worker never names a session. */
+    colleague: Schema.String,
+    message: Schema.String,
+  }),
+}).annotate({ identifier: "SessionWorker.ColleagueAsk" })
 
 export const SpawnChild = Schema.Struct({
   ...Identity,
@@ -375,6 +422,7 @@ export const WorkerMessage = Schema.Union([
   DeviceReport,
   PermissionAssert,
   SpawnChild,
+  ColleagueAsk,
   AwaitChild,
   QuestionAsk,
   ExecutionAdvance,

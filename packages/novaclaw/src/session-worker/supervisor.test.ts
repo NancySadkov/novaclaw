@@ -211,7 +211,16 @@ test("permission and question waits execute in host-owned services", async () =>
     heartbeatTimeoutMs: 2_000,
     onInteractionRequest: (message) => {
       handled.push(message.type)
-      return Effect.runPromise(SessionWorkerInteractionBridge.handle({ permission, question, spawner: spawnerStub, join: joinStub, lease, message }))
+      return Effect.runPromise(SessionWorkerInteractionBridge.handle({
+        permission,
+        question,
+        spawner: spawnerStub,
+        join: joinStub,
+        // Host-side hand-off is not what this case exercises — it must never run here.
+        colleague: { deliver: () => Effect.die("unused") },
+        lease,
+        message,
+      }))
     },
   })
   expect(await worker.result).toEqual({ type: "settled" })

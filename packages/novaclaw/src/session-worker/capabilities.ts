@@ -40,6 +40,16 @@ export interface Capabilities {
     input: SessionWorkerProtocol.SpawnChildInput,
     signal?: AbortSignal,
   ) => Promise<Extract<Reply, { readonly type: "spawn-result" }>>
+  /**
+   * Hand work to a COLLEAGUE — a peer agent's own chat, delivered host-side.
+   *
+   * ⚠️ No sender field: the host stamps it from the lease, so a worker speaks as itself and as
+   * nobody else. Same discipline as `spawnChild`'s absent `parentID` — there is no field to forge.
+   */
+  readonly askColleague: (
+    input: { readonly colleague: string; readonly message: string },
+    signal?: AbortSignal,
+  ) => Promise<Extract<Reply, { readonly type: "colleague-result" }>>
   /** Join a child session. BLOCKS host-side until completion or `timeoutMs` — see `AwaitChild`. */
   readonly awaitChild: (
     input: { readonly childID: string; readonly timeoutMs: number },
@@ -158,6 +168,15 @@ export function make(input: { readonly lease: SessionExecutionAttempt.Lease; rea
         signal,
       )
       if (reply.type !== "spawn-result") throw new Error(`unexpected ${reply.type} reply to spawn`)
+      return reply
+    },
+    askColleague: async (request, signal) => {
+      const reply = await input.client.request(
+        // The identity spread carries the lease; the host reads the SENDER from it, never from here.
+        { ...identity, type: "colleague-ask", requestID: requestID(), input: request },
+        signal,
+      )
+      if (reply.type !== "colleague-result") throw new Error(`unexpected ${reply.type} reply to colleague-ask`)
       return reply
     },
     askQuestion: async (request, signal) => {

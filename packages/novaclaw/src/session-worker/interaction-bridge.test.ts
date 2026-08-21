@@ -3,6 +3,7 @@ import { Effect } from "effect"
 import { PermissionV2 } from "@novaclaw/core/permission"
 import { QuestionV2 } from "@novaclaw/core/question"
 import { SessionSchema } from "@novaclaw/core/session/schema"
+import type { ColleagueHandoff } from "@novaclaw/core/session/colleague-handoff"
 import { SessionWorkerInteractionBridge } from "./interaction-bridge"
 import { SessionSpawner } from "@novaclaw/core/session/spawner"
 import { SessionJoin } from "@novaclaw/core/session/join"
@@ -42,6 +43,9 @@ const unusedQuestion = {
   list: () => Effect.succeed([]),
 } as QuestionV2.Interface
 
+/** Colleague hand-off is host-side; these cases exercise the OTHER requests, so it must never run. */
+const colleagueStub = { deliver: () => Effect.die("unused") } as ColleagueHandoff.Interface
+
 test("permission assertion and question answers stay in host services", async () => {
   const permission = {
     ...unusedPermission,
@@ -52,7 +56,7 @@ test("permission assertion and question answers stay in host services", async ()
     SessionWorkerInteractionBridge.handle({
       permission,
       question: unusedQuestion,
-        spawner: spawnerStub, join: joinStub,
+        spawner: spawnerStub, join: joinStub, colleague: colleagueStub,
       lease,
       message: {
         ...base,
@@ -68,7 +72,7 @@ test("permission assertion and question answers stay in host services", async ()
     SessionWorkerInteractionBridge.handle({
       permission,
       question: unusedQuestion,
-        spawner: spawnerStub, join: joinStub,
+        spawner: spawnerStub, join: joinStub, colleague: colleagueStub,
       lease,
       message: {
         ...base,
@@ -101,7 +105,7 @@ test("permission denial details survive while stale and cross-session requests f
     SessionWorkerInteractionBridge.handle({
       permission: deniedPermission,
       question: unusedQuestion,
-        spawner: spawnerStub, join: joinStub,
+        spawner: spawnerStub, join: joinStub, colleague: colleagueStub,
       lease,
       message: {
         ...base,
@@ -121,7 +125,7 @@ test("permission denial details survive while stale and cross-session requests f
     SessionWorkerInteractionBridge.handle({
       permission: deniedPermission,
       question: unusedQuestion,
-        spawner: spawnerStub, join: joinStub,
+        spawner: spawnerStub, join: joinStub, colleague: colleagueStub,
       lease,
       message: {
         ...base,
@@ -166,6 +170,7 @@ test("🔴 the host spawns with the LEASE's session as parent — the payload ca
       question: unusedQuestion,
       spawner,
       join: joinStub,
+      colleague: colleagueStub,
       lease,
       message: spawnRequest,
     }),
@@ -190,6 +195,7 @@ test("a stale lease is refused before the spawner is reached", async () => {
       question: unusedQuestion,
       spawner,
       join: joinStub,
+      colleague: colleagueStub,
       lease,
       message: { ...spawnRequest, generation: lease.generation - 1 },
     }),
@@ -211,6 +217,7 @@ test("🔴 a quota refusal arrives as `limit`, not as a transport rejection", as
       question: unusedQuestion,
       spawner,
       join: joinStub,
+      colleague: colleagueStub,
       lease,
       message: spawnRequest,
     }),
@@ -232,6 +239,7 @@ test("the optional fields ride through, and absent ones stay absent", async () =
       question: unusedQuestion,
       spawner,
       join: joinStub,
+      colleague: colleagueStub,
       lease,
       message: {
         ...spawnRequest,
@@ -268,6 +276,7 @@ test("a completed child returns its result", async () => {
       question: unusedQuestion,
       spawner: spawnerStub,
       join,
+      colleague: colleagueStub,
       lease,
       message: awaitRequest,
     }),
@@ -285,6 +294,7 @@ test("🔴 a timeout is a normal ANSWER, not a rejection", async () => {
       question: unusedQuestion,
       spawner: spawnerStub,
       join,
+      colleague: colleagueStub,
       lease,
       message: awaitRequest,
     }),
@@ -307,6 +317,7 @@ test("a stale lease is refused before the join is attempted", async () => {
       question: unusedQuestion,
       spawner: spawnerStub,
       join,
+      colleague: colleagueStub,
       lease,
       message: { ...awaitRequest, generation: lease.generation - 1 },
     }),
@@ -324,6 +335,7 @@ test("a completed child with no result still reports completion", async () => {
       question: unusedQuestion,
       spawner: spawnerStub,
       join,
+      colleague: colleagueStub,
       lease,
       message: awaitRequest,
     }),

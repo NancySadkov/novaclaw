@@ -3,14 +3,9 @@ export * as ColleagueTool from "./colleague"
 import { ToolFailure } from "@novaclaw/llm"
 import { Effect, Layer, Schema } from "effect"
 import { AgentV2 } from "../agent"
-import { Database } from "../database/database"
 import { makeLocationNode } from "../effect/app-node"
 import { PermissionV2 } from "../permission"
-import { EventV2 } from "../event"
-import { RosterChat } from "../session/roster-chat"
-import { SessionRunCoordinator } from "../session/run-coordinator"
-import { SessionInput } from "../session/input"
-import { SessionMessage } from "../session/message"
+import { ColleagueHandoff } from "../session/colleague-handoff"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -24,21 +19,13 @@ import { Tools } from "./tools"
 // and who answers on their own terms. A CEO that could only spawn would not be routing work; it
 // would be doing all of it under different names.
 //
-// 🔴 **NOT REGISTERED YET, and the reason is measured rather than suspected.** A session runs in its
-// own WORKER process, and `session-worker/event-bridge.ts` refuses — by design — to publish an event
-// carrying a session id that is not the worker's lease. Driven end to end on 2026-08-21: the model
-// called `ask` correctly and the tool came back *"session event does not belong to this worker"*.
-//
-// That boundary is right, and `spawn` already shows the way past it: *"the worker asks and the HOST
-// spawns, under host authority"* (`session-worker/interaction-bridge.ts`), with the parent taken
-// from the LEASE so a worker can address nothing it does not own. A colleague hand-off needs the
-// same shape — a `colleague-ask` request whose SENDER is stamped host-side — and that is a protocol
-// extension, not a call-site fix. Filed in `todo/named-agents.md`.
-//
-// The module stays because everything except the crossing is settled and tested: who may be
-// addressed, what the roster looks like to a model routing work, and what the receiver is told about
-// who is asking. Registering it before the crossing exists would ship a tool whose main verb fails —
-// exactly the "accepted and discarded" shape this program has spent the week removing.
+// ⚠️ **The delivery happens on the HOST, and that is not an implementation detail.** A session runs
+// in its own worker process, and `session-worker/event-bridge.ts` refuses — by design — to publish an
+// event whose session id is not that worker's lease: a worker must not be able to write into anyone
+// else's transcript. Measured before the crossing existed, the first version of this tool came back
+// *"session event does not belong to this worker"*. `ColleagueHandoff` is the seam; inside a worker
+// it rides `colleague-ask`, and the SENDER is stamped from the lease host-side, so a worker can
+// speak as itself and as nobody else.
 //
 // ⚠️ **Delivered, not awaited.** The message lands in the colleague's own chat and this call
 // returns. There is deliberately no `wait`: a peer is not a subroutine, and blocking one officer on
@@ -98,14 +85,10 @@ export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
     const agents = yield* AgentV2.Service
-    const events = yield* EventV2.Service
-    // The dependency-free WAKE RELAY, not `SessionExecution` — measured the hard way: depending on
-    // the execution service left `@novaclaw/v2/SessionExecution` UNBOUND in the location graph, and
-    // every session-create on the instance answered 500. `spawner.ts` reaches the executor through
-    // this relay for exactly that reason, and its header says so.
-    const wake = yield* SessionRunCoordinator.Wake
+    // ONE seam for the delivery, whichever side of the worker boundary this tool is running on:
+    // host-direct in-process, or over `colleague-ask` when a worker provides the bridge client.
+    const handoff = yield* ColleagueHandoff.Service
     const permission = yield* PermissionV2.Service
-    const { db } = yield* Database.Service
 
     yield* tools
       .register({
@@ -160,8 +143,12 @@ export const layer = Layer.effectDiscard(
                     `this work, say so to the user rather than inventing someone.`,
                 })
 
-              const chat = yield* RosterChat.chatFor(db, target)
-              if (chat === undefined)
+              const outcome = yield* handoff.deliver({
+                from: context.sessionID,
+                colleague: target,
+                message: input.message,
+              })
+              if (!outcome.delivered)
                 return {
                   ok: false,
                   // A colleague with no chat is not an error the model can fix by retrying, and
@@ -172,45 +159,14 @@ export const layer = Layer.effectDiscard(
                     `wanted to hand over and who you wanted to hand it to.`,
                 } satisfies Output
 
-              // Admitted through the SAME seam every other input uses (`SessionInput.admit`), not a
-              // private path: one door for "a turn was requested" is what keeps provenance, ordering
-              // and the durable event log honest for a message that did not come from a person.
-              //
-              // ⚠️ `SessionV2.Service` is deliberately NOT used here even though it wraps these two
-              // calls: the full session service pulls the runner in, and a tool depending on the
-              // runner is a cycle in the location graph — measured, it broke the type-check of five
-              // unrelated modules.
-              yield* SessionInput.admit(db, events, {
-                id: SessionMessage.ID.create(),
-                sessionID: chat.id as never,
-                prompt: {
-                  text: input.message,
-                  files: [],
-                  agents: [],
-                  // PEER, not parent: the receiving model is told a colleague is asking, not that
-                  // work has been assigned to it from above. `session/origin.ts` renders both.
-                  origin: { via: "agent", sessionID: context.sessionID, label: selfID || undefined, relation: "peer" },
-                },
-                delivery: "queue",
-              }).pipe(Effect.orDie)
-              // …and the colleague is WOKEN. A durable-but-dormant hand-off is the "stored and not
-              // live" defect this codebase keeps re-finding: the message would sit in their queue
-              // until somebody happened to open their chat.
-              // Strictly AFTER the admit: the executor's drain reads the queued row from the
-              // database, so waking first is a race that ends in an empty turn (`spawner.ts` learned
-              // this). `wake` coalesces and never fails, so a live hand-off cannot report failure
-              // for a message that did land.
-              const started = yield* wake.wake(chat.id as never)
-
               return {
                 ok: true,
-                message: started
+                message: outcome.started
                   ? `Left it with ${target}, in their own chat, and they have started on it. They answer there, in ` +
                     `their own time — this does not wait for them, so finish what you can and tell the user who ` +
                     `has it.`
-                  : // Durable but dormant, and SAID so: nothing in this process will run their turn,
-                    // so a caller that reported "handed over" would be promising a reply nobody is
-                    // going to write.
+                  : // Durable but dormant, and SAID so: nothing is running their chat, so a caller
+                    // reporting "handed over" would promise a reply nobody is going to write.
                     `Left it with ${target}, but nothing is running their chat right now, so it will wait until ` +
                     `someone opens it. Tell the user it is queued rather than under way.`,
               } satisfies Output
@@ -233,12 +189,5 @@ export const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/colleague",
   layer,
-  deps: [
-    ToolRegistry.node,
-    AgentV2.node,
-    SessionRunCoordinator.wakeNode,
-    PermissionV2.node,
-    Database.node,
-    EventV2.node,
-  ],
+  deps: [ToolRegistry.node, AgentV2.node, ColleagueHandoff.node, PermissionV2.node],
 })

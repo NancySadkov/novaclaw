@@ -55,13 +55,20 @@ export interface Input {
   readonly onInteractionRequest?: (
     message: Extract<
       SessionWorkerProtocol.WorkerMessage,
-      { readonly type: "permission-assert" | "question-ask" | "spawn-child" | "await-child" }
+      { readonly type: "permission-assert" | "question-ask" | "spawn-child" | "await-child" | "colleague-ask" }
     >,
     signal: AbortSignal,
   ) => Promise<
     Extract<
       SessionWorkerProtocol.HostMessage,
-      { readonly type: "permission-result" | "question-result" | "spawn-result" | "await-child-result" }
+      {
+        readonly type:
+          | "permission-result"
+          | "question-result"
+          | "spawn-result"
+          | "await-child-result"
+          | "colleague-result"
+      }
     >
   >
   readonly onExecutionRequest?: (
@@ -275,6 +282,9 @@ export function spawn(input: Input): Handle {
       // the host's LOCATION services. `SessionSpawner` is a location node, and this is the
       // only worker->host path already resolved inside `runLocated`.
       case "await-child":
+      // A colleague hand-off rides this channel for the same reason spawn does: it needs the host's
+      // LOCATION services, and this is the one worker→host path already resolved inside `runLocated`.
+      case "colleague-ask":
       case "spawn-child": {
         if (!ready) {
           finish({ type: "protocol-error", detail: "interaction request arrived before ready" })
@@ -283,7 +293,17 @@ export function spawn(input: Input): Handle {
         const request = input.onInteractionRequest
         if (!request) {
           send(
-            message.type === "await-child"
+            message.type === "colleague-ask"
+              ? {
+                  version: SessionWorkerProtocol.VERSION,
+                  type: "colleague-result",
+                  sessionID: input.lease.sessionID,
+                  attemptID: input.lease.attemptID,
+                  generation: input.lease.generation,
+                  requestID: message.requestID,
+                  outcome: "rejected",
+                }
+              : message.type === "await-child"
               ? {
                   version: SessionWorkerProtocol.VERSION,
                   type: "await-child-result",

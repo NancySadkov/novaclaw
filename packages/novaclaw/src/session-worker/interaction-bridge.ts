@@ -4,17 +4,25 @@ import { Cause, Effect, Exit, Schema } from "effect"
 import { PermissionV2 } from "@novaclaw/core/permission"
 import { QuestionV2 } from "@novaclaw/core/question"
 import { SessionSpawner } from "@novaclaw/core/session/spawner"
+import { ColleagueHandoff } from "@novaclaw/core/session/colleague-handoff"
 import { SessionJoin } from "@novaclaw/core/session/join"
 import { SessionWorkerProtocol } from "@novaclaw/core/session/execution/worker-protocol"
 import type { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
 
 export type Request = Extract<
   SessionWorkerProtocol.WorkerMessage,
-  { readonly type: "permission-assert" | "question-ask" | "spawn-child" | "await-child" }
+  { readonly type: "permission-assert" | "question-ask" | "spawn-child" | "await-child" | "colleague-ask" }
 >
 export type Reply = Extract<
   SessionWorkerProtocol.HostMessage,
-  { readonly type: "permission-result" | "question-result" | "spawn-result" | "await-child-result" }
+  {
+    readonly type:
+      | "permission-result"
+      | "question-result"
+      | "spawn-result"
+      | "await-child-result"
+      | "colleague-result"
+  }
 >
 
 const identity = (message: Request) => ({
@@ -32,11 +40,14 @@ export const handle = Effect.fn("SessionWorkerInteractionBridge.handle")(functio
   readonly question: QuestionV2.Interface
   readonly spawner: SessionSpawner.Interface
   readonly join: SessionJoin.Interface
+  readonly colleague: ColleagueHandoff.Interface
   readonly lease: SessionExecutionAttempt.Lease
   readonly message: Request
 }) {
   const reject = () =>
-    input.message.type === "await-child"
+    input.message.type === "colleague-ask"
+      ? ({ ...identity(input.message), type: "colleague-result" as const, outcome: "rejected" as const } as Reply)
+      : input.message.type === "await-child"
       ? ({ ...identity(input.message), type: "await-child-result" as const, outcome: "rejected" as const } as Reply)
       : input.message.type === "spawn-child"
         ? ({ ...identity(input.message), type: "spawn-result" as const, outcome: "rejected" as const } as Reply)
@@ -102,8 +113,42 @@ export const handle = Effect.fn("SessionWorkerInteractionBridge.handle")(functio
     return reject()
   }
 
+  /**
+   * 🔴 The same crossing as `spawn-child`, for the same reason: a COLLEAGUE's chat is not this
+   * worker's session, so admitting its input publishes an event carrying an id that is not the
+   * lease — which `event-bridge.ts` rejects by design. The worker asks; the host delivers.
+   *
+   * ⚠️ The SENDER comes from the lease and never from the payload. A worker can speak as itself and
+   * as nobody else, structurally — there is no field to forge, exactly as `spawn-child` has no
+   * `parentID`.
+   *
+   * ⚠️ And the host resolves WHICH chat. The worker names a colleague, never a session id, so it
+   * cannot address a conversation it happened to learn the id of.
+   */
+  if (input.message.type === "colleague-ask") {
+    const delivered = yield* input.colleague
+      .deliver({
+        from: input.lease.sessionID,
+        colleague: input.message.input.colleague,
+        message: input.message.input.message,
+      })
+      .pipe(Effect.exit)
+    if (!Exit.isSuccess(delivered)) return reject()
+    return delivered.value.delivered
+      ? {
+          ...identity(input.message),
+          type: "colleague-result" as const,
+          outcome: "delivered" as const,
+          started: delivered.value.started,
+        }
+      : // Not a failure: that colleague simply has no open chat to leave this in, and the model must
+        // say so rather than retry something that cannot succeed.
+        { ...identity(input.message), type: "colleague-result" as const, outcome: "no-chat" as const }
+  }
+
   // Past the spawn branch, every remaining message carries its own `sessionID` and must match the
-  // lease. `spawn-child` deliberately has no such field — that is why it is handled above.
+  // lease. `spawn-child` and `colleague-ask` deliberately have no such field — that is why they are
+  // handled above.
   if (input.message.input.sessionID !== input.lease.sessionID) return reject()
 
   if (input.message.type === "question-ask") {

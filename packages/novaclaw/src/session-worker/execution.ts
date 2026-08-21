@@ -30,6 +30,7 @@ import { SessionWorkerExecutionBridge } from "./execution-bridge"
 import { SessionWorkerInteractionBridge } from "./interaction-bridge"
 import * as SessionWorkerSupervisor from "./supervisor"
 import { SessionSpawner } from "@novaclaw/core/session/spawner"
+import { ColleagueHandoff } from "@novaclaw/core/session/colleague-handoff"
 import { SessionJoin } from "@novaclaw/core/session/join"
 import { SessionLocationRecovery } from "@novaclaw/core/session/location-recovery"
 import { SessionWorkerLocation } from "./location"
@@ -206,6 +207,22 @@ export const layer = Layer.effect(
                     // that is not already in the location graph inside this per-request
                     // handler abandons every tool-call turn. `events` is already built.
                     join: SessionJoin.fromEvents(events),
+                    // ⚠️ Built from parts, NOT `yield* ColleagueHandoff.Service` — the same trap the
+                    // line above names for `SessionJoin`: resolving a service that is not already in
+                    // the location graph inside this per-request handler abandons the tool-call turn.
+                    // Measured: the first live hand-off left the sender's call `running` forever with
+                    // nothing in the log.
+                    colleague: ColleagueHandoff.fromParts({
+                      db: database.db,
+                      events,
+                      session: (id) => store.get(id),
+                      // `true` is honest on THIS path and is not a guess: the coordinator either
+                      // starts a drain for that session or marks a pending wake on the one already
+                      // running, so the receiver's turn happens either way. The relay's own `wake`
+                      // returns false only when no executor is attached at all, which cannot be the
+                      // case inside a live worker host.
+                      wake: (id) => coordinator.wake(id).pipe(Effect.as(true)),
+                    }),
                     lease,
                     message,
                   })

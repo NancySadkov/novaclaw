@@ -7,6 +7,7 @@ import { QuestionV2 } from "@novaclaw/core/question"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { SessionSpawner } from "@novaclaw/core/session/spawner"
+import { ColleagueHandoff } from "@novaclaw/core/session/colleague-handoff"
 import { SessionJoin } from "@novaclaw/core/session/join"
 import { EventManifest } from "@novaclaw/schema/event-manifest"
 import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
@@ -29,6 +30,7 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
   readonly scheduler: SessionScheduler.Interface
   readonly spawner: SessionSpawner.Interface
   readonly join: SessionJoin.Interface
+  readonly colleague: ColleagueHandoff.Interface
 } {
   const events: EventV2.Interface = {
     publish: (definition, data, options) => {
@@ -176,6 +178,28 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
   }
 
   /**
+   * Handing work to a COLLEAGUE — the same class as `spawner` and `join` above: the delivery touches
+   * a session that is NOT this worker's, so it happens host-side and the worker only asks.
+   *
+   * ⚠️ A rejection DIES rather than returning a polite false. `no-chat` is a real answer the model
+   * acts on ("nobody has that conversation open"), while `rejected` means a stale lease — reporting
+   * that as "they have no chat" would send the model off to tell the user something untrue about a
+   * colleague that is perfectly fine.
+   */
+  const colleague: ColleagueHandoff.Interface = {
+    deliver: (request) =>
+      Effect.promise(() =>
+        capabilities.askColleague({ colleague: request.colleague, message: request.message }),
+      ).pipe(
+        Effect.flatMap((reply): Effect.Effect<ColleagueHandoff.Delivery> => {
+          if (reply.outcome === "delivered") return Effect.succeed({ delivered: true, started: reply.started ?? false })
+          if (reply.outcome === "no-chat") return Effect.succeed({ delivered: false, started: false })
+          return Effect.die(unavailable("colleague hand-off"))
+        }),
+      ),
+  }
+
+  /**
    * 🔴 `wait` joined a child through `events.durable(...)`, which the replacement above DIES on — so
    * `wait` failed in every session worker with "only works in host-only contexts". Same class as
    * spawn, found the moment fixing spawn let the live smoke reach the test that exercises it.
@@ -201,7 +225,7 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
       ),
   }
 
-  return { events, permission, question, scheduler, spawner, join }
+  return { events, permission, question, scheduler, spawner, join, colleague }
 }
 
 export function replacements(capabilities: SessionWorkerCapabilities.Capabilities): LayerNode.Replacements {
@@ -224,6 +248,14 @@ export function replacements(capabilities: SessionWorkerCapabilities.Capabilitie
       makeLocationNode({
         service: QuestionV2.Service,
         layer: Layer.succeed(QuestionV2.Service, services.question),
+        deps: [],
+      }),
+    ],
+    [
+      ColleagueHandoff.node,
+      makeLocationNode({
+        service: ColleagueHandoff.Service,
+        layer: Layer.succeed(ColleagueHandoff.Service, services.colleague),
         deps: [],
       }),
     ],
