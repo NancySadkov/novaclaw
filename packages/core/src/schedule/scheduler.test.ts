@@ -304,7 +304,7 @@ describe("CalendarScheduler.makeLaunch", () => {
     expect(created[0].location.directory).toBe("/srv/clients")
   })
 
-  test("omits model/agent/permission when the schedule has none (inherit instance default)", async () => {
+  test("an unowned task is NOVA's: agent defaults to nova, model/permission still inherit", async () => {
     const created: any[] = []
     const prompted: any[] = []
     await Effect.runPromise(
@@ -318,7 +318,63 @@ describe("CalendarScheduler.makeLaunch", () => {
       }),
     )
     expect("model" in created[0]).toBe(false)
-    expect("agent" in created[0]).toBe(false)
     expect("permissionMode" in created[0]).toBe(false)
+    // The owner's rule (2026-08-21): every scheduled task has somebody accountable for it, and absent
+    // that is the CEO. It used to fall through to the instance default agent (`build`) - not a
+    // colleague on the roster, so an unattended run landed in a chat nobody thinks of as a person's.
+    expect(created[0].agent).toBe("nova")
+  })
+
+  // The folder a scheduled run happens in — the owner's rule that a colleague's folder is part of its
+  // JOB, not a per-chat question. Three cases because the three answers rank, and only ordering them
+  // proves it: an explicit per-task folder, else the responsible colleague's own, else instance home.
+  const folderOf = (table: Record<string, string>) => (agentID: string) => Effect.succeed(table[agentID])
+
+  test("an unowned task runs in NOVA's folder, not the instance home", async () => {
+    const created: any[] = []
+    await Effect.runPromise(
+      CalendarScheduler.makeLaunch(
+        fakeSessions(created, []),
+        "/home/nancy",
+        folderOf({ nova: "/home/nancy/.novaclaw/scratch/nova" }),
+      )({ schedule: sample(), occurrenceMillis: 1, firedAt: 1 }),
+    )
+    expect(created[0].location.directory).toBe("/home/nancy/.novaclaw/scratch/nova")
+  })
+
+  test("a task assigned to a colleague runs in THAT colleague's folder", async () => {
+    const created: any[] = []
+    await Effect.runPromise(
+      CalendarScheduler.makeLaunch(
+        fakeSessions(created, []),
+        "/home/nancy",
+        folderOf({ nova: "/scratch/nova", theron: "/home/nancy/d/books" }),
+      )({ schedule: sample({ agent: "theron" }), occurrenceMillis: 1, firedAt: 1 }),
+    )
+    expect(created[0].location.directory).toBe("/home/nancy/d/books")
+  })
+
+  test("an explicit per-task folder still outranks the colleague's own", async () => {
+    const created: any[] = []
+    await Effect.runPromise(
+      CalendarScheduler.makeLaunch(
+        fakeSessions(created, []),
+        "/home/nancy",
+        folderOf({ theron: "/home/nancy/d/books" }),
+      )({ schedule: sample({ agent: "theron", location: "/tmp/audit" }), occurrenceMillis: 1, firedAt: 1 }),
+    )
+    expect(created[0].location.directory).toBe("/tmp/audit")
+  })
+
+  test("an unknown colleague falls back to the instance home rather than failing the launch", async () => {
+    const created: any[] = []
+    await Effect.runPromise(
+      CalendarScheduler.makeLaunch(fakeSessions(created, []), "/home/nancy", folderOf({}))({
+        schedule: sample({ agent: "ghost" }),
+        occurrenceMillis: 1,
+        firedAt: 1,
+      }),
+    )
+    expect(created[0].location.directory).toBe("/home/nancy")
   })
 })

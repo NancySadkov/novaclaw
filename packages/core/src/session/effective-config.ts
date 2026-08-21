@@ -166,9 +166,7 @@ export const layer = Layer.effect(
      */
     const declaredFor = Effect.fn("SessionEffectiveConfig.agent")(function* (agentID: string) {
       const stored = yield* agents.agents()
-      const layers = stored[agentID] ?? []
-      if (layers.length === 0) return undefined
-      return layers.reduce((carry, layer) => ({ ...carry, ...layer }) as ConfigAgent.Info)
+      return AgentConfigStore.fold(stored[agentID] ?? [])
     })
 
     const resolution = Effect.fn("SessionEffectiveConfig.resolution")(function* (sessionID: SessionSchema.ID) {

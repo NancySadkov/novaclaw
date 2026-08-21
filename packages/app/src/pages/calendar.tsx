@@ -4,6 +4,9 @@ import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { GoldGlyph } from "@/components/gold-glyph"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServer } from "@/context/server"
+import { useGlobal } from "@/context/global"
+import { listAgents } from "@/apps/agent-list"
+import { roster, type AgentLike } from "@/apps/contacts"
 import { useDirectoryPicker } from "@/components/directory-picker"
 import {
   createSchedule,
@@ -29,7 +32,7 @@ const RECURRENCE_KINDS: Recurrence["kind"][] = ["once", "daily", "weekly", "mont
 // inside the work folder (external-directory writes still gate); "ask" stalls (no human to approve).
 const PERMISSION_MODES: { value: string; label: string }[] = [
   { value: "bypass", label: "Act within its folder (recommended)" },
-  { value: "", label: "Use the instance default" },
+  { value: "", label: "Whatever the colleague is allowed" },
   { value: "surgical", label: "Edit files, no full rewrites" },
   { value: "plan", label: "Read-only (no file changes)" },
   { value: "ask", label: "Ask each time (needs you watching)" },
@@ -90,6 +93,33 @@ export function CalendarPage() {
   const server = useServer()
   const conn = createMemo(() => server.current)
   const pickDirectory = useDirectoryPicker()
+
+  // WHO is responsible for a scheduled task (owner, 2026-08-21: *"the calendar / schedule should have
+  // a model responsible for each task, defaulting to the Nova itself"*).
+  //
+  // 🔴 **A picker, not a text box.** Typing an agent name meant a typo produced a schedule that fires
+  // for months into a colleague who does not exist — and the fallback made that failure invisible,
+  // because the run still happened, just under the instance default. A task nobody is named on is
+  // Nova's: the CEO routes work it does not do itself, and every scheduled run then lands in a chat
+  // the user can find on the roster.
+  const global = useGlobal()
+  const rosterCtx = createMemo(() => {
+    const current = conn()
+    return current ? global.ensureServerCtx(current) : undefined
+  })
+  const [agentRows] = createResource(rosterCtx, (current) => listAgents(current.sdk.client.v2))
+  /** How a schedule's owner reads in the list: the colleague's display name, Nova when unowned. */
+  const responsibleName = (id: string | null): string => {
+    const wanted = id && id.trim() !== "" ? id : "nova"
+    return agentOptions().find((option) => option.id === wanted)?.name ?? wanted
+  }
+  const agentOptions = createMemo(() =>
+    roster(agentRows() ?? []).map((view) => {
+      const configured = (agentRows() ?? []).find((row: AgentLike) => row.id === view.id)?.config?.["directory"]
+      const folder = typeof configured === "string" && configured.trim() !== "" ? configured : undefined
+      return { id: view.id, name: view.name, folder }
+    }),
+  )
 
   // Live clock — bump every second; refresh the list every 10s so next/last-fire stays current.
   const [now, setNow] = createSignal(Date.now())
@@ -382,7 +412,12 @@ export function CalendarPage() {
                       <div class="mt-0.5 text-xs text-v2-text-text-muted">{describeRecurrence(s.recurrence)}</div>
                       <div class="mt-0.5 truncate text-xs text-v2-text-text-faint">“{s.prompt}”</div>
                       <div class="mt-0.5 truncate text-[11px] text-v2-text-text-faint">
-                        folder: {s.location || "home"} · access: {s.permissionMode || "default"}
+                        {/* WHO first, because that is now the fact that decides the rest: an unnamed
+                            task is Nova's, and the colleague supplies the model, the posture and —
+                            unless this task overrides it — the folder. */}
+                        {responsibleName(s.agent)}
+                        {s.location ? ` · folder: ${s.location}` : ""}
+                        {s.permissionMode ? ` · access: ${s.permissionMode}` : ""}
                         {s.model ? ` · model: ${s.model}` : ""}
                       </div>
                       <div class="mt-1 text-xs text-v2-text-text-accent">
@@ -553,15 +588,26 @@ export function CalendarPage() {
 
           <div class="flex flex-wrap items-center gap-2">
             <label for="calendar-agent" class="text-sm text-v2-text-text-muted">
-              Agent
+              Responsible
             </label>
-            <input
+            <select
               id="calendar-agent"
               class={`${FIELD} min-w-[220px] flex-1`}
-              placeholder="Agent name — blank = instance default"
-              value={agent()}
-              onInput={(e) => setAgent(e.currentTarget.value)}
-            />
+              onChange={(e) => setAgent(e.currentTarget.value)}
+            >
+              {/* ⚠️ `selected` per option, not `value` on the select: the roster arrives AFTER this
+                  element is created, and a browser keeps `selectedIndex` at 0 when children appear
+                  later — measured on the Memory app's owner picker, which read "Nova" over somebody
+                  else's memories. */}
+              <For each={agentOptions()}>
+                {(option) => (
+                  <option value={option.id} selected={option.id === (agent() || "nova")}>
+                    {option.name}
+                    {option.folder ? ` · ${option.folder}` : ""}
+                  </option>
+                )}
+              </For>
+            </select>
           </div>
 
           <div class="flex flex-wrap items-center gap-2">
@@ -571,7 +617,7 @@ export function CalendarPage() {
             <input
               id="calendar-model"
               class={`${FIELD} min-w-[260px] flex-1`}
-              placeholder="providerID/modelID — blank = instance default (e.g. dgx-spark/qwen3.6-35b)"
+              placeholder="Override the model for this one task — blank = whatever the colleague thinks with"
               value={model()}
               onInput={(e) => setModel(e.currentTarget.value)}
             />
@@ -584,7 +630,7 @@ export function CalendarPage() {
             <input
               id="calendar-folder"
               class={`${FIELD} min-w-[220px] flex-1`}
-              placeholder="Work folder — where it reads inputs + writes the report (blank = instance home)"
+              placeholder="Override the folder for this one task — blank = wherever the responsible colleague works"
               value={folder()}
               onInput={(e) => setFolder(e.currentTarget.value)}
             />

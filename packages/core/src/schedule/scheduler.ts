@@ -10,6 +10,8 @@ export * as CalendarScheduler from "./scheduler"
 
 import { Clock, Context, Duration, Effect, Layer, Schedule } from "effect"
 import { AgentV2 } from "../agent"
+import { AgentConfigStore } from "../agent-config-store"
+import { AgentWorkspace } from "../agent/workspace"
 import { Database } from "../database/database"
 import { makeGlobalNode, tags } from "../effect/app-node"
 import { LayerNode } from "../effect/layer-node"
@@ -90,12 +92,18 @@ export const tick = (db: Db, launch: Launch, now: EpochMillis): Effect.Effect<Ti
  * unit-testable with a fake. Returns the new session id. `metadata` stamps the schedule + occurrence so a
  * fired run is traceable back to its schedule.
  */
+/**
+ * Where a colleague works, asked of the LIVE roster. `undefined` = no such colleague, or it has no
+ * folder of its own. Passed in as a function rather than a service so this stays unit-testable with a
+ * fake, exactly like `sessions`.
+ */
+export type FolderOf = (agentID: string) => Effect.Effect<string | undefined>
+
 export const makeLaunch =
-  (sessions: Pick<SessionV2.Interface, "spawn">, homeDir: string): Launch =>
+  (sessions: Pick<SessionV2.Interface, "spawn">, homeDir: string, folderOf?: FolderOf): Launch =>
   (input) =>
     Effect.gen(function* () {
       const { schedule } = input
-      const directory = schedule.location ?? homeDir
       // Per-schedule overrides; absent = inherit the instance default agent/model. Model string is
       // "providerID/modelID" (split so the modelID may itself contain "/").
       let model: ModelV2.Ref | undefined
@@ -103,7 +111,27 @@ export const makeLaunch =
         const { providerID, modelID } = ModelV2.parse(schedule.model)
         model = ModelV2.Ref.make({ id: modelID, providerID })
       }
-      const agent = schedule.agent ? AgentV2.ID.make(schedule.agent) : undefined
+      // 🔴 NOVA owns an unowned task (owner, 2026-08-21: *"the calendar / schedule should have a
+      // model responsible for each task, defaulting to the Nova itself"*).
+      //
+      // Absent used to mean "the instance default agent", which is `build` — the machinery a person
+      // drives, not a colleague on the roster. A scheduled run is the case with NOBODY watching, so
+      // the question "who is accountable for this" has to have an answer that is a name: under the
+      // metaphor that is the CEO, who routes work it does not do itself. It also means every
+      // scheduled task's output lands in a chat the user can find on the roster, rather than in a
+      // session belonging to an agent nobody thinks of as a person.
+      const agent = AgentV2.ID.make(schedule.agent ?? AgentV2.NOVA_ID)
+      // 🔴 A task inherits the RESPONSIBLE COLLEAGUE's folder, not the instance home. Under the roster
+      // the folder is part of the job — you assign the bookkeeper to the books once — so a scheduled
+      // run that landed in `~` would put a colleague somewhere it has never worked and give it a
+      // system prompt naming a folder its files are not in. An explicit per-task folder still wins:
+      // that is a user saying "this particular job happens over there".
+      //
+      // ⚠️ Read at FIRE time, never stored: a colleague reassigned between "save this schedule" and
+      // "it fires at 6am" must fire in its new folder. A snapshot taken at save time is the same stale
+      // -config bug `self` and the reassignment notice exist to prevent.
+      const own = folderOf === undefined ? undefined : yield* folderOf(agent)
+      const directory = schedule.location ?? own ?? homeDir
       // THE CANONICAL SEAM (v0.2.0 prep, 2026-08-11) — was `create()` + `prompt()`. A Calendar launch
       // is ROOTLESS, so it passes `location` instead of a `parentID`, and the fork-bomb guards are
       // skipped BY CONSTRUCTION (see `SessionSpawner.SpawnInput.parentID`): there is no parent to
@@ -116,7 +144,7 @@ export const makeLaunch =
         type: "goal-oriented",
         title: schedule.title || "Scheduled run",
         ...(model ? { model } : {}),
-        ...(agent ? { agent } : {}),
+        agent,
         // Per-schedule permission posture; absent = inherit the default. A scheduled run is unattended, so
         // "ask" would stall waiting for an approval nobody's there to give — the UI defaults to "bypass"
         // (act within its work folder; external-directory writes still gate).
@@ -151,7 +179,23 @@ export const layer = Layer.effect(
     const { db } = yield* Database.Service
     const sessions = yield* SessionV2.Service
     const global = yield* Global.Service
-    const launch = makeLaunch(sessions, global.home)
+    const roster = yield* AgentConfigStore.Service
+    // The store is GLOBAL (it needs only `db`), which is why this is reachable at all: `AgentV2` — the
+    // per-location view of the same rows — is a LOCATION node, and a global node listing it as a dep
+    // fails the graph with "Invalid tag dependencies". The scheduler is instance-wide by nature.
+    const launch = makeLaunch(
+      sessions,
+      global.home,
+      Effect.fn("CalendarScheduler.folderOf")(function* (agentID: string) {
+        const declared = AgentConfigStore.fold((yield* roster.agents())[agentID] ?? [])
+        if (declared === undefined) return undefined
+        const directory = (declared as unknown as Record<string, unknown>)["directory"]
+        return AgentWorkspace.folderFor({
+          agentID,
+          directory: typeof directory === "string" ? directory : undefined,
+        })
+      }),
+    )
     yield* Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis
       yield* tick(db, launch, now)
@@ -168,7 +212,7 @@ export const layer = Layer.effect(
 export const node = makeGlobalNode({
   service: Service,
   layer,
-  deps: [Database.node, SessionV2.node, Global.node],
+  deps: [Database.node, SessionV2.node, Global.node, AgentConfigStore.node],
 })
 
 export const sharedServiceNode = makeGlobalNode({
@@ -178,6 +222,7 @@ export const sharedServiceNode = makeGlobalNode({
     LayerNode.external(Database.Service, tags.values.global),
     LayerNode.external(SessionV2.Service, tags.values.global),
     LayerNode.external(Global.Service, tags.values.global),
+    LayerNode.external(AgentConfigStore.Service, tags.values.global),
   ],
 })
 

@@ -3,7 +3,6 @@
 // became the agent identity chip. Each control is a dumb view over a plain state object the
 // composer builds — no controller context reaches in here.
 import { Show } from "solid-js"
-import { ComposerModelControl, type ComposerModelControlState } from "./model-control"
 import { ComposerFeaturesControl, type ComposerFeaturesControlState } from "./features-control"
 import { ComposerAgentControl } from "./agent-control"
 import type { ComposerAgentControlState } from "./agent-option"
@@ -13,7 +12,6 @@ export type ComposerControlsRowState = {
   sessionControls: boolean
   /** The agent chip only renders mid-session (agent.visible). */
   agentVisible: boolean
-  model: ComposerModelControlState
   features: ComposerFeaturesControlState
   agent: ComposerAgentControlState
 }
@@ -21,7 +19,11 @@ export type ComposerControlsRowState = {
 export function ComposerControlsRow(props: { state: ComposerControlsRowState }) {
   return (
     <>
-      <ComposerModelControl state={props.state.model} />
+      {/* 🔴 The model chip LEFT this row on 2026-08-21 (owner: *"move model picker into the agents
+          configuration, where by default all agents use Default model"*). A colleague has one mind:
+          picking a model per chat made the same colleague clever in one conversation and poor in the
+          next, for reasons the user could not see. It is chosen in the colleague's configuration and
+          defaults to the instance model set in Settings → Models. */}
       {/* 1K: the permission-mode droplist shows on the new-session composer AND
           mid-session (an active session id) — mid-session selection calls switchMode. */}
       {/* 🔴 Posture, permission mode and Strict LEFT this row on 2026-08-21 (owner: they "should be

@@ -97,4 +97,15 @@ export const layer = Layer.effect(
 
 export const defaultLayer = layer.pipe(Layer.provide(Database.defaultLayer))
 
+/**
+ * Fold one agent's ordered layers into the single record every reader means by "the agent".
+ *
+ * Last-wins, because appending a layer IS overriding — the same rule `findLast` encodes for rulesets
+ * and `evaluateNarrowed` for verdicts. Shared rather than re-spelled per reader: two readers folding
+ * the same rows in two directions is a fork that only shows up as one surface disagreeing with
+ * another about what a colleague is configured to do.
+ */
+export const fold = (layers: readonly ConfigAgent.Info[]): ConfigAgent.Info | undefined =>
+  layers.length === 0 ? undefined : (layers.reduce((carry, layer) => ({ ...carry, ...layer }) as ConfigAgent.Info))
+
 export const node = makeGlobalNode({ service: Service, layer, deps: [Database.node] })

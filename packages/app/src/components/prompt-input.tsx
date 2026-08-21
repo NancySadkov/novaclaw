@@ -40,7 +40,6 @@ import {
   type ComposerFeaturesControlState,
   type ComposerAgentControlState,
   type ComposerAgentOption,
-  type ComposerModelControlState,
   type ComposerRemoteChatState,
 } from "@/components/composer"
 import { usePlatform } from "@/context/platform"
@@ -781,18 +780,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return "Ask anything, / for commands, @ for context..."
   }
 
-  const modelControlState = createMemo<ComposerModelControlState>(() => ({
-    loading: providersLoading(),
-    shouldAnimate: providersShouldFadeIn(),
-    title: language.t("command.model.choose"),
-    keybind: command.keybindParts("model.choose"),
-    model: props.controls.model.selection,
-    providerID: props.controls.model.selection.current()?.provider?.id,
-    modelName: props.controls.model.selection.current()?.name ?? language.t("dialog.model.select.title"),
-    style: control(),
-    onClose: restoreFocus,
-  }))
-
   const newSession = () => props.variant === "new-session"
   const featuresControlState = createMemo<ComposerFeaturesControlState>(() => ({
     current: props.controls.features.current,
@@ -957,7 +944,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               state={{
                 sessionControls: newSession() || !!props.controls.session?.id,
                 agentVisible: props.controls.agent.visible,
-                model: modelControlState(),
                 features: featuresControlState(),
                 agent: agentControlState(),
               }}
