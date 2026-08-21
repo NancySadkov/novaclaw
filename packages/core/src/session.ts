@@ -22,7 +22,6 @@ import { SessionMessageTable, SessionTable } from "./session/sql"
 import { SessionSchema } from "./session/schema"
 import { AbsolutePath, PositiveInt, RelativePath } from "./schema"
 import { AgentV2 } from "./agent"
-import { AgentReassignment } from "./agent/reassignment"
 import { SessionRecordEvent } from "@novaclaw/schema/session-record-event"
 import { InstallationVersion } from "./installation/version"
 import { Slug } from "./util/slug"
@@ -1272,8 +1271,5 @@ export const node = makeGlobalNode({
     LocationServiceMap.node,
     SessionProjector.node,
     SessionCompactionRequest.node,
-    // Detection lives at the config-write door (`config-store-write.ts`), which holds no sessions;
-    // the delivery lives here, where they are. See `agent/reassignment.ts`.
-    AgentReassignment.node,
   ],
 })

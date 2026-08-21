@@ -85,6 +85,7 @@ import { PermissionSaved } from "@novaclaw/core/permission/saved"
 import { ProjectV2 } from "@novaclaw/core/project"
 import { PtyTicket } from "@novaclaw/core/pty/ticket"
 import { Ripgrep } from "@novaclaw/core/ripgrep"
+import { AgentReassignment } from "@novaclaw/core/agent/reassignment"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionComponentRegistry } from "@novaclaw/core/session/component-registry"
@@ -317,6 +318,13 @@ const app = LayerNode.group([
   PermissionSaved.node,
   Todo.node,
   SessionProjector.node,
+  // 🔴 The reassignment DELIVERY, registered where the sessions and the event bus are.
+  //
+  // ⚠️ It hung off `SessionV2.node` first, which this graph never builds — so a folder change wrote
+  // the config, announced to nobody, and the colleague was never told. Measured 2026-08-21 by driving
+  // a real `PATCH /config`: the chat stayed empty. The unit tests passed throughout, because they
+  // registered a listener themselves; nothing tested that the SERVER registers one.
+  AgentReassignment.node,
   RuntimeFlags.node,
   EventV2Bridge.node,
   MCP.node,
