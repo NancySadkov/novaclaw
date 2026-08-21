@@ -1370,7 +1370,7 @@ export const dict = {
   "settings.identity.backupTitle": "Back up this identity",
   "settings.identity.backupDescription": "Save a copy you can restore after a disk failure",
   "settings.identity.backupHint":
-    "The saved file IS this instance: anyone who has it can act as you, and nobody can undo that. Keep it somewhere private. Without it, a lost disk loses your identity, your contacts and your history for good — there is no way to reset it.",
+    "The saved file IS this instance: anyone who has it can act as you, and nobody can undo that. Keep it somewhere private. Without it, a lost disk loses your identity, the people you know and your history for good — there is no way to reset it.",
   "settings.identity.backupAction": "Back up…",
   "settings.identity.backupConfirm": "Save the file somewhere private.",
   "settings.identity.backupProceed": "Save backup",
@@ -1379,7 +1379,7 @@ export const dict = {
   "settings.identity.restoreTitle": "Restore an identity",
   "settings.identity.restoreDescription": "Become the same peer again on a rebuilt machine",
   "settings.identity.restoreHint":
-    "Load a file saved by Back up. Everyone who knew the old instance keeps knowing you — contacts, channels and history stay attached to the key, not to the machine.",
+    "Load a file saved by Back up. Everyone who knew the old instance keeps knowing you — the people you know, channels and history stay attached to the key, not to the machine.",
   "settings.identity.restoreAction": "Restore…",
   "settings.identity.restoreChosen": "This replaces the identity below, and there is no way to undo it. Contacts and channels that know the current key lose you — and anything already said from this instance stays in its rooms but stops being yours, because it was signed by the key you are replacing.",
   "settings.identity.restoreProceed": "Replace identity",
@@ -2777,7 +2777,7 @@ export const dict = {
   // Polish and Russian have three forms and Japanese has one — so the choice belongs to the caller
   // and the dictionary carries whatever forms a language needs.
   "community.empty.online": "No messages yet.",
-  "community.empty.airgap": "Offline mode is on, so nothing goes in or out. Your key and contacts are saved; turn it off in Settings to reach people.",
+  "community.empty.airgap": "Offline mode is on, so nothing goes in or out. Your key and the people you know are saved; turn it off in Settings to reach them.",
   "community.empty.notJoined": "You have not joined the community yet. Your key is already saved; turning it on above is all that is left.",
   "community.empty.noPeers": "Nothing here yet — this instance knows nobody to talk to. Add someone's address, or use Find to look on your network and in the public directory.",
   "community.status.checking": "Checking…",

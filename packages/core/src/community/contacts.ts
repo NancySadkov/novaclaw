@@ -14,6 +14,17 @@ import { CommunityContactTable, CommunityObservationTable, CommunitySuccessionTa
  * Two things at once, and the second is the one that matters: it is the user's address book, and it
  * is the **bootstrap set**. A user who has met anybody never needs a seed list the project controls,
  * which is where "survives an acquirer" stops being a slogan and becomes stored bytes.
+ *
+ * ⚠️ **Three words, three meanings — do not "tidy" them into one** (settled 2026-08-21):
+ *   · `CommunityContacts` (here) — OTHER INSTANCES this user has met. The address book + bootstrap set.
+ *   · `CommunityPeers` (`peers.ts`) — the ROUTING TABLE peer exchange fills. Transport, not people.
+ *   · the **Contacts app** (`app/src/pages/contacts.tsx`) — the roster of THIS instance's own
+ *     colleagues, which is what the owner calls "a flat of Agents contacts".
+ *
+ * The user never sees this module's word: the Community surface says **"People you know"**, and the
+ * prose that used to say "your contacts" now says the same. So the collision is a reader's problem
+ * only, and renaming either identifier would collapse two concepts that are genuinely different —
+ * an address book is not a routing table.
  */
 
 export interface Contact {
