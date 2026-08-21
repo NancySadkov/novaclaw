@@ -50,7 +50,27 @@ const AskOp = Schema.Struct({
   }),
 })
 
-export const Input = Schema.Union([ListOp, AskOp])
+const HireOp = Schema.Struct({
+  op: Schema.Literal("hire"),
+  title: Schema.String.annotate({
+    description: 'The job, in two or three words: "Bookkeeper", "Talent Scout". Not "Helper".',
+  }),
+  brief: Schema.String.annotate({
+    description:
+      "What this colleague owns, and what it must never do without asking. This is its standing " +
+      "instruction — it outlives every conversation, so write it for the job, not for today.",
+  }),
+  personality: Schema.String.pipe(Schema.optional).annotate({
+    description: "How it should speak and carry itself. Optional.",
+  }),
+})
+
+const RetireOp = Schema.Struct({
+  op: Schema.Literal("retire"),
+  colleague: Schema.String.annotate({ description: "Which colleague to retire, by id." }),
+})
+
+export const Input = Schema.Union([ListOp, AskOp, HireOp, RetireOp])
 
 const Output = Schema.Struct({ ok: Schema.Boolean, message: Schema.String })
 type Output = typeof Output.Type
@@ -77,6 +97,17 @@ export const formatRoster = (
     .join("\n")
 }
 
+/**
+ * Hiring and retiring are the CEO's job and nobody else's (AGENTS.md — the structural metaphor:
+ * Nova "creates the role when none exists, and retires one that no longer earns its keep").
+ *
+ * ⚠️ Enforced here as WELL as by permission rules, and the two are not redundant. A rule is the
+ * operator's dial and can be widened; this is the org chart itself — an officer that could hire
+ * would be a second CEO, and an org with two CEOs has none. The permission check still runs, because
+ * "Nova may do this" and "this instance allows it right now" are different questions.
+ */
+export const mayStaff = (selfID: string): boolean => selfID === AgentV2.NOVA_ID
+
 /** Colleagues you can address: the roster, minus the staff and the machinery, minus yourself. */
 export const addressable = (agents: ReadonlyArray<AgentV2.Info>, selfID: string): ReadonlyArray<AgentV2.Info> =>
   agents.filter((agent) => agent.mode !== "subagent" && !agent.hidden && agent.id !== selfID)
@@ -88,16 +119,19 @@ export const layer = Layer.effectDiscard(
     // ONE seam for the delivery, whichever side of the worker boundary this tool is running on:
     // host-direct in-process, or over `colleague-ask` when a worker provides the bridge client.
     const handoff = yield* ColleagueHandoff.Service
+
     const permission = yield* PermissionV2.Service
 
     yield* tools
       .register({
         [name]: Tool.make({
           description:
-            "Talk to a colleague — another named agent on this instance, with its own chat, memory and job. " +
-            "`list` shows who works here and what they own; `ask` hands one of them a piece of work. They " +
-            "answer in their own chat, in their own time; this does not wait for them. Use it instead of doing " +
-            "someone else's job, and instead of `spawn` when the work belongs to a role that already exists.",
+            "Your colleagues — the other named agents on this instance, each with its own chat, memory and job. " +
+            "`list` shows who works here and what they own. `ask` hands one of them a piece of work; they answer " +
+            "in their own chat, in their own time, and this does not wait for them. Use it instead of doing " +
+            "someone else's job, and instead of `spawn` when the work belongs to a role that already exists. " +
+            "`hire` and `retire` staff the organization and are Nova's alone — a hire is given a name from the " +
+            "instance's own pool, so colleagues never read as people.",
           input: Input,
           output: Output,
           toModelOutput: ({ output }) => [{ type: "text", text: output.message }],
@@ -107,6 +141,67 @@ export const layer = Layer.effectDiscard(
               if (input.op === "list") {
                 const all = yield* agents.all()
                 return { ok: true, message: formatRoster(addressable(all, selfID), selfID) } satisfies Output
+              }
+
+              if (input.op === "hire" || input.op === "retire") {
+                // The org chart, before the permission dial: an officer that could hire would be a
+                // second CEO, and an organization with two CEOs has none.
+                if (!mayStaff(selfID))
+                  return yield* new ToolFailure({
+                    message:
+                      "Only Nova hires and retires colleagues. Say what role you think is missing, or who is no " +
+                      "longer needed, and let the user or Nova decide.",
+                  })
+                yield* permission.assert({
+                  action: name,
+                  resources: [input.op === "hire" ? "hire" : `retire:${input.colleague}`],
+                  save: ["*"],
+                  sessionID: context.sessionID,
+                  agent: context.agent,
+                  source: {
+                    type: "tool" as const,
+                    messageID: context.assistantMessageID,
+                    callID: context.toolCallID,
+                  },
+                })
+              }
+
+              if (input.op === "hire") {
+                // The whole act — draw a name, write the role, make it LIVE — happens through the
+                // host seam. The first version wrote the store from inside the worker and reloaded
+                // the WORKER's roster: `Procius` existed durably and `GET /api/agent` did not list
+                // him. A colleague nobody can see is a colleague nobody can talk to.
+                const hired = yield* handoff.hire({
+                  title: input.title,
+                  brief: input.brief,
+                  ...(input.personality === undefined ? {} : { personality: input.personality }),
+                })
+                return {
+                  ok: true,
+                  message:
+                    `Hired ${hired.name} (id \`${hired.id}\`) as ${input.title}. They have no chat yet — open them ` +
+                    `in Contacts to start one, or tell the user who they now have.`,
+                } satisfies Output
+              }
+
+              if (input.op === "retire") {
+                const target = input.colleague.trim()
+                if (AgentV2.isProtected(target))
+                  return yield* new ToolFailure({
+                    message: `"${target}" is this instance's governing agent and cannot be retired.`,
+                  })
+                const roster = yield* agents.all()
+                if (!addressable(roster, selfID).some((agent) => String(agent.id) === target))
+                  return yield* new ToolFailure({
+                    message: `No colleague called "${target}" — call \`list\` before retiring anyone.`,
+                  })
+                yield* handoff.retire(target)
+                return {
+                  ok: true,
+                  message:
+                    `Retired ${target}. Their chat and what they remembered go with them; tell the user what they ` +
+                    `used to own, in case it needs a new owner.`,
+                } satisfies Output
               }
 
               // Addressing a colleague is a capability: it spends THEIR model time and puts words in

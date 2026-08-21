@@ -187,9 +187,28 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
    * colleague that is perfectly fine.
    */
   const colleague: ColleagueHandoff.Interface = {
+    // 🔴 STAFFING CROSSES TOO, and it must. The first build refused it here on the theory that only
+    // delivery needed the host — and a hire then wrote the store from inside the worker, reloaded
+    // the WORKER's roster, and left the new colleague durable and invisible to the instance
+    // (measured: `Procius` was in `GET /config` and absent from `GET /api/agent`). The rule is not
+    // "messages cross"; it is that anything whose EFFECT the host must see happens on the host.
+    hire: (request) =>
+      Effect.promise(() => capabilities.colleague({ op: "hire", ...request })).pipe(
+        Effect.flatMap((reply) =>
+          reply.outcome === "hired" && reply.hiredID !== undefined
+            ? Effect.succeed({ id: reply.hiredID, name: reply.hiredName ?? reply.hiredID })
+            : Effect.die(unavailable("colleague hire")),
+        ),
+      ),
+    retire: (colleague) =>
+      Effect.promise(() => capabilities.colleague({ op: "retire", colleague })).pipe(
+        Effect.flatMap((reply) =>
+          reply.outcome === "retired" ? Effect.succeed(true) : Effect.die(unavailable("colleague retire")),
+        ),
+      ),
     deliver: (request) =>
       Effect.promise(() =>
-        capabilities.askColleague({ colleague: request.colleague, message: request.message }),
+        capabilities.colleague({ op: "ask", colleague: request.colleague, message: request.message }),
       ).pipe(
         Effect.flatMap((reply): Effect.Effect<ColleagueHandoff.Delivery> => {
           if (reply.outcome === "delivered") return Effect.succeed({ delivered: true, started: reply.started ?? false })

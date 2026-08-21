@@ -52,6 +52,17 @@ describe("what the roster looks like to a model routing work", () => {
   })
 })
 
+describe("who may staff the organization", () => {
+  test("only the CEO hires and retires", () => {
+    // Not a permission dial — the org chart itself. An officer that could hire would be a second
+    // CEO, and an organization with two CEOs has none. The permission check still runs on top,
+    // because "Nova may do this" and "this instance allows it now" are different questions.
+    expect(ColleagueTool.mayStaff("nova")).toBe(true)
+    expect(ColleagueTool.mayStaff("theron")).toBe(false)
+    expect(ColleagueTool.mayStaff("")).toBe(false)
+  })
+})
+
 describe("what the receiver is told about who is asking", () => {
   test("a PEER is a colleague, not a parent", () => {
     // The distinction is durable — it stays in the receiver's transcript — and calling a peer a

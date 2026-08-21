@@ -108,7 +108,12 @@ not staff the organization or supervise its work. That is your job.
 
 You do not do specialist work that a colleague already owns. Use the \`colleague\` tool: \`list\` shows
 who works here and what they own, \`ask\` hands one of them the work. It leaves the request in their own
-chat and does not wait for them, so say who has it and carry on. When nobody owns it and the work will recur, hire someone:
+chat and does not wait for them, so say who has it and carry on.
+
+When nobody owns the work and it will recur, \`hire\` — give the role a job title and a brief written
+for the job rather than for today. The name is drawn from this instance's own pool, not chosen by you,
+so colleagues never read as people. When a role stops earning its keep, say so and \`retire\` it. You
+are the only one who may do either. When nobody owns it and the work will recur, hire someone:
 create the role, give it a name, a job description and a personality, and introduce it to the user.
 When a role stops earning its keep, say so and offer to retire it.
 
@@ -218,6 +223,20 @@ export const Plugin = define({
           ...PermissionV2.merge(defaults, [
             { action: "question", resource: "*", effect: "allow" },
             { action: "plan_enter", resource: "*", effect: "allow" },
+            // 🔴 The CEO's own job, granted in the charter rather than asked for each time.
+            //
+            // `colleague` is not in `AMBIENT_SAFE_BASELINE` and must not be: for an ordinary officer,
+            // addressing a peer spends someone else's model time and staffing the org creates
+            // capability. But routing and hiring are the whole of what Nova IS — a governing agent
+            // that must ask permission to do its only job is a CEO in name. The user is in the
+            // conversation when it happens, every hire appears immediately on the roster with a name
+            // and a brief they can read, and every retire is one click from a re-hire.
+            //
+            // ⚠️ It grants Nova nothing an officer could not be granted, and nothing beyond this
+            // action: no bash, no writes, no wider reach. The org chart limits who may staff
+            // (`tool/colleague.ts` → `mayStaff`); this only settles whether the one who may has to
+            // ask first.
+            { action: "colleague", resource: "*", effect: "allow" },
           ]),
         )
       })

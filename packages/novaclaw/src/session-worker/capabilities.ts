@@ -46,8 +46,8 @@ export interface Capabilities {
    * ⚠️ No sender field: the host stamps it from the lease, so a worker speaks as itself and as
    * nobody else. Same discipline as `spawnChild`'s absent `parentID` — there is no field to forge.
    */
-  readonly askColleague: (
-    input: { readonly colleague: string; readonly message: string },
+  readonly colleague: (
+    input: SessionWorkerProtocol.ColleagueRequestInput,
     signal?: AbortSignal,
   ) => Promise<Extract<Reply, { readonly type: "colleague-result" }>>
   /** Join a child session. BLOCKS host-side until completion or `timeoutMs` — see `AwaitChild`. */
@@ -170,13 +170,13 @@ export function make(input: { readonly lease: SessionExecutionAttempt.Lease; rea
       if (reply.type !== "spawn-result") throw new Error(`unexpected ${reply.type} reply to spawn`)
       return reply
     },
-    askColleague: async (request, signal) => {
+    colleague: async (request, signal) => {
       const reply = await input.client.request(
         // The identity spread carries the lease; the host reads the SENDER from it, never from here.
-        { ...identity, type: "colleague-ask", requestID: requestID(), input: request },
+        { ...identity, type: "colleague-request", requestID: requestID(), input: request },
         signal,
       )
-      if (reply.type !== "colleague-result") throw new Error(`unexpected ${reply.type} reply to colleague-ask`)
+      if (reply.type !== "colleague-result") throw new Error(`unexpected ${reply.type} reply to colleague-request`)
       return reply
     },
     askQuestion: async (request, signal) => {

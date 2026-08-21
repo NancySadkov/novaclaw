@@ -1,6 +1,10 @@
 export * as ColleagueHandoff from "./colleague-handoff"
 
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
+import { AgentConfigStore } from "../agent-config-store"
+import { AgentUsage } from "../agent/usage"
+import { ConfigAgent } from "../config/agent"
+import { OfficerName } from "../agent/officer-name"
 import { Database } from "../database/database"
 import { EventV2 } from "../event"
 import { makeLocationNode } from "../effect/app-node"
@@ -9,6 +13,7 @@ import { SessionInput } from "./input"
 import { SessionMessage } from "./message"
 import { SessionRunCoordinator } from "./run-coordinator"
 import { SessionSchema } from "./schema"
+import { AgentV2 } from "../agent"
 import { SessionStore } from "./store"
 
 // Handing work from one colleague to another (AGENTS.md — the structural metaphor).
@@ -32,7 +37,27 @@ export interface Delivery {
   readonly started: boolean
 }
 
+export interface Hired {
+  readonly id: string
+  readonly name: string
+}
+
 export interface Interface {
+  /**
+   * Staff the organization: write the role and make it LIVE.
+   *
+   * 🔴 Host-side for the same reason delivery is, and the reason was measured: the tool ran the
+   * store write inside the worker and reloaded the WORKER's roster, so `Procius` existed durably and
+   * the instance's own `GET /api/agent` did not list him. Same "durable but not live" defect the
+   * delete endpoint had — a colleague nobody can see is a colleague nobody can talk to.
+   */
+  readonly hire: (input: {
+    readonly title: string
+    readonly brief: string
+    readonly personality?: string | undefined
+  }) => Effect.Effect<Hired>
+  /** Retire a colleague, and refresh the live roster so they actually disappear. */
+  readonly retire: (colleague: string) => Effect.Effect<boolean>
   /**
    * Leave a message in a colleague's own chat, attributed to the sender.
    *
@@ -63,7 +88,36 @@ export const fromParts = (input: {
   readonly events: EventV2.Interface
   readonly session: (id: SessionSchema.ID) => Effect.Effect<{ readonly agent?: string | undefined } | undefined>
   readonly wake: (id: SessionSchema.ID) => Effect.Effect<boolean>
+  readonly store: AgentConfigStore.Interface
+  /** Re-materialise the LIVE roster after a staffing change. Without it a hire is durable and
+   *  invisible — measured: `Procius` was in the store and absent from `GET /api/agent`. */
+  readonly refresh: Effect.Effect<void>
+  readonly takenNames: Effect.Effect<ReadonlyArray<string>>
 }): Interface => ({
+  hire: Effect.fn("ColleagueHandoff.hire")(function* (request) {
+    // The name is DRAWN, never chosen by a model: a roster sits in an address book beside real
+    // people, and a colleague called "Sarah" is one misread from being taken for one. Taken names —
+    // ids and display names alike — are avoided, because the collision that matters is a reading one.
+    const drawn = OfficerName.pick({ taken: yield* input.takenNames, random: Math.random })
+    const display = OfficerName.display(drawn)
+    yield* input.store.setLayers(drawn, [
+      Schema.decodeUnknownSync(ConfigAgent.Info)({
+        name: display,
+        title: request.title,
+        system: request.brief,
+        mode: "primary",
+        ...(request.personality === undefined ? {} : { personality: request.personality }),
+      }),
+    ])
+    yield* input.refresh
+    return { id: drawn, name: display }
+  }),
+  retire: Effect.fn("ColleagueHandoff.retire")(function* (colleague) {
+    yield* input.store.removeAgent(colleague)
+    yield* AgentUsage.forget(input.db, colleague)
+    yield* input.refresh
+    return true
+  }),
   deliver: Effect.fn("ColleagueHandoff.deliver")(function* (request) {
     const chat = yield* RosterChat.chatFor(input.db, request.colleague)
     if (chat === undefined) return { delivered: false, started: false }
@@ -106,8 +160,18 @@ export const layer = Layer.effect(
     const wake = yield* SessionRunCoordinator.Wake
     // ONE implementation, reached two ways. The layer is for graphs that can resolve services at
     // build time; `fromParts` is for the per-request handler that cannot.
+    const store = yield* AgentConfigStore.Service
+    const agents = yield* AgentV2.Service
     return Service.of(
-      fromParts({ db, events, session: (id) => sessions.get(id), wake: (id) => wake.wake(id) }),
+      fromParts({
+        db,
+        events,
+        session: (id) => sessions.get(id),
+        wake: (id) => wake.wake(id),
+        store,
+        refresh: agents.reload(),
+        takenNames: agents.all().pipe(Effect.map((all) => all.flatMap((one) => [String(one.id), one.name ?? ""]))),
+      }),
     )
   }),
 )
@@ -115,5 +179,12 @@ export const layer = Layer.effect(
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [Database.node, EventV2.node, SessionStore.node, SessionRunCoordinator.wakeNode],
+  deps: [
+    Database.node,
+    EventV2.node,
+    SessionStore.node,
+    SessionRunCoordinator.wakeNode,
+    AgentConfigStore.node,
+    AgentV2.node,
+  ],
 })

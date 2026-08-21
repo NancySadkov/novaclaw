@@ -11,7 +11,7 @@ import type { SessionExecutionAttempt } from "@novaclaw/core/session/execution-a
 
 export type Request = Extract<
   SessionWorkerProtocol.WorkerMessage,
-  { readonly type: "permission-assert" | "question-ask" | "spawn-child" | "await-child" | "colleague-ask" }
+  { readonly type: "permission-assert" | "question-ask" | "spawn-child" | "await-child" | "colleague-request" }
 >
 export type Reply = Extract<
   SessionWorkerProtocol.HostMessage,
@@ -45,7 +45,7 @@ export const handle = Effect.fn("SessionWorkerInteractionBridge.handle")(functio
   readonly message: Request
 }) {
   const reject = () =>
-    input.message.type === "colleague-ask"
+    input.message.type === "colleague-request"
       ? ({ ...identity(input.message), type: "colleague-result" as const, outcome: "rejected" as const } as Reply)
       : input.message.type === "await-child"
       ? ({ ...identity(input.message), type: "await-child-result" as const, outcome: "rejected" as const } as Reply)
@@ -125,13 +125,32 @@ export const handle = Effect.fn("SessionWorkerInteractionBridge.handle")(functio
    * ⚠️ And the host resolves WHICH chat. The worker names a colleague, never a session id, so it
    * cannot address a conversation it happened to learn the id of.
    */
-  if (input.message.type === "colleague-ask") {
+  if (input.message.type === "colleague-request") {
+    const request = input.message.input
+    if (request.op === "hire") {
+      const hired = yield* input.colleague
+        .hire({
+          title: request.title,
+          brief: request.brief,
+          ...(request.personality === undefined ? {} : { personality: request.personality }),
+        })
+        .pipe(Effect.exit)
+      if (!Exit.isSuccess(hired)) return reject()
+      return {
+        ...identity(input.message),
+        type: "colleague-result" as const,
+        outcome: "hired" as const,
+        hiredID: hired.value.id,
+        hiredName: hired.value.name,
+      }
+    }
+    if (request.op === "retire") {
+      const retired = yield* input.colleague.retire(request.colleague).pipe(Effect.exit)
+      if (!Exit.isSuccess(retired)) return reject()
+      return { ...identity(input.message), type: "colleague-result" as const, outcome: "retired" as const }
+    }
     const delivered = yield* input.colleague
-      .deliver({
-        from: input.lease.sessionID,
-        colleague: input.message.input.colleague,
-        message: input.message.input.message,
-      })
+      .deliver({ from: input.lease.sessionID, colleague: request.colleague, message: request.message })
       .pipe(Effect.exit)
     if (!Exit.isSuccess(delivered)) return reject()
     return delivered.value.delivered

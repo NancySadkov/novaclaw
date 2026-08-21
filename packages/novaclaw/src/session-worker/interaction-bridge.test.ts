@@ -44,7 +44,11 @@ const unusedQuestion = {
 } as QuestionV2.Interface
 
 /** Colleague hand-off is host-side; these cases exercise the OTHER requests, so it must never run. */
-const colleagueStub = { deliver: () => Effect.die("unused") } as ColleagueHandoff.Interface
+const colleagueStub = {
+  deliver: () => Effect.die("unused"),
+  hire: () => Effect.die("unused"),
+  retire: () => Effect.die("unused"),
+} as ColleagueHandoff.Interface
 
 test("permission assertion and question answers stay in host services", async () => {
   const permission = {

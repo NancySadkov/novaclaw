@@ -55,7 +55,7 @@ export interface Input {
   readonly onInteractionRequest?: (
     message: Extract<
       SessionWorkerProtocol.WorkerMessage,
-      { readonly type: "permission-assert" | "question-ask" | "spawn-child" | "await-child" | "colleague-ask" }
+      { readonly type: "permission-assert" | "question-ask" | "spawn-child" | "await-child" | "colleague-request" }
     >,
     signal: AbortSignal,
   ) => Promise<
@@ -284,7 +284,7 @@ export function spawn(input: Input): Handle {
       case "await-child":
       // A colleague hand-off rides this channel for the same reason spawn does: it needs the host's
       // LOCATION services, and this is the one worker→host path already resolved inside `runLocated`.
-      case "colleague-ask":
+      case "colleague-request":
       case "spawn-child": {
         if (!ready) {
           finish({ type: "protocol-error", detail: "interaction request arrived before ready" })
@@ -293,7 +293,7 @@ export function spawn(input: Input): Handle {
         const request = input.onInteractionRequest
         if (!request) {
           send(
-            message.type === "colleague-ask"
+            message.type === "colleague-request"
               ? {
                   version: SessionWorkerProtocol.VERSION,
                   type: "colleague-result",

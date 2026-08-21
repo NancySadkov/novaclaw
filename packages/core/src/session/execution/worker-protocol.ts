@@ -108,9 +108,12 @@ export const ColleagueResultMessage = Schema.Struct({
   ...Identity,
   type: Schema.Literal("colleague-result"),
   requestID: Schema.String,
-  outcome: Schema.Literals(["delivered", "no-chat", "rejected"]),
+  outcome: Schema.Literals(["delivered", "no-chat", "hired", "retired", "rejected"]),
   /** Whether anything is actually running their chat — `false` means durable but dormant. */
   started: Schema.Boolean.pipe(Schema.optional),
+  /** The new colleague's id and display name; present only when `outcome` is "hired". */
+  hiredID: Schema.String.pipe(Schema.optional),
+  hiredName: Schema.String.pipe(Schema.optional),
 }).annotate({ identifier: "SessionWorker.ColleagueResult" })
 
 export const SpawnResultMessage = Schema.Struct({
@@ -249,6 +252,9 @@ export const DeviceReport = Schema.Struct({
  * — the host uses the LEASE's session id.** A worker can therefore spawn children of itself and of
  * nothing else, and that property is structural rather than checked.
  */
+/** The payload half of `ColleagueRequest` — ask a colleague, or staff the organization. */
+export type ColleagueRequestInput = (typeof ColleagueRequest.Type)["input"]
+
 /** The payload half of `SpawnChild` — what a worker may ask for. */
 export type SpawnChildInput = (typeof SpawnChild.Type)["input"]
 
@@ -271,7 +277,7 @@ export const AwaitChild = Schema.Struct({
 }).annotate({ identifier: "SessionWorker.AwaitChild" })
 
 /**
- * Hand work to a COLLEAGUE — the third worker→host operation, and a sibling of `SpawnChild` for the
+ * Colleague operations — the third worker→host channel, and a sibling of `SpawnChild` for the
  * same reason it exists at all.
  *
  * 🔴 A colleague's chat is not this worker's session, so admitting its input publishes an event
@@ -288,16 +294,30 @@ export const AwaitChild = Schema.Struct({
  * time, and a sender that waited would be one half of a deadlock over a question either could have
  * answered alone.
  */
-export const ColleagueAsk = Schema.Struct({
+export const ColleagueRequest = Schema.Struct({
   ...Identity,
-  type: Schema.Literal("colleague-ask"),
+  type: Schema.Literal("colleague-request"),
   requestID: Schema.String,
-  input: Schema.Struct({
-    /** Which colleague, by agent id. The host resolves their chat; the worker never names a session. */
-    colleague: Schema.String,
-    message: Schema.String,
-  }),
-}).annotate({ identifier: "SessionWorker.ColleagueAsk" })
+  input: Schema.Union([
+    Schema.Struct({
+      op: Schema.Literal("ask"),
+      /** Which colleague, by agent id. The host resolves their chat; the worker never names a session. */
+      colleague: Schema.String,
+      message: Schema.String,
+    }),
+    /** Staffing the organization. Whether the SENDER may do this is the org chart's business
+     *  (`tool/colleague.ts` → `mayStaff`) and the permission evaluator's; the host's business is that
+     *  the write lands and the live roster is re-materialised, which is why it cannot happen in the
+     *  worker — measured: a worker-side hire left the colleague durable and invisible. */
+    Schema.Struct({
+      op: Schema.Literal("hire"),
+      title: Schema.String,
+      brief: Schema.String,
+      personality: Schema.String.pipe(Schema.optional),
+    }),
+    Schema.Struct({ op: Schema.Literal("retire"), colleague: Schema.String }),
+  ]),
+}).annotate({ identifier: "SessionWorker.ColleagueRequest" })
 
 export const SpawnChild = Schema.Struct({
   ...Identity,
@@ -422,7 +442,7 @@ export const WorkerMessage = Schema.Union([
   DeviceReport,
   PermissionAssert,
   SpawnChild,
-  ColleagueAsk,
+  ColleagueRequest,
   AwaitChild,
   QuestionAsk,
   ExecutionAdvance,

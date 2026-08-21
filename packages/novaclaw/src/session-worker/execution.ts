@@ -2,6 +2,8 @@ export * as SessionExecutionWorker from "./execution"
 
 import { Cause, DateTime, Effect, Exit, Layer } from "effect"
 import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
+import { AgentV2 } from "@novaclaw/core/agent"
+import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
 import { Database } from "@novaclaw/core/database/database"
 import { EventV2 } from "@novaclaw/core/event"
 import { Log } from "@novaclaw/schema/log"
@@ -97,6 +99,10 @@ export const layer = Layer.effect(
     const attempts = yield* SessionExecutionAttempt.Service
     const scheduler = yield* SessionScheduler.Service
     const database = yield* Database.Service
+    // Staffing the roster is a HOST act (see the hand-off below): the store is the durable truth and
+    // the live roster is this process's snapshot, so both are resolved here, once, at layer build —
+    // never inside the per-request handler, which is the trap `SessionJoin` warns about above.
+    const agentConfig = yield* AgentConfigStore.Service
     const ownerID = `server_${crypto.randomUUID()}`
     const command = SessionWorkerCommand.current()
 
@@ -197,6 +203,11 @@ export const layer = Layer.effect(
             onInteractionRequest: (message) =>
               runLocated(
                 Effect.gen(function* () {
+                  // ⚠️ Resolved HERE, like `spawner` below and unlike `join`: `AgentV2` IS a
+                  // location node, so this is the ordinary path rather than the per-request trap.
+                  // The distinction the warning draws is "already in the location graph", not
+                  // "resolved inside the handler".
+                  const roster = yield* AgentV2.Service
                   return yield* SessionWorkerInteractionBridge.handle({
                     permission: yield* PermissionV2.Service,
                     question: yield* QuestionV2.Service,
@@ -216,6 +227,15 @@ export const layer = Layer.effect(
                       db: database.db,
                       events,
                       session: (id) => store.get(id),
+                      // Staffing runs here too, and must: a hire written from inside the worker
+                      // reloads the WORKER's roster, leaving the colleague durable and invisible to
+                      // the instance — measured 2026-08-21, `Procius` was in the store and absent
+                      // from `GET /api/agent`.
+                      store: agentConfig,
+                      refresh: roster.reload(),
+                      takenNames: roster
+                        .all()
+                        .pipe(Effect.map((all) => all.flatMap((one) => [String(one.id), one.name ?? ""]))),
                       // `true` is honest on THIS path and is not a guess: the coordinator either
                       // starts a drain for that session or marks a pending wake on the one already
                       // running, so the receiver's turn happens either way. The relay's own `wake`
