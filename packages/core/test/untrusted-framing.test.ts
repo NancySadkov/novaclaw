@@ -757,6 +757,16 @@ const NO_EXTERNAL = [
   // process measured about the machine it is running on; no party other than the user is involved.
   "resource-status.ts",
   "revert.ts",
+  // Reads the CALLING AGENT'S OWN configuration row and says it back to that same agent — its model,
+  // memory setting, step budget, job title, personality. No party other than the user is on the path.
+  //
+  // ⚠️ The judgement call, recorded rather than hidden: a colleague's `system` and `title` can be
+  // written by NOVA rather than typed by the user (`colleague hire` composes a brief with a model).
+  // That is still not external content by this file's rule — the tool fetches nothing, and the text
+  // is this instance's own configuration being read back to the very agent it configures. It would
+  // become framed the day a brief could arrive from another INSTANCE over P2P, which is the same
+  // boundary `community` already frames at.
+  "self.ts",
   // Pure parser over the command text already supplied to `bash`; it fetches no bytes and returns
   // only structural approval metadata (segments and redirect targets).
   "shell-approval.ts",

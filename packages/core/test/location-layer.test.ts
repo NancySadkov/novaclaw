@@ -72,6 +72,12 @@ const residentTools = [
   // unnoticed, because the change was verified by its own changed-area suites: exactly the failure
   // `changed-area suites are not the TREE` names.
   "read",
+  // RESIDENT, and the ratchet's question was answered before it was added: introspection is REACTIVE
+  // — the user asks "why did you forget that?" and the colleague must be able to answer NOW. Deferred
+  // disclosure works for tools a session reaches for after something happens (`log` after a failure);
+  // a question about the agent itself gives the model no cue that a tool exists to answer it, and a
+  // wrong guess about your own configuration reads to a user as a lie rather than as ignorance.
+  "self",
   "skill",
   "spawn",
   "todowrite",
@@ -235,6 +241,22 @@ describe("LocationServiceMap", () => {
           // `build` session's prompt is unchanged and Nova's carries the 2,078 bytes that make it a
           // CEO. This measurement is the agentless worst case.
           //
+          // RAISED 2026-08-21, 33,000 → 34,250, for `self` — the introspection tool the owner asked for
+          // ("each agent should have introspection tool, which would allow it to see their
+          // configuration"). A/B measured before the number moved: **32,822 without it, 34,065 with —
+          // 1,243 bytes.**
+          //
+          // *Why not deferred?* Introspection is REACTIVE. `log` is reached after a failure and `kb`
+          // when recall falls short — both are moments that cue a search. "Why did you forget that?"
+          // cues nothing: the model has no reason to suspect a tool exists to answer a question about
+          // ITSELF, and a wrong guess about your own configuration reads to a user as a lie rather
+          // than as ignorance.
+          //
+          // *Who pays?* Working agents only. The machinery (title, summary, compaction) carries
+          // `* → deny`, and `materialize` withdraws a wholly-denied tool; a short-chat session is
+          // offered nothing but Upgrade. So the per-turn passes that run on every single turn are
+          // unchanged.
+          //
           // *Could it be cheaper?* It was trimmed twice first — 122 characters out of the new
           // wording, dropping the illustrative examples and the long MIME list — which took it from
           // 32,699 to 32,577. What remains is the clause that does the work. The ask for a
@@ -250,7 +272,7 @@ describe("LocationServiceMap", () => {
           // mechanically — a page body leaking into the description turns it red.
           const fullAgentTools = blockedState.tools.filter((tool) => ShortChat.offered(undefined, tool.name))
           const residentBytes = Buffer.byteLength(JSON.stringify(fullAgentTools))
-          expect(residentBytes).toBeLessThan(33_000) // observed 32,822 on 2026-08-21 (99.5% of 33,000)
+          expect(residentBytes).toBeLessThan(34_250) // observed 34,065 on 2026-08-21 (99.5% of 34,250)
           const chatTools = blockedState.tools.filter((tool) => ShortChat.offered(true, tool.name))
           expect(chatTools.map((tool) => tool.name)).toEqual(["upgrade_chat"])
           expect(Buffer.byteLength(JSON.stringify(chatTools))).toBeLessThan(1_500)

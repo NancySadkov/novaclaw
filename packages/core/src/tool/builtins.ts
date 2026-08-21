@@ -18,6 +18,7 @@ import { LogTool } from "./log"
 import { MessengerTool } from "./messenger"
 import { PermissionTool } from "./permission"
 import { ProfileTool } from "./profile"
+import { SelfTool } from "./self"
 import { QualityProvisionTool } from "./quality-provision"
 import { ReadTool } from "./read"
 import { SessionTool } from "./session"
@@ -147,6 +148,7 @@ export const node = makeLocationNode({
     ReadTool.node,
     ReadHexTool.node,
     RecipeTool.node,
+    SelfTool.node,
     SessionTool.node,
     ResourceStatusTool.node,
     RegisterAppTool.node,

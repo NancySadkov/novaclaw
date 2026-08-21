@@ -38181,6 +38181,9 @@
           "archiveChats": {
             "type": "boolean"
           },
+          "directory": {
+            "type": "string"
+          },
           "description": {
             "type": "string"
           },

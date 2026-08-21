@@ -1,0 +1,134 @@
+export * as SelfTool from "./self"
+
+import { Effect, Layer, Schema } from "effect"
+import { AgentV2 } from "../agent"
+import { AgentWorkspace } from "../agent/workspace"
+import { makeLocationNode } from "../effect/app-node"
+import { ToolRegistry } from "./registry"
+import { Tool } from "./tool"
+import { Tools } from "./tools"
+
+// A colleague reading its OWN configuration (owner, 2026-08-21: *"each agent should have an
+// introspection tool, which would allow it to see their configuration — outside of name and folder,
+// which are part of system prompt"*).
+//
+// 🔴 **Why an officer needs this at all.** Under the roster a colleague is a role record someone
+// else edits: the user changes its model in a dialog, turns its memory off, gives it a step budget.
+// The agent is never told. So a model asked "why did you forget that?" or "can you take on something
+// bigger?" is guessing about its own constitution — and a guess about yourself reads to a user as a
+// lie rather than as missing information.
+//
+// ⚠️ **Name and folder are NOT here**, and that is the owner's line, not an oversight: both are
+// already in the system prompt, so repeating them through a tool would create two answers to one
+// question — and the day the two disagree, the model has no way to know which is current.
+
+export const name = "self"
+
+export const description = `Look up your own configuration on this NovaClaw's roster — the model you think with, whether you keep memories, your step budget, your job title and personality, and whether you may hand work to colleagues. Call this when a question is about YOU rather than about the work: why you did or did not remember something, whether you can take on a longer task, or what you are set up to do. Your name and working folder are already in your prompt and are not repeated here.`
+
+/** No arguments: a colleague's own profile is small, and there is nothing to filter on. */
+export const Input = Schema.Struct({})
+
+export const Output = Schema.Struct({
+  title: Schema.optional(Schema.String),
+  personality: Schema.optional(Schema.String),
+  model: Schema.optional(Schema.String),
+  memory: Schema.optional(Schema.String),
+  archiveChats: Schema.optional(Schema.Boolean),
+  steps: Schema.optional(Schema.Number),
+  canAddressColleagues: Schema.Boolean,
+  workingInOwnScratch: Schema.Boolean,
+})
+export type Output = typeof Output.Type
+
+/**
+ * The lines a model reads. Prose rather than JSON: this answers a question about the agent ITSELF,
+ * and the sentence a model can quote back to its user is worth more than a struct it has to
+ * describe. Every line states the consequence, not just the value — `memory: none` means nothing to
+ * a model that has not been told what `none` does to it.
+ */
+export const toModelOutput = (output: Output): string => {
+  const lines: string[] = []
+  if (output.title) lines.push(`Your job here: ${output.title}.`)
+  if (output.personality) lines.push(`How you are meant to come across: ${output.personality}`)
+  lines.push(
+    output.model
+      ? `You think with ${output.model} — the user chose it for you, and it is the same in every chat you have.`
+      : `You think with this instance's default model; nobody has pinned one to you.`,
+  )
+  lines.push(
+    output.memory === "none"
+      ? `You are a THROWAWAY: you remember nothing between chats and nothing you are told is kept. Say so if you are asked to remember something.`
+      : `You keep your own memories, private to you — no other colleague reads them.` +
+          (output.archiveChats === false
+            ? ` Your compacted conversations are NOT archived, so anything that scrolls out of this chat is gone.`
+            : ` Compacted conversations are archived into your memory, so you can search them later.`),
+  )
+  if (output.steps !== undefined) lines.push(`You may take up to ${output.steps} steps in one turn.`)
+  lines.push(
+    output.canAddressColleagues
+      ? `You may hand work to colleagues with the \`colleague\` tool.`
+      : `You cannot address other colleagues; work that is not yours goes back to the user.`,
+  )
+  if (output.workingInOwnScratch)
+    lines.push(`You are working in your own scratch folder — the user has not pointed you at a project.`)
+  return lines.join("\n")
+}
+
+export const layer = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const tools = yield* Tools.Service
+    const agents = yield* AgentV2.Service
+
+    // `.orDie` like every other builtin: a tool that cannot REGISTER is a boot-time defect, not a
+    // condition a turn can handle. Without it the registration error rides the layer's error channel
+    // into the location graph and surfaces somewhere unrelated — it landed on `V2Session.spawn`.
+    yield* tools
+      .register({
+      [name]: Tool.make({
+        description,
+        input: Input,
+        output: Output,
+        toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
+        // Read through to the LIVE roster on every call (ruling 3): a colleague reconfigured mid-chat
+        // must answer with what it is now, not with a snapshot taken when the tool was registered.
+        // That is the whole point — the user edits the dialog and the agent is not otherwise told.
+        execute: (_input, context) =>
+          Effect.gen(function* () {
+            const id = String(context.agent ?? "")
+            const own = id === "" ? undefined : yield* agents.get(AgentV2.ID.make(id))
+            if (own === undefined)
+              return {
+                canAddressColleagues: false,
+                workingInOwnScratch: false,
+              } satisfies Output
+            const record = own as unknown as Record<string, unknown>
+            const model = own.model ? `${own.model.providerID}/${own.model.id}` : undefined
+            const text = (key: string) => (typeof record[key] === "string" ? (record[key] as string) : undefined)
+            return {
+              ...(text("title") === undefined ? {} : { title: text("title")! }),
+              ...(text("personality") === undefined ? {} : { personality: text("personality")! }),
+              ...(model === undefined ? {} : { model }),
+              ...(text("memory") === undefined ? {} : { memory: text("memory")! }),
+              ...(typeof record["archiveChats"] === "boolean" ? { archiveChats: record["archiveChats"] } : {}),
+              ...(typeof record["steps"] === "number" ? { steps: record["steps"] } : {}),
+              // Read from the RULESET rather than from the agent's id: "may this colleague delegate"
+              // is a permission question, and answering it from a name would go stale the moment the
+              // floor changes (it did, twice, on 2026-08-21).
+              canAddressColleagues: (own.permissions ?? []).some(
+                (rule) => rule.action === "colleague" && rule.effect === "allow",
+              ),
+              workingInOwnScratch: AgentWorkspace.isOwnScratch({ agentID: id, directory: text("directory") }),
+            } satisfies Output
+          }),
+        }),
+      })
+      .pipe(Effect.orDie)
+  }),
+)
+
+export const node = makeLocationNode({
+  name: "tool/self",
+  layer,
+  deps: [ToolRegistry.node, AgentV2.node],
+})

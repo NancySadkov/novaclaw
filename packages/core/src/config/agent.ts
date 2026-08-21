@@ -48,6 +48,22 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
    *  recall is not enough. Default ON (`undefined` = on) — the owner's rule is "unless the officer's
    *  settings disable it". Ignored for a throwaway, which keeps nothing by definition. */
   archiveChats: Schema.Boolean.pipe(Schema.optional),
+  /**
+   * The FOLDER this colleague works on — its project (owner, 2026-08-21).
+   *
+   * 🔴 A property of the COLLEAGUE, not of a chat. The prompt area used to ask which folder a new
+   * chat should run in, which made "where does this work happen" a per-conversation question and left
+   * a named officer with no project of its own. Under the roster it is part of the job: the
+   * bookkeeper works on the books, and you assign it there once.
+   *
+   * Absent = the colleague's own scratch folder (`Scratch.forAgent`), so every officer always has a
+   * real place to work without the user having to choose one.
+   *
+   * ⚠️ Changing it MESSAGES the colleague (`AgentWorkspace.reassignmentNotice`): an agent told
+   * nothing would go on describing the project it was moved off, and a stale mental model is worse
+   * than an interruption.
+   */
+  directory: Schema.String.pipe(Schema.optional),
   description: Schema.String.pipe(Schema.optional),
   mode: Schema.Literals(["subagent", "primary", "all"]).pipe(Schema.optional),
   hidden: Schema.Boolean.pipe(Schema.optional),

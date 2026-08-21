@@ -3797,6 +3797,7 @@ export type ConfigV2Agent = {
   avatar?: string
   memory?: "own" | "none"
   archiveChats?: boolean
+  directory?: string
   description?: string
   mode?: "subagent" | "primary" | "all"
   hidden?: boolean
