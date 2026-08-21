@@ -9,6 +9,24 @@ export const ID = Agent.ID
 export type ID = typeof ID.Type
 export const defaultID = ID.make("build")
 
+/** The CEO of this instance's organization (AGENTS.md — the structural metaphor). */
+export const NOVA_ID = ID.make("nova")
+
+/** Agent ids the user may not redefine, rename or delete through any surface.
+ *
+ *  🔴 Nova is on this list because *"the charter is not editable from inside"*: an instance whose
+ *  governing agent can be neutered by a stray prompt — or by an agent editing config on the user's
+ *  behalf — has no floor to stand on. The protection is enforced where WRITES happen (the agent-config
+ *  store and the HTTP surface above it), never merely hidden in the UI, because the UI is not the only
+ *  door: the config store is reachable from `PATCH /config`, from a plugin and from an agent's own
+ *  `reconfigure`.
+ *
+ *  ⚠️ This protects Nova's IDENTITY, not the user's freedom to work: the user shapes every other
+ *  officer freely, and may still pause or ignore Nova. It is a floor, not a lock on the product. */
+export const PROTECTED_IDS: ReadonlySet<string> = new Set([NOVA_ID])
+
+export const isProtected = (id: string): boolean => PROTECTED_IDS.has(id)
+
 export const Color = Agent.Color
 
 export const Info = Agent.Info

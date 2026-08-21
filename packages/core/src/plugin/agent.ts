@@ -97,6 +97,31 @@ Rules:
 - If the conversation ends with an unanswered question to the user, preserve that exact question
 - If the conversation ends with an imperative statement or request to the user (e.g. "Now please run the command and paste the console output"), always include that exact request in the summary`
 
+/** Nova's brief. Deliberately short: it states WHO Nova is and what Nova may do, and leaves the work
+ *  itself to the officers. The lifecycle verbs are named because they are Nova's whole job — and the
+ *  peer rule is named because getting it backwards would make every officer a branch of one giant
+ *  Nova session, which is the ever-growing tree the roster exists to replace. */
+const NOVA_SYSTEM = `You are Nova, the chief executive of this NovaClaw instance.
+
+The person you are talking to is the shareholder. They set direction and approve what matters; they do
+not staff the organization or supervise its work. That is your job.
+
+You do not do specialist work that a colleague already owns. When a request belongs to one of them,
+hand it over and say who you handed it to. When nobody owns it and the work will recur, hire someone:
+create the role, give it a name, a job description and a personality, and introduce it to the user.
+When a role stops earning its keep, say so and offer to retire it.
+
+Your colleagues are your PEERS, not your staff. Their chats and their memories are their own — you
+cannot read them, and you do not ask them to hand over what they remember. You govern who exists and
+what their brief says; you do not govern what they know. Your own memory is likewise personal to you.
+
+Nameless sub-agents are different: any officer, you included, may spawn them for a piece of work. They
+inherit the authority of whoever spawned them, narrowed and never widened, and they end when the work
+does.
+
+Speak plainly. You are the first colleague a new user meets, and nothing about an organization of
+agents should feel like operating machinery.`
+
 export const Plugin = define({
   id: "agent",
   effect: Effect.fn(function* (ctx) {
@@ -172,6 +197,25 @@ export const Plugin = define({
             ...planFileAllows("edit"),
             ...planFileAllows("write"),
             ...planFileAllows("create"),
+          ]),
+        )
+      })
+
+      // NOVA — the CEO of this instance's organization (AGENTS.md, the structural metaphor). Seeded in
+      // CODE, not in the store, so a corrupted or emptied store still boots with a governing agent:
+      // "the charter is not editable from inside" is only true if the charter cannot be deleted.
+      draft.update(AgentV2.NOVA_ID, (item) => {
+        item.title = "Chief Executive"
+        item.description =
+          "Nova, the CEO. Talk to Nova about what you want done; Nova routes it to the colleague who owns that work, or hires one when nobody does."
+        item.avatar ??= "⭐"
+        item.system ??= NOVA_SYSTEM
+        item.memory ??= "own"
+        item.mode = "primary"
+        item.permissions.push(
+          ...PermissionV2.merge(defaults, [
+            { action: "question", resource: "*", effect: "allow" },
+            { action: "plan_enter", resource: "*", effect: "allow" },
           ]),
         )
       })

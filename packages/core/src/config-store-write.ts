@@ -2,6 +2,7 @@ export * as ConfigStoreWrite from "./config-store-write"
 
 import { Cause, Effect, Exit, Option, Schema } from "effect"
 import { Log } from "@novaclaw/schema/log"
+import { AgentV2 } from "./agent"
 import { AgentConfigStore } from "./agent-config-store"
 import { CatalogSeed } from "./catalog-seed"
 import { CatalogStore } from "./catalog-store"
@@ -1082,6 +1083,17 @@ const removeOne = (
         return refuse(
           "refused",
           `removing all of "${key}" at once is not expressible — name the entry, e.g. ["${key}", "<name>"]`,
+        )
+      // 🔴 The governing agent cannot be deleted (AGENTS.md — the structural metaphor: *"the charter
+      // is not editable from inside"*). Refused HERE, at the one door every config write and removal
+      // passes through, rather than in the roster UI — the UI is not the only caller, and a rule
+      // enforced only where it is displayed is a rule an agent's own `reconfigure` walks around.
+      // The reason names what DOES work, as every refusal in this map must.
+      if (key === "agents" && rest.length === 1 && AgentV2.isProtected(rest[0]!))
+        return refuse(
+          "refused",
+          `"${rest[0]}" is this instance's governing agent and cannot be removed — every other agent ` +
+            `on the roster can be, and you can always stop talking to this one.`,
         )
       return (yield* layered.remove(rest)) ? { key } : refuse("missing", `no such ${key} entry`)
     }

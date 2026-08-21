@@ -1038,8 +1038,19 @@ export const layer = Layer.effect(
       // Kept for the duration of this provider step so a failed `read` can correct the exact
       // remembered file claim that was actually put on the model's horizon.
       let recalledMemories: ReadonlyArray<MemoryClient.SearchHit> = []
+      // Which filing cabinets this turn may open (AGENTS.md — the structural metaphor). The set is
+      // built in `recall.ts` where a test can reach it, because "which scopes" IS the per-agent
+      // memory promise: it cannot be enforced by a label in the roster UI or by asking the model
+      // nicely. `undefined` = a throwaway agent with no memory at all, and it skips the whole leg —
+      // embedding and searching for a probe that must receive nothing is pure cost.
+      const memoryScopes = SessionRecall.recallScopes({
+        sessionID: session.id,
+        agentID: agent.id,
+        memory: agent.info?.memory,
+      })
       if (
         recallQuery !== undefined &&
+        memoryScopes !== undefined &&
         !ShortChat.enabled(config.shortChat) &&
         // ⚠️ No `MemorySetting.memoryEnabled()` here any more: the instance ceiling is applied
         // when the config resolves, so a reader that forgets it can no longer be off by omission.
@@ -1061,7 +1072,7 @@ export const layer = Layer.effect(
           .search({
             query: recallQuery,
             k: SessionRecall.recallPoolSize(budget),
-            scopes: [`session:${session.id}`, "global"],
+            scopes: memoryScopes,
             ...(recallVector === undefined ? {} : { embedding: recallVector }),
           })
           .pipe(Effect.orElseSucceed(() => []))

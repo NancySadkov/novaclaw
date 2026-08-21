@@ -23,9 +23,13 @@ import { Tools } from "./tools"
 // model CHAINS: `search` (find memories) → `neighbors` (what's linked) plus the deliberate writes
 // `remember` / `forget`. The measured KB-E/KB-V rules carry over: results are LINEARIZED text lines,
 // never nested JSON; a fruitless query settles as readable repair text (the model's next call IS the
-// repair loop); ToolFailure stays reserved for infra faults. Two SCOPES: `session:<id>` (this chat)
-// and `global` (durable, cross-chat). Memory disabled/unavailable → the ops degrade to repair text,
-// never a hard failure.
+// repair loop); ToolFailure stays reserved for infra faults. Memory disabled/unavailable → the ops
+// degrade to repair text, never a hard failure.
+//
+// THREE SCOPES, since the roster landed (AGENTS.md — the structural metaphor): `session:<id>` (this
+// chat), `agent:<id>` (this OFFICER's own cabinet, across its chats, invisible to every other agent)
+// and `global` (the household's shared facts, readable by all). A write defaults to the officer's
+// cabinet — a fact learned on the job belongs to the officer, not to the pile everyone reads.
 
 export const name = "kb"
 
@@ -33,9 +37,12 @@ const SearchOp = Schema.Struct({
   op: Schema.Literal("search"),
   query: Schema.String.annotate({ description: "Free-text query; matches remembered facts by keyword" }),
   k: Schema.Finite.pipe(Schema.optional).annotate({ description: "Max results (default 8)" }),
-  scope: Schema.Literals(["session", "global", "all"])
+  scope: Schema.Literals(["session", "agent", "global", "all"])
     .pipe(Schema.optional)
-    .annotate({ description: "session = this chat only · global = durable cross-chat · all (default)" }),
+    .annotate({
+      description:
+        "session = this chat only · agent = your own memory, across your chats · global = shared facts every agent knows · all (default)",
+    }),
 })
 
 const RememberOp = Schema.Struct({
@@ -44,9 +51,12 @@ const RememberOp = Schema.Struct({
   name: Schema.String.pipe(Schema.optional).annotate({
     description: "Short subject/label (e.g. the person or thing it's about)",
   }),
-  scope: Schema.Literals(["session", "global"])
+  scope: Schema.Literals(["session", "agent", "global"])
     .pipe(Schema.optional)
-    .annotate({ description: "global (default) = remember durably across all chats · session = only this chat" }),
+    .annotate({
+      description:
+        "agent (default) = your own durable memory · global = a fact about the user or household that every agent should know · session = only this chat",
+    }),
 })
 
 const ForgetOp = Schema.Struct({
@@ -81,9 +91,12 @@ const IngestOp = Schema.Struct({
   name: Schema.String.pipe(Schema.optional).annotate({
     description: "Short label for the source (defaults to the file name)",
   }),
-  scope: Schema.Literals(["session", "global"])
+  scope: Schema.Literals(["session", "agent", "global"])
     .pipe(Schema.optional)
-    .annotate({ description: "global (default) = available in every chat · session = only this chat" }),
+    .annotate({
+      description:
+        "agent (default) = readable in your own chats · global = readable by every agent · session = only this chat",
+    }),
 })
 
 export const Input = Schema.Union([SearchOp, RememberOp, ForgetOp, NeighborsOp, RelateOp, IngestOp])
@@ -128,8 +141,45 @@ export const searchRepair = (query: string): string =>
 const OVERFETCH = 3
 const OVERFETCH_CAP = 40
 
-const scopesForSearch = (session: string, scope: "session" | "global" | "all" | undefined): string[] =>
-  scope === "session" ? [session] : scope === "global" ? ["global"] : [session, "global"]
+/** The agent's own filing cabinet, or `undefined` when this session has no agent to own one.
+ *
+ *  🔴 **Why the surface grew a third literal instead of re-pointing `session`** (the decision
+ *  `todo/named-agents.md` reserved). Under the roster (AGENTS.md — the structural metaphor) there are
+ *  genuinely three durable places a fact can belong: this chat, this OFFICER across its chats, and the
+ *  household every agent shares. Re-pointing `session` at the agent would have kept the vocabulary
+ *  two-wide by making its own description ("this chat only") false, and a lying enum is worse than a
+ *  wider one — the model reads these strings and the user reads the same words in the UI. */
+export const agentScope = (agent: string | undefined): string | undefined =>
+  agent === undefined || agent === "" ? undefined : `agent:${agent}`
+
+/** Which scopes a `search` reads. `all` is everything this agent may see — never another agent's
+ *  cabinet, which is not reachable through any value of this parameter. */
+export const scopesForSearch = (
+  session: string,
+  agent: string | undefined,
+  scope: "session" | "agent" | "global" | "all" | undefined,
+): string[] => {
+  const own = agentScope(agent)
+  if (scope === "session") return [session]
+  if (scope === "global") return ["global"]
+  // A request for `agent` on a session that has none degrades to this chat rather than to `global`:
+  // widening a narrowing request is the one direction that can leak.
+  if (scope === "agent") return own === undefined ? [session] : [own]
+  return own === undefined ? [session, "global"] : [session, own, "global"]
+}
+
+/** Where a `remember`/`ingest` writes. The default is the OFFICER's cabinet — an officer's durable
+ *  fact belongs to the officer, not to whichever chat was open and not to the household pile every
+ *  other agent reads. With no agent, `global` remains the durable default, as before. */
+export const scopeForWrite = (
+  session: string,
+  agent: string | undefined,
+  scope: "session" | "agent" | "global" | undefined,
+): string => {
+  if (scope === "session") return session
+  if (scope === "global") return "global"
+  return agentScope(agent) ?? "global"
+}
 
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -172,6 +222,10 @@ export const layer = Layer.effectDiscard(
                       "Long-term memory is turned off for this chat or in Settings, so I can't recall or save memories right now.",
                   } satisfies Output
                 const sessionScope = `session:${context.sessionID}`
+                // The officer whose cabinet this turn writes to and reads from. A sub-agent carries its
+                // parent's agent through the config walk, so staff share their officer's cabinet and
+                // cannot reach a sibling's.
+                const agentID = sessionConfig.agent
                 switch (input.op) {
                   case "search": {
                     // The VECTOR leg: embedding the query makes the engine fuse vector KNN with FTS
@@ -184,7 +238,7 @@ export const layer = Layer.effectDiscard(
                         // Over-fetch, then re-rank down to k: ordering can only choose among what
                         // retrieval returned, so the candidate pool must be wider than the answer.
                         k: Math.min(k * OVERFETCH, OVERFETCH_CAP),
-                        scopes: scopesForSearch(sessionScope, input.scope),
+                        scopes: scopesForSearch(sessionScope, agentID, input.scope),
                         ...(queryVector === undefined ? {} : { embedding: queryVector }),
                       })
                       .pipe(Effect.orElseSucceed(() => []))
@@ -197,7 +251,7 @@ export const layer = Layer.effectDiscard(
                   }
                   case "remember": {
                     const id = "mem_" + ascending()
-                    const scope = input.scope === "session" ? sessionScope : "global"
+                    const scope = scopeForWrite(sessionScope, agentID, input.scope)
                     // Embed on write so this memory is reachable by the vector leg later; degrades to
                     // an FTS-only memory when no device is configured.
                     const vector = yield* Effect.promise(() => KbEmbedder.embedOne(input.text))
@@ -305,7 +359,7 @@ export const layer = Layer.effectDiscard(
                           message: `"${input.path}" looks like a binary file — ingest text documents only.`,
                         } satisfies Output
                       const label = input.name?.trim() || basename(target.canonical)
-                      const ingestScope = input.scope === "session" ? sessionScope : "global"
+                      const ingestScope = scopeForWrite(sessionScope, agentID, input.scope)
                       const passages = KbChunk.chunk(KbChunk.stripGutenberg(raw))
                       if (passages.length === 0)
                         return { ok: false, message: `"${label}" has no readable text to ingest.` } satisfies Output

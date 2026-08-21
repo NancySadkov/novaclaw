@@ -85,8 +85,23 @@ export const Plugin = define({
   }),
 })
 
-/** Apply ONE config fragment for one agent onto the draft (the historical per-document merge body). */
+/** Apply ONE config fragment for one agent onto the draft (the historical per-document merge body).
+ *
+ *  🔴 A PROTECTED agent's fragment is dropped whole. Nova is this instance's governing agent and its
+ *  identity is seeded in code (`plugin/agent.ts`), so a stored layer or a markdown file named `nova`
+ *  must not be able to rewrite its brief, hide it, disable it or hand it a different permission set —
+ *  *"the charter is not editable from inside"* (AGENTS.md, the structural metaphor). Dropped rather
+ *  than merged field-by-field: a partial override is the shape that looks harmless and still lands the
+ *  one field that matters. The refusal is LOUD — a silent drop is how a user concludes the product is
+ *  broken rather than that the write was refused. */
 function applyItem(draft: AgentDraft, agentID: AgentV2.ID, item: ConfigAgent.Info, global: Permission.Ruleset) {
+  if (AgentV2.isProtected(agentID)) {
+    console.warn(
+      `config: ignoring a definition for "${agentID}" — it is this instance's governing agent and its ` +
+        `profile is fixed in code. Create your own agent instead, or edit any other one.`,
+    )
+    return
+  }
   if (item.disabled) {
     draft.remove(agentID)
     return
@@ -107,6 +122,10 @@ function applyItem(draft: AgentDraft, agentID: AgentV2.ID, item: ConfigAgent.Inf
       Object.assign(agent.request.body, item.request.body ?? {})
     }
     if (item.system !== undefined) agent.system = item.system
+    if (item.title !== undefined) agent.title = item.title
+    if (item.personality !== undefined) agent.personality = item.personality
+    if (item.avatar !== undefined) agent.avatar = item.avatar
+    if (item.memory !== undefined) agent.memory = item.memory
     if (item.description !== undefined) agent.description = item.description
     if (item.mode !== undefined) agent.mode = item.mode
     if (item.hidden !== undefined) agent.hidden = item.hidden

@@ -67,6 +67,42 @@ const mentionsExactPath = (text: string, target: string): boolean => {
   return false
 }
 
+/** Which memory scopes THIS turn may read (AGENTS.md — *the structural metaphor*: the agent's private
+ *  memory scope is its filing cabinet, and a D&D companion's recall never reaches the trading desk).
+ *
+ *  - `session:<id>` — what was said in this chat.
+ *  - `agent:<id>` — the OFFICER's own cabinet, which is what makes the roster mean anything: it
+ *    outlives any one chat and no sibling agent can see it. Nova is not exempt and is not a
+ *    super-user — its memory is personal to it like everyone else's (owner, 2026-08-19).
+ *  - `global` — the household's shared facts (who the user is, how they like things), deliberately
+ *    readable by every agent: partitioning THOSE would make each new colleague a stranger.
+ *
+ *  ⚠️ `undefined` means this agent has NO memory at all — the owner's throwaway "Crashtest Joe". It is
+ *  distinct from an empty result: the caller must skip the whole recall leg (embed + search + inject),
+ *  not search with no scopes, or a probe pays for retrieval it must never receive.
+ *
+ *  A sub-agent is a child SESSION of its officer and carries the officer's agent id through the config
+ *  walk, so it inherits the same cabinet for free and cannot reach a sibling's. */
+export const recallScopes = (input: {
+  readonly sessionID: string
+  readonly agentID: string | undefined
+  readonly memory: "own" | "none" | undefined
+}): ReadonlyArray<string> | undefined => {
+  if (input.memory === "none") return undefined
+  const scopes = [`session:${input.sessionID}`]
+  if (input.agentID !== undefined && input.agentID !== "") scopes.push(`agent:${input.agentID}`)
+  scopes.push("global")
+  return scopes
+}
+
+/** Where a `remember` writes when the model does not say. An officer's durable facts belong to the
+ *  OFFICER, not to whichever chat happened to be open — that is the whole difference between a roster
+ *  and a session list. Falls back to the session when there is no agent to own it. */
+export const rememberScope = (input: {
+  readonly sessionID: string
+  readonly agentID: string | undefined
+}): string => (input.agentID !== undefined && input.agentID !== "" ? `agent:${input.agentID}` : `session:${input.sessionID}`)
+
 /** Recalled facts that cite an exact filesystem target. This is the provenance gate for automatic
  * correction: a failed read may invalidate a remembered file claim only when that memory actually
  * led the current turn to the missing path. Nearby names (`pi.c.bak`) deliberately do not match. */

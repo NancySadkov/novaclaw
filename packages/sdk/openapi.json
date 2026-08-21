@@ -38062,6 +38062,19 @@
           "system": {
             "type": "string"
           },
+          "title": {
+            "type": "string"
+          },
+          "personality": {
+            "type": "string"
+          },
+          "avatar": {
+            "type": "string"
+          },
+          "memory": {
+            "type": "string",
+            "enum": ["own", "none"]
+          },
           "description": {
             "type": "string"
           },
@@ -40101,6 +40114,32 @@
           "local_model_catalog": {
             "$ref": "#/components/schemas/ConfigV2LocalModelCatalog"
           },
+          "provider_media_limit": {
+            "type": "object",
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string",
+                  "enum": ["NaN"]
+                },
+                {
+                  "type": "string",
+                  "enum": ["Infinity"]
+                },
+                {
+                  "type": "string",
+                  "enum": ["-Infinity"]
+                },
+                {
+                  "type": "string",
+                  "enum": ["Infinity", "-Infinity", "NaN"]
+                }
+              ]
+            }
+          },
           "provider_capability": {
             "type": "object",
             "additionalProperties": {
@@ -40660,6 +40699,10 @@
         "required": ["directory", "root", "origin"],
         "additionalProperties": false
       },
+      "AgentMemory": {
+        "type": "string",
+        "enum": ["own", "none"]
+      },
       "AgentColor": {
         "anyOf": [
           {
@@ -40686,6 +40729,18 @@
           },
           "system": {
             "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "personality": {
+            "type": "string"
+          },
+          "avatar": {
+            "type": "string"
+          },
+          "memory": {
+            "$ref": "#/components/schemas/AgentMemory"
           },
           "description": {
             "type": "string"

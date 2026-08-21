@@ -140,6 +140,10 @@ describe("the built-in agents the plugin actually builds", () => {
         "compaction",
         "explore",
         "general",
+        // The CEO (AGENTS.md — the structural metaphor). Same ruleset as `build` plus the two
+        // interactive grants: Nova talks to the user and routes work, it does not carry authority
+        // its officers lack.
+        "nova",
         "plan",
         "summary",
         "title",

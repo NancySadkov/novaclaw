@@ -16,12 +16,24 @@ export const Color = Schema.Union([
 ]).annotate({ identifier: "Agent.Color" })
 export type Color = typeof Color.Type
 
+/** Memory reach of one agent. Mirrors `ConfigV2.Agent.memory` — the config side is the authoring
+ *  surface, this is the wire the roster UI reads. */
+export const Memory = Schema.Literals(["own", "none"]).annotate({ identifier: "Agent.Memory" })
+export type Memory = typeof Memory.Type
+
 export interface Info extends Schema.Schema.Type<typeof Info> {}
 export const Info = Schema.Struct({
   id: ID,
   model: Model.Ref.pipe(optional),
   request: Provider.Request,
   system: Schema.String.pipe(optional),
+  /** Roster profile — the durable half of a named agent's identity (AGENTS.md, the structural metaphor).
+   *  These ride the PROFILE, never the transcript, which is what makes them survive compaction. */
+  title: Schema.String.pipe(optional),
+  personality: Schema.String.pipe(optional),
+  avatar: Schema.String.pipe(optional),
+  /** `own` = private `agent:<id>` scope + `global`; `none` = a throwaway with no memory at all. */
+  memory: Memory.pipe(optional),
   description: Schema.String.pipe(optional),
   mode: Schema.Literals(["subagent", "primary", "all"]),
   hidden: Schema.Boolean,

@@ -165,6 +165,23 @@ describe("ConfigStoreWrite.remove — layer semantics", () => {
     }),
   )
 
+  it.effect("refuses to remove the GOVERNING agent, and says what does work", () =>
+    Effect.gen(function* () {
+      // AGENTS.md — the structural metaphor: *"the charter is not editable from inside."* The rule
+      // is enforced at this door, not in the roster UI, because this is the door an agent's own
+      // config write reaches. A stored `nova` row is written first so the refusal cannot be passing
+      // merely because there is nothing there to delete.
+      yield* ConfigStoreWrite.apply(decodeInfo({ agents: { nova: { description: "n" }, builder: { description: "b" } } }))
+      const refused = yield* refusalOf([["agents", "nova"]])
+      expect(refused.refusals[0]!.kind).toBe("refused")
+      expect(refused.message).toContain("governing agent")
+      // Every other agent stays removable — this is a floor under one identity, not a frozen roster.
+      yield* ConfigStoreWrite.remove([["agents", "builder"]])
+      const agents = yield* AgentConfigStore.Service
+      expect(Object.keys(yield* agents.agents())).toEqual(["nova"])
+    }),
+  )
+
   it.effect("refuses to wipe a whole layered KEY at once — the blast radius must be named", () =>
     Effect.gen(function* () {
       yield* ConfigStoreWrite.apply(decodeInfo({ agents: { reviewer: { description: "r" } } }))

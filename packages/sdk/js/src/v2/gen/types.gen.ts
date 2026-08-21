@@ -3790,6 +3790,10 @@ export type ConfigV2Agent = {
   variant?: string
   request?: ConfigV2ProviderRequest
   system?: string
+  title?: string
+  personality?: string
+  avatar?: string
+  memory?: "own" | "none"
   description?: string
   mode?: "subagent" | "primary" | "all"
   hidden?: boolean
@@ -4449,6 +4453,9 @@ export type ConfigInfo = {
     [key: string]: ConfigV2ProviderPreset
   }
   local_model_catalog?: ConfigV2LocalModelCatalog
+  provider_media_limit?: {
+    [key: string]: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
   provider_capability?: {
     [key: string]: {
       choice: "native" | "prompted" | "chat-only" | "unknown"
@@ -4624,6 +4631,8 @@ export type LocationInfo = {
   origin: string
 }
 
+export type AgentMemory = "own" | "none"
+
 export type AgentColor = string | "primary" | "secondary" | "accent" | "success" | "warning" | "error" | "info"
 
 export type AgentV2Info = {
@@ -4631,6 +4640,10 @@ export type AgentV2Info = {
   model?: ModelRef
   request: ProviderRequest
   system?: string
+  title?: string
+  personality?: string
+  avatar?: string
+  memory?: AgentMemory
   description?: string
   mode: "subagent" | "primary" | "all"
   hidden: boolean

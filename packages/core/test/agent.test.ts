@@ -119,6 +119,10 @@ describe("AgentV2", () => {
         "compaction",
         "explore",
         "general",
+        // Nova, the CEO (AGENTS.md — the structural metaphor). It joins the built-in roster and is
+        // held to the same floor as every other built-in below: governing WHO exists grants no
+        // ambient authority over what they may run.
+        "nova",
         "plan",
         "summary",
         "title",

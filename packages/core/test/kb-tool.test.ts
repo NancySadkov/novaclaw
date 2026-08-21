@@ -49,3 +49,59 @@ describe("KbTool rendering", () => {
     expect(KbTool.relType("   ")).toBe("related_to")
   })
 })
+
+// The roster's memory boundary, at the WRITE/READ surface the model actually drives (AGENTS.md — the
+// structural metaphor). The negative cases are the point: no value of `scope` reaches another
+// officer's cabinet, and a narrowing request is never widened.
+describe("KbTool scopes", () => {
+  test("search: all (the default) reads this chat, my own cabinet and the household", () => {
+    expect(KbTool.scopesForSearch("session:ses_1", "trader", undefined)).toEqual([
+      "session:ses_1",
+      "agent:trader",
+      "global",
+    ])
+    expect(KbTool.scopesForSearch("session:ses_1", "trader", "all")).toEqual([
+      "session:ses_1",
+      "agent:trader",
+      "global",
+    ])
+  })
+
+  test("search: no scope value can reach another agent's cabinet", () => {
+    for (const scope of ["session", "agent", "global", "all"] as const) {
+      expect(KbTool.scopesForSearch("session:ses_1", "dungeon-master", scope)).not.toContain("agent:trader")
+    }
+  })
+
+  test("search: each narrowing scope reads exactly one place", () => {
+    expect(KbTool.scopesForSearch("session:ses_1", "trader", "session")).toEqual(["session:ses_1"])
+    expect(KbTool.scopesForSearch("session:ses_1", "trader", "agent")).toEqual(["agent:trader"])
+    expect(KbTool.scopesForSearch("session:ses_1", "trader", "global")).toEqual(["global"])
+  })
+
+  test("search: asking for `agent` without one degrades to this chat, never to global", () => {
+    // Widening a narrowing request is the one direction that can leak: a session with no officer
+    // asking for "my own memory" must not be handed the household pile.
+    expect(KbTool.scopesForSearch("session:ses_1", undefined, "agent")).toEqual(["session:ses_1"])
+    expect(KbTool.scopesForSearch("session:ses_1", "", "agent")).toEqual(["session:ses_1"])
+  })
+
+  test("search: with no agent, the pre-roster shape is unchanged", () => {
+    expect(KbTool.scopesForSearch("session:ses_1", undefined, undefined)).toEqual(["session:ses_1", "global"])
+  })
+
+  test("write: defaults to the officer's cabinet, not the household pile", () => {
+    expect(KbTool.scopeForWrite("session:ses_1", "trader", undefined)).toBe("agent:trader")
+    expect(KbTool.scopeForWrite("session:ses_1", "trader", "agent")).toBe("agent:trader")
+  })
+
+  test("write: explicit scopes are honoured", () => {
+    expect(KbTool.scopeForWrite("session:ses_1", "trader", "session")).toBe("session:ses_1")
+    expect(KbTool.scopeForWrite("session:ses_1", "trader", "global")).toBe("global")
+  })
+
+  test("write: with no agent, global stays the durable default", () => {
+    expect(KbTool.scopeForWrite("session:ses_1", undefined, undefined)).toBe("global")
+    expect(KbTool.scopeForWrite("session:ses_1", "", undefined)).toBe("global")
+  })
+})
