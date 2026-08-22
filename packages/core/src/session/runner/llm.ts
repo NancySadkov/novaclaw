@@ -1883,7 +1883,15 @@ export const layer = Layer.effect(
           // SELECTED, which after a fallback is the sick model rather than the one that answered:
           // keying on it would let a successful turn on the healthy substitute clear the sick model's
           // record, send the next turn back to it, and flap one failed turn per cycle forever.
-          const ranOn = { providerID: String(model.provider), id: String(model.id) }
+          // ⚠️ **CATALOG identity, and the wire id is a different string.** `fromCatalogModel` builds
+          // the route with `id: model.api.id` — a model may deliberately route requests under an api
+          // id while the catalog, the config and the user know it by another (`test-model` vs
+          // `api-test-model` in `session-runner-model.test.ts`). `runner/model.ts` asks
+          // `ModelHealth.sick(selected)` with the CATALOG entry, so recording under the wire id would
+          // file every failure where nothing ever looks for it — the tracker would count forever and
+          // the fallback would never fire. It happens to agree for `spark-holo/holo3.1`, which is
+          // exactly why this survived being driven.
+          const ranOn = modelRef ?? { providerID: String(model.provider), id: String(model.id) }
           // ⚠️ **`hasAssistantFailed`, and the two obvious predicates are both WRONG here** — the
           // integration test caught each in turn. `llmFailure` alone misses a provider that streams
           // its fault as a `providerError` EVENT (the ordinary shape for an OpenAI-compatible

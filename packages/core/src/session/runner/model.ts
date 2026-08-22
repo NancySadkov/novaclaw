@@ -674,7 +674,19 @@ export const locationLayer = Layer.effect(
         // ⚠️ Never routes onto a model that is ALSO sick, and never away from the default onto
         // nothing: if the default is the thing failing, staying put and reporting its real error
         // beats bouncing between two dead endpoints and reporting neither.
-        if (selected && session.model) {
+        // ⚠️ **NO `session.model` GUARD, and it had one until it was driven.** The block above needs
+        // `session.model` because it reports what the user ASKED for and there is nothing else to
+        // name. This one does not: the question is whether the model this turn is about to use is
+        // failing, and where that choice came from is irrelevant.
+        //
+        // Copying the guard made the feature dead for the case it exists for. A colleague's model
+        // comes from its AGENT config, which `select()` applies — it never reaches `config.model`,
+        // which resolves from the SESSION ROW (`config-resolve.ts`: `model` → column `model`). So
+        // `session.model` is undefined for every roster colleague, and after the composer's per-chat
+        // model chip was removed on 2026-08-22 that is very nearly every session. Measured live the
+        // same day: holo3.1's endpoint went down, four turns failed with `Transport` in one process,
+        // and the fallback never fired once.
+        if (selected) {
           const at = yield* Clock.currentTimeMillis
           if (ModelHealth.sick(selected, at)) {
             const fallback = yield* catalog.model.default()

@@ -294,6 +294,27 @@ describe("SessionRunnerModel", () => {
     }),
   )
 
+  // 🔴 THE TWO IDENTITIES A MODEL HAS, and why health has to key on the catalog one.
+  //
+  // Measured 2026-08-22: holo3.1's endpoint went down, four turns failed with `Transport` in one
+  // process, and the "model gives errors" fallback never fired. Two causes, both invisible to every
+  // test that existed — this one pins the half that is a pure fact about the shapes.
+  it.effect("a resolved model's `id` is the API id, NOT the catalog id", () =>
+    Effect.gen(function* () {
+      const catalogEntry = model({ type: "aisdk", package: "@ai-sdk/openai", url: "https://openai.example/v1" })
+      const resolved = yield* SessionRunnerModel.fromCatalogModel(catalogEntry)
+      // The catalog knows it as `test-model`; the wire carries `api-test-model`. Anything that
+      // records a fact about a model from the RESOLVED object and looks it up from the CATALOG entry
+      // is filing under one key and reading from another — exactly how `ModelHealth` counted
+      // failures nobody ever read.
+      expect(String(resolved.id)).toBe("api-test-model")
+      expect(String(catalogEntry.id)).toBe("test-model")
+      expect(String(resolved.id)).not.toBe(String(catalogEntry.id))
+      // …and the PROVIDER does agree, which is why a half-correct key looks right at a glance.
+      expect(String(resolved.provider)).toBe(String(catalogEntry.providerID))
+    }),
+  )
+
   it.effect("rejects an explicit unavailable Session variant during model resolution", () =>
     Effect.gen(function* () {
       const catalog = model({ type: "aisdk", package: "@ai-sdk/openai", url: "https://openai.example/v1" })
