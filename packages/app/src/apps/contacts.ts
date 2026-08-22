@@ -38,6 +38,8 @@ export interface AgentLike {
    */
   readonly config?: Record<string, unknown> | undefined
   readonly avatar?: string | undefined
+  /** The colleague's own workspace — an absolute host path, derived server-side. Read-only. */
+  readonly workspace?: string | undefined
   readonly memory?: "own" | "none" | undefined
   /** Keep compacted conversations in this colleague's own memory (default on). */
   readonly archiveChats?: boolean | undefined

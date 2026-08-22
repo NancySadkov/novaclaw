@@ -1369,7 +1369,12 @@ export const dict = {
   // Erase Memory (owner, 2026-08-22) — for starting a run from a clean slate without reinstalling.
   // ⚠️ The wording names WHOSE memory goes, because "erase memory" reads as "this chat's" to most
   // people and the actual scope is every colleague on the roster plus Nova.
-  "settings.health.eraseMemory": "Erase everything every agent remembers",
+  // ⚠️ NOT "Erase everything…" — the Health tab already carries a control by that name and it is the
+  // FULL install reset. Two danger-styled buttons on one screen whose labels start with the same
+  // words is how somebody reaching for "just the memories" wipes their instance. This one names what
+  // goes (memory) and shares no leading word with the other; the owner's framing was the contrast
+  // itself: erase the RAGs "without resetting entire Novaclaw install".
+  "settings.health.eraseMemory": "Erase all agent memory",
   "settings.health.eraseMemory.confirm.title": "Erase all memory?",
   "settings.health.eraseMemory.confirm.description":
     "Every memory every colleague has — Nova included — is deleted permanently. Their chats, briefs and settings are untouched, and nothing is archived: this cannot be undone. Use it to start a run from a clean slate.",

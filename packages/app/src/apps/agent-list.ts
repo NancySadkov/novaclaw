@@ -43,6 +43,14 @@ export const listAgents = async (sdk: { agent: { list: () => Promise<{ data?: un
           ? { model: row["model"] as { providerID: string; id: string } }
           : {}),
         avatar: text("avatar"),
+        // ⚠️ Carried EXPLICITLY because this mapper is a hand-kept subset, and it dropped this field
+        // silently: the roster response stamped `workspace`, the API returned it, and the config
+        // dialog's "Browse …'s workspace" link never rendered because the value did not survive the
+        // trip. Same shape as the clone list, which lost `model`, `archiveChats`, `color` and `steps`
+        // the same way. It is NOT in `config` either — that spread is keyed on
+        // `ConfigAgent.Info.fields`, and `workspace` is derived rather than authored, so it appears
+        // in no config schema by design.
+        workspace: text("workspace"),
         color: text("color"),
         memory,
         ...(typeof row["archiveChats"] === "boolean" ? { archiveChats: row["archiveChats"] } : {}),
