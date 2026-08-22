@@ -1269,7 +1269,13 @@ export const layer = Layer.effect(
       // Tolerable in the meantime because the failure is benign in one direction: the worst case is
       // that delegation becomes available again late in a long run, which is the behaviour that
       // shipped before the gate existed.
-      const drivingASet = UnfinishedSet.asksForSet(lastRealUserText(context) ?? "")
+      // ⚠️ …UNLESS THE USER ASKED FOR DELEGATION. The gate below withholds `spawn` for the whole of a
+      // set request, which is right for *"describe each icon in this folder"* — but *"spawn a fleet of
+      // 6 sub-agents, each summarising a sixth"* trips the same `each` cue while the delegation IS the
+      // instruction. Measured on Qwen3.6-35B 2026-08-22: the officer called `spawn` six times and every
+      // call returned "Unknown tool: spawn", because the user's own order had withheld it.
+      const userText = lastRealUserText(context) ?? ""
+      const drivingASet = UnfinishedSet.asksForSet(userText) && !UnfinishedSet.asksToDelegate(userText)
       const toolMaterialization = isLastStep
         ? undefined
         : yield* tools.materialize(
@@ -1363,6 +1369,15 @@ export const layer = Layer.effect(
             memoryStance: SystemCompose.memoryStanceSection({
               memory: prepared.agent.info?.memory,
               archiveChats: prepared.agent.info?.archiveChats,
+            }),
+            // 🔴 Both flags read from the tools this turn ACTUALLY received, never from the registry
+            // or the ruleset — a section naming a tool the turn cannot call is a false description.
+            // Same source `perception`'s `canSpawn` already uses, and for the same reason.
+            delegation: SystemCompose.delegationSection({
+              canSpawn: (toolMaterialization?.definitions ?? []).some((tool) => tool.name === "spawn"),
+              canAddressColleagues: (toolMaterialization?.definitions ?? []).some(
+                (tool) => tool.name === "colleague",
+              ),
             }),
             projectScope: SystemCompose.projectScopeSection(config.permissionMode),
             // ⚠️ The scratch path is derived from the AGENT id, not from the session: a colleague's
@@ -2587,7 +2602,14 @@ export const layer = Layer.effect(
             const firstText = lastRealUserText(context)
             if (firstText !== undefined)
               setRequests.set(input.sessionID, {
-                asked: UnfinishedSet.asksForSet(firstText),
+                // 🔴 An explicit DELEGATION order is not a set for the harness to drive. Same
+                // exemption as the spawn gate above, applied at the latch so the STEER is suppressed
+                // too. Measured on Qwen3.6-35B 2026-08-22: an officer told to spawn six sub-agents did
+                // exactly that, reported the six child ids — and was then steered into reading
+                // `.gitattributes`, `.gitignore`, `AGENTS.md` one at a time, because "each" had marked
+                // the request as an unfinished set. The work was delegated; the set the harness went
+                // looking for was its own invention.
+                asked: UnfinishedSet.asksForSet(firstText) && !UnfinishedSet.asksToDelegate(firstText),
                 ...(UnfinishedSet.requestedLimit(firstText) === undefined
                   ? {}
                   : { limit: UnfinishedSet.requestedLimit(firstText) }),
@@ -2783,7 +2805,8 @@ export const layer = Layer.effect(
             const realUserText = lastRealUserText(context)
             if (!setRequests.has(input.sessionID) && realUserText !== undefined)
               setRequests.set(input.sessionID, {
-                asked: UnfinishedSet.asksForSet(realUserText),
+                // Same exemption as the sibling latch above — see its note.
+                asked: UnfinishedSet.asksForSet(realUserText) && !UnfinishedSet.asksToDelegate(realUserText),
                 ...(UnfinishedSet.requestedLimit(realUserText) === undefined
                   ? {}
                   : { limit: UnfinishedSet.requestedLimit(realUserText) }),

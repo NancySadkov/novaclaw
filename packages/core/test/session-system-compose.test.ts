@@ -29,7 +29,13 @@ describe("SystemCompose — per-model pre-prompt composition", () => {
   const baseParts: Required<
     Omit<
       SystemCompose.SystemPromptParts,
-      "modelPrePrompt" | "projectScope" | "toolDiscovery" | "perception" | "memoryStance" | "workspace"
+      | "modelPrePrompt"
+      | "projectScope"
+      | "toolDiscovery"
+      | "perception"
+      | "memoryStance"
+      | "workspace"
+      | "delegation"
     >
   > = {
     persona: "You are Nova.",

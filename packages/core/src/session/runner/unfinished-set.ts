@@ -52,6 +52,49 @@ const CUE_MATCHERS: readonly RegExp[] = COLLECTION_CUES.map((cue) => new RegExp(
  */
 export const asksForSet = (userText: string): boolean => CUE_MATCHERS.some((matcher) => matcher.test(userText))
 
+/** Words that name DELEGATION itself, rather than the set being worked through. */
+const DELEGATION_CUES = [
+  "spawn",
+  "sub agent",
+  "sub agents",
+  "subagent",
+  "subagents",
+  "sub-agent",
+  "sub-agents",
+  "delegate",
+  "in parallel",
+  "fleet of",
+  "workers",
+] as const
+
+const DELEGATION_MATCHERS: readonly RegExp[] = DELEGATION_CUES.map(
+  (cue) => new RegExp(String.raw`\b${cue.replaceAll("-", "[- ]")}\b`, "i"),
+)
+
+/**
+ * Did the user ASK for the work to be delegated?
+ *
+ * 🔴 **The exemption `asksForSet` needs, measured on Qwen3.6-35B 2026-08-22.** `llm.ts` withholds
+ * `spawn` for the whole of a set request, for a good and measured reason: the harness is the
+ * controller for a set, so a sub-agent becomes a second controller over the same work, and nine runs
+ * of a 400-icon prompt showed every delegating run covering less in more time.
+ *
+ * But that gate reads the same cue in two different sentences. *"Describe each icon in this folder"*
+ * is the case it was built for. *"Spawn a fleet of 6 sub-agents, each summarising a sixth of the
+ * file"* also contains `each` — and there the delegation IS the instruction. Measured: the officer
+ * called `spawn` six times, correctly, and every call came back **"Unknown tool: spawn"**, because
+ * the tool had been withheld by the cue in the user's own order. It then concluded it had no such
+ * tool and started reading files one at a time — the exact behaviour the gate exists to produce, in
+ * the one case where the user asked for the opposite.
+ *
+ * ⚠️ WORD boundaries, never substrings. The cue list this sits beside cost 835,145 tokens to learn
+ * that `"all "` matches the middle of *"Call the"*; `spawn` inside *"spawning"* is the same hazard in
+ * miniature, and `-` is matched as either a hyphen or a space so "sub-agent" and "sub agent" both
+ * count.
+ */
+export const asksToDelegate = (userText: string): boolean =>
+  DELEGATION_MATCHERS.some((matcher) => matcher.test(userText))
+
 /**
  * How many files ONE steer asks for.
  *

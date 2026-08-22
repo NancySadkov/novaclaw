@@ -218,6 +218,25 @@ export const fromParts = (input: {
     // colleague it is now writing to, this is the reply to it. One stream is the record (owner,
     // 2026-08-21: everything goes through the normal chat, never a sideband), so the stream is also
     // where the question "who spoke last?" is answered.
+    // 🔴 NEVER INTO YOUR OWN CHAT, checked at the DELIVERY layer and not only at the tool.
+    //
+    // `ColleagueTool.addressable` already filters the sender out of the roster it offers, and that is
+    // the layer a model meets. But `deliver` is the SHARED rule — the worker bridge reaches it, a
+    // host-side caller reaches it directly, and anything added later will too. A self-delivery
+    // appends to the conversation the sender is currently having: an infinite regress it cannot see
+    // it is starting, and one the hop counter cannot bound because every lap looks like a fresh ask.
+    //
+    // ⚠️ Found by writing `colleague-concurrency.test.ts`, which admitted one and passed. The rule
+    // existed in exactly one place and read as though it were everywhere.
+    const senderAgent = (yield* input.session(request.from))?.agent
+    if (senderAgent !== undefined && senderAgent === request.colleague)
+      return {
+        delivered: false,
+        started: false,
+        refused:
+          `Not delivered: ${request.colleague} is you. A message to yourself would land in this same ` +
+          `conversation. Say what you were going to say, or hand it to a different colleague.`,
+      }
     const context = yield* lastPeerContext(input.db, request.from)
     const askedByRecipient = context.label === request.colleague
     const turn = ColleagueNote.turnFor({ askedByRecipient })

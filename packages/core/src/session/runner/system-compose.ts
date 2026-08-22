@@ -361,6 +361,59 @@ export const perceptionSection = (input: {
 }
 
 /**
+ * WHO ELSE CAN DO WORK — and the difference between the two kinds.
+ *
+ * 🔴 **Measured on Qwen3.6-35B 2026-08-22, and it is why this section exists.** An officer told
+ * plainly to *"spawn a fleet of 6 sub-agents"* reached for the `colleague` tool and addressed ITSELF,
+ * six times. It then reasoned *"right, `marshal` is me — I need `spawn`"*, went looking for `spawn`
+ * with `tool_search`, and looped on the search four times without ever calling the tool, which was
+ * RESIDENT on its horizon the whole time.
+ *
+ * None of that is a bad tool description. The prompt simply never said the capability existed: the
+ * only mention of `spawn` anywhere in the system prompt sat inside the VISION section, behind a check
+ * for an image modality, so a text-only model was told nothing. And under this product's own
+ * vocabulary a "sub-agent" and a "colleague" are the same idea — both are other agents doing work —
+ * so a model reaching for the one it HAD been told about is making the reasonable inference.
+ *
+ * ⚠️ The two are named TOGETHER on purpose. Stating either alone leaves the model to guess how it
+ * relates to the other, which is precisely the guess that failed: what distinguishes them is not
+ * capability but IDENTITY — a colleague is a person on the roster with their own chat and their own
+ * memory, a sub-agent is nameless, temporary, and yours.
+ *
+ * ⚠️ Both flags come from the MATERIALIZED tool list, never the registry: a section naming a tool
+ * this turn cannot call is the false description ruling 2 forbids.
+ */
+export const delegationSection = (input: {
+  readonly canSpawn: boolean
+  readonly canAddressColleagues: boolean
+}): string | undefined => {
+  const lines: string[] = []
+  if (input.canSpawn)
+    lines.push(
+      "You can put WORK IN PARALLEL by spawning sub-agents. `spawn` creates a nameless helper that " +
+        "runs with your own authority, does one piece of work, and ends — it has no name, no chat of " +
+        "its own and no memory, and nobody but you is waiting on it. Use it whenever a task splits " +
+        "into independent parts: call `spawn` once per part, in the same turn, then collect what they " +
+        "return. Do not do the parts yourself when you have been asked to delegate them, and do not " +
+        "go looking for this tool — it is already in your tool list.",
+    )
+  if (input.canAddressColleagues)
+    lines.push(
+      "You can also hand work to a COLLEAGUE with `colleague`. A colleague is a different person on " +
+        "this instance's roster, with their own name, their own chat and their own memory. That is the " +
+        "opposite of a sub-agent: you use it when the work BELONGS to somebody else, not when you " +
+        "simply want more hands. Never address yourself — a message to your own name lands in this " +
+        "same conversation.",
+    )
+  if (input.canSpawn && input.canAddressColleagues)
+    lines.push(
+      "In short: `spawn` for more hands doing YOUR work, `colleague` for work that is somebody " +
+        "else's. If you are asked for several workers, sub-agents are what is being asked for.",
+    )
+  return lines.length === 0 ? undefined : lines.join("\n\n")
+}
+
+/**
  * ⚠️ **The turn-CLOSING instruction lived here and was CUT on 2026-08-11 — the day it shipped.**
  *
  * The idea: a settled turn renders as the answer with everything behind it folded under "Done", so
@@ -404,6 +457,8 @@ export interface SystemPromptParts {
   readonly projectScope?: string
   /** That this colleague keeps nothing between chats. Absent unless `memory: "none"`. */
   readonly memoryStance?: string
+  /** Who else can do work — `spawn` for more hands, `colleague` for somebody else's job. */
+  readonly delegation?: string
   /** The colleague's own scratch workspace, when it also has a project folder. */
   readonly workspace?: string
   /** The immutable kernel base context (environment, tools, skills) — composed LAST. */
@@ -441,6 +496,7 @@ export const composeSystemParts = (parts: SystemPromptParts): string[] =>
     parts.perception,
     // Beside those two for the third time and the same reason: a fact about what this runtime keeps.
     // A persona that says "I'll remember that for you" must not be able to sit on top of it.
+    parts.delegation,
     parts.memoryStance,
     parts.projectScope,
     // AFTER `projectScope` on purpose: that section tells a session to keep scratch inside the

@@ -76,6 +76,18 @@ describe("the runner latches it", () => {
     expect(source).toContain("setRequests.get(input.sessionID)")
   })
 
+  test("🔴 an explicit DELEGATION order does not latch as a set — both sites", () => {
+    // Measured on Qwen3.6-35B 2026-08-22: an officer told to spawn six sub-agents did exactly that,
+    // reported six child ids, and was then steered into reading `.gitattributes`, `.gitignore` and
+    // `AGENTS.md` one at a time — because "each" had marked the order as an unfinished set. Both
+    // latches must carry the exemption; suppressing only one leaves the steer firing on whichever
+    // path that session took.
+    const guarded = source.split("&& !UnfinishedSet.asksToDelegate(").length - 1
+    expect(guarded).toBe(3)
+    // …and no latch writes a bare `asked:` from `asksForSet` alone any more.
+    expect(source).not.toMatch(/asked: UnfinishedSet\.asksForSet\([a-zA-Z]+\),/)
+  })
+
   test("the DRIVE no longer re-derives either decision from the live context", () => {
     // 🔴 The regression that would restore the bug. Both of the drive's own reads are latched, so the
     // steering decision and the requested count survive compaction.
@@ -84,8 +96,19 @@ describe("the runner latches it", () => {
     // request builder, which cannot see the drain scope where the latch lives. Its failure mode is
     // benign — after compaction `spawn` becomes available again, which is what shipped before the
     // gate existed — but it IS the same defect and this pins the count so it cannot quietly grow.
-    const inline = source.split("UnfinishedSet.asksForSet(lastRealUserText(context)").length - 1
-    expect(inline).toBe(1)
+    //
+    // ⚠️ Re-spelled 2026-08-22 and the COUNT is what matters, not the characters. The gate grew a
+    // second reader of the same text — `asksToDelegate`, the exemption for an order that explicitly
+    // asks for sub-agents — so the live read is now hoisted into `userText` and both predicates share
+    // it. Pinning the old literal would have gone green on a file that no longer contained it.
+    const live = source.split("lastRealUserText(context)").length - 1
+    const gate = source.split("UnfinishedSet.asksForSet(userText)").length - 1
+    expect({ gate, latched: !source.includes("UnfinishedSet.asksForSet(lastRealUserText(context)") }).toEqual({
+      gate: 1,
+      latched: true,
+    })
+    // The hoisted read is one of the file's live reads, not a new one bolted beside it.
+    expect(live).toBeGreaterThanOrEqual(1)
   })
 })
 
