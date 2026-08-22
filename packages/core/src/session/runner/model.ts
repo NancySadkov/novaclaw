@@ -215,6 +215,53 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2
 /** Test or embedding seam. `tier`/`prePrompt`/`capabilities` default to always-undefined so
  *  existing callers need not supply them — and `undefined` capabilities is the pass-everything
  *  "no evidence" answer, so a seam that omits it never starts refusing attachments. */
+/**
+ * WHICH model to run when the one that was chosen cannot serve — the two fallback decisions, as pure
+ * functions.
+ *
+ * 🔴 Extracted 2026-08-22 because the branches that use them had **no test at any level** and two
+ * bugs shipped through them in one day: a `session.model` guard copied from one arm to the other
+ * (which made the health fallback dead for every roster colleague), and a key built from the WIRE id
+ * while the lookup used the CATALOG id. Both were invisible to the unit tests around them, because
+ * those tested `ModelHealth`'s arithmetic and the runner's recording — never the code that reads
+ * them. The service needs a catalog, a capability store, a settings store, an integration registry
+ * and a local-model manager to build; the decision needs none of that.
+ *
+ * ⚠️ `supported` and `sick` are passed IN rather than reached for, so the rule is testable without a
+ * clock or a store and cannot silently start consulting something else.
+ */
+export const usableFallback = <M>(input: {
+  readonly fallback: M | undefined
+  readonly available: readonly M[]
+  readonly supported: (model: M) => boolean
+}): M | undefined =>
+  input.fallback !== undefined && input.supported(input.fallback)
+    ? input.fallback
+    : input.available.find(input.supported)
+
+/**
+ * The healthiest model to route to when the SELECTED one is failing.
+ *
+ * ⚠️ Never routes onto a model that is also sick, and never returns the selected model itself — a
+ * "fallback" to what is already failing is a log line claiming a recovery that did not happen.
+ * `undefined` means stay put and report the real error, which is right when the default is the thing
+ * that is down: bouncing between two dead endpoints reports neither honestly.
+ */
+export const healthyAlternative = <M>(input: {
+  readonly selected: M
+  readonly fallback: M | undefined
+  readonly available: readonly M[]
+  readonly supported: (model: M) => boolean
+  readonly sick: (model: M) => boolean
+  readonly same: (a: M, b: M) => boolean
+}): M | undefined => {
+  const healthy =
+    input.fallback !== undefined && input.supported(input.fallback) && !input.sick(input.fallback)
+      ? input.fallback
+      : input.available.find((entry) => input.supported(entry) && !input.sick(entry))
+  return healthy !== undefined && !input.same(healthy, input.selected) ? healthy : undefined
+}
+
 export const layerWith = (
   resolve: Interface["resolve"],
   tier: Interface["tier"] = () => Effect.succeed(undefined),
@@ -648,8 +695,11 @@ export const locationLayer = Layer.effect(
         // the very next turn tries it again and recovers by itself the moment it returns. Rewriting
         // the config on a transient failure would be a silent, permanent downgrade nobody asked for.
         if (!selected && session.model) {
-          const fallback = yield* catalog.model.default()
-          const usable = fallback && supported(fallback) ? fallback : (yield* catalog.model.available()).find(supported)
+          const usable = usableFallback({
+            fallback: yield* catalog.model.default(),
+            available: yield* catalog.model.available(),
+            supported,
+          })
           if (usable) {
             yield* Log.event("session.model.fallback", {
               "session.id": session.id,
@@ -689,12 +739,15 @@ export const locationLayer = Layer.effect(
         if (selected) {
           const at = yield* Clock.currentTimeMillis
           if (ModelHealth.sick(selected, at)) {
-            const fallback = yield* catalog.model.default()
-            const healthy =
-              fallback && supported(fallback) && !ModelHealth.sick(fallback, at)
-                ? fallback
-                : (yield* catalog.model.available()).find((entry) => supported(entry) && !ModelHealth.sick(entry, at))
-            if (healthy && `${healthy.providerID}/${healthy.id}` !== `${selected.providerID}/${selected.id}`) {
+            const healthy = healthyAlternative({
+              selected,
+              fallback: yield* catalog.model.default(),
+              available: yield* catalog.model.available(),
+              supported,
+              sick: (entry) => ModelHealth.sick(entry, at),
+              same: (a, b) => `${a.providerID}/${a.id}` === `${b.providerID}/${b.id}`,
+            })
+            if (healthy) {
               yield* Log.event("session.model.fallback", {
                 "session.id": session.id,
                 "model.requested": `${selected.providerID}/${selected.id}`,

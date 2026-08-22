@@ -14,6 +14,7 @@ import { ProviderV2 } from "@novaclaw/core/provider"
 import { ProjectV2 } from "@novaclaw/core/project"
 import { DeviceRegistry } from "@novaclaw/core/session/device-registry"
 import { SessionRunnerModel } from "@novaclaw/core/session/runner/model"
+import { healthyAlternative, usableFallback } from "@novaclaw/core/session/runner/model"
 import { SessionV2 } from "@novaclaw/core/session"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { it } from "./lib/effect"
@@ -293,6 +294,107 @@ describe("SessionRunnerModel", () => {
       })
     }),
   )
+
+  // THE FALLBACK DECISIONS — the branches that had no test at any level, and shipped two bugs in one
+  // day because of it. Pure now (`usableFallback` / `healthyAlternative`), so the rule is checkable
+  // without a catalog, a settings store and a local-model manager.
+  describe("choosing a model when the chosen one cannot serve", () => {
+    const m = (id: string) => ({ providerID: "p", id })
+    const all = (m: { id: string }) => true
+    const same = (a: { id: string }, b: { id: string }) => a.id === b.id
+
+    test("unavailable: the instance default is preferred when it can serve", () => {
+      expect(usableFallback({ fallback: m("default"), available: [m("other")], supported: all })).toEqual(m("default"))
+    })
+
+    test("unavailable: an UNSUPPORTED default is skipped for one that works", () => {
+      // The default can be a model this session cannot use — a vision-only chat on a text model, say.
+      // Falling back onto it would swap one refusal for another.
+      const supported = (x: { id: string }) => x.id !== "default"
+      expect(usableFallback({ fallback: m("default"), available: [m("ok")], supported })).toEqual(m("ok"))
+    })
+
+    test("unavailable: nothing usable answers undefined rather than a wrong model", () => {
+      expect(usableFallback({ fallback: undefined, available: [], supported: all })).toBeUndefined()
+    })
+
+    test("unhealthy: routes to the default when it is healthy", () => {
+      expect(
+        healthyAlternative({
+          selected: m("sick"),
+          fallback: m("default"),
+          available: [m("default")],
+          supported: all,
+          sick: (x) => x.id === "sick",
+          same,
+        }),
+      ).toEqual(m("default"))
+    })
+
+    test("🔴 unhealthy: never routes onto a model that is ALSO sick", () => {
+      // Two dead endpoints is not a recovery. It must fall through to a third, or to nothing.
+      expect(
+        healthyAlternative({
+          selected: m("sick"),
+          fallback: m("alsoSick"),
+          available: [m("alsoSick"), m("good")],
+          supported: all,
+          sick: (x) => x.id.includes("ick"),
+          same,
+        }),
+      ).toEqual(m("good"))
+    })
+
+    test("🔴 unhealthy: when the DEFAULT is the thing that is down, stay put", () => {
+      // `undefined` = keep the selected model and report its real error. Anything else logs a
+      // recovery that did not happen — the fault described falsely.
+      expect(
+        healthyAlternative({
+          selected: m("sick"),
+          fallback: m("sick"),
+          available: [m("sick")],
+          supported: all,
+          sick: () => true,
+          same,
+        }),
+      ).toBeUndefined()
+    })
+
+    test("🔴 unhealthy: never 'falls back' onto the selected model itself", () => {
+      // The `same` guard. Without it a sick model that is also the instance default would be logged
+      // as a fallback to itself, every single turn.
+      expect(
+        healthyAlternative({
+          selected: m("only"),
+          fallback: undefined,
+          available: [m("only")],
+          supported: all,
+          sick: () => false,
+          same,
+        }),
+      ).toBeUndefined()
+    })
+  })
+
+  // 🔴 THE JOIN. The decisions above are pure; nothing in them says `resolve` asks. A source ledger
+  // because the service needs a catalog, a capability store, a settings store, an integration
+  // registry and a local-model manager to build — the same split `kb-scan-hydration.test.ts` uses.
+  test("resolve asks BOTH fallback decisions, and the health one is not guarded on session.model", () => {
+    const source = fs
+      .readFileSync(path.join(import.meta.dir, "../src/session/runner/model.ts"), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/.*$/gm, "$1")
+    const resolve = source.slice(source.indexOf('SessionRunnerModel.resolve"'))
+    expect(resolve).toContain("usableFallback({")
+    expect(resolve).toContain("healthyAlternative({")
+    // 🔴 The bug that shipped: the health branch was written `if (selected && session.model)`, copied
+    // from the unavailable branch above it. `session.model` is the session ROW, and a colleague's
+    // model arrives through the AGENT fold — so the guard was false for every roster colleague and
+    // the fallback never fired. The unavailable branch legitimately keeps it: it reports what was
+    // asked for and has nothing else to name.
+    const health = resolve.slice(resolve.indexOf("healthyAlternative({") - 600, resolve.indexOf("healthyAlternative({"))
+    expect(health).not.toMatch(/if \(selected && session\.model\)/)
+  })
 
   // 🔴 THE TWO IDENTITIES A MODEL HAS, and why health has to key on the catalog one.
   //
