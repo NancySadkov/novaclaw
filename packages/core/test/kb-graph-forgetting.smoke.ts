@@ -180,4 +180,43 @@ describe("KB-G forgetting / decay", () => {
     expect(await mem.prune({ scope: "global", maxStaged: 100 })).toBe(0)
     expect((await mem.stats()).valid).toBe(before.valid)
   })
+  // 🔴 PER-CABINET pruning — the half added 2026-08-22 and, until this test, untested by me.
+  //
+  // Auto-extracted facts used to be written to `session:<id>` and promoted into `global`, where the
+  // cap above bounded them. Filing them in the officer's cabinet stopped that leak and removed the
+  // only bound they had, so `kb-graph/memory.ts` now prunes each `agent:` scope as well — discovered
+  // through `stagedScopes`, and capped SEPARATELY. A single cap over `agent:%` would let one
+  // talkative officer evict another's memories, which is the property this proves.
+  test("stagedScopes finds each cabinet, and pruning one never touches another", async () => {
+    const cabinet = async (scope: string, n: number, confidence: number) => {
+      for (let i = 0; i < n; i++)
+        await mem.addMemory({
+          id: `${scope.replace(":", "_")}_${i}`,
+          kind: "entity",
+          text: `${scope} fact number ${i}`,
+          scope,
+          relation: "staged",
+          confidence,
+          source: "auto-extract",
+        })
+    }
+    await cabinet("agent:loud", 12, 0.2)
+    await cabinet("agent:quiet", 3, 0.9)
+
+    const scopes = await mem.stagedScopes("agent:")
+    expect(scopes.sort()).toEqual(["agent:loud", "agent:quiet"])
+    // ⚠️ …and NOT the household pile, which has its own cap and must not be swept up by the prefix.
+    expect(scopes).not.toContain("global")
+
+    const valid = async (scope: string) =>
+      (await mem.list({ scopes: [scope], limit: 5000 })).filter((m) => m.relation === "staged").length
+
+    for (const scope of scopes) await mem.prune({ scope, maxStaged: 5 })
+
+    // The loud one is capped…
+    expect(await valid("agent:loud")).toBe(5)
+    // 🔴 …and the quiet one is untouched. Under a shared cap over `agent:%` its three memories would
+    // have been the cheapest to evict — it is the one that never spoke.
+    expect(await valid("agent:quiet")).toBe(3)
+  })
 })
