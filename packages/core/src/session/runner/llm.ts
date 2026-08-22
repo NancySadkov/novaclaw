@@ -64,6 +64,7 @@ import { type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
 import { SessionMaintenance } from "./maintenance"
 import { SystemAccounting } from "./system-accounting"
+import { Scratch } from "../../scratch"
 import { SystemCompose } from "./system-compose"
 import { TierScaffold } from "./tier-scaffold"
 import { SessionRecall } from "./recall"
@@ -1364,6 +1365,14 @@ export const layer = Layer.effect(
               archiveChats: prepared.agent.info?.archiveChats,
             }),
             projectScope: SystemCompose.projectScopeSection(config.permissionMode),
+            // ⚠️ The scratch path is derived from the AGENT id, not from the session: a colleague's
+            // workspace is a property of who it is, and every chat it has reaches the same one. A
+            // session-derived path would give it a fresh empty folder per conversation, which is the
+            // opposite of the durable place these instructions promise.
+            workspace: SystemCompose.workspaceSection({
+              directory: session.location?.directory,
+              scratch: prepared.agent.id ? Scratch.forAgent(String(prepared.agent.id)) : undefined,
+            }),
             base: system.baseline,
           }
       const promptAccounting = SystemAccounting.of(promptParts)

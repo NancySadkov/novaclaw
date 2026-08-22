@@ -125,6 +125,48 @@ export const projectScopeSection = (mode: PermissionMode): string | undefined =>
   mode === "yolo" ? undefined : PROJECT_SCOPE_INSTRUCTION
 
 /**
+ * BOTH FOLDERS: the project this colleague is assigned to, and its own workspace.
+ *
+ * 🔴 Owner, 2026-08-22: *"the agent with an assigned folder has both scratch and the project
+ * folders."* Assigning a colleague to a project used to take away the one place it could keep notes,
+ * drafts and probes without asking anybody — `AgentWorkspace.folderFor` treated the two as
+ * alternatives. AGENTS.md is explicit that scratch is how a model is meant to work: *"for menial
+ * needs — notes, drafts, scratch — the model uses its own project folder, which requires no
+ * permission."* An officer with nowhere to scribble ends up either asking permission to think, or
+ * dropping its working files into the user's repository.
+ *
+ * ⚠️ **It must come AFTER `projectScope`, which says "keep build output, scratch files and notes
+ * inside [the working folder]".** That sentence is right for a session whose only folder is the
+ * project and wrong for a colleague that has a workspace of its own, so this section names the
+ * exception explicitly rather than leaving a model to reconcile two rules. Both are kernel material
+ * and a persona cannot bury either; the specific one lands last.
+ *
+ * ⚠️ Absent when the working folder IS the scratch folder — an unassigned colleague already works
+ * there, and telling it "you also have somewhere else" would name the same directory twice.
+ */
+export const workspaceSection = (input: {
+  readonly directory: string | undefined
+  readonly scratch: string | undefined
+}): string | undefined => {
+  const scratch = input.scratch?.trim()
+  const directory = input.directory?.trim()
+  if (!scratch || !directory) return undefined
+  const same = directory.replaceAll("\\", "/").toLowerCase() === scratch.replaceAll("\\", "/").toLowerCase()
+  if (same) return undefined
+  return (
+    `Your own workspace: as well as this chat's working folder, you have a private workspace at ` +
+    `${scratch}. You may read and write there freely — it needs no permission and it is not part of ` +
+    `the user's project.
+
+` +
+    `Use it for anything that is YOURS rather than the project's: notes to yourself, drafts, probe ` +
+    `scripts, downloaded references, intermediate output. Prefer it over leaving working files in the ` +
+    `project folder. Anything that is part of the WORK still belongs in the working folder — this is ` +
+    `where you keep the things you would otherwise have had to ask about.`
+  )
+}
+
+/**
  * That this colleague keeps NOTHING between chats, when that is true.
  *
  * 🔴 **The defect, measured live on holo3.1 2026-08-22.** A colleague configured `memory: "none"` was
@@ -362,6 +404,8 @@ export interface SystemPromptParts {
   readonly projectScope?: string
   /** That this colleague keeps nothing between chats. Absent unless `memory: "none"`. */
   readonly memoryStance?: string
+  /** The colleague's own scratch workspace, when it also has a project folder. */
+  readonly workspace?: string
   /** The immutable kernel base context (environment, tools, skills) — composed LAST. */
   readonly base?: string
 }
@@ -399,5 +443,9 @@ export const composeSystemParts = (parts: SystemPromptParts): string[] =>
     // A persona that says "I'll remember that for you" must not be able to sit on top of it.
     parts.memoryStance,
     parts.projectScope,
+    // AFTER `projectScope` on purpose: that section tells a session to keep scratch inside the
+    // working folder, which is right until the colleague has a workspace of its own. The specific
+    // instruction has to land last or a model is left reconciling two rules.
+    parts.workspace,
     parts.base,
   ].filter((part): part is string => part !== undefined && part.length > 0)

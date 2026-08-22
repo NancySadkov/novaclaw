@@ -1,5 +1,6 @@
 import { describe, expect } from "bun:test"
 import { Effect, Schema } from "effect"
+import { Scratch } from "@novaclaw/core/scratch"
 import { AgentV2 } from "@novaclaw/core/agent"
 import type { ConfigAgent } from "@novaclaw/core/config/agent"
 import { ConfigAgent as ConfigAgentSchema } from "@novaclaw/core/config/agent"
@@ -106,6 +107,30 @@ describe("a colleague the user hired", () => {
       // "Top level executive agents who can communicate with each other" (owner). Staffing stays
       // Nova's alone, and `tool/colleague.ts` → `mayStaff` enforces that independently of this dial.
       expect(effectFor(roster.get("theron")!, "colleague")).toBe("allow")
+    }),
+  )
+
+  it.effect("keeps its OWN workspace, even when assigned to a project", () =>
+    Effect.gen(function* () {
+      const roster = yield* rosterWith({ name: "Theron", mode: "primary", directory: "D:/books" })
+      const hired = roster.get("theron")!
+      // 🔴 Owner: "the agent with an assigned folder has both scratch and the project folders."
+      // Assigning a colleague to a project used to take away the one place it could keep notes and
+      // drafts without asking — and AGENTS.md says scratch is how a model is meant to work at all.
+      const mine = `${Scratch.forAgent("theron").replaceAll(String.fromCharCode(92), "/")}/notes.md`
+      expect(effectFor(hired, "external_directory_write", mine)).toBe("allow")
+      expect(effectFor(hired, "external_directory_read", mine)).toBe("allow")
+    }),
+  )
+
+  it.effect("…and NOT into another colleague's workspace", () =>
+    Effect.gen(function* () {
+      // The whole point of a private workspace. `external_directory_write` on `*` is `ask` on the
+      // floor, which the assert path refuses — so a stray write into a peer's drafts is not a rule
+      // that has to be remembered, it simply is not granted.
+      const roster = yield* rosterWith({ name: "Theron", mode: "primary", directory: "D:/books" })
+      const theirs = `${Scratch.forAgent("aris").replaceAll(String.fromCharCode(92), "/")}/notes.md`
+      expect(effectFor(roster.get("theron")!, "external_directory_write", theirs)).not.toBe("allow")
     }),
   )
 

@@ -74,6 +74,16 @@ describe("SessionRunnerLLM — memory stance", () => {
     expect(systemOf(harness)).not.toContain("NOT archived")
   })
 
+  // 🔴 BOTH FOLDERS reach a real prompt. The harness session runs in a project directory while the
+  // agent's workspace is derived from its id, so the two differ and the section must appear — a
+  // `workspace` wired to the session's own folder instead of the agent's would pass every unit test
+  // above while telling every colleague it has a workspace it does not have.
+  test("an assigned colleague is told about its own workspace", async () => {
+    const harness = makeRunnerHarness({ turns: [completeTurn("call_1", "ok")] })
+    await runTurn(harness, "own")
+    expect(systemOf(harness)).toContain("Your own workspace")
+  })
+
   test("the text in the prompt is the section's own, not a second copy", async () => {
     // ⚠️ A parallel wording in the runner would drift from the module the tests measure. Asserting
     // the exact string keeps one source.

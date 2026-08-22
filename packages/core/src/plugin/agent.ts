@@ -4,6 +4,7 @@ import path from "path"
 import { define } from "./internal"
 import { Effect } from "effect"
 import { AgentV2 } from "../agent"
+import { Scratch } from "../scratch"
 import { Global } from "../global"
 import { Location } from "../location"
 import { PermissionV2 } from "../permission"
@@ -208,6 +209,25 @@ export const floor = (input: { readonly scratchDirs: readonly string[]; readonly
 
 /** The scratch locations both floors whitelist. */
 export const SCRATCH_DIRS: readonly string[] = [TRUNCATION_GLOB, path.join(Global.Path.tmp, "*")]
+
+/**
+ * The scratch floor for ONE colleague: the shared dirs, plus its own workspace.
+ *
+ * 🔴 **A colleague assigned to a project keeps its scratch** (owner, 2026-08-22: *"the agent with an
+ * assigned folder has both scratch and the project folders"*). Before this, `AgentWorkspace.folderFor`
+ * treated the two as alternatives — a colleague either worked in a project OR in its own workspace —
+ * so assigning Theron to `d/books` took away the one place it could keep notes, drafts and probes
+ * without asking anybody. AGENTS.md is explicit that this is how a model is meant to work: *"for
+ * menial needs — notes, drafts, scratch — the model uses its own project folder, which requires no
+ * permission."* An officer with nowhere to scribble asks permission to think.
+ *
+ * ⚠️ Forward slashes, matching `LocationMutation.resolve` and `permission.ts`'s own `REPORT_RESOURCE`
+ * — a Windows path with backslashes never matches the resource these rules are evaluated against.
+ */
+export const scratchDirsFor = (agentID: string): readonly string[] => [
+  ...SCRATCH_DIRS,
+  path.join(Scratch.forAgent(agentID), "*").replaceAll("\\", "/"),
+]
 
 export const Plugin = define({
   id: "agent",

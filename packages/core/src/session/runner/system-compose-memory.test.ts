@@ -74,3 +74,49 @@ describe("the memory stance section", () => {
     )
   })
 })
+
+// BOTH FOLDERS — the colleague's own workspace alongside the project (owner, 2026-08-22).
+describe("the workspace section", () => {
+  const scratch = "C:/data/scratch/theron"
+
+  test("an assigned colleague is told about BOTH folders", () => {
+    const section = SystemCompose.workspaceSection({ directory: "D:/books", scratch })
+    expect(section).toBeDefined()
+    expect(section).toContain(scratch)
+    // 🔴 It has to say what goes WHERE, not merely that the folder exists. "You have a scratch dir"
+    // leaves a model to guess whether its notes belong there or in the user's repository.
+    expect(section!.toLowerCase()).toContain("notes to yourself")
+    expect(section!.toLowerCase()).toContain("part of the work still belongs in the working folder")
+  })
+
+  test("an UNASSIGNED colleague gets nothing — it already works there", () => {
+    // Naming the same directory twice, once as "the working folder" and once as "somewhere else",
+    // is worse than silence.
+    expect(SystemCompose.workspaceSection({ directory: scratch, scratch })).toBeUndefined()
+  })
+
+  test("the same folder in a different SPELLING is still the same folder", () => {
+    // Windows hands the session a backslashed path and `Scratch.forAgent` a joined one; comparing
+    // them literally would tell an unassigned colleague it has two workspaces.
+    expect(SystemCompose.workspaceSection({ directory: String.raw`C:\data\scratch\theron`, scratch })).toBeUndefined()
+  })
+
+  test("nothing is claimed when either half is unknown", () => {
+    expect(SystemCompose.workspaceSection({ directory: undefined, scratch })).toBeUndefined()
+    expect(SystemCompose.workspaceSection({ directory: "D:/books", scratch: undefined })).toBeUndefined()
+  })
+
+  test("it lands AFTER project scope, which says the opposite about scratch", () => {
+    // `projectScope` says "keep scratch files and notes inside [the working folder]" — right for a
+    // session with one folder, wrong for a colleague with a workspace. The specific rule must be the
+    // one a model reads last.
+    const parts = SystemCompose.composeSystemParts({
+      projectScope: SystemCompose.projectScopeSection("bypass"),
+      workspace: SystemCompose.workspaceSection({ directory: "D:/books", scratch })!,
+      base: "kernel base",
+    })
+    expect(parts.indexOf(SystemCompose.workspaceSection({ directory: "D:/books", scratch })!)).toBeGreaterThan(
+      parts.indexOf(SystemCompose.projectScopeSection("bypass")!),
+    )
+  })
+})

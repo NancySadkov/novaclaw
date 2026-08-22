@@ -125,7 +125,10 @@ function applyItem(draft: AgentDraft, agentID: AgentV2.ID, item: ConfigAgent.Inf
       // (`tool/colleague.ts` → mayStaff), and spawning as a DIFFERENT agent is still not granted
       // here — that is the form that could widen authority.
       const officer = (item.mode ?? agent.mode) === "primary"
-      agent.permissions.push(...AgentPlugin.floor({ scratchDirs: AgentPlugin.SCRATCH_DIRS, officer }))
+      // ⚠️ `scratchDirsFor(agentID)`, not the shared `SCRATCH_DIRS`: a colleague's OWN workspace is
+      // part of its floor, so assigning it to a project does not take away the place it keeps notes
+      // and drafts. See `AgentPlugin.scratchDirsFor` for why that matters.
+      agent.permissions.push(...AgentPlugin.floor({ scratchDirs: AgentPlugin.scratchDirsFor(agentID), officer }))
       agent.permissions.push(...global)
     }
     if (item.model !== undefined) {
