@@ -507,13 +507,21 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
            * ⚠️ Only for a host file this instance can serve. A remote image URL stays an ordinary
            * `<img>` with whatever the author wrote — rewriting those would make the chat fetch from
            * wherever a model happened to name, which is egress the user did not ask for.
+           *
+           * ⚠️ **NO `loading="lazy"`, and this was measured.** The first version had it, and the
+           * image never appeared: an `<img>` with no intrinsic size lays out 0×0, and a lazy image
+           * with zero dimensions is never triggered even when it is squarely in the viewport —
+           * `complete` stayed false with the element visible and its URL answering 200. Setting
+           * `eager` on the live element loaded it at 320×120 immediately. Every ledger passed
+           * throughout, because they assert the resolver is called and the `src` is right; nothing
+           * about a correct `src` makes a browser fetch it.
            */
           image({ href, title, text }) {
             const titleAttr = title ? ` title="${escapeAttribute(title)}"` : ""
             const alt = escapeAttribute(text || "")
             const local = props.resolveFile?.(href)
             const src = local?.image ? local.url : href
-            return `<img src="${escapeAttribute(src)}" alt="${alt}"${titleAttr} class="agent-file-image" loading="lazy" />`
+            return `<img src="${escapeAttribute(src)}" alt="${alt}"${titleAttr} class="agent-file-image" />`
           },
         },
       },

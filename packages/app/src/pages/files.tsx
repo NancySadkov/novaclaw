@@ -1,4 +1,5 @@
 import { useSearchParams } from "@solidjs/router"
+import { fileDownloadHref } from "@/apps/agent-file-link"
 import { createEffect, createMemo, createResource, createSignal, For, Match, Show, Switch } from "solid-js"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { GoldGlyph } from "@/components/gold-glyph"
@@ -663,6 +664,28 @@ export function FilesPage() {
             <Show when={menu().entry}>
               {(entry) => (
                 <>
+                  {/* 🔴 DOWNLOAD — the point of browsing a colleague's workspace when it is on
+                      another machine (owner, 2026-08-22: *"any reports and results the agent has
+                      prepared, when the user and the agent are on different machines"*). Until this
+                      existed the browser could SHOW a text file and nothing else: a PDF, a rendered
+                      chart or an archive was visible and unobtainable.
+
+                      ⚠️ An `<a download>` rather than a fetch-and-save: the browser streams it
+                      straight from the instance, so a large artefact never has to fit in a JS string,
+                      and the `download` attribute carries the file's own name so it does not land
+                      named after the route. Directories are excluded — there is nothing to stream. */}
+                  <Show when={entry().type === "file"}>
+                    <a
+                      role="menuitem"
+                      data-action="download-file"
+                      href={fileDownloadHref(entry().absolute)}
+                      download={entry().name}
+                      class="flex items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-v2-overlay-simple-overlay-hover"
+                      onClick={() => setContextMenu(undefined)}
+                    >
+                      {language.t("files.download")}
+                    </a>
+                  </Show>
                   <button
                     type="button"
                     role="menuitem"

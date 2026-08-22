@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { fileUrl, hostFile, resolveAgentFile } from "./agent-file-link"
+import { fileDownloadHref, fileUrl, hostFile, resolveAgentFile } from "./agent-file-link"
+import { setInstanceBase } from "./instance-origin"
 
 // Which hrefs the chat treats as FILES ON THIS MACHINE, and which it leaves alone.
 //
@@ -80,7 +81,7 @@ describe("the URL that serves it", () => {
       image: true,
     })
     // ⚠️ Unencoded, the drive colon truncates the query and the space breaks the segment.
-    expect(url).toBe("http://127.0.0.1:4096/api/fs/read/a%20chart.svg?directory=C%3A%2Fmy%20data%2Fscratch")
+    expect(url).toBe("http://127.0.0.1:4096/api/fs/read/a%20chart.svg?location%5Bdirectory%5D=C%3A%2Fmy%20data%2Fscratch")
   })
 
   test("a trailing slash on the base does not double up", () => {
@@ -91,7 +92,7 @@ describe("the URL that serves it", () => {
 describe("the resolver the renderer is handed", () => {
   test("a host image resolves to a same-origin URL and says it is an image", () => {
     expect(resolveAgentFile("/tmp/chart.svg")).toEqual({
-      url: "/api/fs/read/chart.svg?directory=%2Ftmp",
+      url: "/api/fs/read/chart.svg?location%5Bdirectory%5D=%2Ftmp",
       image: true,
     })
   })
@@ -104,5 +105,38 @@ describe("the resolver the renderer is handed", () => {
     // The safe direction. Rewriting a working external link is a regression the user sees; ignoring
     // a file link is a link that still reads as text.
     expect(resolveAgentFile("https://novaclaw.app")).toBeUndefined()
+  })
+})
+
+// 🔴 WHEN THE COLLEAGUE IS ON ANOTHER MACHINE (owner, 2026-08-22). A same-origin URL asks the user's
+// own machine for a path that exists on the instance's — and the remote colleague is exactly the one
+// whose files they cannot otherwise reach.
+describe("addressing the instance the colleague runs on", () => {
+  test("links point at the CONNECTED instance, not the page", () => {
+    setInstanceBase("http://spark-0693.local:4096")
+    expect(resolveAgentFile("/data/reports/q3.pdf")?.url).toBe(
+      "http://spark-0693.local:4096/api/fs/read/q3.pdf?location%5Bdirectory%5D=%2Fdata%2Freports",
+    )
+    setInstanceBase("")
+  })
+
+  test("no connection yet is same-origin, which is the honest answer", () => {
+    setInstanceBase(undefined)
+    expect(resolveAgentFile("/tmp/a.txt")?.url).toBe("/api/fs/read/a.txt?location%5Bdirectory%5D=%2Ftmp")
+  })
+
+  test("the files browser downloads through the SAME resolver", () => {
+    // Two surfaces asking one question. A second path-splitter would drift from this one.
+    setInstanceBase("http://spark-0693.local:4096")
+    // ⚠️ `toBe(string | undefined)` does not typecheck; the resolver's answer is asserted present
+    // first, which is also the stronger claim — a resolver returning nothing here would be the bug.
+    const resolved = resolveAgentFile("/data/reports/q3.pdf")
+    expect(resolved).toBeDefined()
+    expect(fileDownloadHref("/data/reports/q3.pdf")).toBe(resolved!.url)
+    setInstanceBase("")
+  })
+
+  test("a path it cannot parse yields an empty href rather than a broken one", () => {
+    expect(fileDownloadHref("not-a-path")).toBe("")
   })
 })

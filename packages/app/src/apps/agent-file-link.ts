@@ -1,3 +1,5 @@
+import { instanceBase } from "./instance-origin"
+
 // FILES A COLLEAGUE MADE, reachable from the chat log (owner, 2026-08-22: *"the agent can embed
 // links to the files on the host machine, which user can just click in the chat log to download, as
 // well as link images, like say generated svgs or pngs"*).
@@ -78,25 +80,41 @@ export const hostFile = (href: string | undefined): HostFile | undefined => {
 /**
  * The instance URL that serves one host file.
  *
+ * ⚠️ **`location[directory]`, not `directory`** — and this was measured, not read. `LocationQuery` is
+ * a deepObject parameter (`protocol/groups/location.ts`), so the flat form answers 500. The unit
+ * tests asserted the flat spelling happily, because they were checking this function against itself;
+ * only calling the real endpoint said otherwise.
+ *
  * ⚠️ Both halves are encoded. A Windows path carries a colon and spaces are ordinary in a user's
- * folders; an unencoded `directory` truncates the query at the drive letter and an unencoded `name`
+ * folders; an unencoded directory truncates the query at the drive letter and an unencoded `name`
  * breaks on the first space.
  */
 export const fileUrl = (base: string, file: HostFile): string =>
-  `${base.replace(/\/+$/, "")}/api/fs/read/${encodeURIComponent(file.name)}?directory=${encodeURIComponent(file.directory)}`
+  `${base.replace(/\/+$/, "")}/api/fs/read/${encodeURIComponent(file.name)}?location%5Bdirectory%5D=${encodeURIComponent(file.directory)}`
 
 /**
  * The resolver the markdown renderer is given: href in, renderable URL out.
  *
- * ⚠️ **A SAME-ORIGIN url, and that is a real limit rather than an oversight.** `MarkedProvider` is
- * mounted ABOVE `ServerProvider` in `app.tsx`, so the connected instance's base URL is not readable
- * where the renderer is configured. Every shipped configuration is same-origin — the web app is
- * served by the instance it talks to, and the desktop app loads from its own — so a relative URL is
- * correct for all of them. It would be wrong only for a client served by one instance while driving
- * another, which is not a configuration the product offers today; threading the base through is the
- * fix if it ever does, not a guess about the host here.
+ * 🔴 **Built on the CONNECTED instance, not on the page's origin** (owner, 2026-08-22: *"when the
+ * user and the agent are on different machines"*). A person driving the Spark from their laptop must
+ * get the Spark's copy of a report — a same-origin URL would ask their own machine for a path that
+ * exists on somebody else's, and the remote colleague is precisely the one whose files they cannot
+ * otherwise reach. `instanceBase()` is read at CALL time so switching servers mid-session re-points
+ * links that were already rendered.
  */
 export const resolveAgentFile = (href: string): { readonly url: string; readonly image: boolean } | undefined => {
   const file = hostFile(href)
-  return file === undefined ? undefined : { url: fileUrl("", file), image: file.image }
+  return file === undefined ? undefined : { url: fileUrl(instanceBase(), file), image: file.image }
+}
+
+/**
+ * The URL that downloads one absolute host path from the connected instance.
+ *
+ * ⚠️ Shares `hostFile`/`fileUrl` with the chat renderer on purpose — the Files browser and a
+ * colleague's file link are the same question ("serve me this path from that machine") asked by two
+ * surfaces, and a second path-splitter would drift from this one the first time either changed.
+ */
+export const fileDownloadHref = (absolute: string): string => {
+  const file = hostFile(absolute)
+  return file === undefined ? "" : fileUrl(instanceBase(), file)
 }

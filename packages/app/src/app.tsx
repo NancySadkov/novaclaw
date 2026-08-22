@@ -46,6 +46,7 @@ import { PromptProvider } from "@/context/prompt"
 import { ServerConnection, ServerProvider, serverName, useServer } from "@/context/server"
 import { SettingsProvider } from "@/context/settings"
 import { ExpertiseMirror } from "@/components/expertise-mirror"
+import { InstanceOriginMirror } from "@/components/instance-origin-mirror"
 import { AppThemeEffect } from "@/context/app-theme"
 import { TerminalProvider } from "@/context/terminal"
 import { TabsProvider, useTabs, type DraftTab } from "@/context/tabs"
@@ -718,6 +719,10 @@ export function AppInterface(props: {
           <ClientErrorLogDrain />
           <ConnectionGate disableHealthCheck={props.disableHealthCheck}>
             <ExpertiseMirror />
+            {/* File links a colleague writes must address the instance it RUNS ON, not the page's
+                origin — the two differ whenever the user drives a remote instance, which is exactly
+                when its files are otherwise unreachable. */}
+            <InstanceOriginMirror />
             <Dynamic
               component={props.router ?? Router}
               root={(routerProps) => (

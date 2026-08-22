@@ -10,6 +10,9 @@ export const dict = {
   "files.binary": "This file can't be previewed:",
   "files.truncated": "truncated",
   "files.delete": "Delete (to Trash)",
+  // Downloading from the browser — the point of browsing a colleague's workspace when the colleague
+  // is on another machine.
+  "files.download": "Download",
   "files.newFolder": "New folder",
   "files.newFolderTitle": "Create a new folder",
   "files.createFolder": "Create folder",
