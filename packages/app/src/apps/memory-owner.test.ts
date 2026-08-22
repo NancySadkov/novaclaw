@@ -91,3 +91,21 @@ describe("the count beside the door", () => {
     expect(memoryCountLabel(MEMORY_COUNT_CAP + 500)).toBe("200+")
   })
 })
+
+// 🔴 A POSTURE HAS NO FILING CABINET (owner, 2026-08-22: *"Build and Plan are the permission
+// modes"*). `ownersFor` maps the roster, so this follows from the one exclusion in `contacts.ts` —
+// asserted here because this is the surface where a stray owner reads worst: a private memory scope
+// belonging to a setting, sitting beside Nova's.
+describe("postures own no memories", () => {
+  test("build and plan get no owner entry", () => {
+    const keys = ownersFor(
+      [
+        { id: "nova", mode: "primary" },
+        { id: "build", mode: "primary" },
+        { id: "plan", mode: "primary" },
+      ] as never,
+      "Shared",
+    ).map((owner) => owner.key)
+    expect(keys).toEqual(["agent:nova", "global"])
+  })
+})

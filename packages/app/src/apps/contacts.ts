@@ -84,8 +84,34 @@ export const displayName = (id: string): string =>
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ") || id
 
-/** Is this agent a colleague the user can talk to, rather than staff or machinery? */
-export const isColleague = (agent: AgentLike): boolean => agent.mode !== "subagent" && !agent.hidden
+/**
+ * The built-in agents that are POSTURES rather than people.
+ *
+ * 🔴 Owner, 2026-08-22: *"Build and Plan are the permission modes. Plan is just agent surveying the
+ * project and then waiting user to confirm, while Build just proceeds to do work. They are per agent
+ * switches."* The capability they name is `permissionMode`, which every colleague already carries in
+ * its own config — so listing them beside Nova offered the same choice twice and dressed a setting up
+ * as a person. The permission floor had said as much for weeks ("`build` and `plan` are the machinery
+ * a person drives, not colleagues on the roster") while four surfaces went on showing them.
+ *
+ * ⚠️ Excluded HERE and not by marking them `hidden` in the agent plugin, which was tried first and
+ * reverted. `hidden` also makes `AgentV2.selectedDefault` refuse them, so an unattributed chat would
+ * fall to Nova — whose charter carries `colleague` and `spawn`. Every default session would then pay
+ * for those schemas, and `httpapi-project-write-invalidates` (a 1 s cache window) went red on a whole
+ * unit run: measured, not theorised. Who answers an unattributed chat is a separate product question
+ * from who appears on the roster, and bundling them hid a real cost.
+ */
+export const POSTURE_AGENTS: ReadonlySet<string> = new Set(["build", "plan"])
+
+/**
+ * Is this agent a colleague the user can talk to, rather than staff or machinery?
+ *
+ * ⚠️ ONE choke point on purpose: Contacts, the Memory owner picker, the Calendar's responsible-agent
+ * picker and the composer's agent selector all reach the roster through here, and a rule enforced in
+ * one of them is a rule the next surface gets wrong.
+ */
+export const isColleague = (agent: AgentLike): boolean =>
+  agent.mode !== "subagent" && !agent.hidden && !POSTURE_AGENTS.has(agent.id)
 
 const view = (agent: AgentLike): ContactView => {
   const governing = agent.id === GOVERNING_ID

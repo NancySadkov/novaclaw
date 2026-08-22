@@ -119,3 +119,23 @@ describe("search", () => {
     expect(searchRoster(views, "zzz")).toHaveLength(0)
   })
 })
+
+// A POSTURE IS NOT A PERSON (owner, 2026-08-22).
+//
+// 🔴 `build` and `plan` are what `permissionMode` means, not colleagues — and they were listed beside
+// Nova in Contacts, offered their own filing cabinets in the Memory app, and selectable as the
+// responsible agent for a scheduled task. The roster is the metaphor's own promise that the list is
+// people; a setting wearing a name breaks it.
+describe("postures are not colleagues", () => {
+  test("build and plan are off the roster", () => {
+    const ids = roster([agent({ id: "nova" }), agent({ id: "build" }), agent({ id: "plan" }), agent({ id: "theron" })]).map((v) => v.id)
+    expect(ids).not.toContain("build")
+    expect(ids).not.toContain("plan")
+  })
+
+  test("…and everyone else is still on it", () => {
+    // The exclusion is by id and must not catch a colleague who happens to be named similarly.
+    const ids = roster([agent({ id: "nova" }), agent({ id: "theron" }), agent({ id: "builder" }), agent({ id: "planner" })]).map((v) => v.id)
+    expect(ids.sort()).toEqual(["builder", "nova", "planner", "theron"])
+  })
+})
