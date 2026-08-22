@@ -27,6 +27,7 @@ import { ToolPolicy } from "@novaclaw/core/tool-policy"
 import { ToolPolicyGate } from "@novaclaw/core/tool-policy-gate"
 import { ApplicationTools } from "@novaclaw/core/tool/application-tools"
 import { AgentV2 } from "@novaclaw/core/agent"
+import { Memory } from "@novaclaw/core/kb-graph/memory"
 import type { ModelV2 } from "@novaclaw/core/model"
 import { Config } from "@novaclaw/core/config"
 import { ConfigCompaction } from "@novaclaw/core/config/compaction"
@@ -680,6 +681,11 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
       // Exposed so a test can SETTLE detached memory organisation. It was already built as a
       // dependency of the runner; listing it only makes the service reachable, which is what the
       // post-drain ratchet needs now that the memory pass no longer blocks the drain.
+      // ⚠️ Listed EXPLICITLY though the runner already pulls it in transitively: a node reached only
+      // through a dependency is not resolvable from `seed`, and `seed` is where the memory store has
+      // to be tidied. Same node object, so the graph builds one store either way (`LayerNode` memoizes
+      // on identity).
+      Memory.node,
       SessionMaintenance.node,
       SessionRunnerLLM.node,
       SessionExecution.node,
@@ -725,6 +731,26 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     const plugins = yield* PluginV2.Service
     yield* plugins.markReady
     yield* seedSession(HARNESS_SESSION)
+    // 🔴 **THE OTHER HALF OF THE ISOLATION `assertIsolationHolds` ONLY BUYS FOR SQLITE.**
+    // `NOVACLAW_DB=":memory:"` gives every harness its own database. The MEMORY GRAPH is a different
+    // store: `test/preload.ts` points `NOVACLAW_HOME` at a PID-scoped directory, which isolates it
+    // from the developer's real instance but SHARES it across every test in the process.
+    //
+    // That is a real cross-test channel. Measured 2026-08-22: a whole-unit `core` run failed
+    // `hosted tool results > replays durable provider-executed tool results` because
+    // `session-runner-compaction.test.ts` runs first, compaction writes the compressed transcript
+    // into the agent's memory scope as passages (`session/compaction-archive.ts`), and the next
+    // harness's auto-recall found them and put a fourth message in the request. Bisected to that
+    // exact pair; neither file fails alone. It passed under SHARDING — separate processes, separate
+    // homes — so the gate went green whenever memory pressure made the runner shard and red whenever
+    // the machine had room. A suite whose result depends on how much RAM is free is not a signal.
+    //
+    // ⚠️ Clears the three scopes auto-recall actually searches (`SessionRecall.recallScopes`), never
+    // the whole store: a test that seeds a memory and then builds a harness is doing so deliberately,
+    // and wiping everything would break it in a way that looks like the feature failing.
+    const memory = Memory.client(yield* Memory.node.service)
+    for (const scope of [`session:${HARNESS_SESSION}`, `agent:${AgentV2.defaultID}`, "global"])
+      yield* memory.clearScope(scope).pipe(Effect.ignore)
   })
 
   /**
