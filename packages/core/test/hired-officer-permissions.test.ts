@@ -132,7 +132,13 @@ describe("a colleague the user hired", () => {
       // "Staff and temps — sub-agents inherit their officer's scope, narrowed, never widened"
       // (AGENTS.md). A sub-agent that could spawn would be a branch of the org chart that grows
       // sideways with nobody named on it.
-      expect(effectFor(roster.get("theron")!, "spawn", "inherit")).toBe("deny")
+      //
+      // ⚠️ `ask`, and `ask` is a REFUSAL here: the floor gives non-officers no spawn rule at all, so
+      // the action falls through to the evaluator's default — and asking was removed (owner
+      // 2026-08-20), so `PermissionV2.assert` turns every unresolved ask into a denial. Asserting
+      // the ruleset's verdict rather than the assert path's is deliberate: this file measures what
+      // the FLOOR says, and `permission.test.ts` owns the conversion.
+      expect(effectFor(roster.get("theron")!, "spawn", "inherit")).toBe("ask")
     }),
   )
 

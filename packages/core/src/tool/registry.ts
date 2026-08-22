@@ -460,7 +460,15 @@ function stringifyStructured(value: unknown) {
   }
 }
 
-function whollyDisabled(action: string, rules: PermissionV2.Ruleset) {
+/**
+ * Is this tool withdrawn from the model's HORIZON entirely, rather than merely refused on use?
+ *
+ * ⚠️ Exported for a ledger, not for callers: `plugin/agent.ts` composes floors whose deny arms are
+ * meant to take a tool off the horizon, and that intent is invisible in the rule itself — a deny on
+ * `resource: "*"` withdraws while a deny on a NARROWER resource does not. Stating that in a comment
+ * beside the floor got it wrong once already; `agent-floor-horizon.test.ts` drives this instead.
+ */
+export function whollyDisabled(action: string, rules: PermissionV2.Ruleset) {
   const rule = rules.findLast((rule) => Wildcard.match(action, rule.action))
   return rule?.resource === "*" && rule.effect === "deny"
 }

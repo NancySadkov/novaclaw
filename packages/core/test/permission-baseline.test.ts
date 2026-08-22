@@ -196,10 +196,19 @@ describe("the built-in agents the plugin actually builds", () => {
       expect(effectFor(agents.get("nova")!, "spawn", "build")).toBe("ask")
       expect(effectFor(agents.get("nova")!, "spawn", "*")).toBe("ask")
 
-      // The machinery a person drives is not an officer and does not staff itself, exactly as with
-      // `colleague` above — which also keeps the tool off its horizon rather than advertised.
-      for (const id of ["build", "plan", "explore", "general"])
-        expect({ id, effect: effectFor(agents.get(id)!, "spawn", "inherit") }).toEqual({ id, effect: "deny" })
+      // The machinery a person drives is not an officer and does not staff itself. ⚠️ Unlike
+      // `colleague`, the floor adds no DENY for them — it simply grants nothing, so spawn keeps the
+      // verdict it had before officers were granted anything: `ask`, which the assert path refuses.
+      // A `*` deny would additionally take the tool off their horizon, and would also take it off
+      // `build` — the agent a person drives — which is a product change, not this one's.
+      // `agent-floor-horizon.test.ts` drives that distinction.
+      for (const id of ["build", "plan", "general"])
+        expect({ id, effect: effectFor(agents.get(id)!, "spawn", "inherit") }).toEqual({ id, effect: "ask" })
+      // ⚠️ `explore` answers DENY rather than `ask`, and the difference is its own and pre-existing:
+      // it opens with a catch-all `{ *, *, deny }` and re-grants exactly the search pair, because a
+      // read-only search agent's floor is "nothing unless named". Folding it into the loop above
+      // would have hidden which agents are silent-by-absence and which are denied on purpose.
+      expect(effectFor(agents.get("explore")!, "spawn", "inherit")).toBe("deny")
     }),
   )
 

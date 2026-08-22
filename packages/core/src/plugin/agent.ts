@@ -191,7 +191,17 @@ export const floor = (input: { readonly scratchDirs: readonly string[]; readonly
   // ⚠️ The other two bounds are untouched and are the real containment: `permissionMode` narrows
   // through `moreRestrictive` so a child cannot out-rank its parent, and the fork-bomb quotas are
   // hard caps in the spawner that no permission rule can widen.
-  { action: "spawn", resource: "inherit", effect: input.officer ? "allow" : "deny" },
+  // ⚠️ **A GRANT ONLY — no deny arm, unlike `colleague` above, and the difference is deliberate.**
+  // The first version denied non-officers on `resource: "inherit"` with a comment claiming that kept
+  // the tool off their horizon. It does not: `ToolRegistry.materialize` withdraws a tool only when
+  // the last rule matching its action reads `resource: "*"` + `deny` (`registry.ts` →
+  // `whollyDisabled`), so a narrow deny refuses the call while the model still reads the tool every
+  // turn. Widening it to `*` WOULD withdraw it — and would also take `spawn` off `build`, the agent
+  // a person drives interactively, which is a product change and not this slice's to make. So
+  // non-officers keep exactly the verdict they had before officers were granted anything: no rule,
+  // falling through to `ask`, which the assert path refuses. `agent-floor-horizon.test.ts` drives
+  // that distinction through the real predicate so the next person does not have to trust a comment.
+  ...(input.officer ? [{ action: "spawn", resource: "inherit", effect: "allow" } as const] : []),
   { action: "plan_enter", resource: "*", effect: "deny" },
   { action: "plan_exit", resource: "*", effect: "deny" },
 ]
