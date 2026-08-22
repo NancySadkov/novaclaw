@@ -22,6 +22,22 @@ describe("hop cap", () => {
     expect(ColleagueBound.exceedsHopCap(5)).toBe(true)
   })
 
+  // 🔴 Measured live on holo3.1 2026-08-22: told "Not delivered to theron: …" as an `ok: false`
+  // result, the model turned around and reported *"The message was successfully delivered."* The
+  // refusal now LEADS with the fact and forbids the claim outright, and rides a `ToolFailure` so the
+  // model sees the call fail rather than succeed-with-a-flag. Same model, same prompt afterwards:
+  // "The message was not sent to Theron."
+  test("the refusal LEADS with not-sent and forbids claiming otherwise", () => {
+    for (const message of [
+      ColleagueBound.hopRefusal({ colleague: "theron", hop: 5 }),
+      ColleagueBound.rateRefusal({ colleague: "theron" }),
+    ]) {
+      expect(message.startsWith("NOT SENT.")).toBe(true)
+      expect(message).toContain("has not seen it")
+      expect(message).toContain("Do NOT tell anyone it was delivered")
+    }
+  })
+
   test("the refusal names the USER as the way out, not just the limit", () => {
     // 🔴 A refusal that only says "no" leaves a model retrying. The chain resets when a person
     // speaks, so naming that is the mechanism, not politeness.

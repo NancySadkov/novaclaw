@@ -248,22 +248,34 @@ export const layer = Layer.effectDiscard(
                 colleague: target,
                 message: input.message,
               })
+              // 🔴 A BOUND REFUSAL IS A TOOL FAILURE, and holo3.1 is why (measured live 2026-08-22).
+              // It was an `ok: false` result carrying the reason verbatim — the whole cross-boundary
+              // chain worked — and the model read it, then told the user *"The message was
+              // successfully delivered."* A structured `ok: false` beside a paragraph of prose is a
+              // distinction a floor model does not reliably make, and getting it wrong turns a
+              // working bound into a lie told to the person who trusted the answer.
+              //
+              // A `ToolFailure` is a different rendering path: the model sees the call FAIL. It is
+              // also the shape this very tool already uses for "no colleague called that" — a call
+              // that did nothing and needs a change of course, which is exactly this. The no-chat
+              // arm below stays `ok: false` because it is a fact about the world rather than a
+              // refusal: the colleague exists and simply has nowhere to be written to.
+              if (!outcome.delivered && outcome.refused !== undefined)
+                return yield* new ToolFailure({ message: outcome.refused })
               if (!outcome.delivered)
                 return {
                   ok: false,
-                  // 🔴 The REASON the delivery gave, when it gave one. Two different facts hide behind
-                  // "not delivered" — a colleague with no chat, and a hand-off the loop bound refused
-                  // — and they send a model to opposite next actions. Hardcoding the no-chat sentence
-                  // for both would report a bound as a missing chat: a fault described falsely, and
-                  // the model would go on trying to reach somebody it was just told to stop reaching.
+                  // Two different facts hide behind "not delivered" — a colleague with no chat, and a
+                  // hand-off the loop bound refused — and they send a model to opposite next actions.
+                  // The refusal is a `ToolFailure` above; this arm is only ever reached when there is
+                  // no reason to give, so it no longer needs to choose between them.
                   //
                   // A colleague with no chat is not an error the model can fix by retrying, and
                   // silently starting one on their behalf would put words in a conversation the user
                   // has never seen. Say what is true and let the turn continue.
                   message:
-                    outcome.refused ??
                     `${target} has no open chat yet, so there is nowhere to leave this. Tell the user what you ` +
-                      `wanted to hand over and who you wanted to hand it to.`,
+                    `wanted to hand over and who you wanted to hand it to.`,
                 } satisfies Output
 
               return {

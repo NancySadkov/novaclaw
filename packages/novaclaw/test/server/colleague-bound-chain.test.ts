@@ -50,8 +50,15 @@ describe("a refused hand-off keeps its reason across the worker boundary", () =>
     expect(arm.slice(0, 240)).toContain("Effect.succeed")
   })
 
-  test("4. the tool prefers the reason over its own no-chat sentence", () => {
+  test("4. the tool raises the reason as a tool FAILURE, not an ok:false result", () => {
+    // 🔴 Measured live on holo3.1 2026-08-22. As an `ok: false` result carrying the reason verbatim —
+    // the whole chain working — the model read it and told the user *"The message was successfully
+    // delivered."* A structured `ok: false` beside a paragraph of prose is a distinction a floor model
+    // does not reliably make. Re-driven as a `ToolFailure`, the same model on the same prompt said
+    // *"The message was not sent to Theron."*
     const source = read("core", "src", "tool", "colleague.ts")
-    expect(source).toMatch(/outcome\.refused\s*\?\?/)
+    expect(source).toMatch(/outcome\.refused\s*!==\s*undefined/)
+    const arm = source.slice(source.indexOf("outcome.refused !== undefined"))
+    expect(arm.slice(0, 160)).toContain("ToolFailure")
   })
 })

@@ -57,15 +57,17 @@ export const exceedsHopCap = (hop: number): boolean => hop > HOP_CAP
  * that only said "no" would leave a model retrying.
  */
 export const hopRefusal = (input: { readonly colleague: string; readonly hop: number }): string =>
-  `Not delivered to ${input.colleague}: this would be hand-off ${input.hop} in a chain of colleague ` +
-  `messages with nobody outside it. The limit is ${HOP_CAP}. Whatever is still unresolved needs the ` +
-  `user now — say what you have, and what you were about to ask ${input.colleague}. The count resets ` +
-  `as soon as the user says anything.`
+  `NOT SENT. Your message to ${input.colleague} was refused and ${input.colleague} has not seen it. ` +
+  `This would be hand-off ${input.hop} in a chain of colleague messages with nobody outside it, and ` +
+  `the limit is ${HOP_CAP}. Do NOT tell anyone it was delivered. Whatever is still unresolved needs ` +
+  `the user now — say what you have, and what you were about to ask ${input.colleague}. The count ` +
+  `resets as soon as the user says anything.`
 
 export const rateRefusal = (input: { readonly colleague: string }): string =>
-  `Not delivered to ${input.colleague}: you have sent ${RATE_LIMIT} colleague messages in the last ` +
-  `${Math.round(RATE_WINDOW_MS / 60_000)} minutes, which is the limit. Wait for a reply to the ones ` +
-  `you have already sent, or answer the user directly.`
+  `NOT SENT. Your message to ${input.colleague} was refused and ${input.colleague} has not seen it. ` +
+  `You have sent ${RATE_LIMIT} colleague messages in the last ${Math.round(RATE_WINDOW_MS / 60_000)} ` +
+  `minutes, which is the limit. Do NOT tell anyone it was delivered. Wait for a reply to the ones you ` +
+  `have already sent, or answer the user directly.`
 
 /** Which messages inside the window still count. Pure so the trim rule is testable without a clock. */
 export const fresh = (sent: readonly number[], at: number): number[] =>
