@@ -699,6 +699,54 @@ export class WasmMemory {
     })
   }
 
+  /**
+   * Erase EVERY memory, in every scope, for every agent — Nova included.
+   *
+   * 🔴 Owner, 2026-08-22: *"erases all RAGs from all agents, including Nova — that will simplify
+   * running tabula rasa tests, without resetting entire Novaclaw install."* So it is deliberately
+   * total: not "the ones you can see", not "everything but the governing agent's". A partial erase
+   * would leave a tabula-rasa run standing on someone's leftovers, which is the one thing this exists
+   * to prevent.
+   *
+   * ⚠️ A hard `DETACH DELETE`, like `clearScope`, not the soft `t_invalid` that `forget` uses. An
+   * invalidated row still occupies the store and still answers `stats().total`, so "erased" would be
+   * a claim the file contradicts.
+   */
+  eraseAll(): Promise<number> {
+    return this.serialize(async () => {
+      const before = await this.rows(`MATCH (m:Memory) RETURN count(m) AS n`)
+      await this.q(`MATCH (m:Memory) DETACH DELETE m`)
+      this.touch()
+      return Number(before[0]?.n ?? 0)
+    })
+  }
+
+  /**
+   * Discard the memories a pre-roster NovaClaw left in the household pile.
+   *
+   * 🔴 Owner, 2026-08-22: *"we do not migrate the memories created by Novaclaw versions pre corporate
+   * structure — just discard them."* Before the roster, auto-extraction wrote to `session:<id>` and a
+   * consolidation pass promoted those rows into `global`, so one colleague's automatically-learned
+   * facts became readable by every other. Extraction now files into `agent:<id>` and consolidate does
+   * not touch those, so `global` + `auto-extract` names exactly the legacy set and nothing current.
+   *
+   * ⚠️ Idempotent BY CONSTRUCTION rather than by a marker: after one run the predicate matches
+   * nothing, and nothing writes rows that match it again. A "have I run this?" flag would be a second
+   * thing to keep true.
+   */
+  discardLegacyGlobalExtracts(): Promise<number> {
+    return this.serialize(async () => {
+      const doomed = await this.rows(
+        `MATCH (m:Memory) WHERE m.scope = 'global' AND m.source = 'auto-extract' RETURN count(m) AS n`,
+      )
+      const n = Number(doomed[0]?.n ?? 0)
+      if (n === 0) return 0
+      await this.q(`MATCH (m:Memory) WHERE m.scope = 'global' AND m.source = 'auto-extract' DETACH DELETE m`)
+      this.touch()
+      return n
+    })
+  }
+
   clearScope(scope: string): Promise<void> {
     return this.serialize(async () => {
       await this.q(`MATCH (m:Memory) WHERE m.scope = $scope DETACH DELETE m`, { scope })

@@ -1017,6 +1017,39 @@ export const EVENTS = {
    * ⚠️ Temporary by construction — nothing is written to the colleague's config, so this fires again
    * on the next turn if the model is still missing, and stops the moment it returns.
    */
+  /**
+   * The pre-roster leak, cleaned up once at boot.
+   *
+   * 🔴 Auto-extraction used to write to `session:<id>` and a consolidation pass promoted those rows
+   * into `global`, so one colleague's automatically-learned facts became readable by every other.
+   * Owner's ruling: discard rather than migrate. WARN, not info: rows leaving a user's store is
+   * something they should be able to find afterwards, and the count is the whole record of what went.
+   */
+  /**
+   * The whole store, erased on purpose.
+   *
+   * 🔴 WARN and never lower. This is the most destructive thing the product can do to a user's own
+   * data, and the only record afterwards is this line — a tabula-rasa run and an accidental click
+   * look identical in the store once it is empty.
+   */
+  "kb.memory.erased": {
+    level: "warn",
+    message: "erased every memory in every scope",
+    attributes: {
+      "memory.rows": "count",
+    },
+    content: "none",
+    file: "packages/server/src/handlers/memory.ts",
+  },
+  "kb.memory.legacy.discarded": {
+    level: "warn",
+    message: "discarded pre-roster memories that had leaked into the shared pile",
+    attributes: {
+      "memory.rows": "count",
+    },
+    content: "none",
+    file: "packages/core/src/kb-graph/memory.ts",
+  },
   "session.model.fallback": {
     level: "warn",
     message: "configured model could not serve — ran on the default",

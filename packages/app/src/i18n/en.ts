@@ -1363,6 +1363,18 @@ export const dict = {
   "settings.health.unreachable": "This instance could not be reached, so nothing below was checked.",
   "settings.health.recheck": "Check again",
   "settings.health.testProvider": "Test the connection to my model provider",
+  // Erase Memory (owner, 2026-08-22) — for starting a run from a clean slate without reinstalling.
+  // ⚠️ The wording names WHOSE memory goes, because "erase memory" reads as "this chat's" to most
+  // people and the actual scope is every colleague on the roster plus Nova.
+  "settings.health.eraseMemory": "Erase everything every agent remembers",
+  "settings.health.eraseMemory.confirm.title": "Erase all memory?",
+  "settings.health.eraseMemory.confirm.description":
+    "Every memory every colleague has — Nova included — is deleted permanently. Their chats, briefs and settings are untouched, and nothing is archived: this cannot be undone. Use it to start a run from a clean slate.",
+  "settings.health.eraseMemory.confirm.action": "Erase all memory",
+  "settings.health.eraseMemory.erasing": "Erasing…",
+  "settings.health.eraseMemory.done": "Erased {{count}} memories — every agent starts fresh",
+  "settings.health.eraseMemory.empty": "There was nothing to erase",
+  "settings.health.eraseMemory.failed": "Could not erase memory",
   // Community P1 — the instance identity. Plain language on purpose: a user who does not grasp that
   // the backup file IS their instance will store it carelessly, and there is no reset if they do.
   "settings.identity.title": "This instance's identity",

@@ -1,6 +1,9 @@
 import { For, Show, createMemo, createResource, createSignal, type Component } from "solid-js"
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
+import { useConfirm } from "@/components/dialog-confirm"
+import { memoryErase } from "@/utils/memory-api"
+import { showToast } from "@/utils/toast"
 import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
 import { instanceDiagnosis, type DiagnosisSignal, type DiagnosisStatus } from "@/utils/resource-api"
@@ -82,6 +85,48 @@ export const NovaHealthBoard: Component = () => {
   // A failed fetch is itself a finding, and saying so beats an empty panel that reads as "nothing
   // wrong". This is the screen where an unexplained blank is the worst possible answer.
   const unreachable = createMemo(() => diagnosis.error !== undefined)
+
+  const confirm = useConfirm()
+  const [erasing, setErasing] = createSignal(false)
+  /**
+   * Erase every memory in every scope, Nova's included.
+   *
+   * ⚠️ Reports the COUNT and distinguishes zero. "Erased 0 memories" and "erased 1,412" are different
+   * facts, and a store that was already empty must not be reported as though something happened —
+   * that is the difference between a diagnostic and a reassurance.
+   */
+  const eraseMemory = async () => {
+    const conn = connection()
+    if (!conn) return
+    if (
+      !(await confirm({
+        title: language.t("settings.health.eraseMemory.confirm.title"),
+        description: language.t("settings.health.eraseMemory.confirm.description"),
+        confirmLabel: language.t("settings.health.eraseMemory.confirm.action"),
+        destructive: true,
+      }))
+    )
+      return
+    setErasing(true)
+    try {
+      const erased = await memoryErase(conn.http, { directory: confinementDir() })
+      showToast({
+        variant: "success",
+        title:
+          erased > 0
+            ? language.t("settings.health.eraseMemory.done", { count: String(erased) })
+            : language.t("settings.health.eraseMemory.empty"),
+      })
+    } catch (error) {
+      showToast({
+        variant: "error",
+        title: language.t("settings.health.eraseMemory.failed"),
+        description: String(error),
+      })
+    } finally {
+      setErasing(false)
+    }
+  }
 
   /**
    * The confinement reading, fetched HERE rather than handed in as a prop.
@@ -169,6 +214,26 @@ export const NovaHealthBoard: Component = () => {
           }}
         >
           {language.t("settings.health.testProvider")}
+        </button>
+        {/* 🔴 ERASE MEMORY (owner, 2026-08-22) — "erases all RAGs from all agents, including Nova …
+            that will simplify running tabula rasa tests, without resetting entire Novaclaw install."
+
+            It lives on HEALTH rather than in the Memory app because it is not a memory-management
+            action: nobody erases every colleague's recall to tidy up. It is the reset you reach for
+            when you want to know how the product behaves with nothing learned, which is a
+            diagnostic — the same reason "Test the connection" sits here rather than under Models.
+
+            ⚠️ Rendered LAST and styled apart from the two checks above: they are read-only and this
+            one destroys the user's own data. The confirm names the blast radius and what SURVIVES,
+            because "erase all memory" reads as "this chat's" to most people. */}
+        <button
+          type="button"
+          data-action="erase-memory"
+          disabled={erasing()}
+          class="settings-v2-tab-description ml-auto text-v2-text-text-danger underline disabled:opacity-60"
+          onClick={() => void eraseMemory()}
+        >
+          {erasing() ? language.t("settings.health.eraseMemory.erasing") : language.t("settings.health.eraseMemory")}
         </button>
       </div>
     </section>

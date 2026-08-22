@@ -70,6 +70,20 @@ export function memoryStats(server: ServerConnection.HttpBase, input: { director
   return call<MemoryStats>(server, "GET", "memory/stats", input.directory)
 }
 
+/**
+ * Erase every memory in every scope, for every agent including Nova. Returns how many went.
+ *
+ * ⚠️ The CONFIRMATION is the caller's job and lives in the Settings control that offers this. A
+ * helper that asked would put a dialog inside a fetch wrapper, and the next caller would either get a
+ * surprise modal or route around it.
+ */
+export function memoryErase(server: ServerConnection.HttpBase, input: { directory: string }) {
+  // ⚠️ `api/memory/erase`, not `memory/erase`: the rest of this file talks to the LEGACY `/memory/*`
+  // surface, which ruling 11 freezes — new endpoints go on the one contract under `/api/*`, and
+  // `sdk/js/test/legacy-path-ledger.test.ts` turns red if one is added beside its old neighbours.
+  return call<number>(server, "POST", "api/memory/erase", input.directory)
+}
+
 export function memoryList(
   server: ServerConnection.HttpBase,
   input: {

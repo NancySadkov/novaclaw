@@ -68,6 +68,8 @@ describe("MemoryClient.fromEngine", () => {
         throw new Error("boom")
       },
       clearScope: async () => {},
+      eraseAll: async () => 0,
+      discardLegacyGlobalExtracts: async () => 0,
       stats: async () => ({ total: 1, valid: 1 }),
       list: async () => [],
       graph: async () => ({ nodes: [], edges: [] }),

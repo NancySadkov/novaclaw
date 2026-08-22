@@ -13,6 +13,7 @@ import { EventGroup, makeEventGroup } from "./groups/event"
 import type { Definition } from "@novaclaw/schema/event"
 import { AgentGroup } from "./groups/agent"
 import { HealthGroup } from "./groups/health"
+import { MemoryGroup } from "./groups/memory"
 import { PtyGroup } from "./groups/pty"
 import { PtyInstanceGroup } from "./groups/pty-instance"
 import { makeQuestionGroup } from "./groups/question"
@@ -48,6 +49,7 @@ const makeApiFromGroup = <
 ) =>
   HttpApi.make("server")
     .add(HealthGroup)
+    .add(MemoryGroup)
     .add(LocationGroup.middleware(locationMiddleware))
     .add(AgentGroup.middleware(locationMiddleware))
     // 🔴 **Every SESSION-SCOPED group carries `workspaceRoutingMiddleware`, and this list is the place
@@ -110,6 +112,7 @@ type ApiFromGroup<
   HttpApiGroup.AddMiddleware<
     HttpApiGroup.AddMiddleware<
       | typeof HealthGroup
+      | typeof MemoryGroup
       | HttpApiGroup.AddMiddleware<typeof LocationGroup, LocationId>
       | HttpApiGroup.AddMiddleware<typeof AgentGroup, LocationId>
       | ReturnType<

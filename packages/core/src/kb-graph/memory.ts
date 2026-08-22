@@ -108,6 +108,8 @@ export const layerFromConfig = (cfg: MemoryConfig): Layer.Layer<MemoryClient.Ser
         purge: (id) => client((live) => live.purge(id)),
         moveScope: (from, to) => client((live) => live.moveScope(from, to)),
         clearScope: (scope) => client((live) => live.clearScope(scope)),
+        eraseAll: () => client((live) => live.eraseAll()),
+        discardLegacyGlobalExtracts: () => client((live) => live.discardLegacyGlobalExtracts()),
         stats: () => client((live) => live.stats()),
         list: (input) => client((live) => live.list(input)),
         graph: (input) => client((live) => live.graph(input)),
@@ -115,6 +117,25 @@ export const layerFromConfig = (cfg: MemoryConfig): Layer.Layer<MemoryClient.Ser
       // Background consolidation (§1.3.4): periodically promote this instance's session memories to
       // global so auto-extracted facts become cross-session. Best-effort; a no-op until the engine is
       // live. Runs off the turn hot-path (a forked fiber, stopped on scope close).
+      // 🔴 DISCARD THE PRE-ROSTER LEAK, once, before the background loop starts (owner, 2026-08-22:
+      // *"we do not migrate the memories created by Novaclaw versions pre corporate structure — just
+      // discard them"*). Auto-extraction used to write to `session:<id>` and consolidation promoted
+      // those into `global`, so one colleague's automatically-learned facts became readable by every
+      // other. Measured on the owner's own store: 77 such rows in `global`, none in any cabinet.
+      //
+      // ⚠️ Forked, not awaited: the engine is lazy and this must not hold up the first turn. And
+      // idempotent by construction — after one pass the predicate matches nothing, and nothing writes
+      // rows that match it again, so there is no "have I run this?" flag to keep true.
+      yield* Effect.forkScoped(
+        Effect.gen(function* () {
+          const live = engine
+          if (!live) return
+          const discarded = yield* Effect.tryPromise(() => live.discardLegacyGlobalExtracts()).pipe(
+            Effect.orElseSucceed(() => 0),
+          )
+          if (discarded > 0) yield* Log.event("kb.memory.legacy.discarded", { "memory.rows": discarded })
+        }),
+      )
       const consolidateEvery = Duration.millis(cfg.consolidateEveryMs ?? 5 * 60_000)
       yield* Effect.forkScoped(
         Effect.gen(function* () {
@@ -206,6 +227,8 @@ export const client = (capability: Capability.Capability<MemoryClient.Interface>
     purge: (id) => withClient((memory) => memory.purge(id)),
     moveScope: (from, to) => withClient((memory) => memory.moveScope(from, to)),
     clearScope: (scope) => withClient((memory) => memory.clearScope(scope)),
+    eraseAll: () => withClient((memory) => memory.eraseAll()),
+    discardLegacyGlobalExtracts: () => withClient((memory) => memory.discardLegacyGlobalExtracts()),
     stats: () => withClient((memory) => memory.stats()),
     list: (input) => withClient((memory) => memory.list(input)),
     graph: (input) => withClient((memory) => memory.graph(input)),

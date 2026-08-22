@@ -13583,6 +13583,74 @@
         ]
       }
     },
+    "/api/memory/erase": {
+      "post": {
+        "tags": ["novaclaw HttpApi"],
+        "operationId": "v2.memory.erase",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "string",
+                      "enum": ["NaN"]
+                    },
+                    {
+                      "type": "string",
+                      "enum": ["Infinity"]
+                    },
+                    {
+                      "type": "string",
+                      "enum": ["-Infinity"]
+                    },
+                    {
+                      "type": "string",
+                      "enum": ["Infinity", "-Infinity", "NaN"]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Delete every memory in every scope, for every agent including Nova. Used to run from a clean slate without resetting the install. The confirmation is the caller's responsibility.",
+        "summary": "Erase all memory",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.memory.erase({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/location": {
       "get": {
         "tags": ["novaclaw HttpApi"],
@@ -53328,6 +53396,10 @@
     {
       "name": "workspace",
       "description": "Experimental HttpApi workspace routes."
+    },
+    {
+      "name": "novaclaw HttpApi",
+      "description": "Experimental HttpApi surface for selected instance routes."
     },
     {
       "name": "novaclaw HttpApi",

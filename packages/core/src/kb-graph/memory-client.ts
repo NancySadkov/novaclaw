@@ -126,6 +126,10 @@ export interface Interface {
   /** Move a whole scope's memories elsewhere — what a retirement does instead of deleting them. */
   readonly moveScope: (from: string, to: string) => Effect.Effect<void, MemoryError>
   readonly clearScope: (scope: string) => Effect.Effect<void, MemoryError>
+  /** Erase every memory in every scope — see `wasm-engine.ts`. Returns how many were removed. */
+  readonly eraseAll: () => Effect.Effect<number, MemoryError>
+  /** Discard the pre-roster leak: `global` rows written by auto-extraction. Idempotent. */
+  readonly discardLegacyGlobalExtracts: () => Effect.Effect<number, MemoryError>
   readonly stats: () => Effect.Effect<Stats, MemoryError>
   /** Enumerate memories (viewer/editor) — no query, newest first, filterable + paginated. */
   readonly list: (input?: ListInput) => Effect.Effect<ReadonlyArray<MemoryRow>, MemoryError>
@@ -150,6 +154,8 @@ export interface Engine {
   purge(id: string): Promise<void>
   moveScope(from: string, to: string): Promise<void>
   clearScope(scope: string): Promise<void>
+  eraseAll(): Promise<number>
+  discardLegacyGlobalExtracts(): Promise<number>
   stats(): Promise<Stats>
   list(input?: ListInput): Promise<ReadonlyArray<MemoryRow>>
   graph(input?: GraphInput): Promise<MemoryGraph>
@@ -172,6 +178,8 @@ export const fromEngine = (engine: Engine): Interface => {
     purge: (id) => wrap(() => engine.purge(id)),
     moveScope: (from, to) => wrap(() => engine.moveScope(from, to)),
     clearScope: (scope) => wrap(() => engine.clearScope(scope)),
+    eraseAll: () => wrap(() => engine.eraseAll()),
+    discardLegacyGlobalExtracts: () => wrap(() => engine.discardLegacyGlobalExtracts()),
     stats: () => wrap(() => engine.stats()),
     list: (input) => wrap(() => engine.list(input)),
     graph: (input) => wrap(() => engine.graph(input)),
@@ -192,6 +200,8 @@ export const proxy = (get: () => Interface): Interface => ({
   purge: (id) => Effect.suspend(() => get().purge(id)),
   moveScope: (from, to) => Effect.suspend(() => get().moveScope(from, to)),
   clearScope: (scope) => Effect.suspend(() => get().clearScope(scope)),
+  eraseAll: () => Effect.suspend(() => get().eraseAll()),
+  discardLegacyGlobalExtracts: () => Effect.suspend(() => get().discardLegacyGlobalExtracts()),
   stats: () => Effect.suspend(() => get().stats()),
   list: (input) => Effect.suspend(() => get().list(input)),
   graph: (input) => Effect.suspend(() => get().graph(input)),
@@ -217,6 +227,8 @@ export const disabled = (reason = "memory is not available"): Interface => {
     purge: fail,
     moveScope: fail,
     clearScope: fail,
+    eraseAll: fail,
+    discardLegacyGlobalExtracts: fail,
     stats: fail,
     list: fail,
     graph: fail,
@@ -289,6 +301,23 @@ export const stub = (): Interface => {
     clearScope: (scope) =>
       Effect.sync(() => {
         for (const [id, m] of mems) if (m.scope === scope) mems.delete(id)
+      }),
+    eraseAll: () =>
+      Effect.sync(() => {
+        const n = mems.size
+        mems.clear()
+        edges.length = 0
+        return n
+      }),
+    discardLegacyGlobalExtracts: () =>
+      Effect.sync(() => {
+        let n = 0
+        for (const [id, m] of [...mems])
+          if (m.scope === "global" && m.source === "auto-extract") {
+            mems.delete(id)
+            n += 1
+          }
+        return n
       }),
     stats: () => ok({ total: mems.size, valid: [...mems.values()].filter((m) => m.valid).length }),
     list: (input) =>

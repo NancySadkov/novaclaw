@@ -10,6 +10,7 @@ import { SkillHandler } from "./handlers/skill"
 import { EventHandler } from "./handlers/event"
 import { AgentHandler } from "./handlers/agent"
 import { HealthHandler } from "./handlers/health"
+import { MemoryHandler } from "./handlers/memory"
 import { PtyHandler } from "./handlers/pty"
 import { PtyInstanceHandler } from "./handlers/pty-instance"
 import { QuestionHandler } from "./handlers/question"
@@ -27,6 +28,7 @@ import { TelemetryHandler } from "./handlers/telemetry"
 
 type HandlerLayers =
   | typeof HealthHandler
+  | typeof MemoryHandler
   | typeof LocationHandler
   | typeof AgentHandler
   | typeof SessionHandler
@@ -58,6 +60,7 @@ export const handlers: Layer.Layer<
   Layer.Services<HandlerLayers>
 > = Layer.mergeAll(
   HealthHandler,
+  MemoryHandler,
   LocationHandler,
   AgentHandler,
   SessionHandler,

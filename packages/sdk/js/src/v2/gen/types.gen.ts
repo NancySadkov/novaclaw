@@ -13334,6 +13334,35 @@ export type V2HealthGetResponses = {
 
 export type V2HealthGetResponse = V2HealthGetResponses[keyof V2HealthGetResponses]
 
+export type V2MemoryEraseData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/memory/erase"
+}
+
+export type V2MemoryEraseErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2MemoryEraseError = V2MemoryEraseErrors[keyof V2MemoryEraseErrors]
+
+export type V2MemoryEraseResponses = {
+  /**
+   * Success
+   */
+  200: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type V2MemoryEraseResponse = V2MemoryEraseResponses[keyof V2MemoryEraseResponses]
+
 export type V2LocationGetData = {
   body?: never
   path?: never

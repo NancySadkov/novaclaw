@@ -3562,6 +3562,20 @@ class ApiV2Health extends NovaClawApiClient {
   }
 }
 
+class ApiV2Memory extends NovaClawApiClient {
+  /**
+   * Erase all memory
+   *
+   * Delete every memory in every scope, for every agent including Nova. Used to run from a clean slate without resetting the install. The confirmation is the caller's responsibility.
+   */
+  public erase<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).post<T.V2MemoryEraseResponses, T.V2MemoryEraseErrors, ThrowOnError>({
+      url: "/api/memory/erase",
+      ...options,
+    })
+  }
+}
+
 class ApiV2Location extends NovaClawApiClient {
   /**
    * Get location
@@ -6943,6 +6957,11 @@ class ApiV2 extends NovaClawApiClient {
   private _health?: ApiV2Health
   get health(): ApiV2Health {
     return (this._health ??= new ApiV2Health({ client: this.client }))
+  }
+
+  private _memory?: ApiV2Memory
+  get memory(): ApiV2Memory {
+    return (this._memory ??= new ApiV2Memory({ client: this.client }))
   }
 
   private _location?: ApiV2Location
