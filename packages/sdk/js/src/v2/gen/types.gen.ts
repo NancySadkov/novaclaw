@@ -4666,6 +4666,7 @@ export type AgentV2Info = {
   needsTier?: "micro" | "tiny" | "small" | "medium" | "large" | "frontier"
   description?: string
   directory?: string
+  workspace?: string
   permissionMode?: "plan" | "ask" | "bypass" | "yolo"
   strict?: {
     enabled?: boolean

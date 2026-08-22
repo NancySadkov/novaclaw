@@ -41018,6 +41018,9 @@
           "directory": {
             "type": "string"
           },
+          "workspace": {
+            "type": "string"
+          },
           "permissionMode": {
             "type": "string",
             "enum": ["plan", "ask", "bypass", "yolo"]

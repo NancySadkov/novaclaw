@@ -126,6 +126,18 @@ export function AgentConfigDialog(props: {
     permissionMode() ?? (agent()?.config?.["permissionMode"] as string | undefined) ?? "bypass"
   const strictValue = () =>
     strict() ?? ((agent()?.config?.["strict"] as { enabled?: boolean } | undefined)?.enabled ?? false)
+  /**
+   * Where this colleague's own workspace is, as the server computed it.
+   *
+   * ⚠️ Read from the AGENT record rather than derived here: the scratch root lives under the
+   * instance's data directory, which this client does not know. A guess would produce a link to a
+   * folder that does not exist, which is worse than no link.
+   */
+  const workspacePath = () => {
+    const raw = (agent() as unknown as { readonly workspace?: unknown } | undefined)?.workspace
+    return typeof raw === "string" && raw.trim() ? raw.trim() : undefined
+  }
+
   const folderLabel = () => {
     const folder = directoryValue()
     return folder ? folderDisplayName({ worktree: folder }) : language.t("agentConfig.folderScratch")
@@ -604,6 +616,28 @@ export function AgentConfigDialog(props: {
             </Show>
           </div>
           <p class="mt-1 text-[11px] text-v2-text-text-faint">{language.t("agentConfig.folderHint")}</p>
+          {/* 🔴 BOTH FOLDERS, and this is the half the user could not see (owner, 2026-08-22: *"please
+              ensure user can browse the agent's Scratch folder"*). A colleague keeps its own workspace
+              even when assigned to a project — `AgentPlugin.scratchDirsFor` grants it and
+              `SystemCompose.workspaceSection` tells the colleague about it — so the notes, drafts and
+              probe scripts it writes there were real files nobody had a way to open.
+
+              ⚠️ Rendered whether or not a project is assigned, because the workspace exists either
+              way: when there is no project it IS the working folder, and when there is one it is the
+              place the colleague keeps everything that is not the project's. Hiding it in the second
+              case would hide exactly the files the user has no other route to. */}
+          <Show when={workspacePath()}>
+            {(path) => (
+              <a
+                data-action="browse-workspace"
+                href={`/files?path=${encodeURIComponent(path())}`}
+                class="mt-2 inline-flex items-center gap-1.5 text-[11px] text-v2-text-text-faint underline hover:text-v2-text-text-default"
+              >
+                <Icon name="folder" class="size-3 shrink-0" />
+                {language.t("agentConfig.browseWorkspace", { name: name() })}
+              </a>
+            )}
+          </Show>
         </section>
 
         <section class="mt-5">

@@ -1,6 +1,7 @@
 import { AgentV2 } from "@novaclaw/core/agent"
 import { InvalidRequestError } from "@novaclaw/protocol/errors"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
+import { Scratch } from "@novaclaw/core/scratch"
 import { AgentRetire } from "@novaclaw/core/agent/retire"
 import { AgentUsage } from "@novaclaw/core/agent/usage"
 import { Memory } from "@novaclaw/core/kb-graph/memory"
@@ -21,7 +22,14 @@ export const AgentHandler = handlerLayer(
     handlers
       .handle("agent.list", () =>
         Effect.gen(function* () {
-          return yield* response(AgentV2.Service.use((agent) => agent.all()))
+          // ⚠️ `workspace` is stamped HERE rather than stored: it is derived from the id, so keeping
+          // it in the record would be a second copy to keep true, and a stale one the day the scratch
+          // root moves. The app cannot compute it — the root is under the instance's data directory,
+          // which the client does not know and must not guess.
+          const roster = yield* AgentV2.Service.use((agent) => agent.all())
+          return yield* response(
+            Effect.succeed(roster.map((item) => ({ ...item, workspace: Scratch.forAgent(String(item.id)) }))),
+          )
         }),
       )
       .handle("agent.usage", (ctx) =>

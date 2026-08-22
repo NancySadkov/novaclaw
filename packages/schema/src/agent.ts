@@ -45,6 +45,18 @@ export const Info = Schema.Struct({
   description: Schema.String.pipe(optional),
   /** The FOLDER this colleague works on. Absent = its own scratch (`AgentWorkspace.folderFor`). */
   directory: Schema.String.pipe(optional),
+  /**
+   * The colleague's OWN workspace — an absolute host path, derived and never authored.
+   *
+   * 🔴 Read-only and server-computed (`Scratch.forAgent`). It rides the agent record because it is a
+   * property of the colleague, and because the app has no way to derive it: the scratch root lives
+   * under the instance's data directory, which the client does not know and must not guess.
+   *
+   * ⚠️ Present whether or not `directory` is set — a colleague keeps this folder even when assigned
+   * to a project (owner, 2026-08-22), and it is exactly the case where the user has no other route to
+   * the files it writes there.
+   */
+  workspace: Schema.String.pipe(optional),
   /** Standing WORK choices — folded as a layer by `AgentDefaults`, absent = inherit. */
   permissionMode: Schema.Literals(["plan", "ask", "bypass", "yolo"]).pipe(optional),
   strict: Schema.Struct({

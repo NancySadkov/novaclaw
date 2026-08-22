@@ -2690,6 +2690,10 @@ export const dict = {
   "agentConfig.folder": "What it works on",
   "agentConfig.folderScratch": "Its own workspace",
   "agentConfig.folderOwn": "Back to its own",
+  // Browsing the colleague's own workspace (owner, 2026-08-22). Worded as a place belonging to
+  // SOMEBODY — "Open workspace" would read as a generic folder, and the whole point is that this one
+  // is Theron's and nobody else's.
+  "agentConfig.browseWorkspace": "Browse {{name}}'s workspace",
   "agentConfig.folderPick": "Choose the folder this colleague works on",
   "agentConfig.folderHint":
     "Change this and the colleague is told, so it does not carry on thinking it works on the old project.",

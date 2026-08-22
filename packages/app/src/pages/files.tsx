@@ -1,3 +1,4 @@
+import { useSearchParams } from "@solidjs/router"
 import { createEffect, createMemo, createResource, createSignal, For, Match, Show, Switch } from "solid-js"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { GoldGlyph } from "@/components/gold-glyph"
@@ -95,8 +96,22 @@ export function FilesPage() {
       .catch(() => undefined)
     return shape(got)
   })
+  /**
+   * A caller may say WHERE to open (`/files?path=…`).
+   *
+   * 🔴 This is how a colleague's workspace becomes browsable (owner, 2026-08-22: *"please ensure user
+   * can browse the agent's Scratch folder"*). The scratch directory is a real host path the app
+   * manages, so it needs no new browser — only a way to say "start here". Contacts links to it from
+   * the colleague's own config, which is the only place the user knows whose workspace it is.
+   *
+   * ⚠️ It seeds ONCE, like the default start does, rather than tracking the param: the user navigates
+   * away from here by clicking folders, and a reactive param would yank them back to the workspace
+   * every time the route re-rendered.
+   */
+  const [params] = useSearchParams()
   createEffect(() => {
-    const s = pathInfo.latest?.start
+    const requested = typeof params.path === "string" ? params.path.trim() : ""
+    const s = requested || pathInfo.latest?.start
     if (s && !dir()) setDir(s)
   })
   const roots = createMemo(() => pathInfo.latest?.roots ?? [])
