@@ -15,6 +15,7 @@ import {
 import { Cause, Clock, DateTime, Duration, Effect, Exit, FiberSet, Layer, Option, Semaphore, Stream } from "effect"
 import path from "path"
 import { AgentV2 } from "../../agent"
+import { ModelHealth } from "./model-health"
 import { Config } from "../../config"
 import { ConfigToolRouting } from "../../config/tool-routing"
 import { Global } from "../../global"
@@ -1813,6 +1814,39 @@ export const layer = Layer.effect(
                 retryable: true,
               }),
             )
+          }
+          // 🔴 HEALTH BOOKKEEPING for the owner's "or gives errors" fallback — recorded here because
+          // this is the point where a turn's outcome is finally known, after the retry loop has done
+          // everything it can. A failure that reaches here is an endpoint that failed, was retried to
+          // exhaustion, and failed again; `runner/model.ts` routes the NEXT turn around a model that
+          // does that twice inside ten minutes, and back onto it the moment one turn works.
+          //
+          // ⚠️ Deliberately not counting a turn that produced assistant output and then broke: the
+          // endpoint plainly served, and demoting on a damaged epilogue would move a colleague off a
+          // working model. Both branches are best-effort — health tracking must never fail a turn.
+          //
+          // ⚠️ Keyed on the model the turn RAN on (`model.provider`/`model.id` — the same pair
+          // `observeServing` uses), never on `modelRef`. `models.ref` reports what the session
+          // SELECTED, which after a fallback is the sick model rather than the one that answered:
+          // keying on it would let a successful turn on the healthy substitute clear the sick model's
+          // record, send the next turn back to it, and flap one failed turn per cycle forever.
+          const ranOn = { providerID: String(model.provider), id: String(model.id) }
+          // ⚠️ **`hasAssistantFailed`, and the two obvious predicates are both WRONG here** — the
+          // integration test caught each in turn. `llmFailure` alone misses a provider that streams
+          // its fault as a `providerError` EVENT (the ordinary shape for an OpenAI-compatible
+          // endpoint) and leaves the thrown channel empty. And `!hasAssistantStarted()` is never true
+          // after a failure, because `failAssistant` OPENS an assistant message to hang the failure
+          // off — so "the model never started" reads false on exactly the turns that failed hardest.
+          // What decides this is whether the turn ended in a durable assistant failure.
+          //
+          // ⚠️ `handledResponseFailure` excludes the turn that ANSWERED and then broke in its
+          // epilogue: the endpoint plainly served, and demoting a colleague's model for a damaged
+          // `[DONE]` would move it off something that works.
+          const turnFailed = publisher.hasAssistantFailed() && !handledResponseFailure
+          if (turnFailed) {
+            ModelHealth.failed(ranOn, yield* Clock.currentTimeMillis)
+          } else if (!publisher.hasAssistantFailed()) {
+            ModelHealth.succeeded(ranOn)
           }
           if (stream._tag === "Failure" && Cause.hasInterrupts(stream.cause)) yield* FiberSet.clear(toolFibers)
           const settled = yield* restore(awaitToolFibers(toolFibers)).pipe(Effect.exit)

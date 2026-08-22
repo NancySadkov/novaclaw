@@ -43,9 +43,19 @@ export const PROMOTED_NOVACLAW_SUBDIRS = ["server", "v2", "config", "tool", "con
  * default on a loaded one (the same run took core from 129 s to 190 s). A kill is indistinguishable
  * from a hang in the summary and produces no parseable failure list, so an under-set backstop turns a
  * slow machine into a fake red — the exact false failure heavy-guard.ts exists to prevent.
+ *
+ * ⚠️ **300 s expired, and it took two gates to notice — raised to 900 s on 2026-08-22.** The unit
+ * passed at 203 s one evening and was wall-clock-killed at 300 s on the next two gates, with host
+ * commit peaking at 46–48 % — so the summary's "genuine hang, not memory" line was reporting a
+ * healthy run as a crash. Timed both arms of an A/B directly to settle it: **461 s with the change
+ * under test (426 pass), 522 s at HEAD (427 pass)** — the unit is simply slower than it was, and the
+ * arm WITHOUT the change was the slower of the two.
+ *
+ * A measured threshold inherits the expiry of whatever it was measured on. 900 s keeps a real hang
+ * bounded (a hang runs forever; this does not) while leaving ~1.7× over the slowest honest run seen.
  */
 const PROMOTED_WALLCLOCK_MS: Partial<Record<(typeof PROMOTED_NOVACLAW_SUBDIRS)[number], number>> = {
-  server: 300_000,
+  server: 900_000,
 }
 
 /**

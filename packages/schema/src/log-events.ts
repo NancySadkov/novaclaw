@@ -1000,6 +1000,35 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/agent/retire.ts",
   },
+  /**
+   * A colleague's configured model could not serve the turn, so it ran on the instance default.
+   *
+   * 🔴 The audit trail for a SILENT downgrade. The turn works, which is the point — but it works on a
+   * different mind than the user chose for that colleague, and the only way to tell afterwards is
+   * this line. Both models are named: "which one did I ask for" and "what actually answered" are
+   * different questions and an operator needs both.
+   *
+   * ⚠️ `model.reason` separates the TWO faults the owner named, because they are diagnosed
+   * differently: absent (the default) means the catalog cannot resolve it — a model not pulled, a
+   * provider key gone — while `unhealthy` means it resolved fine and then failed turn after turn,
+   * which points at the endpoint rather than at the configuration. Reading a run of these without the
+   * reason would have an operator checking the wrong thing.
+   *
+   * ⚠️ Temporary by construction — nothing is written to the colleague's config, so this fires again
+   * on the next turn if the model is still missing, and stops the moment it returns.
+   */
+  "session.model.fallback": {
+    level: "warn",
+    message: "configured model could not serve — ran on the default",
+    attributes: {
+      "session.id": "correlate",
+      "model.requested": "id",
+      "model.used": "id",
+      "model.reason": "id",
+    },
+    content: "correlated",
+    file: "packages/core/src/session/runner/model.ts",
+  },
   /** A directory had no instance yet, so one is being created. 1146 lines. */
   "instance.store.create": {
     level: "info",

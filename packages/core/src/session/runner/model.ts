@@ -3,13 +3,15 @@ export * as SessionRunnerModel from "./model"
 import { makeLocationNode } from "../../effect/app-node"
 import { splitModelSampling } from "./sampling-split"
 import { withRepetitionFloor } from "./repetition-floor"
+import { ModelHealth } from "./model-health"
 import { type Model } from "@novaclaw/llm"
 import * as AnthropicMessages from "@novaclaw/llm/protocols/anthropic-messages"
 import * as OpenAICompatibleChat from "@novaclaw/llm/protocols/openai-compatible-chat"
 import * as OpenAIResponses from "@novaclaw/llm/protocols/openai-responses"
 import { Auth, type AnyRoute } from "@novaclaw/llm/route"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Schema } from "effect"
 import { produce } from "immer"
+import { Log } from "@novaclaw/schema/log"
 import { Catalog } from "../../catalog"
 import { Config } from "../../config"
 import { Credential } from "../../credential"
@@ -633,11 +635,64 @@ export const locationLayer = Layer.effect(
           yield* plugins.ready.pipe(Effect.timeoutOrElse({ duration: "5 seconds", orElse: () => Effect.void }))
           selected = yield* select(session)
         }
-        if (!selected && session.model)
-          return yield* new ModelUnavailableError({
-            providerID: session.model.providerID,
-            modelID: session.model.id,
-          })
+        // 🔴 FALL BACK to the instance default rather than killing the turn (owner, 2026-08-21: *"if
+        // the agent's chosen model is unavailable / gives errors, we temporarily auto switch to the
+        // Default model"*).
+        //
+        // A colleague's model is part of its job description now, so an unavailable one is an
+        // ordinary condition — a local model not yet pulled, a provider whose key expired, a machine
+        // that used to have a GPU. Refusing the turn made the colleague useless until somebody
+        // noticed and edited its configuration; falling back keeps it working, worse, and says so.
+        //
+        // ⚠️ TEMPORARY means nothing is written. The colleague's configured model is untouched, so
+        // the very next turn tries it again and recovers by itself the moment it returns. Rewriting
+        // the config on a transient failure would be a silent, permanent downgrade nobody asked for.
+        if (!selected && session.model) {
+          const fallback = yield* catalog.model.default()
+          const usable = fallback && supported(fallback) ? fallback : (yield* catalog.model.available()).find(supported)
+          if (usable) {
+            yield* Log.event("session.model.fallback", {
+              "session.id": session.id,
+              "model.requested": `${session.model.providerID}/${session.model.id}`,
+              "model.used": `${usable.providerID}/${usable.id}`,
+              "model.reason": "unavailable",
+            })
+            selected = usable
+          } else
+            return yield* new ModelUnavailableError({
+              providerID: session.model.providerID,
+              modelID: session.model.id,
+            })
+        }
+        // 🔴 The SECOND half of the owner's rule: *"or gives errors"*. A model that resolves cleanly
+        // and then fails every request is the commoner fault — a local server that died, a key that
+        // expired — and the block above cannot see it, because there is nothing wrong with the
+        // catalog entry. `ModelHealth` watches the turns themselves and answers "is this endpoint
+        // serving right now"; two exhausted-retry failures inside ten minutes is the bar, so a
+        // restarting local server does not demote anybody (see that module's threshold note).
+        //
+        // ⚠️ Never routes onto a model that is ALSO sick, and never away from the default onto
+        // nothing: if the default is the thing failing, staying put and reporting its real error
+        // beats bouncing between two dead endpoints and reporting neither.
+        if (selected && session.model) {
+          const at = yield* Clock.currentTimeMillis
+          if (ModelHealth.sick(selected, at)) {
+            const fallback = yield* catalog.model.default()
+            const healthy =
+              fallback && supported(fallback) && !ModelHealth.sick(fallback, at)
+                ? fallback
+                : (yield* catalog.model.available()).find((entry) => supported(entry) && !ModelHealth.sick(entry, at))
+            if (healthy && `${healthy.providerID}/${healthy.id}` !== `${selected.providerID}/${selected.id}`) {
+              yield* Log.event("session.model.fallback", {
+                "session.id": session.id,
+                "model.requested": `${selected.providerID}/${selected.id}`,
+                "model.used": `${healthy.providerID}/${healthy.id}`,
+                "model.reason": "unhealthy",
+              })
+              selected = healthy
+            }
+          }
+        }
         if (!selected) return yield* new ModelNotSelectedError({ sessionID: session.id })
         yield* ensureManagedModel(localModels, selected, Config.latest(yield* config.entries(), "local_model_catalog"))
         const provider = yield* catalog.provider.get(selected.providerID)

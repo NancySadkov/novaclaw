@@ -592,6 +592,16 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
     hasActiveAssistant: () => assistantActive,
     hasAssistantStarted: () => assistantMessageID !== undefined,
     hasProviderError: () => providerFailed,
+    /**
+     * Did this turn end in a DURABLE assistant failure — the row the user sees as "this did not work"?
+     *
+     * ⚠️ Distinct from `hasProviderError` (a provider error was seen) and from `hasAssistantStarted`
+     * (an assistant message exists). Neither answers "did the turn deliver": `failAssistant` OPENS an
+     * assistant message to hang the failure off, so `hasAssistantStarted()` is true after a turn that
+     * produced nothing at all — which is exactly how a first attempt at model-health bookkeeping read
+     * every failed turn as a partial success and recorded nothing.
+     */
+    hasAssistantFailed: () => assistantFailed,
     stepSettlement: () => stepSettlement,
     startAssistant,
     assistantMessageID: assistantMessageIDForTool,
