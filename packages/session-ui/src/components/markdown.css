@@ -366,6 +366,31 @@
     margin: 1.5rem 0;
     display: block;
   }
+
+  /* A file the colleague made, served from this instance (owner, 2026-08-22).
+     🔴 It must not look like a web link: clicking one navigates away, clicking this SAVES something
+     to the user's disk, and those deserve different affordances. The arrow says which before the
+     click rather than after it. */
+  a.agent-file-link::before {
+    content: "⤓";
+    margin-right: 0.35em;
+    opacity: 0.7;
+  }
+
+  a.agent-file-link {
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 2px;
+  }
+
+  /* ⚠️ Capped so a generated chart cannot take over the transcript. A colleague producing a
+     4000px render is ordinary, and an image that fills the scrollback buries the reply that
+     explains it. `object-fit: contain` keeps an over-tall one legible rather than cropping it. */
+  img.agent-file-image {
+    max-height: 28rem;
+    object-fit: contain;
+    object-position: left;
+  }
 }
 
 body:not([data-new-layout]) [data-component="markdown"] {

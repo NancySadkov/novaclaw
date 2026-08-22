@@ -466,17 +466,54 @@ async function highlightCodeBlocks(html: string): Promise<string> {
   return result
 }
 
+/** Attribute-safe text. The path comes from a MODEL, so it is untrusted input in an HTML string. */
+const escapeAttribute = (value: string): string =>
+  value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+
 export type NativeMarkdownParser = (markdown: string) => Promise<string>
+
+/**
+ * How the HOST decides whether a markdown href names a local file, and what URL serves it.
+ *
+ * 🔴 Injected rather than implemented here (owner, 2026-08-22: *"the agent can embed links to the
+ * files on the host machine, which user can just click in the chat log to download, as well as link
+ * images"*). This package renders markdown for anybody; only the app knows which instance is
+ * connected and how to reach its filesystem, and a renderer that guessed would produce links to the
+ * wrong machine the moment the user is driving a remote instance.
+ *
+ * `undefined` means "not a local file" and the ordinary external-link rendering applies.
+ */
+export type HostFileResolver = (href: string) => { readonly url: string; readonly image: boolean } | undefined
 
 export const { use: useMarked, provider: MarkedProvider } = createSimpleContext({
   name: "Marked",
-  init: (props: { nativeParser?: NativeMarkdownParser }) => {
+  init: (props: { nativeParser?: NativeMarkdownParser; resolveFile?: HostFileResolver }) => {
     const jsParser = marked.use(
       {
         renderer: {
           link({ href, title, text }) {
             const titleAttr = title ? ` title="${title}"` : ""
+            // 🔴 A FILE THIS INSTANCE CAN SERVE — a colleague handing over what it made. `download`
+            // makes the click save it rather than navigate, and the attribute carries the file's own
+            // name so it does not land as the route's last segment.
+            const local = props.resolveFile?.(href)
+            if (local)
+              return `<a href="${escapeAttribute(local.url)}"${titleAttr} class="agent-file-link" download="${escapeAttribute(text || "")}" data-agent-file="true">${text}</a>`
             return `<a href="${href}"${titleAttr} class="external-link" target="_blank" rel="noopener noreferrer">${text}</a>`
+          },
+          /**
+           * `![alt](path.png)` from a colleague renders INLINE.
+           *
+           * ⚠️ Only for a host file this instance can serve. A remote image URL stays an ordinary
+           * `<img>` with whatever the author wrote — rewriting those would make the chat fetch from
+           * wherever a model happened to name, which is egress the user did not ask for.
+           */
+          image({ href, title, text }) {
+            const titleAttr = title ? ` title="${escapeAttribute(title)}"` : ""
+            const alt = escapeAttribute(text || "")
+            const local = props.resolveFile?.(href)
+            const src = local?.image ? local.url : href
+            return `<img src="${escapeAttribute(src)}" alt="${alt}"${titleAttr} class="agent-file-image" loading="lazy" />`
           },
         },
       },
