@@ -1348,6 +1348,11 @@ export const layer = Layer.effect(
               // `test/session-system-compose.test.ts`, which fails if `SpawnTool.name` ever moves.
               canSpawn: (toolMaterialization?.definitions ?? []).some((tool) => tool.name === "spawn"),
             }),
+            // ⚠️ From the AGENT record, not from the session's resolved memory stance: `memory:
+            // "none"` is a property of WHO this colleague is — a throwaway keeps nothing by
+            // construction — while the session-level switch can turn recall off for a colleague that
+            // normally remembers, which is a different sentence and not this one.
+            memoryStance: SystemCompose.memoryStanceSection(prepared.agent.info?.memory),
             projectScope: SystemCompose.projectScopeSection(config.permissionMode),
             base: system.baseline,
           })).map(SystemPart.make)

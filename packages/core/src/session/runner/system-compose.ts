@@ -125,6 +125,37 @@ export const projectScopeSection = (mode: PermissionMode): string | undefined =>
   mode === "yolo" ? undefined : PROJECT_SCOPE_INSTRUCTION
 
 /**
+ * That this colleague keeps NOTHING between chats, when that is true.
+ *
+ * 🔴 **The defect, measured live on holo3.1 2026-08-22.** A colleague configured `memory: "none"` was
+ * asked *"remember this for later: the quarterly review is on the 14th"* and answered *"Yes, I've
+ * stored the information."* It had written a TODO. Nothing had ever told it otherwise: the
+ * disclosure existed only in the Contacts dialog, where it tells the USER, and in the `self` tool,
+ * which a model only reads if it thinks to ask about itself. A model whose prompt says nothing about
+ * memory will assume it has some, because almost every model it was trained on does.
+ *
+ * That is the roster's memory switch failing at the one thing it is for. A throwaway is supposed to
+ * be honestly disposable — instead it accepted work it structurally could not do, and said so.
+ *
+ * ⚠️ **Only for `none`.** A colleague WITH memory needs no section: having memory is the assumption a
+ * model already arrives with, and stating it would be dead text in nearly every prompt. Same rule as
+ * `toolDiscoverySection`'s zero-count case — an instruction describing a state that is not this
+ * session's is a false description, and the absent branch keeps an ordinary prompt byte-identical.
+ *
+ * ⚠️ Kernel material, so a persona or an agent prompt cannot bury it: whether anything survives this
+ * conversation is a fact about the runtime, not a preference of the assistant's.
+ */
+export const memoryStanceSection = (memory: "own" | "none" | undefined): string | undefined =>
+  memory === "none" ? THROWAWAY_MEMORY_INSTRUCTION : undefined
+
+const THROWAWAY_MEMORY_INSTRUCTION =
+  "You have NO long-term memory. Nothing from this conversation is kept: when it ends, or is " +
+  "compacted, everything you were told here is gone, and you will not have it in any future chat. " +
+  "If you are asked to remember, note, or keep something for later, say plainly that you cannot and " +
+  "that it needs to go somewhere durable — a file, or a colleague who does keep memories. Never " +
+  "answer that you have stored, saved or noted something for later, because you have not."
+
+/**
  * That the tool list is INCOMPLETE, and how to reach the rest.
  *
  * 🔴 **The defect (owner, 2026-08-11, on Holo-3.1):** asked *"what is the full list of tools you have
@@ -307,6 +338,8 @@ export interface SystemPromptParts {
   readonly perception?: string
   /** The project-scope rule (already resolved via `projectScopeSection`); absent in `yolo`. */
   readonly projectScope?: string
+  /** That this colleague keeps nothing between chats. Absent unless `memory: "none"`. */
+  readonly memoryStance?: string
   /** The immutable kernel base context (environment, tools, skills) — composed LAST. */
   readonly base?: string
 }
@@ -340,6 +373,9 @@ export const composeSystemParts = (parts: SystemPromptParts): string[] =>
     // agent prompt must not be able to bury. Absent when the model declares no image modality, so a
     // text-only model's prompt is byte-identical to the pre-feature one.
     parts.perception,
+    // Beside those two for the third time and the same reason: a fact about what this runtime keeps.
+    // A persona that says "I'll remember that for you" must not be able to sit on top of it.
+    parts.memoryStance,
     parts.projectScope,
     parts.base,
   ].filter((part): part is string => part !== undefined && part.length > 0)

@@ -17,12 +17,20 @@ describe("SystemCompose — per-model pre-prompt composition", () => {
   // ⚠️ `memoryRecall` is deliberately NOT here: it left the system prompt on 2026-08-05 because it is
   // the one per-turn-volatile part and it was destroying the server-side prefix cache. It now rides
   // the message tail (llm.ts). See the ⚠️ header in system-compose.ts.
-  // ⚠️ `projectScope`, `toolDiscovery` and `perception` are omitted alongside `modelPrePrompt` on
-  // purpose: this file's whole claim is "byte-identical to today when the OPTIONAL sections are
-  // absent", so every optional section has to be absent from the baseline. `projectScope`'s own
-  // composition is covered in `test/unattended-bash-safe-mode.test.ts`.
+  // ⚠️ `projectScope`, `toolDiscovery`, `perception` and `memoryStance` are omitted alongside
+  // `modelPrePrompt` on purpose: this file's whole claim is "byte-identical to today when the
+  // OPTIONAL sections are absent", so every optional section has to be absent from the baseline.
+  // `projectScope`'s own composition is covered in `test/unattended-bash-safe-mode.test.ts`;
+  // `memoryStance`'s in `system-compose-memory.test.ts` and `session-runner-memory-stance.test.ts`.
+  //
+  // 🔴 The `Required<Omit<…>>` is what makes this a LEDGER rather than a fixture: adding a part to
+  // `SystemPromptParts` fails to typecheck here until somebody decides whether it belongs in the
+  // baseline or is optional. It caught `memoryStance` the moment it was added.
   const baseParts: Required<
-    Omit<SystemCompose.SystemPromptParts, "modelPrePrompt" | "projectScope" | "toolDiscovery" | "perception">
+    Omit<
+      SystemCompose.SystemPromptParts,
+      "modelPrePrompt" | "projectScope" | "toolDiscovery" | "perception" | "memoryStance"
+    >
   > = {
     persona: "You are Nova.",
     expertiseHint: "Explain in plain language.",
