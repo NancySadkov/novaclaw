@@ -1,6 +1,7 @@
 export * as SessionMaintenance from "./maintenance"
 
 import { LLM, LLMEvent, Message, SystemPart, type FinishReason } from "@novaclaw/llm"
+import { SessionRecall } from "./recall"
 import { Context, DateTime, Duration, Effect, Fiber, FiberSet, Layer, Stream } from "effect"
 import { Log } from "@novaclaw/schema/log"
 import { Database } from "../../database/database"
@@ -285,7 +286,22 @@ export const layer = Layer.effect(
         })
         cap = verdict.cap
       }
-      const scope = `session:${sessionID}`
+      // 🔴 THE OFFICER'S CABINET, not this chat's drawer.
+      //
+      // This was `session:${sessionID}`, hardcoded, and it quietly broke the metaphor's central
+      // promise: "top level executive agents with persistent chats AND MEMORY". Explicit `kb
+      // remember` already writes to `agent:<id>` (`tool/kb.ts` → `scopeForWrite`), so a colleague's
+      // deliberate memories survive. Everything it learned WITHOUT being asked went into the
+      // session's own scope — which recall does read, so it works perfectly until the moment the
+      // user clears the chat, and then every automatically-extracted fact is gone while the
+      // colleague, its brief and its explicit memories all survive. The one kind of memory a user
+      // never sees being written is the one that silently did not last.
+      //
+      // ⚠️ `SessionRecall.rememberScope` is the rule, and it already existed — written for exactly
+      // this ("an officer's durable facts belong to the officer"), tested, and never called by
+      // anything. Using it rather than re-deriving the fallback keeps ONE answer to "where does a
+      // remember go when nobody said": the officer's cabinet, or this chat when there is no officer.
+      const scope = SessionRecall.rememberScope({ sessionID, agentID: config.agent })
       const rawExtraction = chunks.join("")
       // Distinguish "the model said there is nothing to remember" (a legitimate `[]`) from "the model
       // returned NOTHING" (a broken call). Conflating them is what hid this failure for three phases.

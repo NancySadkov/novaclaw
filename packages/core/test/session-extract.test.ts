@@ -47,6 +47,22 @@ describe("SessionExtract durable-memory origin policy", () => {
     expect(exchange).not.toContain(recalled)
   })
 
+  // 🔴 WHERE an automatically-extracted fact is FILED, pinned at the site because the scope is one
+  // string in a 400-line function and nothing observable distinguishes the two answers until the
+  // user clears the chat — at which point everything the colleague learned without being asked is
+  // gone, while its brief and its explicit memories survive.
+  test("extraction files facts in the OFFICER's cabinet, not this chat's drawer", () => {
+    const source = readFileSync(path.join(import.meta.dir, "../src/session/runner/maintenance.ts"), "utf8")
+    const start = source.indexOf('const extractMemory = Effect.fn("SessionMaintenance.extractMemory")')
+    const end = source.indexOf("const refreshChangesSummary", start)
+    expect(start).toBeGreaterThan(0)
+    const body = source.slice(start, end).replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1")
+    // ONE rule, shared with the read side — not a second copy of the fallback.
+    expect(body).toContain("SessionRecall.rememberScope(")
+    // …and never the hardcoded session scope this replaced.
+    expect(body).not.toMatch(/scope = `session:\$\{sessionID\}`/)
+  })
+
   test("the runner applies kind and per-chat gates before touching memory or model work", () => {
     // The pass moved out of the runner's 2 900-line closure into the `SessionMaintenance` service
     // (5.1). A SOURCE-scanning guard's site is invisible to behaviour, so it has to follow the code
