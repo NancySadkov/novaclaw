@@ -10,7 +10,7 @@ import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
 import { listAgents, listSessions } from "@/apps/agent-list"
-import { briefTooBigForTier, isTier, modelRef, parseModelRef } from "@/apps/agent-model"
+import { briefTooBigForTier, isTier, modelRef, parseModelRef, TIER_CHOICES } from "@/apps/agent-model"
 import { useModels } from "@/context/models"
 import { planClone } from "@/apps/agent-clone"
 import { chatFor } from "@/apps/roster-live"
@@ -97,6 +97,7 @@ export function AgentConfigDialog(props: {
   const [memory, setMemory] = createSignal<"own" | "none" | undefined>()
   const [archive, setArchive] = createSignal<boolean | undefined>()
   const [model, setModel] = createSignal<string | undefined>()
+  const [needsTier, setNeedsTier] = createSignal<string | undefined>()
   // `""` is a real value here and means "back to its own scratch" — distinct from `undefined`, which
   // means "the user has not touched this field". Collapsing the two would make Clear indistinguishable
   // from Cancel.
@@ -159,6 +160,21 @@ export function AgentConfigDialog(props: {
       .find((item) => item.id === ref.modelID && item.provider.id === ref.providerID) as { tier?: unknown } | undefined
     return isTier(found?.tier) ? found.tier : undefined
   })
+  const needsTierValue = () => {
+    const chosen = needsTier()
+    if (chosen !== undefined) return chosen
+    const declared = (agent()?.config as Record<string, unknown> | undefined)?.["needsTier"]
+    return typeof declared === "string" ? declared : ""
+  }
+  /** Is the model bound above ALREADY beneath the floor chosen here? Shown live, in the dialog where
+   *  both choices are made — the colleague's own notice arrives in its chat, which is the right place
+   *  for the model but the wrong place for the person setting this up. */
+  const belowFloor = createMemo(() => {
+    const needs = needsTierValue()
+    const bound = boundTier()
+    if (needs === "" || bound === undefined) return false
+    return TIER_CHOICES.indexOf(bound as (typeof TIER_CHOICES)[number]) < TIER_CHOICES.indexOf(needs as never)
+  })
   // The one thing a product whose user picks the model can say, and a vendor-chosen one cannot.
   const mindTooSmall = createMemo(() =>
     briefTooBigForTier({ brief: personalityValue() || agent()?.system, personality: personalityValue(), tier: boundTier() }),
@@ -173,6 +189,7 @@ export function AgentConfigDialog(props: {
     permissionMode() !== undefined ||
     strict() !== undefined ||
     archive() !== undefined ||
+    needsTier() !== undefined ||
     model() !== undefined
 
   const [busy, setBusy] = createSignal<"clone" | "clear" | "retire" | undefined>()
@@ -295,6 +312,9 @@ export function AgentConfigDialog(props: {
             // An empty choice means INHERIT. Writing "" would store an unparseable ref, so the key
             // is simply not sent — `undefined` is how this config says "ask the chain above me".
             ...(modelValue() === "" ? {} : { model: modelValue() }),
+            // "" clears the floor: `null` is how a PATCH removes a key, and an empty string would
+            // store a value the tier schema rejects on the next read.
+            ...(needsTier() === undefined ? {} : { needsTier: needsTierValue() === "" ? null : needsTierValue() }),
           },
         },
       } as never)
@@ -308,6 +328,7 @@ export function AgentConfigDialog(props: {
       setStrict(undefined)
       setArchive(undefined)
       setModel(undefined)
+      setNeedsTier(undefined)
       props.onChanged?.()
       props.onDismiss()
     } catch (error) {
@@ -459,6 +480,36 @@ export function AgentConfigDialog(props: {
               sometimes the right one. */}
           <Show when={mindTooSmall()}>
             <p class="mt-1 text-[11px] text-v2-state-fg-warning">{language.t("agentConfig.modelTooSmall")}</p>
+          </Show>
+          {/* 🔴 The floor this ROLE needs, which is a different statement from the model bound above.
+              A colleague can end up on the instance default without anyone choosing it — its own
+              model may be unavailable or have been failing — and a bookkeeper written for a frontier
+              model quietly thinking with a micro one does not error, it just gets things wrong. The
+              floor is what lets the colleague notice and SAY so. */}
+          <label class="mt-3 block text-xs text-v2-text-text-muted" for="agent-needs-tier">
+            {language.t("agentConfig.needsTier")}
+          </label>
+          <select
+            id="agent-needs-tier"
+            class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+            disabled={governing()}
+            onChange={(event) => setNeedsTier(event.currentTarget.value)}
+          >
+            {/* ⚠️ `selected` per option, not `value` on the select — the agent loads AFTER this
+                element is created, and a browser keeps `selectedIndex` at 0 when that happens. */}
+            <option value="" selected={needsTierValue() === ""}>
+              {language.t("agentConfig.needsTierNone")}
+            </option>
+            <For each={TIER_CHOICES}>
+              {(tier) => (
+                <option value={tier} selected={needsTierValue() === tier}>
+                  {language.t(`agentConfig.tier.${tier}`)}
+                </option>
+              )}
+            </For>
+          </select>
+          <Show when={belowFloor()}>
+            <p class="mt-1 text-[11px] text-v2-state-fg-warning">{language.t("agentConfig.needsTierBelow")}</p>
           </Show>
         </section>
 

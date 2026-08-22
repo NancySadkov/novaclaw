@@ -15,6 +15,7 @@ import {
 import { Cause, Clock, DateTime, Duration, Effect, Exit, FiberSet, Layer, Option, Semaphore, Stream } from "effect"
 import path from "path"
 import { AgentV2 } from "../../agent"
+import { AgentModelFit } from "../../agent/model-fit"
 import { ModelHealth } from "./model-health"
 import { Config } from "../../config"
 import { ConfigToolRouting } from "../../config/tool-routing"
@@ -1025,6 +1026,50 @@ export const layer = Layer.effect(
       // the resolved model's capability tier; best-effort (never gates the turn).
       const tier = yield* models.tier(modelSession)
       const tierHint = TierScaffold.tierScaffold(tier)
+      // 🔴 ROLE/MODEL FIT — tell the colleague when the model behind it is beneath what its role
+      // declared (`agent/model-fit.ts`; `todo/named-agents.md`). It warns and never refuses.
+      //
+      // Placed HERE because this is the first point that holds all three facts at once: the role's
+      // floor, the model the turn will actually run on (after any fallback), and its tier. Reading
+      // the floor at config-write time instead would miss the case this exists for — a colleague put
+      // onto the default model because its own was unavailable or failing.
+      //
+      // ⚠️ **"Once" means once per CONTEXT, and that is the honest reading rather than a shortcut.**
+      // The check scans `entries`, the transcript this turn was assembled from, so after a compaction
+      // drops the earlier notice the colleague is told again. That is correct: the notice exists to
+      // inform the MODEL, and a model whose context no longer holds it does not know. A durable
+      // "warned once" flag would leave a compacted colleague confidently unaware.
+      //
+      // ⚠️ Best-effort. A notice that cannot be published must never cost the turn it was about.
+      if (
+        AgentModelFit.below({ needs: prepared.agent.info?.needsTier, bound: tier }) &&
+        prepared.agent.info?.needsTier !== undefined &&
+        tier !== undefined
+      ) {
+        // ⚠️ The CATALOG identity (`models.ref`), not the wire id. Two reasons, and the second is the
+        // one that made this a bug worth avoiding: the catalog id is what the user sees in Settings,
+        // so a notice naming it is a notice they can act on — and `session-runner-model.test.ts`
+        // ratchets that the per-model `provider/id` expression survives ONLY as the device-key
+        // fallback, which a second copy here would have quietly broken.
+        const boundName = modelRef ? `${modelRef.providerID}/${modelRef.id}` : String(model.id)
+        const told = AgentModelFit.alreadyTold({
+          transcript: entries.map((entry) => SessionCompaction.serializeMessage(entry.message)),
+          model: boundName,
+        })
+        if (!told)
+          yield* events
+            .publish(SessionEvent.Synthetic, {
+              sessionID: session.id,
+              messageID: SessionMessage.ID.create(),
+              timestamp: yield* DateTime.now,
+              text: AgentModelFit.notice({
+                needs: prepared.agent.info.needsTier,
+                bound: tier,
+                model: boundName,
+              }),
+            })
+            .pipe(Effect.ignore)
+      }
       // Per-model pre-prompt (owner 2026-07-29): the resolved model's optional user-authored
       // behaviour correction, wrapped as a distinct labelled section. Read best-effort off the
       // resolved catalog model exactly like the tier above; undefined ⇒ inert (see system-compose.ts).

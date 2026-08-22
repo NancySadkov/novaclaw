@@ -4,6 +4,7 @@ import { Schema } from "effect"
 import { Permission } from "@novaclaw/schema/permission"
 import { ConfigProvider } from "./provider"
 import { PositiveInt } from "../schema"
+import { ModelV2 } from "../model"
 
 export const Color = Schema.Union([
   Schema.String.check(Schema.isPattern(/^#[0-9a-fA-F]{6}$/)),
@@ -48,6 +49,22 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
    *  recall is not enough. Default ON (`undefined` = on) — the owner's rule is "unless the officer's
    *  settings disable it". Ignored for a throwaway, which keeps nothing by definition. */
   archiveChats: Schema.Boolean.pipe(Schema.optional),
+  /**
+   * The capability floor this role needs, as a model tier (`agent/model-fit.ts`).
+   *
+   * 🔴 A role can outrun its model SILENTLY, and the fallback added on 2026-08-22 is why: when a
+   * colleague's chosen model is unavailable or has been failing, the turn runs on the instance
+   * default instead. That is the right behaviour — it keeps the colleague working — but a bookkeeper
+   * written for a frontier model quietly thinking with a micro one does not error, it just gets
+   * things wrong in ways that read as the colleague being bad at its job.
+   *
+   * ⚠️ It WARNS, never refuses. This is the role author's estimate rather than a measurement, the
+   * same role runs fine on a smaller model for an easy request, and the user may have exactly one
+   * model on the machine — refusing would turn a guess into a veto over somebody's hardware.
+   *
+   * Absent = no floor declared, which is silence, not "micro".
+   */
+  needsTier: ModelV2.Tier.pipe(Schema.optional),
   /**
    * The FOLDER this colleague works on — its project (owner, 2026-08-21).
    *

@@ -37,6 +37,20 @@ export const parseModelRef = (value: string | undefined): { providerID: string; 
  * ⚠️ Never fires without a tier. An unknown model is unknown, and inventing a warning from silence
  * would teach the user to ignore the ones that mean something.
  */
+/**
+ * The tier ladder as the config dialog offers it, weakest first.
+ *
+ * ⚠️ **Here rather than in the dialog**, for the reason `agent-option.ts` records: a `.tsx` imports
+ * solid's client-only rendering APIs, so `bun test` cannot load it, and a rule about which tier
+ * outranks which would only ever be checkable by reading the source.
+ *
+ * ⚠️ It cannot be derived from the schema — `ModelV2.Tier` is a union of strings and says nothing
+ * about which is stronger — so it is a hand-kept copy of an ORDER, pinned against
+ * `AgentModelFit.LADDER` by `agent-config-tier.test.ts`. A tier added to the schema and not here is a
+ * floor the user cannot choose; one reordered here is a warning that fires on the wrong models.
+ */
+export const TIER_CHOICES = ["micro", "tiny", "small", "medium", "large", "frontier"] as const
+
 export const briefTooBigForTier = (input: {
   readonly brief: string | undefined
   readonly personality: string | undefined

@@ -2657,6 +2657,15 @@ export const dict = {
   "agentConfig.memory": "What it remembers",
   "agentConfig.mind": "What it thinks with",
   "agentConfig.modelInherit": "Whatever this NovaClaw uses by default",
+  "agentConfig.needsTier": "This job needs at least",
+  "agentConfig.needsTierNone": "No requirement — any model is fine",
+  "agentConfig.needsTierBelow": "The model chosen above is below this. Nothing is blocked, and they will say so themselves.",
+  "agentConfig.tier.micro": "Micro — very small local model",
+  "agentConfig.tier.tiny": "Tiny",
+  "agentConfig.tier.small": "Small",
+  "agentConfig.tier.medium": "Medium",
+  "agentConfig.tier.large": "Large",
+  "agentConfig.tier.frontier": "Frontier — the strongest available",
   "agentConfig.modelTooSmall":
     "This colleague has a long standing brief for a model this small — it may lose the end of its own instructions. It will still try.",
   // The colleague's PROJECT. Named for the relationship ("works on"), not for the mechanism ("cwd"):

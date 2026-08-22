@@ -3798,6 +3798,7 @@ export type ConfigV2Agent = {
   avatar?: string
   memory?: "own" | "none"
   archiveChats?: boolean
+  needsTier?: "micro" | "tiny" | "small" | "medium" | "large" | "frontier"
   directory?: string
   permissionMode?: "plan" | "ask" | "bypass" | "yolo"
   strict?: {
@@ -4658,6 +4659,7 @@ export type AgentV2Info = {
   avatar?: string
   memory?: AgentMemory
   archiveChats?: boolean
+  needsTier?: "micro" | "tiny" | "small" | "medium" | "large" | "frontier"
   description?: string
   directory?: string
   permissionMode?: "plan" | "ask" | "bypass" | "yolo"

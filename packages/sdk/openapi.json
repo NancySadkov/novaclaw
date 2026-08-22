@@ -38184,6 +38184,10 @@
           "archiveChats": {
             "type": "boolean"
           },
+          "needsTier": {
+            "type": "string",
+            "enum": ["micro", "tiny", "small", "medium", "large", "frontier"]
+          },
           "directory": {
             "type": "string"
           },
@@ -40921,6 +40925,10 @@
           },
           "archiveChats": {
             "type": "boolean"
+          },
+          "needsTier": {
+            "type": "string",
+            "enum": ["micro", "tiny", "small", "medium", "large", "frontier"]
           },
           "description": {
             "type": "string"

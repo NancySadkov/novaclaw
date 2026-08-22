@@ -146,6 +146,7 @@ function applyItem(draft: AgentDraft, agentID: AgentV2.ID, item: ConfigAgent.Inf
     if (item.avatar !== undefined) agent.avatar = item.avatar
     if (item.memory !== undefined) agent.memory = item.memory
     if (item.archiveChats !== undefined) agent.archiveChats = item.archiveChats
+    if (item.needsTier !== undefined) agent.needsTier = item.needsTier
     if (item.description !== undefined) agent.description = item.description
     if (item.directory !== undefined) agent.directory = item.directory
     // The standing work choices. Mapped onto the RECORD as well as read from the store by

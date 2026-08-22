@@ -27,6 +27,7 @@ import { ToolPolicy } from "@novaclaw/core/tool-policy"
 import { ToolPolicyGate } from "@novaclaw/core/tool-policy-gate"
 import { ApplicationTools } from "@novaclaw/core/tool/application-tools"
 import { AgentV2 } from "@novaclaw/core/agent"
+import type { ModelV2 } from "@novaclaw/core/model"
 import { Config } from "@novaclaw/core/config"
 import { ConfigCompaction } from "@novaclaw/core/config/compaction"
 import { Tool } from "@novaclaw/core/tool/tool"
@@ -278,6 +279,10 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
      * rather than the tapped `prepare`. See `session-runner-pre-turn-notice.test.ts`.
      */
     modelResolveFailure: undefined as SessionRunnerModel.Error | undefined,
+    /** The CATALOG tier of the resolved model. `undefined` = unknown, which is the shipped default and
+     *  what almost every hand-added local model reports. Set it to exercise anything that reads a
+     *  tier — `TierScaffold`, and the role/model fit notice (`agent/model-fit.ts`). */
+    modelTier: undefined as ModelV2.Tier | undefined,
     /**
      * When set, an INTERACTIVE provider stream signals `streamStarted` and then blocks on this latch
      * before emitting anything. That window — turn in flight, nothing emitted yet — is where steering
@@ -502,15 +507,19 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     deps: [ToolPolicyGate.node],
   })
 
-  const models = SessionRunnerModel.layerWith((session) =>
-    Effect.gen(function* () {
-      const hook = controls.modelResolveHook
-      if (hook) yield* hook
-      if (controls.modelResolveFailure) return yield* Effect.fail(controls.modelResolveFailure)
-      // Keyed on the SESSION's model id, so a `ModelSwitched` event actually changes what resolves.
-      if (session.model?.id === "replacement") return replacementModel
-      return controls.currentModel ?? model
-    }),
+  const models = SessionRunnerModel.layerWith(
+    (session) =>
+      Effect.gen(function* () {
+        const hook = controls.modelResolveHook
+        if (hook) yield* hook
+        if (controls.modelResolveFailure) return yield* Effect.fail(controls.modelResolveFailure)
+        // Keyed on the SESSION's model id, so a `ModelSwitched` event actually changes what resolves.
+        if (session.model?.id === "replacement") return replacementModel
+        return controls.currentModel ?? model
+      }),
+    // ⚠️ Read through `controls` on every call rather than captured, like every other control here:
+    // a test that changes the tier mid-run is exactly the shape the fit notice is about.
+    () => Effect.succeed(controls.modelTier),
   )
 
   const systemContextKey = SystemContext.Key.make("test/harness-context")
