@@ -11,7 +11,7 @@ import { SystemCompose } from "./system-compose"
 
 describe("the memory stance section", () => {
   test("a throwaway is TOLD, in words it can act on", () => {
-    const section = SystemCompose.memoryStanceSection("none")
+    const section = SystemCompose.memoryStanceSection({ memory: "none", archiveChats: undefined })
     expect(section).toBeDefined()
     // The instruction has to survive being skimmed: the fact, and what to do instead.
     expect(section).toContain("NO long-term memory")
@@ -25,14 +25,39 @@ describe("the memory stance section", () => {
   test("a colleague WITH memory gets nothing — silence is the correct default", () => {
     // Having memory is the assumption a model already arrives with, so stating it would be dead text
     // in nearly every prompt. Same rule as `toolDiscoverySection`'s zero-count case.
-    expect(SystemCompose.memoryStanceSection("own")).toBeUndefined()
+    expect(SystemCompose.memoryStanceSection({ memory: "own", archiveChats: undefined })).toBeUndefined()
+  })
+
+  // 🔴 THE SECOND WAY a colleague is wrong about its own recall, and the subtler one: it keeps
+  // memories and can search them, so nothing in its experience says the older half of THIS
+  // conversation is unreachable. `self.ts` already carried the sentence; the prompt did not.
+  test("a colleague whose chat is NOT archived is told what it loses — and what it keeps", () => {
+    const section = SystemCompose.memoryStanceSection({ memory: "own", archiveChats: false })
+    expect(section).toBeDefined()
+    expect(section).toContain("NOT archived")
+    // ⚠️ The other half. Told only "not archived", a colleague would reasonably conclude its memory
+    // is off — it is not, and saying so would make a working colleague refuse to look things up.
+    expect(section!.toLowerCase()).toContain("still search them")
+    expect(section).toContain("do not promise to find it again")
+  })
+
+  test("a THROWAWAY gets the throwaway text, not the archive one — it keeps nothing either way", () => {
+    // `shouldArchive` already refuses for `memory: "none"`, so the two would otherwise both apply and
+    // the colleague would be told twice, in two different voices, about one fact.
+    const section = SystemCompose.memoryStanceSection({ memory: "none", archiveChats: false })
+    expect(section).toContain("NO long-term memory")
+    expect(section).not.toContain("still search them")
+  })
+
+  test("archiving ON is silence, like every other default", () => {
+    expect(SystemCompose.memoryStanceSection({ memory: "own", archiveChats: true })).toBeUndefined()
   })
 
   test("an UNDECLARED stance gets nothing either", () => {
     // `undefined` is a colleague that never set the field, which defaults to having memory. Emitting
     // the throwaway text here would tell most colleagues on the roster something false about
     // themselves — worse than the silence it replaced.
-    expect(SystemCompose.memoryStanceSection(undefined)).toBeUndefined()
+    expect(SystemCompose.memoryStanceSection({ memory: undefined, archiveChats: undefined })).toBeUndefined()
   })
 
   test("it composes as KERNEL material a persona cannot bury", () => {
@@ -41,10 +66,10 @@ describe("the memory stance section", () => {
     const parts = SystemCompose.composeSystemParts({
       persona: "You are Mnemo. You never forget.",
       agentSystem: "Keep notes for the user.",
-      memoryStance: SystemCompose.memoryStanceSection("none"),
+      memoryStance: SystemCompose.memoryStanceSection({ memory: "none", archiveChats: undefined }),
       base: "kernel base",
     })
-    expect(parts.indexOf(SystemCompose.memoryStanceSection("none")!)).toBeGreaterThan(
+    expect(parts.indexOf(SystemCompose.memoryStanceSection({ memory: "none", archiveChats: undefined })!)).toBeGreaterThan(
       parts.indexOf("Keep notes for the user."),
     )
   })

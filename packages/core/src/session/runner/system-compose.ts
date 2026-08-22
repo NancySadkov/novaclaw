@@ -145,8 +145,30 @@ export const projectScopeSection = (mode: PermissionMode): string | undefined =>
  * ⚠️ Kernel material, so a persona or an agent prompt cannot bury it: whether anything survives this
  * conversation is a fact about the runtime, not a preference of the assistant's.
  */
-export const memoryStanceSection = (memory: "own" | "none" | undefined): string | undefined =>
-  memory === "none" ? THROWAWAY_MEMORY_INSTRUCTION : undefined
+export const memoryStanceSection = (input: {
+  readonly memory: "own" | "none" | undefined
+  readonly archiveChats: boolean | undefined
+}): string | undefined => {
+  if (input.memory === "none") return THROWAWAY_MEMORY_INSTRUCTION
+  // ⚠️ The SECOND way a colleague can be wrong about its own recall, and it is the subtler one: it
+  // keeps memories and can search them, so nothing in its experience says the older half of this
+  // conversation is unreachable. `shouldArchive` already folds `memory: "none"` in above, so this
+  // arm is only ever about a remembering colleague whose user turned archiving off.
+  if (input.archiveChats === false) return NO_ARCHIVE_INSTRUCTION
+  return undefined
+}
+
+/**
+ * ⚠️ Says what is LOST and what still works, because half of it does. A colleague told only "your
+ * conversations are not archived" would reasonably conclude its memory is off — it is not, and
+ * `kb` still finds everything it deliberately remembered. Getting that wrong in the other direction
+ * would make a working colleague refuse to look things up.
+ */
+const NO_ARCHIVE_INSTRUCTION =
+  "This conversation is NOT archived. Your own memories are kept and you can still search them, but " +
+  "the raw conversation is not: once it is compacted, whatever scrolled out of it is gone and you " +
+  "will not be able to look it up later. If something said here matters beyond this chat, remember " +
+  "it deliberately or write it somewhere durable — do not promise to find it again in the transcript."
 
 const THROWAWAY_MEMORY_INSTRUCTION =
   "You have NO long-term memory. Nothing from this conversation is kept: when it ends, or is " +

@@ -16,21 +16,22 @@ import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixtu
  * the request the provider actually received.
  */
 
-const withMemory = (memory: "own" | "none") =>
+const withMemory = (memory: "own" | "none", archiveChats?: boolean) =>
   Effect.gen(function* () {
     const agents = yield* AgentV2.Service
     yield* agents.transform((draft) => {
       draft.update(AgentV2.defaultID, (item) => {
         item.memory = memory
+        if (archiveChats !== undefined) item.archiveChats = archiveChats
       })
     })
   })
 
-const runTurn = (harness: ReturnType<typeof makeRunnerHarness>, memory: "own" | "none") =>
+const runTurn = (harness: ReturnType<typeof makeRunnerHarness>, memory: "own" | "none", archiveChats?: boolean) =>
   drive(
     harness,
     Effect.gen(function* () {
-      yield* withMemory(memory)
+      yield* withMemory(memory, archiveChats)
       const session = yield* SessionV2.Service
       yield* session.prompt({
         sessionID: HARNESS_SESSION,
@@ -58,12 +59,27 @@ describe("SessionRunnerLLM — memory stance", () => {
     expect(systemOf(harness)).not.toContain("NO long-term memory")
   })
 
+  // 🔴 A SECOND FIELD read from the same record, and reading one correctly says nothing about the
+  // other — a `memoryStance` wired only to `memory` would pass every test above while a colleague
+  // with archiving off is told nothing.
+  test("a colleague with archiving OFF is told, from the same record", async () => {
+    const harness = makeRunnerHarness({ turns: [completeTurn("call_1", "ok")] })
+    await runTurn(harness, "own", false)
+    expect(systemOf(harness)).toContain("NOT archived")
+  })
+
+  test("archiving ON leaves the prompt alone", async () => {
+    const harness = makeRunnerHarness({ turns: [completeTurn("call_1", "ok")] })
+    await runTurn(harness, "own", true)
+    expect(systemOf(harness)).not.toContain("NOT archived")
+  })
+
   test("the text in the prompt is the section's own, not a second copy", async () => {
     // ⚠️ A parallel wording in the runner would drift from the module the tests measure. Asserting
     // the exact string keeps one source.
     const harness = makeRunnerHarness({ turns: [completeTurn("call_1", "ok")] })
     await runTurn(harness, "none")
-    const section = SystemCompose.memoryStanceSection("none")!
+    const section = SystemCompose.memoryStanceSection({ memory: "none", archiveChats: undefined })!
     expect(systemOf(harness)).toContain(section.slice(0, 60))
   })
 })
