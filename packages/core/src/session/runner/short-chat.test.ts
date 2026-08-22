@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { Effect, Exit } from "effect"
 import { PermissionV2 } from "../../permission"
 import { ShortChat } from "./short-chat"
+import { SystemCompose } from "./system-compose"
 import { readFileSync } from "node:fs"
 import path from "node:path"
 import { UpgradeChatTool } from "../../tool/upgrade-chat"
@@ -60,10 +61,32 @@ describe("ShortChat policy", () => {
     expect(order).toEqual([])
   })
 
+  // 🔴 The unification's whole safety claim, asserted rather than reasoned: expressing the Chat
+  // posture as named BLOCKS must not change one byte of what it sends. `composeSystemParts` emits
+  // `persona` first and `base` last and the Chat posture sets nothing in between, so the array is the
+  // same one `systemParts` built — but "so it should be" is exactly the sentence that ships a
+  // regression.
+  test("the Chat posture's prompt is byte-identical expressed as blocks", () => {
+    for (const persona of ["You are Iris, a warm and brief assistant.", undefined]) {
+      const asBlocks = SystemCompose.composeSystemParts({
+        ...(persona === undefined ? {} : { persona }),
+        base: ShortChat.GUIDANCE,
+      })
+      expect(asBlocks).toEqual(ShortChat.systemParts(persona))
+    }
+  })
+
   test("the runner consumes the policy at every expensive boundary", () => {
     const runner = readFileSync(path.join(import.meta.dir, "llm.ts"), "utf8")
     expect(runner).toContain("? Effect.succeed(SystemContext.empty)")
-    expect(runner).toContain("? ShortChat.systemParts(harness.chatPersona)")
+    // ⚠️ Was `"? ShortChat.systemParts(harness.chatPersona)"` until 2026-08-22. The two postures now
+    // build ONE `SystemPromptParts` object between them — the Chat posture as `persona` + `base` —
+    // so `SystemAccounting` can count both prompts on the same scale. The composed output is
+    // byte-identical (`composeSystemParts` emits persona first and base last, and the Chat posture
+    // sets nothing between), and what this ledger is about is unchanged: the posture still decides
+    // the prompt at this boundary, and it still supplies its own body.
+    expect(runner).toContain("ShortChat.GUIDANCE")
+    expect(runner).toContain("harness.chatPersona")
     expect(runner).toContain("ShortChat.offered(config.shortChat, name)")
     expect(runner).toContain("const startSnapshot = ShortChat.enabled(config.shortChat)")
     expect(runner).toContain("const endSnapshot = ShortChat.enabled(config.shortChat)")

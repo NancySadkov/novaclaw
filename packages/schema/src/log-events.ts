@@ -1897,6 +1897,34 @@ export const EVENTS = {
     content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  /**
+   * The per-turn SYSTEM-PROMPT breakdown, block by block.
+   *
+   * 🔴 Sits beside `session.request.footprint` deliberately and answers the question that one cannot.
+   * The footprint measures the outgoing request in three lumps — system, messages, tools — so a
+   * system prompt that grew is one number with no denominator anyone can break down. Every prompt
+   * claim on record ("tools are 31.9% of the body") has been a tool-wire capture for that reason.
+   * This names the block.
+   *
+   * ⚠️ `prompt.largest` is the point of the whole event: a total that moved tells you something
+   * regressed, and the block name tells you where to look. `todo/tool-scale.md` asks for exactly this
+   * before any capping decision, because a proportional squeeze over unnamed blocks would trim the
+   * safety rules along with everything else.
+   */
+  "session.prompt.blocks": {
+    level: "debug",
+    message: "system prompt, block by block",
+    attributes: {
+      "session.id": "correlate",
+      "prompt.tokens": "count",
+      "prompt.chars": "count",
+      "prompt.blocks": "count",
+      "prompt.largest": "id",
+      "prompt.largest.tokens": "count",
+    },
+    content: "correlated",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   "session.context.pressure.high": {
     level: "warn",
     message: "ctx_pressure: real prompt near the context window",

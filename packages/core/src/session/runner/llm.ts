@@ -63,6 +63,7 @@ import { SpawnTool } from "../../tool/spawn"
 import { type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
 import { SessionMaintenance } from "./maintenance"
+import { SystemAccounting } from "./system-accounting"
 import { SystemCompose } from "./system-compose"
 import { TierScaffold } from "./tier-scaffold"
 import { SessionRecall } from "./recall"
@@ -1323,9 +1324,15 @@ export const layer = Layer.effect(
           if (!AgentJail.attendedRoot(rootType)) yield* SessionInput.steer(db, events, session.id, nudge)
         }
       }
-      const systemParts = (ShortChat.enabled(config.shortChat)
-        ? ShortChat.systemParts(harness.chatPersona)
-        : SystemCompose.composeSystemParts({
+      // 🔴 ONE assembly, two configurations — so both postures are measurable in the same vocabulary.
+      // The Chat posture used to build its own `[persona, GUIDANCE]` array; expressed as named blocks
+      // it is `persona` + `base`, which `composeSystemParts` emits in that order, so the prompt is
+      // byte-identical (`short-chat.test.ts` pins it). What it buys is that
+      // `SystemAccounting` can now count a chit-chat role's prompt and an engineering one's on the
+      // same scale — the comparison `todo/named-agents.md` asks for and had no instrument to make.
+      const promptParts: SystemCompose.SystemPromptParts = ShortChat.enabled(config.shortChat)
+        ? { ...(harness.chatPersona === undefined ? {} : { persona: harness.chatPersona }), base: ShortChat.GUIDANCE }
+        : {
             persona: harness.persona,
             modelPrePrompt,
             expertiseHint: harness.expertiseHint,
@@ -1358,7 +1365,20 @@ export const layer = Layer.effect(
             }),
             projectScope: SystemCompose.projectScopeSection(config.permissionMode),
             base: system.baseline,
-          })).map(SystemPart.make)
+          }
+      const promptAccounting = SystemAccounting.of(promptParts)
+      // Beside `session.request.footprint`, which measures the request in three lumps and therefore
+      // cannot say WHICH part of the system prompt grew. Debug level: one line a turn, and the line a
+      // regression is read from.
+      yield* Log.event("session.prompt.blocks", {
+        "session.id": session.id,
+        "prompt.tokens": promptAccounting.tokens,
+        "prompt.chars": promptAccounting.chars,
+        "prompt.blocks": promptAccounting.blocks.length,
+        "prompt.largest": promptAccounting.largest?.block ?? "none",
+        "prompt.largest.tokens": promptAccounting.largest?.tokens ?? 0,
+      })
+      const systemParts = SystemCompose.composeSystemParts(promptParts).map(SystemPart.make)
       const providerMessages = toLLMMessages(context, model, modelCapabilities, modelImageLimit)
       const latestCompactionID = context.findLast((message) => message.type === "compaction")?.id
       const strictEnabled = ({ ...(harness.strict ?? {}), ...(config.strict ?? {}) }).enabled === true
