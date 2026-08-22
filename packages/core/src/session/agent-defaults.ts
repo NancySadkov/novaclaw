@@ -1,6 +1,7 @@
 export * as AgentDefaults from "./agent-defaults"
 
 import type { ConfigAgent } from "../config/agent"
+import { ModelV2 } from "../model"
 import { EFFECTIVE_CONFIG_DEFAULTS, type EffectiveConfig } from "./config-resolve"
 
 /**
@@ -36,6 +37,28 @@ export type Declarable = (typeof DECLARABLE)[number]
 export const fold = (base: EffectiveConfig, agent: ConfigAgent.Info | undefined): EffectiveConfig => {
   if (agent === undefined) return { ...base }
   const next = { ...base }
+  // 🔴 **THE MODEL, folded here and NOT listed in `DECLARABLE`, because it crosses a shape boundary.**
+  // Everything in `DECLARABLE` copies across as-is; the model does not. A colleague's config carries
+  // `"providerID/modelID"` as a STRING while `EffectiveConfig.model` is a `{ providerID, id }` ref,
+  // so the generic loop below would assign a string into a ref-shaped field and `select()` would
+  // match nothing. The same boundary broke the clone feature (`agent-clone.ts`).
+  //
+  // ⚠️ Until 2026-08-22 the model was folded NOWHERE, and the consequence was that "a model belongs
+  // to the colleague" — the whole reason the picker moved into the Tune dialog and the composer's
+  // per-chat chip was deleted — did not happen. Measured: a colleague configured
+  // `ghostprovider/nosuchmodel` ran on the instance default and never touched its own setting. The
+  // model resolver reads `session.model` (the session ROW) or the catalog default and has never
+  // consulted the agent registry; `startChat` sends only `{agent, title}`; so nothing carried it.
+  const declaredModel = (agent as unknown as Record<string, unknown>)["model"]
+  if (typeof declaredModel === "string" && declaredModel.trim() !== "") {
+    const parsed = ModelV2.parse(declaredModel)
+    const variant = (agent as unknown as Record<string, unknown>)["variant"]
+    next.model = {
+      providerID: parsed.providerID,
+      id: parsed.modelID,
+      ...(typeof variant === "string" && variant.trim() !== "" ? { variant } : {}),
+    } as EffectiveConfig["model"]
+  }
   for (const field of DECLARABLE) {
     const value = (agent as unknown as Record<string, unknown>)[field]
     if (value === undefined) continue

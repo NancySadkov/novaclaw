@@ -9,6 +9,48 @@ import type { ConfigAgent } from "@novaclaw/core/config/agent"
 
 const agent = (over: Record<string, unknown>) => over as unknown as ConfigAgent.Info
 
+// 🔴 THE MODEL — the fold that did not exist, and the feature that therefore did not happen.
+//
+// "A model belongs to the COLLEAGUE, not to the chat" is why the picker moved into the Tune dialog
+// and the composer's per-chat chip was deleted on 2026-08-22. Nothing carried it: the resolver reads
+// `session.model` (the session ROW) or the catalog default and has never consulted the agent
+// registry, `startChat` sends only `{agent, title}`, and `model` was in no fold. Measured live the
+// same day — a colleague configured `ghostprovider/nosuchmodel` ran on the instance default and
+// never touched its own setting, with no fallback logged because there was nothing to fall back
+// from. After the fold: `model.requested "ghostprovider/nosuchmodel"`, `model.used
+// "spark-holo/holo3.1"`, `model.reason "unavailable"`.
+describe("the colleague's model", () => {
+  test("a declared model becomes the chat's model, parsed into a REF", () => {
+    // ⚠️ The shape boundary is the whole reason this is not just another `DECLARABLE` entry: config
+    // carries `"providerID/modelID"` as a string, `EffectiveConfig.model` is `{ providerID, id }`.
+    // Assigning the string through the generic loop would leave `select()` matching nothing — the
+    // same boundary that broke `agent-clone.ts`.
+    const folded = AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, agent({ model: "spark-holo/holo3.1" }))
+    expect(folded.model).toEqual({ providerID: "spark-holo", id: "holo3.1" })
+  })
+
+  test("a model id containing a slash keeps it — only the FIRST segment is the provider", () => {
+    // `spark-ollama/hf.co/unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_XL` is a real entry on this instance.
+    const folded = AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, agent({ model: "spark-ollama/hf.co/unsloth/Qwen3.6" }))
+    expect(folded.model).toEqual({ providerID: "spark-ollama", id: "hf.co/unsloth/Qwen3.6" })
+  })
+
+  test("a declared variant rides with it", () => {
+    const folded = AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, agent({ model: "a/b", variant: "thinking" }))
+    expect(folded.model).toEqual({ providerID: "a", id: "b", variant: "thinking" })
+  })
+
+  test("no model declared leaves the base alone — the instance default still applies", () => {
+    expect(AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, agent({ title: "Bookkeeper" })).model).toBeUndefined()
+  })
+
+  test("an EMPTY model string is not a declaration", () => {
+    // A cleared picker writes "" through some paths; treating it as a ref would resolve to a model
+    // whose provider and id are both empty and fail every match.
+    expect(AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, agent({ model: "  " })).model).toBeUndefined()
+  })
+})
+
 describe("a colleague's standing choices", () => {
   test("declared fields become the baseline its chats start from", () => {
     const folded = AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, agent({ permissionMode: "plan", strict: { enabled: true } }))
