@@ -69,11 +69,20 @@ export const fold = (base: EffectiveConfig, agent: ConfigAgent.Info | undefined)
   return next
 }
 
-/** What this colleague actually declared — for a surface that has to say where a value came from. */
-export const declaredBy = (agent: ConfigAgent.Info | undefined): readonly Declarable[] =>
-  agent === undefined
-    ? []
-    : DECLARABLE.filter((field) => (agent as unknown as Record<string, unknown>)[field] !== undefined)
+/**
+ * What this colleague actually declared — for a surface that has to say where a value came from.
+ *
+ * ⚠️ Includes `model`, which is NOT in `DECLARABLE` because it needs its own shape conversion in
+ * `fold`. Two lists that must agree and cannot share a loop is a fork waiting to happen, so
+ * `agent-defaults.test.ts` asserts this answer matches what `fold` actually changed.
+ */
+export const declaredBy = (agent: ConfigAgent.Info | undefined): readonly string[] => {
+  if (agent === undefined) return []
+  const record = agent as unknown as Record<string, unknown>
+  const declared: string[] = DECLARABLE.filter((field) => record[field] !== undefined)
+  if (typeof record["model"] === "string" && record["model"].trim() !== "") declared.push("model")
+  return declared
+}
 
 /** The shipped baseline, for callers with no colleague at all. */
 export const NONE: EffectiveConfig = EFFECTIVE_CONFIG_DEFAULTS

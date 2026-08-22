@@ -285,6 +285,9 @@ const SessionCatalogHandler = handlerLayer(
                       .pipe(Effect.catchTag("Session.NotFoundError", () => Effect.succeed(undefined))),
                   {
                     defaults: layer.defaults,
+                    // WHO chose each default. Without it every colleague-declared field reported
+                    // `source: {kind: "instance"}` by elimination — see `AgentLayer`.
+                    ...(layer.agent === undefined ? {} : { agent: layer.agent }),
                     ...(layer.project === undefined
                       ? {}
                       : {

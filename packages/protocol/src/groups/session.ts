@@ -182,6 +182,10 @@ const SessionConfigFieldResolution = Schema.Struct({
     Schema.Union([
       Schema.Struct({ kind: Schema.Literal("instance") }),
       Schema.Struct({ kind: Schema.Literal("project"), file: Schema.String }),
+      // The COLLEAGUE whose chat this is chose the value — its model, posture, Strict or permission
+      // mode. Ranked below `project`, matching the fold: a folder's tune overrides the officer, so a
+      // field a folder claimed reports as `project` even when the colleague declared it too.
+      Schema.Struct({ kind: Schema.Literal("agent"), agentID: Schema.String }),
     ]),
   ),
 }).annotate({ identifier: "SessionConfigFieldResolution" })

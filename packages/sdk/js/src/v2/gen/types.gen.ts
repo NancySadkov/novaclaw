@@ -1839,6 +1839,10 @@ export type SessionConfigFieldResolution = {
         kind: "project"
         file: string
       }
+    | {
+        kind: "agent"
+        agentID: string
+      }
 }
 
 export type SessionConfigResolved = {

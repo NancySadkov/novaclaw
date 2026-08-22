@@ -59,11 +59,29 @@ export interface FieldResolution<ID extends string = string> {
 export type DefaultSource =
   | { readonly kind: "instance" }
   | { readonly kind: "project"; readonly file: string }
+  /** A colleague's own standing choice — its model, posture, Strict or permission mode. */
+  | { readonly kind: "agent"; readonly agentID: string }
 
 /** What the entity resolves against: the folded defaults, and which components the folder supplied. */
 export interface DefaultsLayer {
   readonly defaults: EffectiveConfig
   readonly project?: ProjectLayer
+  readonly agent?: AgentLayer
+}
+
+/**
+ * The colleague's contribution, reported so the surface can name WHO chose a value.
+ *
+ * 🔴 Without this every field a colleague declares reported `source: { kind: "instance" }` — by
+ * elimination, because the fold writes into `defaults` and anything in `defaults` that no project
+ * file claimed was assumed to be the instance's. So a chat that is read-only because its officer is
+ * an auditor told the user the INSTANCE had decided that. A surface built to explain configuration
+ * naming the wrong author is worse than one that says nothing.
+ */
+export interface AgentLayer {
+  readonly id: string
+  /** The fields the colleague declared. Not necessarily the fields that SURVIVED — see the ranking. */
+  readonly applied: readonly string[]
 }
 
 /** The folder's contribution, reported so the surface can name the file and what it did. */
@@ -146,7 +164,14 @@ export const resolvedConfigView = <ID extends string>(
         ? undefined
         : layer.project?.applied.includes(key)
           ? { kind: "project", file: layer.project.file }
-          : { kind: "instance" }
+          : // ⚠️ RANKED BELOW the project file, matching the fold order in `effective-config.ts`:
+            // `ProjectDefaults.fold(AgentDefaults.fold(DEFAULTS, colleague), tune)`. A folder that
+            // tunes a field the colleague also declared wins, so it must also be the one NAMED —
+            // reporting the colleague there would send a user to edit a setting that is being
+            // overridden.
+            layer.agent?.applied.includes(key)
+            ? { kind: "agent", agentID: layer.agent.id }
+            : { kind: "instance" }
     fields[key] = {
       ...(resolved[key] === undefined ? {} : { value: resolved[key] }),
       merge: SESSION_CONFIG_FIELDS[key].merge,

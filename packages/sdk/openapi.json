@@ -32047,6 +32047,20 @@
                 },
                 "required": ["kind", "file"],
                 "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": ["agent"]
+                  },
+                  "agentID": {
+                    "type": "string"
+                  }
+                },
+                "required": ["kind", "agentID"],
+                "additionalProperties": false
               }
             ]
           }

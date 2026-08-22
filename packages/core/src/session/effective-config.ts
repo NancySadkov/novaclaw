@@ -58,6 +58,15 @@ export interface Resolution {
   readonly deferred: readonly ProjectFile.TuneFeature[]
   /** The project file that supplied the tune, when one governs the session's folder. */
   readonly project?: { readonly root: string; readonly file: string }
+  /**
+   * The COLLEAGUE whose chat this is, and which defaults it supplied.
+   *
+   * ⚠️ `applied` is what the agent DECLARED, which is not the same as what survives: the folder's
+   * tune folds OVER the colleague, so a field listed here can still be overridden by a project file
+   * or by a session row deeper in the chain. The reader ranks them (`session-config.ts`); this only
+   * reports authorship.
+   */
+  readonly agent?: { readonly id: string; readonly applied: readonly string[] }
 }
 
 /**
@@ -193,6 +202,14 @@ export const layer = Layer.effect(
         ...(found.root !== undefined && found.file !== undefined
           ? { project: { root: found.root, file: found.file } }
           : {}),
+        // 🔴 WHO supplied a default, so the config surface can say "Veritas chose this" instead of
+        // blaming the instance. Measured 2026-08-22: every field a colleague declares — its model,
+        // its posture, Strict, its permission mode — reported `source: {kind: "instance"}`, because
+        // the fold writes into `defaults` and defaults were attributed to the instance by
+        // elimination. A surface built to explain configuration was naming the wrong author.
+        ...(session?.agent === undefined
+          ? {}
+          : { agent: { id: String(session.agent), applied: AgentDefaults.declaredBy(colleague) } }),
       } satisfies Resolution
     })
 

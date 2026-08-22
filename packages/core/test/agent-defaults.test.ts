@@ -51,6 +51,36 @@ describe("the colleague's model", () => {
   })
 })
 
+// 🔴 `declaredBy` and `fold` are TWO lists that must agree and cannot share a loop — `model` needs a
+// shape conversion the generic loop cannot do. A fork between them is a surface naming the wrong
+// author, silently.
+describe("who declared what", () => {
+  test("every field the fold CHANGES is one declaredBy reports", () => {
+    const colleague = agent({
+      model: "spark-holo/holo3.1",
+      permissionMode: "plan",
+      shortChat: true,
+      strict: { enabled: true },
+    })
+    const folded = AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, colleague)
+    const changed = Object.keys(folded).filter(
+      (key) =>
+        JSON.stringify((folded as unknown as Record<string, unknown>)[key]) !==
+        JSON.stringify((EFFECTIVE_CONFIG_DEFAULTS as unknown as Record<string, unknown>)[key]),
+    )
+    expect([...AgentDefaults.declaredBy(colleague)].sort()).toEqual(changed.sort())
+  })
+
+  test("a colleague that declares nothing authored nothing", () => {
+    expect(AgentDefaults.declaredBy(agent({ title: "Auditor" }))).toEqual([])
+    expect(AgentDefaults.declaredBy(undefined)).toEqual([])
+  })
+
+  test("an empty model string is not authorship", () => {
+    expect(AgentDefaults.declaredBy(agent({ model: "  " }))).toEqual([])
+  })
+})
+
 describe("a colleague's standing choices", () => {
   test("declared fields become the baseline its chats start from", () => {
     const folded = AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, agent({ permissionMode: "plan", strict: { enabled: true } }))

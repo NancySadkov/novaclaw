@@ -492,6 +492,39 @@ describe("provenance beneath the entity", () => {
     expect(view.fields.safeMode?.source).toEqual({ kind: "instance" })
   })
 
+  // 🔴 THE COLLEAGUE as an author. Until 2026-08-22 every field an agent declared reported
+  // `source: { kind: "instance" }` — by elimination, because the fold writes into `defaults` and a
+  // default no project file claimed was assumed to be the instance's. A chat that was read-only
+  // because its officer is an auditor told the user the INSTANCE had decided that.
+  const layerWithAgent = {
+    defaults: { ...EFFECTIVE_CONFIG_DEFAULTS, permissionMode: "plan" as const, safeMode: true },
+    agent: { id: "veritas", applied: ["permissionMode"] },
+  }
+
+  test("a default the COLLEAGUE declared names the colleague", () => {
+    const view = resolvedConfigView("s1", ["s1"], [{}], layerWithAgent)
+    expect(view.fields.permissionMode?.source).toEqual({ kind: "agent", agentID: "veritas" })
+  })
+
+  test("a default the colleague did NOT declare still reads as the instance", () => {
+    // The negative control, and the one that would catch "attribute everything to the agent".
+    const view = resolvedConfigView("s1", ["s1"], [{}], layerWithAgent)
+    expect(view.fields.safeMode?.source).toEqual({ kind: "instance" })
+  })
+
+  test("🔴 the FOLDER outranks the colleague on a field they both declared", () => {
+    // Matching the fold order — `ProjectDefaults.fold(AgentDefaults.fold(DEFAULTS, colleague), tune)`
+    // — so the folder's value is what survives and the folder is what gets named. Reporting the
+    // colleague here would send a user to edit a setting that is being overridden.
+    const both = {
+      defaults: { ...EFFECTIVE_CONFIG_DEFAULTS, memory: false },
+      project: { root: "C:/work/app", file: "C:/work/app/novaclaw.json", applied: ["memory"], refused: [] },
+      agent: { id: "veritas", applied: ["memory"] },
+    }
+    const view = resolvedConfigView("s1", ["s1"], [{}], both)
+    expect(view.fields.memory?.source).toEqual({ kind: "project", file: "C:/work/app/novaclaw.json" })
+  })
+
   test("🔴 a session that declares the component OUTRANKS the folder, and says so", () => {
     const view = resolvedConfigView("s1", ["s1"], [{ memory: true }], layerWithProject)
     expect(view.fields.memory?.value).toBe(true)
