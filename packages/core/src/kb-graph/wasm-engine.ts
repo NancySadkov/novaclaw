@@ -920,6 +920,24 @@ export class WasmMemory {
    *    1 `auto-extract` model-guessed episodes — noisy and unreviewed.
    *    2 everything else — a deliberate `kb remember`; the user chose to save it, so it dies last.
    *  Age remains the tiebreak WITHIN a tier. */
+  /**
+   * Every scope beginning with `prefix` that currently holds staged memories.
+   *
+   * 🔴 Exists so each colleague's cabinet can be capped SEPARATELY. A single cap over `agent:%` as a
+   * whole would let one talkative officer evict another's memories — the same reasoning the
+   * colleague rate window follows ("one loud colleague never spends another's allowance"), and the
+   * reason this returns scopes rather than pruning by prefix in one pass.
+   */
+  async stagedScopes(prefix: string): Promise<string[]> {
+    const rows = await this.rows(
+      `MATCH (m:Memory)
+       WHERE m.t_invalid IS NULL AND m.relation = 'staged' AND starts_with(m.scope, $prefix)
+       RETURN DISTINCT m.scope AS scope`,
+      { prefix },
+    )
+    return rows.map((row) => String(row.scope ?? "")).filter((scope) => scope !== "")
+  }
+
   prune(opts: { scope?: string; maxStaged?: number } = {}): Promise<number> {
     return this.serialize(async () => {
       const cap = Math.max(0, Math.floor(opts.maxStaged ?? 5000))

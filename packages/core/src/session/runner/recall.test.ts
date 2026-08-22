@@ -68,6 +68,20 @@ describe("rememberScope", () => {
     )
   })
 
+  it("🔴 the officer's cabinet is NOT the scope consolidation promotes out of", () => {
+    // The actual pre-2026-08-22 defect, and it was a LEAK rather than a loss. `kb-graph/memory.ts`
+    // promotes `source = 'auto-extract'` memories in `session:` scopes into `global` every five
+    // minutes, so everything a colleague learned without being asked became readable by EVERY
+    // colleague — the filing-cabinet promise inverted, on exactly the memories a user never watches
+    // being written. Filing in the cabinet fixes it by construction: consolidation only picks up
+    // `session:` scopes.
+    expect(SessionRecall.rememberScope({ sessionID: "ses_1", agentID: "theron" }).startsWith("session:")).toBe(false)
+    // ⚠️ …and the agentless fallback IS session-scoped, which means it still consolidates. That is
+    // correct and deliberate: a chat with no officer has no cabinet to file in, and `global` is where
+    // an ownerless durable fact belongs.
+    expect(SessionRecall.rememberScope({ sessionID: "ses_1", agentID: undefined }).startsWith("session:")).toBe(true)
+  })
+
   it("…which the session scope would NOT have done", () => {
     // The negative control, and the exact shape of the bug: a fact written to the first chat's own
     // scope is unreachable from the second, and nothing anywhere reports it missing.

@@ -128,6 +128,21 @@ export const layerFromConfig = (cfg: MemoryConfig): Layer.Layer<MemoryClient.Ser
               // (§1.3.5/§4.7) — drop the lowest-importance staged over the cap; core is never touched.
               yield* Effect.tryPromise(() => live.consolidate()).pipe(Effect.ignore)
               yield* Effect.tryPromise(() => live.prune({ scope: "global", maxStaged: stagedCap })).pipe(Effect.ignore)
+              // 🔴 …AND EVERY COLLEAGUE'S CABINET, each capped on its own.
+              //
+              // Until 2026-08-22 auto-extracted facts were written to `session:<id>` and this pass
+              // promoted them into `global`, where the cap above bounded them. That promotion was a
+              // LEAK — it made one colleague's automatically-learned facts readable by every other
+              // (`runner/maintenance.ts` now files them in `agent:<id>`, which `consolidate` does not
+              // touch). Stopping the leak also removed the only thing that bounded them, so the bound
+              // moves here: without it a cabinet grows forever and recall quality decays with it.
+              //
+              // ⚠️ Per scope, never one cap over `agent:%` together: a shared cap lets one talkative
+              // officer evict another's memories. Same rule as the colleague rate window.
+              for (const scope of yield* Effect.tryPromise(() => live.stagedScopes("agent:")).pipe(
+                Effect.orElseSucceed(() => [] as string[]),
+              ))
+                yield* Effect.tryPromise(() => live.prune({ scope, maxStaged: stagedCap })).pipe(Effect.ignore)
               // Embed drain: attach vectors to memories stored BEFORE a device was configured (or while
               // it was unreachable), so the vector leg covers the WHOLE graph rather than only new
               // writes — otherwise an instance with history stays effectively keyword-only. Bounded per

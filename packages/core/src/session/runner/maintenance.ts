@@ -288,14 +288,21 @@ export const layer = Layer.effect(
       }
       // 🔴 THE OFFICER'S CABINET, not this chat's drawer.
       //
-      // This was `session:${sessionID}`, hardcoded, and it quietly broke the metaphor's central
-      // promise: "top level executive agents with persistent chats AND MEMORY". Explicit `kb
-      // remember` already writes to `agent:<id>` (`tool/kb.ts` → `scopeForWrite`), so a colleague's
-      // deliberate memories survive. Everything it learned WITHOUT being asked went into the
-      // session's own scope — which recall does read, so it works perfectly until the moment the
-      // user clears the chat, and then every automatically-extracted fact is gone while the
-      // colleague, its brief and its explicit memories all survive. The one kind of memory a user
-      // never sees being written is the one that silently did not last.
+      // This was `session:${sessionID}`, hardcoded, and it broke the filing-cabinet promise — "a
+      // D&D companion's recall never reaches the trading desk".
+      //
+      // ⚠️ **It was a LEAK, not a loss, and the first version of this comment said the wrong one.**
+      // The obvious reading is that a session-scoped fact dies when the user clears the chat. It did
+      // not: `kb-graph/memory.ts` runs a consolidation pass every five minutes that promotes exactly
+      // `source = 'auto-extract'` memories in `session:` scopes into `global`
+      // (`wasm-engine.ts` → `consolidate`). So everything a colleague learned WITHOUT being asked
+      // became readable by EVERY colleague within about five minutes, and showed up in the Memory
+      // app under "shared" rather than under the officer who learned it. Explicit `kb remember`
+      // facts were unaffected — they already went to `agent:<id>` (`tool/kb.ts` → `scopeForWrite`) —
+      // so the partition held for what a user watched being written and failed for what it did not.
+      //
+      // Filing them in the officer's cabinet fixes it by construction: `consolidate` only picks up
+      // `session:` scopes, so nothing promotes them, and recall reads `agent:<id>` anyway.
       //
       // ⚠️ `SessionRecall.rememberScope` is the rule, and it already existed — written for exactly
       // this ("an officer's durable facts belong to the officer"), tested, and never called by
