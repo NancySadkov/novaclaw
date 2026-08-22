@@ -33659,6 +33659,9 @@
               "relation": {
                 "type": "string",
                 "enum": ["parent", "peer"]
+              },
+              "hops": {
+                "type": "number"
               }
             },
             "required": ["via", "sessionID"],

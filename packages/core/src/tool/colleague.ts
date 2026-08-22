@@ -251,12 +251,19 @@ export const layer = Layer.effectDiscard(
               if (!outcome.delivered)
                 return {
                   ok: false,
+                  // 🔴 The REASON the delivery gave, when it gave one. Two different facts hide behind
+                  // "not delivered" — a colleague with no chat, and a hand-off the loop bound refused
+                  // — and they send a model to opposite next actions. Hardcoding the no-chat sentence
+                  // for both would report a bound as a missing chat: a fault described falsely, and
+                  // the model would go on trying to reach somebody it was just told to stop reaching.
+                  //
                   // A colleague with no chat is not an error the model can fix by retrying, and
                   // silently starting one on their behalf would put words in a conversation the user
                   // has never seen. Say what is true and let the turn continue.
                   message:
+                    outcome.refused ??
                     `${target} has no open chat yet, so there is nowhere to leave this. Tell the user what you ` +
-                    `wanted to hand over and who you wanted to hand it to.`,
+                      `wanted to hand over and who you wanted to hand it to.`,
                 } satisfies Output
 
               return {

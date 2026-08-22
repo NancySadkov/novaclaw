@@ -2391,6 +2391,7 @@ export type PromptOrigin =
       sessionID: string
       label?: string
       relation?: "parent" | "peer"
+      hops?: number
     }
   | {
       via: "messenger"

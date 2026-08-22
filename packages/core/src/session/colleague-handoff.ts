@@ -1,9 +1,10 @@
 export * as ColleagueHandoff from "./colleague-handoff"
 
 import { and, desc, eq } from "drizzle-orm"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Schema } from "effect"
 import { AgentConfigStore } from "../agent-config-store"
 import { AgentRetire } from "../agent/retire"
+import { ColleagueBound } from "./colleague-bound"
 import { ConfigAgent } from "../config/agent"
 import { OfficerName } from "../agent/officer-name"
 import { Database } from "../database/database"
@@ -44,7 +45,23 @@ import { SessionStore } from "./store"
  *
  * `undefined` when nothing peer-shaped has arrived, which is the ordinary case for a first hand-off.
  */
-const lastPeerLabel = (db: Database.Interface["db"], session: SessionSchema.ID): Effect.Effect<string | undefined> =>
+interface PeerContext {
+  /** Which colleague last wrote in as a peer, skipping the user's own interjections. */
+  readonly label: string | undefined
+  /**
+   * How deep the chain reaching this session is — 0 when a person spoke most recently.
+   *
+   * ⚠️ **Read by a DIFFERENT rule than `label`, over the same rows, and the difference is the whole
+   * user exemption.** `label` skips the user's messages, because a person interjecting mid-exchange
+   * does not make a colleague's question stop being unanswered. `hops` STOPS at them: the user
+   * speaking is exactly what re-authorizes a chain, so a user message found before any peer message
+   * means this session is one hop from a person. Neither rule is right for both questions, and
+   * collapsing them would either exempt nobody or exempt everybody.
+   */
+  readonly hops: number
+}
+
+const lastPeerContext = (db: Database.Interface["db"], session: SessionSchema.ID): Effect.Effect<PeerContext> =>
   db
     .select({ data: SessionMessageTable.data })
     .from(SessionMessageTable)
@@ -54,14 +71,25 @@ const lastPeerLabel = (db: Database.Interface["db"], session: SessionSchema.ID):
     .all()
     .pipe(
       Effect.map((rows) => {
+        let label: string | undefined
+        let hops: number | undefined
         for (const row of rows) {
-          const origin = (row.data as { readonly origin?: { readonly via?: string; readonly label?: string } })?.origin
+          const origin = (
+            row.data as {
+              readonly origin?: { readonly via?: string; readonly label?: string; readonly hops?: number }
+            }
+          )?.origin
+          const peer = origin?.via === "agent"
           // The FIRST peer message walking backwards wins, and the user's own messages in between are
           // skipped rather than ending the search: a person interjecting in the middle of a colleague
           // exchange does not make the colleague's question stop being unanswered.
-          if (origin?.via === "agent" && typeof origin.label === "string") return origin.label
+          if (peer && label === undefined && typeof origin?.label === "string") label = origin.label
+          // The chain depth is decided by whichever came LAST, so the walk stops at the first row of
+          // either kind. A message with no agent origin is the user at the composer.
+          if (hops === undefined) hops = peer ? (typeof origin?.hops === "number" ? origin.hops : 0) : 0
+          if (label !== undefined && hops !== undefined) break
         }
-        return undefined
+        return { label, hops: hops ?? 0 } satisfies PeerContext
       }),
       Effect.orDie,
     )
@@ -75,6 +103,14 @@ export interface Delivery {
   readonly delivered: boolean
   /** Whether anything is actually running their chat. `false` = durable but dormant. */
   readonly started: boolean
+  /**
+   * Why the bound refused this hand-off, when it did.
+   *
+   * ⚠️ A REASON, not a boolean, and it is the sender's to read. "Not delivered" and "not delivered
+   * because you are four colleagues deep and the user needs to hear this" send a model to two
+   * completely different next actions, and only the second one ends the loop.
+   */
+  readonly refused?: string | undefined
 }
 
 export interface Hired {
@@ -182,10 +218,24 @@ export const fromParts = (input: {
     // colleague it is now writing to, this is the reply to it. One stream is the record (owner,
     // 2026-08-21: everything goes through the normal chat, never a sideband), so the stream is also
     // where the question "who spoke last?" is answered.
-    const askedByRecipient = yield* lastPeerLabel(input.db, request.from).pipe(
-      Effect.map((last) => last === request.colleague),
-    )
+    const context = yield* lastPeerContext(input.db, request.from)
+    const askedByRecipient = context.label === request.colleague
     const turn = ColleagueNote.turnFor({ askedByRecipient })
+    // 🔴 THE BOUND, checked before anything is written. Both refusals return `delivered: false` with a
+    // reason the sender reads as its tool result — see `colleague-bound.ts` for why the note's
+    // asymmetry alone was never enough, and why these two mechanisms catch different failures.
+    //
+    // ⚠️ Ordered hop-then-rate on purpose: a colleague deep in a chain is told about the CHAIN, which
+    // is the fact that tells it to go back to the user. Reporting a rate limit to a model whose real
+    // problem is depth would have it wait and then continue the loop.
+    const hop = ColleagueBound.nextHop(context.hops)
+    if (ColleagueBound.exceedsHopCap(hop))
+      return { delivered: false, started: false, refused: ColleagueBound.hopRefusal({ colleague: request.colleague, hop }) }
+    const now = yield* Clock.currentTimeMillis
+    // Keyed on the sender's SESSION, which is one chat per colleague — so this is per-colleague
+    // without needing the agent id, and a colleague with no agent row still gets a window.
+    if (ColleagueBound.rateExceeded(String(request.from), now))
+      return { delivered: false, started: false, refused: ColleagueBound.rateRefusal({ colleague: request.colleague }) }
     yield* SessionInput.admit(input.db, input.events, {
       id: SessionMessage.ID.create(),
       sessionID: chat.id as SessionSchema.ID,
@@ -206,6 +256,9 @@ export const fromParts = (input: {
           via: "agent",
           sessionID: request.from,
           relation: "peer",
+          // Stamped so the RECEIVER knows how far from a person it is: without this the chain is
+          // invisible to everyone in it, which is how a loop that every hop finds reasonable runs.
+          hops: hop,
           ...(label === undefined ? {} : { label }),
         },
       },
@@ -214,6 +267,8 @@ export const fromParts = (input: {
     // Strictly AFTER the admit: the executor's drain reads the queued row from the database, so
     // waking first is a race that ends in an empty turn (`spawner.ts` learned this).
     const started = yield* input.wake(chat.id as SessionSchema.ID)
+    // AFTER the admit, so a refused or failed hand-off never spends the sender's allowance.
+    ColleagueBound.record(String(request.from), now)
     return { delivered: true, started }
   }),
 })

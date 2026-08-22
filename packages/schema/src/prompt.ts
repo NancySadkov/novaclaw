@@ -75,6 +75,22 @@ export const Origin = Schema.Union([
      * other.
      */
     relation: Schema.Literals(["parent", "peer"]).pipe(optional),
+    /**
+     * How many colleague hand-offs deep this message is, with nobody outside the chain.
+     *
+     * 🔴 The loop bound's carrier (`session/colleague-bound.ts`). It rides HERE rather than in a side
+     * table for the same reason `relation` does: the transcript is the record, one stream per agent,
+     * and a counter kept anywhere else can disagree with what actually happened. A receiver reading
+     * its own inbox can therefore always answer "how far from a person am I?"
+     *
+     * Absent means zero — a first hand-off, or any message a writer that predates the bound produced.
+     *
+     * ⚠️ `Finite`, not `Number`: the plain form encodes as `number | "NaN" | "Infinity" | "-Infinity"`
+     * on the wire (seen in the regenerated SDK types), and a hop count that can arrive as `Infinity`
+     * is a bound with a hole in it. Matches `SpawnResultMessage.depth`, which is the same kind of
+     * number for the same reason.
+     */
+    hops: Schema.Finite.pipe(optional),
   }),
   Schema.Struct({
     via: Schema.Literal("messenger"),

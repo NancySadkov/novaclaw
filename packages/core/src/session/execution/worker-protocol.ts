@@ -99,16 +99,25 @@ export const AwaitChildResult = Schema.Struct({
 /**
  * The host's answer to a `colleague-ask`.
  *
- * The three outcomes are three different facts and are deliberately not flattened: `delivered` means
- * it landed in their chat, `no-chat` means that colleague has no open conversation to leave it in
- * (the model must say so rather than retry), and `rejected` means the request never got that far —
- * a stale lease. Collapsing them would tell a model to retry a thing that cannot succeed.
+ * The outcomes are different facts and are deliberately not flattened: `delivered` means it landed in
+ * their chat, `no-chat` means that colleague has no open conversation to leave it in (the model must
+ * say so rather than retry), `refused` means the loop bound stopped it, and `rejected` means the
+ * request never got that far — a stale lease. Collapsing them would tell a model to retry a thing
+ * that cannot succeed.
+ *
+ * ⚠️ **`refused` carries its `reason` ACROSS the worker boundary, and that is the point.** The tool
+ * runs inside the worker and never sees the host's `Delivery` object — it sees this message. A bound
+ * whose explanation stopped at the bridge would be a mechanism the model is never told about: it
+ * would read "no open chat", go on trying to reach a colleague it was just stopped from reaching, and
+ * the cap would look broken from every side that matters.
  */
 export const ColleagueResultMessage = Schema.Struct({
   ...Identity,
   type: Schema.Literal("colleague-result"),
   requestID: Schema.String,
-  outcome: Schema.Literals(["delivered", "no-chat", "hired", "retired", "rejected"]),
+  outcome: Schema.Literals(["delivered", "no-chat", "refused", "hired", "retired", "rejected"]),
+  /** Why the loop bound refused; present only when `outcome` is "refused". Read by the sender. */
+  reason: Schema.String.pipe(Schema.optional),
   /** Whether anything is actually running their chat — `false` means durable but dormant. */
   started: Schema.Boolean.pipe(Schema.optional),
   /** The new colleague's id and display name; present only when `outcome` is "hired". */

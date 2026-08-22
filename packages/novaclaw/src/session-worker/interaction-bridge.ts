@@ -153,16 +153,28 @@ export const handle = Effect.fn("SessionWorkerInteractionBridge.handle")(functio
       .deliver({ from: input.lease.sessionID, colleague: request.colleague, message: request.message })
       .pipe(Effect.exit)
     if (!Exit.isSuccess(delivered)) return reject()
-    return delivered.value.delivered
-      ? {
-          ...identity(input.message),
-          type: "colleague-result" as const,
-          outcome: "delivered" as const,
-          started: delivered.value.started,
-        }
-      : // Not a failure: that colleague simply has no open chat to leave this in, and the model must
-        // say so rather than retry something that cannot succeed.
-        { ...identity(input.message), type: "colleague-result" as const, outcome: "no-chat" as const }
+    if (delivered.value.delivered)
+      return {
+        ...identity(input.message),
+        type: "colleague-result" as const,
+        outcome: "delivered" as const,
+        started: delivered.value.started,
+      }
+    // 🔴 TWO reasons a hand-off did not land, and the bridge must not flatten them. `refused` is the
+    // loop bound (`session/colleague-bound.ts`) and carries the sentence the sender needs to read;
+    // `no-chat` is a colleague with nowhere to be written to. Collapsing both into "no open chat" —
+    // which this did — would have reported every bound as a missing chat, and the mechanism would
+    // have been invisible to the only reader that can act on it.
+    if (delivered.value.refused !== undefined)
+      return {
+        ...identity(input.message),
+        type: "colleague-result" as const,
+        outcome: "refused" as const,
+        reason: delivered.value.refused,
+      }
+    // Not a failure: that colleague simply has no open chat to leave this in, and the model must
+    // say so rather than retry something that cannot succeed.
+    return { ...identity(input.message), type: "colleague-result" as const, outcome: "no-chat" as const }
   }
 
   // Past the spawn branch, every remaining message carries its own `sessionID` and must match the

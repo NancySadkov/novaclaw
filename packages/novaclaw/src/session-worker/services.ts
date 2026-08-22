@@ -213,6 +213,15 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
         Effect.flatMap((reply): Effect.Effect<ColleagueHandoff.Delivery> => {
           if (reply.outcome === "delivered") return Effect.succeed({ delivered: true, started: reply.started ?? false })
           if (reply.outcome === "no-chat") return Effect.succeed({ delivered: false, started: false })
+          // The loop bound's refusal, rebuilt on this side so the TOOL sees the same `Delivery` shape
+          // it would have seen host-side. Without this arm a bound would `die` here as an
+          // unavailability — the sender would lose its turn instead of being told to go to the user.
+          if (reply.outcome === "refused")
+            return Effect.succeed({
+              delivered: false,
+              started: false,
+              refused: reply.reason ?? "That hand-off was refused by this instance's colleague-loop limit.",
+            })
           return Effect.die(unavailable("colleague hand-off"))
         }),
       ),
