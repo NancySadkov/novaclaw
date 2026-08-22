@@ -71,6 +71,15 @@ export const Flag = {
   // the package is published or bundled as a local tarball.
   NOVACLAW_INSTALL_PLUGIN_TYPES: truthy("NOVACLAW_INSTALL_PLUGIN_TYPES"),
   NOVACLAW_DISABLE_MOUSE: truthy("NOVACLAW_DISABLE_MOUSE"),
+  /**
+   * Do not open a browser when the web server starts.
+   *
+   * 🔴 `novaclaw web` opens the UI on boot, which is right for a person starting their instance and
+   * wrong for everything else: a scripted run, a smoke test, or an agent restarting the server to
+   * check something. Measured the hard way on 2026-08-22 — a session that restarted the dev server
+   * repeatedly put a stack of tabs in the owner's browser, one per run.
+   */
+  NOVACLAW_NO_OPEN: truthy("NOVACLAW_NO_OPEN"),
   NOVACLAW_FAKE_VCS: env("NOVACLAW_FAKE_VCS"),
   NOVACLAW_SERVER_PASSWORD: env("NOVACLAW_SERVER_PASSWORD"),
   NOVACLAW_SERVER_USERNAME: env("NOVACLAW_SERVER_USERNAME"),

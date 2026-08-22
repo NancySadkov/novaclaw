@@ -128,6 +128,16 @@ export const layerFromConfig = (cfg: MemoryConfig): Layer.Layer<MemoryClient.Ser
       // rows that match it again, so there is no "have I run this?" flag to keep true.
       yield* Effect.forkScoped(
         Effect.gen(function* () {
+          // ⚠️ **`open()`, not `engine`** — and the first version read the variable, which is
+          // `undefined` until something opens the store. The fork ran at boot, found nothing, and
+          // returned: the discard was dead on arrival and the 77 leaked rows were still there on the
+          // owner's instance a day later. `open()` is the lazy opener the client itself goes through,
+          // so this waits for the store rather than racing it.
+          //
+          // ⚠️ It opens the engine EARLIER than a purely lazy instance would. That is the cost of
+          // doing this at all, and it is bounded: one store open per boot, off the turn path, on an
+          // instance that was going to open it the first time anything recalled anything.
+          yield* Effect.tryPromise(() => open()).pipe(Effect.orElseSucceed(() => undefined))
           const live = engine
           if (!live) return
           const discarded = yield* Effect.tryPromise(() => live.discardLegacyGlobalExtracts()).pipe(
