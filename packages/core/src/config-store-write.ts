@@ -4,6 +4,7 @@ import { Cause, Effect, Exit, Option, Schema } from "effect"
 import { Log } from "@novaclaw/schema/log"
 import { AgentV2 } from "./agent"
 import { AgentConfigStore } from "./agent-config-store"
+import { AgentRemoval } from "./agent/removal"
 import { AgentReassignment } from "./agent/reassignment"
 import { AgentWorkspace } from "./agent/workspace"
 import { CatalogSeed } from "./catalog-seed"
@@ -317,7 +318,14 @@ const LAYERED_ARMS = [
         // store — it lives in `packages/server/src/handlers/agent.ts`, and `provider.remove` /
         // `provider.removeModel` each carry their own copy of the same rule. `pruneDanglingDefaults`
         // below is this module's copy, and the duplication is filed rather than hidden.
-        removeEntity: (name) => agents.removeAgent(name),
+        // 🔴 …AND RETIRE WHAT THE ROW LEFT BEHIND. Dropping the row un-hires the colleague; its
+        // private memories, its spend and its chats are keyed on the id and survive it. Officer names
+        // are drawn from a FIXED POOL, so the id returns and the next colleague drawn on it would
+        // open holding a stranger's memories — measured 2026-08-22 through this exact door.
+        //
+        // Announced rather than done here: this module has no memory client (see `agent/removal.ts`).
+        removeEntity: (name) =>
+          agents.removeAgent(name).pipe(Effect.andThen(AgentRemoval.announce(name))),
       }
     }),
     ...agentCodec,

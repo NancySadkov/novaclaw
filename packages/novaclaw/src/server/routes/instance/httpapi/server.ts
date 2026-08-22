@@ -85,6 +85,7 @@ import { PermissionSaved } from "@novaclaw/core/permission/saved"
 import { ProjectV2 } from "@novaclaw/core/project"
 import { PtyTicket } from "@novaclaw/core/pty/ticket"
 import { Ripgrep } from "@novaclaw/core/ripgrep"
+import { AgentRemoval } from "@novaclaw/core/agent/removal"
 import { AgentReassignment } from "@novaclaw/core/agent/reassignment"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionV2 } from "@novaclaw/core/session"
@@ -325,6 +326,11 @@ const app = LayerNode.group([
   // a real `PATCH /config`: the chat stayed empty. The unit tests passed throughout, because they
   // registered a listener themselves; nothing tested that the SERVER registers one.
   AgentReassignment.node,
+  // The other half of the config door: a colleague removed through `POST /api/config/remove` must
+  // have its cabinet set aside like one retired through `DELETE /api/agent/:id`. Registered HERE for
+  // the reason `AgentReassignment` is — a node the server never builds is a feature that ships dead,
+  // which is how the reassignment notice spent a day doing nothing (`agent-removal-wiring.test.ts`).
+  AgentRemoval.node,
   RuntimeFlags.node,
   EventV2Bridge.node,
   MCP.node,
