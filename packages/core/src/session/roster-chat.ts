@@ -20,6 +20,14 @@ type Db = Database.Interface["db"]
 export interface Chat {
   readonly id: string
   readonly title: string
+  /**
+   * Where this chat actually runs.
+   *
+   * ⚠️ NOT the colleague's configured folder — the two diverge the moment it is reassigned, because
+   * the chat stays where it was created (`agent/workspace.ts`). A caller that has to tell this chat
+   * something true about its own root can get it from here and nowhere else.
+   */
+  readonly directory: string
 }
 
 /**
@@ -34,7 +42,10 @@ export interface Chat {
  */
 export const chatFor = (db: Db, agentID: string) =>
   db
-    .select({ id: SessionTable.id, title: SessionTable.title })
+    // ⚠️ `directory` rides along because a caller that has to tell this chat something TRUE about
+    // where it runs cannot get that from anywhere else — the colleague's configured folder and the
+    // chat's actual root diverge the moment it is reassigned (`agent/workspace.ts`).
+    .select({ id: SessionTable.id, title: SessionTable.title, directory: SessionTable.directory })
     .from(SessionTable)
     .where(
       and(
@@ -62,7 +73,7 @@ export const chatFor = (db: Db, agentID: string) =>
  */
 export const liveChatsFor = (db: Db, agentID: string) =>
   db
-    .select({ id: SessionTable.id, title: SessionTable.title })
+    .select({ id: SessionTable.id, title: SessionTable.title, directory: SessionTable.directory })
     .from(SessionTable)
     .where(
       and(eq(SessionTable.agent, agentID), isNull(SessionTable.parent_id), isNull(SessionTable.time_archived)),

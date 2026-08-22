@@ -13,6 +13,18 @@ import { Scratch } from "../scratch"
 // the project it was moved off — its system prompt still names the old one, its plan still refers to
 // files that are no longer under it, and nothing in a fresh turn says otherwise. Being interrupted is
 // cheaper than being confidently wrong about where you are.
+//
+// 🔴 **AND THE EXISTING CHAT DOES NOT MOVE, which the notice used to deny.** Measured 2026-08-22: a
+// colleague reassigned from `folderA` to `folderB` was told *"you now work on folderB, not folderA"*
+// while its session's `location.directory` stayed `folderA` — so every tool call it made would still
+// land in the old folder while it believed otherwise. Worse than silence: it would look for the new
+// project's files where they are not and conclude the project is empty.
+//
+// Repointing a live session across PROJECTS is not a supported operation — `control-plane/move-session.ts`
+// refuses it outright (`DestinationProjectMismatchError`); it moves a session between worktrees of one
+// project, not between projects. So the notice now says what is true: the assignment changed, this
+// conversation did not, and the way to start work on the new folder is to clear the chat. Making the
+// chat follow the colleague is filed in `todo/named-agents.md`.
 
 /** Where a colleague works: its configured folder, or its own scratch when it has none. */
 export const folderFor = (input: {
@@ -52,11 +64,25 @@ export const reassignmentNotice = (input: {
   readonly from: string
   readonly to: string
   readonly ownScratch: boolean
+  /**
+   * Where THIS chat actually runs, read from the session.
+   *
+   * ⚠️ **Not `from`.** `from` is the config's previous value, and the two diverge the moment a
+   * colleague is reassigned twice: the chat is still rooted wherever it was CREATED, while `from`
+   * has moved on. Measured 2026-08-22 — the second reassignment told a colleague it was rooted in
+   * the folder it had just been moved off, which is the same false statement this notice was
+   * rewritten to remove, one level deeper.
+   */
+  readonly rooted: string
 }): string =>
   input.ownScratch
-    ? `Your working folder has changed: you are no longer on ${input.from}, and are back in your own ` +
-      `workspace (${input.to}). Anything you were part-way through in the old folder is not yours to ` +
-      `finish any more — say so if it matters, and wait for the next thing you are asked.`
-    : `Your working folder has changed: you now work on ${input.to}, not ${input.from}. Treat anything ` +
-      `you remember about the old folder's files as out of date — it may not exist here. If you were ` +
-      `part-way through something there, say so rather than continuing it against the new project.`
+    ? `You have been reassigned: you are no longer on ${input.from}, and your folder is your own ` +
+      `workspace (${input.to}) again. ⚠️ THIS conversation is still rooted in ${input.rooted}, so every ` +
+      `file you read or write here still happens there. Anything you were part-way through is not ` +
+      `yours to finish — say so if it matters, and wait for the next thing you are asked.`
+    : `You have been reassigned: your folder is now ${input.to}, not ${input.from}. ⚠️ THIS ` +
+      `conversation is still rooted in ${input.rooted}, so every file you read or write here still ` +
+      `happens there — you cannot work on ${input.to} in this chat. Do not go looking for the new ` +
+      `project's files; you will not find them and the folder will look empty or wrong. Say what you ` +
+      `were part-way through, and tell the user to clear this chat so your next one starts in ` +
+      `${input.to}.`

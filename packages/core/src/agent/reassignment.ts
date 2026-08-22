@@ -113,7 +113,8 @@ export const deliver = (input: {
         sessionID: chat.id as SessionSchema.ID,
         messageID: SessionMessage.ID.create(),
         timestamp: yield* DateTime.now,
-        text: notice(input.move),
+        // The chat's OWN root, not the config's previous value — see `reassignmentNotice.rooted`.
+        text: notice({ ...input.move, rooted: chat.directory }),
       })
       .pipe(Effect.ignore)
     return true
