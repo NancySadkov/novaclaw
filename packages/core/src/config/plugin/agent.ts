@@ -117,10 +117,13 @@ function applyItem(draft: AgentDraft, agentID: AgentV2.ID, item: ConfigAgent.Inf
       // plugins: `read` came back `ask` while the shipped mode still granted `bash`, i.e. an officer
       // that could run a shell command and could not look at a file.
       //
-      // `officer` = a PRIMARY agent, which is what a roster colleague is. It widens the floor by one
-      // action — addressing a peer — because "top level executive agents who can communicate with
-      // each other" is the metaphor's own sentence. Config-defined SUB-agents are nameless staff and
-      // get the floor without it. Staffing stays Nova's regardless (`tool/colleague.ts` → mayStaff).
+      // `officer` = a PRIMARY agent, which is what a roster colleague is. It widens the floor by two
+      // actions — addressing a peer, and spawning a helper that runs as ITSELF — because "top level
+      // executive agents who can communicate with each other and spawn the nameless sub-agents" is
+      // the metaphor's own sentence, both halves. Config-defined SUB-agents are nameless staff and
+      // get the floor without either, so staff cannot staff. Hiring stays Nova's regardless
+      // (`tool/colleague.ts` → mayStaff), and spawning as a DIFFERENT agent is still not granted
+      // here — that is the form that could widen authority.
       const officer = (item.mode ?? agent.mode) === "primary"
       agent.permissions.push(...AgentPlugin.floor({ scratchDirs: AgentPlugin.SCRATCH_DIRS, officer }))
       agent.permissions.push(...global)

@@ -109,6 +109,33 @@ describe("a colleague the user hired", () => {
     }),
   )
 
+  it.effect("can staff ITSELF — and cannot borrow another agent's standing to do it", () =>
+    Effect.gen(function* () {
+      const roster = yield* rosterWith({ name: "Theron", mode: "primary" })
+      const hired = roster.get("theron")!
+      // The metaphor's other half: *"…and spawn the nameless sub-agents"*. A hired officer gets this
+      // from the officer floor, the same door `colleague` comes through.
+      expect(effectFor(hired, "spawn", "inherit")).toBe("allow")
+      // 🔴 AND NO FURTHER. `inherit` runs the child as Theron under Theron's own ruleset, so it can
+      // do nothing Theron could not. Naming another agent is the form that WOULD widen — a narrow
+      // colleague reaching for a broader one's standing — and it stays ungranted. This assertion is
+      // the whole reason the grant is safe; if it ever reads "allow", the grant is an escalation.
+      expect(effectFor(hired, "spawn", "build")).toBe("ask")
+      expect(effectFor(hired, "spawn", "nova")).toBe("ask")
+    }),
+  )
+
+  it.effect("a config-defined SUB-agent staffs nobody — staff cannot staff", () =>
+    Effect.gen(function* () {
+      // ⚠️ `rosterWith` always stores the agent under the id `theron`; the MODE is the variable.
+      const roster = yield* rosterWith({ name: "Runner", mode: "subagent" })
+      // "Staff and temps — sub-agents inherit their officer's scope, narrowed, never widened"
+      // (AGENTS.md). A sub-agent that could spawn would be a branch of the org chart that grows
+      // sideways with nobody named on it.
+      expect(effectFor(roster.get("theron")!, "spawn", "inherit")).toBe("deny")
+    }),
+  )
+
   it.effect("is still bound by the floor's refusals", () =>
     Effect.gen(function* () {
       const roster = yield* rosterWith({ name: "Theron", mode: "primary" })

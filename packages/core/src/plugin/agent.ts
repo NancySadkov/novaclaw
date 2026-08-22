@@ -174,6 +174,24 @@ export const floor = (input: { readonly scratchDirs: readonly string[]; readonly
   // with `colleague` on every horizon and 30,744 without it — 2,078 bytes on every turn of every
   // session. An officer pays them because delegation is its job; the machinery agents do not.
   { action: "colleague", resource: "*", effect: input.officer ? "allow" : "deny" },
+  // 🔴 AN OFFICER MAY STAFF ITSELF — the owner's metaphor names it: *"top level executive agents …
+  // spawn the nameless sub-agents"*. Until 2026-08-22 nobody could: `spawn` is absent from
+  // `AMBIENT_SAFE_BASELINE`, so it fell through to the evaluator's `ask` default — and asking was
+  // REMOVED (owner ruling 2026-08-20), so every `ask` now resolves to a denial. The capability was
+  // not gated, it was gone, for Nova as much as anyone.
+  //
+  // ⚠️ **`inherit`, not `*`, and the difference is the whole safety argument.** `"inherit"` is the
+  // literal resource `tool/spawn.ts` asserts when the call names no agent, which means the child runs
+  // as THIS agent and therefore under this exact ruleset. So the grant creates a session and not one
+  // unit of authority: AGENTS.md's *"sub-agents inherit their officer's scope, narrowed, never
+  // widened"* holds by construction rather than by a check. Spawning as a DIFFERENT agent keeps its
+  // old verdict, so "may spawn `plan` helpers but not `build` ones" is still a deliberate grant —
+  // that is the door through which authority could widen, and it stays shut.
+  //
+  // ⚠️ The other two bounds are untouched and are the real containment: `permissionMode` narrows
+  // through `moreRestrictive` so a child cannot out-rank its parent, and the fork-bomb quotas are
+  // hard caps in the spawner that no permission rule can widen.
+  { action: "spawn", resource: "inherit", effect: input.officer ? "allow" : "deny" },
   { action: "plan_enter", resource: "*", effect: "deny" },
   { action: "plan_exit", resource: "*", effect: "deny" },
 ]
@@ -269,6 +287,12 @@ export const Plugin = define({
             // (`tool/colleague.ts` → `mayStaff`); this only settles whether the one who may has to
             // ask first.
             { action: "colleague", resource: "*", effect: "allow" },
+            // …and the other half of the same sentence: *"executive agents who can communicate with
+            // each other AND spawn the nameless sub-agents"*. Nova takes the non-officer floor (it is
+            // seeded in code, before any roster exists) and re-allows its own job here, exactly as it
+            // does for `colleague` above. `inherit` only — the child runs as Nova, under Nova's
+            // ruleset, so this creates a worker and not a privilege.
+            { action: "spawn", resource: "inherit", effect: "allow" },
           ]),
         )
       })

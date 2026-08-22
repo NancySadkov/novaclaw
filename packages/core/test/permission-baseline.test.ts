@@ -180,6 +180,29 @@ describe("the built-in agents the plugin actually builds", () => {
     }),
   )
 
+  it.effect("an OFFICER may staff itself, and only itself — spawn is granted on `inherit`, never on `*`", () =>
+    Effect.gen(function* () {
+      const agents = yield* builtinAgents
+      // 🔴 The owner's metaphor: *"top level executive agents … spawn the nameless sub-agents"*. Until
+      // 2026-08-22 nobody could — `spawn` is absent from the ambient baseline, so it fell to `ask`,
+      // and asking was removed, so every ask denies. The capability was gone rather than gated.
+      expect(effectFor(agents.get("nova")!, "spawn", "inherit")).toBe("allow")
+
+      // ⚠️ THE SAFETY CLAIM, asserted rather than described. `inherit` means the child runs as THIS
+      // agent under THIS ruleset, so the grant creates a session and not one unit of authority.
+      // Spawning as a NAMED agent is the one form that can widen — a narrow colleague reaching for a
+      // broad one — and it must keep falling through. If this ever reads "allow", the org chart has
+      // stopped being a permission structure.
+      expect(effectFor(agents.get("nova")!, "spawn", "build")).toBe("ask")
+      expect(effectFor(agents.get("nova")!, "spawn", "*")).toBe("ask")
+
+      // The machinery a person drives is not an officer and does not staff itself, exactly as with
+      // `colleague` above — which also keeps the tool off its horizon rather than advertised.
+      for (const id of ["build", "plan", "explore", "general"])
+        expect({ id, effect: effectFor(agents.get(id)!, "spawn", "inherit") }).toEqual({ id, effect: "deny" })
+    }),
+  )
+
   it.effect("a DEFAULT install is unchanged for the mutation/exec cluster — the mode grants it now", () =>
     Effect.gen(function* () {
       const build = (yield* builtinAgents).get("build")!

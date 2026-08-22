@@ -75,13 +75,20 @@ import { Tools } from "./tools"
 //      hard caps in the seam; no permission rule can widen them. This gate is a policy hook over an
 //      already-bounded capability, not the bound itself.
 //
-// So the honest statement, and the one the tests hold to: a default install now ASKS the first time
-// a session wants to spawn a helper, the answer is saveable, and a user or an agent config still has
-// exactly one place to say otherwise. ⚠️ Two consequences worth naming rather than discovering: an
-// UNATTENDED root below `yolo` has nobody to answer, so a scheduled chain that needs sub-agents needs
-// the grant saved (or an agent rule) beforehand — the deny-fast stance in `config-resolve.ts` is
-// about the external classes, not about this, so an unanswered spawn ask would PARK rather than fail
-// fast; and the fork-bomb quotas above remain the real bound either way.
+// ⚠️ **THE TWO PARAGRAPHS BELOW USED TO SAY THIS TOOL "ASKS", AND THAT WENT STALE UNDER IT.** They
+// described a default install asking once with a saveable answer, and warned that an unattended root
+// would PARK on the card. Neither is true since the owner removed asking (2026-08-20): `evaluateInput`
+// converts EVERY unresolved `ask` into a denial, attended or not (`permission.test.ts` pins both
+// arms). So this gate was not gating spawn — it was abolishing it, for every agent including Nova,
+// while the comment here told the next reader a consent card was waiting somewhere.
+//
+// So the honest statement as of 2026-08-22: an OFFICER may spawn a helper that runs as ITSELF —
+// `plugin/agent.ts` grants `{ action: "spawn", resource: "inherit" }` on the officer floor, next to
+// `colleague` and for the same reason (the org chart decides who may staff; this only settles whether
+// the one who may has to ask first, and asking no longer exists). Spawning as a DIFFERENT agent still
+// falls through to `ask` → deny, because that is the one form of this call that can widen authority.
+// A user or an agent config still has exactly one place to say otherwise. The fork-bomb quotas above
+// remain the real bound either way.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const name = "spawn"
