@@ -74,15 +74,49 @@ export function useSystemLoad(): () => SystemLoad {
   // the sidecar was killed, BEFORE the connection banner's 2 s anti-flicker gate could show it, and
   // it never cleared when the sidecar came back. An unreachable host is the "cannot be measured"
   // case this file already documents — so it degrades to `undefined` and the tile reads "—".
-  const [usage, actions] = createResource(connection, (value) =>
-    instanceResources(value.http).catch(() => undefined),
-  )
+  const [usage, actions] = createResource(connection, (value) => instanceResources(value.http).catch(() => undefined))
 
+  // 🔴 GATED ON VISIBILITY, and that is not an optimisation (review H3, 2026-08-23).
+  //
+  // This poll hits `global/resources`, whose Windows memory reading spawns a `powershell.exe`
+  // running `Get-CimInstance Win32_OperatingSystem` — measured on the owner's box at 360–657 ms,
+  // median ≈530 ms. The probe is cached for `MEMORY_CACHE_MS = 3_000`, a TTL sized for a per-turn
+  // path, so a 10-second poll misses it EVERY time: one fresh process per tick, ≈5% duty cycle,
+  // forever, on the app's idle screen. And it ran with the window minimised or backgrounded, where
+  // nobody can see the number it is refreshing.
+  //
+  // The house pattern is already here — `components/debug-bar.tsx` and `context/server-sync.tsx`
+  // both gate their polls the same way. Coming back to visible refetches once, so the tile is
+  // current the moment it is looked at rather than up to ten seconds stale.
   let timer: ReturnType<typeof setInterval> | undefined
-  onMount(() => {
+  const stop = () => {
+    if (timer === undefined) return
+    clearInterval(timer)
+    timer = undefined
+  }
+  const start = () => {
+    if (timer !== undefined) return
     timer = setInterval(() => void actions.refetch(), MEMORY_POLL_MS)
+  }
+  const onVisibility = () => {
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+      stop()
+      return
+    }
+    void actions.refetch()
+    start()
+  }
+  onMount(() => {
+    // ⚠️ The listener is registered UNCONDITIONALLY. Registering it only on the visible branch would
+    // leave a tile mounted while hidden with no way to ever start — the tile would sit at "—" for
+    // the rest of the session.
+    if (typeof document !== "undefined") document.addEventListener("visibilitychange", onVisibility)
+    if (typeof document === "undefined" || document.visibilityState === "visible") start()
   })
-  onCleanup(() => timer && clearInterval(timer))
+  onCleanup(() => {
+    stop()
+    if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onVisibility)
+  })
 
   return createMemo<SystemLoad>(() => {
     // `.latest`, not `usage()`: a refetch every 10 s would otherwise blank the number it is

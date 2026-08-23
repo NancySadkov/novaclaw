@@ -1,4 +1,4 @@
-import { createMemo, createResource, createSignal, Show, startTransition } from "solid-js"
+import { createMemo, createSignal, Show, startTransition } from "solid-js"
 import { SessionTitle } from "@novaclaw/core/session/title"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { Spinner } from "@novaclaw/ui/spinner"
@@ -10,7 +10,6 @@ import { useLanguage } from "@/context/language"
 import { errorMessage } from "@/pages/layout/helpers"
 import { showToast } from "@/utils/toast"
 import { ComposerAgentControl } from "@/components/composer/agent-control"
-import { listAgents } from "@/apps/agent-list"
 import type { AgentLike } from "@/apps/contacts"
 import { roster } from "@/apps/contacts"
 
@@ -51,6 +50,13 @@ export function useNewAgentSpawn() {
   // chip had to show it.
   async function spawn(agentID?: string, agentFolder?: string) {
     const c = conn()
+    // 🔴 `agentFolder` is WHERE THIS COLLEAGUE WORKS — its configured project, or its own
+    // `<data>/scratch/<agentID>` workspace as the SERVER derives it (`AgentWorkspace.folderFor`),
+    // resolved by the caller off the roster row it already holds. Only a spawn with NO colleague
+    // falls through to the shared scratch root. It used to fall through whenever a colleague merely
+    // had no project — the ordinary state of a fresh hire (review D4, 2026-08-23) — so the reuse
+    // probe searched a folder the colleague's chats are never filed in, and `projects.open()`
+    // registered the shared root while the session lived one directory down.
     const directory = agentFolder ?? scratchDir()
     if (!c || !directory || spawning()) return
     setSpawning(true)
@@ -61,9 +67,15 @@ export function useNewAgentSpawn() {
       // instead of minting a sibling — five stray clicks land in one chat, not five rows.
       // The loaded list is best-effort: an unloaded store just falls through to create.
       const [childStore] = cx.sync.peek(directory, { bootstrap: false })
+      // ⚠️ `s.agent === agentID` is load-bearing, and it was the half that was missing. The other
+      // four clauses say "an untouched chat in this folder" and none of them mentions WHO it
+      // belongs to — so one stray agent-less draft in the shared root was reopened for whichever
+      // colleague the chip had selected, forever. A chat may only ever be reused for its own
+      // colleague.
       const reusable = childStore.session.find(
         (s) =>
           !s.parentID &&
+          (s.agent ?? undefined) === agentID &&
           s.location.directory === directory &&
           SessionTitle.isDefault(s.title) &&
           (s.tokens?.input ?? 0) + (s.tokens?.output ?? 0) === 0,
@@ -126,14 +138,23 @@ export function NewAgentBar() {
   const agent = useNewAgentSpawn()
 
   const global = useGlobal()
-  const conn = createMemo(() => server.current)
+  // ⚠️ The SAME definition of "the current server" as `system-load.ts`, `contacts.tsx` and
+  // `agent-config-dialog.tsx` (review H8). With a bare `server.current` the hero tile beside this
+  // bar happily polled the first server while the bar reported "Still connecting to your
+  // workspace" — two answers to one question, on one screen.
+  const conn = createMemo(() => server.current ?? global.servers.list()[0])
   const barCtx = createMemo(() => {
     const current = conn()
     return current ? global.ensureServerCtx(current) : undefined
   })
   const spawning = agent.spawning
   const [chosenAgent, setChosenAgent] = createSignal<string | undefined>()
-  const [agents] = createResource(barCtx, (current) => listAgents(current.sdk.client.v2))
+  // 🔴 The server context's ONE shared roster (review D8), which also carries the `.catch` this
+  // call site was missing (D1/H1). It matters most here: this component is mounted unconditionally
+  // by the home screen, which is the app's BOOT ROUTE, and a rejected resource read from the eager
+  // memo below reached the root ErrorBoundary and replaced the launcher with the error page.
+  const agents = () => barCtx()?.agents.list()
+  const agentsLoading = () => barCtx()?.agents.loading() ?? true
   // The roster, as the chip needs it: who, and where each one works. `folderFor` is resolved here
   // ONLY for the reuse probe and the chip's own label — the session's actual folder is decided by the
   // server, so the two can never disagree about a colleague the client has not re-read.
@@ -154,7 +175,13 @@ export function NewAgentBar() {
     const id = chosenAgent() ?? agentOptions()[0]?.id
     const row = (agents() ?? []).find((entry: AgentLike) => entry.id === id)
     const configured = row?.config?.["directory"]
-    return typeof configured === "string" && configured.trim() !== "" ? configured : undefined
+    if (typeof configured === "string" && configured.trim() !== "") return configured
+    // ⚠️ Then the colleague's OWN workspace, read off the roster row rather than joined here:
+    // `Scratch.forAgent` lives in `core` behind `node:path` + `Global.Path.data`, so the client
+    // cannot compute it, and a second copy of that rule is how the client and the server end up
+    // disagreeing about where a chat lives. The roster response stamps it (`agent-list.ts:53`).
+    const workspace = row?.workspace?.trim()
+    return workspace ? workspace : undefined
   }
   const canSpawn = createMemo(() => (chosenFolder() ? !!conn() : agent.ready()))
   // Owner call 2026-07-14: the CLICK creates the chat — no typing here. The bar sits at the
@@ -162,12 +189,24 @@ export function NewAgentBar() {
   // transitions straight into the new chat's composer without the input appearing to move.
   const activate = () => {
     if (spawning()) return
+    // ⚠️ A click while the ROSTER is still in flight used to spawn `spawn(undefined, undefined)` —
+    // an agent-less chat in the shared scratch root, which then sat there as the thing every later
+    // click reused (review D4). The chip shows a colleague; the click must create that colleague's
+    // chat or nothing. A roster that has SETTLED with nobody in it still falls through, so a
+    // degraded instance keeps its escape hatch.
+    if (agentsLoading()) {
+      showToast({
+        title: language.t("common.requestFailed"),
+        description: language.t("home.newAgent.notReady"),
+      })
+      return
+    }
     // Never silently no-op: if the server/scratch dir isn't ready yet, tell the user instead of
     // eating the click (which reads as "nothing happens").
     if (!canSpawn()) {
       showToast({
         title: language.t("common.requestFailed"),
-        description: "Still connecting to your workspace — try again in a moment.",
+        description: language.t("home.newAgent.notReady"),
       })
       return
     }
@@ -182,23 +221,22 @@ export function NewAgentBar() {
       {/* Gold lead-in glyph — the skin's command bar opens with a gold mark (one accent, spent on
           the primary action; the hero + this bar are the home screen's two gold anchors). */}
       <Icon name="edit" size="normal" class="shrink-0 text-v2-icon-icon-accent" />
-      <input
+      {/* 🔴 A BUTTON, because that is what it does (review H7). It used to be a `readonly` text
+          input with `preventDefault()` on pointerdown: a screen reader announced a text field the
+          user could not type into, the preventDefault suppressed focus so a mouse user never
+          focused the control they had just activated, and the Enter handler only ever reached
+          people who tabbed to it. Nothing is typed here — the click creates the chat and the real
+          composer is where words go (owner call 2026-07-14) — so the element says so. The input's
+          look is kept verbatim; only the semantics changed. */}
+      <button
         data-slot="home-new-agent-input"
-        type="text"
-        readonly
-        class="min-w-0 flex-1 cursor-text bg-transparent text-[14px] text-v2-text-text-base outline-none placeholder:text-v2-text-text-faint"
-        placeholder={language.t("home.newAgent.placeholder")}
+        type="button"
+        class="min-w-0 flex-1 cursor-text bg-transparent text-left text-[14px] text-v2-text-text-faint outline-none disabled:opacity-60"
         disabled={spawning()}
-        onPointerDown={(event) => {
-          event.preventDefault()
-          activate()
-        }}
-        onKeyDown={(event) => {
-          if (event.key !== "Enter") return
-          event.preventDefault()
-          activate()
-        }}
-      />
+        onClick={() => activate()}
+      >
+        {language.t("home.newAgent.placeholder")}
+      </button>
       <Show when={spawning()}>
         <Spinner class="size-4 shrink-0 text-v2-icon-icon-muted" />
       </Show>

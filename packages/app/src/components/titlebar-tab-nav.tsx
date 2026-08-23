@@ -10,6 +10,7 @@ import { projectForSession } from "@/pages/layout/helpers"
 import { SessionTabAvatar } from "@/pages/layout/session-tab-avatar"
 import { showToast } from "@/utils/toast"
 import type { SessionV2Info as Session } from "@novaclaw/sdk/v2"
+import { tabLabel } from "@/apps/session-tab-label"
 import { canOpenTabRename, forwardTabRef } from "./titlebar-tab-gesture"
 
 export function TabNavItem(props: {
@@ -53,6 +54,25 @@ export function TabNavItem(props: {
     return projectForSession(session, serverCtx()?.projects.list() ?? [])
   })
 
+  /**
+   * 🔴 The tab says WHO, not what (owner, 2026-08-23). Reasoning and the fallbacks live in
+   * `@/apps/session-tab-label`, where `bun test` can reach them — this file is a `.tsx` the unit
+   * tier cannot load, which is exactly how defects in the tab strip have survived before.
+   *
+   * ⚠️ The roster is read from THIS TAB'S OWN server context, not from an ambient one: a tab strip
+   * mixes tabs from more than one instance, and resolving a colleague's name against the wrong
+   * instance's roster is a confident falsehood rather than a missing one. That roster is the one
+   * shared fetch (`createServerCtx`), so a strip of ten tabs costs zero extra requests.
+   */
+  const label = createMemo(() => {
+    const session = props.session()
+    return tabLabel({
+      agent: session?.agent,
+      title: session?.title,
+      agents: serverCtx()?.agents.list() ?? [],
+    })
+  })
+
   const measureTitleOverflow = () => {
     if (!titleEl || editing()) {
       setTitleOverflowing(false)
@@ -70,7 +90,7 @@ export function TabNavItem(props: {
   }
 
   createEffect(() => {
-    props.session()?.title
+    label().text
     props.forceTruncate
     editing()
     scheduleTitleOverflow()
@@ -129,18 +149,21 @@ export function TabNavItem(props: {
   createEffect(() => {
     if (editing()) return
     if (!titleEl) return
-    const title = props.session()?.title
-    if (title === undefined) return
-    titleEl.textContent = title
+    titleEl.textContent = label().text
   })
 
   const openRename = (event: MouseEvent) => {
     event.preventDefault()
     event.stopPropagation()
     if (!canOpenTabRename(props.dragging, editing(), committing)) return
+    // ⚠️ A tab showing a COLLEAGUE is not renameable here — this gesture writes the session title,
+    // so on such a tab the user would type a new name, press Enter and watch it snap back to the
+    // colleague's. Renaming a colleague is done in its own config, which is the one place that
+    // write belongs.
+    if (!label().renameable) return
     const session = props.session()
     if (!session) return
-    titleEl.textContent = session.title
+    titleEl.textContent = label().text
     setEditing(true)
 
     requestAnimationFrame(() => {
@@ -218,10 +241,12 @@ export function TabNavItem(props: {
               <span
                 ref={(el) => {
                   titleEl = el
-                  titleEl.textContent = session().title
+                  titleEl.textContent = label().text
                 }}
                 data-slot="tab-title"
                 data-titlebar-tab-title
+                // The chat's own topic, kept where it costs nothing until it is wanted.
+                title={label().tooltip}
                 class="min-w-0 flex-1 outline-none leading-4"
                 classList={{
                   "overflow-hidden text-clip whitespace-nowrap": !editing(),
@@ -238,7 +263,7 @@ export function TabNavItem(props: {
                   }
                   if (event.key !== "Escape") return
                   event.preventDefault()
-                  titleEl.textContent = session().title
+                  titleEl.textContent = label().text
                   void closeRename(false)
                 }}
                 onBlur={() => void closeRename(true)}

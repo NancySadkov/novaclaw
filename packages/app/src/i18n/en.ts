@@ -925,7 +925,10 @@ export const dict = {
   "session.info.tags": "Tags",
   "common.remove": "Remove",
   "session.info.tags.placeholder": "Add a tag and press Enter",
-  "home.newAgent.placeholder": "Tell a new agent what to do — Enter opens its chat, ready to configure",
+  // ⚠️ The copy changed WITH the control (AGENTS.md principle 12): this was a fake text input whose
+  // label said "Enter opens its chat", which described typing that never happened. It is a button.
+  "home.newAgent.placeholder": "Start a new chat — opens ready to configure",
+  "home.newAgent.notReady": "Still connecting to your workspace — try again in a moment.",
   "home.newAgent.folder.scratch": "Scratch",
   "home.newAgent.folder.pick": "Choose the agent's working folder",
   "home.newAgent.folder.reset": "Back to the scratch folder",
@@ -2634,6 +2637,7 @@ export const dict = {
   "home.app.debug.name": "Debug",
   "home.app.debug.subtitle": "Connection, error log, sessions — under the hood",
   "agentConfig.close": "Close",
+  "agentConfig.back": "Back",
   "agentConfig.clearChat": "Clear chat",
   "agentConfig.clearing": "Clearing…",
   "agentConfig.clearedTitle": "Chat cleared — the next one starts fresh",

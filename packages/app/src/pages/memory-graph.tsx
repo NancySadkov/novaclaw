@@ -244,8 +244,8 @@ export function MemoryGraphPage() {
   const visibleCount = () => (graph()?.nodes ?? []).filter((n) => kindVisible(n.kind)).length
 
   return (
-    <div class="flex h-full w-full flex-col bg-v2-surface-bg-base text-v2-text-text-base">
-      <header class="flex items-center gap-3 border-b border-v2-border-border-faint px-4 py-2.5">
+    <div class="flex h-full w-full flex-col bg-v2-background-bg-base text-v2-text-text-base">
+      <header class="flex items-center gap-3 border-b border-v2-border-border-muted px-4 py-2.5">
         <A href="/" class="flex items-center gap-1.5 text-sm opacity-70 hover:opacity-100">
           <Icon name="arrow-left" size="large" />
           Home
@@ -309,7 +309,7 @@ export function MemoryGraphPage() {
                 onClick={() => setAppView(entry.id)}
                 class="rounded px-2 py-1"
                 classList={{
-                  "bg-v2-background-bg-layer-03 text-v2-text-text-strong": appView() === entry.id,
+                  "bg-v2-background-bg-layer-03 text-v2-text-text-base": appView() === entry.id,
                   "opacity-60 hover:opacity-100": appView() !== entry.id,
                 }}
               >
@@ -532,7 +532,7 @@ export function MemoryGraphPage() {
           {/* detail panel for the selected memory */}
           <Show when={selectedNode()}>
             {(sel) => (
-              <aside class="absolute right-0 top-0 h-full w-72 overflow-y-auto border-l border-v2-border-border-faint bg-v2-surface-bg-raised p-4 text-sm">
+              <aside class="absolute right-0 top-0 h-full w-72 overflow-y-auto border-l border-v2-border-border-muted bg-v2-background-bg-layer-02 p-4 text-sm">
                 <div class="mb-2 flex items-start justify-between gap-2">
                   <span
                     class="rounded px-1.5 py-0.5 text-xs"

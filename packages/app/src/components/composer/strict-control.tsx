@@ -67,7 +67,7 @@ export function ComposerStrictControl(props: { state: ComposerStrictControlState
           type="button"
           data-action="prompt-strict"
           data-enabled={enabled() ? "true" : undefined}
-          class="flex h-7 items-center gap-1.5 rounded-md px-2 text-[13px] font-[440] leading-5 hover:bg-v2-background-bg-subtle"
+          class="flex h-7 items-center gap-1.5 rounded-md px-2 text-[13px] font-[440] leading-5 hover:bg-v2-background-bg-layer-02"
           classList={{
             "text-v2-text-text-faint": !enabled(),
             "text-v2-text-text-base": enabled(),

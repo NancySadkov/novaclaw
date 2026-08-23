@@ -261,7 +261,7 @@ function RemoteChatSection(props: { remote: ComposerRemoteChatState }) {
   const [pickedTrust, setPickedTrust] = createSignal<ComposerRemoteTrust>("operator")
 
   const row =
-    "flex items-start justify-between gap-3 rounded-md border border-transparent px-2.5 py-1.5 text-left hover:bg-v2-background-bg-subtle"
+    "flex items-start justify-between gap-3 rounded-md border border-transparent px-2.5 py-1.5 text-left hover:bg-v2-background-bg-layer-02"
 
   return (
     <div class="flex flex-col gap-1.5" data-section="remote-chat">
@@ -281,7 +281,7 @@ function RemoteChatSection(props: { remote: ComposerRemoteChatState }) {
                 <button
                   type="button"
                   data-action="remote-open-settings"
-                  class="self-start text-[13px] text-v2-text-text-base underline decoration-dotted hover:text-v2-text-text-strong"
+                  class="self-start text-[13px] text-v2-text-text-base underline decoration-dotted hover:text-v2-text-text-base"
                   onClick={() => props.remote.openSettings()}
                 >
                   {language.t("prompt.remote.none")}
@@ -364,7 +364,7 @@ function RemoteChatSection(props: { remote: ComposerRemoteChatState }) {
                       <button
                         type="button"
                         data-action="remote-manual-use"
-                        class="h-7 rounded-md px-2 text-[13px] text-v2-text-text-base hover:bg-v2-background-bg-subtle disabled:opacity-50"
+                        class="h-7 rounded-md px-2 text-[13px] text-v2-text-text-base hover:bg-v2-background-bg-layer-02 disabled:opacity-50"
                         disabled={manual().trim().length === 0}
                         onClick={() => {
                           const value = manual().trim()
@@ -457,7 +457,7 @@ function RemoteChatSection(props: { remote: ComposerRemoteChatState }) {
               <span class="truncate text-[13px] text-v2-text-text-base">
                 {language.t("prompt.remote.connected", { driver: binding().driverName, chat: binding().chatTitle })}
               </span>
-              <span class="shrink-0 rounded-sm bg-v2-background-bg-subtle px-1.5 text-[11px] text-v2-text-text-faint">
+              <span class="shrink-0 rounded-sm bg-v2-background-bg-layer-02 px-1.5 text-[11px] text-v2-text-text-faint">
                 {language.t(`prompt.remote.trust.${binding().trust}.title`)}
               </span>
             </span>
@@ -609,7 +609,7 @@ function MakeDefaultSection(props: {
       <button
         type="button"
         data-action="make-default"
-        class="mt-1 self-start rounded-md border border-border-base px-2.5 py-1 text-[13px] text-v2-text-text-base hover:bg-v2-background-bg-subtle disabled:opacity-50"
+        class="mt-1 self-start rounded-md border border-border-base px-2.5 py-1 text-[13px] text-v2-text-text-base hover:bg-v2-background-bg-layer-02 disabled:opacity-50"
         disabled={busy() || persisted().length === 0}
         onClick={run}
       >
@@ -726,6 +726,13 @@ export function ComposerFeaturesControl(props: { state: ComposerFeaturesControlS
   // the conversation's own. Same dialog the Contacts app opens, so there is one place to learn.
   //
   // `showScoped` is unchanged and still load-bearing — see the note below on the mis-targeted write.
+  //
+  // ⚠️ `onDismiss` CLOSES THE DIALOG, it does not merely fire the composer's hook. It used to call
+  // only `props.state.onClose()`, which re-reads the session record and leaves the panel standing —
+  // so Close and Cancel did nothing visible. That went unnoticed because the panel was closing by
+  // accident on every click (it rendered a bare `<div>` under the stack's `pointer-events: none`
+  // layer, so clicks fell through to the overlay). Fixing the modal made the dead button visible.
+  // `stack.close` runs the `onClose` passed below, so the composer's hook still fires exactly once.
   const openPanel = () =>
     void dialog.showScoped(
       () => (
@@ -733,8 +740,8 @@ export function ComposerFeaturesControl(props: { state: ComposerFeaturesControlS
           agentID={props.state.agent}
           // No `onChanged` here on purpose: opened from a CHAT, there is no roster on screen to
           // refresh, and the config's own fields re-read the agent list themselves.
-          onDismiss={() => props.state.onClose()}
-          tuning={() => <TuningPanel state={props.state} onDismiss={() => props.state.onClose()} embedded />}
+          onDismiss={() => dialog.close()}
+          tuning={() => <TuningPanel state={props.state} onDismiss={() => dialog.close()} embedded />}
         />
       ),
       () => props.state.onClose(),
@@ -748,7 +755,7 @@ export function ComposerFeaturesControl(props: { state: ComposerFeaturesControlS
           data-action="prompt-features"
           data-enabled-count={enabledCount() || undefined}
           data-mode={unattended() ? props.state.mode : undefined}
-          class="flex h-7 items-center gap-1.5 rounded-md px-2 text-[13px] font-[440] leading-5 hover:bg-v2-background-bg-subtle"
+          class="flex h-7 items-center gap-1.5 rounded-md px-2 text-[13px] font-[440] leading-5 hover:bg-v2-background-bg-layer-02"
           classList={{
             "text-v2-text-text-faint": enabledCount() === 0 && !unattended(),
             "text-v2-text-text-base": enabledCount() > 0 || unattended(),
@@ -830,7 +837,7 @@ function TuningPanel(props: { state: ComposerFeaturesControlState; onDismiss: ()
                   data-posture-option={posture}
                   aria-checked={selected()}
                   onClick={() => props.state.set("shortChat", posture === "chat")}
-                  class="flex items-start justify-between gap-3 rounded-md border px-2.5 py-1.5 text-left hover:bg-v2-background-bg-subtle"
+                  class="flex items-start justify-between gap-3 rounded-md border px-2.5 py-1.5 text-left hover:bg-v2-background-bg-layer-02"
                   classList={{
                     "border-v2-border-border-focus bg-v2-background-bg-layer-01": selected(),
                     "border-transparent": !selected(),
@@ -882,7 +889,7 @@ function TuningPanel(props: { state: ComposerFeaturesControlState; onDismiss: ()
                 data-mode-option={mode}
                 aria-checked={props.state.mode === mode}
                 onClick={() => props.state.setMode(mode)}
-                class="flex items-start justify-between gap-3 rounded-md border px-2.5 py-1.5 text-left hover:bg-v2-background-bg-subtle"
+                class="flex items-start justify-between gap-3 rounded-md border px-2.5 py-1.5 text-left hover:bg-v2-background-bg-layer-02"
                 classList={{
                   "border-v2-border-border-focus bg-v2-background-bg-layer-01": props.state.mode === mode,
                   "border-transparent": props.state.mode !== mode,

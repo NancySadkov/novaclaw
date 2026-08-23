@@ -55,8 +55,8 @@ import { SettingsRowV2 } from "./parts/row"
 
 /** Neutral for `unknown` on purpose — an unread probe must not borrow the healthy colour. */
 const MARK: Record<DiagnosisStatus, string> = {
-  problem: "text-v2-text-text-danger",
-  warning: "text-v2-text-text-warning",
+  problem: "text-v2-state-fg-danger",
+  warning: "text-v2-state-fg-warning",
   unknown: "text-v2-text-text-muted",
   ok: "text-v2-text-text-muted",
 }
@@ -230,7 +230,7 @@ export const NovaHealthBoard: Component = () => {
           type="button"
           data-action="erase-memory"
           disabled={erasing()}
-          class="settings-v2-tab-description ml-auto text-v2-text-text-danger underline disabled:opacity-60"
+          class="settings-v2-tab-description ml-auto text-v2-state-fg-danger underline disabled:opacity-60"
           onClick={() => void eraseMemory()}
         >
           {erasing() ? language.t("settings.health.eraseMemory.erasing") : language.t("settings.health.eraseMemory")}

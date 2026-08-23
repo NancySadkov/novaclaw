@@ -220,7 +220,7 @@ export const ConfinementRows: Component<{
         >
           <code
             data-slot="settings-confinement-probe"
-            class="min-w-0 select-all truncate rounded bg-v2-surface-surface-sunken px-1.5 py-1 text-[12px] text-v2-text-text-muted"
+            class="min-w-0 select-all truncate rounded bg-v2-background-bg-deep px-1.5 py-1 text-[12px] text-v2-text-text-muted"
             title={probeDetail()}
           >
             {probeDetail()}

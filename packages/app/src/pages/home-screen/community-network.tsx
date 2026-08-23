@@ -1083,7 +1083,7 @@ export const CommunityNetwork: Component = () => {
                   {language.t("community.announce.publish")}
                 </ButtonV2>
                 <Show when={announceProblem()}>
-                  <span class="text-[11px] leading-snug text-v2-text-text-danger">{announceProblem()}</span>
+                  <span class="text-[11px] leading-snug text-v2-state-fg-danger">{announceProblem()}</span>
                 </Show>
                 <span class="text-[11px] leading-snug text-v2-text-text-muted">
                   Off. Other instances find this one on your network, from addresses you type, and through

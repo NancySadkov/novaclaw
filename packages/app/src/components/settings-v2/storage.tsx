@@ -288,7 +288,7 @@ const PathValue: Component<{
     {/* `select-all` + title: the path is often longer than the row, so a click selects the whole thing
         and the tooltip shows it in full even when it is visually truncated. */}
     <code
-      class="min-w-0 flex-1 select-all truncate rounded bg-v2-surface-surface-sunken px-1.5 py-1 text-[12px] text-v2-text-text-muted"
+      class="min-w-0 flex-1 select-all truncate rounded bg-v2-background-bg-deep px-1.5 py-1 text-[12px] text-v2-text-text-muted"
       title={props.value}
       data-slot="settings-v2-storage-path"
     >

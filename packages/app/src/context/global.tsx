@@ -1,5 +1,5 @@
 import { createSimpleContext } from "@novaclaw/ui/context"
-import { createEffect, createMemo, createRoot } from "solid-js"
+import { createEffect, createMemo, createResource, createRoot, createSignal } from "solid-js"
 import { createServerProjects, ServerConnection, useServer } from "./server"
 import { useServerHealth } from "@/utils/server-health"
 import { createServerSdkContext } from "./server-sdk"
@@ -7,6 +7,8 @@ import { createServerSyncContext } from "./server-sync"
 import { getOwner } from "solid-js/web"
 import { QueryClient } from "@tanstack/solid-query"
 import type { ServerScope } from "@/utils/server-scope"
+import { listAgents } from "@/apps/agent-list"
+import type { AgentLike } from "@/apps/contacts"
 
 export const { use: useGlobal, provider: GlobalProvider } = createSimpleContext({
   name: "Global",
@@ -101,6 +103,52 @@ function createServerCtx(
   const sdk = createServerSdkContext(conn, scope)
   const sync = createServerSyncContext(sdk)
 
+  /**
+   * THE roster for this instance — one fetch, shared by every surface that asks who works here.
+   *
+   * 🔴 It lives on the server context because there were THREE independent `createResource`s over
+   * `GET /api/agent` (review D8, 2026-08-23): the home launcher's New Agent bar, the Contacts page,
+   * and the config dialog on EVERY open. Opening Home, then Contacts, then one colleague was three
+   * round trips for identical data — and the dialog's own in-flight window is what made it possible
+   * to save a colleague's brief away as `""` before its record had arrived (D3).
+   *
+   * ⚠️ `.catch(() => [])` is not optional. `createResource.read()` re-throws into whatever memo
+   * reads it, and this app has exactly ONE ErrorBoundary — at its root — so an unreachable instance
+   * used to replace the entire UI, including on the boot route. A roster we cannot read degrades to
+   * "nobody listed", never to a dead app; the surfaces that must distinguish "empty" from "failed"
+   * keep their own error signal.
+   *
+   * ⚠️ It is DELIBERATELY the v2 list and not the sync store's `data.agent`, which is the legacy
+   * `GET /agent` projection: entries keyed by `name`, carrying no `title`, `personality`, `avatar`
+   * or `memory` (`apps/agent-list.ts`).
+   */
+  const [rosterError, setRosterError] = createSignal<unknown>(undefined)
+  const [agentRoster, agentRosterActions] = createResource(
+    () => sdk.client.v2,
+    (client) =>
+      listAgents(client).then(
+        (rows) => {
+          setRosterError(undefined)
+          return rows
+        },
+        (error: unknown) => {
+          // ⚠️ The failure is KEPT, not discarded. Most surfaces only want a list and are content
+          // with an empty one, but Contacts is the roster: "you have nobody" and "we could not read
+          // who you have" are different sentences, and collapsing them is how a broken request
+          // reads as an empty organization. One fetch, both facts.
+          setRosterError(error ?? new Error("listAgents failed"))
+          return [] as AgentLike[]
+        },
+      ),
+  )
+  const agents = {
+    list: (): readonly AgentLike[] => agentRoster.latest ?? [],
+    loading: () => agentRoster.loading,
+    /** The last failure, or `undefined` once a read succeeds. */
+    error: () => rosterError(),
+    refetch: () => void agentRosterActions.refetch(),
+  }
+
   function enrich(project: { worktree: string; expanded: boolean; sandboxes?: string[]; id?: string }) {
     const [childStore] = sync.child(project.worktree, { bootstrap: false })
     // T3 (entities.md): the entity metadata died — the per-directory LOCAL meta is the source.
@@ -125,6 +173,7 @@ function createServerCtx(
     queryClient,
     sdk,
     sync,
+    agents,
     isLocal,
     projects: {
       ...projects,

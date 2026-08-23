@@ -684,7 +684,7 @@ export const DialogModelConfig: Component<{
                 <button
                   type="button"
                   data-action="tool-channel-test"
-                  class="text-[12px] text-v2-text-text-base underline decoration-dotted hover:text-v2-text-text-strong disabled:opacity-50"
+                  class="text-[12px] text-v2-text-text-base underline decoration-dotted hover:text-v2-text-text-base disabled:opacity-50"
                   disabled={testing()}
                   onClick={() => void testChannel()}
                 >

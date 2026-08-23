@@ -676,7 +676,7 @@ export const DialogNewModel: Component<{
               {(status) => (
                 <div class="flex flex-col gap-3">
                   <Show when={!status().supported}>
-                    <div class="rounded-xl bg-v2-background-bg-layer-01 px-3.5 py-3 text-[12px] text-v2-text-text-danger ring-1 ring-v2-border-border-base">
+                    <div class="rounded-xl bg-v2-background-bg-layer-01 px-3.5 py-3 text-[12px] text-v2-state-fg-danger ring-1 ring-v2-border-border-base">
                       {t("settings.models.new.managed.unsupported", { platform: status().platform })}
                     </div>
                   </Show>
@@ -753,11 +753,11 @@ export const DialogNewModel: Component<{
                         </Show>
                         <Show when={status().preflight?.issues.length}>
                           <For each={status().preflight?.issues}>
-                            {(issue) => <span class="select-text text-[11px] text-v2-text-text-danger">{issue}</span>}
+                            {(issue) => <span class="select-text text-[11px] text-v2-state-fg-danger">{issue}</span>}
                           </For>
                         </Show>
                         <Show when={status().stage === "error" && status().profileID === profile.id}>
-                          <span class="select-text whitespace-pre-wrap text-[11px] text-v2-text-text-danger">
+                          <span class="select-text whitespace-pre-wrap text-[11px] text-v2-state-fg-danger">
                             {status().detail ?? status().message}
                           </span>
                         </Show>
@@ -791,7 +791,7 @@ export const DialogNewModel: Component<{
               )}
             </Show>
             <Show when={managed() && error()}>
-              <span class="select-text text-[12px] text-v2-text-text-danger">{error()}</span>
+              <span class="select-text text-[12px] text-v2-state-fg-danger">{error()}</span>
             </Show>
           </div>
         </Show>
@@ -825,7 +825,7 @@ export const DialogNewModel: Component<{
               {probing() ? t("settings.models.new.discovering") : t("settings.models.new.discover")}
             </ButtonV2>
             <Show when={error()}>
-              <span class="text-[12px] text-v2-text-text-danger">{error()}</span>
+              <span class="text-[12px] text-v2-state-fg-danger">{error()}</span>
             </Show>
           </div>
         </Show>
@@ -871,7 +871,7 @@ export const DialogNewModel: Component<{
               </For>
             </div>
             <Show when={error()}>
-              <span class="text-[12px] text-v2-text-text-danger">{error()}</span>
+              <span class="text-[12px] text-v2-state-fg-danger">{error()}</span>
             </Show>
           </div>
         </Show>

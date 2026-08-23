@@ -27,36 +27,42 @@ export function ComposerAgentControl(props: { state: ComposerAgentControlState }
         gutter={4}
         value={language.t(props.state.working ? "prompt.agent.tooltip.working" : "prompt.agent.tooltip")}
       >
-        <label class="flex h-7 items-center gap-1.5 rounded-md px-2 text-[13px] font-[440] leading-5 text-v2-text-text-faint hover:bg-v2-background-bg-subtle">
+        <label class="flex h-7 items-center gap-1.5 rounded-md px-2 text-[13px] font-[440] leading-5 text-v2-text-text-faint hover:bg-v2-background-bg-layer-02">
           <Show when={current()?.avatar} fallback={<Icon name="user" class="size-3.5 shrink-0" />}>
             {(avatar) => <span class="shrink-0">{avatar()}</span>}
           </Show>
+          {/* 🔴 In a chat the NAME IS NOT REPEATED here (owner, 2026-08-23: *"the prompt area
+              doesn't really need to have the agent's name, since it is already in the tab title"*).
+              The tab strip above now says who you are talking to, and saying it twice on one screen
+              spends the composer's scarcest width on a fact already in view. The avatar stays —
+              it is the glance-level identity — and the tooltip still names them for anyone who
+              needs the word rather than the mark. On HOME this branch never runs: there the chip is
+              a real selector, and a selector with no label is a puzzle. */}
           <Show when={props.state.readOnly}>
-            {/* Whose chat this is. No control, because there is nothing to choose: see `readOnly`. */}
-            <span data-slot="prompt-agent-name" class="max-w-[12rem] truncate">
+            <span data-slot="prompt-agent-name" class="sr-only">
               {current()?.name}
             </span>
           </Show>
           <Show when={!props.state.readOnly}>
-          <select
-            data-action="prompt-agent"
-            disabled={props.state.working}
-            class="max-w-[12rem] truncate bg-transparent outline-none disabled:cursor-not-allowed disabled:opacity-60"
-            onChange={(event) => props.state.onSelect(event.currentTarget.value)}
-          >
-            <For each={props.state.options}>
-              {(option) => (
-                // ⚠️ `selected` per option, not `value` on the select: the options arrive with the
-                // roster, AFTER the element is created, and a browser keeps `selectedIndex` at 0 when
-                // children appear later. Measured on the Memory app's owner picker 2026-08-21 — it
-                // read "Nova" over somebody else's memories.
-                <option value={option.id} selected={option.id === current()?.id}>
-                  {option.name}
-                  {option.ownScratch ? "" : ` · ${option.folder}`}
-                </option>
-              )}
-            </For>
-          </select>
+            <select
+              data-action="prompt-agent"
+              disabled={props.state.working}
+              class="max-w-[12rem] truncate bg-transparent outline-none disabled:cursor-not-allowed disabled:opacity-60"
+              onChange={(event) => props.state.onSelect(event.currentTarget.value)}
+            >
+              <For each={props.state.options}>
+                {(option) => (
+                  // ⚠️ `selected` per option, not `value` on the select: the options arrive with the
+                  // roster, AFTER the element is created, and a browser keeps `selectedIndex` at 0 when
+                  // children appear later. Measured on the Memory app's owner picker 2026-08-21 — it
+                  // read "Nova" over somebody else's memories.
+                  <option value={option.id} selected={option.id === current()?.id}>
+                    {option.name}
+                    {option.ownScratch ? "" : ` · ${option.folder}`}
+                  </option>
+                )}
+              </For>
+            </select>
           </Show>
         </label>
       </TooltipV2>

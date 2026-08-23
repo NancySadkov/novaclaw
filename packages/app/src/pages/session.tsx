@@ -1010,7 +1010,7 @@ export default function Page() {
           <Show when={["recovering", "paused", "failed", "interrupted"].includes(attempt().state)}>
             <div class="mx-2 mt-2 flex select-text items-center gap-3 rounded-[10px] border border-v2-state-border-warning bg-v2-state-bg-warning px-3 py-2 text-xs text-v2-text-text-muted">
               <span class="min-w-0 flex-1">
-                <strong class="text-v2-text-text-strong">
+                <strong class="text-v2-text-text-base">
                   {attempt().state === "recovering" ? "This chat is recovering." : "This chat is paused safely."}
                 </strong>{" "}
                 {attempt().failureDetail ??
@@ -1058,7 +1058,7 @@ export default function Page() {
           data-slot="session-presence"
           data-presence-state={presenceSnapshot()?.state ?? "unattended"}
           data-presence-driving={presenceState().driving ? "true" : "false"}
-          class="mx-2 mt-2 flex select-text items-center gap-3 rounded-[10px] border border-v2-border-border-subtle bg-v2-background-bg-subtle px-3 py-2 text-xs text-v2-text-text-muted"
+          class="mx-2 mt-2 flex select-text items-center gap-3 rounded-[10px] border border-v2-border-border-muted bg-v2-background-bg-layer-02 px-3 py-2 text-xs text-v2-text-text-muted"
         >
           <span class="min-w-0 flex-1">
             <Show when={presenceState().line}>
@@ -1066,7 +1066,7 @@ export default function Page() {
             </Show>{" "}
             <Show when={presenceHandoff()}>
               {(line) => (
-                <span data-slot="session-presence-handoff" class="text-v2-text-text-strong">
+                <span data-slot="session-presence-handoff" class="text-v2-text-text-base">
                   {language.t(line().key, line().values)}
                 </span>
               )}

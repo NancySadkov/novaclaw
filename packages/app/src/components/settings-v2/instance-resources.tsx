@@ -96,9 +96,9 @@ export const InstanceResources: Component = () => {
       </SettingsListV2>
 
       <Show when={usage()?.localModel.supported}>
-        <div class="flex items-center justify-between gap-3 rounded-lg bg-v2-surface-surface-sunken px-3 py-2">
+        <div class="flex items-center justify-between gap-3 rounded-lg bg-v2-background-bg-deep px-3 py-2">
           <div class="min-w-0">
-            <div class="text-[12px] font-medium text-v2-text-text-strong">
+            <div class="text-[12px] font-medium text-v2-text-text-base">
               {language.t("settings.storage.resources.localModel")}
             </div>
             <div class="select-text text-[11px] text-v2-text-text-muted">
@@ -111,7 +111,7 @@ export const InstanceResources: Component = () => {
         </div>
       </Show>
       <Show when={usage.error}>
-        <p class="select-text text-[12px] text-v2-text-text-danger">
+        <p class="select-text text-[12px] text-v2-state-fg-danger">
           {usage.error instanceof Error ? usage.error.message : String(usage.error)}
         </p>
       </Show>
