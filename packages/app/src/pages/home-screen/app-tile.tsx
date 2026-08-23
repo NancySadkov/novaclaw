@@ -1,4 +1,4 @@
-import { Component, For, Show, type ComponentProps } from "solid-js"
+import { Component, Index, Show, type ComponentProps } from "solid-js"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import type { HomeApp } from "@/apps/registry"
 
@@ -158,29 +158,35 @@ const HeroTile: Component<TileProps> = (props) => {
             while its neighbours sat on empty space. Sizing to content spends the width where it is
             actually needed. */}
         <div class="relative flex items-end justify-between gap-1.5 border-t border-[color-mix(in_srgb,var(--nc-accent-solid,#d8ab4b)_28%,transparent)] pt-3">
-          <For each={stats()}>
+          {/* ⚠️ `<Index>`, not `<For>` (review H5, 2026-08-23). `systemLoadStats()` returns a NEW array
+              of NEW objects on every call, and it chains through `useThreadActivity()` — a memo over
+              the sync store's session data, which moves on every streaming tick. `<For>` keys by
+              reference, so these three cells were disposed and recreated at roughly token rate while
+              an agent was answering. The set is FIXED at three: position IS their identity, which is
+              exactly what `<Index>` keys on. */}
+          <Index each={stats()}>
             {(stat) => (
               <div class="flex min-w-0 flex-col items-center gap-0.5">
                 <span
                   class="text-[17px] font-semibold leading-none tabular-nums transition-colors"
                   classList={{
-                    "text-v2-text-text-base": !stat.tone,
+                    "text-v2-text-text-base": !stat().tone,
                     // Dimmed, not hidden: an idle machine still reports, it just does not ask for
                     // attention. `faint` is the same token the empty states use.
-                    "text-v2-text-text-faint": stat.tone === "idle",
-                    "text-v2-state-fg-danger": stat.tone === "warn",
+                    "text-v2-text-text-faint": stat().tone === "idle",
+                    "text-v2-state-fg-danger": stat().tone === "warn",
                   }}
                 >
-                  {stat.value}
+                  {stat().value}
                 </span>
                 {/* Tight tracking + a nowrap ellipsis backstop: three columns share ~200px on a
                     phone-width tile, and a label that truncates to "TOKE…" is worse than none. */}
                 <span class="max-w-full truncate text-[9px] font-medium uppercase tracking-[0.04em] text-v2-text-text-muted">
-                  {stat.label}
+                  {stat().label}
                 </span>
               </div>
             )}
-          </For>
+          </Index>
         </div>
       </div>
     </button>

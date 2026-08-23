@@ -188,7 +188,10 @@ export const HomeScreen: Component = () => {
     const onDown = (e: PointerEvent) => {
       const tile = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-home-app-id]") : undefined
       if (!tile || !scroller?.contains(tile) || !tile.dataset.homeAppId) {
-        clickGuard.clear()
+        // ⚠️ Scoped to THIS pointer (review H6). Clearing unconditionally let a second touch
+        // anywhere on the page abandon the first pointer's live gesture, so its release over a tile
+        // emitted an unswallowed click and the app opened mid-reorder.
+        clickGuard.clear(e.pointerId)
         return
       }
       clickGuard.begin({ pointerID: e.pointerId, x: e.clientX, y: e.clientY })

@@ -47,7 +47,20 @@ export function createHomeTileClickGuard(travel = 10) {
       pointer = undefined
       return true
     },
-    clear() {
+    /**
+     * Abandon the gesture.
+     *
+     * ⚠️ `pointerID` is OPTIONAL and, when given, is honoured — property 2 above, at the one call
+     * site that was breaking it (review H6, 2026-08-23). `home-screen.tsx` clears whenever a
+     * pointerdown lands outside a tile, and it did so with no id test: a second touch anywhere on
+     * the page mid-drag therefore reset `dragged` to false, and the FIRST pointer's release over a
+     * tile emitted an unswallowed click — the app opened while the user was reordering. Narrow
+     * (multi-touch only), and a hole in exactly the property this module was rewritten to
+     * guarantee. Called with no id it still means "abandon whatever is live", which is what the
+     * `blur` and unmount paths want.
+     */
+    clear(pointerID?: number) {
+      if (pointerID !== undefined && pointer !== undefined && pointer.pointerID !== pointerID) return
       pointer = undefined
       dragged = false
     },
