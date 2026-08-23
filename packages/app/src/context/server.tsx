@@ -218,7 +218,7 @@ export function nextServerAfterRemoval(
   return next ? ServerConnection.key(next) : fallback
 }
 
-export const { use: useServer, provider: ServerProvider } = createSimpleContext({
+export const { use: useServer, provider: ServerProvider, context: ServerContext } = createSimpleContext({
   name: "Server",
   gate: true,
   init: (props: {

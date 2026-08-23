@@ -230,7 +230,7 @@ function readStoredLocale() {
 const warm = readStoredLocale() ?? detectLocale()
 if (warm !== "en") void loadDict(warm)
 
-export const { use: useLanguage, provider: LanguageProvider } = createSimpleContext({
+export const { use: useLanguage, provider: LanguageProvider, context: LanguageContext } = createSimpleContext({
   name: "Language",
   gate: false,
   init: (props: { locale?: Locale }) => {

@@ -28,7 +28,7 @@ function modelKey(model: ModelKey) {
   return `${model.providerID}:${model.modelID}`
 }
 
-export const { use: useModels, provider: ModelsProvider } = createSimpleContext({
+export const { use: useModels, provider: ModelsProvider, context: ModelsContext } = createSimpleContext({
   name: "Models",
   gate: false,
   init: (props: { directory?: Accessor<string | undefined> } = {}) => {

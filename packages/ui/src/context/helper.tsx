@@ -34,5 +34,19 @@ export function createSimpleContext<T, Props extends Record<string, any>>(
       if (!value) throw new Error(`${input.name} context must be used within a context provider`)
       return value
     },
+    /**
+     * The raw Context, so a TEST can supply a stub value without standing up the real `init`.
+     *
+     * 🔴 Its absence is why no test in this repo had ever RENDERED a context-dependent component,
+     * and that is a measured cost, not a theory: the 2026-08-23 named-agents review found eleven
+     * defects in two `.tsx` files, every one of them invisible to the three "ledgers" that reach
+     * those files by `readFileSync` + regex. `provider` calls the real `init`, so a component that
+     * wants a server connection, an SDK client and a live sync store could only be tested by
+     * building all three — which nobody did.
+     *
+     * ⚠️ Product code must never reach for this. `use()` is the contract; this exists so a smoke
+     * test can mount the component under stub values and assert what actually renders.
+     */
+    context: ctx,
   }
 }

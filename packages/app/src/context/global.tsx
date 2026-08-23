@@ -10,7 +10,7 @@ import type { ServerScope } from "@/utils/server-scope"
 import { listAgents } from "@/apps/agent-list"
 import type { AgentLike } from "@/apps/contacts"
 
-export const { use: useGlobal, provider: GlobalProvider } = createSimpleContext({
+export const { use: useGlobal, provider: GlobalProvider, context: GlobalContext } = createSimpleContext({
   name: "Global",
   init: () => {
     const server = useServer()
