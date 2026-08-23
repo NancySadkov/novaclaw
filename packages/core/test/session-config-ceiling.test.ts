@@ -61,14 +61,16 @@ describe("the memory ceiling", () => {
     // ⚠️ A source claim, because the ordering is the property and no behavioural test can see it:
     // folding the ceiling into the defaults would put it BENEATH the chain, where an explicit `true`
     // climbs straight back over it — which is exactly the case the first test above forbids.
+    // ⚠️ Pinned as NESTING, not as character offsets. The first version compared `indexOf` positions
+    // of two formatting-specific literals, and both vanished when the entry point started walking the
+    // chain itself and the call collapsed onto one line — it went red on a file whose ordering was
+    // still correct. What this test is about is that the clamp WRAPS the resolve, so that is what it
+    // reads.
     const source = fs.readFileSync(path.join(SRC, "session", "effective-config.ts"), "utf8")
-    const fold = source.indexOf("ProjectDefaults.fold(")
-    const clamp = source.indexOf("clampToCeilings(\n")
-    const walk = source.indexOf("resolveSessionConfig(folded.defaults")
-    expect(fold).toBeGreaterThan(0)
-    expect(walk).toBeGreaterThan(fold)
-    expect(clamp).toBeGreaterThan(fold)
-    expect(clamp).toBeLessThan(walk)
+    expect(source).toMatch(/ProjectDefaults\.fold\(/)
+    // clamp(resolve(folded.defaults, …)) — the resolve is the clamp ARGUMENT, so the ceiling lands on
+    // the chain-resolved value and cannot be climbed back over by an explicit `true`.
+    expect(source).toMatch(/clampToCeilings\(\s*resolve(SessionConfig|Config)\(\s*folded\.defaults/)
   })
 
   test("no reader re-applies the ceiling by hand", () => {

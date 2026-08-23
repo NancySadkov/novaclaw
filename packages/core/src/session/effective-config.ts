@@ -5,7 +5,13 @@ import { ProjectFile } from "@novaclaw/schema/project-file"
 import { makeGlobalNode } from "../effect/app-node"
 import { MemorySetting } from "../kb-graph/memory-setting"
 import { ProjectFileCache } from "../project-file-cache"
-import { EFFECTIVE_CONFIG_DEFAULTS, resolveSessionConfig, type EffectiveConfig } from "./config-resolve"
+import {
+  EFFECTIVE_CONFIG_DEFAULTS,
+  agentOf,
+  resolveConfig,
+  sessionConfigChain,
+  type EffectiveConfig,
+} from "./config-resolve"
 import { AgentConfigStore } from "../agent-config-store"
 import { AgentDefaults } from "./agent-defaults"
 import type { ConfigAgent } from "../config/agent"
@@ -187,12 +193,28 @@ export const layer = Layer.effect(
       // 🔴 The COLLEAGUE's standing choices, folded UNDER the folder (see `agent-defaults.ts` for why
       // that order is a security decision, not a preference). Read from the store rather than from
       // the live roster so this resolves the same way on a headless turn as in the app.
-      const colleague = session?.agent === undefined ? undefined : yield* declaredFor(session.agent)
+      // 🔴 **WHOSE config to fold — the CHAIN's agent, not this row's.** A spawned sub-agent stores
+      // `agent: null` and inherits its officer through the parent-chain walk (`agent` is a chain field
+      // with `merge: "override"`, which is the "undefined = inherit" stance). Reading the ROW here gave
+      // a second, disagreeing answer to "who is this session", and the child silently lost everything
+      // `AgentDefaults` folds: its officer's MODEL, capability floor, memory stance, archive setting
+      // and posture.
+      //
+      // Measured 2026-08-23: a Marshal officer on Qwen spawned six sub-agents; all six ran as the
+      // instance default and died against a provider that had been down for days, while the officer
+      // reported the fleet launched. The fleet was real and every worker was somebody else.
+      //
+      // ⚠️ Two passes, deliberately. The first resolves the chain against the SHIPPED defaults purely
+      // to learn which agent is in force; the second resolves it again with that agent's choices
+      // folded underneath. One pass cannot do it — the fold must happen before the chain overrides,
+      // and the chain is what says whose fold it is. The walk is depth-capped, so this is bounded.
+      // ONE walk, two answers: which colleague is in force, and the chain to resolve against. Asking
+      // separately cost a second walk on every resolution and pushed `core` past the gate's kill.
+      const chain = yield* sessionConfigChain(sessionID, (id) => sessions.get(id as SessionSchema.ID))
+      const agentID = agentOf(chain)
+      const colleague = agentID === undefined ? undefined : yield* declaredFor(agentID)
       const folded = ProjectDefaults.fold(AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, colleague), found.tune)
-      const config = clampToCeilings(
-        yield* resolveSessionConfig(folded.defaults, sessionID, (id) => sessions.get(id as SessionSchema.ID)),
-        currentCeilings(),
-      )
+      const config = clampToCeilings(resolveConfig(folded.defaults, chain), currentCeilings())
       return {
         config,
         defaults: folded.defaults,
@@ -207,9 +229,11 @@ export const layer = Layer.effect(
         // its posture, Strict, its permission mode — reported `source: {kind: "instance"}`, because
         // the fold writes into `defaults` and defaults were attributed to the instance by
         // elimination. A surface built to explain configuration was naming the wrong author.
-        ...(session?.agent === undefined
-          ? {}
-          : { agent: { id: String(session.agent), applied: AgentDefaults.declaredBy(colleague) } }),
+        // ⚠️ The CHAIN's agent here too, not the row's. This is what the Tune dialog and the folder
+        // report read to say "these settings came from Theron" — and for a sub-agent the row is null,
+        // so reporting from it said no colleague was involved while the colleague's own model, floor
+        // and posture were in force.
+        ...(agentID === undefined ? {} : { agent: { id: agentID, applied: AgentDefaults.declaredBy(colleague) } }),
       } satisfies Resolution
     })
 

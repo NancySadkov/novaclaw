@@ -582,6 +582,29 @@ export const sessionConfigChain = <E, R>(
  * fetches a session by id (or `undefined`). Guards against a cyclic `parentID` chain so a corrupt
  * tree can never loop forever.
  */
+/**
+ * WHOSE session this is, read off an already-walked chain.
+ *
+ * 🔴 A spawned sub-agent stores `agent: null` and inherits its officer through the chain, because
+ * `agent` is an `override` field and `undefined = inherit`. Anything that needs to know which
+ * COLLEAGUE a session belongs to must ask the chain, not the row: the two disagree for every child,
+ * and reading the row silently hands a sub-agent the instance default instead of its officer.
+ *
+ * ⚠️ Takes a CHAIN rather than a session id, so the caller walks once and answers both questions from
+ * it. The first draft took an id and walked separately — correct, and it pushed the `core` unit from
+ * ~600s to 638s, straight through the gate's wall-clock kill. A second walk per resolution is not
+ * free in a suite that resolves thousands of times.
+ */
+export const agentOf = (chain: readonly SessionConfig[]): string | undefined => {
+  // Last declared wins, the same direction `resolveConfig` applies its overrides — so a child that
+  // declared none inherits its parent's.
+  for (let index = chain.length - 1; index >= 0; index--) {
+    const declared = chain[index]?.agent
+    if (declared !== undefined && declared !== null && String(declared).trim() !== "") return String(declared)
+  }
+  return undefined
+}
+
 export const resolveSessionConfig = <E, R>(
   defaults: EffectiveConfig,
   sessionID: string,

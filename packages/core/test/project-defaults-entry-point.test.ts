@@ -92,7 +92,12 @@ describe("the folder layer folds at one entry point", () => {
     const source = stripComments(fs.readFileSync(path.join(SRC, ENTRY_POINT), "utf8"))
     expect(offenders).not.toContain(ENTRY_POINT)
     expect(source).toMatch(/ProjectDefaults\.fold\(/)
-    expect(source).toMatch(/resolveSessionConfig\(\s*folded\.defaults/)
+    // ⚠️ Either spelling — what is pinned is the LAYER it resolves against, not the function name.
+    // The entry point walks the chain itself now (once, to answer "whose agent" and "what config"
+    // together), so it calls `resolveConfig(folded.defaults, chain)` rather than
+    // `resolveSessionConfig(folded.defaults, …)`. Pinning the old literal would have gone red on a
+    // file that still folds correctly — and the rule this file exists for is the folding.
+    expect(source).toMatch(/resolve(SessionConfig|Config)\(\s*folded\.defaults/)
   })
 
   test("every file that resolves against the shipped defaults is on the ledger", () => {

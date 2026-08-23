@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto"
 import fs from "node:fs/promises"
+import { existsSync } from "node:fs"
 import path from "node:path"
 import { describe, expect, test } from "bun:test"
 import { Effect, Fiber, Layer } from "effect"
@@ -27,6 +28,25 @@ const run = <A, E>(
   Effect.runPromise(
     effect.pipe(Effect.provide(Layer.merge(FSUtil.defaultLayer, Layer.succeed(HttpClient.HttpClient, client)))),
   )
+
+/**
+ * Wait until a path exists, bounded.
+ *
+ * A download writes its partial as it streams, so "has the first chunk landed?" is a CONDITION, not a
+ * duration — and the only honest way to wait for one is to look. The bound turns a genuine failure
+ * (nothing ever written) into a red test in two seconds rather than a hang.
+ */
+const waitForFile = (target: string, timeoutMs = 2_000) =>
+  Effect.gen(function* () {
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+      if (exists(target)) return
+      yield* Effect.sleep("5 millis")
+    }
+  })
+
+/** A sync peek, because the loop above is a poll and `fs/promises` is what this file already imports. */
+const exists = (target: string): boolean => existsSync(target)
 
 describe("Download.toFile", () => {
   test("streams a pinned file, reports progress, and publishes it only after verification", async () => {
@@ -275,7 +295,13 @@ describe("Download.toFile", () => {
             integrity: { sha256 },
             stallTimeout: "1 minute",
           }).pipe(Effect.forkScoped)
-          yield* Effect.sleep("20 millis")
+          // ⚠️ Wait for the PARTIAL TO EXIST, never for a duration. This slept 20ms and assumed the
+          // first chunk had reached disk — true when the file runs alone, and not true inside a
+          // 6,000-test unit under load, where it failed once and passed the next five runs. A fixed
+          // sleep in a test is a race whose flake looks like a product defect: the assertion that goes
+          // red is "the partial was preserved", which reads as broken resume rather than as an
+          // interrupt that landed too early.
+          yield* waitForFile(`${destination}.partial-${sha256}`)
           yield* Fiber.interrupt(fiber)
         }),
       ),

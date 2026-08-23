@@ -7,6 +7,8 @@ import {
   moreRestrictive,
   narrowRootType,
   resolveConfig,
+  agentOf,
+  sessionConfigChain,
   resolveSessionConfig,
   rootAttendance,
   rootSessionType,
@@ -664,4 +666,66 @@ describe("unattendedStanceRules — the unattended confinement stance", () => {
   // arm, not by the config chain, and `test/permission.test.ts` covers that end to end. What
   // survives is the claim that actually binds — the stance is a function of the ROOT's attendance
   // and the resolved mode, pinned by the four tests above.
+})
+
+// WHOSE session is this — the question a spawned sub-agent answers differently from its row.
+//
+// 🔴 Measured 2026-08-23. A Marshal officer bound to Qwen spawned six sub-agents; every child stored
+// `agent: null` (the child declares none and inherits through the chain), and every one of them ran
+// as the INSTANCE DEFAULT — against a provider that had been down for days — while the officer
+// reported the fleet launched. The fleet was real and every worker was somebody else.
+//
+// The cause was two answers to one question: `config-resolve` inherits `agent` through the chain,
+// while `SessionEffectiveConfig` folded the colleague's own choices from the session ROW. For a root
+// chat the two agree, which is why every existing test passed.
+describe("agentOf — the agent in force, not the one on the row", () => {
+  /** Walk the chain the way the entry point does, then read the agent off it. */
+  const agentFor = (sessions: Record<string, SessionLike>, id: string) =>
+    agentOf(Effect.runSync(sessionConfigChain(id, (each) => Effect.succeed(sessions[each]))))
+
+  test("🔴 a child that declares no agent inherits its parent's", () => {
+    const sessions: Record<string, SessionLike> = {
+      officer: { id: "officer", agent: "marshal" },
+      // Exactly what `spawn` writes: a parent, and no agent of its own.
+      worker: { id: "worker", parentID: "officer" },
+    }
+    expect(agentFor(sessions, "worker")).toBe("marshal")
+  })
+
+  test("a child's OWN agent still wins", () => {
+    const sessions: Record<string, SessionLike> = {
+      officer: { id: "officer", agent: "marshal" },
+      worker: { id: "worker", parentID: "officer", agent: "plan" },
+    }
+    expect(agentFor(sessions, "worker")).toBe("plan")
+  })
+
+  test("it inherits through MORE than one hop — a sub-agent's sub-agent", () => {
+    const sessions: Record<string, SessionLike> = {
+      officer: { id: "officer", agent: "marshal" },
+      worker: { id: "worker", parentID: "officer" },
+      helper: { id: "helper", parentID: "worker" },
+    }
+    expect(agentFor(sessions, "helper")).toBe("marshal")
+  })
+
+  test("no agent anywhere in the chain is undefined, never a guess", () => {
+    // The honest answer for a session nobody named: the caller falls back to the registry's default,
+    // which is a decision it makes explicitly rather than one this walk invents.
+    const sessions: Record<string, SessionLike> = {
+      root: { id: "root" },
+      child: { id: "child", parentID: "root" },
+    }
+    expect(agentFor(sessions, "child")).toBeUndefined()
+  })
+
+  test("an empty or blank agent is treated as ABSENT, so inheritance continues", () => {
+    // A blank column is a row that was written badly, not a colleague called "". Stopping there would
+    // hand the child no officer at all.
+    const sessions: Record<string, SessionLike> = {
+      officer: { id: "officer", agent: "marshal" },
+      worker: { id: "worker", parentID: "officer", agent: "   " },
+    }
+    expect(agentFor(sessions, "worker")).toBe("marshal")
+  })
 })
