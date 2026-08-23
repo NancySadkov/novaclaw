@@ -1,35 +1,8 @@
-/*
- * ⛔ PENDING — this file is deliberately NOT named `.test.tsx`, so `test:browser` does not load it.
- *
- * It is complete and its assertions are right; what is missing is one dependency. `bun test`
- * transpiles JSX with its own React transform — measured 2026-08-23 inside this very package, where
- * `tsconfig.json` already sets `jsx: "preserve"` and `jsxImportSource: "solid-js"`:
- *
- *     bun build ./probe.tsx  →  React.createElement("div", { class: "a" }, x)
- *
- * so importing any `.tsx` from a test dies on `ReferenceError: React is not defined`. **That is the
- * mechanism that has kept this repo's entire `.tsx` surface untestable**, and it is why the
- * 2026-08-23 review found eleven defects no instrument could see.
- *
- * `solid-preload.ts` (beside this file) applies the REAL `babel-preset-solid` transform and is the
- * correct fix — deliberately not `solid-js/h/jsx-runtime`, whose reactivity semantics differ from the
- * compiled output, which would test a code path the product never runs. It resolves `@babel/core` and
- * `babel-preset-solid` out of bun's store, where they sit as transitive deps of `vite-plugin-solid`.
- *
- * 🔴 **The one blocker: `@babel/preset-typescript` is not installed anywhere in the tree**, so babel
- * cannot strip the type annotations before transforming JSX. Adding it is a LOCKFILE change, which
- * `bunfig.toml`'s `frozenLockfile` makes a deliberate, reviewable act rather than a side effect of
- * wiring up a test — so it is being surfaced, not slipped in.
- *
- * To finish: add `@babel/preset-typescript` as a devDependency of `packages/app`, add
- * `--preload ./solid-preload.ts` to the `test:browser` script, and rename this file to
- * `.test.tsx`. The five assertions below then pin D2 and D3 from the review.
- */
-
 import { afterEach, describe, expect, test } from "bun:test"
+import { createSignal, onMount } from "solid-js"
 import { render } from "solid-js/web"
 import { MemoryRouter, Route } from "@solidjs/router"
-import { DialogProvider } from "@novaclaw/ui/context/dialog"
+import { DialogProvider, useDialog } from "@novaclaw/ui/context/dialog"
 import { AgentConfigDialog } from "@/components/agent-config-dialog"
 import { GlobalContext } from "@/context/global"
 import { ServerContext } from "@/context/server"
@@ -71,7 +44,10 @@ const AGENT = {
   title: "Bookkeeper",
   personality: "Precise and dry.",
   memory: "own" as const,
-  model: "spark/qwen3.8-27b",
+  // ⚠️ An OBJECT, not a ref string — `AgentLike.model` is `{ providerID, id }` and `modelValue()`
+  // re-serialises it with `modelRef`. A string here silently yields "" and would have looked
+  // exactly like the D2 defect this test exists to catch.
+  model: { providerID: "spark", id: "qwen3.8-27b" },
   config: {},
 }
 
@@ -88,6 +64,12 @@ afterEach(() => {
   dispose = undefined
   host?.remove()
   host = undefined
+  // ⚠️ `dispose()` does NOT clear the portal. `Kobalte.Portal` appends the dialog to `document.body`,
+  // outside the mount host, so without this the previous test's dialog is still in the document and
+  // `document.querySelector` returns ITS controls — every later assertion then reads a stale render
+  // and passes or fails for the wrong reason. Caught by dumping the DOM: run alone the save button
+  // was correctly `disabled=true`, run in sequence it was the prior test's enabled one.
+  document.body.innerHTML = ""
 })
 
 /**
@@ -96,23 +78,29 @@ afterEach(() => {
  * `agents` decides what the roster fetch has produced: a list, or `undefined` for "still in flight"
  * — which is the window D3 lives in. `models` likewise, so the D2 race can be driven from either end.
  */
-function mount(options: { agents?: unknown[]; models?: unknown[] }) {
+function mount(options: { agents?: unknown[]; models?: () => unknown[] }) {
   host = document.createElement("div")
   document.body.appendChild(host)
 
-  // The SDK surface the dialog actually touches: one roster read.
-  const client = { v2: { agent: { list: async () => ({ data: { data: options.agents ?? [] } }) } } }
+  // The server context's ONE shared roster (D8's fix) — `agents.list()` is what the dialog reads, and
+  // `undefined` from it is the in-flight window D3 lives in.
   const connection = { url: "http://localhost:4096", http: "http://localhost:4096" }
+  const agentsCache = {
+    list: () => options.agents,
+    loading: () => options.agents === undefined,
+    error: () => undefined,
+    refetch: () => {},
+  }
   const globalStub = {
     servers: { list: () => [connection] },
-    ensureServerCtx: () => ({ sdk: { client }, sync: { data: { path: {} } } }),
+    ensureServerCtx: () => ({ agents: agentsCache, sync: { data: { path: {} } } }),
   }
   const syncStub = () => ({
     data: { path: { directory: "/tmp/p" } },
     session: { data: { info: {} } },
     updateConfig: async () => ({}),
   })
-  const modelsStub = { list: () => options.models ?? MODELS, connected: () => true }
+  const modelsStub = { list: () => options.models?.() ?? MODELS, connected: () => true }
   // The translator returns the KEY, so an assertion names the key rather than English prose that a
   // copy edit would break.
   const languageStub = { t: (key: string) => key, locale: () => "en", setLocale: () => {} }
@@ -129,7 +117,7 @@ function mount(options: { agents?: unknown[]; models?: unknown[] }) {
                   <ServerSyncContext.Provider value={syncStub as never}>
                     <ModelsContext.Provider value={modelsStub as never}>
                       <DialogProvider>
-                        <AgentConfigDialog agentID="theron" onDismiss={() => {}} />
+                        <Opener />
                       </DialogProvider>
                     </ModelsContext.Provider>
                   </ServerSyncContext.Provider>
@@ -145,28 +133,49 @@ function mount(options: { agents?: unknown[]; models?: unknown[] }) {
   return host
 }
 
+/**
+ * Mount the dialog THE WAY THE APP DOES — through the dialog stack, not bare.
+ *
+ * ⚠️ Not a convenience. `AgentConfigDialog` renders the v2 `Dialog` shell, whose `Kobalte.Content`
+ * must sit under a Kobalte root; the stack is what supplies it (`ui/src/context/dialog.tsx` wraps
+ * each layer in `<Kobalte modal open={…}>`). Mounting the component directly throws
+ * `useDialogContext must be used within a Dialog component` — so a bare mount would be testing a
+ * composition the product never builds.
+ */
+function Opener() {
+  const dialog = useDialog()
+  onMount(() => void dialog.show(() => <AgentConfigDialog agentID="theron" onDismiss={() => {}} />))
+  return null
+}
+
 /** Let the roster resource settle. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
 
-const selects = (root: HTMLElement) => [...root.querySelectorAll("select")] as HTMLSelectElement[]
-const saveButton = (root: HTMLElement) =>
-  [...root.querySelectorAll("button")].find((b) => b.textContent?.includes("agentConfig.save")) as
+/**
+ * ⚠️ Queries run against `document`, NOT the mount host. `Kobalte.Portal` moves the dialog out of the
+ * host subtree and onto `document.body`, so `host.querySelector` finds nothing and every assertion
+ * would pass or fail for the wrong reason. Reading the document is what the user sees.
+ */
+const selects = () => [...document.querySelectorAll("select")] as HTMLSelectElement[]
+const saveButton = () =>
+  [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("agentConfig.save")) as
     | HTMLButtonElement
     | undefined
+const dialogText = () => document.body.textContent ?? ""
 
 describe("AgentConfigDialog renders", () => {
   test("the dialog mounts at all", async () => {
-    const root = mount({ agents: [AGENT] })
+    mount({ agents: [AGENT] })
     await settle()
     // The guard on the instrument: if this is empty every assertion below is vacuous.
-    expect(root.textContent).toContain("agentConfig.who")
-    expect(selects(root).length).toBeGreaterThan(0)
+    expect(dialogText()).toContain("agentConfig.who")
+    expect(selects().length).toBeGreaterThan(0)
   })
 
   test("D2 · the model select shows the colleague's BOUND model, not Inherit", async () => {
-    const root = mount({ agents: [AGENT] })
+    mount({ agents: [AGENT] })
     await settle()
-    const model = selects(root)[0]!
+    const model = selects()[0]!
     // `spark/qwen3.8-27b` is what the agent is bound to. Under the old `value={…}` form this read
     // `""` — the Inherit option — whenever the options had not been created yet.
     expect(model.value).toBe("spark/qwen3.8-27b")
@@ -174,43 +183,47 @@ describe("AgentConfigDialog renders", () => {
   })
 
   test("D2 · a model arriving AFTER first paint is still selected", async () => {
-    // The cold-catalog half of the race: the option list is empty at mount and grows afterwards.
-    // A `value=` assignment made before the option exists is discarded and never re-applied.
-    const root = mount({ agents: [AGENT], models: [] })
+    // 🔴 THE COLD-CATALOG HALF OF THE RACE, and the one a second `mount()` cannot express: the
+    // option list must be empty at first paint and then GROW in place, because that is what the
+    // provider catalog does. `value={…}` compiles to an effect keyed on the VALUE, so an assignment
+    // made before the option existed is discarded and never re-applied when the list arrives —
+    // the colleague's bound model then reads "Inherit the instance default" forever.
+    const [models, setModels] = createSignal<unknown[]>([])
+    mount({ agents: [AGENT], models })
     await settle()
-    const before = selects(root)[0]!
-    expect(before.value).toBe("")
+    expect(selects()[0]!.value).toBe("")
 
-    const root2 = mount({ agents: [AGENT], models: MODELS })
+    setModels(MODELS)
     await settle()
-    expect(selects(root2)[0]!.value).toBe("spark/qwen3.8-27b")
+    expect(selects()[0]!.value).toBe("spark/qwen3.8-27b")
   })
 
   test("D3 · Save is disabled while the roster is still in flight", async () => {
     // `agents: undefined` is the blank window — `agent()` is undefined, so `titleValue()` and
     // `personalityValue()` resolve to "". Save must not be reachable here even once a field is dirty.
-    const root = mount({ agents: undefined })
-    const save = saveButton(root)
+    mount({ agents: undefined })
+    await settle()
+    const save = saveButton()
     expect(save).toBeDefined()
     expect(save!.disabled).toBe(true)
 
-    const name = root.querySelector("input") as HTMLInputElement | null
+    const name = document.querySelector("input") as HTMLInputElement | null
     if (name) {
       name.value = "Theron the Second"
       name.dispatchEvent(new Event("input", { bubbles: true }))
     }
     // Dirty, but still not loaded: the Clone button beside it has always carried this guard.
-    expect(saveButton(root)!.disabled).toBe(true)
+    expect(saveButton()!.disabled).toBe(true)
   })
 
   test("D3 · Save becomes reachable once the roster has loaded and a field is edited", async () => {
-    const root = mount({ agents: [AGENT] })
+    mount({ agents: [AGENT] })
     await settle()
-    expect(saveButton(root)!.disabled).toBe(true) // loaded, but nothing touched yet
+    expect(saveButton()!.disabled).toBe(true) // loaded, but nothing touched yet
 
-    const name = root.querySelector("input") as HTMLInputElement
+    const name = document.querySelector("input") as HTMLInputElement
     name.value = "Theron the Second"
     name.dispatchEvent(new Event("input", { bubbles: true }))
-    expect(saveButton(root)!.disabled).toBe(false)
+    expect(saveButton()!.disabled).toBe(false)
   })
 })

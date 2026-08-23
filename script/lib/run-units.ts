@@ -169,7 +169,19 @@ export const PACKAGES: Pkg[] = [
   {
     name: "app:browser",
     dir: "packages/app",
-    args: ["--conditions=browser", "--preload", "./happydom.ts", "./test-browser"],
+    // ⚠️ `solid-preload.ts` is REQUIRED, not optional: without it `bun test` compiles JSX with its own
+    // React transform and every `.tsx` import dies on `ReferenceError: React is not defined`. It is
+    // listed HERE as well as in the package's `test:browser` script because this array — not the
+    // script — is what the gate runs, and wiring only the script left the gate red while a direct
+    // `bun run test:browser` was green.
+    args: [
+      "--conditions=browser",
+      "--preload",
+      "./happydom.ts",
+      "--preload",
+      "./solid-preload.ts",
+      "./test-browser",
+    ],
   },
   // The packaging seam. `src` covers main + renderer + preload; the electron-builder config test sits at
   // the package ROOT, so it needs its own arg or it silently stays unrun (which is how it got here).

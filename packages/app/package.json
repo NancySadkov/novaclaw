@@ -19,7 +19,7 @@
     "serve": "vite preview",
     "test": "bun run test:unit && bun run test:browser",
     "test:unit": "bun test --only-failures --preload ./happydom.ts ./src",
-    "test:browser": "bun test --conditions=browser --preload ./happydom.ts ./test-browser",
+    "test:browser": "bun test --conditions=browser --preload ./happydom.ts --preload ./solid-preload.ts ./test-browser",
     "test:unit:watch": "bun test --watch --preload ./happydom.ts ./src",
     "test:e2e": "playwright test",
     "test:e2e:local": "playwright test",
@@ -29,6 +29,8 @@
   },
   "license": "SEE LICENSE IN LICENSE",
   "devDependencies": {
+    "@babel/core": "7.28.4",
+    "@babel/preset-typescript": "7.27.1",
     "@happy-dom/global-registrator": "20.0.11",
     "@playwright/test": "catalog:",
     "@tailwindcss/vite": "catalog:",
@@ -36,6 +38,7 @@
     "@types/luxon": "catalog:",
     "@types/node": "catalog:",
     "@typescript/native-preview": "catalog:",
+    "babel-preset-solid": "1.9.12",
     "typescript": "catalog:",
     "vite": "catalog:",
     "vite-plugin-solid": "catalog:"
