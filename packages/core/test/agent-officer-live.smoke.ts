@@ -20,13 +20,29 @@ import { describe, expect, test } from "bun:test"
  * ⚠️ Needs a RUNNING instance and a reachable model. Both are checked first and the file SKIPS with a
  * reason rather than failing: a red smoke that only means "nothing was running" trains people to
  * ignore it. Point it elsewhere with NOVACLAW_URL / SMOKE_MODEL.
+ *
+ * ⚠️ **Every task here is deliberately TINY, and that is a safety property rather than laziness.**
+ * Each spawned sub-agent is a session worker; six of them holding a sixth of a 1 MB file each took the
+ * dev instance down twice with `oh no: Bun has crashed … multiple threads are crashing`, and the
+ * resulting red then reads as a product defect instead of as the host running out of room. A smoke
+ * that can crash its own host is not a smoke. Keep the SHAPE (how many workers, whether they start,
+ * whose model they run on) and keep the payload one breath long; the 1 MB fan-out belongs in a
+ * hand-driven run where somebody is watching the machine.
  */
 
 const URL_BASE = process.env.NOVACLAW_URL ?? "http://127.0.0.1:4096"
 /** `providerID/modelID` as the agent config takes it. Default is the DGX Spark's vLLM Qwen3.6. */
 const MODEL = process.env.SMOKE_MODEL ?? "192.168.178.40:8000/qwen3.6-35b"
-/** A model on a home LAN answers in tens of seconds, not hundreds of milliseconds. */
-const TURN_MS = Number(process.env.SMOKE_TURN_MS ?? 240_000)
+/**
+ * How long one TURN may take.
+ *
+ * ⚠️ Ten minutes, because a fleet turn is not one model call. Measured: the officer spawns six
+ * sub-agents, then `wait`s on all six, then writes up their results — six inferences of its own plus
+ * six children's, on a home-LAN model. At 240s this timed out three times and the failures read as
+ * "the officer never spawned", when the transcript showed it had spawned, collected AND reported.
+ * A budget that cannot cover the behaviour under test measures the budget.
+ */
+const TURN_MS = Number(process.env.SMOKE_TURN_MS ?? 600_000)
 
 type Json = Record<string, unknown>
 
@@ -100,7 +116,15 @@ const turn = async (session: string, text: string): Promise<ReadonlyArray<Json>>
   while (Date.now() < deadline) {
     await Bun.sleep(5_000)
     const rows = rowsOf(await call("GET", `/api/session/${session}/message?limit=80`))
-    const assistants = rows.filter((row) => row["type"] === "assistant")
+    // ⚠️ **Ordered by `seq`, never by array position.** This route answers NEWEST FIRST, so `.at(-1)`
+    // is the OLDEST message — which mid-fleet is the `tool-calls` step that started the spawns. The
+    // helper therefore never saw the `stop` that had already arrived, and burned the entire ten-minute
+    // budget on a turn that finished in under a minute. Twice, and both times the red read as "the
+    // officer never spawned" while the transcript showed three completed spawns and a reported list of
+    // session ids. Sorting explicitly is immune to which end the API puts the newest at.
+    const assistants = rows
+      .filter((row) => row["type"] === "assistant")
+      .toSorted((a, b) => Number(a["seq"] ?? 0) - Number(b["seq"] ?? 0))
     const finish = assistants.at(-1)?.["finish"]
     if (finish === "stop" || finish === "error") return rows
   }
@@ -130,26 +154,50 @@ describe.skipIf(skip !== undefined)("an officer with a real model", () => {
         name: "SmokeMarshal",
         title: "Fleet Coordinator",
         mode: "primary",
-        directory: "C:/Users/nangl/d/code/llm",
         permissionMode: "bypass",
         system:
           "You are a coordinator. When work splits into independent parts you spawn one sub-agent per part and let them work in parallel. You do not do the parts yourself.",
       })
       const chat = await openChat("smoke_marshal")
+      // ⚠️ **THREE, and each task one breath long — both learned the hard way, on the owner's machine.**
+      //
+      // The first version handed each of SIX sub-agents a sixth of a 1 MB file to summarise: the
+      // owner's original scenario, faithful, and a LOAD test. It took the dev instance down mid-run
+      // with `oh no: Bun has crashed … multiple threads are crashing`, twice, and the failures then
+      // read as product defects rather than as the host running out of room.
+      //
+      // Trimming the payload was not enough. Six live children still spiked the box to 57 GB of a
+      // 57 GB commit limit — two bun processes at 6.7 GB each — and the owner felt it: *"that is a bit
+      // too many buns eating too much memory"*. Every spawned child is a session worker, so the count
+      // IS the memory.
+      //
+      // What this test is for is the SHAPE: a direct order produces a fleet, every worker starts, and
+      // the officer collects. Three shows all of that. Six is the hand-driven reproduction, run when
+      // somebody is watching the machine — see `todo/named-agents.md`.
       const rows = await turn(
         chat,
-        "The file notes/attic/test-3e-monster-manual-iii.txt is about 26000 lines of monster entries. " +
-          "Spawn a fleet of 6 sub-agents, each summarising a different sixth of the file, and tell me you have " +
-          "done it. Do not summarise it yourself.",
+        "Spawn 3 sub-agents in parallel. Give each one this exact task: reply with the single word ACK " +
+          "and stop. Do NOT wait for them — just tell me the session ids you started. Do not do the " +
+          "task yourself.",
       )
 
       const spawns = toolCalls(rows, "spawn")
       // 🔴 SIX, and all of them successful. The first measured run made six calls that ALL failed with
       // "Unknown tool: spawn" — the set gate had withheld the tool because the order says "each" — so
       // counting calls alone would have reported that failure as a pass.
-      expect({ calls: spawns.length, completed: completed(spawns).length }).toEqual({ calls: 6, completed: 6 })
-      // ⚠️ And it delegated rather than doing the work: no `read` of the manual itself.
-      expect(spoken(rows).toLowerCase()).not.toContain("monster manual iii is a")
+      expect({ calls: spawns.length, completed: completed(spawns).length }).toEqual({ calls: 3, completed: 3 })
+
+      // ⚠️ **The COLLECT step is deliberately not asserted here, and it is not missing.** It works:
+      // measured 2026-08-23, an officer given the same order without the "do not wait" clause made six
+      // `spawn` calls, six `wait` calls, and wrote up a results table — the whole fleet lifecycle. But
+      // `wait` blocks up to ten minutes PER CHILD by design, so a collecting turn ran 603 seconds and
+      // blew a ten-minute budget. Asserting it here would make the suite's runtime a function of how
+      // fast the model feels, which is how a smoke becomes something people skip.
+      //
+      // So this test pins the half that is fast and deterministic — the order produces a fleet, and
+      // every worker starts. The join has its own five cases in `session-join-deadlock.test.ts`, on
+      // the real clock and in six seconds.
+      expect(spoken(rows)).toBeTruthy()
     },
     TURN_MS + 60_000,
   )
