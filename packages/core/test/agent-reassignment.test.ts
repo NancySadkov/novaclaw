@@ -5,7 +5,9 @@ import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { Database } from "@novaclaw/core/database/database"
 import { EventV2 } from "@novaclaw/core/event"
+import { ProjectV2 } from "@novaclaw/core/project"
 import { SessionProjector } from "@novaclaw/core/session/projector"
+import { SessionStore } from "@novaclaw/core/session/store"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { testEffect } from "./lib/effect"
@@ -19,7 +21,7 @@ import { testEffect } from "./lib/effect"
 // delivery half end to end against a real database and event bus.
 
 const it = testEffect(
-  AppNodeBuilder.build(LayerNode.group([Database.node, EventV2.node, SessionProjector.node])),
+  AppNodeBuilder.build(LayerNode.group([Database.node, EventV2.node, SessionProjector.node, ProjectV2.node, SessionStore.node])),
 )
 
 const openChat = (db: Database.Interface["db"], id: string, agent: string) =>
@@ -43,18 +45,41 @@ const openChat = (db: Database.Interface["db"], id: string, agent: string) =>
 const move = { agentID: "theron", from: "D:/books", to: "D:/ledger", ownScratch: false }
 
 describe("a moved colleague is told, in its own chat", () => {
-  it.effect("the notice lands as a message the colleague will read", () =>
+  const deps = Effect.gen(function* () {
+    const { db } = yield* Database.Service
+    return {
+      db,
+      events: yield* EventV2.Service,
+      projects: yield* ProjectV2.Service,
+      store: yield* SessionStore.Service,
+    }
+  })
+
+  /**
+   * 🔴 The chat does NOT follow its colleague — it is ARCHIVED and a successor opens in the new
+   * folder. Repointing a live session across projects is refused outright by
+   * `control-plane/move-session.ts`, so the old behaviour left the chat stranded and told the USER
+   * to clear it. Nothing is destroyed: compaction files a transcript into the colleague's own
+   * cabinet, and continuity lives there rather than in the transcript.
+   */
+  it.effect("the old chat is archived and a successor opens in the NEW folder", () =>
     Effect.gen(function* () {
-      const { db } = yield* Database.Service
-      const events = yield* EventV2.Service
-      yield* openChat(db, "ses_theron", "theron")
+      const d = yield* deps
+      yield* openChat(d.db, "ses_theron", "theron")
 
-      expect(yield* AgentReassignment.deliver({ db, events, move })).toBe(true)
+      expect(yield* AgentReassignment.deliver({ ...d, move })).toBe(true)
 
-      // Synthetic, which lowers to a `user`-role message (`to-llm-message.ts`) AND renders in the
-      // transcript — one mechanism for the model and the person scrolling back.
-      const rows = yield* db.select().from(SessionTable).all().pipe(Effect.orDie)
-      expect(rows.length).toBe(1)
+      const rows = yield* d.db.select().from(SessionTable).all().pipe(Effect.orDie)
+      const archived = rows.filter((r) => r.id === "ses_theron")
+      const live = rows.filter((r) => r.agent === "theron" && r.time_archived === null)
+      expect(archived[0]?.time_archived).not.toBe(null)
+      // Exactly ONE live chat afterwards — the invariant survives a reassignment, and the successor
+      // is rooted where the colleague now works.
+      expect(live.length).toBe(1)
+      // ⚠️ Compared with separators normalised: the store keeps NATIVE separators, so a literal
+      // `D:/ledger` fails on Windows against the `D:\ledger` that was actually written. The claim is
+      // "the successor is rooted in the new folder", not "the string round-trips unchanged".
+      expect(String(live[0]?.directory).replaceAll("\\", "/")).toBe(move.to)
     }),
   )
 
@@ -62,9 +87,8 @@ describe("a moved colleague is told, in its own chat", () => {
     Effect.gen(function* () {
       // Starting a conversation the user has never seen, in order to announce a settings change, is
       // worse than silence — the next chat opens with the new folder in its prompt anyway.
-      const { db } = yield* Database.Service
-      const events = yield* EventV2.Service
-      expect(yield* AgentReassignment.deliver({ db, events, move })).toBe(false)
+      const d = yield* deps
+      expect(yield* AgentReassignment.deliver({ ...d, move })).toBe(false)
     }),
   )
 })

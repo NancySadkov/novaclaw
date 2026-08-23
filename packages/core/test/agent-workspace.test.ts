@@ -46,50 +46,46 @@ describe("whether a reassignment happened at all", () => {
 })
 
 describe("what the colleague is told", () => {
+  const move = { from: "D:/books", to: "D:/ledger", ownScratch: false }
+
   test("both ends are named — knowing only the destination cannot date a stale plan", () => {
-    const notice = AgentWorkspace.reassignmentNotice({ from: "D:/books", to: "D:/ledger", ownScratch: false, rooted: "D:/books" })
+    const notice = AgentWorkspace.reassignmentNotice(move)
     expect(notice).toContain("D:/books")
     expect(notice).toContain("D:/ledger")
   })
 
-  // 🔴 THE NOTICE MUST NOT CLAIM THE CHAT MOVED, because it does not. Measured 2026-08-22: a
-  // colleague reassigned folderA → folderB was told "you now work on folderB" while its session's
-  // `location.directory` stayed folderA, so every tool call would still land in the old folder while
-  // it believed otherwise. Repointing a live session across PROJECTS is refused outright by
-  // `control-plane/move-session.ts`, so the honest sentence is the one that survives.
-  test("it says THIS conversation has not moved, and how to start one that has", () => {
-    const notice = AgentWorkspace.reassignmentNotice({ from: "D:/books", to: "D:/ledger", ownScratch: false, rooted: "D:/books" })
-    expect(notice).toContain("still rooted in D:/books")
-    expect(notice).toContain("cannot work on D:/ledger in this chat")
-    expect(notice.toLowerCase()).toContain("clear this chat")
+  /**
+   * 🔴 **The notice REPORTS; it no longer instructs, because there is nothing left to instruct.**
+   *
+   * History, kept so the stranded-chat design is not reintroduced by someone reading only the code:
+   * a colleague reassigned folderA → folderB used to be told "you now work on folderB" while its
+   * session's `location.directory` stayed folderA — every tool call would land in the old folder
+   * while it believed otherwise. `control-plane/move-session.ts` refuses a cross-project move
+   * outright, so the chat genuinely could not follow, and the honest notice admitted the chat was
+   * stranded and asked the USER to clear it.
+   *
+   * That was honesty as a workaround. Reassignment now ARCHIVES the old chat and opens its successor
+   * in the new folder (`agent/reassignment.ts`), so the sentence that survives is the one describing
+   * what already happened. The old assertions — "still rooted in", "cannot work on … in this chat",
+   * "clear this chat" — are asserted ABSENT below, because their return would mean the stranding did.
+   */
+  test("it says the old conversation was filed and this one starts in the new folder", () => {
+    const notice = AgentWorkspace.reassignmentNotice(move)
+    expect(notice).toContain("filed")
+    expect(notice).toContain("starts")
+    expect(notice).toContain("D:/ledger")
   })
 
-  test("it warns off the search that would otherwise happen", () => {
-    // Without this a model reassigned to a project it cannot reach lists the OLD folder, finds none
-    // of the new project's files, and reports the new project as empty or broken.
-    const notice = AgentWorkspace.reassignmentNotice({ from: "D:/books", to: "D:/ledger", ownScratch: false, rooted: "D:/books" })
-    expect(notice).toContain("will not find them")
+  test("it does NOT strand the chat, nor hand the user homework", () => {
+    const notice = AgentWorkspace.reassignmentNotice(move).toLowerCase()
+    for (const stranded of ["still rooted in", "cannot work on", "clear this chat", "will not find them"])
+      expect(notice).not.toContain(stranded)
   })
 
-  // 🔴 THE SECOND REASSIGNMENT, where `from` and the chat's real root diverge. The chat stays where
-  // it was CREATED; `from` is only the config's previous value. Naming `from` as the root was the
-  // same false statement this notice exists to remove, one level deeper — caught live on the second
-  // move, not the first.
-  test("the root is the CHAT's, not the config's previous value", () => {
-    const notice = AgentWorkspace.reassignmentNotice({
-      from: "D:/ledger",
-      to: "D:/books",
-      ownScratch: false,
-      rooted: "D:/original",
-    })
-    expect(notice).toContain("still rooted in D:/original")
-    expect(notice).not.toContain("still rooted in D:/ledger")
-  })
-
-  test("going back to its own workspace reads as that, not as a new project", () => {
-    const notice = AgentWorkspace.reassignmentNotice({ from: "D:/books", to: "/scratch/theron", ownScratch: true, rooted: "D:/books" })
+  test("the own-scratch return is reported the same way", () => {
+    const notice = AgentWorkspace.reassignmentNotice({ from: "D:/books", to: "D:/scratch/wren", ownScratch: true })
     expect(notice).toContain("your own")
-    // …and carries the same caveat, because the chat does not follow it home either.
-    expect(notice).toContain("still rooted in D:/books")
+    expect(notice).toContain("filed")
+    expect(notice.toLowerCase()).not.toContain("clear this chat")
   })
 })

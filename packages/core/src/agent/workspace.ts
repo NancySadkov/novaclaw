@@ -64,25 +64,15 @@ export const reassignmentNotice = (input: {
   readonly from: string
   readonly to: string
   readonly ownScratch: boolean
-  /**
-   * Where THIS chat actually runs, read from the session.
-   *
-   * ⚠️ **Not `from`.** `from` is the config's previous value, and the two diverge the moment a
-   * colleague is reassigned twice: the chat is still rooted wherever it was CREATED, while `from`
-   * has moved on. Measured 2026-08-22 — the second reassignment told a colleague it was rooted in
-   * the folder it had just been moved off, which is the same false statement this notice was
-   * rewritten to remove, one level deeper.
-   */
-  readonly rooted: string
 }): string =>
   input.ownScratch
-    ? `You have been reassigned: you are no longer on ${input.from}, and your folder is your own ` +
-      `workspace (${input.to}) again. ⚠️ THIS conversation is still rooted in ${input.rooted}, so every ` +
-      `file you read or write here still happens there. Anything you were part-way through is not ` +
-      `yours to finish — say so if it matters, and wait for the next thing you are asked.`
-    : `You have been reassigned: your folder is now ${input.to}, not ${input.from}. ⚠️ THIS ` +
-      `conversation is still rooted in ${input.rooted}, so every file you read or write here still ` +
-      `happens there — you cannot work on ${input.to} in this chat. Do not go looking for the new ` +
-      `project's files; you will not find them and the folder will look empty or wrong. Say what you ` +
-      `were part-way through, and tell the user to clear this chat so your next one starts in ` +
-      `${input.to}.`
+    ? `Your assignment changed: you are no longer on ${input.from}, and your folder is your own ` +
+      `workspace (${input.to}) again. Your previous conversation has been filed and THIS chat starts ` +
+      `fresh, rooted in ${input.to} — so everything you read or write here happens in the right ` +
+      `place. Anything you were part-way through in the old chat is not yours to finish; say so if ` +
+      `it matters, and wait for the next thing you are asked.`
+    : `Your assignment changed: your folder is now ${input.to}, not ${input.from}. Your previous ` +
+      `conversation has been filed and THIS chat starts fresh, rooted in ${input.to} — so the new ` +
+      `project's files are the ones you will find here. Anything you were part-way through in the ` +
+      `old chat is not yours to carry over; say so if it matters, and wait for the next thing you ` +
+      `are asked.`

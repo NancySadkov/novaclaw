@@ -4,7 +4,13 @@ import { DateTime, Effect, Layer } from "effect"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
 import { EventV2 } from "../event"
+import { AbsolutePath } from "../schema"
+import { AgentV2 } from "../agent"
+import { ProjectV2 } from "../project"
+import { createSessionRecord } from "../session"
 import { RosterChat } from "../session/roster-chat"
+import { SessionPatch } from "../session/patch"
+import { SessionStore } from "../session/store"
 import { SessionEvent } from "../session/event"
 import { SessionMessage } from "../session/message"
 import { SessionSchema } from "../session/schema"
@@ -103,18 +109,55 @@ export const notice = AgentWorkspace.reassignmentNotice
 export const deliver = (input: {
   readonly db: Database.Interface["db"]
   readonly events: EventV2.Interface
+  readonly projects: ProjectV2.Interface
+  readonly store: SessionStore.Interface
   readonly move: Move
 }): Effect.Effect<boolean> =>
   Effect.gen(function* () {
     const chat = yield* RosterChat.chatFor(input.db, input.move.agentID)
     if (chat === undefined) return false
+
+    // 🔴 ARCHIVE, then open the successor in the NEW folder. The chat does not follow its colleague
+    // and never could: `control-plane/move-session.ts` refuses a cross-project move outright, so the
+    // old behaviour was a notice admitting the chat was stranded and telling the user to clear it
+    // themselves. That is homework, and *a common user is helped, not handed a pager*.
+    //
+    // Nothing is destroyed. Compaction files a transcript into the colleague's own cabinet as
+    // passages (`session/compaction-archive.ts`) and `kb search` reads them back — continuity lives
+    // in the cabinet, not the transcript. This is the same archive-then-fresh mechanism **Clear
+    // chat** already uses; reassignment is that event with a different trigger.
+    const at = DateTime.makeUnsafe(Date.now())
+    yield* SessionPatch.patchSessionRecord(
+      { db: input.db, events: input.events },
+      SessionSchema.ID.make(chat.id),
+      (info) => ({ ...info, time: { ...info.time, archived: at } }),
+    )
+
+    // ⚠️ The successor is created EAGERLY rather than lazily, and the notice is why: it is delivered
+    // INTO a chat, so archiving without opening one would leave the explanation nowhere to live and
+    // the user would meet a silently emptied roster row.
+    //
+    // ⚠️ This only works because an ARCHIVED chat does not block its successor — one of the four
+    // exclusions in the one-chat-per-agent guard (`session-one-chat-per-agent.test.ts`). Without
+    // that clause this call would hand back the chat just archived.
+    const successor = yield* createSessionRecord(
+      { db: input.db, events: input.events, projects: input.projects, store: input.store },
+      {
+        agent: AgentV2.ID.make(input.move.agentID),
+        // No `title`: `createSessionRecord` defaults to "New session", which is what `isDefault`
+        // recognises — so auto-title is still free to name this chat from its first real exchange.
+        location: { directory: AbsolutePath.make(input.move.to) },
+      },
+    )
+
     yield* input.events
       .publish(SessionEvent.Synthetic, {
-        sessionID: chat.id as SessionSchema.ID,
+        sessionID: successor.id,
         messageID: SessionMessage.ID.create(),
         timestamp: yield* DateTime.now,
-        // The chat's OWN root, not the config's previous value — see `reassignmentNotice.rooted`.
-        text: notice({ ...input.move, rooted: chat.directory }),
+        // Reports what HAPPENED. The old text described a stranded chat and issued an instruction;
+        // there is nothing to instruct now, because the thing it asked for has been done.
+        text: notice(input.move),
       })
       .pipe(Effect.ignore)
     return true
@@ -135,8 +178,10 @@ export const node = makeGlobalNode({
     Effect.gen(function* () {
       const { db } = yield* Database.Service
       const events = yield* EventV2.Service
-      yield* register((move) => deliver({ db, events, move }).pipe(Effect.asVoid))
+      const projects = yield* ProjectV2.Service
+      const store = yield* SessionStore.Service
+      yield* register((move) => deliver({ db, events, projects, store, move }).pipe(Effect.asVoid))
     }),
   ),
-  deps: [Database.node, EventV2.node],
+  deps: [Database.node, EventV2.node, ProjectV2.node, SessionStore.node],
 })
