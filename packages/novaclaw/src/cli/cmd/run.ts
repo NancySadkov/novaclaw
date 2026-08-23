@@ -272,6 +272,36 @@ export const RunCommand = effectCmd({
     const agentSvc = yield* Agent.Service
     const flags = yield* RuntimeFlags.Service
     const localInstance = yield* InstanceRef
+    // 🔴 `--dangerously-skip-permissions` HAS BEEN INERT SINCE 2026-08-20, and says so now.
+    //
+    // It works by replying `"once"` to a `permission.v2.asked` event, and `bf39088eb` ("remove ASK as
+    // an outcome — a refusal is instant") stopped that event ever being emitted. So the reply loop
+    // below waits for something that never arrives and the user is refused exactly as if they had not
+    // passed the flag — measured: `define_tool` still answers "Permission denied … no standing rule
+    // grants it". A flag that silently does nothing is the shape principle 13 forbids at the write
+    // side: no surface should accept a line its reader discards.
+    //
+    // ⚠️ **The two modes are NOT the same problem, which is why this only warns.** `novaclaw run` is
+    // in-process by default, where a scoped `Agent.transform` would be genuinely run-scoped —
+    // `state.ts` applies transforms in memory and drops them when the owning Scope closes, so nothing
+    // reaches config. Under `--attach` the CLI drives a REMOTE instance and there is no run-scoped
+    // mechanism at all: any grant would widen a shared instance for everyone on it, outliving the
+    // run. The honest answer there is the deny text's own — *widening this is the operator's
+    // decision, made in advance in the permission settings*.
+    //
+    // Granting for the local case is filed (`todo/named-agents.md`) and deliberately not done here:
+    // it widens permissions, and this commit only tells the truth about a flag that does nothing.
+    if (args["dangerously-skip-permissions"])
+      UI.println(
+        UI.Style.TEXT_WARNING_BOLD + "!",
+        UI.Style.TEXT_NORMAL +
+          "--dangerously-skip-permissions currently has NO effect: the consent prompt it answers was " +
+          "removed, so permissions are evaluated exactly as without it. " +
+          (args.attach
+            ? "Attached to a remote instance, it cannot be honoured at all — widen permissions in that instance's settings instead."
+            : "Grant what this run needs in the agent's permission settings instead."),
+      )
+
     const local = args.attach
       ? undefined
       : yield* Effect.promise(() => import("@/server/routes/instance/httpapi/server")).pipe(
