@@ -913,7 +913,11 @@ export const layer = Layer.effect(
         model: config.model as typeof session.model,
         device: config.device,
       }
-      const model = yield* tap(models.resolve(modelSession))
+      // ⚠️ `requested` is read from the RAW ROW, not from the overlay. `modelSession.model` is the
+      // chain-resolved answer, which includes the colleague's own configuration — so asking it "did
+      // the user name this?" always says yes. The row is where an explicit `--model`, a switch or a
+      // per-turn override actually lands.
+      const model = yield* tap(models.resolve(modelSession, { requested: session.model !== undefined }))
       const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
       return { session, config, agent, system, modelSession, model, entries, promoted }
     })

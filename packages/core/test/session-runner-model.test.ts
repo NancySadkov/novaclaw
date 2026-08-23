@@ -845,3 +845,35 @@ describe("SessionRunnerModel.resolveDefault", () => {
     expect(body).not.toContain("ModelNotSelectedError")
   })
 })
+
+// AN EXPLICIT REQUEST IS NOT A SUGGESTION.
+//
+// 🔴 Found by the RELEASE gate, 2026-08-23. The fallback added for a colleague whose configured model
+// is temporarily down had also started swallowing `--model does/not-exist`: `novaclaw run` exited 0
+// having quietly run something else, defeating `run-process.test.ts`'s regression guard for #27371.
+// Both rules are right; the resolver could not tell them apart, because an agent-declared model and a
+// user-named one arrive on the same field. `requested` is the distinction, read from the RAW ROW.
+describe("the fallback never substitutes for a model the user NAMED", () => {
+  test("an explicit request that cannot be served is an error, not a substitution", () => {
+    // The unavailable branch is guarded on `options.requested === true` BEFORE the fallback runs, so
+    // ordering is the property: a `requested` model must never reach `usableFallback`.
+    const source = fs
+      .readFileSync(path.join(import.meta.dir, "../src/session/runner/model.ts"), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/.*$/gm, "$1")
+    const guard = source.indexOf("options?.requested === true")
+    const fallback = source.indexOf("usableFallback({")
+    expect(guard).toBeGreaterThan(0)
+    expect(fallback).toBeGreaterThan(guard)
+  })
+
+  test("the runner reads `requested` from the ROW, never from the resolved overlay", () => {
+    // ⚠️ The overlay carries the colleague's configuration, so asking IT whether the user named a
+    // model always answers yes — and the fallback would then never fire for the case it exists for.
+    const runner = fs
+      .readFileSync(path.join(import.meta.dir, "../src/session/runner/llm.ts"), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/.*$/gm, "$1")
+    expect(runner).toMatch(/requested: session\.model !== undefined/)
+  })
+})

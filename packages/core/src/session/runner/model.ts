@@ -130,7 +130,16 @@ export type Error =
   | Integration.AuthorizationError
 
 export interface Interface {
-  readonly resolve: (session: SessionSchema.Info) => Effect.Effect<Model, Error>
+  /**
+   * @param requested — the user NAMED this model (a `--model` flag, a switch, a per-turn override),
+   *   as opposed to it arriving from the colleague's own configuration. It decides what an
+   *   unavailable model means: an explicit request that cannot be served is an ERROR the caller must
+   *   see, while a colleague's configured model being down falls back so the officer keeps working.
+   */
+  readonly resolve: (
+    session: SessionSchema.Info,
+    options?: { readonly requested?: boolean },
+  ) => Effect.Effect<Model, Error>
   /**
    * Report WHICH process served a live turn, so a verdict measured on another is discarded.
    *
@@ -671,7 +680,7 @@ export const locationLayer = Layer.effect(
           .forgetIfMoved(model.providerID, model.id, servedBy)
           .pipe(Effect.catchCause(() => Effect.succeed(false)))
       }),
-      resolve: Effect.fn("SessionRunnerModel.resolve")(function* (session) {
+      resolve: Effect.fn("SessionRunnerModel.resolve")(function* (session, options?: { readonly requested?: boolean }) {
         // Location plugins populate and filter the catalog asynchronously during layer startup
         // (plugin-internal's forked boot batch) — a prompt issued right after boot can read an
         // EMPTY catalog and misreport a configured model as unavailable. Only when the first
@@ -694,6 +703,21 @@ export const locationLayer = Layer.effect(
         // ⚠️ TEMPORARY means nothing is written. The colleague's configured model is untouched, so
         // the very next turn tries it again and recovers by itself the moment it returns. Rewriting
         // the config on a transient failure would be a silent, permanent downgrade nobody asked for.
+        // 🔴 **AN EXPLICIT REQUEST THAT CANNOT BE SERVED IS AN ERROR, NEVER A SUBSTITUTION.**
+        // The fallback below exists for a COLLEAGUE whose configured model is temporarily down — the
+        // officer keeps working on the default rather than going silent. It must not swallow
+        // `--model does/not-exist`: the user named that model, and quietly running a different one is
+        // answering a question nobody asked.
+        //
+        // Measured 2026-08-23 in the release gate: `novaclaw run --model test/nonexistent-model` had
+        // started exiting 0, defeating `run-process.test.ts`'s regression guard for #27371. The two
+        // rules are both right and the resolver could not tell them apart, because an agent-declared
+        // model and a user-requested one arrive on the same field.
+        if (!selected && session.model && options?.requested === true)
+          return yield* new ModelUnavailableError({
+            providerID: session.model.providerID,
+            modelID: session.model.id,
+          })
         if (!selected && session.model) {
           const usable = usableFallback({
             fallback: yield* catalog.model.default(),
