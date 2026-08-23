@@ -4675,6 +4675,7 @@ export type AgentV2Info = {
   shortChat?: boolean
   mode: "subagent" | "primary" | "all"
   hidden: boolean
+  paused?: boolean
   color?: AgentColor
   steps?: number
   permissions: PermissionV2Ruleset

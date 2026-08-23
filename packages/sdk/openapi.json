@@ -41087,6 +41087,9 @@
           "hidden": {
             "type": "boolean"
           },
+          "paused": {
+            "type": "boolean"
+          },
           "color": {
             "$ref": "#/components/schemas/AgentColor"
           },

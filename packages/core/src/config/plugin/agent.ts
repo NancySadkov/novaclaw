@@ -103,8 +103,36 @@ function applyItem(draft: AgentDraft, agentID: AgentV2.ID, item: ConfigAgent.Inf
     )
     return
   }
+  // 🔴 `disabled` PAUSES; it does not remove (owner decision, 2026-08-23 — `todo/named-agents.md`).
+  //
+  // It used to `draft.remove(agentID)`, which was a fourth removal door bypassing every guarantee of
+  // `agent/retire.ts` — no `AgentUsage.forget`, no `archiveChats`, no `agent:<id>` → `retired:<id>:<at>`
+  // — reachable from an ordinary config write and unconfirmed. Retirement is CONFIRM-GATED by its own
+  // definition and a config write carries no confirmation, so this can never have been a retirement.
+  //
+  // Three things that removal broke, and marking fixes:
+  //   · the colleague's chat was left LIVE but DOORLESS — the roster row is the only way into it;
+  //   · its id left the roster, so `planHire`'s `taken` set no longer held it and `OfficerName.pick`
+  //     could redraw it — handing the NEXT colleague the paused one's cabinet at `agent:<id>`;
+  //   · usage kept accruing to a name nobody could see.
+  //
+  // ⚠️ The "cannot act" half is NOT lost by staying on the roster: `permission.ts` reads `paused` and
+  // answers `missingAgentPermissions` — deny `*` on `*` — which is the same verdict a removed agent
+  // already produced through `agents.resolve` returning undefined. The effect is preserved; only the
+  // collateral damage is gone.
+  // ⚠️ A MUTATOR, not a mapper. `Draft.update` is `(id, fn: (agent) => void)` and IGNORES the return
+  // value, so `(agent) => ({ ...agent, paused: true })` set nothing — and because `update` creates
+  // the record when it is absent, it also minted a blank `Info.empty` agent for an id that had none.
+  // The gate caught it as two unrelated-looking failures in the plugin suite.
   if (item.disabled) {
-    draft.remove(agentID)
+    // ⚠️ Only an agent that EXISTS is paused. `Draft.update` creates the record when it is absent, so
+    // an unguarded call would mint a blank `Info.empty` ghost on the roster for a config line
+    // disabling an agent nobody ever defined — a paused colleague with no name and no profile.
+    // Disabling something that is not there is a no-op, which is what it reads as.
+    if (draft.get(agentID) !== undefined)
+      draft.update(agentID, (agent) => {
+        agent.paused = true
+      })
     return
   }
 

@@ -106,8 +106,11 @@ export const layer = Layer.effect(
         },
       }),
     })
+    // ⚠️ `paused` excluded here but NOT from `isColleague`: a paused colleague still belongs on the
+    // roster (that is the whole point of pausing rather than retiring), it simply must never be the
+    // agent a session falls back to when nothing else is chosen.
     const selectable = (agent: Info | undefined) =>
-      agent && agent.mode !== "subagent" && !agent.hidden ? agent : undefined
+      agent && agent.mode !== "subagent" && !agent.hidden && agent.paused !== true ? agent : undefined
     const selectedDefault = () => {
       const data = state.get()
       const configured = data.default ? selectable(data.agents.get(data.default)) : undefined

@@ -67,6 +67,14 @@ export const Info = Schema.Struct({
   shortChat: Schema.Boolean.pipe(optional),
   mode: Schema.Literals(["subagent", "primary", "all"]),
   hidden: Schema.Boolean,
+  /**
+   * Set aside WITHOUT being retired — the config's `disabled: true`.
+   *
+   * 🔴 Distinct from `hidden` (which is about the picker) and from retirement (which is
+   * confirm-gated, archives the chats and moves the cabinet). A paused colleague stays ON the roster
+   * and keeps its id, its chat, its cabinet and its usage; it simply may not act.
+   */
+  paused: Schema.Boolean.pipe(optional),
   color: Color.pipe(optional),
   steps: PositiveInt.pipe(optional),
   permissions: Permission.Ruleset,

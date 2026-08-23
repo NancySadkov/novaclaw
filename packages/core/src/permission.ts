@@ -752,6 +752,12 @@ export const layer = Layer.effect(
       const session = yield* sessions.get(sessionID)
       if (!session) return yield* new SessionV2.NotFoundError({ sessionID })
       const agent = yield* agents.resolve(agentID ?? session.agent)
+      // ⚠️ A PAUSED colleague is denied exactly as a missing one is, and deliberately reuses the same
+      // ruleset rather than a second deny-all: `disabled: true` used to delete the agent outright, so
+      // `resolve` returned undefined and this line already answered deny-`*`-on-`*`. Pausing keeps
+      // the colleague on the roster (its chat reachable, its id held, its cabinet its own) WITHOUT
+      // changing what it may do, which is only true if both arms give the same verdict.
+      if (agent?.paused === true) return missingAgentPermissions
       return agent?.permissions ?? missingAgentPermissions
     })
 

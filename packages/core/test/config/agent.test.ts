@@ -155,7 +155,11 @@ describe("ConfigAgentPlugin.Plugin", () => {
         { action: "read", resource: "*", effect: "allow" },
         { action: "edit", resource: "*", effect: "allow" },
       ])
-      expect(yield* agents.get(AgentV2.ID.make("removed"))).toBeUndefined()
+      // ⚠️ PAUSED, not removed (2026-08-23). `disabled: true` used to `draft.remove` the agent, which
+      // was a retirement bypassing every guarantee of `agent/retire.ts` — and retirement is
+      // confirm-gated, which a config write can never be. It stays on the roster; `permission.ts`
+      // denies it everything.
+      expect(yield* agents.get(AgentV2.ID.make("removed"))).toMatchObject({ paused: true })
     }),
   )
 
@@ -216,7 +220,7 @@ describe("ConfigAgentPlugin.Plugin", () => {
     }),
   )
 
-  it.effect("removes a built-in agent disabled by configuration", () =>
+  it.effect("PAUSES a built-in agent disabled by configuration, rather than removing it", () =>
     Effect.gen(function* () {
       const agents = yield* AgentV2.Service
       const build = AgentV2.ID.make("build")
@@ -230,7 +234,10 @@ describe("ConfigAgentPlugin.Plugin", () => {
         Effect.provideService(AgentConfigStore.Service, store),
       )
 
-      expect(yield* agents.get(build)).toBeUndefined()
+      // 🔴 Still there, and that is the fix: removal left the colleague's chat live but DOORLESS
+      // (the roster row is the only way in) and freed its id for `OfficerName.pick` to redraw,
+      // handing the next hire its cabinet at `agent:<id>`.
+      expect(yield* agents.get(build)).toMatchObject({ paused: true })
     }),
   )
 

@@ -35,7 +35,9 @@ const CONSUMED: Record<string, string> = {
   variant: "folded into `agent.model.variant`, which only exists once a model does",
   request: "merged field-by-field into the existing headers/body rather than replaced",
   permissions: "PUSHED onto the ruleset, never assigned — order is the whole semantics",
-  disabled: "removes the agent from the draft entirely; it is not a property of one",
+  disabled:
+    "PAUSES the agent (`agent.paused = true`) rather than being copied — it used to remove the agent " +
+    "from the draft entirely, which bypassed every guarantee of `agent/retire.ts`",
 }
 
 describe("no config field is silently dropped on the way to the agent record", () => {
