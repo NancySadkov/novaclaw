@@ -261,7 +261,7 @@ export const RunCommand = effectCmd({
       })
       .option("dangerously-skip-permissions", {
         type: "boolean",
-        describe: "auto-approve permissions that are not explicitly denied (dangerous!)",
+        describe: "REMOVED — it cannot work; configure the agent's permissions and use --agent instead",
         default: false,
       }),
   handler: Effect.fn("Cli.run")(function* (args) {
@@ -272,35 +272,32 @@ export const RunCommand = effectCmd({
     const agentSvc = yield* Agent.Service
     const flags = yield* RuntimeFlags.Service
     const localInstance = yield* InstanceRef
-    // 🔴 `--dangerously-skip-permissions` HAS BEEN INERT SINCE 2026-08-20, and says so now.
+    // 🔴 `--dangerously-skip-permissions` REFUSES rather than warning (2026-08-23).
     //
-    // It works by replying `"once"` to a `permission.v2.asked` event, and `bf39088eb` ("remove ASK as
-    // an outcome — a refusal is instant") stopped that event ever being emitted. So the reply loop
-    // below waits for something that never arrives and the user is refused exactly as if they had not
-    // passed the flag — measured: `define_tool` still answers "Permission denied … no standing rule
-    // grants it". A flag that silently does nothing is the shape principle 13 forbids at the write
-    // side: no surface should accept a line its reader discards.
+    // It has been inert since `bf39088eb` removed the `permission.v2.asked` event it answers, so a
+    // user passing it was refused exactly as if they had not. An earlier pass made it WARN; that was
+    // half the rule. Principle 13's shape is **refuses-and-reports** — a surface must not accept a
+    // line its reader discards — and warning still accepts it, then runs the whole task under a
+    // belief about permissions that is false. Failing at the first line, naming the fix, is strictly
+    // kinder than a run that looks approved and is not.
     //
-    // ⚠️ **The two modes are NOT the same problem, which is why this only warns.** `novaclaw run` is
-    // in-process by default, where a scoped `Agent.transform` would be genuinely run-scoped —
-    // `state.ts` applies transforms in memory and drops them when the owning Scope closes, so nothing
-    // reaches config. Under `--attach` the CLI drives a REMOTE instance and there is no run-scoped
-    // mechanism at all: any grant would widen a shared instance for everyone on it, outliving the
-    // run. The honest answer there is the deny text's own — *widening this is the operator's
-    // decision, made in advance in the permission settings*.
+    // 🔴 **It is not being reimplemented, and that is principle 1 rather than reluctance.** Granting
+    // would mean inventing a run-scoped widening mechanism that exists nowhere else, purely to serve
+    // V1 vocabulary — the flag answers a consent prompt the product deliberately deleted (principle
+    // 14: no blocking waits for an absent human). The clean model already works: configure that
+    // agent's permissions and select it with `--agent`. Keeping the flag alive would be the
+    // back-compat shim principle 1 tells us to accept a breaking change over.
     //
-    // Granting for the local case is filed (`todo/named-agents.md`) and deliberately not done here:
-    // it widens permissions, and this commit only tells the truth about a flag that does nothing.
-    if (args["dangerously-skip-permissions"])
-      UI.println(
-        UI.Style.TEXT_WARNING_BOLD + "!",
-        UI.Style.TEXT_NORMAL +
-          "--dangerously-skip-permissions currently has NO effect: the consent prompt it answers was " +
-          "removed, so permissions are evaluated exactly as without it. " +
-          (args.attach
-            ? "Attached to a remote instance, it cannot be honoured at all — widen permissions in that instance's settings instead."
-            : "Grant what this run needs in the agent's permission settings instead."),
+    // ⚠️ And it could never have been honoured under `--attach` in any case: that drives a REMOTE
+    // instance where a grant would widen a shared instance for everyone on it and outlive the run.
+    if (args["dangerously-skip-permissions"]) {
+      UI.error(
+        "--dangerously-skip-permissions has been removed: the consent prompt it answered no longer " +
+          "exists, so it silently granted nothing. Grant what this run needs in the agent's " +
+          "permission settings and select it with --agent <name>.",
       )
+      process.exit(2)
+    }
 
     const local = args.attach
       ? undefined
@@ -848,28 +845,13 @@ export const RunCommand = effectCmd({
               break
             }
 
-            if (event.type === "permission.v2.asked") {
-              const permission = event.properties
-
-              if (args["dangerously-skip-permissions"]) {
-                await client.v2.session.permission.reply({
-                  sessionID,
-                  requestID: permission.id,
-                  reply: "once",
-                })
-              } else {
-                UI.println(
-                  UI.Style.TEXT_WARNING_BOLD + "!",
-                  UI.Style.TEXT_NORMAL +
-                    `permission requested: ${permission.action} (${permission.resources.join(", ")}); auto-rejecting`,
-                )
-                await client.v2.session.permission.reply({
-                  sessionID,
-                  requestID: permission.id,
-                  reply: "reject",
-                })
-              }
-            }
+            // ⚠️ The `permission.v2.asked` branch that stood here is GONE (2026-08-23), and it was
+            // dead twice over: `bf39088eb` stopped that event being emitted when ASK was removed as
+            // an outcome (principle 14 — a refusal is instant, nothing blocks on an absent human),
+            // and its only non-default arm was `--dangerously-skip-permissions`, which now refuses
+            // the run before this loop is reached. It also carried the string
+            // `"permission requested: …"` that `run-process.test.ts` was pinned against for three
+            // days, asserting a prompt no user could ever see.
           }
           return error
         }

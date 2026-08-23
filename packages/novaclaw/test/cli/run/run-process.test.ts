@@ -35,9 +35,9 @@ describe("novaclaw run (non-interactive subprocess)", () => {
         )
         yield* llm.text("  after tool  ")
 
-        const result = yield* novaclaw.run("use a tool", {
-          extraArgs: ["--dangerously-skip-permissions"],
-        })
+        // ⚠️ No `--dangerously-skip-permissions` — it was INERT (it answered a consent prompt
+        // `bf39088eb` deleted), so this test never depended on it, and it now refuses the run.
+        const result = yield* novaclaw.run("use a tool")
 
         novaclaw.expectExit(result, 0)
         expect(result.stdout).toBe("before tool\nafter tool\n")
@@ -194,7 +194,7 @@ describe("novaclaw run (non-interactive subprocess)", () => {
 
         const result = yield* novaclaw.run("exercise json records", {
           format: "json",
-          extraArgs: ["--thinking", "--dangerously-skip-permissions"],
+          extraArgs: ["--thinking"],
         })
 
         expect(result.exitCode).toBe(0)
@@ -265,7 +265,7 @@ describe("novaclaw run (non-interactive subprocess)", () => {
   // service's own location (permission.ts eventLocation) so a runner-origin ask survives the
   // stream's directory filter even when the publishing fiber lacks Location.Service in context.
   cliIt.concurrent(
-    "denies a requested permission, and the dangerous flag does not change that (and SAYS so)",
+    "denies a requested permission; the removed dangerous flag REFUSES; an explicit deny holds",
     ({ home, llm, novaclaw }) =>
       Effect.gen(function* () {
         // `define_tool` deliberately falls through to consent in Build mode. A configured `bash: ask`
@@ -300,21 +300,21 @@ describe("novaclaw run (non-interactive subprocess)", () => {
         const allowed = yield* novaclaw.run("request permission", {
           extraArgs: ["--dangerously-skip-permissions"],
         })
-        novaclaw.expectExit(allowed, 0)
-        // 🔴 The flag grants NOTHING today, and the honest assertion is that it says so. It works by
-        // replying to the `permission.v2.asked` event that `bf39088eb` stopped emitting, so a user
-        // passing it is refused exactly as without it. Until granting is implemented
-        // (`todo/named-agents.md`), the contract under test is the WARNING — a flag that silently
-        // does nothing is what principle 13 forbids at the write side.
-        expect(allowed.stderr).toContain("has NO effect")
-        expect(allowed.stdout).toContain("continued after approval")
+        // 🔴 The flag REFUSES the run outright. It answered a consent prompt `bf39088eb` deleted, so
+        // it granted nothing; warning and continuing would still have run the whole task under a
+        // false belief about permissions. Principle 13's shape is refuses-AND-reports.
+        novaclaw.expectExit(allowed, 2)
+        expect(allowed.stderr).toContain("has been removed")
+        expect(allowed.stderr).toContain("--agent")
 
         yield* llm.reset
         yield* llm.tool("bash", { command: "touch explicitly-denied", description: "Create a denied marker" })
         yield* llm.text("continued after explicit denial")
+        // ⚠️ NO flag here any more, and that is load-bearing. With the flag the run now exits 2
+        // before doing anything, so the "file was not created" assertion below would pass for the
+        // wrong reason — a vacuous green that reads as proof an explicit deny held.
         const explicitlyDenied = yield* novaclaw.run("request denied permission", {
           permission: { bash: "deny" },
-          extraArgs: ["--dangerously-skip-permissions"],
         })
         novaclaw.expectExit(explicitlyDenied, 0)
         expect(explicitlyDenied.stdout).toContain("continued after explicit denial")
