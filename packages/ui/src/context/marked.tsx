@@ -1,9 +1,9 @@
 import { marked } from "marked"
-import markedKatex from "marked-katex-extension"
 import markedShiki from "marked-shiki"
 import katex from "katex"
 import { bundledLanguages, type BundledLanguage } from "shiki"
 import { createSimpleContext } from "./helper"
+import { findMathSpans, render as renderMath } from "../util/math-latex"
 import { getSharedHighlighter, registerCustomTheme, ThemeRegistrationResolved } from "@pierre/diffs"
 
 export const NovaClawTheme = {
@@ -379,37 +379,52 @@ export const NovaClawTheme = {
 
 registerCustomTheme("NovaClaw", () => Promise.resolve(NovaClawTheme))
 
+/**
+ * ONE math renderer for both parser paths — repair-then-VERIFY.
+ *
+ * 🔴 The detection, the repairs and the give-up rule live in `../util/math-latex`, PURE and tested
+ * (`math-latex.test.ts`). Two things used to be wrong here and both were invisible to every test:
+ *
+ *  · **Prices rendered as formulas.** The inline rule was
+ *    `(?<!\$)\$(?!\$)((?:[^$\]|\.)+?)\$(?!\$)`, which happily matched across "It costs $5 and
+ *    the other is $10" and set "5 and the other is " in italic serif. A silent misrender of the
+ *    user's own words is worse than rendering no maths at all.
+ *  · **`\(…\)` and `\[…\]` were not recognised at all**, and they are what a LaTeX-trained model
+ *    emits at least as often as `$…$`. The STEM answer that took the most effort to produce was the
+ *    one that came out as gibberish.
+ *
+ * And `throwOnError: false` meant a malformed formula was rendered as KaTeX's red diagnostic. Now
+ * the parser is the VERIFIER: each repair candidate is offered to it in strict mode, and if none is
+ * accepted the model's own text is shown as ordinary prose.
+ */
 function renderMathInText(text: string): string {
-  let result = text
-
-  // Display math: $$...$$
-  const displayMathRegex = /\$\$([\s\S]*?)\$\$/g
-  result = result.replace(displayMathRegex, (_, math) => {
-    try {
-      return katex.renderToString(math, {
-        displayMode: true,
-        throwOnError: false,
-      })
-    } catch {
-      return `$$${math}$$`
-    }
-  })
-
-  // Inline math: $...$
-  const inlineMathRegex = /(?<!\$)\$(?!\$)((?:[^$\\]|\\.)+?)\$(?!\$)/g
-  result = result.replace(inlineMathRegex, (_, math) => {
-    try {
-      return katex.renderToString(math, {
-        displayMode: false,
-        throwOnError: false,
-      })
-    } catch {
-      return `$${math}$`
-    }
-  })
-
-  return result
+  const spans = findMathSpans(text)
+  if (spans.length === 0) return text
+  let out = ""
+  let cursor = 0
+  for (const span of spans) {
+    out += text.slice(cursor, span.start)
+    const result = renderMath(span.body, { display: span.display, katex: katexRender })
+    // ⚠️ The give-up branch re-emits the ORIGINAL slice, delimiters included, escaped as HTML. It
+    // must not re-emit the raw source: this function's output goes into an HTML string, and a
+    // formula containing `<` would otherwise open a tag.
+    out += result.ok ? result.html : escapeHtml(text.slice(span.start, span.end))
+    cursor = span.end
+  }
+  return out + text.slice(cursor)
 }
+
+const katexRender = (tex: string, options: { displayMode: boolean; throwOnError: boolean }): string =>
+  katex.renderToString(tex, options)
+
+/** HTML-safe text. Used on the give-up path, whose output lands inside an HTML string. */
+const escapeHtml = (value: string): string =>
+  value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;")
 
 function renderMathExpressions(html: string): string {
   // Split on code/pre/kbd tags to avoid processing their contents
@@ -470,6 +485,69 @@ async function highlightCodeBlocks(html: string): Promise<string> {
 const escapeAttribute = (value: string): string =>
   value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
 
+/**
+ * The marked extension that renders maths — OUR detector, not `marked-katex-extension`.
+ *
+ * 🔴 Swapped for two reasons, and neither is stylistic. That extension has no way to REFUSE a `$…$`
+ * span, so every price pair in a chat became a formula; and it renders a malformed formula through
+ * KaTeX's `throwOnError: false`, which produces a red error box in the middle of an answer. Both
+ * are decisions this codebase has to own, so the tokenizer is ours and `../util/math-latex` holds
+ * the rules with the tests against them.
+ *
+ * ⚠️ Tokenizing maths at the INLINE level (rather than post-processing the HTML) is what keeps
+ * marked's own inline rules off the formula. `a_1 + a_2` contains two underscores; left to marked
+ * they become an `<em>`, and the subscripts silently disappear before KaTeX ever sees the string.
+ */
+export function markedMath() {
+  const claim = (src: string, display: boolean) => {
+    const span = findMathSpans(src)[0]
+    if (!span || span.start !== 0 || span.display !== display) return undefined
+    return span
+  }
+  const html = (body: string, display: boolean, raw: string) => {
+    const result = renderMath(body, { display, katex: katexRender })
+    return result.ok ? result.html : escapeHtml(raw)
+  }
+  return {
+    extensions: [
+      {
+        name: "novaclawMathBlock",
+        level: "block" as const,
+        // `start` is marked's cheap "could a token begin near here?" hint. It must be permissive:
+        // a miss means the span is never offered to the tokenizer at all.
+        start: (src: string) => {
+          const at = src.search(/\$\$|\\\[|\\begin\{/)
+          return at === -1 ? undefined : at
+        },
+        tokenizer(src: string) {
+          const span = claim(src, true)
+          if (!span) return undefined
+          return { type: "novaclawMathBlock", raw: src.slice(0, span.end), text: span.body }
+        },
+        renderer(token: { raw: string; text: string }) {
+          return html(token.text, true, token.raw)
+        },
+      },
+      {
+        name: "novaclawMathInline",
+        level: "inline" as const,
+        start: (src: string) => {
+          const at = src.search(/\$|\\\(/)
+          return at === -1 ? undefined : at
+        },
+        tokenizer(src: string) {
+          const span = claim(src, false)
+          if (!span) return undefined
+          return { type: "novaclawMathInline", raw: src.slice(0, span.end), text: span.body }
+        },
+        renderer(token: { raw: string; text: string }) {
+          return html(token.text, false, token.raw)
+        },
+      },
+    ],
+  }
+}
+
 export type NativeMarkdownParser = (markdown: string) => Promise<string>
 
 /**
@@ -525,10 +603,7 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
           },
         },
       },
-      markedKatex({
-        throwOnError: false,
-        nonStandard: true,
-      }),
+      markedMath(),
       markedShiki({
         async highlight(code, lang) {
           const highlighter = await getSharedHighlighter({

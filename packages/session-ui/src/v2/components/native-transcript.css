@@ -108,6 +108,19 @@
   color: var(--v2-text-text-base);
 }
 
+/* WHEN the message was written. Quieter than the buttons beside it — it is a fact, not an action,
+   and it must not read as something to press. `align-self: center` because the buttons carry
+   padding and the bare text would otherwise sit a pixel high against them. */
+[data-slot="native-msg-time"] {
+  align-self: center;
+  padding: 0.125rem 0.125rem;
+  color: var(--v2-text-text-faint);
+  font-size: var(--font-size-small);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: default;
+}
+
 /* in-flight "working" indicator (shown until the first token streams) */
 [data-slot="native-working"] {
   display: flex;

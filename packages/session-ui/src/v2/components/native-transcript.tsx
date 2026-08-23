@@ -44,6 +44,7 @@ import {
 } from "@novaclaw/core/session/session-error"
 import { useI18n } from "@novaclaw/ui/context/i18n"
 import { selectTranscriptMessages } from "../transcript-view"
+import { messageTime } from "../message-time"
 import {
   attemptLabel,
   currentPhase,
@@ -76,6 +77,31 @@ const ReasoningFoldContext = createContext<Accessor<FoldModes>>(defaultFoldModes
 function useFaultText() {
   const i18n = useI18n()
   return (fault: SessionErrorDisplay): string => sessionErrorHeadline(fault, i18n.t)
+}
+
+/**
+ * WHEN a message was written, beside Copy in the hover chrome (owner, 2026-08-23).
+ *
+ * ⚠️ It lives INSIDE `native-msg-actions`, which is hover-revealed and marked `user-select: none`.
+ * Both matter: a timestamp on every row permanently would turn a conversation into a log, and one
+ * that joined drag-selections would paste a wall of dates into whatever the reader copied.
+ *
+ * The short label is what fits; the full form is on `title`. Reasoning: `../message-time.ts`.
+ */
+function MessageTimestamp(props: { created: number | undefined }) {
+  const i18n = useI18n()
+  // `Date.now()` is read here, untracked, and that is correct: the chip is created when the row
+  // renders and only decides today-vs-not-today, which does not change while a row is on screen.
+  const stamp = createMemo(() => messageTime({ created: props.created, locale: i18n.locale() }))
+  return (
+    <Show when={stamp()}>
+      {(value) => (
+        <time data-slot="native-msg-time" dateTime={new Date(props.created!).toISOString()} title={value().full}>
+          {value().label}
+        </time>
+      )}
+    </Show>
+  )
 }
 
 // Per-message actions the host app can wire into the transcript (e.g. "revert to this prompt").
@@ -235,8 +261,7 @@ function Turn(props: {
   busy?: boolean
 }) {
   const body = () => props.group.body
-  const running = () =>
-    props.busy || body().some((message) => message.type === "assistant" && !message.time.completed)
+  const running = () => props.busy || body().some((message) => message.type === "assistant" && !message.time.completed)
   /** The turn's closing assistant message — the only one that can carry the answer. */
   const closing = () => {
     const tail = body().at(-1)
@@ -270,9 +295,7 @@ function Turn(props: {
   const toolCount = () =>
     body().reduce(
       (total, message) =>
-        message.type === "assistant"
-          ? total + message.content.filter((part) => part.type === "tool").length
-          : total,
+        message.type === "assistant" ? total + message.content.filter((part) => part.type === "tool").length : total,
       0,
     )
   return (
@@ -284,9 +307,7 @@ function Turn(props: {
         when={folds()}
         fallback={
           <For each={body()}>
-            {(message) => (
-              <NativeMessage message={message} developer={props.developer} liveTiming={props.liveTiming} />
-            )}
+            {(message) => <NativeMessage message={message} developer={props.developer} liveTiming={props.liveTiming} />}
           </For>
         }
       >
@@ -309,12 +330,25 @@ function Turn(props: {
                 <NativeMessage message={message} developer={props.developer} liveTiming={props.liveTiming} />
               )}
             </For>
-            <AssistantMessage message={closing()!} developer={props.developer} liveTiming={props.liveTiming} half="work" />
+            <AssistantMessage
+              message={closing()!}
+              developer={props.developer}
+              liveTiming={props.liveTiming}
+              half="work"
+            />
           </div>
         </details>
-        <Show when={outcome()} fallback={
-          <AssistantMessage message={closing()!} developer={props.developer} liveTiming={props.liveTiming} half="answer" />
-        }>
+        <Show
+          when={outcome()}
+          fallback={
+            <AssistantMessage
+              message={closing()!}
+              developer={props.developer}
+              liveTiming={props.liveTiming}
+              half="answer"
+            />
+          }
+        >
           {(line) => <p data-slot="native-turn-outcome">{line()}</p>}
         </Show>
       </Show>
@@ -413,8 +447,11 @@ function UserMessage(props: { message: SessionMessageUser }) {
           </div>
         </Show>
       </div>
-      <Show when={actions().onRevert}>
-        <div data-slot="native-msg-actions">
+      {/* ⚠️ The row is no longer gated on `onRevert`. The timestamp belongs to EVERY message, and
+          hanging it off a host-supplied callback would have made "when did I say this?" answerable
+          only in a client that also happens to wire up Revert. */}
+      <div data-slot="native-msg-actions">
+        <Show when={actions().onRevert}>
           <button
             type="button"
             data-slot="native-revert"
@@ -424,8 +461,9 @@ function UserMessage(props: { message: SessionMessageUser }) {
           >
             Revert
           </button>
-        </div>
-      </Show>
+        </Show>
+        <MessageTimestamp created={props.message.time.created} />
+      </div>
     </div>
   )
 }
@@ -576,6 +614,7 @@ function AssistantMessage(props: {
           >
             Copy
           </button>
+          <MessageTimestamp created={props.message.time.created} />
         </div>
       </Show>
     </div>
@@ -642,62 +681,62 @@ function TurnReceipt(props: { timing?: TurnTiming; live: boolean; developer?: bo
     >
       {(value) => (
         <>
-        <details data-slot="native-turn-receipt" data-live={props.live ? "" : undefined}>
-          <summary aria-live={props.live ? "polite" : undefined}>
-            <span data-slot="native-turn-summary">
-              <Show when={props.live}>
-                <span data-slot="native-working-dot" aria-hidden="true" />
-              </Show>
-              {/* Owner ruling 2026-08-11: the settled label is just "Details" — the internals are
+          <details data-slot="native-turn-receipt" data-live={props.live ? "" : undefined}>
+            <summary aria-live={props.live ? "polite" : undefined}>
+              <span data-slot="native-turn-summary">
+                <Show when={props.live}>
+                  <span data-slot="native-working-dot" aria-hidden="true" />
+                </Show>
+                {/* Owner ruling 2026-08-11: the settled label is just "Details" — the internals are
                   there for whoever wants to open the hood, and a longer name advertises them. */}
-              <span>{props.live ? liveLabel() : "Details"}</span>
-              <ElapsedTime startedAt={value().startedAt} completedAt={value().completedAt} />
-            </span>
-          </summary>
-          <ol data-slot="native-turn-phases">
-            <For each={value().phases}>
-              {(phase) => (
-                <li data-current={phase.completedAt === undefined ? "" : undefined}>
-                  <div data-slot="native-turn-phase">
-                    <span>{phaseLabel(phase.phase)}</span>
-                    <ElapsedTime startedAt={phase.startedAt} completedAt={phase.completedAt} />
-                  </div>
-                  <Show when={props.developer && phase.details?.length}>
-                    <ul data-slot="native-turn-details">
-                      <For each={phase.details}>
-                        {(detail) => (
-                          <li>
-                            <span>{detailLabel(detail.phase)}</span>
-                            <ElapsedTime startedAt={detail.startedAt} completedAt={detail.completedAt} />
-                          </li>
-                        )}
-                      </For>
-                    </ul>
-                  </Show>
-                </li>
-              )}
-            </For>
-            <For each={attempts(value())}>
-              {(attempt) => (
-                <li data-kind={attempt.outcome === "retry" ? "retry" : "attempt"}>
-                  <div data-slot="native-turn-phase">
-                    <span>{attemptLabel(attempt)}</span>
-                    <ElapsedTime startedAt={attempt.dispatchedAt} completedAt={attempt.completedAt} />
-                  </div>
-                </li>
-              )}
-            </For>
-          </ol>
-        </details>
-        {/* Outside the fold on purpose: the whole point is that it reaches someone who has NOT
+                <span>{props.live ? liveLabel() : "Details"}</span>
+                <ElapsedTime startedAt={value().startedAt} completedAt={value().completedAt} />
+              </span>
+            </summary>
+            <ol data-slot="native-turn-phases">
+              <For each={value().phases}>
+                {(phase) => (
+                  <li data-current={phase.completedAt === undefined ? "" : undefined}>
+                    <div data-slot="native-turn-phase">
+                      <span>{phaseLabel(phase.phase)}</span>
+                      <ElapsedTime startedAt={phase.startedAt} completedAt={phase.completedAt} />
+                    </div>
+                    <Show when={props.developer && phase.details?.length}>
+                      <ul data-slot="native-turn-details">
+                        <For each={phase.details}>
+                          {(detail) => (
+                            <li>
+                              <span>{detailLabel(detail.phase)}</span>
+                              <ElapsedTime startedAt={detail.startedAt} completedAt={detail.completedAt} />
+                            </li>
+                          )}
+                        </For>
+                      </ul>
+                    </Show>
+                  </li>
+                )}
+              </For>
+              <For each={attempts(value())}>
+                {(attempt) => (
+                  <li data-kind={attempt.outcome === "retry" ? "retry" : "attempt"}>
+                    <div data-slot="native-turn-phase">
+                      <span>{attemptLabel(attempt)}</span>
+                      <ElapsedTime startedAt={attempt.dispatchedAt} completedAt={attempt.completedAt} />
+                    </div>
+                  </li>
+                )}
+              </For>
+            </ol>
+          </details>
+          {/* Outside the fold on purpose: the whole point is that it reaches someone who has NOT
             opened the receipt and is wondering whether the thing is stuck. */}
-        <Show when={note()}>
-          {(text) => (
-            <div data-slot="native-turn-note" role="status">
-              {text()}
-            </div>
-          )}
-        </Show>
+          <Show when={note()}>
+            {(text) => (
+              <div data-slot="native-turn-note" role="status">
+                {text()}
+              </div>
+            )}
+          </Show>
         </>
       )}
     </Show>
