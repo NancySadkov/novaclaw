@@ -81,27 +81,30 @@ const openChat = async (agent: string): Promise<string> => {
   return String((created["data"] as Json)["id"])
 }
 
-/** Send a prompt and wait until the turn stops producing new messages. */
+/**
+ * Send a prompt and wait for the turn to actually END.
+ *
+ * ⚠️ **The end of a turn is a STATE, not a pause.** The first version waited for the message count to
+ * stop moving for fifteen seconds and called that settled — which is a proxy, and a bad one against a
+ * model that takes ~40s per step. It read half-finished turns as finished: a session whose last
+ * message was `finish: "tool-calls"` (still mid-chain) counted as done, so a fleet that had spawned
+ * two of six looked like a fleet of two, and the assertions failed as though the product had. Three
+ * of these tests passed once and then failed on the same code, which is what a proxy signal buys you.
+ *
+ * A turn is over when the LAST assistant message stops asking for more work — `finish` is `stop`
+ * (spoke and finished) or `error` (died). `tool-calls` means the runner is still going.
+ */
 const turn = async (session: string, text: string): Promise<ReadonlyArray<Json>> => {
   await call("POST", `/api/session/${session}/prompt`, { prompt: { text, files: [], agents: [] } })
   const deadline = Date.now() + TURN_MS
-  let seen = -1
-  let quietFor = 0
   while (Date.now() < deadline) {
     await Bun.sleep(5_000)
-    const rows = rowsOf(await call("GET", `/api/session/${session}/message?limit=60`))
-    // ⚠️ Settled = the message count stopped moving, not "the last message is assistant". A turn that
-    // ends mid-tool-chain has an assistant message too, and asserting on it would read a half-finished
-    // run as a finished one.
-    if (rows.length === seen) {
-      quietFor += 1
-      if (quietFor >= 3) return rows
-    } else {
-      seen = rows.length
-      quietFor = 0
-    }
+    const rows = rowsOf(await call("GET", `/api/session/${session}/message?limit=80`))
+    const assistants = rows.filter((row) => row["type"] === "assistant")
+    const finish = assistants.at(-1)?.["finish"]
+    if (finish === "stop" || finish === "error") return rows
   }
-  throw new Error(`turn did not settle within ${TURN_MS}ms`)
+  throw new Error(`turn did not finish within ${TURN_MS}ms`)
 }
 
 const toolCalls = (rows: ReadonlyArray<Json>, name: string) =>
@@ -182,6 +185,51 @@ describe.skipIf(skip !== undefined)("an officer with a real model", () => {
       expect(paths.some((p) => normalise(p).includes(normalise(workspace)))).toBe(true)
       // …and NOT into the assigned project.
       expect(paths.some((p) => normalise(p).includes("/d/code/llm/novaclaw/smoke-note"))).toBe(false)
+    },
+    TURN_MS + 60_000,
+  )
+
+  test(
+    "🔴 a spawned SUB-AGENT runs on its officer's model, not the instance default",
+    async () => {
+      // The defect this guards, measured 2026-08-23: six sub-agents spawned correctly and every one
+      // ran as the INSTANCE DEFAULT, against a provider that had been down for days, while the
+      // officer reported the fleet launched. A child stores `agent: null` and inherits its officer
+      // through the parent chain; `SessionEffectiveConfig` was folding the colleague from the session
+      // ROW, so the child lost its officer's model, floor, memory stance and posture.
+      //
+      // ⚠️ Only a LIVE run sees this. Every unit test passed throughout, because for a root chat the
+      // row and the chain agree — it is exactly the case a fleet creates that they do not.
+      await officer("smoke_inherit", {
+        name: "SmokeInherit",
+        title: "Coordinator",
+        mode: "primary",
+        permissionMode: "bypass",
+        system: "You are a coordinator. You spawn sub-agents for independent work.",
+      })
+      const chat = await openChat("smoke_inherit")
+      const rows = await turn(
+        chat,
+        'Spawn 2 sub-agents in parallel. Give each one this exact task: reply with the single word ACK ' +
+          "and stop. Then tell me you have done it.",
+      )
+      expect(completed(toolCalls(rows, "spawn")).length).toBeGreaterThanOrEqual(1)
+
+      const children = rowsOf(await call("GET", "/api/session?limit=80")).filter(
+        (row) => String(row["parentID"] ?? "") === chat,
+      )
+      expect(children.length).toBeGreaterThanOrEqual(1)
+
+      // What the CHILD actually ran on. The officer's model is `MODEL` (`providerID/modelID`), and the
+      // child's assistant message records the model that served it.
+      const [providerID, ...rest] = MODEL.split("/")
+      const modelID = rest.join("/")
+      for (const child of children.slice(0, 2)) {
+        const messages = rowsOf(await call("GET", `/api/session/${String(child["id"])}/message?limit=20`))
+        const assistant = messages.find((row) => row["type"] === "assistant")
+        const ran = (assistant?.["model"] ?? {}) as Json
+        expect({ provider: ran["providerID"], id: ran["id"] }).toEqual({ provider: providerID, id: modelID })
+      }
     },
     TURN_MS + 60_000,
   )

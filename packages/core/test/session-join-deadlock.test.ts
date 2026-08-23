@@ -1,4 +1,4 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { DateTime, Effect, Fiber } from "effect"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
@@ -8,6 +8,9 @@ import { SessionEvent } from "@novaclaw/core/session/event"
 import { SessionJoin } from "@novaclaw/core/session/join"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionSchema } from "@novaclaw/core/session/schema"
+import { readFileSync } from "node:fs"
+import path from "node:path"
+import { fileURLToPath } from "node:url"
 import { testEffect } from "./lib/effect"
 
 /**
@@ -126,4 +129,42 @@ describe("awaiting a child", () => {
       expect(outcome).toEqual({ completed: false })
     }),
   )
+})
+
+/**
+ * WHOSE child you may wait on — the authorization half, which lives in the TOOL rather than the join.
+ *
+ * 🔴 A source ledger, because the check is three lines inside `wait`'s `execute` and reaching it needs
+ * a live `SessionStore`, a `SessionJoin` and a tool context — scaffolding that would test the harness
+ * more than the rule. What matters is that the rule EXISTS and refuses two distinct cases, and both
+ * are visible in one predicate.
+ *
+ * ⚠️ Without it an officer could join any session it can name — a sibling's, another colleague's, or
+ * its own. Joining your own is the self-deadlock: `awaitCompletion` waits for a completion that cannot
+ * arrive until the turn doing the waiting ends.
+ */
+describe("only a DIRECT child may be waited on", () => {
+  const source = readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "tool", "wait.ts"),
+    "utf8",
+  )
+
+  test("the guard refuses a session that is not this session's child", () => {
+    // `!child` covers a name that resolves to nothing; the parent comparison covers everything else,
+    // including waiting on YOURSELF — a session is never its own parent.
+    expect(source).toMatch(/!child \|\| child\.parentID !== context\.sessionID/)
+  })
+
+  test("it fails as a ToolFailure the model reads, not a silent false", () => {
+    // A refusal the model cannot see would leave it believing it had joined something.
+    const guard = source.slice(source.indexOf("!child ||"))
+    expect(guard.slice(0, 400)).toContain("ToolFailure")
+    expect(guard.slice(0, 400)).toMatch(/not a direct child/)
+  })
+
+  test("the join it guards is BOUNDED — the timeout is passed, never omitted", () => {
+    // The five cases above prove `awaitCompletion` honours a timeout. This pins that the tool actually
+    // supplies one: an unbounded call would hang the officer on a wedged child.
+    expect(source).toMatch(/awaitCompletion\(\{[^}]*timeoutMs: WAIT_TIMEOUT_MS/)
+  })
 })
