@@ -349,6 +349,18 @@ describe("novaclaw run (non-interactive subprocess)", () => {
   // carries an unguarded hazard: a turn that finishes before the prompt call's HTTP response
   // resolves sets the flag AFTER its idle has passed, so the loop waits for an event that will
   // never come again. Do not re-try that shape without handling the fast-turn case.
+  // 🔴 ROOT-CAUSED 2026-08-23, and still skipped because the CAUSE is not fixed — only its silence.
+  //
+  // `loop()` iterates `for await (… of events.stream)`, which exits NORMALLY when the SSE stream
+  // closes. A dropped subscription therefore looked exactly like a finished turn: the CLI exited 0
+  // having never waited for the model. Measured — a failing run takes ~2.7 s against ~8.5 s passing,
+  // sends NOTHING to the provider (`llm.inputs` is `[]`), and writes not one byte to either stderr.
+  // Nothing errored; the run stopped listening and called that success.
+  //
+  // `cli/cmd/run.ts` now fails with "lost the event stream before the turn finished" instead of
+  // reporting a turn that never happened — confirmed by 8 runs where the single non-pass printed
+  // exactly that. ⚠️ The stream still drops ~1 in 8 under `--attach`; that is the remaining work, and
+  // it is now a narrow question (why does the subscription close?) rather than a mystery.
   cliIt.skip(
     "attach mode sends client-local file contents without a shared path",
     ({ home, llm, novaclaw }) =>

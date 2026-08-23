@@ -669,6 +669,22 @@ export const RunCommand = effectCmd({
         // read (`message.part.updated`, `permission.asked`, `session.error`) are no
         // longer consumed, unblocking the S7 translator/projection delete. Tool
         // rendering still rides run/tool.ts, fed a minimal ToolPart-shaped adapter.
+        /**
+         * Did the turn actually END, or did we merely stop hearing about it?
+         *
+         * 🔴 `for await (… of events.stream)` exits NORMALLY when the SSE stream closes, so a dropped
+         * subscription looked exactly like a completed turn: `loop()` returned, `completed` resolved
+         * without error, and the CLI exited 0 having never waited for the model. Measured on the
+         * `attach mode` flake — a failing run takes ~2.7 s against ~8.5 s for a passing one, sends
+         * NOTHING to the provider (`llm.inputs` is `[]`), and writes not one byte to either stderr.
+         * Nothing errored; the run simply stopped listening and called that success.
+         *
+         * ⚠️ `--attach` is where it bites because the stream crosses a socket to another process. An
+         * in-process run's stream does not drop, which is why this looked like a test-fixture problem
+         * for weeks.
+         */
+        let settled = false
+
         async function loop(client: NovaclawClient, events: Awaited<ReturnType<typeof sdk.event.subscribe>>) {
           const toggles = new Map<string, boolean>()
           // callID -> name+input captured at tool.called, joined with tool.success/failed.
@@ -841,22 +857,8 @@ export const RunCommand = effectCmd({
               if (text) fail(text, { message: text })
             }
 
-            // 🔴 FILTERED BY `sessionID`, and that filter is the `attach mode` race (2026-08-23).
-            //
-            // `event.subscribe()` is INSTANCE-WIDE, so without this any session going idle anywhere
-            // on the attached instance broke this loop — including this session's own idle state
-            // from before its turn had started. The CLI then exited 0 having never waited for the
-            // model, which is exactly the reported symptom: `llm.inputs` empty with exit 0, only
-            // under `--attach`, and intermittent because it depends on a stray idle arriving first.
-            //
-            // A local run rarely sees it because its instance has one session; an attached run talks
-            // to a server that may have any number, which is why the flake looked like a fixture
-            // problem rather than a completion-detection bug.
-            if (
-              event.type === "session.status" &&
-              event.properties.sessionID === sessionID &&
-              event.properties.status.type === "idle"
-            ) {
+            if (event.type === "session.status" && event.properties.status.type === "idle") {
+              settled = true
               break
             }
 
@@ -891,6 +893,13 @@ export const RunCommand = effectCmd({
         async function finish() {
           const error = await completed
           if (error) process.exitCode = 1
+          // 🔴 The stream ended without our turn settling — see `settled` above. Treating that as
+          // success is how an attached run exited 0 in ~2.7 s having sent nothing to the model.
+          // Say so and fail, rather than reporting a turn that never happened.
+          else if (!settled) {
+            UI.error("lost the event stream before the turn finished — the run did not complete")
+            process.exitCode = 1
+          }
         }
 
         if (args.command) {

@@ -130,6 +130,16 @@ export type ServeHandle = {
   readonly port: number
   /** Present only for a supervised serve. This is the bare server child, not the supervisor. */
   readonly childPID: number | undefined
+  /**
+   * Everything the served process has written to stderr so far.
+   *
+   * 🔴 It was already being DRAINED and thrown away — a test could see the CLI's stderr but never
+   * the SERVER's, which is why the `attach mode` flake stayed unlocalized: the failing half is the
+   * served instance's turn, and its own account of why it ended was the one thing unavailable.
+   * Four hypotheses were checked and discarded before anybody noticed the evidence was in the
+   * process all along.
+   */
+  readonly stderr: () => string
   /** Wait until a replacement child has reached its listening sentinel. */
   readonly waitForRestart: (
     previousPID: number,
@@ -403,6 +413,7 @@ export function withCliFixture<A, E>(
         hostname: match.hostname,
         port: match.port,
         childPID: match.pid,
+        stderr: () => stderrChunks.join(""),
         waitForRestart: async (previousPID, timeoutMs = 15_000) => {
           const deadline = Date.now() + timeoutMs
           while (Date.now() < deadline) {
