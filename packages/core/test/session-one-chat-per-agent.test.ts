@@ -1,0 +1,219 @@
+import { describe, expect } from "bun:test"
+import { Effect } from "effect"
+import { AbsolutePath } from "@novaclaw/core/schema"
+import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
+import { LayerNode } from "@novaclaw/core/effect/layer-node"
+import { Database } from "@novaclaw/core/database/database"
+import { EventV2 } from "@novaclaw/core/event"
+import { createSessionRecord } from "@novaclaw/core/session"
+import { ProjectV2 } from "@novaclaw/core/project"
+import { SessionStore } from "@novaclaw/core/session/store"
+import { SessionProjector } from "@novaclaw/core/session/projector"
+import { SessionSchema } from "@novaclaw/core/session/schema"
+import { SessionTable } from "@novaclaw/core/session/sql"
+import { testEffect } from "./lib/effect"
+
+/**
+ * ONE CHAT PER COLLEAGUE — enforced at `createSessionRecord`, the one seam every creator reaches.
+ *
+ * 🔴 Owner, 2026-08-23: *"every agent has a single chat. If the user wants a new chat, they either
+ * clear chat with an existing agent or hire a new agent. That also applies to Nova."* The reason is
+ * identity, not storage — a colleague with two conversations is two personalities wearing one name.
+ *
+ * **And for Nova it is authority, not just personality:** *"if there are more than one chain of
+ * thoughts, then there are two Novas and a conflict of authority. They may do war on each other."*
+ * The governing agent is the instance's floor, and a floor that can disagree with itself is not one.
+ * `governing does not get an exemption` below is the test that says so — it is the carve-out someone
+ * will eventually be tempted to add.
+ *
+ * Before this the rule was a convention: nothing rejected a second root session, the New Agent bar's
+ * reuse probe only reopened an *empty* chat, and `chatFor` silently returned the most recently
+ * touched. The loser of that pick had **no door** — the roster row is the only way into a
+ * colleague's chat — while its tokens still rolled up into the colleague's totals.
+ */
+
+/**
+ * ⚠️ Driven through `createSessionRecord` with its four explicit deps, NOT through `SessionV2.Service`.
+ * That is not a shortcut — the module comment says this seam exists so `spawn` can reuse create
+ * "WITHOUT depending on `SessionV2.node`, which would close the runner cycle
+ * `SessionV2 -> LocationServiceMap -> location services -> spawn -> SessionV2`". Binding the full
+ * service here fails on exactly that (`Unbound layer node: SessionExecution`), and the seam is where
+ * the invariant actually lives, so this is the faithful target as well as the reachable one.
+ */
+const it = testEffect(
+  AppNodeBuilder.build(
+    LayerNode.group([
+      Database.node,
+      EventV2.node,
+      SessionProjector.node,
+      ProjectV2.node,
+      SessionStore.node,
+    ]),
+  ),
+)
+
+const deps = Effect.gen(function* () {
+  const { db } = yield* Database.Service
+  return {
+    db,
+    events: yield* EventV2.Service,
+    projects: yield* ProjectV2.Service,
+    store: yield* SessionStore.Service,
+  }
+})
+
+const here = () => AbsolutePath.make(process.cwd())
+
+/** A pre-existing chat, written straight to the row so the test does not depend on create's own rule. */
+const seedChat = (
+  db: Database.Interface["db"],
+  row: { id: string; agent?: string; parent?: string; archived?: number },
+) =>
+  db
+    .insert(SessionTable)
+    .values([
+      {
+        id: SessionSchema.ID.make(row.id),
+        slug: row.id,
+        directory: process.cwd(),
+        title: `${row.agent ?? "nobody"}'s chat`,
+        version: "test",
+        agent: row.agent,
+        parent_id: row.parent ? SessionSchema.ID.make(row.parent) : undefined,
+        time_archived: row.archived,
+        time_created: 1,
+        time_updated: 1,
+      },
+    ])
+    .run()
+    .pipe(Effect.orDie)
+
+const rootsFor = (db: Database.Interface["db"], agent: string) =>
+  db
+    .select()
+    .from(SessionTable)
+    .all()
+    .pipe(
+      Effect.orDie,
+      Effect.map((rows) => rows.filter((r) => r.agent === agent && !r.parent_id && r.time_archived === null)),
+    )
+
+describe("one chat per colleague", () => {
+  it.effect("a second create for the same colleague returns the chat it already has", () =>
+    Effect.gen(function* () {
+      const d = yield* deps
+      yield* seedChat(d.db, { id: "ses_theron", agent: "theron" })
+
+      const created = yield* createSessionRecord(d, { agent: "theron", location: { directory: here() } } as never)
+
+      // The SAME chat, not a sibling — an answer, not an error (the product rule is "you already
+      // have that conversation").
+      expect(String(created.id)).toBe("ses_theron")
+      const roots_theron = yield* rootsFor(d.db, "theron")
+      expect(roots_theron.length).toBe(1)
+    }),
+  )
+
+  it.effect("governing does not get an exemption — two Novas would be two authorities", () =>
+    Effect.gen(function* () {
+      const d = yield* deps
+      yield* seedChat(d.db, { id: "ses_nova", agent: "nova" })
+
+      const created = yield* createSessionRecord(d, { agent: "nova", location: { directory: here() } } as never)
+
+      expect(String(created.id)).toBe("ses_nova")
+      const roots_nova = yield* rootsFor(d.db, "nova")
+      expect(roots_nova.length).toBe(1)
+    }),
+  )
+
+  it.effect("an ARCHIVED chat does not block its successor — that is what Clear chat does", () =>
+    Effect.gen(function* () {
+      const d = yield* deps
+      // "Clear chat" archives rather than deletes. If an archived chat blocked creation, clearing
+      // would leave the colleague permanently unable to start again.
+      yield* seedChat(d.db, { id: "ses_old", agent: "spectre", archived: 5 })
+
+      const created = yield* createSessionRecord(d, { agent: "spectre", location: { directory: here() } } as never)
+
+      expect(String(created.id)).not.toBe("ses_old")
+      const roots_spectre = yield* rootsFor(d.db, "spectre")
+      expect(roots_spectre.length).toBe(1)
+    }),
+  )
+
+  it.effect("a SUB-AGENT is not collapsed into its officer's chat", () =>
+    Effect.gen(function* () {
+      const d = yield* deps
+      // 🔴 A sub-agent inherits its officer's id. Without the `parentID === undefined` clause every
+      // spawned worker would return the officer's chat and a fleet of six would be one session.
+      yield* seedChat(d.db, { id: "ses_officer", agent: "theron" })
+
+      const child = yield* createSessionRecord(d, {
+        agent: "theron",
+        parentID: SessionSchema.ID.make("ses_officer"),
+        location: { directory: here() },
+      } as never)
+
+      expect(String(child.id)).not.toBe("ses_officer")
+      expect(String(child.parentID)).toBe("ses_officer")
+    }),
+  )
+
+  it.effect("a POSTURE is not a person — `build` chats are never collapsed", () =>
+    Effect.gen(function* () {
+      const d = yield* deps
+      // 🔴 The regression this test exists for, found in LIVE DATA rather than by reasoning. Scanned
+      // the owner's own stores 2026-08-23: `novaclaw.db` held `build` × 54 and `nova` × 2 live root
+      // chats. `build` is this instance's DEFAULT agent (`AgentV2.defaultID`), so an ordinary chat
+      // that never named a colleague still carries `agent: "build"` on its row — and a guard keyed
+      // on `agent !== undefined` would have merged all 54 of those into a single conversation.
+      // `build` and `plan` are permission modes wearing an agent's shape, not people.
+      yield* seedChat(d.db, { id: "ses_build_1", agent: "build" })
+
+      const created = yield* createSessionRecord(d, { agent: "build", location: { directory: here() } } as never)
+
+      expect(String(created.id)).not.toBe("ses_build_1")
+      const roots_build = yield* rootsFor(d.db, "build")
+      expect(roots_build.length).toBe(2)
+    }),
+  )
+
+  it.effect("a FORK is anonymous — it never becomes a second chat for the colleague", () =>
+    Effect.gen(function* () {
+      const d = yield* deps
+      // 🔴 Fork makes a fresh ROOT. Carrying the source's agent would be a second chat for that
+      // colleague — the one thing the invariant forbids — and the `SessionV2.fork` suite went red
+      // the moment the guard could see it. The fix is NOT an exemption (an exemption is the
+      // appendix); fork drops the identity and branches the transcript, which is what the user
+      // asked for. Forking an agent-session ENTITY is what `clone` already does.
+      yield* seedChat(d.db, { id: "ses_theron", agent: "theron" })
+
+      const branch = yield* createSessionRecord(d, {
+        title: "fork of Theron's chat",
+        agent: undefined,
+        location: { directory: here() },
+      } as never)
+
+      expect(String(branch.id)).not.toBe("ses_theron")
+      const roots_theron = yield* rootsFor(d.db, "theron")
+      expect(roots_theron.length).toBe(1)
+    }),
+  )
+
+  it.effect("an AGENT-LESS root is untouched — the messenger console, recipes and the CLI", () =>
+    Effect.gen(function* () {
+      const d = yield* deps
+      // Verified at the call sites: none of those three passes `agent`, and they legitimately make
+      // many rootless sessions. Collapsing them would merge every messenger conversation into one.
+      yield* seedChat(d.db, { id: "ses_console" })
+
+      const second = yield* createSessionRecord(d, { location: { directory: here() } } as never)
+
+      expect(String(second.id)).not.toBe("ses_console")
+      const allRows = yield* d.db.select().from(SessionTable).all().pipe(Effect.orDie)
+      const rootless = allRows.filter((r) => !r.agent)
+      expect(rootless.length).toBe(2)
+    }),
+  )
+})

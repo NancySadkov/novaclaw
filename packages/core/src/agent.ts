@@ -27,6 +27,30 @@ export const PROTECTED_IDS: ReadonlySet<string> = new Set([NOVA_ID])
 
 export const isProtected = (id: string): boolean => PROTECTED_IDS.has(id)
 
+/**
+ * The POSTURE agents. `build` and `plan` are permission modes wearing an agent's shape (owner,
+ * 2026-08-22), not people — and `build` is this instance's DEFAULT agent (see `defaultID` above), so
+ * an ordinary chat that never named a colleague still carries `agent: "build"` on its row.
+ */
+export const POSTURE_IDS: ReadonlySet<string> = new Set([ID.make("build"), ID.make("plan")])
+
+/**
+ * Is this a COLLEAGUE — someone on the roster — rather than staff, machinery, or a posture?
+ *
+ * 🔴 Lives in the kernel because a KERNEL invariant depends on it: one chat per colleague, enforced
+ * at `createSessionRecord`. The app has the same predicate at `apps/contacts.ts:isColleague`, whose
+ * comment calls itself "ONE choke point on purpose" — it now reads this, so there is one definition
+ * rather than two that drift.
+ *
+ * ⚠️ The posture clause is not cosmetic, and it was measured. Keyed on `agent !== undefined` alone,
+ * the one-chat guard would have collapsed **54 live `build` chats into one** on the owner's own
+ * installed instance (scanned 2026-08-23: `build` 54, `nova` 2). `agent` on a session row means
+ * "the agent this session RUNS AS", which defaults to `build` — it does not mean "this is a
+ * colleague's chat".
+ */
+export const isColleague = (agent: { readonly id: string; readonly mode?: string; readonly hidden?: boolean }): boolean =>
+  agent.mode !== "subagent" && !agent.hidden && !POSTURE_IDS.has(agent.id)
+
 export const Color = Agent.Color
 
 export const Info = Agent.Info

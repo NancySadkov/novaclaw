@@ -13,6 +13,8 @@
 //     shared with everyone. The competitor's roster promises separation and shares the machine
 //     underneath (`notes/survey/grokbot-research.md`); ours must not read the same way.
 
+import { AgentV2 } from "@novaclaw/core/agent"
+
 /** The agent shape this module needs — a structural subset of `AgentV2.Info` so the view model can be
  *  tested without the wire type, and so a field added there does not force a change here. */
 export interface AgentLike {
@@ -103,7 +105,14 @@ export const displayName = (id: string): string =>
  * unit run: measured, not theorised. Who answers an unattributed chat is a separate product question
  * from who appears on the roster, and bundling them hid a real cost.
  */
-export const POSTURE_AGENTS: ReadonlySet<string> = new Set(["build", "plan"])
+/**
+ * ⚠️ Re-exported from the KERNEL, not defined here. A kernel invariant now depends on the same
+ * question — one chat per colleague, enforced at `createSessionRecord` — and two copies of
+ * "is this a person?" drifting apart would mean the roster and the session store disagreeing about
+ * who exists. `core/src/agent.ts` is the definition; this stays the name the app's four surfaces
+ * import, so the choke point below is unchanged.
+ */
+export const POSTURE_AGENTS: ReadonlySet<string> = AgentV2.POSTURE_IDS
 
 /**
  * Is this agent a colleague the user can talk to, rather than staff or machinery?
@@ -112,8 +121,7 @@ export const POSTURE_AGENTS: ReadonlySet<string> = new Set(["build", "plan"])
  * picker and the composer's agent selector all reach the roster through here, and a rule enforced in
  * one of them is a rule the next surface gets wrong.
  */
-export const isColleague = (agent: AgentLike): boolean =>
-  agent.mode !== "subagent" && !agent.hidden && !POSTURE_AGENTS.has(agent.id)
+export const isColleague = (agent: AgentLike): boolean => AgentV2.isColleague(agent)
 
 const view = (agent: AgentLike): ContactView => {
   const governing = agent.id === GOVERNING_ID

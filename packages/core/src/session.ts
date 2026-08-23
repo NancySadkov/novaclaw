@@ -427,6 +427,63 @@ export const createSessionRecord = (
     const sessionID = input.id ?? SessionSchema.ID.create()
     const recorded = yield* store.get(sessionID)
     if (recorded) return recorded
+    // 🔴 ONE CHAT PER COLLEAGUE, enforced HERE because this is the one seam every creator reaches
+    // (owner, 2026-08-23: *"every agent has a single chat … that also applies to Nova"*). The reason
+    // is identity, not storage: a colleague with two conversations is two personalities wearing one
+    // name, and the roster — which is the only door to a colleague's chat — can show exactly one of
+    // them. Before this, `chatFor` silently picked the most recently touched and the loser became
+    // UNREACHABLE while its tokens still rolled up into the colleague's totals: a chat that, to the
+    // user, vanished.
+    //
+    // Returning the existing chat rather than failing is deliberate, and matches the idempotent
+    // `if (recorded) return recorded` directly above: the product rule is "you already have that
+    // conversation", which is an answer, not an error. It also means the UI needs no reuse probe.
+    //
+    // ⚠️ Three exclusions, each load-bearing:
+    //   · `parentID === undefined` — a SUB-AGENT inherits its officer's id, so without this every
+    //     spawned worker would collapse into its officer's chat and the fleet would be one session.
+    //   · `agent !== undefined` — the messenger console, recipe cooks and the CLI all create
+    //     agent-less roots (verified: none passes `agent`), and they are not colleague chats.
+    //   · `time_archived IS NULL` — "Clear chat" ARCHIVES rather than deletes, which is precisely
+    //     how the user asks for a fresh one. An archived chat must not block its own successor.
+    // ⚠️ `isColleague`, NOT `agent !== undefined`. `agent` on a row means "the agent this session
+    // RUNS AS" and defaults to `build` — so keyed on mere presence this guard would have collapsed
+    // 54 live `build` chats into one on the owner's installed instance (scanned 2026-08-23). A
+    // posture is not a person.
+    //
+    // 🔴 The check is the STATIC id set, deliberately, and not `AgentV2.Service`. `AgentV2.node` is a
+    // LOCATION node while this layer is GLOBAL, so consulting the registry here crosses a layer
+    // boundary the graph refuses to build (measured: `makeGlobalNode` rejected the deps list). The
+    // set needs no service and covers the measured case exactly.
+    //
+    // ⚠️ Known narrowness, stated rather than hidden: `isColleague` also excludes `mode: "subagent"`
+    // and `hidden` agents, and those two need the record. A hidden agent holding a ROOT chat would
+    // therefore still be treated as a colleague here. Sub-agents are already excluded by the
+    // `parentID` clause, so the residual gap is hidden-agent roots — narrow, and filed rather than
+    // papered over.
+    if (
+      input.parentID === undefined &&
+      input.agent !== undefined &&
+      !AgentV2.POSTURE_IDS.has(input.agent)
+    ) {
+      const live = yield* db
+        .select()
+        .from(SessionTable)
+        .where(
+          and(
+            eq(SessionTable.agent, input.agent),
+            isNull(SessionTable.parent_id),
+            isNull(SessionTable.time_archived),
+          ),
+        )
+        .orderBy(desc(SessionTable.time_updated))
+        .get()
+        .pipe(Effect.orDie)
+      if (live) {
+        const existing = yield* store.get(SessionSchema.ID.make(live.id))
+        if (existing) return existing
+      }
+    }
     const project = yield* projects.resolve(input.location.directory)
     const now = Date.now()
     const subpath = path.relative(project.directory, input.location.directory).replaceAll("\\", "/")
@@ -1079,7 +1136,27 @@ export const layer = Layer.effect(
             location,
             title: SessionTitle.forked(source.title),
             metadata: source.metadata ? structuredClone({ ...source.metadata }) : undefined,
-            agent: inherited.agent ? AgentV2.ID.make(inherited.agent) : undefined,
+            // 🔴 A FORK DOES NOT CARRY A COLLEAGUE'S IDENTITY (owner, 2026-08-23:
+            // *"no dead code allowing spawning extra sessions for agent"*). A fork makes a fresh
+            // ROOT, and a rooted session bearing a colleague's id is a second chat for that
+            // colleague, which is the one thing the invariant forbids. Carrying it made the
+            // `SessionV2.fork` suite red the moment the guard could see it, and the fix is not to
+            // exempt fork — an exemption IS the appendix — but to stop it duplicating an identity.
+            //
+            // Under the ECS merge (agent ⟷ session are one entity) forking an agent-session IS
+            // cloning, and clone already exists and already mints a first-class id. So a fork is
+            // what remains once identity is removed: a branch of the TRANSCRIPT, which is exactly
+            // what the user asked for when they forked a message.
+            //
+            // ⚠️ A POSTURE still carries, and the distinction is the whole point: `build`/`plan` are
+            // permission modes wearing an agent's shape, not people, so a fork keeping `plan` keeps
+            // a MODE and duplicates no identity. `session-fork-config.test.ts` forks a `plan` root
+            // and requires every carried field to survive — that ledger stays green, and `agent`
+            // gains a REASONED exclusion for colleagues rather than being dropped wholesale.
+            agent:
+              inherited.agent && AgentV2.POSTURE_IDS.has(inherited.agent)
+                ? AgentV2.ID.make(inherited.agent)
+                : undefined,
             model: inherited.model
               ? ModelV2.Ref.make({
                   id: ModelV2.ID.make(inherited.model.id),
