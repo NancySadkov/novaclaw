@@ -128,7 +128,6 @@ const SessionCatalogHandler = handlerLayer(
                   permissionMode: ctx.payload.permissionMode,
                   responder: ctx.payload.responder,
                   title: ctx.payload.title,
-                  permission: ctx.payload.permission,
                   strict: ctx.payload.strict,
                   // ⚠️ The per-session feature overrides are forwarded ONE-FOR-ONE with
                   // `SessionFeature.Name`, and a plain `ctx.payload.<name>` is deliberate: each is a

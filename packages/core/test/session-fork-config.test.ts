@@ -263,8 +263,11 @@ describe("SessionV2.fork — the fork carries the source's resolved config", () 
       const forkConfig = yield* resolveFor(forked.id)
       for (const key of SESSION_CONFIG_FIELD_KEYS) expectField(`resolved ${key}`, forkConfig[key], sourceConfig[key])
 
-      // (c) The saved ruleset is not part of the fold, so it is carried verbatim off the row.
-      expectField("permission ruleset", stored.permission, source.permission)
+      // ⚠️ The saved `permission` ruleset used to be carried verbatim here. It is GONE (2026-08-23):
+      // it was written by create/`setPermission` and read by nobody — `permission.ts` resolves the
+      // AGENT's ruleset and never consulted the session row — and it was typed in the LEGACY
+      // `{permission, pattern, action}` shape the evaluator does not even take. Nothing replaces it;
+      // one authority for permissions is the decision.
       expectField("fork is a root", stored.parentID, undefined)
     }),
   )

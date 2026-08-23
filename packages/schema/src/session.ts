@@ -48,9 +48,6 @@ export const Info = Schema.Struct({
   // the native Info now; the columns are NOT NULL).
   slug: Schema.String,
   version: Schema.String,
-  // The saved permission ruleset (written at create/setPermission; the whole-row Updated
-  // projector must never lose it).
-  permission: PermissionRuleset.Ruleset.pipe(optional),
   metadata: Schema.Record(Schema.String, Schema.Unknown).pipe(optional),
   agent: Agent.ID.pipe(optional),
   model: Model.Ref.pipe(optional),

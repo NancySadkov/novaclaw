@@ -356,10 +356,6 @@ export interface Interface {
     metadata: Record<string, unknown>
   }) => Effect.Effect<void, NotFoundError>
   readonly setArchived: (input: { sessionID: SessionSchema.ID; time?: number }) => Effect.Effect<void, NotFoundError>
-  readonly setPermission: (input: {
-    sessionID: SessionSchema.ID
-    permission: PermissionRuleset.Ruleset
-  }) => Effect.Effect<void, NotFoundError>
   readonly children: (sessionID: SessionSchema.ID) => Effect.Effect<SessionSchema.Info[], NotFoundError>
   /** The agent-maintained todo list (native twin of the retired bare-/session read — V1-nuke A0). */
   readonly todos: (sessionID: SessionSchema.ID) => Effect.Effect<ReadonlyArray<SessionTodo.Info>, NotFoundError>
@@ -508,10 +504,15 @@ export const createSessionRecord = (
       // create meaning to restrict produced an unrestricted session and nothing said so).
       // `config-columns.ts` now generates all three directions from one descriptor.
       ...SessionConfigColumns.configFromInput(input),
-      // NOT a config field: `permission` is the saved ruleset, which has no session column and does
+      // ⚠️ There is no saved `permission` ruleset any more. It was WRITTEN by create and
+      // `setPermission` and READ by nobody — `permission.ts` resolves the AGENT's ruleset
+      // (`configured(sessionID, agentID)`) and never consulted the session row. v0.2.0 ruling 16
+      // removed per-session `permissionRules` for having zero consumers; this was its successor
+      // field, quietly carrying the same defect. Removed rather than wired up: one authority for
+      // permissions is the decision (todo/named-agents.md), and a second one on the session row is
+      // the widening path the org chart calls a coup.
       // not resolve through the chain walk (ruling 16). Generating from the descriptor excludes it
       // by construction, so it stays listed here on purpose.
-      permission: input.permission ? [...input.permission] : undefined,
       cost: 0,
       tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
       time: { created: DateTime.makeUnsafe(now), updated: DateTime.makeUnsafe(now) },
@@ -633,7 +634,7 @@ export const layer = Layer.effect(
     const isDurableSessionEvent = Schema.is(SessionEvent.Durable)
     const decode = SessionMessageRead.decodeRow
 
-    // The shared setter shape (setTitle/setMetadata/setArchived/setPermission): the cycle-free
+    // The shared setter shape (setTitle/setMetadata/setArchived): the cycle-free
     // `SessionPatch.patchSessionRecord` (read row -> fromRow -> merge -> full-info NATIVE
     // `session.updated` publish; also used by the runner's auto-title), with the missing-row
     // case mapped onto this service's NotFoundError.
@@ -1057,15 +1058,6 @@ export const layer = Layer.effect(
           }),
         ),
       ),
-      setPermission: Effect.fn("V2Session.setPermission")((input) =>
-        patchRecord(input.sessionID, (info) =>
-          SessionSchema.Info.make({
-            ...info,
-            permission: [...input.permission],
-            time: { ...info.time, updated: DateTime.makeUnsafe(Date.now()) },
-          }),
-        ),
-      ),
       children: Effect.fn("V2Session.children")(function* (sessionID) {
         yield* result.get(sessionID)
         const rows = yield* db
@@ -1177,17 +1169,9 @@ export const layer = Layer.effect(
             introspection: inherited.introspection,
             quality: inherited.quality,
             affective: inherited.affective,
-            // The saved ruleset has a `session.permission` column but NO entry in
-            // `SESSION_CONFIG_FIELDS` — `SessionConfig.permissionRules` was deleted in B2 as a
-            // phantom (zero production consumers, measured over the whole tree). So the chain fold
-            // cannot see this column and copying the source's own verbatim is the only faithful
-            // carry; it can only PRESERVE restrictions, never widen them.
-            // ⚠️ The column itself is separately slated for deletion (v0.2.0 ruling 16). It is NOT
-            // deleted here: `Session.Info.permission` is on the wire and in the generated SDK, and
-            // `packages/novaclaw`'s `subagent-permissions.ts` still takes a `parentSessionPermission`
-            // — so removing it is a cross-package job with its own migration, not a side effect of
-            // deleting a config field nothing read. Whoever does it starts from this line.
-            permission: source.permission ? [...source.permission] : undefined,
+            // ⚠️ The `permission` COLUMN survives this removal on purpose. Dropping a column needs a
+            // migration, and an unused column is inert where a bad migration is not; the field, the
+            // service method and every write are gone, so nothing can put anything in it again.
             // Carried directly since 2026-07-29. These four used to finish through
             // `FeatureSwitched`/`ResponderSwitched` events because `sessionRow` silently dropped
             // `thinking_budget`/`surgical_edits`/`ask_before_changes` and `CreateInput` had no

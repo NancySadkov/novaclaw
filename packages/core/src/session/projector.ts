@@ -76,7 +76,6 @@ export function sessionRow(info: SessionSchema.Info): typeof SessionTable.$infer
     tokens_cache_read: (info.tokens ?? { cache: { read: 0 } }).cache.read,
     tokens_cache_write: (info.tokens ?? { cache: { write: 0 } }).cache.write,
     revert: info.revert ? { ...info.revert, messageID: SessionMessage.ID.make(info.revert.messageID) } : null,
-    permission: info.permission ? [...info.permission] : undefined,
     // ⚠️ THREE of the config columns above — `thinking_budget`, `surgical_edits`,
     // `ask_before_changes` — were MISSING from this function until 2026-07-29, which made the
     // "fromRow's inverse" claim false and cost the fork fix a workaround. Measured by publishing a

@@ -13,7 +13,6 @@ export function fromRow(row: typeof SessionTable.$inferSelect): SessionSchema.In
     id: SessionSchema.ID.make(row.id),
     slug: row.slug,
     version: row.version,
-    permission: row.permission ?? undefined,
     metadata: row.metadata ?? undefined,
     title: row.title,
     parentID: row.parent_id ? SessionSchema.ID.make(row.parent_id) : undefined,

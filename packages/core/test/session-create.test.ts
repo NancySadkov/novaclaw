@@ -610,20 +610,6 @@ describe("SessionV2 setters", () => {
     }),
   )
 
-  it.effect("replaces the saved permission ruleset", () =>
-    Effect.gen(function* () {
-      const session = yield* SessionV2.Service
-      const { db } = yield* Database.Service
-      const created = yield* session.create({ location })
-      const ruleset = [{ permission: "bash", pattern: "git *", action: "allow" as const }]
-
-      yield* session.setPermission({ sessionID: created.id, permission: ruleset })
-
-      const row = yield* db.select().from(SessionTable).where(eq(SessionTable.id, created.id)).get().pipe(Effect.orDie)
-      expect(row!.permission).toEqual(ruleset)
-    }),
-  )
-
   it.effect("rejects setter calls for a missing Session", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
@@ -636,7 +622,6 @@ describe("SessionV2 setters", () => {
 
       expect(yield* tag(session.setMetadata({ sessionID: missing, metadata: {} }))).toBe("Session.NotFoundError")
       expect(yield* tag(session.setArchived({ sessionID: missing, time: 1 }))).toBe("Session.NotFoundError")
-      expect(yield* tag(session.setPermission({ sessionID: missing, permission: [] }))).toBe("Session.NotFoundError")
     }),
   )
 })

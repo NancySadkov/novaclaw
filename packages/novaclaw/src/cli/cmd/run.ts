@@ -1,4 +1,3 @@
-import type { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { sessionErrorLike, sessionErrorLines } from "@novaclaw/core/session/session-error"
 // CLI entry point for `novaclaw run` — the headless, non-interactive runner.
@@ -424,23 +423,6 @@ export const RunCommand = effectCmd({
         process.exit(1)
       }
 
-      const rules: PermissionRuleset.Ruleset = [
-        {
-          permission: "question",
-          action: "deny",
-          pattern: "*",
-        },
-        {
-          permission: "plan_enter",
-          action: "deny",
-          pattern: "*",
-        },
-        {
-          permission: "plan_exit",
-          action: "deny",
-          pattern: "*",
-        },
-      ]
 
       function title() {
         if (args.title === undefined) return
@@ -513,10 +495,13 @@ export const RunCommand = effectCmd({
         }
 
         const name = title()
-        const result = await sdk.v2.session.create({
-          title: name,
-          permission: [...rules],
-        })
+        // ⚠️ No `permission` here any more. The CLI used to send three DENY rules (`question`,
+        // `plan_enter`, `plan_exit`) into a field the evaluator never reads — and they were dead
+        // three times over: the field is unread, the rules were in the LEGACY
+        // `{permission, pattern, action}` shape while the evaluator takes `{action, resource, effect}`,
+        // and `question` has not been a permission since the tool was deleted. `plan_enter`/
+        // `plan_exit` are already denied by default in `plugin/agent.ts`, so nothing is lost.
+        const result = await sdk.v2.session.create({ title: name })
         const id = result.data?.data?.id
         if (!id) {
           return
