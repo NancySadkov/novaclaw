@@ -29,6 +29,19 @@ export const node = makeGlobalNode({
     Effect.gen(function* () {
       yield* SpawnAdmission.register(() =>
         Effect.gen(function* () {
+          // 🔴 FRESH, not cached — and a fan-out is exactly why. `MEMORY_CACHE_MS` is 3 s, chosen for
+          // a per-turn path where a 400 ms probe is not free. On THIS path the cache defeats the
+          // guard precisely when it matters most: an officer spawning a fleet admits every child
+          // against the memory reading taken before the FIRST one, so the check that exists to stop
+          // a fan-out from filling the host cannot see the fan-out filling it.
+          //
+          // `resetMemoryCache`'s own doc names this case — *"drop the cache after a known large
+          // allocation … so admission sees reality"* — and a session worker is that allocation.
+          //
+          // ⚠️ It costs a probe per spawn (~530 ms on Windows, measured). That is proportionate
+          // against creating a session worker, and spawns are already rate-capped at 10/min per
+          // parent; paying it is what makes each child see the room its siblings took.
+          Pressure.resetMemoryCache()
           const reading = yield* Effect.promise(() => Pressure.memory())
           const level = Pressure.memoryLevel(reading, Pressure.DEFAULT_THRESHOLDS)
           return { refuse: level === "floor" ? "host memory is at the floor" : undefined }
