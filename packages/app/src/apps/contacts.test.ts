@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test"
-import { displayName, isColleague, memoryDisclosure, roster, searchRoster, type AgentLike } from "./contacts"
+import {
+  displayName,
+  hiddenRoster,
+  isColleague,
+  memoryDisclosure,
+  roster,
+  searchRoster,
+  type AgentLike,
+} from "./contacts"
 
 const agent = (over: Partial<AgentLike> & { id: string }): AgentLike => ({
   mode: "primary",
@@ -171,5 +179,43 @@ describe("a paused colleague", () => {
   test("it is still searchable — you have to find it to un-pause it", () => {
     const rows = roster([agent({ id: "theron", name: "Theron", paused: true })])
     expect(searchRoster(rows, "ther").map((r) => r.id)).toEqual(["theron"])
+  })
+})
+
+describe("hidden colleagues have a door", () => {
+  /**
+   * 🔴 `hidden` removes a row from `roster()` while the colleague stays able to act — unlike pausing,
+   * which denies it everything. The row is the only way into a colleague's chat, so hiding one made
+   * a doorless chat with a RUNNING agent. `hiddenRoster` is that door.
+   */
+  test("a hidden colleague is out of the main roster and in the hidden one", () => {
+    const rows = [agent({ id: "aris", name: "Aris" }), agent({ id: "theron", name: "Theron", hidden: true })]
+    expect(roster(rows).map((r) => r.id)).toEqual(["aris"])
+    expect(hiddenRoster(rows).map((r) => r.id)).toEqual(["theron"])
+  })
+
+  test("MACHINERY never appears there — it is a 'you hid these' list, not an internals dump", () => {
+    // `plugin/agent.ts` sets `hidden` on compaction/title/etc. Those are not colleagues anybody hid.
+    const rows = [
+      agent({ id: "compaction", name: "compaction", hidden: true, mode: "subagent" }),
+      agent({ id: "build", name: "build", hidden: true }),
+      agent({ id: "theron", name: "Theron", hidden: true }),
+    ]
+    expect(hiddenRoster(rows).map((r) => r.id)).toEqual(["theron"])
+  })
+
+  test("the two lists never overlap, whatever the flags", () => {
+    const rows = [
+      agent({ id: "aris", name: "Aris" }),
+      agent({ id: "theron", name: "Theron", hidden: true }),
+      agent({ id: "spectre", name: "Spectre", paused: true }),
+      agent({ id: "vale", name: "Vale", hidden: true, paused: true }),
+    ]
+    const main = roster(rows).map((r) => r.id)
+    const tucked = hiddenRoster(rows).map((r) => r.id)
+    expect(main.filter((id) => tucked.includes(id))).toEqual([])
+    // A colleague that is BOTH hidden and paused belongs in the hidden list, still marked paused.
+    expect(tucked).toContain("vale")
+    expect(hiddenRoster(rows).find((r) => r.id === "vale")?.paused).toBe(true)
   })
 })

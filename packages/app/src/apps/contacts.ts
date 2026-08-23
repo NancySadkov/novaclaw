@@ -160,6 +160,26 @@ export const roster = (agents: readonly AgentLike[]): readonly ContactView[] =>
       return left.name.localeCompare(right.name)
     })
 
+/**
+ * The colleagues a user HID — the roster's second list, and the reason it exists.
+ *
+ * 🔴 `hidden: true` takes a row out of `roster()` (via `isColleague`) while leaving the colleague
+ * fully able to act — unlike pausing, which denies it everything. Since the roster row is the only
+ * door to a colleague's chat, hiding one produced a chat with NO door and an agent still running.
+ * This is that door: the same shape as the Household row, at the foot of the list, visibly not one
+ * of the working rows but openable.
+ *
+ * ⚠️ It deliberately does NOT return machinery. `hidden` is also the marker `plugin/agent.ts` sets on
+ * `compaction`, `title` and the rest, and those are not colleagues anybody hid — surfacing them would
+ * turn a "you hid these" list into an internals dump. The other two `isColleague` clauses still
+ * apply, so what comes back is exactly *a colleague-shaped agent that is hidden*.
+ */
+export const hiddenRoster = (agents: readonly AgentLike[]): readonly ContactView[] =>
+  agents
+    .filter((agent) => agent.hidden === true && agent.mode !== "subagent" && !POSTURE_AGENTS.has(agent.id))
+    .map(view)
+    .sort((left, right) => left.name.localeCompare(right.name))
+
 /** Filter the roster by what the user typed. Matches the name, the job title and the id, because a
  *  user who knows a colleague by any of the three should find it by that one. */
 export const searchRoster = (views: readonly ContactView[], query: string): readonly ContactView[] => {

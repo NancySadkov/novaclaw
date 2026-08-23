@@ -2638,6 +2638,7 @@ export const dict = {
   "home.app.debug.subtitle": "Connection, error log, sessions — under the hood",
   "agentConfig.close": "Close",
   "contacts.paused": "Paused",
+  "contacts.hiddenCount": "Hidden ({{count}})",
   "agentConfig.pause": "Pause",
   "agentConfig.resume": "Resume",
   "agentConfig.pausing": "Saving…",

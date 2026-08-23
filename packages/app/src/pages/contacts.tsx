@@ -9,7 +9,13 @@ import { useServer } from "@/context/server"
 import { useLanguage } from "@/context/language"
 import { AppPage } from "@/components/app-page"
 import { agentColor } from "@/utils/agent"
-import { memoryDisclosure, roster, searchRoster, type AgentLike, type ContactView } from "@/apps/contacts"
+import {
+  hiddenRoster,
+  memoryDisclosure,
+  roster,
+  searchRoster,
+  type ContactView,
+} from "@/apps/contacts"
 import { SHARED_ROUTE } from "@/apps/memory-owner"
 import { listSessions, listUsage, startChat } from "@/apps/agent-list"
 import { planHire } from "@/apps/agent-hire"
@@ -210,6 +216,8 @@ export function ContactsPage() {
   })
 
   const views = createMemo(() => roster(agents() ?? []))
+  /** The colleagues the user hid — listed separately so their chats keep a door. */
+  const hidden = createMemo(() => hiddenRoster(agents() ?? []))
   const shown = createMemo(() => searchRoster(views(), query()))
 
   /**
@@ -304,6 +312,36 @@ export function ContactsPage() {
               )}
             </For>
           </Show>
+        </Show>
+
+        {/* HIDDEN COLLEAGUES — the door that hiding used to take away.
+            🔴 `hidden: true` drops a row from the main roster while the colleague stays fully able to
+            act (pausing, by contrast, denies it everything). The row is the only way into a
+            colleague's chat, so a hidden colleague had a live chat and no door. Collapsed by default
+            because hiding means "not one of my working colleagues" — but present, countable and one
+            click from openable, which is the whole difference.
+            ⚠️ Machinery is not in here: `hiddenRoster` keeps `isColleague`'s other two clauses, so
+            `compaction`/`title` stay out and this reads as "you hid these" rather than an internals
+            dump. */}
+        <Show when={hidden().length > 0}>
+          <details data-slot="contacts-hidden" class="border-t border-v2-border-border-muted">
+            <summary class="cursor-pointer px-4 py-3 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02">
+              {language.t("contacts.hiddenCount", { count: String(hidden().length) })}
+            </summary>
+            <For each={hidden()}>
+              {(view) => (
+                <ContactRow
+                  view={view}
+                  sessions={liveSessions()}
+                  starting={starting() === view.id}
+                  onStart={() => void startTheirChat(view.id, view.name)}
+                  usage={usage()?.[view.id] ?? []}
+                  serverKey={serverKey()}
+                  onOpen={() => openConfig(view.id)}
+                />
+              )}
+            </For>
+          </details>
         </Show>
 
         {/* The HOUSEHOLD, at the foot of the roster and visibly not a colleague.
