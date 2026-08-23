@@ -55,6 +55,7 @@ import { Storage } from "@/storage/storage"
 import { Truncate } from "@/tool/truncate"
 import { Worktree } from "@/worktree"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import * as SpawnPressure from "@/storage/spawn-pressure"
 import { MoveSession } from "@novaclaw/core/control-plane/move-session"
 import { Credential } from "@novaclaw/core/credential"
 import { CredentialCipher } from "@novaclaw/core/credential-cipher"
@@ -331,6 +332,10 @@ const app = LayerNode.group([
   // the reason `AgentReassignment` is — a node the server never builds is a feature that ships dead,
   // which is how the reassignment notice spent a day doing nothing (`agent-removal-wiring.test.ts`).
   AgentRemoval.node,
+  // Spawn asks the host whether it can afford another sub-agent. Listed HERE for the same reason the
+  // two above are: `SpawnAdmission.check()` admits when nobody answers, so an unregistered probe is a
+  // guard that ships inert rather than one that fails loudly.
+  SpawnPressure.node,
   RuntimeFlags.node,
   EventV2Bridge.node,
   MCP.node,

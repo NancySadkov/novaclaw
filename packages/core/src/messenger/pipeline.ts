@@ -125,11 +125,20 @@ export const DISPATCH_ACK = "🚀 On it — I'll report back here when it's done
  * Phrased for a chat, not for a model: it says what to DO next, because the operator cannot read a
  * `reason` field. The agent-facing wording for the same three cases lives in `tool/spawn.ts`.
  */
-export const spawnLimitReply = (limit: { reason: "depth" | "children" | "rate"; depth: number; limit: number }): string =>
+export const spawnLimitReply = (limit: {
+  reason: "depth" | "children" | "rate" | "pressure"
+  depth: number
+  limit: number
+}): string =>
   ({
     depth: `That task would nest ${limit.depth} sessions deep (max ${limit.limit}). Ask this console directly instead of asking it to delegate again.`,
     children: `This console already has ${limit.depth} tasks running (max ${limit.limit}). Let some finish, then ask again.`,
     rate: `That's ${limit.depth} tasks started in the last minute (max ${limit.limit}) — give them a moment, then ask again.`,
+    // ⚠️ Carries NO numbers, unlike the three above. They quote a bound the operator set; this one is
+    // the machine's own verdict at this moment, and a figure here would read as a limit somebody
+    // chose. It is also the one refusal that is nobody's fault, so it does not ask the person to
+    // change what they did.
+    pressure: `This machine is low on memory right now, so I didn't start another task. Give the running ones a moment and ask again.`,
   })[limit.reason]
 
 /** How long a dispatched task may run before it is worth saying "on it" at all. An answer that

@@ -135,7 +135,12 @@ export const SpawnResultMessage = Schema.Struct({
   /** Whether the child was handed to a live executor — `SpawnResult.started`. */
   started: Schema.Boolean.pipe(Schema.optional),
   /** Present only when `outcome` is "limit": which quota, and the numbers behind it. */
-  reason: Schema.Literals(["depth", "children", "rate"]).pipe(Schema.optional),
+  // ⚠️ MUST match `SessionSpawner.SpawnLimitError.reason`. This is the fourth link the reason travels
+  // (guard -> error -> worker protocol -> host handler), and the typechecker is the only thing that
+  // notices when one of them is left behind: adding `pressure` on the kernel side alone made the
+  // WORKER boundary reject it, which surfaced as an unrelated-looking handler-signature error in
+  // `session-worker/execution.ts`.
+  reason: Schema.Literals(["depth", "children", "rate", "pressure"]).pipe(Schema.optional),
   depth: Schema.Finite.pipe(Schema.optional),
   limit: Schema.Finite.pipe(Schema.optional),
 }).annotate({ identifier: "SessionWorker.SpawnResult" })

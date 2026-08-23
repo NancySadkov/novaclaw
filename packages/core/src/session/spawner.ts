@@ -13,6 +13,7 @@ import { Location } from "../location"
 import { AgentV2 } from "../agent"
 import { ModelV2 } from "../model"
 import { createSessionRecord } from "../session"
+import { SpawnAdmission } from "./spawn-admission"
 import { SessionRunCoordinator } from "./run-coordinator"
 import { SessionStore } from "./store"
 import { SessionTable } from "./sql"
@@ -52,7 +53,7 @@ const RATE_WINDOW_MS = 60_000
 
 /** Raised when a spawn quota trips (depth / children / rate) — surfaced to the model, not fatal. */
 export class SpawnLimitError extends Schema.TaggedErrorClass<SpawnLimitError>()("SessionSpawner.LimitError", {
-  reason: Schema.Literals(["depth", "children", "rate"]),
+  reason: Schema.Literals(["depth", "children", "rate", "pressure"]),
   depth: Schema.Number,
   limit: Schema.Number,
 }) {}
@@ -173,6 +174,24 @@ export const layer = Layer.effect(
               depth++
               ancestor = parent.parentID
             }
+            // 🔴 THE HOST'S OWN VERDICT, asked before any of the three counting bounds.
+            //
+            // Those three are all per-PARENT (depth 8, 16 active children, 10/min), so they compose
+            // into no instance-wide limit: P spawning parents permit 16xP and nothing bounds P. And
+            // `MAX_SPAWN_CHILDREN` sits ~2.7x above the only observed failure — six sub-agents
+            // holding a sixth of a 1 MB file each took a dev instance down twice
+            // (`notes/reports/fleet-bounds-2026-08-23.md`). Counting children cannot see any of that;
+            // asking the host can.
+            //
+            // ⚠️ FIRST, because it is the only check that answers "is there room" rather than "has
+            // this parent had its share". A spawn refused for pressure has not misbehaved, so the
+            // reason is separate from the fork-bomb reasons and says something a person can act on.
+            // ⚠️ No threshold lives here — `spawn-admission.ts` carries the seam and the instance
+            // carries the verdict. Nobody registered admits, which is the pre-existing behaviour.
+            const admission = yield* SpawnAdmission.check()
+            if (admission.refuse !== undefined)
+              return yield* Effect.fail(new SpawnLimitError({ reason: "pressure", depth: 0, limit: 0 }))
+
             if (depth >= MAX_SPAWN_DEPTH)
               return yield* Effect.fail(new SpawnLimitError({ reason: "depth", depth, limit: MAX_SPAWN_DEPTH }))
 

@@ -248,6 +248,12 @@ export const layer = Layer.effectDiscard(
                           depth: `Spawn refused: the session chain is already ${error.depth} deep (max ${error.limit}). Do the sub-task in this session instead of spawning deeper.`,
                           children: `Spawn refused: this session already has ${error.depth} unfinished children (max ${error.limit}). Reuse or wait on existing children instead of spawning more.`,
                           rate: `Spawn refused: ${error.depth} spawns in the last minute (max ${error.limit}). Slow down — wait on the children you already spawned.`,
+                          // ⚠️ Says the HOST is short, not that the model misbehaved — the other
+                          // three are fork-bomb bounds this session tripped, and telling a model to
+                          // "slow down" when the machine is out of memory sends it looking for a
+                          // mistake it did not make. Waiting is the action; the children already
+                          // running are what will free the room.
+                          pressure: `Spawn refused: this machine is low on memory right now, not because of anything you did. Wait for the children you already have to finish, or do the sub-task in this session.`,
                         }[error.reason],
                       }),
                   ),
