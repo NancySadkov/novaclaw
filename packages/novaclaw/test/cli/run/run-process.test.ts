@@ -341,8 +341,17 @@ describe("novaclaw run (non-interactive subprocess)", () => {
   // what blocked the 2026-08-23 release build: a green run reading as a regression.
   //
   // Skipped rather than deleted, and COUNTED in the harness's skip table, so the missing coverage is
-  // visible instead of implied. Restore it with `cliIt.live` the moment the race is localized —
-  // tracked in `todo/named-agents.md`.
+  // 🔴 STILL QUARANTINED, but the flake is now MUCH narrower and one real cause is fixed.
+  //
+  // `loop()` broke on ANY `session.status idle` because `event.subscribe()` is instance-wide, so a
+  // stray idle — including this session's own, from before its turn began — ended the run: exit 0
+  // with the model never reached, which is exactly the `llm.inputs` empty symptom. `cli/cmd/run.ts`
+  // now filters on `sessionID`, and that is a genuine bug fix independent of this test.
+  //
+  // ⚠️ MEASURED, not assumed: **3 pass / 5 fail before the filter; 10 pass / 1 fail across 11 runs
+  // after.** Better is not fixed. One-in-eleven in the release gate is still a red that means
+  // nothing, and a flaky test teaches people to ignore reds — so it stays skipped until the
+  // remaining cause is found, rather than being declared closed on an improved ratio.
   cliIt.skip(
     "attach mode sends client-local file contents without a shared path",
     ({ home, llm, novaclaw }) =>

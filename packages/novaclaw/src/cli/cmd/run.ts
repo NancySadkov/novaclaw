@@ -841,7 +841,22 @@ export const RunCommand = effectCmd({
               if (text) fail(text, { message: text })
             }
 
-            if (event.type === "session.status" && event.properties.status.type === "idle") {
+            // 🔴 FILTERED BY `sessionID`, and that filter is the `attach mode` race (2026-08-23).
+            //
+            // `event.subscribe()` is INSTANCE-WIDE, so without this any session going idle anywhere
+            // on the attached instance broke this loop — including this session's own idle state
+            // from before its turn had started. The CLI then exited 0 having never waited for the
+            // model, which is exactly the reported symptom: `llm.inputs` empty with exit 0, only
+            // under `--attach`, and intermittent because it depends on a stray idle arriving first.
+            //
+            // A local run rarely sees it because its instance has one session; an attached run talks
+            // to a server that may have any number, which is why the flake looked like a fixture
+            // problem rather than a completion-detection bug.
+            if (
+              event.type === "session.status" &&
+              event.properties.sessionID === sessionID &&
+              event.properties.status.type === "idle"
+            ) {
               break
             }
 
