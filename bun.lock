@@ -125,7 +125,7 @@
     },
     "packages/desktop": {
       "name": "@novaclaw/desktop",
-      "version": "0.1.59",
+      "version": "0.1.66",
       "dependencies": {
         "@ladybugdb/wasm-core": "0.18.2",
         "@lydell/node-pty": "catalog:",
@@ -164,6 +164,9 @@
         "@lydell/node-pty-win32-arm64": "1.2.0-beta.12",
         "@lydell/node-pty-win32-x64": "1.2.0-beta.12",
       },
+    },
+    "packages/dht": {
+      "name": "@novaclaw/dht",
     },
     "packages/effect-drizzle-sqlite": {
       "name": "@novaclaw/effect-drizzle-sqlite",
@@ -381,7 +384,6 @@
         "fuzzysort": "catalog:",
         "katex": "0.16.27",
         "marked": "catalog:",
-        "marked-katex-extension": "5.1.6",
         "marked-shiki": "catalog:",
         "motion-dom": "12.34.3",
         "motion-utils": "12.29.2",
@@ -830,6 +832,8 @@
     "@novaclaw/core": ["@novaclaw/core@workspace:packages/core"],
 
     "@novaclaw/desktop": ["@novaclaw/desktop@workspace:packages/desktop"],
+
+    "@novaclaw/dht": ["@novaclaw/dht@workspace:packages/dht"],
 
     "@novaclaw/effect-drizzle-sqlite": ["@novaclaw/effect-drizzle-sqlite@workspace:packages/effect-drizzle-sqlite"],
 
@@ -1922,8 +1926,6 @@
     "make-fetch-happen": ["make-fetch-happen@15.0.6", "", { "dependencies": { "@gar/promise-retry": "^1.0.0", "@npmcli/agent": "^4.0.0", "@npmcli/redact": "^4.0.0", "cacache": "^20.0.1", "http-cache-semantics": "^4.1.1", "minipass": "^7.0.2", "minipass-fetch": "^5.0.0", "minipass-flush": "^1.0.5", "minipass-pipeline": "^1.2.4", "negotiator": "^1.0.0", "proc-log": "^6.0.0", "ssri": "^13.0.0" } }, "sha512-Je0fLJ0F5atA7F+eIlLzk+Wkcl57JDf4kf+EW8xiP5E31xOQxkIxTbgf1Oi1Lw9tRI9UEMRdI5Vz2xTzoNU1Jw=="],
 
     "marked": ["marked@15.0.12", "", { "bin": { "marked": "bin/marked.js" } }, "sha512-8dD6FusOQSrpv9Z1rdNMdlSgQOIP880DHqnohobOmYLElGEqAL/JvxvuxZO16r4HtjTlfPRDC1hbvxC9dPN2nA=="],
-
-    "marked-katex-extension": ["marked-katex-extension@5.1.6", "", { "peerDependencies": { "katex": ">=0.16 <0.17", "marked": ">=4 <18" } }, "sha512-vYpLXwmlIDKILIhJtiRTgdyZRn5sEYdFBuTmbpjD7lbCIzg0/DWyK3HXIntN3Tp8zV6hvOUgpZNLWRCgWVc24A=="],
 
     "marked-shiki": ["marked-shiki@1.2.1", "", { "peerDependencies": { "marked": ">=7.0.0", "shiki": ">=1.0.0" } }, "sha512-yHxYQhPY5oYaIRnROn98foKhuClark7M373/VpLxiy5TrDu9Jd/LsMwo8w+U91Up4oDb9IXFrP0N1MFRz8W/DQ=="],
 
