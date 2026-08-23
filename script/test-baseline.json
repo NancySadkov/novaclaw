@@ -1,8 +1,7 @@
 {
   "note": "Baseline for `bun run test`. `units` = tests bun reported SKIPPED per run unit; `failing` = failures PINNED as known, by name. Both are ratchets: any change fails the run and prints what moved. Pin only failures that are understood and filed — never to make a red go away. Seeded 2026-07-27 (v0.2.0 PREP Wave 0).",
   "reasons": {
-    "novaclaw:server": "Windows-from-source. 16 pinned failures. The three PublicApi OpenAPI error-shape tests were removed 2026-08-05 after passing in two independent full runs. The promptAsync entry was stored MOJIBAKED (UTF-8 bytes for an arrow decoded as cp1252), so the ledger could never match its own entry and reported one phantom fix plus one phantom new failure on every run — it was corrected, not removed; that test is still red.",
-    "novaclaw test/cli/": "ONE pin, understood and filed. `rejects requested permissions by default and allows them with the dangerous flag` asserts stderr contains \"permission requested: define_tool\" — a prompt that has not existed since ASK was removed (bf39088eb, 2026-08-20), which also left `--dangerously-skip-permissions` inert. The obvious fix cannot work either: `session.create({permission})` stores a ruleset `core/src/permission.ts` never reads (the evaluator consults the AGENT's). Un-pin when the flag grants for real. Evidence: notes/reports/cli-permission-flags-inert-2026-08-23.md; open item in todo/named-agents.md. ⚠️ `attach mode sends client-local file contents` was REMOVED from this list 2026-08-23 and quarantined at the source instead (cliIt.skip). It is a flake — 3 pass / 5 fail over 7 observations — and a pin asserts a RELIABLE failure, so every run where it happened to pass reported drift and reddened the gate. Restore it when the race is localized."
+    "novaclaw:server": "Windows-from-source. 16 pinned failures. The three PublicApi OpenAPI error-shape tests were removed 2026-08-05 after passing in two independent full runs. The promptAsync entry was stored MOJIBAKED (UTF-8 bytes for an arrow decoded as cp1252), so the ledger could never match its own entry and reported one phantom fix plus one phantom new failure on every run — it was corrected, not removed; that test is still red."
   },
   "units": {
     "llm": 29,
@@ -26,10 +25,7 @@
     "novaclaw test/cli/": 2
   },
   "failing": {
-    "novaclaw:server": [],
-    "novaclaw test/cli/": [
-      "novaclaw run (non-interactive subprocess) > rejects requested permissions by default and allows them with the dangerous flag"
-    ]
+    "novaclaw:server": []
   },
   "peaks": {
     "schema": 1236,
