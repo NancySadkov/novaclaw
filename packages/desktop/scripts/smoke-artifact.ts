@@ -617,6 +617,74 @@ async function run() {
       "w64devkit-c99-run",
       `compiled program exited ${String(executed?.status)}: ${executed?.stderr || executed?.stdout || "not run"}`,
     )
+
+    // ── ImageMagick (owner, 2026-08-23) ──────────────────────────────────────────────────────
+    // ⚠️ The three capabilities the owner NAMED, exercised rather than asserted-present. A file on
+    // disk proves the copy step; it does not prove the binary runs, finds its XML configuration, or
+    // can write a PNG — and a `magick.exe` that starts and then cannot resolve `configure.xml` fails
+    // exactly where a `existsSync` check cannot see. PATH is scrubbed for the same reason it is
+    // scrubbed for GCC above: a host ImageMagick would satisfy this on any developer's machine and
+    // hide an incomplete release.
+    const magickDir = path.join(path.dirname(exe), "resources", "third-party", "imagemagick")
+    const magick = path.join(magickDir, "magick.exe")
+    check(existsSync(magick), "imagemagick-binary", `missing ${magick}`)
+    for (const name of ["configure.xml", "delegates.xml", "policy.xml", "type.xml"])
+      check(existsSync(path.join(magickDir, name)), `imagemagick-${name}`, `missing ${path.join(magickDir, name)}`)
+    check(
+      existsSync(path.join(magickDir, "LICENSE.txt")),
+      "imagemagick-license",
+      "the embedded ImageMagick licence is missing",
+    )
+
+    const magickEnv = { ...compilerEnv, PATH: magickDir, MAGICK_HOME: magickDir, MAGICK_CONFIGURE_PATH: magickDir }
+    const drawn = path.join(tempHome, "smoke-shapes.png")
+    const converted = path.join(tempHome, "smoke-shapes.webp")
+    // Draw a primitive AND set a single pixel, in one invocation.
+    const draw = existsSync(magick)
+      ? spawnSync(
+          magick,
+          [
+            "-size",
+            "16x16",
+            "xc:white",
+            "-stroke",
+            "blue",
+            "-fill",
+            "none",
+            "-draw",
+            "rectangle 2,2 12,12",
+            "-fill",
+            "red",
+            "-draw",
+            "point 5,6",
+            drawn,
+          ],
+          { cwd: tempHome, encoding: "utf8", env: magickEnv },
+        )
+      : undefined
+    check(
+      draw?.status === 0 && existsSync(drawn),
+      "imagemagick-draw",
+      `magick exited ${String(draw?.status)}: ${draw?.stderr || draw?.stdout || "not run"}`,
+    )
+    // The pixel is READ BACK. A `-draw` that silently did nothing still exits 0 and still writes a
+    // PNG, so the exit code alone cannot tell "it drew" from "it wrote a blank image".
+    const pixel = existsSync(drawn)
+      ? spawnSync(magick, [drawn, "-format", "%[pixel:p{5,6}]", "info:"], { encoding: "utf8", env: magickEnv })
+      : undefined
+    check(
+      pixel?.status === 0 && (pixel.stdout ?? "").includes("255,0,0"),
+      "imagemagick-set-pixel",
+      `expected a red pixel at 5,6; magick said ${pixel?.stdout || pixel?.stderr || "nothing"}`,
+    )
+    const convert = existsSync(drawn)
+      ? spawnSync(magick, [drawn, converted], { cwd: tempHome, encoding: "utf8", env: magickEnv })
+      : undefined
+    check(
+      convert?.status === 0 && existsSync(converted),
+      "imagemagick-convert",
+      `PNG->WebP exited ${String(convert?.status)}: ${convert?.stderr || convert?.stdout || "not run"}`,
+    )
   }
   const authSeed = process.env.NOVACLAW_SMOKE_AUTH_FILE
   const keySeed = process.env.NOVACLAW_SMOKE_CREDENTIAL_KEY

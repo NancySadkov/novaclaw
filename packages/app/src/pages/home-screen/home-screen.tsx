@@ -1,4 +1,4 @@
-import { Component, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js"
+import { Component, createMemo, createSignal, For, Index, onCleanup, onMount, Show } from "solid-js"
 import {
   DragDropProvider,
   DragDropSensors,
@@ -41,9 +41,7 @@ function loadOrder(): string[] {
   try {
     const parsed: unknown = JSON.parse(localStorage.getItem(ORDER_KEY) ?? "[]")
     if (!Array.isArray(parsed)) return []
-    return parsed
-      .filter((id): id is string => typeof id === "string")
-      .map((id) => RENAMED_IDS[id] ?? id)
+    return parsed.filter((id): id is string => typeof id === "string").map((id) => RENAMED_IDS[id] ?? id)
   } catch {
     return []
   }
@@ -288,7 +286,13 @@ export const HomeScreen: Component = () => {
           class="flex-1 min-h-0 w-full flex overflow-x-auto overflow-y-hidden snap-x snap-mandatory scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
           <SortableProvider ids={apps().map((app) => app.id)}>
-            <For each={pages()}>
+            {/* ⚠️ `<Index>` on the PAGES, `<For>` on the tiles (review H2). `pages()` is a fresh
+                array of fresh arrays on every recomputation, so `<For>`'s reference keying disposed
+                and rebuilt every page — and with it every tile inside — on each drag-release. A page
+                has no identity beyond its position, which is exactly what `<Index>` keys on; the
+                TILES do have identity, and `builtins.tsx` now keeps theirs stable so `<For>` can
+                move them instead of remounting them. */}
+            <Index each={pages()}>
               {(pageApps) => (
                 <div class="snap-center shrink-0 w-full h-full flex items-start justify-center overflow-y-auto pt-6">
                   {/* Explicit minmax(0,5rem) tracks (not auto) so a col-span-2 hero stretches to 2 tracks
@@ -296,7 +300,7 @@ export const HomeScreen: Component = () => {
                       would overflow a 360px viewport and clip the left column unreachably (centered flex
                       overflow has no start-edge scroll). Tiles are w-full inside their track. */}
                   <div class="grid w-full [grid-template-columns:repeat(4,minmax(0,5rem))] sm:[grid-template-columns:repeat(5,minmax(0,5rem))] md:[grid-template-columns:repeat(6,minmax(0,5rem))] gap-x-4 sm:gap-x-7 gap-y-9 px-4 py-8 pt-2 sm:px-8 max-w-[62rem] justify-center">
-                    <For each={pageApps}>
+                    <For each={pageApps()}>
                       {(app) => (
                         <SortableTile
                           app={app}
@@ -308,7 +312,7 @@ export const HomeScreen: Component = () => {
                   </div>
                 </div>
               )}
-            </For>
+            </Index>
           </SortableProvider>
         </div>
       </DragDropProvider>

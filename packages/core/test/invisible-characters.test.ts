@@ -92,6 +92,13 @@ const SKIP_DIRS = new Set([
   "gen", // generated SDK client — never hand-edited (AGENTS.md → Known pitfalls #7)
   ".git",
   ".claude", // agent worktrees: copies of this tree, not this tree
+  // 🔴 VENDORED, and we may not touch it. `resources/third-party/` holds the provisioned w64devkit
+  // and ImageMagick trees — upstream files retained VERBATIM because the licences require it
+  // (`licenses/imagemagick-NOTICE.md`, `licenses/w64devkit-NOTICE.md`). This ledger's whole premise
+  // is "we authored this text and can retype it"; a control character in somebody else's changelog
+  // is neither our defect nor ours to fix, and the only way to satisfy the rule would be to modify
+  // an attribution artefact. Measured 2026-08-23: ImageMagick's `ChangeLog.md` carries a U+0016.
+  "third-party",
   ".turbo",
   ".vite",
   "playwright-report",

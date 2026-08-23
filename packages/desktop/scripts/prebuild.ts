@@ -4,6 +4,7 @@ import { $ } from "bun"
 import { enforce } from "../../../script/lib/heavy-guard"
 import { resolveChannel } from "./utils"
 import { prepareW64devkit } from "./prepare-w64devkit"
+import { prepareImageMagick } from "./prepare-imagemagick"
 
 // The guard has to bite from BOTH sides. prebuild is the first lifecycle step of every desktop build,
 // so refusing here stops a build from piling onto a suite already running. The desktop floor is
@@ -15,6 +16,11 @@ enforce("a desktop build", process.argv, { minimumFreeBytes: 2.5 * 1024 ** 3 })
 
 const channel = resolveChannel()
 await prepareW64devkit()
+// ⚠️ NOT wrapped in a soft catch, and that is deliberate — the same lesson `prepareW64devkit` above
+// carries. A tolerated failure here ships a build whose agents believe they can edit images and
+// cannot, and the word WARNING scrolls past in a 4,000-line log. It is idempotent and cheap after
+// the first run (SHA-256 marker, cached archive), so failing loudly costs a rebuild, not a day.
+await prepareImageMagick()
 
 /**
  * The native host module, which `electron-builder.config.ts` copies out of `packages/host/build/`

@@ -15,6 +15,7 @@
  */
 import { spawn, type ChildProcess } from "node:child_process"
 import path from "node:path"
+import { existsSync } from "node:fs"
 // The leaf spelling of `Shell.killTree` — `node:` builtins only, so a dev launcher pays nothing for it.
 // `packages/app` already declares `@novaclaw/core` as a dependency.
 import { killTreeSync } from "@novaclaw/core/util/kill-tree"
@@ -59,10 +60,20 @@ if (await alreadyServing()) {
   process.stdout.write(`[backend] reusing the server already on :${API_PORT}\n`)
 } else {
   process.stdout.write(`[backend] starting on :${API_PORT}…\n`)
+  // The embedded `magick`, when this checkout has run `prepare-imagemagick.ts` (every desktop
+  // prebuild does). The PACKAGED app gets this from `desktop/src/main/server.ts`; without the same
+  // line here the dev loop is the one place the capability cannot be exercised, and a capability you
+  // can only test after a twenty-minute package build is a capability nobody tests.
+  //
+  // ⚠️ w64devkit is deliberately NOT set here. It would swap the dev agent's shell from Git Bash to
+  // BusyBox ash — a behaviour change, not an addition. ImageMagick only appends a directory to PATH.
+  const imagemagick = path.join(REPO, "packages", "desktop", "resources", "third-party", "imagemagick")
+  const magickBinary = path.join(imagemagick, process.platform === "win32" ? "magick.exe" : "magick")
+  const backendEnv = existsSync(magickBinary) ? { ...process.env, NOVACLAW_IMAGEMAGICK_PATH: imagemagick } : process.env
   const backend = spawn(
     "bun",
     ["run", "--conditions=browser", "packages/novaclaw/src/index.ts", "serve", "--port", String(API_PORT)],
-    { cwd: REPO, stdio: ["ignore", "pipe", "pipe"], shell: process.platform === "win32" },
+    { cwd: REPO, stdio: ["ignore", "pipe", "pipe"], shell: process.platform === "win32", env: backendEnv },
   )
   children.push(backend)
   prefix("backend", backend.stdout)

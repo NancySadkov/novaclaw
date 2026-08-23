@@ -39,6 +39,10 @@ export const Flag = {
   get NOVACLAW_W64DEVKIT_PATH() {
     return env("NOVACLAW_W64DEVKIT_PATH")
   },
+  /** The embedded ImageMagick's root — where `magick` lives (`shell.ts` → `imagemagickRoot`). */
+  get NOVACLAW_IMAGEMAGICK_PATH() {
+    return env("NOVACLAW_IMAGEMAGICK_PATH")
+  },
   NOVACLAW_CONFIG: env("NOVACLAW_CONFIG"),
   NOVACLAW_CONFIG_CONTENT: env("NOVACLAW_CONFIG_CONTENT"),
   NOVACLAW_DISABLE_AUTOUPDATE: truthy("NOVACLAW_DISABLE_AUTOUPDATE"),

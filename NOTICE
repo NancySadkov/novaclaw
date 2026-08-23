@@ -36,6 +36,16 @@ NovaClaw Windows distributions embed the w64devkit development environment:
     Notice and redistribution details: licenses/w64devkit-NOTICE.md
     MinGW-w64 notices are retained at third-party/w64devkit/COPYING.MinGW-w64-runtime.txt
 
+NovaClaw Windows distributions embed the ImageMagick image toolkit:
+
+    ImageMagick 7.1.2-29 (Q16, x64)
+    Copyright (c) 1999 ImageMagick Studio LLC
+    Licensed under the ImageMagick License (a derivative of Apache-2.0)
+    Full license text: third-party/imagemagick/LICENSE.txt
+    Notice and redistribution details: licenses/imagemagick-NOTICE.md
+    Upstream notices for the libraries it links are retained at
+    third-party/imagemagick/NOTICE.txt
+
 NovaClaw also depends on numerous third-party open-source packages, each
 distributed under its own license. Refer to the individual package licenses
 under node_modules and to the dependency manifests (package.json / bun.lock)

@@ -111,6 +111,15 @@ const getBase = (appId: string): Configuration => ({
             from: "resources/third-party/w64devkit/",
             to: "third-party/w64devkit/",
           },
+          {
+            // ImageMagick (owner, 2026-08-23) — one static `magick.exe` plus the XML configuration
+            // it reads from beside itself. Prepared and SHA-256 verified by
+            // scripts/prepare-imagemagick.ts. 32 MB, not the 240 MB the archive expands to: the
+            // portable build ships eight byte-identical copies of the same binary dispatching on
+            // argv[0], and IM7 reaches all of them through `magick <verb>`.
+            from: "resources/third-party/imagemagick/",
+            to: "third-party/imagemagick/",
+          },
         ]
       : []),
   ],

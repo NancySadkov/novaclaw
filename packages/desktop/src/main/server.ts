@@ -464,8 +464,13 @@ function createSidecarEnv(): Record<string, string> {
   delete env.DEBUG
   if (process.platform === "linux") delete env.LD_PRELOAD
   if (!app.isPackaged) env.NOVACLAW_DISABLE_CHANNEL_DB = "1"
-  if (process.platform === "win32" && app.isPackaged)
+  if (process.platform === "win32" && app.isPackaged) {
     env.NOVACLAW_W64DEVKIT_PATH = join(process.resourcesPath, "third-party", "w64devkit")
+    // The embedded `magick` (owner, 2026-08-23). Same shape and the same reason as the line above:
+    // `shell.ts` puts it on the agent's PATH, and without this the binary ships and is unreachable —
+    // a capability that exists on disk and not in the product.
+    env.NOVACLAW_IMAGEMAGICK_PATH = join(process.resourcesPath, "third-party", "imagemagick")
+  }
   return env
 }
 

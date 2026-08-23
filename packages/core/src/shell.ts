@@ -151,6 +151,31 @@ export function w64devkitShell() {
   return root ? path.join(root, "bin", "sh.exe") : undefined
 }
 
+/**
+ * The embedded ImageMagick's root — where `magick` lives (owner, 2026-08-23).
+ *
+ * 🔴 **Vision is half a capability without a way to WRITE an image.** A colleague could look at a
+ * screenshot and could not produce one, crop one, set a pixel or convert a format, so every image
+ * task ended at "I can see it, but I cannot change it". One static `magick.exe` closes that.
+ *
+ * ⚠️ The binary is verified to EXIST here, not merely named. A resource path that points at nothing
+ * would put a directory on the agent's PATH and teach the model it has a tool it does not have —
+ * which is worse than not shipping it, because the failure surfaces as the model's own confusion
+ * mid-task rather than as a missing capability up front. Same test `w64devkitRoot` does above.
+ */
+export function imagemagickRoot() {
+  const root = Flag.NOVACLAW_IMAGEMAGICK_PATH
+  if (!root) return
+  const binary = path.join(root, process.platform === "win32" ? "magick.exe" : "magick")
+  if (stat(binary)?.isFile()) return root
+}
+
+/** The embedded `magick`, if this install has one. */
+export function imagemagick() {
+  const root = imagemagickRoot()
+  return root ? path.join(root, process.platform === "win32" ? "magick.exe" : "magick") : undefined
+}
+
 /** Functional child environment for the composed Windows toolchain. w64devkit's own shell needs
  *  its bin first; Git Bash keeps its MSYS userland first and receives w64devkit last so GCC is
  *  available without recreating the measured BusyBox-shadowing failure. */
@@ -165,16 +190,26 @@ export function toolchainEnv(file: string, base: NodeJS.ProcessEnv = process.env
         .toLowerCase()
         .startsWith(`${FSUtil.windowsPath(root).toLowerCase()}\\`)
     : false
+  // ⚠️ ImageMagick goes LAST, always. It ships exactly one binary named `magick`, which shadows
+  // nothing, but the ordering rule that protects the BusyBox userland from being shadowed by a later
+  // toolchain is a rule about position, not about this particular kit — and a third entry inserted
+  // in the middle is how that measured failure comes back wearing a different name.
+  const magick = imagemagickRoot()
   const paths = inKit
-    ? [bin, existing]
+    ? [bin, existing, magick]
     : name(file) === "bash"
-      ? [...ShellBundle.pathPrepend(file), existing, bin]
-      : [existing, bin]
+      ? [...ShellBundle.pathPrepend(file), existing, bin, magick]
+      : [existing, bin, magick]
   const value = Array.from(new Set(paths.filter((item): item is string => Boolean(item)))).join(path.delimiter)
   if (!value) return
   return {
     [key]: value,
     ...(root ? { W64DEVKIT_HOME: root, W64DEVKIT: readVersion(root) } : {}),
+    // `MAGICK_HOME` is how `magick` finds its own `configure.xml`/`delegates.xml`/`policy.xml` when
+    // it is invoked through a symlink or from another directory. Without it a shipped `magick` runs
+    // but silently loses colour-name lookup, format delegates and — the one that matters — the
+    // security policy that bounds what an agent's invocation may touch.
+    ...(magick ? { MAGICK_HOME: magick, MAGICK_CONFIGURE_PATH: magick } : {}),
   }
 }
 

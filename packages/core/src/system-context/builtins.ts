@@ -46,6 +46,23 @@ const builtIns = Layer.effectDiscard(
           // unrelated-looking errors — measured 2026-07-26: the same π prompt scored 1/100 digits under
           // a silent cmd.exe and 100/100 under bash.
           ...(Shell.shellFallbackNote() ? [`  ${Shell.shellFallbackNote()}`] : []),
+          // 🔴 The image toolkit, NAMED (owner, 2026-08-23). A binary the model does not know about
+          // is a binary that never gets used — the "built, tested and never called" shape. One line,
+          // and it is the line that turns 32 MB on disk into a capability: without it a colleague
+          // asked to crop a screenshot reasons about Pillow, npm packages and whether it may install
+          // anything, and usually gives up. The verbs are listed because ImageMagick's surface is
+          // enormous and a model that knows only the name still has to guess the syntax.
+          ...(Shell.imagemagick()
+            ? [
+                `  Images: \`magick\` (ImageMagick 7) is on your PATH — use it to inspect, convert,`,
+                `    crop, resize, annotate and DRAW. Examples: \`magick in.png out.webp\` (convert),`,
+                `    \`magick identify in.png\` (dimensions/format), \`magick in.png -crop 100x80+10+10 out.png\`,`,
+                `    \`magick -size 64x48 xc:navy -stroke yellow -fill none -draw "rectangle 5,5 30,30" out.png\``,
+                `    (primitives: point, line, rectangle, circle, ellipse, polygon, text),`,
+                `    \`magick in.png -fill red -draw "point 2,3" out.png\` (set one pixel),`,
+                `    \`magick in.png -format "%[pixel:p{2,3}]" info:\` (read one pixel).`,
+              ]
+            : []),
           ...resourceLines.map((line) => `  ${line}`),
           // Only when a CONFIGURED MCP server is not usable. Empty for a healthy set, so the block is
           // byte-identical to one built without this seam — see `mcp-health-context.ts` for the whole

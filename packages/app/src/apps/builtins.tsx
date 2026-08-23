@@ -44,10 +44,23 @@ export function useBuiltinApps(): () => HomeApp[] {
   const sub = (id: BuiltinAppId): string =>
     appSubtitle(t, id, BUILTIN_APP_LABELS[id].subtitle) ?? BUILTIN_APP_LABELS[id].subtitle
 
-  return () => [
+  // 🔴 ONE array, ONE object per app, built ONCE — not a fresh literal per call (review H2,
+  // 2026-08-23). `<For>` keys by REFERENCE, so a factory that minted new objects on every call gave
+  // every tile a new identity on every recomputation of the home screen's `apps` memo: solid then
+  // disposed and recreated the entire grid instead of moving nodes. Measured with solid's own
+  // `mapArray`: a drag-release went from 3 tile mounts to 6, and each rebuilt tile re-ran
+  // `createSortable()` — re-registering with solid-dnd MID-GESTURE — rebuilt its classList effects
+  // and recreated its `<img>`. It also fired whenever an agent app registered or a manifest loaded.
+  //
+  // ⚠️ `title` and `subtitle` are GETTERS, not values. They read the language context, so they must
+  // stay reactive — a getter keeps the object identity stable while the field still tracks, which is
+  // the same trick `badge`/`stats` already use as thunks (`app-tile.tsx:56-58`).
+  const apps: HomeApp[] = [
     {
       id: "contacts",
-      title: name("contacts"),
+      get title() {
+        return name("contacts")
+      },
       icon: "speech-bubble",
       tile: "/assets/skin/tiles/tasks.png",
       // The hero's accent IS the preset's primary accent, so the one eye-anchor re-themes with the
@@ -57,7 +70,9 @@ export function useBuiltinApps(): () => HomeApp[] {
       hero: true,
       // Not rendered ON the hero any more — the tile shows live numbers instead — but still the
       // tile's accessible description and its tooltip, so it stays a sentence about what opens.
-      subtitle: sub("contacts"),
+      get subtitle() {
+        return sub("contacts")
+      },
       source: "builtin",
       // ⚠️ The hero opens the ROSTER now, not a chat list — one door, because a second tile onto the
       // same page is the "separate Contacts app" the owner ruled out. Its id stays `tasks` so an
@@ -71,37 +86,51 @@ export function useBuiltinApps(): () => HomeApp[] {
     },
     {
       id: "notes",
-      title: name("notes"),
+      get title() {
+        return name("notes")
+      },
       icon: "edit",
       tile: "/assets/skin/tiles/notes.png",
       accent: "#8b5cf6",
-      subtitle: sub("notes"),
+      get subtitle() {
+        return sub("notes")
+      },
       source: "builtin",
       open: () => navigate("/notes"),
     },
     {
       id: "calendar",
-      title: name("calendar"),
+      get title() {
+        return name("calendar")
+      },
       icon: "calendar",
       tile: "/assets/skin/tiles/calendar.png",
       accent: "#6366f1",
-      subtitle: sub("calendar"),
+      get subtitle() {
+        return sub("calendar")
+      },
       source: "builtin",
       open: () => navigate("/calendar"),
     },
     {
       id: "recipes",
-      title: name("recipes"),
+      get title() {
+        return name("recipes")
+      },
       icon: "checklist",
       tile: "/assets/skin/tiles/recipes.png",
       accent: "#f97316",
-      subtitle: sub("recipes"),
+      get subtitle() {
+        return sub("recipes")
+      },
       source: "builtin",
       open: () => navigate("/recipes"),
     },
     {
       id: "skills",
-      title: name("skills"),
+      get title() {
+        return name("skills")
+      },
       // Owner-supplied artwork (2026-08-20), so this tile no longer takes the gradient fallback:
       // the gold brain from `doc/gfx/other/brain.png`, downscaled 1024 -> 256 like every other tile
       // and kept on transparency so the aubergine field shows through. `icon` stays as the fallback
@@ -110,7 +139,9 @@ export function useBuiltinApps(): () => HomeApp[] {
       icon: "brain",
       tile: "/assets/skin/tiles/skills.png",
       accent: "#06b6d4",
-      subtitle: sub("skills"),
+      get subtitle() {
+        return sub("skills")
+      },
       source: "builtin",
       // NORMAL level, on purpose. A skill is instructions from someone else that change what your
       // agent does; the people most likely to ask "what did I just install?" are exactly the ones an
@@ -119,11 +150,15 @@ export function useBuiltinApps(): () => HomeApp[] {
     },
     {
       id: "files",
-      title: name("files"),
+      get title() {
+        return name("files")
+      },
       icon: "folder",
       tile: "/assets/skin/tiles/files.png",
       accent: "#3b82f6",
-      subtitle: sub("files"),
+      get subtitle() {
+        return sub("files")
+      },
       source: "builtin",
       open: () => navigate("/files"),
     },
@@ -138,11 +173,15 @@ export function useBuiltinApps(): () => HomeApp[] {
     // The id stays RESERVED (like `processes`) so nothing can squat the name.
     {
       id: "terminal",
-      title: name("terminal"),
+      get title() {
+        return name("terminal")
+      },
       icon: "terminal",
       tile: "/assets/skin/tiles/terminal.png",
       accent: "#64748b",
-      subtitle: sub("terminal"),
+      get subtitle() {
+        return sub("terminal")
+      },
       source: "builtin",
       // Chat is the shell for everyone else; the raw terminal appears only after the user opts into
       // Advanced or Developer expertise. Its PTY always runs on the selected instance.
@@ -151,11 +190,15 @@ export function useBuiltinApps(): () => HomeApp[] {
     },
     {
       id: "registry",
-      title: name("registry"),
+      get title() {
+        return name("registry")
+      },
       icon: "cpu",
       tile: "/assets/skin/tiles/registry.png",
       accent: "#0ea5e9",
-      subtitle: sub("registry"),
+      get subtitle() {
+        return sub("registry")
+      },
       source: "builtin",
       // Raw database editing is a Developer surface (uix.md §6.4; the sanctioned re-homing of
       // the old `db` sqlite3 shell — todo.md tie-break #3).
@@ -164,11 +207,15 @@ export function useBuiltinApps(): () => HomeApp[] {
     },
     {
       id: "debug",
-      title: name("debug"),
+      get title() {
+        return name("debug")
+      },
       icon: "console",
       tile: "/assets/skin/tiles/debug.png",
       accent: "#a78bfa",
-      subtitle: sub("debug"),
+      get subtitle() {
+        return sub("debug")
+      },
       source: "builtin",
       // Raw diagnostics are a Developer surface (uix.md §6.4; dependability P5 — the calm
       // banner/ErrorPage stay clean, the detail lives here).
@@ -177,18 +224,24 @@ export function useBuiltinApps(): () => HomeApp[] {
     },
     {
       id: "trash",
-      title: name("trash"),
+      get title() {
+        return name("trash")
+      },
       icon: "trash",
       tile: "/assets/skin/tiles/trash.png",
       // Cool teal, not the old saturated red — gold is the ONLY warm accent (the hero). uix.md §3/P3.
       accent: "#14b8a6",
-      subtitle: sub("trash"),
+      get subtitle() {
+        return sub("trash")
+      },
       source: "builtin",
       open: () => navigate("/trash"),
     },
     {
       id: "social",
-      title: name("social"),
+      get title() {
+        return name("social")
+      },
       // A generic people glyph, NOT the Discord mark: the tile leads to Discord, Reddit AND the website, so
       // wearing one company's trademark both misdescribes it and borrows a mark we have no licence to use as
       // our own iconography. The Discord ROW inside the panel keeps its logo — that one really is Discord.
@@ -196,31 +249,42 @@ export function useBuiltinApps(): () => HomeApp[] {
       tile: "/assets/skin/tiles/community.png",
       // Cool indigo-blue, so it doesn't compete with the gold hero (uix.md §3/P3).
       accent: "#5865f2",
-      subtitle: sub("social"),
+      get subtitle() {
+        return sub("social")
+      },
       source: "builtin",
       // Sits next to Help on purpose: when the tour doesn't answer it, humans do.
       open: () => void dialog.show(() => <SocialPanel />),
     },
     {
       id: "help",
-      title: name("help"),
+      get title() {
+        return name("help")
+      },
       icon: "help",
       tile: "/assets/skin/tiles/help.png",
       // Cool indigo, not the old pink — keeps the single-warm-accent discipline. uix.md §3/P3.
       accent: "#6366f1",
-      subtitle: sub("help"),
+      get subtitle() {
+        return sub("help")
+      },
       source: "builtin",
       open: () => void dialog.show(() => <HelpTour />),
     },
     {
       id: "settings",
-      title: name("settings"),
+      get title() {
+        return name("settings")
+      },
       icon: "settings-gear",
       tile: "/assets/skin/tiles/settings.png",
       accent: "#8d8fa6",
-      subtitle: sub("settings"),
+      get subtitle() {
+        return sub("settings")
+      },
       source: "builtin",
       open: () => openSettings(),
     },
   ]
+  return () => apps
 }
