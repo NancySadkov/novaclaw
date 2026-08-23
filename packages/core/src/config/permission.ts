@@ -46,11 +46,17 @@ export type Rule = Schema.Schema.Type<typeof Rule>
 // (`core/src/config/agent.ts`), so its output has never reached a V2 agent at all — but the stale
 // offer is its own legibility fault and is tracked separately, not silently inherited from here.
 //
-// ⚠️ `task` STAYS, and is not a V2 action. Nothing on the V2 path spends it, but it is live on the
-// legacy path — `packages/novaclaw/src/tool/truncate.ts` calls `evaluate("task", "*", …)` to choose
-// a truncation hint, `agent/subagent-permissions.ts` reads `task` rules to decide a default deny,
-// and `cli/cmd/agent.ts` offers it to users in `AVAILABLE_PERMISSIONS`. Removing the documented key
-// for a gate that still fires would be the wrong direction; it goes when that island does.
+// ⚠️ `task` STAYS, and is not a V2 action. Nothing on the V2 path spends it, but ONE legacy consumer
+// still does: `packages/novaclaw/src/tool/truncate.ts` calls `evaluate("task", "*", …)` to choose a
+// truncation hint. Removing a documented key for a gate that still fires would be the wrong
+// direction; it goes when that last caller does.
+//
+// ⚠️ This list said THREE consumers until 2026-08-23 and two of them were wrong. Re-counted:
+// `agent/subagent-permissions.ts` was deleted (built, tested, never called — and its test asserted
+// "subagent permissions take precedence over parent agent restrictions", which is the widening
+// AGENTS.md forbids), and `cli/cmd/agent.ts`'s `AVAILABLE_PERMISSIONS` does not contain `task` and
+// evidently had not for some time. A comment naming who depends on a thing is a claim; count it
+// before trusting it.
 const InputObject = Schema.StructWithRest(
   Schema.Struct({
     read: Schema.optional(Rule),

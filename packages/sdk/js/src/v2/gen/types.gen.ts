@@ -157,16 +157,6 @@ export type MoveSessionError = {
   }
 }
 
-export type PermissionAction = "allow" | "deny" | "ask"
-
-export type PermissionRule = {
-  permission: string
-  pattern: string
-  action: PermissionAction
-}
-
-export type PermissionRuleset = Array<PermissionRule>
-
 export type Prompt = {
   text: string
   files?: Array<PromptFileAttachment>
@@ -1653,6 +1643,16 @@ export type Command = {
   hints: Array<string>
 }
 
+export type PermissionAction = "allow" | "deny" | "ask"
+
+export type PermissionRule = {
+  permission: string
+  pattern: string
+  action: PermissionAction
+}
+
+export type PermissionRuleset = Array<PermissionRule>
+
 export type Agent = {
   name: string
   description?: string
@@ -2321,7 +2321,6 @@ export type SessionV2Info = {
   parentID?: string
   slug: string
   version: string
-  permission?: PermissionRuleset
   metadata?: {
     [key: string]: unknown
   }

@@ -215,7 +215,23 @@ const GENERATE_TIMEOUT_MS = 60_000
 // roster slice was checked against the immediately preceding tree and is a single deliberate addition
 // — `AgentUsageMinute`, the per-minute spend row the roster reads. Everything before it is accepted
 // here as history rather than re-derived, and that acceptance is the point of writing this down.
-const SCHEMA_NAME_FINGERPRINT = "9f8708a64477eecee3eabf205c96cda0e4808a317f895e1d10636bd0f2e3b3e1"
+// -- 2026-08-23: ZERO name changes -- WALK ORDER only --------------------------------------------
+// WARNING: the one shape of update this ledger's own instructions do not describe, so it is written
+// down. Every previous entry reasoned about names ADDED or REMOVED. Here the table is identical as a
+// SET: measured 536 pairs before and 536 after, `same set: true`, and not one `source -> emitted`
+// pair added, removed or repointed. What changed is the ORDER the emitter walks them in -- the
+// fingerprint hashes `mapping.join()`, so a reordering moves it exactly as a rename would.
+//
+// Cause: the session schema stopped importing `PermissionRuleset` (the write-only `permission`
+// ruleset was deleted -- written by create/`setPermission`, read by nobody, and typed in a legacy
+// shape the evaluator does not take). `PermissionAction` is therefore reached later in the walk;
+// first divergence at index 10, `PermissionAction` -> `Prompt`, with `PermissionAction` still
+// present further down.
+//
+// So this re-pin asserts something WEAKER than the usual one, and deliberately: not "the additions
+// were reviewed" but "there was nothing to review -- the public naming table is identical as a set".
+// A future reader must not read this entry as precedent for re-pinning past a real rename.
+const SCHEMA_NAME_FINGERPRINT = "fab60443ca4987df25ed01d15b29d2aa4a65d858512e491735c5236f269bf87d"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

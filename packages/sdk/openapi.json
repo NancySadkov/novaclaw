@@ -26410,32 +26410,6 @@
         "required": ["name", "data"],
         "additionalProperties": false
       },
-      "PermissionAction": {
-        "type": "string",
-        "enum": ["allow", "deny", "ask"]
-      },
-      "PermissionRule": {
-        "type": "object",
-        "properties": {
-          "permission": {
-            "type": "string"
-          },
-          "pattern": {
-            "type": "string"
-          },
-          "action": {
-            "$ref": "#/components/schemas/PermissionAction"
-          }
-        },
-        "required": ["permission", "pattern", "action"],
-        "additionalProperties": false
-      },
-      "PermissionRuleset": {
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/PermissionRule"
-        }
-      },
       "Prompt": {
         "type": "object",
         "properties": {
@@ -31489,6 +31463,32 @@
         "required": ["name", "template", "hints"],
         "additionalProperties": false
       },
+      "PermissionAction": {
+        "type": "string",
+        "enum": ["allow", "deny", "ask"]
+      },
+      "PermissionRule": {
+        "type": "object",
+        "properties": {
+          "permission": {
+            "type": "string"
+          },
+          "pattern": {
+            "type": "string"
+          },
+          "action": {
+            "$ref": "#/components/schemas/PermissionAction"
+          }
+        },
+        "required": ["permission", "pattern", "action"],
+        "additionalProperties": false
+      },
+      "PermissionRuleset": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/PermissionRule"
+        }
+      },
       "Agent": {
         "type": "object",
         "properties": {
@@ -33527,9 +33527,6 @@
           },
           "version": {
             "type": "string"
-          },
-          "permission": {
-            "$ref": "#/components/schemas/PermissionRuleset"
           },
           "metadata": {
             "type": "object"
