@@ -220,6 +220,44 @@ describe("ConfigAgentPlugin.Plugin", () => {
     }),
   )
 
+  /**
+   * 🔴 A RETIRED ID RETURNS, so a returning colleague must not be born PAUSED.
+   *
+   * Officer names come from a fixed pool, so `OfficerName.pick` can hand a new hire the id a retired
+   * colleague used. This programme's standing constraint is that **anything newly keyed on an agent
+   * id is cleared at retirement** — and `paused` (2026-08-23) is newly keyed on one. It is cleared by
+   * construction, because retiring drops the whole `agents.<id>` config fragment
+   * (`config-store-write.ts` → `AgentConfigStore.removeAgent` → `agents.remove(name)`), but nothing
+   * asserted it. The constraint exists precisely because new state gets added and forgotten, and the
+   * failure would be silent: a fresh hire that quietly cannot act, with no control showing why.
+   */
+  it.effect("a returning id is NOT born paused — the disabled fragment goes with the agent", () =>
+    Effect.gen(function* () {
+      const agents = yield* AgentV2.Service
+      const id = AgentV2.ID.make("theron")
+      yield* agents.transform((editor) => editor.update(id, () => {}))
+
+      const store = memoryStore()
+      const apply = () =>
+        ConfigAgentPlugin.Plugin.effect(host({ agent: agentHost(agents) })).pipe(
+          Effect.provideService(Config.Service, Config.Service.of({ entries: () => Effect.succeed([]) })),
+          Effect.provideService(AgentConfigStore.Service, store),
+        )
+
+      yield* store.setLayers("theron", [decode({ agents: { theron: { disabled: true } } }).agents!.theron])
+      yield* apply()
+      expect(yield* agents.get(id)).toMatchObject({ paused: true })
+
+      // Retirement removes the stored fragment; the pool then hands the id to somebody new.
+      yield* store.setLayers("theron", [])
+      yield* agents.transform((editor) => editor.update(id, () => {}))
+      yield* apply()
+
+      const returned = yield* agents.get(id)
+      expect(returned?.paused).not.toBe(true)
+    }),
+  )
+
   it.effect("PAUSES a built-in agent disabled by configuration, rather than removing it", () =>
     Effect.gen(function* () {
       const agents = yield* AgentV2.Service

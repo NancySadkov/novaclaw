@@ -1,7 +1,7 @@
 {
   "note": "Baseline for `bun run test`. `units` = tests bun reported SKIPPED per run unit; `failing` = failures PINNED as known, by name. Both are ratchets: any change fails the run and prints what moved. Pin only failures that are understood and filed — never to make a red go away. Seeded 2026-07-27 (v0.2.0 PREP Wave 0).",
   "reasons": {
-    "novaclaw:server": "Windows-from-source. 16 pinned failures. The three PublicApi OpenAPI error-shape tests were removed 2026-08-05 after passing in two independent full runs. The promptAsync entry was stored MOJIBAKED (UTF-8 bytes for an arrow decoded as cp1252), so the ledger could never match its own entry and reported one phantom fix plus one phantom new failure on every run — it was corrected, not removed; that test is still red."
+    "novaclaw:server": "NO pins — this unit is expected FULLY GREEN, and any failure is drift. It once carried 16 Windows-from-source pins; they were fixed and the list emptied, but this reason string kept claiming them until 2026-08-24, which made a drift report read as one of the known 16. ⚠️ Observed 2026-08-23 under memory pressure (host commit 75%, wall 2.8x normal): two DIFFERENT new failures across two runs, one with an `error: secret stack marker` signature rather than an assertion diff. Environmental, not pinned — a flake belongs in quarantine, never in an expected-failure ledger."
   },
   "units": {
     "llm": 29,
