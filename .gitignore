@@ -10,6 +10,12 @@ node_modules
 *~
 playground
 tmp
+# A probe that must live INSIDE a package for module resolution (`bun test` resolves `solid-js`
+# only from within the package that depends on it) is one broad `git add` away from shipping into
+# a release surface. Measured twice: `ea62baa5d` swept three, and a fourth
+# (`packages/app/packages/app/tmp-probe/`) reached HEAD and red the `script` unit's own ledger,
+# which asserts that every test file in the tree belongs to a run unit.
+**/tmp-probe/
 dist
 ts-dist
 .ts-dist
