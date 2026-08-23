@@ -28,6 +28,8 @@ export interface AgentLike {
   readonly system?: string | undefined
   /** The model this colleague thinks with. Absent = it inherits the instance default. */
   readonly model?: { readonly providerID: string; readonly id: string } | undefined
+  /** Set aside without being retired (config `disabled: true`). Still a colleague; may not act. */
+  readonly paused?: boolean | undefined
   /**
    * The colleague's config fields, verbatim from the API row — everything `ConfigAgent.Info` declares
    * that this row actually had.
@@ -61,6 +63,14 @@ export interface ContactView {
   readonly color: string | undefined
   /** `governing` is Nova: shown first, and refused by every delete door. */
   readonly kind: "governing" | "officer"
+  /**
+   * Set aside, not retired.
+   *
+   * ⚠️ A paused colleague is STILL LISTED, and in its usual place. Sorting it to the bottom or
+   * dropping it would recreate the thing pausing was built to stop — a colleague you cannot see is a
+   * colleague whose chat has no door. It is marked, not moved.
+   */
+  readonly paused: boolean
   /** False for the governing agent — the roster must not offer a control the API will refuse. */
   readonly removable: boolean
   /** What this colleague remembers, as a key the page translates. Both halves, always. */
@@ -132,6 +142,7 @@ const view = (agent: AgentLike): ContactView => {
     avatar: agent.avatar?.trim() || undefined,
     color: agent.color,
     kind: governing ? "governing" : "officer",
+    paused: agent.paused === true,
     // The row offers no Retire control for Nova, and the API refuses it too. Both, on purpose: a
     // rule enforced only where it is displayed is a rule an agent's own config write walks around.
     removable: !governing,

@@ -139,3 +139,37 @@ describe("postures are not colleagues", () => {
     expect(ids.sort()).toEqual(["builder", "nova", "planner", "theron"])
   })
 })
+
+describe("a paused colleague", () => {
+  /**
+   * 🔴 Pausing exists so a colleague can be set aside WITHOUT the damage removal did — its chat left
+   * live but doorless, its id freed for `OfficerName.pick` to redraw, its cabinet inheritable. The
+   * roster row is the door. So the one thing the view must never do is drop it.
+   */
+  test("is still on the roster, in its usual place, and marked", () => {
+    const rows = roster([
+      agent({ id: "nova", name: "Nova" }),
+      agent({ id: "aris", name: "Aris" }),
+      agent({ id: "theron", name: "Theron", paused: true }),
+    ])
+    expect(rows.map((r) => r.id)).toEqual(["nova", "aris", "theron"])
+    expect(rows.find((r) => r.id === "theron")?.paused).toBe(true)
+    expect(rows.find((r) => r.id === "aris")?.paused).toBe(false)
+  })
+
+  test("pausing does not change where it sorts", () => {
+    const order = (paused: boolean) =>
+      roster([
+        agent({ id: "nova", name: "Nova" }),
+        agent({ id: "aris", name: "Aris", paused }),
+        agent({ id: "theron", name: "Theron" }),
+      ]).map((r) => r.id)
+    // Sorting a paused colleague away would recreate the invisibility pausing was built to avoid.
+    expect(order(true)).toEqual(order(false))
+  })
+
+  test("it is still searchable — you have to find it to un-pause it", () => {
+    const rows = roster([agent({ id: "theron", name: "Theron", paused: true })])
+    expect(searchRoster(rows, "ther").map((r) => r.id)).toEqual(["theron"])
+  })
+})

@@ -214,7 +214,7 @@ export function AgentConfigDialog(props: {
     needsTier() !== undefined ||
     model() !== undefined
 
-  const [busy, setBusy] = createSignal<"clone" | "clear" | "retire" | undefined>()
+  const [busy, setBusy] = createSignal<"clone" | "clear" | "retire" | "pause" | undefined>()
 
   const sdk = () => ctx()?.sdk.client.v2
 
@@ -279,6 +279,29 @@ export function AgentConfigDialog(props: {
    *  left keyed on it), which is recoverable in principle and not through any surface a user has.
    *  A control that removes a colleague from the roster and empties its cabinet, one click deep and
    *  in the same row as Clone, still deserves the sentence that says so. */
+  /**
+   * PAUSE / RESUME — set the colleague aside without retiring it.
+   *
+   * ⚠️ **Deliberately NOT confirm-gated, and that asymmetry is the point.** Retirement asks first
+   * because it archives the chats and moves the cabinet to `retired:<id>:<at>`; pausing changes one
+   * boolean and is undone by pressing the same button again. Confirming a reversible act teaches
+   * people to click through confirmations, which is how the irreversible one stops being read.
+   */
+  const setPaused = async (paused: boolean) => {
+    const id = props.agentID
+    if (id === undefined || governing()) return
+    setBusy("pause")
+    try {
+      await sync().updateConfig({ agents: { [id]: { disabled: paused } } } as never)
+      props.onChanged?.()
+    } catch (error) {
+      // Said, never swallowed: a colleague that silently refuses to pause reads as a dead control.
+      showToast({ variant: "error", title: language.t("agentConfig.pauseFailed"), description: String(error) })
+    } finally {
+      setBusy(undefined)
+    }
+  }
+
   const retire = async () => {
     const id = props.agentID
     const client = sdk()
@@ -756,6 +779,22 @@ export function AgentConfigDialog(props: {
             {busy() === "clone" ? language.t("agentConfig.cloning") : language.t("agentConfig.clone")}
           </button>
           <Show when={!governing()}>
+            {/* ⚠️ Ordinary weight, NOT danger red, and separated from Retire — the two must not read
+                as the same kind of act. Pausing is reversible and keeps everything; retiring
+                archives the chats and sets the cabinet aside. */}
+            <button
+              type="button"
+              data-action="agent-pause"
+              class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
+              disabled={busy() !== undefined || agent() === undefined}
+              onClick={() => void setPaused(agent()?.paused !== true)}
+            >
+              {busy() === "pause"
+                ? language.t("agentConfig.pausing")
+                : agent()?.paused === true
+                  ? language.t("agentConfig.resume")
+                  : language.t("agentConfig.pause")}
+            </button>
             <button
               type="button"
               class="ml-auto rounded-md px-2.5 py-1.5 text-xs text-v2-state-fg-danger hover:bg-v2-background-bg-layer-02 disabled:opacity-40"

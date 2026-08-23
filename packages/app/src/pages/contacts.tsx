@@ -388,6 +388,19 @@ function ContactRow(props: {
               {language.t("contacts.governing")}
             </span>
           </Show>
+          {/* ⚠️ A BADGE, not a dimmed or hidden row. A paused colleague is set aside, not gone —
+              and the row is the only door to its chat, so anything that makes it harder to find
+              recreates the problem pausing was built to solve. It reads as a state, beside the
+              name, in the same place the governing badge sits. */}
+          <Show when={props.view.paused}>
+            <span
+              data-state="paused"
+              class="rounded-full bg-v2-state-bg-warning px-2 py-0.5 text-[10px] uppercase tracking-wide text-v2-state-fg-warning"
+              title={language.t("contacts.pausedHint")}
+            >
+              {language.t("contacts.paused")}
+            </span>
+          </Show>
           <span class="truncate text-xs text-v2-text-text-muted">
             {props.view.title ?? language.t("contacts.noTitle")}
           </span>
