@@ -13,6 +13,7 @@ import {
 import { SessionMessage } from "../message"
 import { SessionOrigin } from "../origin"
 import type { FileAttachment } from "../prompt"
+import { ArchiveAttachment } from "./archive-attachment"
 
 const media = (file: FileAttachment): ContentPart => ({
   type: "media",
@@ -327,6 +328,29 @@ export const needsCapabilityEvidence = (messages: readonly SessionMessage.Messag
 
 // Decode a data: URI's payload to text (base64 or percent-encoded). Returns undefined
 // for any other URI scheme or a malformed data URI.
+/** A `file://` URI as a host path, or `undefined` for anything else. */
+const localPath = (uri: string | undefined): string | undefined => {
+  if (uri === undefined || !uri.startsWith("file://")) return undefined
+  try {
+    // The query carries a line selection for a source excerpt (`?start=&end=`); a path does not want it.
+    return decodeURIComponent(uri.slice("file://".length).split("?")[0] ?? "")
+  } catch {
+    return undefined
+  }
+}
+
+/** The raw bytes behind a `data:…;base64,` URI. `undefined` for any other scheme or a bad payload. */
+const bytesFromDataUri = (uri: string): Uint8Array | undefined => {
+  const match = /^data:([^,]*),([\s\S]*)$/.exec(uri)
+  if (!match) return undefined
+  try {
+    if (/;base64$/i.test(match[1]!)) return new Uint8Array(Buffer.from(match[2]!, "base64"))
+    return new Uint8Array(Buffer.from(decodeURIComponent(match[2]!), "utf8"))
+  } catch {
+    return undefined
+  }
+}
+
 const textFromDataUri = (uri: string): string | undefined => {
   const match = /^data:([^,]*),([\s\S]*)$/.exec(uri)
   if (!match) return undefined
@@ -344,6 +368,25 @@ const textFromDataUri = (uri: string): string | undefined => {
 // is inlined here at lowering. Only data: URIs can be decoded in this pure function —
 // a text file:// attachment still lowers as media (resolve-time materialization residue).
 const attachment = (file: FileAttachment, capabilities: InputCapabilities | undefined): ContentPart => {
+  // 🔴 AN ARCHIVE IS NOT MEDIA (owner, 2026-08-23). `attachmentModality` cannot classify
+  // `application/zip`, so the capability gate answers `"unknown"` — which means "send it and let the
+  // provider be the authority" — and a zip rode to the endpoint as a base64 media part no model can
+  // read. The user attached their project and the agent answered about nothing. Opened here instead,
+  // and its readable entries inlined as text: the same seam a `text/*` attachment already uses, one
+  // more container. Everything not shown is named with its reason (`archive-attachment.ts`).
+  if (ArchiveAttachment.isArchive(file)) {
+    return {
+      type: "text",
+      text: ArchiveAttachment.archiveDigest({
+        bytes: bytesFromDataUri(file.uri),
+        name: file.name,
+        mime: file.mime,
+        // A `file://` attachment has no bytes here but IS a real file on this host, and the agent has
+        // a shell. `sourceUri` first: an inlined attachment keeps its origin there.
+        path: localPath(file.sourceUri) ?? localPath(file.uri),
+      }),
+    }
+  }
   if (file.mime.toLowerCase().startsWith("text/")) {
     const text = textFromDataUri(file.uri)
     if (text !== undefined) {
@@ -579,7 +622,11 @@ export const toLLMMessages = (
   model: Model,
   capabilities?: InputCapabilities | undefined,
   maxImages?: number | undefined,
-) => budgetImages(messages.flatMap((message) => toLLMMessage(message, model, capabilities)), maxImages)
+) =>
+  budgetImages(
+    messages.flatMap((message) => toLLMMessage(message, model, capabilities)),
+    maxImages,
+  )
 
 // ─────────────────────────────────────────────────────────────────────────────
 // THE PER-REQUEST IMAGE BUDGET — the dead-end a working vision path walks into.
@@ -662,10 +709,7 @@ const isImageContent = (item: ToolContent): item is ToolFileContent =>
  * ⚠️ It counts BOTH doors in one pass (a user's `media` part and a tool result's `file` content),
  * because the provider counts both and a budget that saw only one of them would still 400.
  */
-export const budgetImages = (
-  messages: readonly Message[],
-  max: number | undefined,
-): readonly Message[] => {
+export const budgetImages = (messages: readonly Message[], max: number | undefined): readonly Message[] => {
   if (max === undefined || !Number.isFinite(max) || max < 0) return messages
   let total = 0
   for (const message of messages) {
@@ -748,7 +792,9 @@ const describedImageIndices = (messages: readonly Message[]): ReadonlySet<number
   const events: Array<{ readonly kind: "image" | "text"; readonly index: number }> = []
   let imageIndex = 0
   for (const message of messages) {
-    const parts: readonly ContentPart[] = Array.isArray(message.content) ? (message.content as readonly ContentPart[]) : []
+    const parts: readonly ContentPart[] = Array.isArray(message.content)
+      ? (message.content as readonly ContentPart[])
+      : []
     // Text first within a message: an assistant message lowers as [text, tool-call], so its prose
     // belongs to the images ALREADY seen, never to the call it is about to make.
     const text =
@@ -763,7 +809,8 @@ const describedImageIndices = (messages: readonly Message[]): ReadonlySet<number
       if (isImagePart(part)) events.push({ kind: "image", index: imageIndex++ })
       else if (part.type === "tool-result") {
         const value = contentEntries((part as ToolResultPart).result)
-        if (value) for (const item of value) if (isImageContent(item)) events.push({ kind: "image", index: imageIndex++ })
+        if (value)
+          for (const item of value) if (isImageContent(item)) events.push({ kind: "image", index: imageIndex++ })
       }
     }
   }
