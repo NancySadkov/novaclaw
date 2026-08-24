@@ -23,6 +23,7 @@ import {
 import { buildMemoryBundle, importScope, parseMemoryBundle } from "./memory-bundle"
 import { MemoryRemembered } from "@/components/memory-remembered"
 import { SettingsProfileSection } from "./profile"
+import { SettingsExplainV2 } from "./explain"
 
 // The Memory tab (notes/kb-graph-plan.md §5) — the lay-first home for "what NovaClaw remembers".
 // Out of the box memory is fully automatic (recall + extract + consolidate under the hood); this tab
@@ -332,7 +333,14 @@ export const SettingsMemoryV2: Component<{ sessionID?: string; embedded?: boolea
           <SettingsListV2>
             <SettingsRowV2
               title={language.t("settings.memory.enabled.title")}
-              description={language.t("settings.memory.enabled.description")}
+              description={
+                <>
+                  {language.t("settings.memory.enabled.description")}
+                  <SettingsExplainV2 label={language.t("settings.memory.enabled.title")}>
+                    {language.t("settings.memory.enabled.description.more")}
+                  </SettingsExplainV2>
+                </>
+              }
             >
               <div data-action="settings-memory-enabled">
                 <Switch checked={enabled()} onChange={setEnabled} hideLabel>

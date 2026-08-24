@@ -160,7 +160,14 @@ export const SettingsStrictV2: Component = () => {
           <SettingsListV2>
             <SettingsRowV2
               title={language.t("settings.strict.row.enabled.title")}
-              description={language.t("settings.strict.row.enabled.description")}
+              description={
+                <>
+                  {language.t("settings.strict.row.enabled.description")}
+                  <SettingsExplainV2 label={language.t("settings.strict.row.enabled.title")}>
+                    {language.t("settings.strict.row.enabled.description.more")}
+                  </SettingsExplainV2>
+                </>
+              }
             >
               <Switch
                 checked={current().enabled === true}
@@ -239,7 +246,14 @@ export const SettingsStrictV2: Component = () => {
 
             <SettingsRowV2
               title={language.t("settings.strict.row.executionTokens.title")}
-              description={language.t("settings.strict.row.executionTokens.description")}
+              description={
+                <>
+                  {language.t("settings.strict.row.executionTokens.description")}
+                  <SettingsExplainV2 label={language.t("settings.strict.row.executionTokens.title")}>
+                    {language.t("settings.strict.row.executionTokens.description.more")}
+                  </SettingsExplainV2>
+                </>
+              }
             >
               <BudgetControl
                 presets={EXECUTION_PRESETS}
@@ -254,7 +268,14 @@ export const SettingsStrictV2: Component = () => {
 
             <SettingsRowV2
               title={language.t("settings.strict.row.reasoningTokens.title")}
-              description={language.t("settings.strict.row.reasoningTokens.description")}
+              description={
+                <>
+                  {language.t("settings.strict.row.reasoningTokens.description")}
+                  <SettingsExplainV2 label={language.t("settings.strict.row.reasoningTokens.title")}>
+                    {language.t("settings.strict.row.reasoningTokens.description.more")}
+                  </SettingsExplainV2>
+                </>
+              }
             >
               <BudgetControl
                 presets={REASONING_PRESETS}

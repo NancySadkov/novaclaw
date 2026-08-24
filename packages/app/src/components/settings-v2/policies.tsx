@@ -22,6 +22,7 @@ import {
   policyIDIsAddable,
   projectPoliciesPayload,
 } from "./project-policies"
+import { SettingsExplainV2 } from "./explain"
 
 /**
  * **Which checks run before a tool call, which of them you have switched off, and what this folder
@@ -140,19 +141,36 @@ export const SettingsPoliciesSection: Component = () => {
       .catch((error) => console.error("policy toggle failed", error))
   }
 
+  /**
+   * What this row SAYS — the policy's own sentence plus anything true of this row alone.
+   *
+   * ⚠️ The row's own copy states the switch position too. A description that read the same whether
+   * the policy was running or not is the "fixed copy beside a moved control" defect.
+   */
   const describe = (entry: InstalledPolicy) => {
     const sentence = authorText(entry.describe, 240)
     const parts = [
       sentence === "" ? "" : language.t("policies.row.describes", { describe: sentence }),
-      entry.alwaysOn ? language.t("policies.row.everywhere") : language.t("policies.row.optIn"),
-      entry.safetyCritical ? language.t("policies.row.safetyCritical") : language.t("policies.row.advisory"),
-      // ⚠️ The row's own copy states the switch position too. A description that read the same
-      // whether the policy was running or not is the "fixed copy beside a moved control" defect.
       entry.enabled ? "" : language.t("policies.row.off"),
       requested().has(entry.id) ? language.t("policies.row.requestedHere") : "",
     ]
     return parts.filter((part) => part !== "").join(" ")
   }
+
+  /**
+   * The part that is the same on every row of its class — scope, and what happens if the check stops
+   * answering. Owner, 2026-08-24: joined onto the description it made each row a ~280-character
+   * paragraph, and a list where every entry repeats the same two sentences is a list nobody reads.
+   *
+   * 🔴 `everywhere` moved here rather than being dropped: it is what tells a reader why an always-on
+   * check has no entry in the folder list below, and without it that list reads as incomplete. The
+   * section's own hint already states the rule, so this is the second place it is said, not the only.
+   */
+  const scopeMore = (entry: InstalledPolicy) =>
+    [
+      entry.alwaysOn ? language.t("policies.row.everywhere") : language.t("policies.row.optIn"),
+      entry.safetyCritical ? language.t("policies.row.safetyCritical") : language.t("policies.row.advisory"),
+    ].join(" ")
 
   return (
     <Show when={state()}>
@@ -162,7 +180,11 @@ export const SettingsPoliciesSection: Component = () => {
 
           <SettingsListV2>
             {/* 🔴 The fact FIRST, before any switch — principle 12(d). */}
-            <SettingsRowV2 title={language.t("policies.inForce.title")} description={inForce()} hint={language.t("policies.hint")}>
+            <SettingsRowV2
+              title={language.t("policies.inForce.title")}
+              description={inForce()}
+              hint={language.t("policies.hint")}
+            >
               <Value>{String(resolved().installed.length)}</Value>
             </SettingsRowV2>
 
@@ -170,7 +192,14 @@ export const SettingsPoliciesSection: Component = () => {
               {(entry) => (
                 <SettingsRowV2
                   title={authorText(entry.id, 64) || entry.id}
-                  description={describe(entry)}
+                  description={
+                    <>
+                      {describe(entry)}
+                      <SettingsExplainV2 label={authorText(entry.id, 64) || entry.id}>
+                        {scopeMore(entry)}
+                      </SettingsExplainV2>
+                    </>
+                  }
                 >
                   <div data-action="settings-policy-toggle" data-policy={entry.id}>
                     <Switch checked={entry.enabled} onChange={(checked) => toggle(entry.id, checked)} />
@@ -354,9 +383,7 @@ const FolderPoliciesEditor: Component<{
           {(id, index) => (
             <div class="flex items-start gap-2" data-folder-policy-row data-policy={id}>
               <div class="flex flex-1 flex-col">
-                <span class="text-[12px] leading-4 break-all text-v2-text-text-base">
-                  {authorText(id, 64) || id}
-                </span>
+                <span class="text-[12px] leading-4 break-all text-v2-text-text-base">{authorText(id, 64) || id}</span>
                 <Muted>{statusOf(id)}</Muted>
               </div>
               <ButtonV2

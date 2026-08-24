@@ -111,6 +111,15 @@ describe("the screen is wired to the rule", () => {
     expect(source).toContain('data-action="instances-peer-token-reveal"')
   })
 
+  test("the reveal control is an EYE, and it changes with the state", () => {
+    // An icon rather than a word: the control sits beside the field it acts on, so its meaning is
+    // positional. A single unchanging icon would be worse than the text it replaced — the whole
+    // point is that you can see, at a glance, which state the field is in.
+    expect(source).toContain('icon={<Icon name={revealPeerToken() ? "eye-off" : "eye"} size="normal" />}')
+    // The word survives for screen readers, which have no "beside" to read.
+    expect(source).toContain("aria-label={language.t(")
+  })
+
   test("editing one peer does not carry another's reveal state", () => {
     // Opening a second peer with the first still revealed would show a secret nobody asked to see.
     expect(source).toContain("setRevealPeerToken(false)")

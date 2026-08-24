@@ -1,7 +1,9 @@
-import { Component, For, Show, createMemo, createSignal } from "solid-js"
+import { Component, For, type JSX, Show, createMemo, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
+import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { mergeProviderKey, type ProviderRequest } from "./provider-key"
 import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
@@ -17,6 +19,7 @@ import * as ToolChannel from "./tool-channel"
 import { showToast } from "@/utils/toast"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
+import { SettingsExplainV2 } from "./explain"
 
 // The per-model config the dialog reads from / writes back to provider.<id>.models.<id> in
 // novaclaw.jsonc. Sampling knobs live under `options`; limits, capability flags, and modalities
@@ -63,13 +66,7 @@ const SAMPLING = [
   "presence_penalty",
   "frequency_penalty",
 ] as const
-type FieldKey =
-  | (typeof SAMPLING)[number]
-  | "context"
-  | "maxTokens"
-  | "images"
-  | "thinkingBudget"
-  | "retryAttempts"
+type FieldKey = (typeof SAMPLING)[number] | "context" | "maxTokens" | "images" | "thinkingBudget" | "retryAttempts"
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 // MindControl thinking budget is stored in request.body (the free-form record the runtime reads),
@@ -163,7 +160,16 @@ const PRESETS: Record<FieldKey, RawPreset[]> = {
   ],
   // A count of pictures, so the presets are small and literal. 3 is holo3.1's vLLM cap and the
   // reason this row exists; 1 is what the harness assumes when this is blank.
-  images: [{}, { size: "1", num: 1 }, { size: "2", num: 2 }, { size: "3", num: 3 }, { size: "4", num: 4 }, { size: "8", num: 8 }, { size: "16", num: 16 }, { size: "32", num: 32 }],
+  images: [
+    {},
+    { size: "1", num: 1 },
+    { size: "2", num: 2 },
+    { size: "3", num: 3 },
+    { size: "4", num: 4 },
+    { size: "8", num: 8 },
+    { size: "16", num: 16 },
+    { size: "32", num: 32 },
+  ],
   maxTokens: [
     {},
     { size: "512", num: 512 },
@@ -502,10 +508,19 @@ export const DialogModelConfig: Component<{
     )
   }
 
-  const paramRow = (field: FieldKey) => (
+  // The explain node is passed in rather than derived from `field`: a template-literal `.desc.more`
+  // key would type-check for every field and render the RAW KEY for the ones that have no second
+  // half — the live bug `dynamicKey`'s doc warns about, and a `?` with nothing behind it is a dead
+  // control besides. Opt in per row instead.
+  const paramRow = (field: FieldKey, more?: JSX.Element) => (
     <SettingsRowV2
       title={language.t(`settings.models.config.${field}.name`)}
-      description={language.t(`settings.models.config.${field}.desc`)}
+      description={
+        <>
+          {language.t(`settings.models.config.${field}.desc`)}
+          {more}
+        </>
+      }
     >
       <PresetField field={field} />
     </SettingsRowV2>
@@ -561,7 +576,14 @@ export const DialogModelConfig: Component<{
           <SettingsListV2>
             <SettingsRowV2
               title={language.t("settings.models.config.providerName.name")}
-              description={language.t("settings.models.config.providerName.desc")}
+              description={
+                <>
+                  {language.t("settings.models.config.providerName.desc")}
+                  <SettingsExplainV2 label={language.t("settings.models.config.providerName.name")}>
+                    {language.t("settings.models.config.providerName.desc.more")}
+                  </SettingsExplainV2>
+                </>
+              }
             >
               <TextInputV2
                 class="w-64 max-w-full"
@@ -573,7 +595,14 @@ export const DialogModelConfig: Component<{
             </SettingsRowV2>
             <SettingsRowV2
               title={language.t("settings.models.config.apiPath.name")}
-              description={language.t("settings.models.config.apiPath.desc")}
+              description={
+                <>
+                  {language.t("settings.models.config.apiPath.desc")}
+                  <SettingsExplainV2 label={language.t("settings.models.config.apiPath.name")}>
+                    {language.t("settings.models.config.apiPath.desc.more")}
+                  </SettingsExplainV2>
+                </>
+              }
             >
               <TextInputV2
                 class="w-64 max-w-full"
@@ -588,7 +617,14 @@ export const DialogModelConfig: Component<{
             </SettingsRowV2>
             <SettingsRowV2
               title={language.t("settings.models.config.apiKey.name")}
-              description={language.t("settings.models.config.apiKey.desc")}
+              description={
+                <>
+                  {language.t("settings.models.config.apiKey.desc")}
+                  <SettingsExplainV2 label={language.t("settings.models.config.apiKey.name")}>
+                    {language.t("settings.models.config.apiKey.desc.more")}
+                  </SettingsExplainV2>
+                </>
+              }
             >
               <div class="flex items-center gap-2">
                 <TextInputV2
@@ -603,19 +639,18 @@ export const DialogModelConfig: Component<{
                   aria-label={language.t("settings.models.config.apiKey.name")}
                 />
                 {/* Masked by DEFAULT and revealed on request: the ask was to see it, and a secret
-                    that is legible to anyone glancing at a shared screen is a different promise. */}
-                <ButtonV2
-                  variant="ghost"
+                    that is legible to anyone glancing at a shared screen is a different promise.
+                    An eye rather than a word — the control sits beside the field it acts on, so its
+                    meaning is positional, and a text button made the row wrap on narrow dialogs. */}
+                <IconButtonV2
+                  variant="ghost-muted"
                   size="small"
                   onClick={() => setRevealKey(!revealKey())}
+                  icon={<Icon name={revealKey() ? "eye-off" : "eye"} size="normal" />}
                   aria-label={language.t(
                     revealKey() ? "settings.models.config.apiKey.hide" : "settings.models.config.apiKey.reveal",
                   )}
-                >
-                  {language.t(
-                    revealKey() ? "settings.models.config.apiKey.hide" : "settings.models.config.apiKey.reveal",
-                  )}
-                </ButtonV2>
+                />
               </div>
             </SettingsRowV2>
             <SettingsRowV2
@@ -650,6 +685,9 @@ export const DialogModelConfig: Component<{
           <div class="flex flex-col gap-1.5">
             <span class="text-[12px] text-v2-text-text-muted leading-snug">
               {language.t("settings.models.config.prePrompt.desc")}
+              <SettingsExplainV2 label={language.t("settings.models.config.prePrompt.name")}>
+                {language.t("settings.models.config.prePrompt.desc.more")}
+              </SettingsExplainV2>
             </span>
             <TextareaV2
               rows={3}
@@ -672,7 +710,12 @@ export const DialogModelConfig: Component<{
             {/* Only for a model that declares image input — a picture cap on a text-only model is a
                 row the reader has to read and then dismiss. */}
             <Show when={form.inImage}>{paramRow("images")}</Show>
-            {paramRow("thinkingBudget")}
+            {paramRow(
+              "thinkingBudget",
+              <SettingsExplainV2 label={language.t("settings.models.config.thinkingBudget.name")}>
+                {language.t("settings.models.config.thinkingBudget.desc.more")}
+              </SettingsExplainV2>,
+            )}
           </SettingsListV2>
 
           {section("reliability")}
@@ -682,13 +725,27 @@ export const DialogModelConfig: Component<{
           <SettingsListV2>
             <SettingsRowV2
               title={language.t("settings.models.config.reasoning.name")}
-              description={language.t("settings.models.config.reasoning.desc")}
+              description={
+                <>
+                  {language.t("settings.models.config.reasoning.desc")}
+                  <SettingsExplainV2 label={language.t("settings.models.config.reasoning.name")}>
+                    {language.t("settings.models.config.reasoning.desc.more")}
+                  </SettingsExplainV2>
+                </>
+              }
             >
               <Switch checked={form.reasoning} onChange={(v) => setForm("reasoning", v)} />
             </SettingsRowV2>
             <SettingsRowV2
               title={language.t("settings.models.config.tool_call.name")}
-              description={language.t("settings.models.config.tool_call.desc")}
+              description={
+                <>
+                  {language.t("settings.models.config.tool_call.desc")}
+                  <SettingsExplainV2 label={language.t("settings.models.config.tool_call.name")}>
+                    {language.t("settings.models.config.tool_call.desc.more")}
+                  </SettingsExplainV2>
+                </>
+              }
             >
               <Switch checked={form.tool_call} onChange={(v) => setForm("tool_call", v)} />
             </SettingsRowV2>
@@ -750,7 +807,9 @@ export const DialogModelConfig: Component<{
                   onClick={() => void testChannel()}
                 >
                   {language.t(
-                    testing() ? "settings.models.config.toolChannel.testing" : "settings.models.config.toolChannel.test",
+                    testing()
+                      ? "settings.models.config.toolChannel.testing"
+                      : "settings.models.config.toolChannel.test",
                   )}
                 </button>
                 <Show when={testError()}>

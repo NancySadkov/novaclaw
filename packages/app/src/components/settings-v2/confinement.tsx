@@ -216,7 +216,14 @@ export const ConfinementRows: Component<{
         <SettingsRowV2
           minLevel="advanced"
           title={language.t("settings.confinement.probe.title")}
-          description={language.t("settings.confinement.probe.description")}
+          description={
+            <>
+              {language.t("settings.confinement.probe.description")}
+              <SettingsExplainV2 label={language.t("settings.confinement.probe.title")}>
+                {language.t("settings.confinement.probe.description.more")}
+              </SettingsExplainV2>
+            </>
+          }
         >
           <code
             data-slot="settings-confinement-probe"

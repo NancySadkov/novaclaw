@@ -273,6 +273,12 @@ const icons = {
     viewBox: "0 0 20 20",
     body: `<path d="M10 4.58325C5.83333 4.58325 2.5 9.99992 2.5 9.99992C2.5 9.99992 5.83333 15.4166 10 15.4166C14.1667 15.4166 17.5 9.99992 17.5 9.99992C17.5 9.99992 14.1667 4.58325 10 4.58325Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/><circle cx="10" cy="10" r="2.5" stroke="currentColor"/>`,
   },
+  // The same eye, struck through. Paired with `eye` for reveal toggles on secret fields, so the
+  // control reads as one thing in two states rather than two different buttons.
+  "eye-off": {
+    viewBox: "0 0 20 20",
+    body: `<path d="M10 4.58325C5.83333 4.58325 2.5 9.99992 2.5 9.99992C2.5 9.99992 5.83333 15.4166 10 15.4166C14.1667 15.4166 17.5 9.99992 17.5 9.99992C17.5 9.99992 14.1667 4.58325 10 4.58325Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/><circle cx="10" cy="10" r="2.5" stroke="currentColor"/><path d="M3.5 3.5L16.5 16.5" stroke="currentColor" stroke-linecap="round"/>`,
+  },
   "file-tree": {
     viewBox: "0 0 20 20",
     body: `<path d="M18 18V5H9.5L7.5 2H2L2 18H5M18 18H5M18 18V8.5H5V18" stroke="currentColor" stroke-linecap="square"/>`,

@@ -29,6 +29,7 @@ import { DialogExpertise } from "./dialog-expertise"
 import { DialogTelemetryStatus, type TelemetryStatus } from "./dialog-telemetry-status"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
+import { SettingsExplainV2 } from "./explain"
 
 type ShellOption = {
   path: string
@@ -395,7 +396,14 @@ export const SettingsGeneralV2: Component<{
 
         <SettingsRowV2
           title={language.t("settings.general.row.defaultPermissionMode.title")}
-          description={language.t("settings.general.row.defaultPermissionMode.description")}
+          description={
+            <>
+              {language.t("settings.general.row.defaultPermissionMode.description")}
+              <SettingsExplainV2 label={language.t("settings.general.row.defaultPermissionMode.title")}>
+                {language.t("settings.general.row.defaultPermissionMode.description.more")}
+              </SettingsExplainV2>
+            </>
+          }
         >
           <SelectV2
             appearance="inline"
@@ -709,7 +717,14 @@ export const SettingsGeneralV2: Component<{
           <SettingsListV2>
             <SettingsRowV2
               title={language.t("settings.general.row.health.title")}
-              description={language.t("settings.general.row.health.description")}
+              description={
+                <>
+                  {language.t("settings.general.row.health.description")}
+                  <SettingsExplainV2 label={language.t("settings.general.row.health.title")}>
+                    {language.t("settings.general.row.health.description.more")}
+                  </SettingsExplainV2>
+                </>
+              }
             >
               <ButtonV2
                 size="normal"

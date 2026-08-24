@@ -7,6 +7,7 @@ import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
+import { SettingsExplainV2 } from "./explain"
 
 type ContextCategory = "system" | "messages" | "retrieval" | "memory" | "tool_output"
 type ContextProfileName = "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
@@ -83,7 +84,14 @@ export const SettingsTunesV2: Component = () => {
           <SettingsListV2>
             <SettingsRowV2
               title={language.t("settings.tunes.context.enabled.title")}
-              description={language.t("settings.tunes.context.enabled.description")}
+              description={
+                <>
+                  {language.t("settings.tunes.context.enabled.description")}
+                  <SettingsExplainV2 label={language.t("settings.tunes.context.enabled.title")}>
+                    {language.t("settings.tunes.context.enabled.description.more")}
+                  </SettingsExplainV2>
+                </>
+              }
             >
               <Switch
                 checked={current().enabled !== false}

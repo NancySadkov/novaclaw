@@ -7,6 +7,7 @@ import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
+import { SettingsExplainV2 } from "./explain"
 
 // The Profile section inside Memory — the friendly, normal-level home for "who am I". The user types
 // their name and a short "about me"; the Enable switch is the master consent gate. When enabled, the model can look the
@@ -61,7 +62,14 @@ export const SettingsProfileSection: Component = () => {
       <SettingsListV2>
         <SettingsRowV2
           title={language.t("settings.profile.enabled.title")}
-          description={language.t("settings.profile.enabled.description")}
+          description={
+            <>
+              {language.t("settings.profile.enabled.description")}
+              <SettingsExplainV2 label={language.t("settings.profile.enabled.title")}>
+                {language.t("settings.profile.enabled.description.more")}
+              </SettingsExplainV2>
+            </>
+          }
         >
           <div data-action="settings-profile-enabled">
             <Switch checked={enabled()} onChange={(checked) => void persistProfile({ enabled: checked })} hideLabel>

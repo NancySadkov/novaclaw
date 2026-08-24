@@ -55,7 +55,10 @@ describe("Model Configure — identity and connection", () => {
       'name: form.providerName.trim() || (provider.name === "local" ? "local" : apiPath || props.providerID)',
     )
     expect(en["settings.models.config.providerName.name"]).toContain("optional")
-    expect(en["settings.models.config.providerName.desc"]).toContain("serving URL")
+    // The fallback rule moved behind the row's explain affordance when the descriptions were
+    // shortened (2026-08-24): the row says what the field IS, the `?` says what leaving it blank
+    // does. Still asserted — where it is said changed, whether it is said did not.
+    expect(en["settings.models.config.providerName.desc.more"]).toContain("serving URL")
   })
 
   test("has human labels for all identity fields", () => {

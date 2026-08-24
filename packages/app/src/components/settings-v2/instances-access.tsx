@@ -1,4 +1,6 @@
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
+import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
+import { Icon } from "@novaclaw/ui/v2/icon"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { type Component, For, Show, createMemo, createSignal } from "solid-js"
 import { RequiresLevel } from "@/context/expertise"
@@ -217,19 +219,16 @@ export const InstancesAccess: Component = () => {
               placeholder={language.t("settings.instances.peers.token")}
               autocomplete="off"
             />
-            <ButtonV2
+            <IconButtonV2
               size="small"
-              variant="ghost"
+              variant="ghost-muted"
               data-action="instances-peer-token-reveal"
               onClick={() => setRevealPeerToken(!revealPeerToken())}
+              icon={<Icon name={revealPeerToken() ? "eye-off" : "eye"} size="normal" />}
               aria-label={language.t(
                 revealPeerToken() ? "settings.instances.peers.token.hide" : "settings.instances.peers.token.reveal",
               )}
-            >
-              {language.t(
-                revealPeerToken() ? "settings.instances.peers.token.hide" : "settings.instances.peers.token.reveal",
-              )}
-            </ButtonV2>
+            />
             <ButtonV2 size="small" variant="neutral" data-action="instances-peer-addbtn" onClick={addPeer}>
               {language.t("settings.instances.peers.add")}
             </ButtonV2>

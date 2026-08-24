@@ -7,6 +7,7 @@ import { HELP_SEEN_KEY } from "@/pages/home-screen/help-tour"
 import { NovaHealthBoard } from "./nova-health"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
+import { SettingsExplainV2 } from "./explain"
 
 // The UI-preference surface, and ONLY that. localStorage is the app's whole persistence backend on
 // web (servers, drafts, prompt history all live there — see utils/persist.ts), so a blanket
@@ -88,7 +89,14 @@ export const SettingsRecoveryV2: Component = () => {
           <SettingsListV2>
             <SettingsRowV2
               title={language.t("settings.recovery.row.resetUi.title")}
-              description={language.t("settings.recovery.row.resetUi.description")}
+              description={
+                <>
+                  {language.t("settings.recovery.row.resetUi.description")}
+                  <SettingsExplainV2 label={language.t("settings.recovery.row.resetUi.title")}>
+                    {language.t("settings.recovery.row.resetUi.description.more")}
+                  </SettingsExplainV2>
+                </>
+              }
             >
               <ButtonV2
                 size="normal"
@@ -104,7 +112,14 @@ export const SettingsRecoveryV2: Component = () => {
 
             <SettingsRowV2
               title={language.t("settings.recovery.row.snapshots.title")}
-              description={language.t("settings.recovery.row.snapshots.description")}
+              description={
+                <>
+                  {language.t("settings.recovery.row.snapshots.description")}
+                  <SettingsExplainV2 label={language.t("settings.recovery.row.snapshots.title")}>
+                    {language.t("settings.recovery.row.snapshots.description.more")}
+                  </SettingsExplainV2>
+                </>
+              }
             >
               <ButtonV2 size="normal" variant="neutral" disabled data-action="settings-recovery-snapshots">
                 {language.t("settings.recovery.row.snapshots.action")}

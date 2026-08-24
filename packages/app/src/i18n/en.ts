@@ -1225,8 +1225,8 @@ export const dict = {
     "Choose how NovaClaw protects the instructions, conversation, recalled memory, knowledge, and tool evidence that a model needs to keep working.",
   "settings.tunes.toast.failed": "Saving Tune settings failed",
   "settings.tunes.context.enabled.title": "Context guard",
-  "settings.tunes.context.enabled.description":
-    "Keep one kind of context from crowding out the others. System instructions and the original task are always protected.",
+  "settings.tunes.context.enabled.description": "Keep one kind of context from crowding out the others.",
+  "settings.tunes.context.enabled.description.more": "System instructions and the original task are always protected.",
   "settings.tunes.todo.enabled.title": "Checklist reminders",
   "settings.tunes.todo.enabled.description":
     "Periodically put the current task list back in front of the model so long jobs stay on course.",
@@ -1267,8 +1267,8 @@ export const dict = {
   "settings.storage.copyFailed": "Could not copy the path",
   "settings.storage.openFailed": "Could not open that folder",
   "settings.storage.instanceHome": "Instance home",
-  "settings.storage.instanceHome.description":
-    "This instance was started with --home, so everything below lives inside this one folder. Copy or delete it and you copy or delete the whole instance. Run another NovaClaw with a different --home to keep two independent instances on one machine.",
+  "settings.storage.instanceHome.description": "This instance was started with --home, so everything lives in one folder.",
+  "settings.storage.instanceHome.description.more": "Copy or delete it and you copy or delete the whole instance. Run another NovaClaw with a different --home to keep two independent instances on one machine.",
   "settings.storage.config": "Settings",
   "settings.storage.config.description":
     "Your settings. They are stored in the database below; this folder is only used to import or export a settings file.",
@@ -1294,8 +1294,8 @@ export const dict = {
   "settings.storage.logs.retention.value": "{{days}} days · up to {{size}}",
   "settings.storage.logs.retention.days": "Keep about {{days}} days",
   "settings.storage.logs.level": "How much detail to write",
-  "settings.storage.logs.level.description":
-    "Info is the calm everyday record. Choose Debug while investigating a problem; Warn or Error keeps only increasingly serious events.",
+  "settings.storage.logs.level.description": "Info is the calm everyday record.",
+  "settings.storage.logs.level.description.more": "Choose Debug while investigating a problem; Warn or Error keeps only increasingly serious events.",
   "settings.storage.logs.level.debug": "Debug · everything",
   "settings.storage.logs.level.info": "Info · everyday activity",
   "settings.storage.logs.level.warn": "Warn · problems only",
@@ -1316,8 +1316,8 @@ export const dict = {
   // the report. ENGLISH-ONLY like its neighbours; translate properly or leave it out.
   "settings.recovery.section.restore": "Ways back",
   "settings.recovery.row.resetUi.title": "Reset appearance and layout",
-  "settings.recovery.row.resetUi.description":
-    "Reset how NovaClaw looks and is laid out back to the defaults — theme, the welcome tour, and view options. Your chats, files, and connected models are kept.",
+  "settings.recovery.row.resetUi.description": "Reset how NovaClaw looks and is laid out back to the defaults.",
+  "settings.recovery.row.resetUi.description.more": "Theme, the welcome tour, and view options. Your chats, files, and connected models are kept.",
   "settings.recovery.row.resetUi.action": "Reset",
   "settings.recovery.row.resetUi.confirm": "Click again to confirm",
   "settings.recovery.row.factory.title": "Factory reset",
@@ -1325,8 +1325,8 @@ export const dict = {
     "Erase all chats, sessions and configuration on this device and start fresh. Coming soon.",
   "settings.recovery.row.factory.action": "Erase everything",
   "settings.recovery.row.snapshots.title": "Snapshots",
-  "settings.recovery.row.snapshots.description":
-    "Roll the workspace back to an earlier point in time. File deletions already land in a dated Trash; full workspace snapshots are coming soon.",
+  "settings.recovery.row.snapshots.description": "Roll the workspace back to an earlier point in time.",
+  "settings.recovery.row.snapshots.description.more": "File deletions already land in a dated Trash; full workspace snapshots are coming soon.",
   "settings.recovery.row.snapshots.action": "Browse snapshots",
 
   // The Appearance tab's visual section (color scheme/theme/fonts) — "Visual", since the tab title is
@@ -1361,8 +1361,8 @@ export const dict = {
   // verdict to be stale, and this tab is not where findings live any more.
   // ENGLISH-ONLY like its neighbours; translate properly or leave the keys out.
   "settings.general.row.health.title": "Is something wrong?",
-  "settings.general.row.health.description":
-    "The health report checks this instance — its models, its storage, and how far the agent's shell is boxed in on this machine — and says what to do about anything it finds. It is also where the ways back live, if you need one.",
+  "settings.general.row.health.description": "Checks this instance and says what to do about anything it finds.",
+  "settings.general.row.health.description.more": "It looks at its models, its storage, and how far the agent's shell is boxed in on this machine. It is also where the ways back live, if you need one.",
   "settings.general.row.health.action": "Open health & recovery",
   "settings.health.title": "Is anything wrong?",
   "settings.health.checking": "Checking…",
@@ -1462,8 +1462,8 @@ export const dict = {
   "settings.general.row.mobileTitlebarBottom.description":
     "Place the title bar and session tabs at the bottom of the screen on mobile",
   "settings.general.row.defaultPermissionMode.title": "Default permission mode",
-  "settings.general.row.defaultPermissionMode.description":
-    'How much a new chat can do on its own before asking you. "Plan" and "Ask" check with you first; the higher modes act without asking, which is faster but riskier — only pick those for trusted work.',
+  "settings.general.row.defaultPermissionMode.description": "How much a new chat can do on its own before asking you.",
+  "settings.general.row.defaultPermissionMode.description.more": "“Plan” and “Ask” check with you first; the higher modes act without asking, which is faster but riskier — only pick those for trusted work.",
   "settings.general.row.shellBundle.title": "Shell environment",
   "settings.general.row.shellBundle.description":
     "The bash + git substrate agents run on. Provisioning downloads the pinned PortableGit bundle (~59 MB) so every machine gets the same environment — do it before going airgapped",
@@ -1826,8 +1826,8 @@ export const dict = {
   "settings.confinement.platform.darwin": "macOS",
   "settings.confinement.platform.linux": "Linux",
   "settings.confinement.probe.title": "What was actually tested",
-  "settings.confinement.probe.description":
-    "The exact check this instance ran on its own machine when it started, and what came back. Run it yourself to confirm — this screen is only repeating it.",
+  "settings.confinement.probe.description": "The check this instance ran on its own machine at startup, and what came back.",
+  "settings.confinement.probe.description.more": "Run it yourself to confirm — this screen is only repeating it.",
   "settings.confinement.probe.unreported": "This instance did not report a check.",
   "settings.confinement.probe.checking": "Asking the instance…",
   "settings.confinement.probe.none": "No check runs on {{platform}} — there is no sandbox to test yet.",
@@ -2022,14 +2022,18 @@ export const dict = {
   "settings.models.config.defaultPlaceholder": "default",
   "settings.models.config.section.identity": "Identity and connection",
   "settings.models.config.providerName.name": "Connection name (optional)",
-  "settings.models.config.providerName.desc":
-    "A concise name shown in Nova. Leave it blank to identify this connection by its serving URL.",
+  "settings.models.config.providerName.desc": "A concise name shown in Nova.",
+  "settings.models.config.providerName.desc.more": "Leave it blank to identify this connection by its serving URL.",
   "settings.models.config.apiPath.name": "API path",
-  "settings.models.config.apiPath.desc":
-    "The endpoint Nova connects to. This path is shared by every model from this provider.",
+  // Owner, 2026-08-24: a row's description is SCANNED, not read — one clause saying what the field
+  // is. Anything a person only wants once moves to `hint`, which pops on hover/focus. The rule is
+  // the same one `settings.identity.*` already follows; these rows simply predated it.
+  "settings.models.config.apiPath.desc": "The endpoint Nova connects to.",
+  "settings.models.config.apiPath.desc.more": "Shared by every model from this provider, not just this one.",
   "settings.models.config.apiKey.name": "API key",
-  "settings.models.config.apiKey.desc":
-    "The key Nova sends to this provider. Shared by every model from it. Hidden until you reveal it; clearing the field removes the stored key.",
+  "settings.models.config.apiKey.desc": "The key Nova sends to this provider.",
+  "settings.models.config.apiKey.desc.more":
+    "Shared by every model from this provider. Hidden until you reveal it; clearing the field removes the stored key.",
   "settings.models.config.apiKey.reveal": "Show API key",
   "settings.models.config.apiKey.hide": "Hide API key",
   "settings.models.config.modelID.name": "Model ID",
@@ -2043,8 +2047,9 @@ export const dict = {
   "settings.models.config.section.modalities": "What it handles",
   "settings.models.config.section.corrections": "Behaviour corrections",
   "settings.models.config.prePrompt.name": "Model-specific corrections",
-  "settings.models.config.prePrompt.desc":
-    "A short note prepended to every chat with this model, to correct a quirk in how it behaves — e.g. “Never wrap replies in markdown code fences” or “Stop apologising; answer directly”. It travels with the model, not the task, so keep it to behaviour fixes — not task instructions.",
+  "settings.models.config.prePrompt.desc": "A short note added to every chat with this model.",
+  "settings.models.config.prePrompt.desc.more":
+    "For correcting a quirk in how the model behaves — e.g. “Never wrap replies in markdown code fences” or “Stop apologising; answer directly”. It travels with the model, not the task, so keep it to behaviour fixes — not task instructions.",
   "settings.models.config.prePrompt.placeholder": "e.g. Don’t wrap answers in code fences.",
   "settings.models.config.temperature.name": "Temperature",
   "settings.models.config.temperature.desc":
@@ -2076,17 +2081,17 @@ export const dict = {
   "settings.models.config.maxTokens.name": "Max response length",
   "settings.models.config.maxTokens.desc": "The most tokens the model may generate in a single reply.",
   "settings.models.config.thinkingBudget.name": "Thinking budget",
-  "settings.models.config.thinkingBudget.desc":
-    "Soft cap on the model's reasoning per turn. When it's reached, the harness nudges the model to wrap up and answer — curbing runaway thinking in smaller models. Blank uses the default (¼ of the context).",
+  "settings.models.config.thinkingBudget.desc": "Soft cap on the model's reasoning per turn.",
+  "settings.models.config.thinkingBudget.desc.more": "When it's reached, the harness nudges the model to wrap up and answer — curbing runaway thinking in smaller models. Blank uses the default (¼ of the context).",
   "settings.models.config.retryAttempts.name": "Connection attempts",
   "settings.models.config.retryAttempts.desc":
     "How many times NovaClaw may reconnect when this model sends no reply or an incomplete reply. Includes the first attempt; 1–10.",
   "settings.models.config.reasoning.name": "Thinking",
-  "settings.models.config.reasoning.desc":
-    "Let the model think privately before answering. Turn on only if the model supports reasoning.",
+  "settings.models.config.reasoning.desc": "Let the model think privately before answering.",
+  "settings.models.config.reasoning.desc.more": "Turn on only if the model supports reasoning.",
   "settings.models.config.tool_call.name": "Tool use",
-  "settings.models.config.tool_call.desc":
-    "Let the model use NovaClaw's tools — read and edit files, run commands, search. Turn off for models that can't.",
+  "settings.models.config.tool_call.desc": "Let the model use NovaClaw's tools.",
+  "settings.models.config.tool_call.desc.more": "Read and edit files, run commands, search. Turn off for models that can't.",
   "settings.models.config.toolChannel.name": "How tools are offered",
   "settings.models.config.toolChannel.native":
     "This model is handed tools through the endpoint's own tool channel — the usual way, and the one that works when it works.",
@@ -2284,8 +2289,8 @@ export const dict = {
   "settings.systemPrompt.toast.failed": "Saving system-prompt settings failed",
   "settings.systemPrompt.persona.title": "Persona",
   "settings.systemPrompt.persona.enabled.title": "Persona baseline",
-  "settings.systemPrompt.persona.enabled.description":
-    "Add the persona to the start of every agent's system prompt, so its behavior stays consistent even when you switch models.",
+  "settings.systemPrompt.persona.enabled.description": "Add the persona to the start of every agent's system prompt.",
+  "settings.systemPrompt.persona.enabled.description.more": "So its behaviour stays consistent even when you switch models.",
   "settings.systemPrompt.persona.name.title": "Assistant name",
   "settings.systemPrompt.persona.name.description": "Rename the assistant without forking the prompt text",
   "settings.systemPrompt.persona.prompt.title": "Persona prompt",
@@ -2300,8 +2305,8 @@ export const dict = {
     "Tell the assistant who you are. When enabled, it can look your profile up on demand through a tool — your name and background stay out of every prompt until it actually needs them.",
   "settings.profile.toast.failed": "Saving your profile failed",
   "settings.profile.enabled.title": "Share my profile with the assistant",
-  "settings.profile.enabled.description":
-    "On when you've filled in your profile: the assistant can call a tool to read the details below on demand. Turn it off to keep them private.",
+  "settings.profile.enabled.description": "Let the assistant read the details below on demand.",
+  "settings.profile.enabled.description.more": "On when you've filled in your profile: the assistant can call a tool to read them. Turn it off to keep them private.",
   "settings.profile.name.title": "Your name",
   "settings.profile.name.description": "What the assistant should call you",
   "settings.profile.name.placeholder": "e.g. Nancy",
@@ -2314,8 +2319,8 @@ export const dict = {
   "settings.memory.description":
     "What NovaClaw remembers about you and your work. It learns as you chat — nothing to set up. Your memory stays on this device.",
   "settings.memory.enabled.title": "Remember across chats",
-  "settings.memory.enabled.description":
-    "Let NovaClaw learn and recall things about you and your work as you chat. Turn off to stop all recall and saving — what's already stored stays until you clear it.",
+  "settings.memory.enabled.description": "Let NovaClaw learn and recall things about you and your work as you chat.",
+  "settings.memory.enabled.description.more": "Turn off to stop all recall and saving — what's already stored stays until you clear it.",
   "settings.memory.io.hint":
     "Export a backup to keep or move to another instance, restore one here, or clear everything for a fresh start.",
   "settings.memory.export.action": "Export",
@@ -2442,8 +2447,8 @@ export const dict = {
     "Instead of trusting the model to plan a long task, the system breaks work into tiny steps, verifies each one by actually compiling and running things, and recovers from mistakes automatically — so a modest model on your own hardware can finish jobs that normally need a frontier model.",
   "settings.strict.toast.failed": "Saving Strict-mode settings failed",
   "settings.strict.row.enabled.title": "Enable Strict mode",
-  "settings.strict.row.enabled.description":
-    "Run tasks under the Strict harness: step-by-step planning with a verified checkpoint after every action. Because it builds and runs things on its own, a chat also needs its permission mode set to Bypass (or Yolo) — below that, the chat explains and answers normally.",
+  "settings.strict.row.enabled.description": "Run tasks under the Strict harness: plan, act, verify each step.",
+  "settings.strict.row.enabled.description.more": "A verified checkpoint follows every action. Because it builds and runs things on its own, a chat also needs its permission mode set to Bypass (or Yolo) — below that, the chat explains and answers normally.",
   "settings.strict.row.verification.title": "Verification gates",
   "settings.strict.row.verification.description":
     "Track what each build produced and re-run the kept tests after every edit — a change that silently breaks something verified is caught immediately.",
@@ -2473,11 +2478,11 @@ export const dict = {
   "settings.strict.row.wallMinutes.description":
     "Wall-clock budget per Strict task; at exhaustion the best verified state is delivered. Empty = 45.",
   "settings.strict.row.executionTokens.title": "Execution budget (tokens)",
-  "settings.strict.row.executionTokens.description":
-    "How much room each working step gets to write its answer — file edits, commands, and the like. A step that runs out mid-file is wasted work, so leave headroom: one non-trivial source file already runs to 13–15k tokens. Empty = 24576.",
+  "settings.strict.row.executionTokens.description": "Room each working step gets to write its answer.",
+  "settings.strict.row.executionTokens.description.more": "File edits, commands, and the like. A step that runs out mid-file is wasted work, so leave headroom: one non-trivial source file already runs to 13–15k tokens. Empty = 24576.",
   "settings.strict.row.reasoningTokens.title": "Reasoning budget (tokens)",
-  "settings.strict.row.reasoningTokens.description":
-    "Let the model think a step through before it acts, and give that thinking its own room. Reasoning is all-or-nothing: a model cut off mid-thought returns nothing at all, so this needs to be generous — 24576 works, 8192 returns empty. Costs an extra call on the steps that plan and recover. Empty or 0 = off.",
+  "settings.strict.row.reasoningTokens.description": "Room for the model to think a step through before it acts.",
+  "settings.strict.row.reasoningTokens.description.more": "Reasoning is all-or-nothing: a model cut off mid-thought returns nothing at all, so this needs to be generous — 24576 works, 8192 returns empty. Costs an extra call on the steps that plan and recover. Empty or 0 = off.",
   "settings.webSearch.title": "Web Search",
   "settings.webSearch.description":
     "Web search just works out of the box — NovaClaw searches free engines in-process, no setup. Point it at your own SearXNG for richer results, or turn a built-in engine off if it starts misbehaving.",
@@ -2518,12 +2523,12 @@ export const dict = {
   "settings.computer.description":
     "Let the agent see a screen and click on it, and decide how much it may do before asking you.",
   "settings.computer.display.name": "Display",
-  "settings.computer.windows.description":
-    "On Windows, NovaClaw drives one application at a time rather than a whole screen — the agent names the program it wants (for example dosbox-x.exe) and you approve it when it asks. There is no display to set here.",
+  "settings.computer.windows.description": "On Windows, NovaClaw drives one application at a time, not a whole screen.",
+  "settings.computer.windows.description.more": "The agent names the program it wants (for example dosbox-x.exe) and you approve it when it asks. There is no display to set here.",
   "settings.computer.windows.value": "Per app, on request",
 
-  "settings.computer.display.description":
-    "The X display the agent observes and clicks, for example :99. Leave it empty and computer use stays off — a display is never picked up from the environment, because that would either fail on a server or quietly drive your own screen.",
+  "settings.computer.display.description": "The X display the agent observes and clicks, for example :99.",
+  "settings.computer.display.description.more": "Leave it empty and computer use stays off — a display is never picked up from the environment, because that would either fail on a server or quietly drive your own screen.",
   "settings.computer.screenshot.name": "Screenshot path",
   "settings.computer.screenshot.description":
     "Where screenshots are written on the machine serving the display. Defaults to a temporary file.",

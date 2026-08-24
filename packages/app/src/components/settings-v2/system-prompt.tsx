@@ -7,6 +7,7 @@ import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
+import { SettingsExplainV2 } from "./explain"
 
 // B4 — the System Prompt settings tab. Exposes the composed prompt's EDITABLE
 // layers: (1) persona — rename the agent (Nova→anything) + replace the B3 base
@@ -80,7 +81,14 @@ export const SettingsSystemPromptV2: Component = () => {
           <SettingsListV2>
             <SettingsRowV2
               title={language.t("settings.systemPrompt.persona.enabled.title")}
-              description={language.t("settings.systemPrompt.persona.enabled.description")}
+              description={
+                <>
+                  {language.t("settings.systemPrompt.persona.enabled.description")}
+                  <SettingsExplainV2 label={language.t("settings.systemPrompt.persona.enabled.title")}>
+                    {language.t("settings.systemPrompt.persona.enabled.description.more")}
+                  </SettingsExplainV2>
+                </>
+              }
             >
               <Switch
                 checked={persona().enabled !== false}

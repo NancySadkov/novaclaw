@@ -19,6 +19,7 @@ import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import { InstanceResources } from "./instance-resources"
 import { STORAGE_ENTRIES, type PathInfo } from "./storage-entries"
+import { SettingsExplainV2 } from "./explain"
 
 // The Storage tab — what this instance costs in RAM/on disk, and WHERE it keeps things.
 //
@@ -113,7 +114,14 @@ export const SettingsStorageV2: Component = () => {
           <SettingsListV2>
             <SettingsRowV2
               title={language.t("settings.storage.instanceHome")}
-              description={language.t("settings.storage.instanceHome.description")}
+              description={
+                <>
+                  {language.t("settings.storage.instanceHome.description")}
+                  <SettingsExplainV2 label={language.t("settings.storage.instanceHome")}>
+                    {language.t("settings.storage.instanceHome.description.more")}
+                  </SettingsExplainV2>
+                </>
+              }
             >
               <PathValue
                 value={home()}
@@ -197,7 +205,14 @@ export const SettingsStorageV2: Component = () => {
         </SettingsRowV2>
         <SettingsRowV2
           title={language.t("settings.storage.logs.level")}
-          description={language.t("settings.storage.logs.level.description")}
+          description={
+            <>
+              {language.t("settings.storage.logs.level.description")}
+              <SettingsExplainV2 label={language.t("settings.storage.logs.level")}>
+                {language.t("settings.storage.logs.level.description.more")}
+              </SettingsExplainV2>
+            </>
+          }
           minLevel="advanced"
         >
           <LogLevelSelect

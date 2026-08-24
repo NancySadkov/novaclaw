@@ -16,6 +16,7 @@ import {
   type PermissionEffect,
   type PermissionRule,
 } from "./computer-rules"
+import { SettingsExplainV2 } from "./explain"
 
 // The Computer Use settings tab.
 //
@@ -114,7 +115,14 @@ export const SettingsComputerV2: Component = () => {
           fallback={
             <SettingsRowV2
               title={language.t("settings.computer.display.name")}
-              description={language.t("settings.computer.windows.description")}
+              description={
+                <>
+                  {language.t("settings.computer.windows.description")}
+                  <SettingsExplainV2 label={language.t("settings.computer.display.name")}>
+                    {language.t("settings.computer.windows.description.more")}
+                  </SettingsExplainV2>
+                </>
+              }
             >
               <span class="text-[13px] text-v2-text-text-muted">{language.t("settings.computer.windows.value")}</span>
             </SettingsRowV2>
@@ -122,7 +130,14 @@ export const SettingsComputerV2: Component = () => {
         >
           <SettingsRowV2
             title={language.t("settings.computer.display.name")}
-            description={language.t("settings.computer.display.description")}
+            description={
+              <>
+                {language.t("settings.computer.display.description")}
+                <SettingsExplainV2 label={language.t("settings.computer.display.name")}>
+                  {language.t("settings.computer.display.description.more")}
+                </SettingsExplainV2>
+              </>
+            }
           >
             <TextInputV2
               appearance="large"
