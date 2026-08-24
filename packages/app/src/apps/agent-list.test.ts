@@ -36,6 +36,23 @@ describe("the fields a roster row keeps", () => {
     expect(row?.workspace).toBeUndefined()
   })
 
+  test("🔴 `paused` survives the trip — it draws the badge AND enables Resume", async () => {
+    // The same hand-kept-subset defect as `workspace`, and it disabled TWO controls at once. Every
+    // other link in the chain existed: the server sets it from config `disabled: true`, the wire
+    // schema declares it, `contacts.ts` maps it and `pages/contacts.tsx` renders a badge for it —
+    // only this mapper dropped it. So no badge ever appeared, and the config dialog's button always
+    // read "Pause", which re-wrote `disabled: true` on an already-paused colleague. Resume was
+    // unreachable through the UI entirely.
+    const [row] = await listAgents(response([{ id: "wren", mode: "primary", name: "Wren", paused: true }]) as never)
+    expect(row?.paused).toBe(true)
+  })
+
+  test("an active colleague is not reported as paused", async () => {
+    // The control. A mapper hard-coding `paused: true` would satisfy the test above.
+    const [row] = await listAgents(response([{ id: "edda", mode: "primary", name: "Edda" }]) as never)
+    expect(row?.paused).toBe(false)
+  })
+
   test("the identity fields a roster tile draws still come through", async () => {
     const [row] = await listAgents(
       response([{ id: "iris", mode: "primary", name: "Iris", title: "Companion", avatar: "I", memory: "none" }]) as never,

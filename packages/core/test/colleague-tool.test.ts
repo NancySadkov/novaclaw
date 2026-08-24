@@ -54,6 +54,34 @@ describe("what the roster looks like to a model routing work", () => {
   test("a nameless colleague still lists under its id", () => {
     expect(ColleagueTool.formatRoster([{ id: "build" }], "nova")).toBe("build · build")
   })
+
+  test("🔴 a PAUSED colleague is marked, not hidden", () => {
+    // Marked, because asking one spends a hop on a message that never comes back — `permission.ts`
+    // answers deny `*` for a paused agent — and the silence only surfaces 30 minutes later as a
+    // stall notice.
+    const listing = ColleagueTool.formatRoster([{ id: "wren", name: "Wren", paused: true }], "nova")
+    expect(listing).toContain("wren")
+    expect(listing).toContain("PAUSED")
+  })
+
+  test("…and HIDING one would be worse than listing it", () => {
+    // The reason it is marked rather than filtered: a roster that omits a paused colleague reads as
+    // "no such colleague", and the model hires a DUPLICATE — handing the new hire the paused one's
+    // name and cabinet, which is the collateral that pausing replaced removal to avoid.
+    const listing = ColleagueTool.formatRoster(
+      [
+        { id: "wren", name: "Wren", paused: true },
+        { id: "edda", name: "Edda" },
+      ],
+      "nova",
+    )
+    expect(listing.split("\n")).toHaveLength(2)
+  })
+
+  test("an ACTIVE colleague carries no state marker", () => {
+    // The control: a marker on every row would teach the model nothing.
+    expect(ColleagueTool.formatRoster([{ id: "edda", name: "Edda" }], "nova")).not.toContain("PAUSED")
+  })
 })
 
 describe("who may staff the organization", () => {

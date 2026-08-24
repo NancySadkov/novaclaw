@@ -116,17 +116,24 @@ export const formatRoster = (
     readonly name?: string | undefined
     readonly title?: string | undefined
     readonly description?: string | undefined
+    readonly paused?: boolean | undefined
   }>,
   selfID: string,
 ): string => {
   const rows = agents.filter((agent) => agent.id !== selfID)
-  if (rows.length === 0)
-    return "You have no colleagues yet. Ask the user whether to hire one, or do the work yourself."
+  if (rows.length === 0) return "You have no colleagues yet. Ask the user whether to hire one, or do the work yourself."
   return rows
     .map((agent) => {
       const name = agent.name?.trim() || agent.id
       const role = [agent.title?.trim(), agent.description?.trim()].filter(Boolean).join(" — ")
-      return `${agent.id} · ${name}${role ? ` · ${role}` : ""}`
+      // 🔴 MARKED, not hidden. A paused colleague cannot act — `permission.ts` answers deny `*` — so
+      // asking one spends a hop on a message that will never come back, and `colleague-stall.ts`
+      // then has to report the silence 30 minutes later. But HIDING them would be worse: the roster
+      // would read as "no such colleague" and the model would hire a DUPLICATE, handing the new hire
+      // the paused one's name and cabinet — the exact collateral that pausing replaced removal to
+      // avoid. The user sees the same fact as a badge on the Contacts row.
+      const state = agent.paused === true ? " · PAUSED (set aside; cannot answer until resumed)" : ""
+      return `${agent.id} · ${name}${role ? ` · ${role}` : ""}${state}`
     })
     .join("\n")
 }
@@ -167,8 +174,8 @@ export const layer = Layer.effectDiscard(
             "`hire` and `retire` staff the organization and are Nova's alone — a hire is given a name from the " +
             "instance's own pool, so colleagues never read as people.",
           input: Input,
-  // At the cap the asking ops are not offered at all — see `CAPPED`.
-  variants: { [CAPPED]: CappedInput },
+          // At the cap the asking ops are not offered at all — see `CAPPED`.
+          variants: { [CAPPED]: CappedInput },
           output: Output,
           toModelOutput: ({ output }) => [{ type: "text", text: output.message }],
           execute: (input, context) =>

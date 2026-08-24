@@ -34,6 +34,13 @@ export const listAgents = async (sdk: { agent: { list: () => Promise<{ data?: un
         id,
         mode,
         hidden: row["hidden"] === true,
+        // 🔴 The SAME hand-kept-subset defect as `workspace` below, and it disabled two controls at
+        // once. `paused` is set server-side from config `disabled: true`, is declared on the wire
+        // (`schema/agent.ts`), is mapped by `contacts.ts` (`agent.paused === true`) and is rendered
+        // as a badge (`pages/contacts.tsx`) — every link in the chain existed except this one, so the
+        // badge never appeared AND the config dialog's button always read "Pause". Clicking it on an
+        // already-paused colleague re-wrote `disabled: true`, which is why Resume was UNREACHABLE.
+        paused: row["paused"] === true,
         name: text("name"),
         title: text("title"),
         description: text("description"),
