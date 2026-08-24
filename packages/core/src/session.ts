@@ -310,7 +310,10 @@ export interface Interface {
     after?: number
     limit: number
   }) => Effect.Effect<{ events: ReadonlyArray<SessionEvent.DurableEvent>; hasMore: boolean }, NotFoundError>
-  readonly switchAgent: (input: { sessionID: SessionSchema.ID; agent: string }) => Effect.Effect<void, NotFoundError>
+  readonly switchAgent: (input: {
+    sessionID: SessionSchema.ID
+    agent: string
+  }) => Effect.Effect<void, NotFoundError | OperationUnavailableError>
   readonly switchModel: (input: {
     sessionID: SessionSchema.ID
     model: ModelV2.Ref
@@ -409,6 +412,28 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2
  * create WITHOUT depending on `SessionV2.node`, which would close the runner cycle
  * `SessionV2 -> LocationServiceMap -> location services -> spawn -> SessionV2`.
  */
+/**
+ * The live root chat a colleague already owns, if any — **the ONE chat-pick rule**.
+ *
+ * 🔴 Extracted because two callers now need it and they must not disagree. `createSessionRecord`
+ * uses it to return the existing conversation instead of minting a second; `switchAgent` uses it to
+ * refuse a move that would give one colleague two. Written twice, the two would drift, and the
+ * symptom of the drift is exactly what this rule exists to prevent: a colleague with two
+ * conversations, one of them unreachable because the roster can only show one.
+ *
+ * The three clauses are the same three `createSessionRecord` documents: a ROOT (a sub-agent inherits
+ * its officer's id), NOT archived ("Clear chat" archives, which is how a fresh one is asked for), and
+ * newest first so the pick is deterministic rather than whatever the planner returned.
+ */
+const liveRootFor = (db: Database.Interface["db"], agent: string) =>
+  db
+    .select()
+    .from(SessionTable)
+    .where(and(eq(SessionTable.agent, agent), isNull(SessionTable.parent_id), isNull(SessionTable.time_archived)))
+    .orderBy(desc(SessionTable.time_updated))
+    .get()
+    .pipe(Effect.orDie)
+
 export const createSessionRecord = (
   deps: {
     readonly db: Database.Interface["db"]
@@ -457,24 +482,8 @@ export const createSessionRecord = (
     // therefore still be treated as a colleague here. Sub-agents are already excluded by the
     // `parentID` clause, so the residual gap is hidden-agent roots — narrow, and filed rather than
     // papered over.
-    if (
-      input.parentID === undefined &&
-      input.agent !== undefined &&
-      !AgentV2.POSTURE_IDS.has(input.agent)
-    ) {
-      const live = yield* db
-        .select()
-        .from(SessionTable)
-        .where(
-          and(
-            eq(SessionTable.agent, input.agent),
-            isNull(SessionTable.parent_id),
-            isNull(SessionTable.time_archived),
-          ),
-        )
-        .orderBy(desc(SessionTable.time_updated))
-        .get()
-        .pipe(Effect.orDie)
+    if (input.parentID === undefined && input.agent !== undefined && !AgentV2.POSTURE_IDS.has(input.agent)) {
+      const live = yield* liveRootFor(db, input.agent)
       if (live) {
         const existing = yield* store.get(SessionSchema.ID.make(live.id))
         if (existing) return existing
@@ -931,8 +940,32 @@ export const layer = Layer.effect(
         yield* execution.wake(admitted.sessionID)
         return { type: "prompt" as const, admitted }
       }),
+      /**
+       * 🔴 **The other door into "one chat per colleague" — and it had no lock on it.**
+       *
+       * `createSessionRecord` enforces the invariant for anyone CREATING a chat, but a switch moves
+       * an existing chat onto an agent, and this endpoint published the event unconditionally. Point
+       * a second root at a colleague who already has one and they own two: the roster can show only
+       * one of them, so the other becomes unreachable while its tokens still roll up into that
+       * colleague's totals — the exact failure the create-side guard was written to stop, reached
+       * through a different door. It is public, and a command's `agent:` frontmatter reaches it too.
+       *
+       * ⚠️ Refuses rather than silently doing nothing: a switch that reports success and leaves the
+       * chat where it was is the "message can be the lie" defect. `OperationUnavailableError` already
+       * declares `switchAgent` in its operation literal, so this needed no new error type.
+       *
+       * ⚠️ A switch onto the agent this chat ALREADY runs as is a no-op, not a conflict — otherwise
+       * re-issuing the same command fails the second time.
+       */
       switchAgent: Effect.fn("V2Session.switchAgent")(function* (input) {
-        yield* result.get(input.sessionID)
+        const session = yield* result.get(input.sessionID)
+        if (session.agent !== input.agent && !AgentV2.POSTURE_IDS.has(input.agent)) {
+          const live = yield* liveRootFor(db, input.agent)
+          // Only a ROOT can conflict: a sub-agent inherits its officer's id by design.
+          if (live && live.id !== String(input.sessionID) && session.parentID === undefined) {
+            return yield* new OperationUnavailableError({ operation: "switchAgent" })
+          }
+        }
         yield* events.publish(SessionEvent.AgentSwitched, {
           sessionID: input.sessionID,
           messageID: SessionMessage.ID.create(),
