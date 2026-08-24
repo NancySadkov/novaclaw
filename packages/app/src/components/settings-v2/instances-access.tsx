@@ -7,6 +7,7 @@ import { useGlobal } from "@/context/global"
 import { discoverInstances, type DiscoveredInstance } from "@/utils/instance-discovery"
 import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
+import { mergePeer, type Peer } from "./peer-token"
 
 // P2P inter-instance access (Settings → Instances):
 //   1. "This instance" — the INCOMING API token (config server.password; HTTP Basic, username
@@ -21,8 +22,6 @@ import { useServerSync } from "@/context/server-sync"
 //   2. "Agent peers" — the `instances` config array: peer NovaClaw instances THIS instance's
 //      agents may drive free-form over HTTP. Each peer surfaces to models as
 //      NOVACLAW_INSTANCE_<NAME>_URL/_TOKEN env in bash plus a system-prompt line.
-type Peer = { name: string; url: string; token?: string }
-
 export const InstancesAccess: Component = () => {
   const language = useLanguage()
   const serverSync = useServerSync()
@@ -41,6 +40,9 @@ export const InstancesAccess: Component = () => {
 
   const peers = createMemo(() => config().instances ?? [])
   const [draft, setDraft] = createSignal<Peer>({ name: "", url: "", token: "" })
+  // Masked by default, revealable on request — the same stance as the model API key: the ask is to
+  // SEE it, and a secret legible to anyone glancing at a shared screen is a different promise.
+  const [revealPeerToken, setRevealPeerToken] = createSignal(false)
 
   // Rule 2, offer what exists: the LAN already knows which instances are reachable, so asking a
   // person to type `http://host:port` asks them to look up something the product can see.
@@ -80,12 +82,16 @@ export const InstancesAccess: Component = () => {
   }
   const addPeer = () => {
     const value = draft()
-    if (!value.name.trim() || !value.url.trim()) return
-    savePeers([
-      ...peers().filter((peer) => peer.name !== value.name.trim()),
-      { ...value, name: value.name.trim(), url: value.url.trim() },
-    ])
+    const merged = mergePeer({ draft: value, existing: peers().find((peer) => peer.name === value.name.trim()) })
+    if (merged === undefined) return
+    savePeers([...peers().filter((peer) => peer.name !== merged.name), merged])
     setDraft({ name: "", url: "", token: "" })
+  }
+
+  /** Load a saved peer into the draft so it can be SEEN and changed rather than only deleted. */
+  const editPeer = (peer: Peer) => {
+    setRevealPeerToken(false)
+    setDraft({ name: peer.name, url: peer.url, token: peer.token ?? "" })
   }
 
   return (
@@ -146,6 +152,14 @@ export const InstancesAccess: Component = () => {
                 <ButtonV2
                   size="small"
                   variant="neutral"
+                  data-action="instances-peer-edit"
+                  onClick={() => editPeer(peer)}
+                >
+                  {language.t("common.edit")}
+                </ButtonV2>
+                <ButtonV2
+                  size="small"
+                  variant="neutral"
                   data-action="instances-peer-remove"
                   onClick={() => savePeers(peers().filter((item) => item.name !== peer.name))}
                 >
@@ -196,13 +210,26 @@ export const InstancesAccess: Component = () => {
               autocomplete="off"
             />
             <TextInputV2
-              type="password"
+              type={revealPeerToken() ? "text" : "password"}
               appearance="base"
               value={draft().token ?? ""}
               onInput={(event) => setDraft({ ...draft(), token: event.currentTarget.value })}
               placeholder={language.t("settings.instances.peers.token")}
               autocomplete="off"
             />
+            <ButtonV2
+              size="small"
+              variant="ghost"
+              data-action="instances-peer-token-reveal"
+              onClick={() => setRevealPeerToken(!revealPeerToken())}
+              aria-label={language.t(
+                revealPeerToken() ? "settings.instances.peers.token.hide" : "settings.instances.peers.token.reveal",
+              )}
+            >
+              {language.t(
+                revealPeerToken() ? "settings.instances.peers.token.hide" : "settings.instances.peers.token.reveal",
+              )}
+            </ButtonV2>
             <ButtonV2 size="small" variant="neutral" data-action="instances-peer-addbtn" onClick={addPeer}>
               {language.t("settings.instances.peers.add")}
             </ButtonV2>

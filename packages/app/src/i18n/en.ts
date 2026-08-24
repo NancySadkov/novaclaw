@@ -1844,6 +1844,8 @@ export const dict = {
   "settings.instances.peers.name": "name",
   "settings.instances.peers.url": "http://host:port",
   "settings.instances.peers.token": "peer token",
+  "settings.instances.peers.token.reveal": "Show token",
+  "settings.instances.peers.token.hide": "Hide token",
   "settings.instances.peers.scan": "Find instances on my network",
   "settings.instances.peers.scanning": "Looking…",
   "settings.instances.peers.none": "No other instances answered on this network — fill the fields below.",
