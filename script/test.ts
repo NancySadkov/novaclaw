@@ -19,9 +19,11 @@
  *   bun run test --only=core
  *   bun run test --only=typecheck   # just: does the tree compile (~52 s)
  *
- * ⚠️ novaclaw is `--full` + per-subdir: its cli/server/instance integration tests each pass alone but
- * HANG when run together in one process (an undisposed InstanceStore/serve handle leak — todo.md).
- * Until that fixture leak is fixed, we run each subdir in its own process so the leak can't accumulate.
+ * ⚠️ novaclaw is `--full`: everything not promoted runs as ONE unit, plus a unit per file that cannot
+ * share a process (`SOLO_TEST_FILES`). It used to be one unit PER SUBDIR because those tests "hang when
+ * run together" under an undisposed InstanceStore/serve handle leak. Measured 2026-08-24: they do not.
+ * 71 files ran together in one process and exited cleanly; the leak was fixed and the workaround
+ * outlived it, at ~25 process startups and ~200 s of every release gate.
  *
  * ─── WHY A GREEN RUN MEANS SOMETHING (v0.2.0 PREP → Wave 0, 2026-07-27) ────────────────────────────
  * The binding ruling is todo.md → Standing architecture decisions: *"a check that reads as coverage
@@ -693,20 +695,60 @@ function run(name: string, kind: Kind, dir: string, argv: string[], wallclockMs:
 // novaclaw's integration tests must run isolated (see header). Enumerate its test/ subdirs that hold
 // test files, plus the handful of top-level test files, and run each as its own process. Subdirs
 // already promoted to fast-tier run units are skipped so `--full` never runs them twice.
-function subUnits(dir: string, promoted: ReadonlySet<string>): string[] {
+/**
+ * Files that genuinely cannot share a process — and the ONLY reason anything here is isolated.
+ *
+ * 🔴 They assert on PROCESS-GLOBAL state, so they pass alone and fail together, which is a different
+ * defect from the hang this file used to isolate for:
+ *
+ *   - `lazy-command` asserts a module is loaded ONCE and shared between builder and handler, which is
+ *     a claim about bun's module cache. Any earlier suite that imported it has already decided the
+ *     answer.
+ *   - `mcp/config-reload` (B7 tier-3) asserts a reconcile keeps the SAME client object. A connection
+ *     another suite established is a different object.
+ *
+ * ⚠️ Add to this list only with a measurement: run the file alone and with the bulk, and show that it
+ * passes alone and fails together. An entry added on suspicion costs a process every release gate
+ * forever, which is exactly the bill this list replaced.
+ */
+const SOLO_TEST_FILES = ["test/cli/lazy-command.test.ts", "test/mcp/config-reload.test.ts"] as const
+
+/**
+ * The `--full` tier's run units for a per-subdir package: ONE bulk unit, plus a unit per file that
+ * cannot share a process.
+ *
+ * 🔴 **This was one unit PER SUBDIR, and the reason had expired.** The comment at the top of this
+ * file said novaclaw's cli/server/instance subdirs "each pass alone but HANG when run together in one
+ * process (an undisposed InstanceStore/serve handle leak)". Measured 2026-08-24: all 18 non-promoted
+ * subdirs plus the 8 top-level files — 71 files, 655 tests — ran together in ONE process and exited
+ * cleanly in 291 s. No hang. The leak was fixed at some point and the workaround outlived it.
+ *
+ * What it cost: ~25 process startups on every release gate, about 500 s, against 273 s for the same
+ * content in one process. Half the extra tier's wall clock, spent on a defect that was gone.
+ *
+ * ⚠️ If a hang ever returns, this is where to split again — but split on a MEASUREMENT, and prefer
+ * naming the file in `SOLO_TEST_FILES` over re-isolating every subdir.
+ */
+function subUnits(dir: string, promoted: ReadonlySet<string>): { unit: string; args: string[] }[] {
   const root = `${dir}/test`
-  const units: string[] = []
-  const top: string[] = []
+  const paths: string[] = []
   for (const entry of readdirSync(root, { withFileTypes: true })) {
     if (entry.isDirectory()) {
       if (promoted.has(entry.name)) continue
-      if (readdirSync(`${root}/${entry.name}`, { recursive: true }).some((f) => String(f).endsWith(".test.ts")))
-        units.push(`test/${entry.name}/`)
+      for (const found of readdirSync(`${root}/${entry.name}`, { recursive: true })) {
+        const name = String(found).replaceAll("\\", "/")
+        if (name.endsWith(".test.ts")) paths.push(`test/${entry.name}/${name}`)
+      }
     } else if (entry.name.endsWith(".test.ts")) {
-      top.push(`test/${entry.name}`)
+      paths.push(`test/${entry.name}`)
     }
   }
-  return [...top, ...units]
+  const solo = SOLO_TEST_FILES.filter((file) => paths.includes(file))
+  const bulk = paths.filter((file) => !solo.includes(file as (typeof SOLO_TEST_FILES)[number]))
+  return [
+    ...(bulk.length > 0 ? [{ unit: "test/*", args: bulk }] : []),
+    ...solo.map((file) => ({ unit: file, args: [file] })),
+  ]
 }
 
 const promotedSubdirs = new Set<string>(PROMOTED_NOVACLAW_SUBDIRS)
@@ -749,8 +791,8 @@ for (const pkg of PACKAGES) {
   const perTest = pkg.timeoutMs ?? PER_TEST_TIMEOUT_MS
   const argv = (args: string[]) => ["test", ...args, `--timeout=${perTest}`]
   if (pkg.perSubdir) {
-    for (const unit of subUnits(pkg.dir, promotedSubdirs))
-      run(`${pkg.name} ${unit}`, "test", pkg.dir, argv([unit]), pkg.subdirWallclockMs?.[unit] ?? wallclock)
+    for (const sub of subUnits(pkg.dir, promotedSubdirs))
+      run(`${pkg.name} ${sub.unit}`, "test", pkg.dir, argv(sub.args), pkg.subdirWallclockMs?.[sub.unit] ?? wallclock)
   } else {
     run(pkg.name, "test", pkg.dir, argv(pkg.args), wallclock)
   }

@@ -208,8 +208,11 @@ export const PACKAGES: Pkg[] = [
     args: [],
     fullOnly: true,
     perSubdir: true,
-    // Measured isolated at 201.2 s; two exact full gates killed it at the generic 150 s
-    // ceiling with host commit peaking at only 81%. Keep a hang backstop, with honest margin.
-    subdirWallclockMs: { "test/cli/": 300_000 },
+    // 🔴 `test/*` is now ONE unit — the per-subdir split's reason (a hang) was measured gone on
+    // 2026-08-24; see `subUnits` in test.ts. Measured 273 s for all 69 files together, so 900 s keeps
+    // a real hang bounded (a hang runs forever; this does not) with honest margin over the slowest
+    // honest run — the same reasoning `server` above carries, and the same lesson: an under-set
+    // backstop turns a slow machine into a fake red.
+    subdirWallclockMs: { "test/*": 900_000 },
   },
 ]
