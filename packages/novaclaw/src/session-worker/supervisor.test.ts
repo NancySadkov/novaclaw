@@ -219,6 +219,7 @@ test("permission and question waits execute in host-owned services", async () =>
         // Host-side hand-off is not what this case exercises — it must never run here.
         colleague: {
           deliver: () => Effect.die("unused"),
+          deliverGroup: () => Effect.die("unused"),
           hire: () => Effect.die("unused"),
           retire: () => Effect.die("unused"),
         },

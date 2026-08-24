@@ -104,3 +104,52 @@ describe("SessionOrigin.badge (transcript sender chip)", () => {
     })
   })
 })
+
+describe("a group message says it is one", () => {
+  const groupOrigin = (over: Record<string, unknown> = {}): Origin =>
+    ({
+      via: "agent",
+      sessionID: "ses_a",
+      label: "aris",
+      relation: "peer",
+      conversation: "conv_1",
+      participants: ["aris", "belen", "cato"],
+      ...over,
+    }) as Origin
+
+  test("the receiver is told who else is listening", () => {
+    // 🔴 The fan-out is INVISIBLE from inside one chat — a group message arrives looking exactly
+    // like a 1:1 hand-off. A receiver told nothing answers one colleague and silently leaves the
+    // rest of the conference out.
+    const header = SessionOrigin.modelHeader(groupOrigin())
+    expect(header).toContain("to a group")
+    expect(header).toContain("belen")
+    expect(header).toContain("cato")
+  })
+
+  test("the sender is not listed as one of the others", () => {
+    // `participants` deliberately includes the sender so a reply can reach them; the HEADER is the
+    // one place that would read as nonsense ("also here: aris" when aris is who just spoke).
+    expect(SessionOrigin.modelHeader(groupOrigin())).not.toContain("also here: aris")
+  })
+
+  test("a 1:1 hand-off is unchanged — no conversation, no group wording", () => {
+    // The regression that matters most: every existing colleague exchange must read exactly as
+    // before, or this field has changed messages it was never meant to touch.
+    const solo = SessionOrigin.modelHeader({
+      via: "agent",
+      sessionID: "ses_a",
+      label: "aris",
+      relation: "peer",
+    } as Origin)
+    expect(solo).not.toContain("to a group")
+    expect(solo).toContain("from your colleague aris")
+  })
+
+  test("a conversation id with nobody else in it is NOT a group", () => {
+    // A one-participant conference is a 1:1 exchange wearing a group's clothes; announcing it would
+    // teach the model to address a set that does not exist.
+    const alone = groupOrigin({ participants: ["aris"] })
+    expect(SessionOrigin.modelHeader(alone)).not.toContain("to a group")
+  })
+})

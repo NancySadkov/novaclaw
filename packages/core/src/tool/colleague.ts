@@ -50,6 +50,24 @@ const AskOp = Schema.Struct({
   }),
 })
 
+/**
+ * ⚠️ A SEPARATE OP rather than letting `ask` take a list.
+ *
+ * One field that means "one colleague" in some calls and "several" in others is exactly the shape a
+ * floor model gets wrong, and getting it wrong here is not a typo: it silently addresses one person
+ * when the sender meant the room, or charges the loop bound N times when it meant one. Two ops make
+ * the choice explicit at the call site, which is where the model is actually deciding.
+ */
+const AskGroupOp = Schema.Struct({
+  op: Schema.Literal("ask_group"),
+  colleagues: Schema.Array(Schema.String).annotate({
+    description: "Two or more colleagues, by id. Each gets it in their own chat and can see who else was asked.",
+  }),
+  message: Schema.String.annotate({
+    description: "What you are putting to all of them, in full — they do not see your conversation.",
+  }),
+})
+
 const HireOp = Schema.Struct({
   op: Schema.Literal("hire"),
   title: Schema.String.annotate({
@@ -70,7 +88,7 @@ const RetireOp = Schema.Struct({
   colleague: Schema.String.annotate({ description: "Which colleague to retire, by id." }),
 })
 
-export const Input = Schema.Union([ListOp, AskOp, HireOp, RetireOp])
+export const Input = Schema.Union([ListOp, AskOp, AskGroupOp, HireOp, RetireOp])
 
 const Output = Schema.Struct({ ok: Schema.Boolean, message: Schema.String })
 type Output = typeof Output.Type
@@ -206,6 +224,81 @@ export const layer = Layer.effectDiscard(
                     `Retired ${target}. Their chat is archived and what they remembered is set aside, so nobody ` +
                     `inherits it — the name goes back into the pool. Tell the user what they used to own, in case ` +
                     `it needs a new owner.`,
+                } satisfies Output
+              }
+
+              if (input.op === "ask_group") {
+                const named = [...new Set(input.colleagues.map((id) => id.trim()).filter((id) => id !== ""))].filter(
+                  (id) => id !== selfID,
+                )
+                if (named.length < 2)
+                  return yield* new ToolFailure({
+                    message:
+                      "`ask_group` is for two or more colleagues — name them, or use `ask` for one. " +
+                      "Call `list` to see who works here.",
+                  })
+
+                const all = yield* agents.all()
+                const roster = addressable(all, selfID)
+                const unknown = named.filter((id) => !roster.some((agent) => String(agent.id) === id))
+                if (unknown.length > 0)
+                  return yield* new ToolFailure({
+                    message:
+                      `No colleague called ${unknown.map((id) => `"${id}"`).join(", ")}. Call \`list\` to see who ` +
+                      `works here — and if nobody owns this work, say so to the user rather than inventing someone.`,
+                  })
+
+                // 🔴 ONE assert naming EVERY colleague, not one call per colleague in a loop.
+                //
+                // A rule can name a single colleague ("may ask the bookkeeper, not the trader"), and
+                // both shapes refuse in that case — `permission.ts` folds a multi-resource request
+                // with `effects.includes("deny") ? "deny"`, so one denied member denies the call,
+                // which is exactly the all-or-nothing a group needs.
+                //
+                // ⚠️ The loop is the WORSE shape, and the evaluator says why: project rules are
+                // resolved ONCE per evaluation on purpose, because "a multi-resource assert must be
+                // judged against ONE view of the file, or two resources in the same call could be
+                // answered from either side of an edit". Asserting in a loop re-reads that file per
+                // colleague and reintroduces exactly the split it guards against — and it would ask
+                // the user N separate times for one act.
+                yield* permission.assert({
+                  action: name,
+                  resources: named,
+                  save: ["*"],
+                  sessionID: context.sessionID,
+                  agent: context.agent,
+                  source: {
+                    type: "tool" as const,
+                    messageID: context.assistantMessageID,
+                    callID: context.toolCallID,
+                  },
+                })
+
+                const outcome = yield* handoff.deliverGroup({
+                  from: context.sessionID,
+                  colleagues: named,
+                  message: input.message,
+                })
+                // A bound refusal is a ToolFailure for the reason the 1:1 arm below spells out: a
+                // floor model read `ok: false` beside a paragraph of prose as success.
+                if (outcome.refused !== undefined) return yield* new ToolFailure({ message: outcome.refused })
+                if (outcome.delivered.length === 0)
+                  return {
+                    ok: false,
+                    message:
+                      `None of them have an open chat to leave this in: ${outcome.missing.join(", ")}. ` +
+                      `Open them in Contacts, or tell the user who is unreachable.`,
+                  } satisfies Output
+                // The missing half is REPORTED rather than swallowed: the sender asked for a room and
+                // got a smaller one, and only it can decide whether that still answers the question.
+                return {
+                  ok: true,
+                  message:
+                    `Asked ${outcome.delivered.join(", ")} together — each has it in their own chat, and they can ` +
+                    `see who else was asked. They answer in their own time; end your turn if you need their reply.` +
+                    (outcome.missing.length > 0
+                      ? ` Not delivered to ${outcome.missing.join(", ")} — no open chat.`
+                      : ""),
                 } satisfies Output
               }
 

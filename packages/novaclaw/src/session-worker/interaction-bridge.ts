@@ -149,6 +149,32 @@ export const handle = Effect.fn("SessionWorkerInteractionBridge.handle")(functio
       if (!Exit.isSuccess(retired)) return reject()
       return { ...identity(input.message), type: "colleague-result" as const, outcome: "retired" as const }
     }
+    if (request.op === "ask_group") {
+      const group = yield* input.colleague
+        .deliverGroup({ from: input.lease.sessionID, colleagues: request.colleagues, message: request.message })
+        .pipe(Effect.exit)
+      if (!Exit.isSuccess(group)) return reject()
+      // Same non-flattening rule as the 1:1 arm below: a bound refusal carries its sentence, because
+      // the tool never sees the host's `GroupDelivery` — it sees this message.
+      if (group.value.refused !== undefined)
+        return {
+          ...identity(input.message),
+          type: "colleague-result" as const,
+          outcome: "refused" as const,
+          reason: group.value.refused,
+        }
+      if (group.value.delivered.length === 0)
+        return { ...identity(input.message), type: "colleague-result" as const, outcome: "no-chat" as const }
+      return {
+        ...identity(input.message),
+        type: "colleague-result" as const,
+        outcome: "group-delivered" as const,
+        delivered: group.value.delivered,
+        missing: group.value.missing,
+        started: group.value.started,
+        ...(group.value.conversation === undefined ? {} : { conversation: group.value.conversation }),
+      }
+    }
     const delivered = yield* input.colleague
       .deliver({ from: input.lease.sessionID, colleague: request.colleague, message: request.message })
       .pipe(Effect.exit)

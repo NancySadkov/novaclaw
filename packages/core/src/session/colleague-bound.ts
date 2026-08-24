@@ -86,6 +86,25 @@ export const record = (sender: string, at: number): void => {
   sent.set(sender, [...fresh(sent.get(sender) ?? [], at), at])
 }
 
+/**
+ * Can this sender afford to address `count` colleagues AT ONCE?
+ *
+ * 🔴 A broadcast charges the bound ONCE PER RECIPIENT, so a group of six turns one lap into six.
+ * Asking `rateExceeded` and then delivering N times would check a budget of one against a spend of
+ * N — the bound would still be there, and it would be wrong by a factor of the group size.
+ *
+ * ⚠️ All-or-nothing on purpose. A partially delivered conference is worse than a refused one: the
+ * `participants` list every recipient can see would name colleagues who never got the message, so
+ * they would answer a group that was never assembled, and nobody in it could tell.
+ */
+export const hasCapacityFor = (sender: string, at: number, count: number): boolean =>
+  fresh(sent.get(sender) ?? [], at).length + count <= RATE_LIMIT
+
+/** Charge the bound once per recipient — see `hasCapacityFor`. */
+export const recordMany = (sender: string, at: number, count: number): void => {
+  for (let index = 0; index < count; index += 1) record(sender, at)
+}
+
 /** Is this sender over its rate limit right now? */
 export const rateExceeded = (sender: string, at: number): boolean => overRate(sent.get(sender) ?? [], at)
 

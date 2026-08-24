@@ -91,6 +91,36 @@ export const Origin = Schema.Union([
      * number for the same reason.
      */
     hops: Schema.Finite.pipe(optional),
+    /**
+     * The GROUP EXCHANGE this message belongs to, if it is one.
+     *
+     * 🔴 A conference has no session of its own, and that is the design rather than an omission.
+     * Agents and sessions are the same first-class entity (owner, 2026-08-23), so a session with no
+     * personality would re-introduce the split the merge exists to remove — and giving a participant
+     * a second stream is the very thing *"maintaining the agent's ego and consciousness instead of
+     * splitting it among several streams"* forbids. A group is therefore a FAN-OUT: the same message
+     * lands in each participant's own chat, and this id is what makes those copies one conversation.
+     *
+     * It rides HERE for the reason `hops` does: the transcript is the record, one stream per agent,
+     * and membership kept in a side table can disagree with what actually happened. It also means a
+     * receiver reading its own inbox can answer "who else heard this?" without querying a chat it
+     * does not own — which, under one-stream-per-agent, it cannot do.
+     *
+     * Absent means an ordinary 1:1 hand-off.
+     */
+    conversation: Schema.String.pipe(optional),
+    /**
+     * Everyone in the conference, by agent id, INCLUDING the sender.
+     *
+     * A receiver answers the group by fanning out to this set minus itself. Carrying the sender is
+     * deliberate: the reply has to reach them too, and reconstructing "the set plus whoever wrote to
+     * me" from two fields is how one of them ends up wrong.
+     *
+     * ⚠️ This is a BOUND-BEARING field, not a display list. A broadcast charges the colleague loop
+     * bound once per recipient (`session/colleague-bound.ts`); a group of six that charged once would
+     * turn one lap into six for the price of one.
+     */
+    participants: Schema.Array(Schema.String).pipe(optional),
   }),
   Schema.Struct({
     via: Schema.Literal("messenger"),

@@ -27,8 +27,28 @@ export type Turn = "ask" | "answer"
  * paid for by the user. One round trip is the default; anything further has to be a deliberate new
  * `ask`, which a model does only when it actually has something to say.
  */
-export const replyNote = (input: { readonly from: string; readonly turn: Turn }): string =>
-  input.turn === "ask"
+export const replyNote = (input: {
+  readonly from: string
+  readonly turn: Turn
+  /**
+   * The OTHER people in this conference, when it is one — everyone except the receiver.
+   *
+   * 🔴 Without this a group message is a BROADCAST, not a conference. The note is the whole
+   * reply channel, so a receiver told to answer `from` answers one person, and the rest of the
+   * room never hears it — the sender assembled a group and got N private conversations.
+   *
+   * ⚠️ A reply opens a NEW fan-out carrying the same people, rather than re-joining the id it
+   * came from: the receiver would have to echo an id back for that, which is a thing to get
+   * wrong for no gain. What bounds the exchange is the hop counter, exactly as in a 1:1.
+   */
+  readonly group?: ReadonlyArray<string> | undefined
+}): string =>
+  input.turn === "ask" && input.group !== undefined && input.group.length > 0
+    ? `\n\n[This came from ${input.from} and went to all of you. To answer everyone, call the ` +
+      `\`colleague\` tool with op "ask_group", colleagues ${JSON.stringify([input.from, ...input.group])}, ` +
+      `and your answer as the message — it lands in each of their chats the way this landed in yours. ` +
+      `Answer once; nobody is waiting on you.]`
+    : input.turn === "ask"
     ? `\n\n[This came from ${input.from}, a colleague. To answer them, call the \`colleague\` tool with ` +
       `op "ask", colleague "${input.from}", and your answer as the message — it lands in their chat the ` +
       `way this landed in yours. Answer once; they are not waiting on you.]`
@@ -41,5 +61,10 @@ export const turnFor = (input: { readonly askedByRecipient: boolean }): Turn =>
 
 /** The delivered body: the colleague's own words, then the note. Kept as one function so the two
  *  call sites (the tool and any future one) cannot drift on the spacing or the order. */
-export const compose = (input: { readonly message: string; readonly from: string; readonly turn: Turn }): string =>
-  `${input.message.trimEnd()}${replyNote({ from: input.from, turn: input.turn })}`
+export const compose = (input: {
+  readonly message: string
+  readonly from: string
+  readonly turn: Turn
+  readonly group?: ReadonlyArray<string> | undefined
+}): string =>
+  `${input.message.trimEnd()}${replyNote({ from: input.from, turn: input.turn, group: input.group })}`

@@ -33741,6 +33741,15 @@
               },
               "hops": {
                 "type": "number"
+              },
+              "conversation": {
+                "type": "string"
+              },
+              "participants": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
               }
             },
             "required": ["via", "sessionID"],

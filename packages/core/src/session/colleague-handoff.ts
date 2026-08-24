@@ -8,6 +8,7 @@ import { ColleagueBound } from "./colleague-bound"
 import { ConfigAgent } from "../config/agent"
 import { OfficerName } from "../agent/officer-name"
 import { Database } from "../database/database"
+import { Identifier } from "../id/id"
 import { EventV2 } from "../event"
 import { Memory } from "../kb-graph/memory"
 import { makeLocationNode } from "../effect/app-node"
@@ -113,6 +114,24 @@ export interface Delivery {
   readonly refused?: string | undefined
 }
 
+/** The outcome of addressing several colleagues at once — see `Interface.deliverGroup`. */
+export interface GroupDelivery {
+  /** The id every copy carries, so a reply can address the set. Absent when nothing was delivered. */
+  readonly conversation?: string | undefined
+  /**
+   * Exactly who received it.
+   *
+   * 🔴 This must equal what the recipients' `participants` list says, or the conference is a lie:
+   * they would answer colleagues who never heard the question and could not tell.
+   */
+  readonly delivered: ReadonlyArray<string>
+  /** Named colleagues with no open chat to leave this in — a fact for the sender, not a failure. */
+  readonly missing: ReadonlyArray<string>
+  /** Whether anything is actually running. `false` = durable but dormant. */
+  readonly started: boolean
+  readonly refused?: string | undefined
+}
+
 export interface Hired {
   readonly id: string
   readonly name: string
@@ -153,9 +172,99 @@ export interface Interface {
     readonly colleague: string
     readonly message: string
   }) => Effect.Effect<Delivery>
+  /**
+   * Put ONE message in front of SEVERAL colleagues, as one conversation.
+   *
+   * 🔴 There is no conference session, deliberately. Agents and sessions are the same first-class
+   * entity, so a session with no personality would re-introduce the split that merge removes, and a
+   * participant with two streams is the thing *"maintaining the agent's ego and consciousness"*
+   * forbids. Each recipient gets it in THEIR OWN chat; the shared `conversation` id on the origin is
+   * what makes those copies one exchange.
+   *
+   * ⚠️ The bound is charged ONCE PER RECIPIENT. A group that charged once would turn one lap into N
+   * for the price of one — see `ColleagueBound.hasCapacityFor`.
+   */
+  readonly deliverGroup: (input: {
+    readonly from: SessionSchema.ID
+    readonly colleagues: ReadonlyArray<string>
+    readonly message: string
+  }) => Effect.Effect<GroupDelivery>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/ColleagueHandoff") {}
+
+/**
+ * Land one colleague message in one chat, and wake it. THE ONLY PLACE a hand-off is written.
+ *
+ * 🔴 Extracted when group delivery arrived. A group is a fan-out of exactly this, and writing it a
+ * second time is how the two drift: the peer attribution, the hop stamp and the wake-after-admit
+ * ordering are each load-bearing, and each was learned from a defect. A second copy inherits none of
+ * that history and will lose one of them quietly.
+ */
+const landColleagueMessage = (
+  deps: {
+    readonly db: Database.Interface["db"]
+    readonly events: EventV2.Interface
+    readonly wake: (id: SessionSchema.ID) => Effect.Effect<boolean>
+  },
+  args: {
+    readonly chatID: SessionSchema.ID
+    readonly from: SessionSchema.ID
+    readonly message: string
+    readonly label: string | undefined
+    readonly turn: ReturnType<typeof ColleagueNote.turnFor>
+    readonly hop: number
+    readonly conversation?: string | undefined
+    readonly participants?: ReadonlyArray<string> | undefined
+    /** Who this copy is FOR — used to leave them out of "the others" in their own note. */
+    readonly recipient?: string | undefined
+  },
+) =>
+  Effect.gen(function* () {
+    yield* SessionInput.admit(deps.db, deps.events, {
+      id: SessionMessage.ID.create(),
+      sessionID: args.chatID,
+      prompt: {
+        // The colleague's words, plus HOW TO ANSWER — the note is the entire reply channel, and an
+        // answer's note differs from a question's so the exchange stops at one round trip
+        // (`colleague-note.ts` holds the argument).
+        text: ColleagueNote.compose({
+          message: args.message,
+          from: args.label ?? String(args.from),
+          turn: args.turn,
+          // The room MINUS the sender (the note names them separately) and minus the reader, who
+          // does not need telling they are here. Absent for a 1:1, which keeps that note identical.
+          ...(args.participants === undefined
+            ? {}
+            : {
+                group: args.participants.filter(
+                  (id) => id !== args.recipient && id !== (args.label ?? String(args.from)),
+                ),
+              }),
+        }),
+        files: [],
+        agents: [],
+        // PEER, not parent — `session/origin.ts` renders the two differently, and the difference is
+        // durable in the receiver's transcript.
+        origin: {
+          via: "agent",
+          sessionID: args.from,
+          relation: "peer",
+          // Stamped so the RECEIVER knows how far from a person it is: without this the chain is
+          // invisible to everyone in it, which is how a loop that every hop finds reasonable runs.
+          hops: args.hop,
+          ...(args.label === undefined ? {} : { label: args.label }),
+          // Absent for a 1:1 hand-off, so every existing exchange is byte-identical to before.
+          ...(args.conversation === undefined ? {} : { conversation: args.conversation }),
+          ...(args.participants === undefined ? {} : { participants: [...args.participants] }),
+        },
+      },
+      delivery: "queue",
+    }).pipe(Effect.orDie)
+    // Strictly AFTER the admit: the executor's drain reads the queued row from the database, so
+    // waking first is a race that ends in an empty turn (`spawner.ts` learned this).
+    return yield* deps.wake(args.chatID)
+  })
 
 /**
  * Build the delivery from parts the caller already holds.
@@ -255,40 +364,93 @@ export const fromParts = (input: {
     // without needing the agent id, and a colleague with no agent row still gets a window.
     if (ColleagueBound.rateExceeded(String(request.from), now))
       return { delivered: false, started: false, refused: ColleagueBound.rateRefusal({ colleague: request.colleague }) }
-    yield* SessionInput.admit(input.db, input.events, {
-      id: SessionMessage.ID.create(),
-      sessionID: chat.id as SessionSchema.ID,
-      prompt: {
-        // The colleague's words, plus HOW TO ANSWER — the note is the entire reply channel, and an
-        // answer's note differs from a question's so the exchange stops at one round trip
-        // (`colleague-note.ts` holds the argument).
-        text: ColleagueNote.compose({
-          message: request.message,
-          from: label ?? String(request.from),
-          turn,
-        }),
-        files: [],
-        agents: [],
-        // PEER, not parent — `session/origin.ts` renders the two differently, and the difference is
-        // durable in the receiver's transcript.
-        origin: {
-          via: "agent",
-          sessionID: request.from,
-          relation: "peer",
-          // Stamped so the RECEIVER knows how far from a person it is: without this the chain is
-          // invisible to everyone in it, which is how a loop that every hop finds reasonable runs.
-          hops: hop,
-          ...(label === undefined ? {} : { label }),
-        },
-      },
-      delivery: "queue",
-    }).pipe(Effect.orDie)
-    // Strictly AFTER the admit: the executor's drain reads the queued row from the database, so
-    // waking first is a race that ends in an empty turn (`spawner.ts` learned this).
-    const started = yield* input.wake(chat.id as SessionSchema.ID)
+    const started = yield* landColleagueMessage(input, {
+      chatID: chat.id as SessionSchema.ID,
+      from: request.from,
+      message: request.message,
+      label,
+      turn,
+      hop,
+    })
     // AFTER the admit, so a refused or failed hand-off never spends the sender's allowance.
     ColleagueBound.record(String(request.from), now)
     return { delivered: true, started }
+  }),
+  deliverGroup: Effect.fn("ColleagueHandoff.deliverGroup")(function* (request) {
+    const sender = yield* input.session(request.from)
+    const label = sender?.agent
+    // Self is dropped rather than refused: a model listing the whole roster to reach "everyone" is
+    // doing something reasonable, and `deliver` refuses self-delivery for the harder reason that it
+    // would append to the conversation the sender is currently having.
+    const named = [...new Set(request.colleagues.map((id) => id.trim()).filter((id) => id !== ""))].filter(
+      (id) => id !== label,
+    )
+    if (named.length === 0)
+      return {
+        delivered: [],
+        missing: [],
+        started: false,
+        refused: "Name at least one colleague other than yourself — call `list` to see who works here.",
+      }
+
+    // Who can actually be reached. A colleague with no open chat is left OUT of the conference
+    // rather than blocking it, and reported: `participants` must name exactly who received this, or
+    // the recipients would answer someone who never heard the question and nobody could tell.
+    const reachable: string[] = []
+    const missing: string[] = []
+    for (const colleague of named) {
+      const chat = yield* RosterChat.chatFor(input.db, colleague)
+      if (chat === undefined) missing.push(colleague)
+      else reachable.push(colleague)
+    }
+    if (reachable.length === 0) return { delivered: [], missing, started: false }
+
+    const context = yield* lastPeerContext(input.db, request.from)
+    const hop = ColleagueBound.nextHop(context.hops)
+    if (ColleagueBound.exceedsHopCap(hop))
+      return {
+        delivered: [],
+        missing,
+        started: false,
+        refused: ColleagueBound.hopRefusal({ colleague: reachable.join(", "), hop }),
+      }
+    const now = yield* Clock.currentTimeMillis
+    // 🔴 Capacity for the WHOLE group, checked before anything is written. Asking `rateExceeded` and
+    // then delivering N times would check a budget of one against a spend of N.
+    if (!ColleagueBound.hasCapacityFor(String(request.from), now, reachable.length))
+      return {
+        delivered: [],
+        missing,
+        started: false,
+        refused: ColleagueBound.rateRefusal({ colleague: reachable.join(", ") }),
+      }
+
+    const conversation = Identifier.ascending("conversation")
+    // The sender is IN the list: a reply has to reach them too, and rebuilding "the set plus
+    // whoever wrote to me" from two fields is how one of them ends up wrong.
+    const participants = [label ?? String(request.from), ...reachable]
+    let started = false
+    for (const colleague of reachable) {
+      const chat = yield* RosterChat.chatFor(input.db, colleague)
+      if (chat === undefined) continue
+      const woke = yield* landColleagueMessage(input, {
+        chatID: chat.id as SessionSchema.ID,
+        from: request.from,
+        message: request.message,
+        label,
+        // Per recipient: an answer's note differs from a question's, and in a group one participant
+        // may be answering the sender while the others are being asked for the first time.
+        turn: ColleagueNote.turnFor({ askedByRecipient: context.label === colleague }),
+        hop,
+        conversation,
+        participants,
+        recipient: colleague,
+      })
+      started = started || woke
+    }
+    // AFTER the writes, once per recipient — see `hasCapacityFor`.
+    ColleagueBound.recordMany(String(request.from), now, reachable.length)
+    return { conversation, delivered: reachable, missing, started }
   }),
 })
 

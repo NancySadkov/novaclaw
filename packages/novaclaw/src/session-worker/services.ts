@@ -225,6 +225,32 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
           return Effect.die(unavailable("colleague hand-off"))
         }),
       ),
+    deliverGroup: (request) =>
+      Effect.promise(() =>
+        capabilities.colleague({ op: "ask_group", colleagues: [...request.colleagues], message: request.message }),
+      ).pipe(
+        Effect.flatMap((reply): Effect.Effect<ColleagueHandoff.GroupDelivery> => {
+          if (reply.outcome === "group-delivered")
+            return Effect.succeed({
+              delivered: reply.delivered ?? [],
+              missing: reply.missing ?? [],
+              started: reply.started ?? false,
+              ...(reply.conversation === undefined ? {} : { conversation: reply.conversation }),
+            })
+          if (reply.outcome === "no-chat") return Effect.succeed({ delivered: [], missing: [], started: false })
+          // Rebuilt on this side so the TOOL sees the same shape it would host-side — the same
+          // reason the 1:1 arm above does it. A bound that `die`d here would cost the sender its
+          // turn instead of telling it to go back to the user.
+          if (reply.outcome === "refused")
+            return Effect.succeed({
+              delivered: [],
+              missing: [],
+              started: false,
+              refused: reply.reason ?? "That hand-off was refused by this instance's colleague-loop limit.",
+            })
+          return Effect.die(unavailable("colleague group hand-off"))
+        }),
+      ),
   }
 
   /**

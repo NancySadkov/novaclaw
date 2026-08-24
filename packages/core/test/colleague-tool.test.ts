@@ -178,3 +178,44 @@ describe("a delivered peer message says how to answer it", () => {
     expect(note.indexOf("Two shillings.")).toBe(0)
   })
 })
+
+// Asking a GROUP is one act with several subjects, and both facts below live inside the handler —
+// invisible to a unit test, which is what a source ledger is for (same instrument as the delivery
+// phrasing above).
+describe("asking a group is ONE permission decision, over every colleague", () => {
+  const source = readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "tool", "colleague.ts"),
+    "utf8",
+  )
+  const branch = source.slice(source.indexOf('input.op === "ask_group"'), source.indexOf("// Addressing a colleague"))
+
+  test("the ledger's own instrument works", () => {
+    // A slice that failed to find the branch would make every assertion below vacuous.
+    expect(branch.length).toBeGreaterThan(500)
+    expect(branch).toContain("deliverGroup")
+  })
+
+  test("the assert names EVERY colleague in one call", () => {
+    // `permission.ts` folds a multi-resource request with `effects.includes("deny") ? "deny"`, so one
+    // denied member denies the whole call — the all-or-nothing a group needs.
+    expect(branch).toContain("resources: named")
+  })
+
+  test("it is NOT asserted per colleague in a loop", () => {
+    // 🔴 The evaluator resolves project rules ONCE per evaluation on purpose, so two resources in one
+    // call cannot be answered from either side of an edit. A loop re-reads that file per colleague
+    // and puts the split back — and asks the user N times for one act.
+    expect(branch).not.toMatch(/for \(const \w+ of named\)\s*\{[\s\S]{0,200}permission\.assert/)
+  })
+
+  test("colleagues it could not reach are REPORTED, never swallowed", () => {
+    // The sender asked for a room and may have got a smaller one; only it can decide whether that
+    // still answers the question.
+    expect(branch).toContain("outcome.missing")
+  })
+
+  test("NEGATIVE CONTROL: the reader would notice if the assert went away", () => {
+    expect(/resources: named/.test("yield* permission.assert({ action: name, resources: named })")).toBe(true)
+    expect(/resources: named/.test("yield* permission.assert({ action: name, resources: [target] })")).toBe(false)
+  })
+})

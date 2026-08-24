@@ -115,11 +115,31 @@ export const ColleagueResultMessage = Schema.Struct({
   ...Identity,
   type: Schema.Literal("colleague-result"),
   requestID: Schema.String,
-  outcome: Schema.Literals(["delivered", "no-chat", "refused", "hired", "retired", "rejected"]),
+  outcome: Schema.Literals([
+    "delivered",
+    "group-delivered",
+    "no-chat",
+    "refused",
+    "hired",
+    "retired",
+    "rejected",
+  ]),
   /** Why the loop bound refused; present only when `outcome` is "refused". Read by the sender. */
   reason: Schema.String.pipe(Schema.optional),
   /** Whether anything is actually running their chat — `false` means durable but dormant. */
   started: Schema.Boolean.pipe(Schema.optional),
+  /**
+   * Who a GROUP message actually reached, and who it could not — present only for "group-delivered".
+   *
+   * ⚠️ Both halves cross the boundary for the same reason `reason` does: the tool runs inside the
+   * worker and never sees the host's `GroupDelivery`. A sender told only "delivered" would believe it
+   * had assembled the room it named, and the colleagues it never reached would simply be missing from
+   * a conversation nobody knows is incomplete.
+   */
+  delivered: Schema.Array(Schema.String).pipe(Schema.optional),
+  missing: Schema.Array(Schema.String).pipe(Schema.optional),
+  /** The shared id every copy carries, so a reply can address the set. */
+  conversation: Schema.String.pipe(Schema.optional),
   /** The new colleague's id and display name; present only when `outcome` is "hired". */
   hiredID: Schema.String.pipe(Schema.optional),
   hiredName: Schema.String.pipe(Schema.optional),
@@ -330,6 +350,18 @@ export const ColleagueRequest = Schema.Struct({
       personality: Schema.String.pipe(Schema.optional),
     }),
     Schema.Struct({ op: Schema.Literal("retire"), colleague: Schema.String }),
+    /**
+     * Put ONE message to SEVERAL colleagues, as one conversation.
+     *
+     * A separate op rather than `ask` with a list: the two charge the loop bound differently (once
+     * per recipient, not once per call), and a single field meaning either would make the difference
+     * invisible at the call site where it is being decided.
+     */
+    Schema.Struct({
+      op: Schema.Literal("ask_group"),
+      colleagues: Schema.Array(Schema.String),
+      message: Schema.String,
+    }),
   ]),
 }).annotate({ identifier: "SessionWorker.ColleagueRequest" })
 

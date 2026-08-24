@@ -46,6 +46,7 @@ const unusedQuestion = {
 /** Colleague hand-off is host-side; these cases exercise the OTHER requests, so it must never run. */
 const colleagueStub = {
   deliver: () => Effect.die("unused"),
+  deliverGroup: () => Effect.die("unused"),
   hire: () => Effect.die("unused"),
   retire: () => Effect.die("unused"),
 } as ColleagueHandoff.Interface

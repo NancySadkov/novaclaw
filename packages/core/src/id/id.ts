@@ -13,6 +13,8 @@ const prefixes = {
   workspace: "wrk",
   observation: "obs",
   answered: "ans",
+  /** A group exchange between colleagues. Rides on the message origin, never its own session. */
+  conversation: "cnv",
 } as const
 
 export function ascending(prefix: keyof typeof prefixes, given?: string) {

@@ -272,7 +272,28 @@ describe("LocationServiceMap", () => {
           // mechanically — a page body leaking into the description turns it red.
           const fullAgentTools = blockedState.tools.filter((tool) => ShortChat.offered(undefined, tool.name))
           const residentBytes = Buffer.byteLength(JSON.stringify(fullAgentTools))
-          expect(residentBytes).toBeLessThan(34_250) // observed 34,065 on 2026-08-21 (99.5% of 34,250)
+          //
+          // ── Raised 2026-08-24 for `colleague` op "ask_group" (34,065 → 34,506) ──────────────────
+          //
+          // *Who pays?* Only sessions that may ADDRESS colleagues at all. `colleague` is denied by the
+          // agent floor (`plugin/agent.ts`), so a `build` session never sees the tool and pays nothing;
+          // Nova re-allows it and pays. This measurement runs with NO agent, so it is the worst case by
+          // construction — which is what makes it the right thing for a ratchet to hold.
+          //
+          // *Could it be cheaper?* Trimmed first, as this budget demands: 62 bytes out of the two new
+          // descriptions (34,568 → 34,506). What remains is the op itself, which is ~440 bytes of
+          // schema no wording can remove. The cheaper alternative was considered and REJECTED: an
+          // optional `also: string[]` on the existing `ask` op costs roughly a quarter as much,
+          // because it reuses `message` and mints no second op literal — but it makes the
+          // first-named colleague read as the primary recipient when delivery treats every
+          // participant identically. A conference where one member looks senior is the same class of
+          // misattribution the peer/parent distinction exists to prevent, and it is durable in the
+          // receiver's transcript.
+          //
+          // *Should it be resident at all?* The `colleague` tool already is, and an op cannot be
+          // deferred separately from the schema that declares it. The choice was a new op or a
+          // cheaper ambiguous field, not resident or deferred.
+          expect(residentBytes).toBeLessThan(34_700) // observed 34,506 on 2026-08-24 (99.4% of 34,700)
           const chatTools = blockedState.tools.filter((tool) => ShortChat.offered(true, tool.name))
           expect(chatTools.map((tool) => tool.name)).toEqual(["upgrade_chat"])
           expect(Buffer.byteLength(JSON.stringify(chatTools))).toBeLessThan(1_500)
