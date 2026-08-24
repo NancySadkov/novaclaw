@@ -49,7 +49,9 @@ export function useNewAgentSpawn() {
   // ⚠️ The reuse probe below still needs a directory, so it is read from the roster row the chip is
   // already holding rather than re-derived: the client knows where the colleague works because the
   // chip had to show it.
-  async function spawn(agentID?: string, agentFolder?: string) {
+  async function spawn(agentID?: string, agentFolder?: string, agentName?: string) {
+    /** The colleague's name, falling back to their id so a chat is never titled `undefined`. */
+    const agentTitle = (id: string) => agentName?.trim() || id
     const c = conn()
     // 🔴 `agentFolder` is WHERE THIS COLLEAGUE WORKS — its configured project, or its own
     // `<data>/scratch/<agentID>` workspace as the SERVER derives it (`AgentWorkspace.folderFor`),
@@ -100,8 +102,14 @@ export function useNewAgentSpawn() {
       }
       // No `location`: the server resolves the colleague's own folder (`agentLocation`), which is the
       // ONE place that rule lives. Sending a directory computed here would be a second copy of it.
+      //
+      // 🔴 **A colleague's chat is titled with the colleague's NAME.** Owner, 2026-08-24: *"we still
+      // have 'New session', instead of the agent's name for the session title."* Contacts already
+      // titled it (`startChat({ agentID, title: name })`); this door did not — and because one chat
+      // per agent means BOTH doors reach the same chat, whichever opened it first decided the title.
+      // Open a colleague from the launcher and their chat was called "New session" forever after.
       const created = await cx.sdk.client.v2.session.create(
-        agentID ? ({ agent: agentID } as never) : { location: { directory } },
+        agentID ? ({ agent: agentID, title: agentTitle(agentID) } as never) : { location: { directory } },
       )
       const sessionID = created.data?.data.id
       if (created.error || !sessionID) throw created.error ?? new Error("session create returned no id")
@@ -225,7 +233,8 @@ export function NewAgentBar() {
       })
       return
     }
-    void agent.spawn(chosenAgent() ?? defaultOfficerID(), chosenFolder())
+    const id = chosenAgent() ?? defaultOfficerID()
+    void agent.spawn(id, chosenFolder(), agentOptions().find((option) => option.id === id)?.name)
   }
 
   return (

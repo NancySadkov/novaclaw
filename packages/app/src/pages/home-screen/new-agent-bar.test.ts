@@ -46,6 +46,15 @@ describe("what the launcher opens", () => {
     expect(offered[0]).toBe(AgentV2.DEFAULT_COLLEAGUE_ID)
   })
 
+  test('🔴 the chat is titled with the colleague\'s NAME, not left as "New session"', () => {
+    // Owner, 2026-08-24. Contacts already passed a title; this door did not — and one chat per agent
+    // means both doors reach the SAME chat, so whichever opened it first decided the title forever.
+    expect(source).toContain("title: agentTitle(agentID)")
+    expect(source).toContain("agentOptions().find((option) => option.id === id)?.name")
+    // Never titled `undefined`: the id is the fallback when a colleague has no display name.
+    expect(source).toContain("agentName?.trim() || id")
+  })
+
   test("⚠️ the fallback is still an OFFICER when Nova is absent", () => {
     // A paused or hidden Nova must leave a working launcher — but not one that reaches for `build`.
     const withoutNova = AGENTS.filter((agent) => agent.id !== "nova")
