@@ -457,6 +457,18 @@ const SessionControlHandler = handlerLayer(
                   }),
                 ),
               ),
+              // One chat per colleague. 409, and it names WHICH colleague and WHY — a bare conflict
+              // sends the caller looking for a race that did not happen.
+              Effect.catchTag("Session.OperationUnavailableError", () =>
+                Effect.fail(
+                  new ConflictError({
+                    message:
+                      `${ctx.payload.agent} already has a chat. A colleague has exactly one, so this ` +
+                      `session cannot be switched onto them — open their existing chat instead.`,
+                    resource: `agent:${ctx.payload.agent}`,
+                  }),
+                ),
+              ),
             )
             return HttpApiSchema.NoContent.make()
           }),

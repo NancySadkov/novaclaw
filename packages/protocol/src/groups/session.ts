@@ -642,14 +642,19 @@ export const makeSessionGroups = <
           params: { sessionID: Session.ID },
           payload: Schema.Struct({ agent: Agent.ID }),
           success: HttpApiSchema.NoContent,
-          error: SessionNotFoundError,
+          // 409, not 503: one chat per colleague. `ServiceUnavailableError` — the mapping the other
+          // `OperationUnavailableError` routes use — would read "not available yet", which is untrue
+          // here. The operation is available; this particular request conflicts.
+          error: [SessionNotFoundError, ConflictError],
         })
           .middleware(sessionLocationMiddleware)
           .annotateMerge(
             OpenApi.annotations({
               identifier: "v2.session.switchAgent",
               summary: "Switch session agent",
-              description: "Switch the agent used by subsequent provider turns.",
+              description:
+                "Switch the agent used by subsequent provider turns. Refuses with 409 when that " +
+                "colleague already has a chat — a colleague has exactly one.",
             }),
           ),
       )
