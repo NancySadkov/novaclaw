@@ -12,6 +12,7 @@ import { showToast } from "@/utils/toast"
 import { ComposerAgentControl } from "@/components/composer/agent-control"
 import type { AgentLike } from "@/apps/contacts"
 import { roster } from "@/apps/contacts"
+import { AgentV2 } from "@novaclaw/core/agent"
 
 /**
  * The shared "spawn a new agent chat" flow: create (or reuse a truly-empty draft) in the given
@@ -171,8 +172,22 @@ export function NewAgentBar() {
       }
     }),
   )
+  /**
+   * 🔴 **Nova, by NAME — not "whoever the roster happens to sort first".**
+   *
+   * Owner, 2026-08-24: *"the [bar] at the bottom defaults to Nova itself, while the user can only
+   * speak with the officers."* It already landed on Nova, but only because `roster()` sorts the
+   * governing agent first — so the owner's rule was being satisfied by a SORT ORDER, and any change
+   * to that ordering would have moved the default silently, with nothing to notice.
+   *
+   * ⚠️ Falls back to the first officer rather than to nothing: an instance whose Nova is paused or
+   * hidden still has a working launcher. It never falls back to a posture — `agentOptions` is built
+   * from `roster()`, which excludes them, which is the point of the ruling.
+   */
+  const defaultOfficerID = () =>
+    agentOptions().find((option) => option.id === AgentV2.DEFAULT_COLLEAGUE_ID)?.id ?? agentOptions()[0]?.id
   const chosenFolder = () => {
-    const id = chosenAgent() ?? agentOptions()[0]?.id
+    const id = chosenAgent() ?? defaultOfficerID()
     const row = (agents() ?? []).find((entry: AgentLike) => entry.id === id)
     const configured = row?.config?.["directory"]
     if (typeof configured === "string" && configured.trim() !== "") return configured
@@ -210,7 +225,7 @@ export function NewAgentBar() {
       })
       return
     }
-    void agent.spawn(chosenAgent() ?? agentOptions()[0]?.id, chosenFolder())
+    void agent.spawn(chosenAgent() ?? defaultOfficerID(), chosenFolder())
   }
 
   return (

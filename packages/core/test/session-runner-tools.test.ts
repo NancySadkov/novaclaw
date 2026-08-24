@@ -76,7 +76,9 @@ describe("SessionRunnerLLM — application tools", () => {
     expect(contexts).toHaveLength(1)
     expect(contexts[0]).toMatchObject({
       sessionID: HARNESS_SESSION,
-      agent: AgentV2.ID.make("build"),
+      // The harness session names no colleague, so it runs as the DEFAULT OFFICER. That was the
+      // `build` posture until 2026-08-24 — see `AgentV2.DEFAULT_COLLEAGUE_ID`.
+      agent: AgentV2.DEFAULT_COLLEAGUE_ID,
       assistantMessageID: expect.stringMatching(/^msg_/),
       toolCallID: "call-application",
     })
@@ -391,7 +393,11 @@ describe("SessionRunnerLLM — local tool execution", () => {
       harness,
       Effect.gen(function* () {
         const session = yield* SessionV2.Service
-        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Echo twice" }), resume: false })
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Echo twice" }),
+          resume: false,
+        })
         yield* session.resume(HARNESS_SESSION)
         return yield* session.context(HARNESS_SESSION)
       }),

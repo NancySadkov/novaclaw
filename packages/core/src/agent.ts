@@ -7,10 +7,41 @@ import { State } from "./state"
 
 export const ID = Agent.ID
 export type ID = typeof ID.Type
-export const defaultID = ID.make("build")
+/**
+ * The BUILD agent's id. Named for what it is, not for a role it no longer has: it was
+ * `defaultID` while an unattributed chat ran as `build`, and one name for two ideas is how the
+ * plugin's "configure the build agent" call and the runner's "who owns this chat" call drifted
+ * into each other.
+ */
+export const BUILD_ID = ID.make("build")
+
+/**
+ * @deprecated Use {@link BUILD_ID} for the build agent, or {@link DEFAULT_COLLEAGUE_ID} for the
+ * officer an unattributed chat belongs to. Kept so an out-of-tree caller keeps compiling.
+ */
+export const defaultID = BUILD_ID
 
 /** The CEO of this instance's organization (AGENTS.md — the structural metaphor). */
 export const NOVA_ID = ID.make("nova")
+
+/**
+ * 🔴 **WHO OWNS A CHAT NOBODY ATTRIBUTED — and it is an OFFICER, never a posture.**
+ *
+ * Owner, 2026-08-24: *"ensure there are no such ghost officers, and instead the [bar] at the bottom
+ * defaults to Nova itself, while the user can only speak with the officers, which are fully
+ * responsible for their subagents."*
+ *
+ * This used to be `build`, which produced the haunting the owner named: the agent that answered you
+ * had no Contacts row (`POSTURE_IDS` excludes it from `isColleague`), was exempt from one-chat-per-
+ * agent, and therefore never got the identity that would title its chat — so the chat stayed *"New
+ * session"* and the thing you were talking to did not appear to exist. AGENTS.md's own table has no
+ * slot for a posture: it is shareholder, CEO, officer, sub-agent. `build` is a permission mode, and
+ * a permission mode is not someone you can talk to.
+ *
+ * Nova specifically, because the CEO is the one who *"routes a task to the right agent"* — an
+ * unattributed request is exactly the case the CEO exists to absorb.
+ */
+export const DEFAULT_COLLEAGUE_ID = NOVA_ID
 
 /** Agent ids the user may not redefine, rename or delete through any surface.
  *
@@ -48,8 +79,11 @@ export const POSTURE_IDS: ReadonlySet<string> = new Set([ID.make("build"), ID.ma
  * "the agent this session RUNS AS", which defaults to `build` — it does not mean "this is a
  * colleague's chat".
  */
-export const isColleague = (agent: { readonly id: string; readonly mode?: string; readonly hidden?: boolean }): boolean =>
-  agent.mode !== "subagent" && !agent.hidden && !POSTURE_IDS.has(agent.id)
+export const isColleague = (agent: {
+  readonly id: string
+  readonly mode?: string
+  readonly hidden?: boolean
+}): boolean => agent.mode !== "subagent" && !agent.hidden && !POSTURE_IDS.has(agent.id)
 
 export const Color = Agent.Color
 
@@ -111,12 +145,29 @@ export const layer = Layer.effect(
     // agent a session falls back to when nothing else is chosen.
     const selectable = (agent: Info | undefined) =>
       agent && agent.mode !== "subagent" && !agent.hidden && agent.paused !== true ? agent : undefined
+    /**
+     * 🔴 An unattributed chat belongs to an OFFICER. See {@link DEFAULT_COLLEAGUE_ID} for why.
+     *
+     * ⚠️ The posture clause applies to the CONFIGURED default too, not only to the fallback. A
+     * `default_agent: "build"` in config is the ordinary state of an instance that predates this
+     * ruling — honouring it would leave exactly the installs the owner is complaining about
+     * unchanged, which is the whole failure mode of a rule that only guards the new path.
+     */
+    const selectedOfficer = (agent: Info | undefined) => (agent && isColleague(agent) ? selectable(agent) : undefined)
     const selectedDefault = () => {
       const data = state.get()
-      const configured = data.default ? selectable(data.agents.get(data.default)) : undefined
+      const configured = data.default ? selectedOfficer(data.agents.get(data.default)) : undefined
       if (configured) return configured
-      const build = selectable(data.agents.get(ID.make("build")))
-      if (build) return build
+      const nova = selectedOfficer(data.agents.get(DEFAULT_COLLEAGUE_ID))
+      if (nova) return nova
+      // ⚠️ Still an officer, never a posture: an instance whose Nova is paused falls to another
+      // colleague rather than back to `build`, because a posture answering the user is the defect.
+      for (const agent of data.agents.values()) {
+        const fallback = selectedOfficer(agent)
+        if (fallback) return fallback
+      }
+      // Last resort only: nothing colleague-shaped exists at all (a degraded or mid-boot registry).
+      // Better a posture answers than nothing does — but it is the floor, not the preference.
       for (const agent of data.agents.values()) {
         const fallback = selectable(agent)
         if (fallback) return fallback
@@ -142,7 +193,7 @@ export const layer = Layer.effect(
           return { id: selected, info: state.get().agents.get(selected) }
         }
         const info = selectedDefault()
-        return { id: info?.id ?? defaultID, info }
+        return { id: info?.id ?? DEFAULT_COLLEAGUE_ID, info }
       }),
       all: Effect.fn("AgentV2.all")(function* () {
         return Array.fromIterable(state.get().agents.values())

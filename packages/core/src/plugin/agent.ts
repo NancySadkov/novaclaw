@@ -240,7 +240,7 @@ export const Plugin = define({
     const defaults: PermissionV2.Ruleset = floor({ scratchDirs: SCRATCH_DIRS, officer: false })
 
     yield* ctx.agent.transform((draft) => {
-      draft.update(AgentV2.defaultID, (item) => {
+      draft.update(AgentV2.BUILD_ID, (item) => {
         item.description = "The default agent. Executes tools based on configured permissions."
         item.system ??= BUILD_SYSTEM
         item.mode = "primary"

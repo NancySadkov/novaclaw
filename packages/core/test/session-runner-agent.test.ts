@@ -75,7 +75,10 @@ describe("SessionRunnerLLM — agent system prompt", () => {
       "claim — default agent system before durable context",
     )
 
-    expectAgentSystemBeforeContext(harness.requests.at(-1)?.system.map((part) => part.text), "Build agent instructions")
+    expectAgentSystemBeforeContext(
+      harness.requests.at(-1)?.system.map((part) => part.text),
+      "Build agent instructions",
+    )
   })
 
   test("uses the configured default agent system for omitted-agent sessions", async () => {
@@ -186,9 +189,10 @@ describe("SessionRunnerLLM — agent system prompt", () => {
       "claim — the turn keeps the model it sampled",
     )
 
-    expect(harness.requests.map((request) => request.model), "the in-flight turn keeps its sampled model").toEqual([
-      harness.model,
-    ])
+    expect(
+      harness.requests.map((request) => request.model),
+      "the in-flight turn keeps its sampled model",
+    ).toEqual([harness.model])
   })
 
   test("keeps the sampled agent when selection changes during observation", async () => {
@@ -196,11 +200,13 @@ describe("SessionRunnerLLM — agent system prompt", () => {
     // system context is being loaded must not retroactively change the turn already assembling.
     //
     // ⭐ Asserted through SKILL GUIDANCE rather than the agent name, because guidance is what actually
-    // differs downstream: the turn must carry `build`'s skills, and must not carry `reviewer`'s. A
+    // differs downstream: the turn must carry the DEFAULT OFFICER's skills, and must not carry
+    // `reviewer`'s. (It was `build` until 2026-08-24, when an unattributed chat stopped falling to a
+    // posture — see `AgentV2.DEFAULT_COLLEAGUE_ID`.) A
     // claim asserting only "the agent is still build" would pass on a runner that sampled the agent
     // once but re-derived its guidance afterwards — which is the half that reaches the model.
     const harness = makeRunnerHarness({ turns: [completeTurn("t1", "Done")] })
-    harness.controls.skillBaselines.set("build", "Build skills")
+    harness.controls.skillBaselines.set(AgentV2.DEFAULT_COLLEAGUE_ID, "Build skills")
     harness.controls.skillBaselines.set("reviewer", "Reviewer skills")
 
     await drive(
@@ -243,7 +249,7 @@ describe("SessionRunnerLLM — agent system prompt", () => {
     const harness = makeRunnerHarness({
       turns: [completeTurn("t1", "First answer"), completeTurn("t2", "Second answer")],
     })
-    harness.controls.skillBaselines.set("build", "Build skills")
+    harness.controls.skillBaselines.set(AgentV2.DEFAULT_COLLEAGUE_ID, "Build skills")
 
     await drive(
       harness,

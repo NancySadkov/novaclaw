@@ -120,7 +120,6 @@ function assertion(input: Partial<PermissionV2.AssertInput> = {}) {
   } satisfies PermissionV2.AssertInput
 }
 
-
 /** An edit of `/project/task.md`, where that file is also one of the user's attachments. */
 const editingAnAttachment = (input: Partial<PermissionV2.AssertInput> = {}) =>
   assertion({
@@ -156,9 +155,7 @@ describe("PermissionV2", () => {
       yield* setup([{ action: "bash", resource: "*", effect: "allow" }])
       const service = yield* PermissionV2.Service
       expect(
-        yield* service.ask(
-          assertion({ action: "bash", resources: ["echo $(whoami)"], minimumEffect: "ask" }),
-        ),
+        yield* service.ask(assertion({ action: "bash", resources: ["echo $(whoami)"], minimumEffect: "ask" })),
       ).toMatchObject({ effect: "deny" })
       yield* setRules([{ action: "bash", resource: "*", effect: "deny" }])
       expect(
@@ -349,7 +346,7 @@ describe("PermissionV2", () => {
     }),
   )
 
-  it.effect("uses build permissions when the Session agent is omitted", () =>
+  it.effect("🔴 an omitted agent uses the DEFAULT OFFICER's permissions, not a posture's", () =>
     Effect.gen(function* () {
       yield* setup()
       const { db } = yield* Database.Service
@@ -360,9 +357,21 @@ describe("PermissionV2", () => {
         .run()
         .pipe(Effect.orDie)
       const agents = yield* AgentV2.Service
+      // Owner, 2026-08-24: a chat nobody attributed belongs to Nova, not to `build`. Before the
+      // ruling this test configured `build` and expected build's answer — the posture WAS the
+      // default, which is the haunting the owner named (an agent that answers you but has no
+      // roster row and no chat of its own).
       yield* agents.transform((editor) =>
-        editor.update(AgentV2.ID.make("build"), (agent) => {
+        editor.update(AgentV2.DEFAULT_COLLEAGUE_ID, (agent) => {
           agent.permissions = [{ action: "todowrite", resource: "*", effect: "allow" }]
+        }),
+      )
+      // The negative half, and the one that actually pins the change: `build` is given the OPPOSITE
+      // rule, so a resolution that still fell through to the posture would deny and fail here rather
+      // than pass by agreeing with Nova by accident.
+      yield* agents.transform((editor) =>
+        editor.update(AgentV2.BUILD_ID, (agent) => {
+          agent.permissions = [{ action: "todowrite", resource: "*", effect: "deny" }]
         }),
       )
 
@@ -445,7 +454,6 @@ describe("PermissionV2", () => {
     }),
   )
 
-
   // A deleted session must take its pending asks with it: the V2 session-scoped reply route can
   // never settle them once the session row is gone, so without the sweep they orphan forever.
 
@@ -453,8 +461,6 @@ describe("PermissionV2", () => {
   // publishes idle/exited (Stop, exit, error) the tool awaiting the answer is gone, and a stale
   // ask wedged the chat — the ask dock replaces the composer, leaving no Stop and no way to
   // re-prompt.
-
-
 
   // ⚠️ Rewritten 2026-08-20. This used to reach the saved store through the ask/reply lifecycle —
   // fork an assert, wait for `Asked`, reply "always" — and that lifecycle no longer exists. The
@@ -1116,9 +1122,7 @@ describe("PermissionV2 — an unattended ask denies FAST", () => {
       expect(yield* service.ask(gated({ sessionID: SessionV2.ID.make("ses_chat") }))).toMatchObject({
         effect: "deny",
       })
-      const attended = yield* service
-        .assert(gated({ sessionID: SessionV2.ID.make("ses_chat") }))
-        .pipe(Effect.flip)
+      const attended = yield* service.assert(gated({ sessionID: SessionV2.ID.make("ses_chat") })).pipe(Effect.flip)
       expect((attended as PermissionV2.DeniedError).reason).toBe("ask-removed")
       // …and nothing is queued for anyone to answer.
       expect(yield* service.get(PermissionV2.ID.create("per_test"))).toBeUndefined()
