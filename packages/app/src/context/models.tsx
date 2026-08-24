@@ -1,9 +1,10 @@
-import { type Accessor, createMemo, createResource } from "solid-js"
+import { type Accessor, createEffect, createMemo, createResource } from "solid-js"
 import { createStore } from "solid-js/store"
 import { DateTime } from "luxon"
 import { filter, firstBy, flat, groupBy, mapValues, pipe, uniqueBy, values } from "remeda"
 import { createSimpleContext } from "@novaclaw/ui/context"
 import { useProviders } from "@/hooks/use-providers"
+import { pruneCovers } from "./models-covers"
 import { Persist, persisted } from "@/utils/persist"
 
 export type ModelKey = { providerID: string; modelID: string }
@@ -59,6 +60,34 @@ export const { use: useModels, provider: ModelsProvider, context: ModelsContext 
     const available = createMemo(() =>
       availableAll().filter((m) => !removedSet().has(modelKey({ providerID: m.provider.id, modelID: m.id }))),
     )
+
+    /**
+     * 🔴 **A REMOVED KEY IS A COVER, NOT A TOMBSTONE — drop it once the server agrees.**
+     *
+     * `remove()` only ever APPENDED, and this store is `Persist.global`, so deleting a model wrote a
+     * key that nothing on any path ever cleared. Re-adding that exact model then did nothing visible:
+     * the server had it, `availableAll()` carried it, and this filter hid it forever — in the Models
+     * tab AND in the agent's Tune dialog, because both read `available()`. The only escape was
+     * resetting UI preferences, which the comment above offers as a feature and is really the
+     * symptom. Reported by the owner 2026-08-24: delete a model, add it back, it never returns.
+     *
+     * The cover's own justification had already expired. It was written when the delete was
+     * client-only (*"patchJsonc can't delete a key over the wire"*); `settings-v2/models.tsx` now
+     * calls `provider.removeModel` and hides locally only until that lands — its comment says so.
+     *
+     * So the rule is: a key stays only while the SERVER still lists the model. Once the catalog drops
+     * it the delete is confirmed and the cover has done its job; if that model is ever added back it
+     * arrives with no tombstone waiting for it.
+     *
+     * ⚠️ Guarded on a non-empty catalog. At boot `availableAll()` is empty until providers load, and
+     * pruning against nothing would clear every cover on every start — harmless today (a confirmed
+     * delete is gone server-side anyway) but it would make this effect a liar about what it does.
+     */
+    createEffect(() => {
+      const listed = availableAll().map((m) => modelKey({ providerID: m.provider.id, modelID: m.id }))
+      const kept = pruneCovers({ removed: store.removed ?? [], listed })
+      if (kept !== undefined) setStore("removed", kept)
+    })
 
     const release = createMemo(
       () =>

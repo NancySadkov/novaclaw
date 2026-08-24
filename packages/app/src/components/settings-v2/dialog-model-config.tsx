@@ -2,6 +2,7 @@ import { Component, For, Show, createMemo, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
+import { mergeProviderKey, type ProviderRequest } from "./provider-key"
 import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
@@ -286,8 +287,22 @@ export const DialogModelConfig: Component<{
     return name && name !== defaultProviderName() ? name : ""
   }
 
+  /**
+   * The key this provider is using, read from where V2 resolution reads it
+   * (`providers.<id>.request.body.apiKey` — `session/runner/model.ts`).
+   */
+  const storedApiKey = (): string => {
+    const body = (providerCfg() as { request?: { body?: Record<string, unknown> } }).request?.body
+    return typeof body?.["apiKey"] === "string" ? (body["apiKey"] as string) : ""
+  }
+  const [revealKey, setRevealKey] = createSignal(false)
+
   const [form, setForm] = createStore({
     apiPath: providerCfg().api?.url ?? props.providerApi.url ?? "",
+    // Seeded from what is STORED, because the owner's ask was to see it as well as change it. A
+    // write-only field cannot answer "which key is this provider using?", which is the question
+    // somebody opening this dialog actually has.
+    apiKey: storedApiKey(),
     providerName: customProviderName(),
     modelID: init.api?.id ?? props.apiModelID,
     modelName: init.name ?? props.modelName,
@@ -388,12 +403,26 @@ export const DialogModelConfig: Component<{
     const api = apiPath ? { ...(provider.api ?? props.providerApi), url: apiPath } : provider.api
     // The config key is `providers` (plural) — the schema drops a stray `provider`, which silently
     // discarded every save this dialog made (pre-existing bug, fixed 2026-07-24).
+    // 🔴 The key rides the PROVIDER, not the model — `providers.<id>.request.body.apiKey` is the one
+    // place V2 resolution reads it. `...provider` above already carries any stored key forward, so
+    // this only has to express a CHANGE.
+    //
+    // ⚠️ An empty field CLEARS it, and that is deliberate: this dialog shows the stored key, so what
+    // the user sees is what will be saved. (`dialog-new-model` treats empty as "keep" because it is
+    // an ADD form with nothing to show.) Written as `""` rather than omitted, because the store
+    // patch-merges — omitting a key preserves it, so "delete my key" needs a value to land.
+    const request = mergeProviderKey({
+      request: (provider as { request?: ProviderRequest }).request,
+      stored: storedApiKey(),
+      next: form.apiKey.trim(),
+    })
     const patch = {
       providers: {
         [props.providerID]: {
           ...provider,
           name: form.providerName.trim() || (provider.name === "local" ? "local" : apiPath || props.providerID),
           ...(api === undefined ? {} : { api }),
+          ...(request === undefined ? {} : { request }),
           models: { ...(provider.models ?? {}), [props.modelID]: model },
         },
       },
@@ -556,6 +585,38 @@ export const DialogModelConfig: Component<{
                 autocapitalize="off"
                 aria-label={language.t("settings.models.config.apiPath.name")}
               />
+            </SettingsRowV2>
+            <SettingsRowV2
+              title={language.t("settings.models.config.apiKey.name")}
+              description={language.t("settings.models.config.apiKey.desc")}
+            >
+              <div class="flex items-center gap-2">
+                <TextInputV2
+                  class="w-64 max-w-full"
+                  type={revealKey() ? "text" : "password"}
+                  value={form.apiKey}
+                  onInput={(event) => setForm("apiKey", event.currentTarget.value)}
+                  spellcheck={false}
+                  autocorrect="off"
+                  autocomplete="off"
+                  autocapitalize="off"
+                  aria-label={language.t("settings.models.config.apiKey.name")}
+                />
+                {/* Masked by DEFAULT and revealed on request: the ask was to see it, and a secret
+                    that is legible to anyone glancing at a shared screen is a different promise. */}
+                <ButtonV2
+                  variant="ghost"
+                  size="small"
+                  onClick={() => setRevealKey(!revealKey())}
+                  aria-label={language.t(
+                    revealKey() ? "settings.models.config.apiKey.hide" : "settings.models.config.apiKey.reveal",
+                  )}
+                >
+                  {language.t(
+                    revealKey() ? "settings.models.config.apiKey.hide" : "settings.models.config.apiKey.reveal",
+                  )}
+                </ButtonV2>
+              </div>
             </SettingsRowV2>
             <SettingsRowV2
               title={language.t("settings.models.config.modelID.name")}

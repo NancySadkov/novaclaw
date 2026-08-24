@@ -2025,6 +2025,11 @@ export const dict = {
   "settings.models.config.apiPath.name": "API path",
   "settings.models.config.apiPath.desc":
     "The endpoint Nova connects to. This path is shared by every model from this provider.",
+  "settings.models.config.apiKey.name": "API key",
+  "settings.models.config.apiKey.desc":
+    "The key Nova sends to this provider. Shared by every model from it. Hidden until you reveal it; clearing the field removes the stored key.",
+  "settings.models.config.apiKey.reveal": "Show API key",
+  "settings.models.config.apiKey.hide": "Hide API key",
   "settings.models.config.modelID.name": "Model ID",
   "settings.models.config.modelID.desc": "The exact model identifier Nova sends to the API.",
   "settings.models.config.modelName.name": "Model name",
