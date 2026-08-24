@@ -101,8 +101,16 @@ export const tick = (db: Db, launch: Launch, now: EpochMillis): Effect.Effect<Ti
  */
 export type FolderOf = (agentID: string) => Effect.Effect<string | undefined>
 
+/**
+ * Can this colleague act right now? Read at FIRE time, like `folderOf`, and for the same reason.
+ *
+ * Absent means "cannot tell" — the task fires as its own colleague, because refusing a scheduled run
+ * on a maybe is worse than running one that turns out to be denied.
+ */
+export type CanAct = (agentID: string) => Effect.Effect<boolean>
+
 export const makeLaunch =
-  (sessions: Pick<SessionV2.Interface, "spawn">, homeDir: string, folderOf?: FolderOf): Launch =>
+  (sessions: Pick<SessionV2.Interface, "spawn">, homeDir: string, folderOf?: FolderOf, canAct?: CanAct): Launch =>
   (input) =>
     Effect.gen(function* () {
       const { schedule } = input
@@ -122,7 +130,22 @@ export const makeLaunch =
       // metaphor that is the CEO, who routes work it does not do itself. It also means every
       // scheduled task's output lands in a chat the user can find on the roster, rather than in a
       // session belonging to an agent nobody thinks of as a person.
-      const agent = AgentV2.ID.make(schedule.agent ?? AgentV2.NOVA_ID)
+      const requested = schedule.agent ?? AgentV2.NOVA_ID
+      // 🔴 A PAUSED COLLEAGUE'S TASK GOES TO NOVA, and the run says so.
+      //
+      // Firing it as the paused colleague lands an unattended run in a chat that answers deny-`*`:
+      // the work does not happen and nothing says why. The two alternatives were skip-and-report and
+      // reassign; the vision picks reassign, and the line below already does exactly that for an
+      // UNOWNED task — one rule, not two. Pausing sets aside the COLLEAGUE, not the user's standing
+      // instruction; deleting the schedule is how you stop the work, and it is the control that says
+      // what it does.
+      //
+      // ⚠️ NOT silent. A reassignment nobody is told about is the same defect as a skip nobody is
+      // told about, one step along — the task appears to have run normally as somebody else. The
+      // note rides the PROMPT, so it is in the chat the user opens rather than in a log.
+      const able = canAct === undefined ? true : yield* canAct(requested)
+      const reassigned = !able && requested !== AgentV2.NOVA_ID
+      const agent = AgentV2.ID.make(reassigned ? AgentV2.NOVA_ID : requested)
       // 🔴 A task inherits the RESPONSIBLE COLLEAGUE's folder, not the instance home. Under the roster
       // the folder is part of the job — you assign the bookkeeper to the books once — so a scheduled
       // run that landed in `~` would put a colleague somewhere it has never worked and give it a
@@ -142,7 +165,14 @@ export const makeLaunch =
       // actually begin?" that the two-call version could not give.
       const spawned = yield* sessions.spawn({
         location: { directory: AbsolutePath.make(directory) },
-        text: schedule.prompt,
+        text: reassigned
+          ? `[This scheduled task belongs to ${requested}, who is currently PAUSED and cannot act, so ` +
+            `it was handed to you instead. Do it if you can. If it needs ${requested} specifically, ` +
+            `say so and tell the user they can resume ${requested} or reassign the task.]
+
+` +
+            schedule.prompt
+          : schedule.prompt,
         type: "goal-oriented",
         title: schedule.title || "Scheduled run",
         ...(model ? { model } : {}),
@@ -198,6 +228,19 @@ export const layer = Layer.effect(
           agentID,
           directory: typeof directory === "string" ? directory : undefined,
         })
+      }),
+      // Same store, same fold, same FIRE-time read as `folderOf` above — pausing writes config
+      // `agents.<id>.disabled`, and the registry's `paused` is derived from that one field, so this
+      // reads the source of truth rather than a second copy of it.
+      //
+      // ⚠️ An agent with NO config row reads as ABLE, deliberately. Built-ins (Nova included) are
+      // registered by the plugin and may author no config layers at all, so treating "absent" as
+      // "cannot act" would refuse every task on a stock instance. Only an explicit `disabled: true`
+      // stands anyone down. A RETIRED colleague also has no row, and its schedules are the retire
+      // path's job to clear — see `todo/named-agents.md`.
+      Effect.fn("CalendarScheduler.canAct")(function* (agentID: string) {
+        const declared = AgentConfigStore.fold((yield* roster.agents())[agentID] ?? [])
+        return declared?.disabled !== true
       }),
     )
     yield* Effect.gen(function* () {

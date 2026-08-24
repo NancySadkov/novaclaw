@@ -366,6 +366,18 @@ export const fromParts = (input: {
   /** Erase everything keyed on the retired id — `AgentRetire.everything`. Passed in rather than
    *  built here because the per-request host handler cannot resolve a memory service (see above). */
   readonly forget: (colleague: string) => Effect.Effect<void>
+  /**
+   * Is this colleague set aside? A RESOLVED answer, passed in rather than computed here.
+   *
+   * The registry already folds config layers into `Info.paused`; asking `store` for the layers and
+   * folding them again here would be a second copy of a rule that lives in
+   * `config/plugin/agent.ts` — the drift this file keeps warning about. The layer resolves it from
+   * `AgentV2` (which it already holds) and hands the answer in.
+   *
+   * ⚠️ Optional so the per-request host handler, which cannot resolve the registry, still builds.
+   * Absent means "cannot tell", and a hand-off is DELIVERED rather than refused on a maybe.
+   */
+  readonly paused?: (colleague: string) => Effect.Effect<boolean>
 }): Interface => ({
   hire: Effect.fn("ColleagueHandoff.hire")(function* (request) {
     // The name is DRAWN, never chosen by a model: a roster sits in an address book beside real
@@ -392,6 +404,25 @@ export const fromParts = (input: {
     return true
   }),
   deliver: Effect.fn("ColleagueHandoff.deliver")(function* (request) {
+    // 🔴 A PAUSED COLLEAGUE CANNOT ANSWER, so the hand-off is refused HERE — at the delivery layer,
+    // which is the shared one. `formatRoster` already marks them, and that is what stops a model
+    // choosing one; this is what stops every OTHER caller, including the worker bridge and anything
+    // added later. Without it the message lands in a chat whose every turn answers deny-`*`, the
+    // sender waits for a reply that cannot come, and `colleague-stall.ts` reports the silence half an
+    // hour later — a stall manufactured by the instance rather than by the colleague.
+    if (input.paused !== undefined && (yield* input.paused(request.colleague)))
+      return {
+        delivered: false,
+        started: false,
+        // Same NOT SENT vocabulary as the three bounds, and it names the remedy: a paused colleague
+        // is resumed by the USER, so telling the model to wait or retry would be telling it to wait
+        // for something no colleague can change.
+        refused:
+          `NOT SENT. ${request.colleague} is PAUSED — set aside by the user — and has not seen this. ` +
+          `A paused colleague cannot act until the user resumes it, so waiting or asking again cannot ` +
+          `help. Do NOT tell anyone it was delivered. Do the work yourself, hand it to a colleague who ` +
+          `is active, or tell the user that ${request.colleague} is the one you need.`,
+      }
     const chat = yield* RosterChat.chatFor(input.db, request.colleague)
     if (chat === undefined) return { delivered: false, started: false }
     // The sender's own agent, read from ITS session row rather than trusted from the caller: the
@@ -603,6 +634,10 @@ export const layer = Layer.effect(
         store,
         refresh: agents.reload(),
         forget: (colleague) => AgentRetire.everything({ db, events, memory, agent: colleague, at: Date.now() }),
+        // Resolved from the registry, which folds config `disabled` into `Info.paused` — one rule,
+        // read where it already lives.
+        paused: (colleague) =>
+          agents.all().pipe(Effect.map((all) => all.find((one) => String(one.id) === colleague)?.paused === true)),
         takenNames: agents.all().pipe(Effect.map((all) => all.flatMap((one) => [String(one.id), one.name ?? ""]))),
       }),
     )
