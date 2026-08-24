@@ -22,7 +22,7 @@
     "novaclaw:config": 0,
     "novaclaw:tool": 0,
     "novaclaw test/project/": 2,
-    "novaclaw test/cli/": 2
+    "novaclaw test/cli/": 1
   },
   "failing": {
     "novaclaw:server": []

@@ -326,42 +326,29 @@ describe("novaclaw run (non-interactive subprocess)", () => {
     60_000,
   )
 
-  // 🔴 QUARANTINED 2026-08-23 — a FLAKE, and pinning it as an expected failure was the wrong shelf.
-  //
-  // Record: fail/fail/pass/fail across four full-tier runs, then fail/pass/pass across three
-  // isolated re-runs — 3 pass / 5 fail over 7 observations. The symptom is `llm.inputs` empty with
-  // exit 0: the run finishes without ever reaching the model. The `serve` fixture does wait for the
-  // "listening on" line, so the race is further in; a plausible shape is the attached server
-  // resolving a provider before the fake LLM has registered its canned reply.
-  //
-  // ⚠️ It was PINNED in `script/test-baseline.json`, and that is what a pin must not be used for —
-  // the ledger's own rule is "pinning is for failures that are UNDERSTOOD AND FILED, never for make
-  // it green". A pin asserts the test reliably FAILS, so on every run where this one happened to
-  // pass the ratchet reported expected-failure drift and turned the whole gate red. That is exactly
-  // what blocked the 2026-08-23 release build: a green run reading as a regression.
-  //
-  // Skipped rather than deleted, and COUNTED in the harness's skip table, so the missing coverage is
-  // 🔴 STILL QUARANTINED. One real cause was found and fixed (`loop()` broke on ANY session's
-  // `idle` because `event.subscribe()` is instance-wide; now filtered on `sessionID`) — measured
-  // 3 pass / 5 fail before, 10 pass / 1 fail after. A second fix was tried and REVERTED: gating the
-  // break on a `promptAccepted` flag, to ignore the session's own PRE-PROMPT idle. It measured
-  // 12 pass / 4 fail over 16 runs — no improvement demonstrated over the filter alone — and it
-  // carries an unguarded hazard: a turn that finishes before the prompt call's HTTP response
-  // resolves sets the flag AFTER its idle has passed, so the loop waits for an event that will
-  // never come again. Do not re-try that shape without handling the fast-turn case.
-  // 🔴 ROOT-CAUSED 2026-08-23, and still skipped because the CAUSE is not fixed — only its silence.
-  //
-  // `loop()` iterates `for await (… of events.stream)`, which exits NORMALLY when the SSE stream
-  // closes. A dropped subscription therefore looked exactly like a finished turn: the CLI exited 0
-  // having never waited for the model. Measured — a failing run takes ~2.7 s against ~8.5 s passing,
-  // sends NOTHING to the provider (`llm.inputs` is `[]`), and writes not one byte to either stderr.
-  // Nothing errored; the run stopped listening and called that success.
-  //
-  // `cli/cmd/run.ts` now fails with "lost the event stream before the turn finished" instead of
-  // reporting a turn that never happened — confirmed by 8 runs where the single non-pass printed
-  // exactly that. ⚠️ The stream still drops ~1 in 8 under `--attach`; that is the remaining work, and
-  // it is now a narrow question (why does the subscription close?) rather than a mystery.
-  cliIt.skip(
+  /**
+   * 🟢 UN-QUARANTINED 2026-08-24 — the `attach mode` flake is root-caused and fixed.
+   *
+   * It was never the CLI's fault. The server's SSE stream ends on `server.instance.disposed`
+   * (`Stream.takeUntil`), and `configUpdate` disposes EVERY instance after an accepted config write.
+   * So any config write terminates every subscriber's stream — and the writer here was a NovaClaw UI
+   * open in a desktop browser pane, POSTing to `127.0.0.1:4096`, because `--port 0` means *prefer
+   * 4096* rather than *OS-assigned*. An unrelated window was reaching into the test run.
+   *
+   * The fixture now chooses its own free port (`freePort` in `test/lib/cli-process.ts`, which carries
+   * the full reasoning). Measured: 25% failure across two batches of 12 before, 16/16 after.
+   *
+   * ⚠️ Why this hid for so long: a PASSING run recorded the same `configUpdate -> disposeAll` as a
+   * failing one. The write lands constantly and is fatal only when it falls inside the turn, so its
+   * presence proved nothing and only its timing did. Three signatures — a short failure that sent
+   * nothing to the provider, a ~9 s one that had already prompted, and a 30 s timeout — turned out to
+   * be one cause landing at different moments, not three defects.
+   *
+   * 🔴 The product half is NOT fixed and is filed: a config write should not destroy live instances.
+   * See `notes/reports/attach-flake-2026-08-24.md`. If this test ever flakes again, suspect that
+   * first — this fixture only stops STRANGERS reaching the server, not the server disposing itself.
+   */
+  cliIt.concurrent(
     "attach mode sends client-local file contents without a shared path",
     ({ home, llm, novaclaw }) =>
       Effect.gen(function* () {

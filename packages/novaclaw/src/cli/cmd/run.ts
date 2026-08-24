@@ -1,5 +1,6 @@
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { sessionErrorLike, sessionErrorLines } from "@novaclaw/core/session/session-error"
+import { incompleteMessage, type IncompleteReason } from "./run/incomplete"
 // CLI entry point for `novaclaw run` — the headless, non-interactive runner.
 //
 // Sends a single prompt, streams the session's events to stdout, and exits when
@@ -684,6 +685,8 @@ export const RunCommand = effectCmd({
          * for weeks.
          */
         let settled = false
+        // Set when the SERVER says it is disposing this instance — see ./run/incomplete.
+        let incomplete: IncompleteReason = "stream-ended"
 
         async function loop(client: NovaclawClient, events: Awaited<ReturnType<typeof sdk.event.subscribe>>) {
           const toggles = new Map<string, boolean>()
@@ -750,6 +753,13 @@ export const RunCommand = effectCmd({
 
           for await (const event of events.stream) {
             if (process.env["NOVACLAW_RUN_DEBUG_EVENTS"]) console.error("EVT", event.type)
+            // BEFORE the session filter, deliberately: the disposal carries only `{ directory }`,
+            // so the filter below would skip it as "not mine" — and it is the one event that
+            // explains why this stream is about to end.
+            if (event.type === "server.instance.disposed") {
+              incomplete = "disposed"
+              continue
+            }
             const scoped = (event as { properties?: { sessionID?: string } }).properties
             if (scoped?.sessionID !== sessionID) continue
 
@@ -897,7 +907,7 @@ export const RunCommand = effectCmd({
           // success is how an attached run exited 0 in ~2.7 s having sent nothing to the model.
           // Say so and fail, rather than reporting a turn that never happened.
           else if (!settled) {
-            UI.error("lost the event stream before the turn finished — the run did not complete")
+            UI.error(incompleteMessage(incomplete))
             process.exitCode = 1
           }
         }

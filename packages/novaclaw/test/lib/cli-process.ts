@@ -23,6 +23,7 @@ import { AppProcess } from "@novaclaw/core/process"
 import { Deferred, Duration, Effect, Layer, Schedule, Scope, Stream } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/unstable/http"
 import { ChildProcess } from "effect/unstable/process"
+import net from "node:net"
 import path from "node:path"
 import { TestLLMServer } from "./llm-server"
 import { ConfigPermission } from "@novaclaw/core/config/permission"
@@ -140,6 +141,17 @@ export type ServeHandle = {
    * process all along.
    */
   readonly stderr: () => string
+  /**
+   * Everything the served process has written to STDOUT so far.
+   *
+   * ⚠️ The server's own log lines go here, not to stderr, so `stderr()` above answers
+   * "why did the instance go away?" with an EMPTY STRING. Measured 2026-08-24 while chasing
+   * the `attach mode` flake: a failing run dumped `stderr()` and got nothing, which reads as
+   * "the server said nothing" when the truth is "we asked the wrong stream". The lines were
+   * already being buffered in `stdoutLines` for the readiness sentinel and simply were not
+   * reachable from the handle.
+   */
+  readonly stdout: () => string
   /** Wait until a replacement child has reached its listening sentinel. */
   readonly waitForRestart: (
     previousPID: number,
@@ -183,6 +195,34 @@ export type CliFixture = {
   readonly home: string
   readonly novaclaw: NovaclawCli
 }
+
+/**
+ * A port nothing else on this machine is using, chosen HERE rather than by passing `--port 0`.
+ *
+ * 🔴 `--port 0` does NOT mean "OS-assigned" to this server. `server/server.ts` reads it as *prefer
+ * 4096, fall back to anything*, so the first test server to start takes the well-known port — and
+ * any local client that assumes the default reaches it. Measured 2026-08-24: a NovaClaw UI open in
+ * a desktop browser pane POSTed a config write to `127.0.0.1:4096` during a test run; `configUpdate`
+ * disposes every instance, which terminates every SSE subscriber, which killed the CLI's turn
+ * mid-flight. That is the `attach mode` flake — an unrelated window reaching into a test.
+ *
+ * ⚠️ Deliberately NOT fixed by changing what `0` means. Preferring 4096 is right for a person
+ * running `novaclaw serve` and expecting their bookmark to work; it is only wrong for tests, so the
+ * tests stop asking for it.
+ *
+ * The bind-close-reuse window is a small race, and it is strictly better than a shared fixed port:
+ * a collision fails loudly at startup instead of silently sharing state with whatever else is there.
+ */
+const freePort = (): Promise<number> =>
+  new Promise((resolve, reject) => {
+    const probe = net.createServer()
+    probe.once("error", reject)
+    probe.listen(0, "127.0.0.1", () => {
+      const address = probe.address()
+      const port = typeof address === "object" && address !== null ? address.port : 0
+      probe.close(() => (port === 0 ? reject(new Error("could not obtain a free port")) : resolve(port)))
+    })
+  })
 
 // Provisions a TestLLMServer + tmpdir + spawn helper and invokes fn. Cleans
 // up the tmpdir on scope exit. TestLLMServer.layer is provided internally so
@@ -333,9 +373,9 @@ export function withCliFixture<A, E>(
       // kill, leaking a supervisor+server pair per test.
       const argv = ["serve"]
       if (!opts?.supervise) argv.push("--no-supervise")
-      // Default port 0 — let the OS pick a free port, parse the actual one
-      // off stdout. Hard-coded ports flake under parallel tests.
-      argv.push("--port", String(opts?.port ?? 0))
+      // An explicitly chosen free port — see `freePort` for why `--port 0` does not give one.
+      // The actual bound port is still parsed off stdout rather than assumed.
+      argv.push("--port", String(opts?.port ?? (yield* Effect.promise(freePort))))
       if (opts?.hostname) argv.push("--hostname", opts.hostname)
       if (opts?.extraArgs) argv.push(...opts.extraArgs)
 
@@ -414,6 +454,7 @@ export function withCliFixture<A, E>(
         port: match.port,
         childPID: match.pid,
         stderr: () => stderrChunks.join(""),
+        stdout: () => stdoutLines.join("\n"),
         waitForRestart: async (previousPID, timeoutMs = 15_000) => {
           const deadline = Date.now() + timeoutMs
           while (Date.now() < deadline) {

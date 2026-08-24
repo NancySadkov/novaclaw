@@ -63,8 +63,8 @@ Options:
       --variant                       model variant (provider-specific reasoning effort, e.g., high,
                                       max, minimal)                                         [string]
       --thinking                      show thinking blocks                                 [boolean]
-      --dangerously-skip-permissions  auto-approve permissions that are not explicitly denied
-                                      (dangerous!)                        [boolean] [default: false]"
+      --dangerously-skip-permissions  REMOVED — it cannot work; configure the agent's permissions
+                                      and use --agent instead             [boolean] [default: false]"
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw debug --help 1`] = `
