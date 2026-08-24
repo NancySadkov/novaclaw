@@ -76,12 +76,28 @@ const reachable = async (): Promise<string | undefined> => {
   } catch {
     return `no instance at ${URL_BASE} — start one with \`bun run dev\``
   }
-  const host = MODEL.split("/")[0] ?? ""
+  // Resolve the provider through the INSTANCE's own catalog — the only place that knows which
+  // endpoint a providerID names.
+  //
+  // ⚠️ This was parsing a HOST out of the model ref, and the sibling `agent-pipeline-live.smoke.ts`
+  // had already replaced that with the catalog lookup below. The fix landed in one copy and not the
+  // other, and the decay was SILENT in the worst way: a providerID that is a catalog key rather than
+  // a `host:port` — which every real one now is — made this probe fail, so the whole file SKIPPED
+  // with "model host spark-qwen38 is unreachable". Green suite, zero live colleague coverage, and
+  // nothing anywhere saying so. Measured 2026-08-24 while trying to drive group chats live.
+  const providerID = MODEL.split("/")[0] ?? ""
+  const catalog = rowsOf(await call("GET", "/api/provider"))
+  const provider = catalog.find((row) => row["id"] === providerID)
+  if (!provider) {
+    const known = catalog.map((row) => String(row["id"])).join(", ")
+    return `provider "${providerID}" is not in this instance's catalog (has: ${known})`
+  }
+  const url = String(((provider["api"] as Json | undefined)?.["url"] as string | undefined) ?? "")
   try {
-    const probe = await fetch(`http://${host}/v1/models`, { signal: AbortSignal.timeout(8_000) })
-    if (!probe.ok) return `model host ${host} answered ${probe.status}`
+    const probe = await fetch(`${url}/models`, { signal: AbortSignal.timeout(8_000) })
+    if (!probe.ok) return `model endpoint ${url} answered ${probe.status}`
   } catch {
-    return `model host ${host} is unreachable`
+    return `model endpoint ${url} is unreachable`
   }
   return undefined
 }
@@ -256,6 +272,17 @@ describe.skipIf(skip !== undefined)("an officer with a real model", () => {
         system: "You are a coordinator. You spawn sub-agents for independent work.",
       })
       const chat = await openChat("smoke_inherit")
+      // 🔴 CHILDREN FROM THIS RUN ONLY, and one-chat-per-agent is why this is not paranoia.
+      //
+      // `openChat` returns the agent's EXISTING chat — that is the invariant working — so every run
+      // of this smoke hangs its sub-agents off the same parent, and they accumulate. Selecting by
+      // list order then reads whichever the API happened to return first, which on 2026-08-24 was a
+      // pair from the day before that had run on the old instance default. The test went red naming
+      // a defect that had been FIXED, while this run's own children were correct.
+      //
+      // ⚠️ That is the expensive direction of wrong: a live smoke reporting a regression that is not
+      // there costs an investigation, and doing it twice teaches people to ignore it.
+      const startedAt = Date.now()
       const rows = await turn(
         chat,
         'Spawn 2 sub-agents in parallel. Give each one this exact task: reply with the single word ACK ' +
@@ -263,9 +290,15 @@ describe.skipIf(skip !== undefined)("an officer with a real model", () => {
       )
       expect(completed(toolCalls(rows, "spawn")).length).toBeGreaterThanOrEqual(1)
 
-      const children = rowsOf(await call("GET", "/api/session?limit=80")).filter(
-        (row) => String(row["parentID"] ?? "") === chat,
-      )
+      const createdAt = (row: Json): number => {
+        const time = (row["time"] ?? {}) as Json
+        const created = time["created"] ?? row["time_created"]
+        return typeof created === "number" ? created : 0
+      }
+      const children = rowsOf(await call("GET", "/api/session?limit=80"))
+        .filter((row) => String(row["parentID"] ?? "") === chat)
+        // A second of slack: the child row is written a beat before the turn's clock is read here.
+        .filter((row) => createdAt(row) >= startedAt - 1_000)
       expect(children.length).toBeGreaterThanOrEqual(1)
 
       // What the CHILD actually ran on. The officer's model is `MODEL` (`providerID/modelID`), and the
