@@ -50,6 +50,13 @@ interface PeerContext {
   /** Which colleague last wrote in as a peer, skipping the user's own interjections. */
   readonly label: string | undefined
   /**
+   * The agent ids this chain has already passed through, in order.
+   *
+   * 🔴 What makes a CYCLE decidable rather than merely deep: `hops` cannot tell `A→B→C→A` from
+   * `A→B→C→D`, so without this a loop is caught two laps late and reported as a depth limit.
+   */
+  readonly path: ReadonlyArray<string>
+  /**
    * How deep the chain reaching this session is — 0 when a person spoke most recently.
    *
    * ⚠️ **Read by a DIFFERENT rule than `label`, over the same rows, and the difference is the whole
@@ -74,10 +81,16 @@ const lastPeerContext = (db: Database.Interface["db"], session: SessionSchema.ID
       Effect.map((rows) => {
         let label: string | undefined
         let hops: number | undefined
+        let path: ReadonlyArray<string> | undefined
         for (const row of rows) {
           const origin = (
             row.data as {
-              readonly origin?: { readonly via?: string; readonly label?: string; readonly hops?: number }
+              readonly origin?: {
+                readonly via?: string
+                readonly label?: string
+                readonly hops?: number
+                readonly path?: ReadonlyArray<string>
+              }
             }
           )?.origin
           const peer = origin?.via === "agent"
@@ -88,9 +101,12 @@ const lastPeerContext = (db: Database.Interface["db"], session: SessionSchema.ID
           // The chain depth is decided by whichever came LAST, so the walk stops at the first row of
           // either kind. A message with no agent origin is the user at the composer.
           if (hops === undefined) hops = peer ? (typeof origin?.hops === "number" ? origin.hops : 0) : 0
+          // Absent means EMPTY, the same convention `hops` uses: a message written before the field
+          // existed reads as a fresh chain rather than an unknown one.
+          if (path === undefined) path = peer && Array.isArray(origin?.path) ? origin.path : []
           if (label !== undefined && hops !== undefined) break
         }
-        return { label, hops: hops ?? 0 } satisfies PeerContext
+        return { label, hops: hops ?? 0, path: path ?? [] } satisfies PeerContext
       }),
       Effect.orDie,
     )
@@ -214,6 +230,8 @@ const landColleagueMessage = (
     readonly label: string | undefined
     readonly turn: ReturnType<typeof ColleagueNote.turnFor>
     readonly hop: number
+    /** The chain so far, so the next hop can decide a cycle rather than infer depth. */
+    readonly path?: ReadonlyArray<string> | undefined
     readonly conversation?: string | undefined
     readonly participants?: ReadonlyArray<string> | undefined
     /** Who this copy is FOR — used to leave them out of "the others" in their own note. */
@@ -255,6 +273,8 @@ const landColleagueMessage = (
           // Stamped so the RECEIVER knows how far from a person it is: without this the chain is
           // invisible to everyone in it, which is how a loop that every hop finds reasonable runs.
           hops: args.hop,
+          // Absent when empty rather than an empty array: a fresh chain should not carry a field.
+          ...(args.path === undefined || args.path.length === 0 ? {} : { path: [...args.path] }),
           ...(args.label === undefined ? {} : { label: args.label }),
           // Absent for a 1:1 hand-off, so every existing exchange is byte-identical to before.
           ...(args.conversation === undefined ? {} : { conversation: args.conversation }),
@@ -271,6 +291,56 @@ const landColleagueMessage = (
     // `Delivery.started` has always meant.
     if (args.wake === false) return false
     return yield* deps.wake(args.chatID)
+  })
+
+/**
+ * Tell the agent that STARTED the chain that it came back around.
+ *
+ * ⚠️ Lands DORMANT and charges nothing. It is a notice, not a hand-off: it spends no rate budget
+ * (the sender was already refused — charging would bill them twice for one act), it does not wake
+ * anybody (a loop detector that summons a third agent is an amplifier), and it deliberately skips
+ * the cycle check it would otherwise trip, because the originator is by definition on the path.
+ */
+const notifyOriginator = (
+  deps: {
+    readonly db: Database.Interface["db"]
+    readonly events: EventV2.Interface
+    readonly wake: (id: SessionSchema.ID) => Effect.Effect<boolean>
+  },
+  args: {
+    readonly path: ReadonlyArray<string>
+    readonly from: SessionSchema.ID
+    readonly refusedBy: string | undefined
+    readonly target: string
+  },
+) =>
+  Effect.gen(function* () {
+    const originator = args.path[0]
+    // Only the SENDER already knows — it is holding the refusal. The target does NOT: nothing was
+    // delivered to it, and in the commonest ring the target IS the originator (A→B→C→A), so skipping
+    // it would silence exactly the case this exists for. That was the first cut of this guard, and
+    // the test below is what caught it.
+    if (originator === undefined || originator === args.refusedBy) return
+    const chat = yield* RosterChat.chatFor(deps.db, originator)
+    if (chat === undefined) return
+    yield* SessionInput.admit(deps.db, deps.events, {
+      id: SessionMessage.ID.create(),
+      sessionID: chat.id as SessionSchema.ID,
+      prompt: {
+        text: ColleagueNote.cycleNotice({
+          path: args.path,
+          refusedBy: args.refusedBy ?? String(args.from),
+          target: args.target,
+        }),
+        files: [],
+        agents: [],
+        // No peer origin: this is the instance reporting a bound, not a colleague asking for
+        // something. Giving it a `relation: "peer"` would put it on the next path and make the
+        // notice itself part of a chain.
+        origin: undefined,
+      },
+      delivery: "queue",
+    }).pipe(Effect.orDie)
   })
 
 /**
@@ -364,6 +434,17 @@ export const fromParts = (input: {
     // is the fact that tells it to go back to the user. Reporting a rate limit to a model whose real
     // problem is depth would have it wait and then continue the loop.
     const hop = ColleagueBound.nextHop(context.hops)
+    const path = ColleagueBound.extendPath(context.path, label)
+    // 🔴 CYCLE BEFORE DEPTH. A loop refused as "too deep" sends a model to wait and retry, which is
+    // the one thing that cannot help — so the check that can name the loop runs first.
+    if (ColleagueBound.closesCycle({ path, target: request.colleague, answering: askedByRecipient })) {
+      yield* notifyOriginator(input, { path, from: request.from, refusedBy: label, target: request.colleague })
+      return {
+        delivered: false,
+        started: false,
+        refused: ColleagueBound.cycleRefusal({ colleague: request.colleague, path }),
+      }
+    }
     if (ColleagueBound.exceedsHopCap(hop))
       return { delivered: false, started: false, refused: ColleagueBound.hopRefusal({ colleague: request.colleague, hop }) }
     const now = yield* Clock.currentTimeMillis
@@ -378,6 +459,7 @@ export const fromParts = (input: {
       label,
       turn,
       hop,
+      path,
     })
     // AFTER the admit, so a refused or failed hand-off never spends the sender's allowance.
     ColleagueBound.record(String(request.from), now)
@@ -403,7 +485,7 @@ export const fromParts = (input: {
     // Who can actually be reached. A colleague with no open chat is left OUT of the conference
     // rather than blocking it, and reported: `participants` must name exactly who received this, or
     // the recipients would answer someone who never heard the question and nobody could tell.
-    const reachable: string[] = []
+    let reachable: string[] = []
     const missing: string[] = []
     for (const colleague of named) {
       const chat = yield* RosterChat.chatFor(input.db, colleague)
@@ -414,6 +496,23 @@ export const fromParts = (input: {
 
     const context = yield* lastPeerContext(input.db, request.from)
     const hop = ColleagueBound.nextHop(context.hops)
+    const path = ColleagueBound.extendPath(context.path, label)
+    // 🔴 A cycle is PER-RECIPIENT, so it drops that participant and is reported — never a refusal of
+    // the whole conference. The all-or-nothing rule belongs to the RATE budget, which is a property
+    // of the sender; one colleague already in the chain says nothing about the others.
+    const cycling = reachable.filter((colleague) =>
+      ColleagueBound.closesCycle({ path, target: colleague, answering: context.label === colleague }),
+    )
+    reachable = reachable.filter((colleague) => !cycling.includes(colleague))
+    for (const colleague of cycling)
+      yield* notifyOriginator(input, { path, from: request.from, refusedBy: label, target: colleague })
+    if (reachable.length === 0)
+      return {
+        delivered: [],
+        missing,
+        started: false,
+        refused: ColleagueBound.cycleRefusal({ colleague: cycling.join(", "), path }),
+      }
     if (ColleagueBound.exceedsHopCap(hop))
       return {
         delivered: [],
@@ -466,6 +565,7 @@ export const fromParts = (input: {
         label,
         turn: announced ? "announce" : entry.turn,
         hop,
+        path,
         conversation,
         participants,
         recipient: entry.colleague,
@@ -476,7 +576,9 @@ export const fromParts = (input: {
     }
     // AFTER the writes, once per recipient — see `hasCapacityFor`.
     ColleagueBound.recordMany(String(request.from), now, reachable.length)
-    return { conversation, delivered: reachable, missing, started }
+    // Reported alongside the unreachable: the sender asked for a room and got a smaller one,
+    // and only it can judge whether that still answers the question.
+    return { conversation, delivered: reachable, missing: [...missing, ...cycling], started }
   }),
 })
 

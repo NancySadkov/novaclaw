@@ -2395,6 +2395,7 @@ export type PromptOrigin =
       label?: string
       relation?: "parent" | "peer"
       hops?: number
+      path?: Array<string>
       conversation?: string
       participants?: Array<string>
     }

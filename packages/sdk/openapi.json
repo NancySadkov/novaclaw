@@ -33742,6 +33742,12 @@
               "hops": {
                 "type": "number"
               },
+              "path": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
               "conversation": {
                 "type": "string"
               },

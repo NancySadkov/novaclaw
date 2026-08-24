@@ -105,6 +105,54 @@ export const recordMany = (sender: string, at: number, count: number): void => {
   for (let index = 0; index < count; index += 1) record(sender, at)
 }
 
+/**
+ * THE PATH — a cycle is decidable at the hop that would close it.
+ *
+ * 🔴 `hops` is a number, so `A→B→C→A` and `A→B→C→D` are the same fact to it. A loop is therefore
+ * caught only when `HOP_CAP` fires — about two laps late — and the refusal says "too deep", which
+ * sends a model to wait and try again rather than to go back to the person. Naming the loop is the
+ * difference between a bound that stops a thing and a bound that explains it.
+ *
+ * ⚠️ Every id here is an AGENT id, never a session: one chat per agent, so the agent is the node.
+ */
+
+/** The path this hop would carry: what arrived, plus the sender appending itself. */
+export const extendPath = (incoming: ReadonlyArray<string> | undefined, sender: string | undefined): string[] => {
+  const path = [...(incoming ?? [])]
+  // A sender we cannot name cannot be appended — and must not silently shorten the path either, so
+  // the rest is preserved and the check simply has one fewer node to match on.
+  if (sender !== undefined && sender !== "") path.push(sender)
+  return path
+}
+
+/**
+ * Would delivering to `target` close a cycle?
+ *
+ * 🔴 **An ANSWER back to whoever asked you is not a cycle — it is the exchange ending.** `A→B→A` is
+ * the normal round trip and appears on the path exactly like `A→B→C→A` does; only the TURN separates
+ * them. Refusing the answer breaks every ordinary hand-off, which is what a first cut of this did:
+ * `deliver(theron → aris)` after aris had asked theron read as a loop.
+ *
+ * So the check applies to an ASK being passed onward, never to an answer going back.
+ */
+export const closesCycle = (input: {
+  readonly path: ReadonlyArray<string>
+  readonly target: string
+  readonly answering: boolean
+}): boolean => !input.answering && input.path.includes(input.target)
+
+/**
+ * Why that hop was not sent — in the same NOT SENT vocabulary as the other two bounds, and naming
+ * the LOOP so it is not mistaken for a depth refusal.
+ */
+export const cycleRefusal = (input: { readonly colleague: string; readonly path: ReadonlyArray<string> }): string =>
+  `NOT SENT. Your message to ${input.colleague} was refused and ${input.colleague} has not seen it. ` +
+  `${input.colleague} is already in this chain (${[...input.path, input.colleague].join(" → ")}), ` +
+  `so passing it on would close a LOOP rather than make progress. Do NOT tell anyone it was ` +
+  `delivered. ⚠️ This is not a depth limit — going around again cannot help, and waiting will not ` +
+  `change it. Answer with what the chain already knows, or take it to the USER — the chain resets ` +
+  `as soon as a person speaks.`
+
 /** Is this sender over its rate limit right now? */
 export const rateExceeded = (sender: string, at: number): boolean => overRate(sent.get(sender) ?? [], at)
 

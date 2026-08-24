@@ -108,6 +108,25 @@ export const Origin = Schema.Union([
      *
      * Absent means an ordinary 1:1 hand-off.
      */
+    /**
+     * The agent ids this chain has passed through, in order, each sender appended at its own hop.
+     *
+     * 🔴 **`hops` is a NUMBER, so `A→B→C→A` is indistinguishable from `A→B→C→D`.** A cycle is caught
+     * only when the cap fires — roughly two laps late — and nobody is ever told it WAS a cycle, so
+     * the refusal reads as "too deep" and the loop looks like ordinary depth. A path makes the
+     * difference decidable at the hop that would close it, which is the standard answer everywhere
+     * else: BGP drops a route whose `AS_PATH` already contains its own AS, SIP loop-detects from
+     * `Via`, mail counts `Received:`.
+     *
+     * ⚠️ **Absent means EMPTY, exactly as `hops` absent means zero.** Every message written before
+     * this field existed then reads as a fresh chain rather than an unknown one, which is the
+     * permissive direction — a bound must not refuse a hand-off because it could not see the path.
+     *
+     * ⚠️ **Across P2P this is UNTRUSTED and the check is best-effort.** A peer strips or forges it
+     * for free (A2A carries no hop or depth field at all), so between instances the rate window and
+     * the hop cap remain the real bound. Saying so is the honest description of what this delivers.
+     */
+    path: Schema.Array(Schema.String).pipe(optional),
     conversation: Schema.String.pipe(optional),
     /**
      * Everyone in the conference, by agent id, INCLUDING the sender.

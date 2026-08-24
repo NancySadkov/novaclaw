@@ -67,6 +67,27 @@ export const replyNote = (input: {
     : `\n\n[This is ${input.from}'s ANSWER to what you asked them. Nothing further is expected of you — ` +
       `use it and carry on. Only call the \`colleague\` tool again if you have a NEW question for them.]`
 
+/**
+ * What the ORIGINATOR is told when a chain it started came back around.
+ *
+ * 🔴 **The part no surveyed framework does.** Everyone else refuses the hop and tells the sender; the
+ * one participant who can actually dissolve the loop is the agent holding the question it is
+ * circling, and nobody informs it. Its chat is a door we already have, so this costs no new
+ * mechanism — principle 14 satisfied rather than bent.
+ *
+ * ⚠️ Deliberately NOT a hand-off. It asks for nothing, so it invites no reply and starts no chain: an
+ * amplifier attached to a loop detector would be a poor joke.
+ */
+export const cycleNotice = (input: {
+  readonly path: ReadonlyArray<string>
+  readonly refusedBy: string
+  readonly target: string
+}): string =>
+  `[A chain you started came back around: ${[...input.path, input.target].join(" → ")}. ` +
+  `${input.refusedBy} tried to pass it to ${input.target}, who is already in it, so that hop was ` +
+  `refused and nothing was delivered. Nobody is waiting on you — but you hold the question this is ` +
+  `circling, so you are the one who can settle it: answer it yourself, or take it to the user.]`
+
 /** Whether a delivery is a question or an answer, from what the sender's own chat last received. */
 export const turnFor = (input: { readonly askedByRecipient: boolean }): Turn =>
   input.askedByRecipient ? "answer" : "ask"

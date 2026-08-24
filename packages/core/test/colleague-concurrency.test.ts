@@ -128,7 +128,7 @@ const admitted = (db: Database.Interface["db"]) =>
 
 describe("a RING of officers terminates", () => {
   it.effect(
-    "A→B→C→A stops at the cap instead of circling forever",
+    "A→B→C→A is refused at the hop that would CLOSE it, and named as a loop",
     () =>
       Effect.gen(function* () {
         ColleagueBound.reset()
@@ -155,10 +155,24 @@ describe("a RING of officers terminates", () => {
         }
 
         expect(refusal).toBeDefined()
+        // The way out is still the user — the chain resets when a person speaks, so this is the
+        // mechanism rather than a brush-off.
         expect(refusal!.toLowerCase()).toContain("user")
-        // ⚠️ Exactly the cap, not "eventually". A ring that stopped at 9 would mean the count resets
-        // on some edge of the circuit, which is the bug this test exists for.
-        expect(yield* admitted(db)).toBe(ColleagueBound.HOP_CAP)
+        // 🔴 NAMED AS A LOOP, and that is the point of carrying a path. Refused as "too deep" a ring
+        // sends a model to wait and retry, which is the one thing that cannot help; it also never
+        // tells anybody it WAS a ring. `hops` is a number and cannot tell A→B→C→A from A→B→C→D.
+        expect(refusal!.toLowerCase()).toContain("loop")
+        expect(refusal!.toLowerCase()).not.toContain("limit is")
+        // ⚠️ THREE, and each one is a different fact — this used to be `toBe(HOP_CAP)`.
+        //
+        // Two are the hops that made progress (aris→theron, theron→kallias). The circuit is then cut
+        // at the hop that would CLOSE it — kallias→aris, with aris already on the path — where the
+        // old depth counter would have let a full lap and a half run first ("roughly two laps late").
+        //
+        // The third is the notice to the ORIGINATOR: aris started this chain and is the only
+        // participant that can dissolve it, so it is told the chain came back around. Nothing else
+        // in the field does that, and counting it here is what stops it being quietly dropped.
+        expect(yield* admitted(db)).toBe(3)
       }).pipe(Effect.timeout(NO_HANG)),
   )
 })

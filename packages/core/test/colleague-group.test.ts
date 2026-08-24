@@ -70,7 +70,8 @@ const handoff = (
 const ARIS = "ses_aris" as SessionSchema.ID
 const THERON = "ses_theron" as SessionSchema.ID
 const KALLIAS = "ses_kallias" as SessionSchema.ID
-const ROSTER = { [ARIS]: "aris", [THERON]: "theron", [KALLIAS]: "kallias" }
+const NOVA = "ses_nova" as SessionSchema.ID
+const ROSTER = { [ARIS]: "aris", [THERON]: "theron", [KALLIAS]: "kallias", [NOVA]: "nova" }
 
 /** What was actually queued into a colleague's chat. */
 const admitted = (db: Database.Interface["db"], session: SessionSchema.ID) =>
@@ -94,6 +95,7 @@ const threeChats = Effect.gen(function* () {
   yield* chat(db, { id: ARIS, agent: "aris" })
   yield* chat(db, { id: THERON, agent: "theron" })
   yield* chat(db, { id: KALLIAS, agent: "kallias" })
+  yield* chat(db, { id: NOVA, agent: "nova" })
   return { db, events: yield* EventV2.Service }
 })
 
@@ -225,7 +227,7 @@ describe("addressing several colleagues at once", () => {
       // 🔴 The invariant the whole shape rests on. A conference session would be an entity with no
       // personality, and it would hand every participant a second stream.
       const sessions = yield* db.select({ id: SessionTable.id }).from(SessionTable).all().pipe(Effect.orDie)
-      expect(sessions.map((row) => row.id).sort()).toEqual([ARIS, KALLIAS, THERON].sort())
+      expect(sessions.map((row) => row.id).sort()).toEqual([ARIS, KALLIAS, THERON, NOVA].sort())
     }),
   )
 
@@ -291,7 +293,12 @@ describe("addressing several colleagues at once", () => {
 })
 
 /** Put a peer message in a chat, so `lastPeerContext` sees who spoke to it last. */
-const peerMessageFrom = (db: Database.Interface["db"], session: SessionSchema.ID, from: string) =>
+const peerMessageFrom = (
+  db: Database.Interface["db"],
+  session: SessionSchema.ID,
+  from: string,
+  path?: ReadonlyArray<string>,
+) =>
   db
     .insert(SessionMessageTable)
     .values([
@@ -300,7 +307,10 @@ const peerMessageFrom = (db: Database.Interface["db"], session: SessionSchema.ID
         session_id: session,
         type: "user",
         seq: 1,
-        data: { text: "earlier question", origin: { via: "agent", relation: "peer", label: from, hops: 1 } },
+        data: {
+          text: "earlier question",
+          origin: { via: "agent", relation: "peer", label: from, hops: 1, ...(path ? { path: [...path] } : {}) },
+        },
         time_created: 1,
       } as never,
     ])
@@ -370,6 +380,129 @@ describe("a reply INFORMS the room, it does not summon it", () => {
       // Nobody is being answered here, so this is the ask — and an ask that woke nobody would be a
       // question shouted into an empty room.
       expect(woke.sort()).toEqual([String(KALLIAS), String(THERON)].sort())
+    }),
+  )
+})
+
+describe("a cycle is decided per recipient, not against the whole room", () => {
+  it.effect(
+    "🔴 a participant already in the chain is DROPPED and reported — the others still get it",
+    Effect.gen(function* () {
+      const { db, events } = yield* threeChats
+      // A REAL ring: aris asked theron, theron asked kallias. kallias now addresses the room, and
+      // aris is on the chain behind it while nova is not.
+      // ⚠️ kallias→aris would be an ANSWER, not a cycle, had aris written to kallias directly — which
+      // is why the chain has to reach kallias THROUGH theron for this to be a loop at all.
+      yield* peerMessageFrom(db, KALLIAS, "theron", ["aris", "theron"])
+
+      const outcome = yield* handoff(db, events, ROSTER).deliverGroup({
+        from: KALLIAS,
+        colleagues: ["aris", "nova"],
+        message: "who owns the ledger?",
+      })
+
+      // ⚠️ NOT a refusal of the conference. All-or-nothing belongs to the RATE budget, which is a
+      // property of the sender; one colleague being in the chain says nothing about the others.
+      expect(outcome.delivered).toEqual(["nova"])
+      expect(outcome.missing).toContain("aris")
+      expect(outcome.refused).toBeUndefined()
+      expect((yield* admitted(db, NOVA)).length).toBe(1)
+      // aris does NOT get the question — that would close the loop. What it gets is the notice that a
+      // chain it started came back around, which is a different message and the point of telling it.
+      const toAris = yield* admitted(db, ARIS)
+      expect(toAris.length).toBe(1)
+      expect(toAris[0]!.text).toContain("came back around")
+      expect(toAris[0]!.text).not.toContain("who owns the ledger?")
+    }),
+  )
+
+  it.effect(
+    "the participants list names who RECEIVED it, so a dropped node is not advertised",
+    Effect.gen(function* () {
+      const { db, events } = yield* threeChats
+      yield* peerMessageFrom(db, KALLIAS, "theron", ["aris", "theron"])
+      yield* handoff(db, events, ROSTER).deliverGroup({
+        from: KALLIAS,
+        colleagues: ["aris", "nova"],
+        message: "who owns the ledger?",
+      })
+      // Otherwise nova answers a room containing aris, who never heard the question.
+      expect((yield* admitted(db, NOVA))[0]!.origin["participants"]).toEqual(["kallias", "nova"])
+    }),
+  )
+
+  it.effect(
+    "the chain is CARRIED, so the next hop can decide",
+    Effect.gen(function* () {
+      const { db, events } = yield* threeChats
+      yield* peerMessageFrom(db, KALLIAS, "theron", ["aris", "theron"])
+      yield* handoff(db, events, ROSTER).deliverGroup({
+        from: KALLIAS,
+        colleagues: ["nova"],
+        message: "who owns the ledger?",
+      })
+      // `hops` is a number and cannot tell A→B→C→A from A→B→C→D; the path is what makes the next
+      // hop's decision possible at all.
+      expect((yield* admitted(db, NOVA))[0]!.origin["path"]).toEqual(["aris", "theron", "kallias"])
+    }),
+  )
+})
+
+describe("the originator is told its chain came back around", () => {
+  it.effect(
+    "🔴 the agent that STARTED the chain hears about the loop, in its own chat",
+    Effect.gen(function* () {
+      const { db, events } = yield* threeChats
+      // aris started it: aris → theron → kallias. kallias now tries to pass it back to aris.
+      yield* peerMessageFrom(db, KALLIAS, "theron", ["aris", "theron"])
+
+      const outcome = yield* handoff(db, events, ROSTER).deliver({
+        from: KALLIAS,
+        colleague: "aris",
+        message: "who owns the ledger?",
+      })
+
+      expect(outcome.delivered).toBe(false)
+      // No framework surveyed does this: everyone refuses the hop and tells the SENDER, while the one
+      // participant who can dissolve the loop — the agent holding the question it circles — is never
+      // informed.
+      const notice = yield* admitted(db, ARIS)
+      expect(notice.length).toBe(1)
+      expect(notice[0]!.text).toContain("came back around")
+      expect(notice[0]!.text).toContain("aris → theron → kallias → aris")
+    }),
+  )
+
+  it.effect(
+    "the notice is not a hand-off: it carries no peer origin and starts no chain",
+    Effect.gen(function* () {
+      const { db, events } = yield* threeChats
+      yield* peerMessageFrom(db, KALLIAS, "theron", ["aris", "theron"])
+      yield* handoff(db, events, ROSTER).deliver({ from: KALLIAS, colleague: "aris", message: "?" })
+
+      const origin = (yield* admitted(db, ARIS))[0]!.origin
+      // ⚠️ A `relation: "peer"` here would put the NOTICE on the next path and make a loop detector
+      // part of a loop. It also must not invite a reply — an amplifier attached to a loop detector
+      // would be a poor joke.
+      expect(origin["relation"]).toBeUndefined()
+      expect(origin["path"]).toBeUndefined()
+    }),
+  )
+
+  it.effect(
+    "the sender's own loop tells nobody else — there is no third party to inform",
+    Effect.gen(function* () {
+      const { db, events } = yield* threeChats
+      // aris asked theron; theron is answering back to aris, which is NOT a cycle at all.
+      yield* peerMessageFrom(db, THERON, "aris", ["aris"])
+      const outcome = yield* handoff(db, events, ROSTER).deliver({
+        from: THERON,
+        colleague: "aris",
+        message: "it balances",
+      })
+      // Delivered, because an answer closes an exchange rather than a loop — and so there is no
+      // notice to send.
+      expect(outcome.delivered).toBe(true)
     }),
   )
 })
