@@ -21,6 +21,7 @@ import { SessionRunCoordinator } from "./run-coordinator"
 import { SessionSchema } from "./schema"
 import { AgentV2 } from "../agent"
 import { SessionStore } from "./store"
+import { ColleagueStall } from "./colleague-stall"
 
 // Handing work from one colleague to another (AGENTS.md — the structural metaphor).
 //
@@ -71,7 +72,7 @@ interface PeerContext {
 
 const lastPeerContext = (db: Database.Interface["db"], session: SessionSchema.ID): Effect.Effect<PeerContext> =>
   db
-    .select({ data: SessionMessageTable.data })
+    .select({ id: SessionMessageTable.id, data: SessionMessageTable.data })
     .from(SessionMessageTable)
     .where(and(eq(SessionMessageTable.session_id, session), eq(SessionMessageTable.type, "user")))
     .orderBy(desc(SessionMessageTable.seq))
@@ -83,6 +84,11 @@ const lastPeerContext = (db: Database.Interface["db"], session: SessionSchema.ID
         let hops: number | undefined
         let path: ReadonlyArray<string> | undefined
         for (const row of rows) {
+          // 🔴 Step over an instance NOTICE — it is nobody's turn. Without this the `hops = 0` line
+          // below reads a notice as the user at the composer and resets the chain, so the notice's
+          // own "ask again" advice reopened the full budget every thirty minutes. The PATH resets
+          // with it, which is worse: a cycle stops being decidable at the hop that would close it.
+          if (ColleagueStall.isNotice(String(row.id))) continue
           const origin = (
             row.data as {
               readonly origin?: {

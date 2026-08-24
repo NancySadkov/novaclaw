@@ -57,9 +57,41 @@ export interface Stalled {
  */
 export const AFTER_MS = 30 * 60_000
 
+/**
+ * The prefix every stall notice's id carries.
+ *
+ * 🔴 It is LOAD-BEARING TWICE. The id is already the memory of having told someone (a second sweep
+ * derives the same one and the primary key refuses it), and it is also how the two hop walks
+ * recognise a notice they must not read as a turn — see {@link isNotice}.
+ */
+export const NOTICE_PREFIX = "msg_stall_"
+
 /** The id a notice for this ask MUST have — deterministic, so the second attempt collides. */
-export const noticeID = (input: Stalled): string =>
-  `msg_stall_${input.asker}_${input.colleague}_${input.askedAt}`
+export const noticeID = (input: Stalled): string => `${NOTICE_PREFIX}${input.asker}_${input.colleague}_${input.askedAt}`
+
+/**
+ * Is this message an instance notice rather than somebody's turn?
+ *
+ * 🔴 **A notice must not RESET the bound it polices.** It is admitted with no origin — deliberately,
+ * because it is the instance reporting silence and giving it a peer origin would make it answerable
+ * and count it as a hop. But both hop walks read "user-role message with no agent origin" as A REAL
+ * PERSON SPEAKING, which ends the chain and returns 0. So the notice that says *"ask again"* handed
+ * the asker a fresh budget of `HOP_CAP` hops, every thirty minutes, for ever — an unbounded re-ask
+ * loop invisible to the cap, the path AND the rate window, created by the very thing meant to report
+ * the stall.
+ *
+ * SKIPPED, not counted: the walk steps over a notice and keeps going, so the chain behind it is
+ * preserved exactly. A notice is nobody's turn — it neither advances a chain nor ends one.
+ *
+ * ⚠️ Keyed on the id rather than a new field on `Prompt` or a new `Origin` member. Both of those are
+ * hand-listed subsets that go stale silently (`Prompt.fromUserMessage` enumerates its four fields;
+ * `origin.ts` branches on `via === "agent"` and lets everything else fall through to the MESSENGER
+ * renderer, so a third member would render as a chat message at fourteen sites). The id is already
+ * durable, already deterministic and already load-bearing here. When a SECOND kind of instance notice
+ * appears, promote this to an `Origin` member and audit those sites then.
+ */
+export const isNotice = (messageID: string | undefined): boolean =>
+  typeof messageID === "string" && messageID.startsWith(NOTICE_PREFIX)
 
 /**
  * Which asks have gone unanswered for longer than `after`.

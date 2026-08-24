@@ -1,6 +1,7 @@
 export * as ColleagueHop from "./colleague-hop"
 
 import type { SessionMessage } from "./message"
+import { ColleagueStall } from "./colleague-stall"
 
 /**
  * HOW FAR FROM A PERSON THIS TURN IS — read from the transcript already in hand.
@@ -24,6 +25,11 @@ export const fromContext = (context: readonly SessionMessage.Message[]): number 
   for (let index = context.length - 1; index >= 0; index -= 1) {
     const message = context[index]
     if (message?.type !== "user") continue
+    // 🔴 An instance NOTICE is nobody's turn — step over it. It carries no origin (it is not a
+    // colleague speaking), and without this the line below reads that as A PERSON speaking and
+    // returns 0 — so the stall notice's own "ask again" handed out a fresh `HOP_CAP` every thirty
+    // minutes and the cap could never fire. See `ColleagueStall.isNotice`.
+    if (ColleagueStall.isNotice((message as { id?: string }).id)) continue
     const origin = (message as { origin?: { via?: string; hops?: number } }).origin
     if (origin?.via !== "agent") {
       // A REAL person's turn ends the walk: anything older belongs to a previous exchange, and a
