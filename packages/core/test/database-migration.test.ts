@@ -10,6 +10,8 @@ import { eq, inArray, sql } from "drizzle-orm"
 import { DatabaseMigration } from "@novaclaw/core/database/migration"
 import { migrations } from "@novaclaw/core/database/migration.gen"
 import sessionUsageMigration from "@novaclaw/core/database/migration/20260510033149_session_usage"
+import collapseDuplicateChatsMigration from "@novaclaw/core/database/migration/20260824180000_collapse_duplicate_colleague_chats"
+import liveRootIndexMigration from "@novaclaw/core/database/migration/20260824205121_amusing_invaders"
 import normalizeStoragePathsMigration from "@novaclaw/core/database/migration/20260601010001_normalize_storage_paths"
 import sessionMessageProjectionOrderMigration from "@novaclaw/core/database/migration/20260603040000_session_message_projection_order"
 import eventSourcedSessionInputMigration from "@novaclaw/core/database/migration/20260604172448_event_sourced_session_input"
@@ -407,6 +409,62 @@ describe("DatabaseMigration", () => {
   // predates this index by three weeks, so the upgrade path runs `CREATE INDEX` against a populated
   // table — and a plan row that vanished (or a `CREATE TABLE` where an index was meant) is the
   // boot-death shape v0.2.0 Wave 0 / B5 was written about.
+  test("🔴 collapses duplicate colleague chats BEFORE the unique index, or the upgrade bricks", async () => {
+    // Measured on the owner's own instance 2026-08-24: `nova` held TWO live root chats, so
+    // `CREATE UNIQUE INDEX` failed outright — and a failed migration leaves the database at the
+    // last completed one. The pair must be tested TOGETHER and in order; either alone is wrong.
+    //
+    // ⚠️ The pre-migration shape is built BY HAND, as the jh_plan case below does. `apply` on an
+    // empty database bootstraps from the FULL generated schema, which already contains the index —
+    // so the duplicate rows could never be inserted and the test would assert against a database the
+    // defect cannot exist in. (Learned the hard way: filtering the two migrations out of the list
+    // changed nothing, because the list was never what built the table.)
+    await run(
+      Effect.gen(function* () {
+        const db = yield* makeDb
+        yield* db.run(
+          sql`CREATE TABLE session (id text PRIMARY KEY, parent_id text, agent text, title text NOT NULL, time_updated integer NOT NULL, time_archived integer)`,
+        )
+        const insert = (id: string, agent: string, title: string, updated: number) =>
+          db.run(
+            sql`INSERT INTO session (id, parent_id, agent, title, time_updated) VALUES (${id}, NULL, ${agent}, ${title}, ${updated})`,
+          )
+        // Two live roots for one colleague — the shape that cannot exist once the index lands.
+        yield* insert("ses_old", "wren", "New session", 100)
+        yield* insert("ses_new", "wren", "Greeting", 200)
+        // A POSTURE may hold many, and must survive untouched.
+        yield* insert("ses_b1", "build", "one", 100)
+        yield* insert("ses_b2", "build", "two", 200)
+        // A SUB-AGENT inherits its officer's id and must not collide with it.
+        yield* db.run(
+          sql`INSERT INTO session (id, parent_id, agent, title, time_updated) VALUES (${"ses_kid"}, ${"ses_new"}, ${"wren"}, ${"child"}, 300)`,
+        )
+
+        yield* DatabaseMigration.applyOnly(db, [collapseDuplicateChatsMigration, liveRootIndexMigration])
+
+        // The NEWEST survives — the same tiebreak `liveRootFor` uses to answer "which chat is this
+        // colleague's". The loser is ARCHIVED, never deleted: nothing is lost, and it was already
+        // unreachable, because the roster can show only one chat per colleague.
+        const live = yield* db.all<{ id: string }>(
+          sql`SELECT id FROM session WHERE agent = ${"wren"} AND parent_id IS NULL AND time_archived IS NULL`,
+        )
+        expect(live.map((row) => row.id)).toEqual(["ses_new"])
+        const archived = yield* db.all<{ id: string }>(sql`SELECT id FROM session WHERE time_archived IS NOT NULL`)
+        expect(archived.map((row) => row.id)).toEqual(["ses_old"])
+
+        // ⚠️ The posture keeps BOTH, and the sub-agent survives: `build` is the mode most chats run
+        // as (55-98 live roots on the owner's own instances), and collapsing those would be the worse bug.
+        const kept = yield* db.all<{ id: string }>(sql`SELECT id FROM session WHERE time_archived IS NULL ORDER BY id`)
+        expect(kept.map((row) => row.id)).toEqual(["ses_b1", "ses_b2", "ses_kid", "ses_new"])
+
+        // And the constraint now BITES — the half the application checks cannot give, being
+        // check-then-act.
+        const second = yield* insert("ses_third", "wren", "another", 300).pipe(Effect.exit)
+        expect(second._tag).toBe("Failure")
+      }),
+    )
+  })
+
   test("adds the jh_plan retention index to an existing populated database", async () => {
     await run(
       Effect.gen(function* () {

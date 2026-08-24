@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "c9d81d55-ae00-4c63-b161-b4813025b265",
+  "id": "1e8c5691-fb74-4222-b236-64058923d8eb",
   "prevIds": [
-    "a830d767-7c72-438e-97d7-613e59fef7ff"
+    "c9d81d55-ae00-4c63-b161-b4813025b265"
   ],
   "ddl": [
     {
@@ -5680,6 +5680,20 @@
       "where": null,
       "origin": "manual",
       "name": "session_parent_idx",
+      "entityType": "indexes",
+      "table": "session"
+    },
+    {
+      "columns": [
+        {
+          "value": "agent",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": "\"session\".\"parent_id\" IS NULL AND \"session\".\"time_archived\" IS NULL AND \"session\".\"agent\" IS NOT NULL AND \"session\".\"agent\" NOT IN ('build', 'plan')",
+      "origin": "manual",
+      "name": "session_agent_live_root_idx",
       "entityType": "indexes",
       "table": "session"
     },

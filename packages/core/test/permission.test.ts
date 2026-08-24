@@ -71,16 +71,29 @@ function setup(rules: PermissionV2.Ruleset = []) {
   })
 }
 
+/**
+ * The ruleset currently in force, remembered so `insertSession` can mirror it onto the agent it
+ * creates. See that helper for why each fixture session now owns a different agent.
+ */
+let currentRules: PermissionV2.Ruleset = []
+
 function setRules(rules: PermissionV2.Ruleset) {
   return Effect.gen(function* () {
+    currentRules = [...rules]
     const agents = yield* AgentV2.Service
-    yield* agents.transform((editor) =>
-      editor.update(AgentV2.ID.make("test"), (agent) => {
-        agent.permissions = [...rules]
-      }),
-    )
+    yield* agents.transform((editor) => {
+      // Every agent this fixture has minted, not just "test": a test that inserts its scenario
+      // session BEFORE calling `setRules` must still see the rules applied to it.
+      for (const id of fixtureAgents)
+        editor.update(AgentV2.ID.make(id), (agent) => {
+          agent.permissions = [...rules]
+        })
+    })
   })
 }
+
+/** Every agent id this fixture has created a session for, `"test"` included. */
+const fixtureAgents = new Set<string>(["test"])
 
 /** Insert an extra session row so a test can exercise the CHAIN (type + mode live on the row). */
 function insertSession(input: {
@@ -88,9 +101,13 @@ function insertSession(input: {
   readonly type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
   readonly permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
   readonly parentID?: string
+  /** Override the session's agent; defaults to the session id (one live root per agent). */
+  readonly agent?: string
 }) {
   return Effect.gen(function* () {
     const { db } = yield* Database.Service
+    const agentID = input.agent ?? input.id
+    fixtureAgents.add(agentID)
     yield* db
       .insert(SessionTable)
       .values({
@@ -99,7 +116,17 @@ function insertSession(input: {
         directory: "/project",
         title: input.id,
         version: "test",
-        agent: "test",
+        // 🔴 ONE LIVE ROOT PER AGENT is now a DATABASE constraint
+        // (`session_agent_live_root_idx`), and this fixture used to give every scenario session the
+        // SAME agent `"test"` — several live roots for one colleague, a state the product cannot
+        // reach because `createSessionRecord` returns the existing chat instead of minting a second.
+        // With `.onConflictDoNothing()` the second insert silently did nothing and the test then
+        // failed with `Session.NotFoundError`, which names neither the cause nor the row.
+        //
+        // The agent was only ever incidental here — these rows exist to vary `type` and
+        // `permissionMode`, which live on the ROW — so each session now owns its own agent, and
+        // `setRules` mirrors the ruleset onto all of them so agent-scoped resolution is unchanged.
+        agent: input.agent ?? input.id,
         ...(input.type ? { type: input.type } : {}),
         ...(input.permissionMode ? { permission_mode: input.permissionMode } : {}),
         ...(input.parentID ? { parent_id: SessionV2.ID.make(input.parentID) } : {}),
@@ -107,6 +134,14 @@ function insertSession(input: {
       .onConflictDoNothing()
       .run()
       .pipe(Effect.orDie)
+    // Mirror the ruleset in force onto this session's own agent, so a scenario row resolves exactly
+    // the permissions it did when every fixture session shared one agent.
+    const agents = yield* AgentV2.Service
+    yield* agents.transform((editor) =>
+      editor.update(AgentV2.ID.make(agentID), (agent) => {
+        agent.permissions = [...currentRules]
+      }),
+    )
   })
 }
 

@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm"
 import { sqliteTable, text, integer, index, primaryKey, real, uniqueIndex } from "drizzle-orm/sqlite-core"
 import * as DatabasePath from "../database/path"
 import type { SessionMessage } from "./message"
@@ -90,7 +91,32 @@ export const SessionTable = sqliteTable(
     time_compacting: integer(),
     time_archived: integer(),
   },
-  (table) => [index("session_workspace_idx").on(table.workspace_id), index("session_parent_idx").on(table.parent_id)],
+  (table) => [
+    index("session_workspace_idx").on(table.workspace_id),
+    index("session_parent_idx").on(table.parent_id),
+    // 🔴 ONE LIVE CHAT PER COLLEAGUE, enforced by the DATABASE — the constraint behind the two
+    // application checks (`createSessionRecord` and `switchAgent`), both of which are check-then-act
+    // and so cannot close the race between them. A colleague with two conversations is two
+    // personalities wearing one name, and the roster — the only door into a colleague's chat — can
+    // show exactly one of them, so the loser becomes UNREACHABLE while its tokens still roll up into
+    // that colleague's totals.
+    //
+    // ⚠️ The three clauses are the same three both application checks use, and the exclusions are
+    // load-bearing:
+    //   · `parent_id IS NULL` — a SUB-AGENT inherits its officer's id, so without this every spawned
+    //     worker would collide with its officer and the fleet would be one session.
+    //   · `time_archived IS NULL` — "Clear chat" ARCHIVES rather than deletes, which is precisely how
+    //     a fresh chat is asked for. An archived chat must not block its own successor.
+    //   · `agent NOT IN ('build','plan')` — those are POSTURES, not colleagues (`AgentV2.POSTURE_IDS`).
+    //     `agent` means "the agent this session RUNS AS", and measured 2026-08-24 the owner's own
+    //     instances hold 55–98 live `build` roots and 76 `plan`: without this clause the index would
+    //     collapse the mode most chats run as into a single conversation.
+    uniqueIndex("session_agent_live_root_idx")
+      .on(table.agent)
+      .where(
+        sql`${table.parent_id} IS NULL AND ${table.time_archived} IS NULL AND ${table.agent} IS NOT NULL AND ${table.agent} NOT IN ('build', 'plan')`,
+      ),
+  ],
 )
 
 // The durable ownership/fencing row for the session's CURRENT execution attempt. A new owner

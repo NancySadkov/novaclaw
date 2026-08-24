@@ -749,6 +749,9 @@ export default {
       yield* tx.run(`CREATE INDEX \`session_message_time_created_idx\` ON \`session_message\` (\`time_created\`);`)
       yield* tx.run(`CREATE INDEX \`session_workspace_idx\` ON \`session\` (\`workspace_id\`);`)
       yield* tx.run(`CREATE INDEX \`session_parent_idx\` ON \`session\` (\`parent_id\`);`)
+      yield* tx.run(
+        `CREATE UNIQUE INDEX \`session_agent_live_root_idx\` ON \`session\` (\`agent\`) WHERE "session"."parent_id" IS NULL AND "session"."time_archived" IS NULL AND "session"."agent" IS NOT NULL AND "session"."agent" NOT IN ('build', 'plan');`,
+      )
       yield* tx.run(`CREATE INDEX \`session_tag_tag_idx\` ON \`session_tag\` (\`tag\`);`)
       yield* tx.run(`CREATE INDEX \`todo_snapshot_attempt_idx\` ON \`todo_snapshot\` (\`attempt_id\`);`)
       yield* tx.run(`CREATE INDEX \`todo_session_idx\` ON \`todo\` (\`session_id\`);`)
