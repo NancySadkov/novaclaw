@@ -7,7 +7,7 @@ import { ColleagueBound } from "@novaclaw/core/session/colleague-bound"
 import { ColleagueHandoff } from "@novaclaw/core/session/colleague-handoff"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionSchema } from "@novaclaw/core/session/schema"
-import { SessionInputTable, SessionTable } from "@novaclaw/core/session/sql"
+import { SessionInputTable, SessionMessageTable, SessionTable } from "@novaclaw/core/session/sql"
 import { Database } from "@novaclaw/core/database/database"
 import { eq } from "drizzle-orm"
 import { testEffect } from "./lib/effect"
@@ -47,12 +47,20 @@ const chat = (db: Database.Interface["db"], input: { id: SessionSchema.ID; agent
     .run()
     .pipe(Effect.orDie)
 
-const handoff = (db: Database.Interface["db"], events: EventV2.Interface, agents: Record<string, string>) =>
+const handoff = (
+  db: Database.Interface["db"],
+  events: EventV2.Interface,
+  agents: Record<string, string>,
+  woke?: string[],
+) =>
   ColleagueHandoff.fromParts({
     db,
     events,
     session: (id) => Effect.succeed({ agent: agents[String(id)] }),
-    wake: () => Effect.succeed(true),
+    wake: (id) => {
+      woke?.push(String(id))
+      return Effect.succeed(true)
+    },
     store: {} as never,
     refresh: Effect.void,
     takenNames: Effect.succeed([]),
@@ -278,6 +286,90 @@ describe("addressing several colleagues at once", () => {
       // exactly as before, or a field added for groups has changed messages it never meant to touch.
       expect(note).toContain('op "ask"')
       expect(note).not.toContain("ask_group")
+    }),
+  )
+})
+
+/** Put a peer message in a chat, so `lastPeerContext` sees who spoke to it last. */
+const peerMessageFrom = (db: Database.Interface["db"], session: SessionSchema.ID, from: string) =>
+  db
+    .insert(SessionMessageTable)
+    .values([
+      {
+        id: `msg_peer_${from}_${session}`,
+        session_id: session,
+        type: "user",
+        seq: 1,
+        data: { text: "earlier question", origin: { via: "agent", relation: "peer", label: from, hops: 1 } },
+        time_created: 1,
+      } as never,
+    ])
+    .run()
+    .pipe(Effect.orDie)
+
+describe("a reply INFORMS the room, it does not summon it", () => {
+  it.effect(
+    "🔴 only the colleague being ANSWERED is woken; the rest are durable but dormant",
+    Effect.gen(function* () {
+      const { db, events } = yield* threeChats
+      // theron is replying: its own chat last heard from aris, so aris is being answered and
+      // kallias is a bystander to that answer.
+      yield* peerMessageFrom(db, THERON, "aris")
+
+      const woke: string[] = []
+      const outcome = yield* handoff(db, events, ROSTER, woke).deliverGroup({
+        from: THERON,
+        colleagues: ["aris", "kallias"],
+        message: "the quarter closed cleanly",
+      })
+
+      expect(outcome.delivered).toEqual(["aris", "kallias"])
+      // Waking every recipient is what makes a room amplify: one reply becomes N more turns, and it
+      // settles only when the hop cap or the rate window REFUSES something.
+      expect(woke).toEqual([String(ARIS)])
+      // …and the bystander still HAS it. Dormant is durable, not dropped.
+      expect((yield* admitted(db, KALLIAS)).length).toBe(1)
+    }),
+  )
+
+  it.effect(
+    "the bystander's note says nobody is waiting — and how to speak up",
+    Effect.gen(function* () {
+      const { db, events } = yield* threeChats
+      yield* peerMessageFrom(db, THERON, "aris")
+      yield* handoff(db, events, ROSTER).deliverGroup({
+        from: THERON,
+        colleagues: ["aris", "kallias"],
+        message: "the quarter closed cleanly",
+      })
+
+      const note = (yield* admitted(db, KALLIAS))[0]!.text
+      // ⚠️ The note must change WITH the wake: a fixed sentence under a changed control is the copy
+      // defect principle 12 names. Handing a bystander the `ask_group` call as though a reply were
+      // expected is exactly the amplification this rule removes.
+      // ⚠️ Must be a phrase ONLY the announcement carries. An OR with "nobody is waiting" passed
+      // under the perturbation below, because the ASK note says that too — a weak assertion that
+      // would have let the damper be deleted with one test still green.
+      expect(note).toMatch(/kept informed/i)
+      expect(note).not.toMatch(/Answer once/i)
+      // …but a room where nobody may speak is not a room.
+      expect(note).toContain("ask_group")
+    }),
+  )
+
+  it.effect(
+    "a fresh QUESTION still wakes everyone — the damper is on replies only",
+    Effect.gen(function* () {
+      const { db, events } = yield* threeChats
+      const woke: string[] = []
+      yield* handoff(db, events, ROSTER, woke).deliverGroup({
+        from: ARIS,
+        colleagues: ["theron", "kallias"],
+        message: "did the quarter close cleanly?",
+      })
+      // Nobody is being answered here, so this is the ask — and an ask that woke nobody would be a
+      // question shouted into an empty room.
+      expect(woke.sort()).toEqual([String(KALLIAS), String(THERON)].sort())
     }),
   )
 })

@@ -15,8 +15,16 @@ export * as ColleagueNote from "./colleague-note"
 // chat, I'll relay the answer to you"* — a promise the product could not keep. A model told who is
 // asking will try to answer them; if the route back is not stated it invents one.
 
-/** How far a peer exchange runs on its own: a question, and an answer. */
-export type Turn = "ask" | "answer"
+/**
+ * How far a peer exchange runs on its own: a question, an answer — and, in a room, an ANNOUNCEMENT.
+ *
+ * 🔴 `announce` is what makes a conference affordable. Adopted from the field's mention gating:
+ * *"posts without mentions are announcements — visible in channel history but won't wake anyone up"*.
+ * Without it a four-person room amplifies — one question is three wakes, each reply three more — and
+ * it converges only when the hop cap or the rate window refuses something. Convergence by refusal is
+ * not convergence, and it spends every bystander's context on a question that was not theirs.
+ */
+export type Turn = "ask" | "answer" | "announce"
 
 /**
  * The line appended to a delivered peer message.
@@ -43,7 +51,11 @@ export const replyNote = (input: {
    */
   readonly group?: ReadonlyArray<string> | undefined
 }): string =>
-  input.turn === "ask" && input.group !== undefined && input.group.length > 0
+  input.turn === "announce"
+    ? `\n\n[${input.from} answered the group. You are being kept informed — nobody is waiting on ` +
+      `you and no reply is expected. If you have something the others need, call the \`colleague\` tool ` +
+      `with op "ask_group" and say it; otherwise carry on with your own work.]`
+    : input.turn === "ask" && input.group !== undefined && input.group.length > 0
     ? `\n\n[This came from ${input.from} and went to all of you. To answer everyone, call the ` +
       `\`colleague\` tool with op "ask_group", colleagues ${JSON.stringify([input.from, ...input.group])}, ` +
       `and your answer as the message — it lands in each of their chats the way this landed in yours. ` +
@@ -58,6 +70,15 @@ export const replyNote = (input: {
 /** Whether a delivery is a question or an answer, from what the sender's own chat last received. */
 export const turnFor = (input: { readonly askedByRecipient: boolean }): Turn =>
   input.askedByRecipient ? "answer" : "ask"
+
+/**
+ * Does this group delivery ANSWER somebody? If so it is a reply, and only the person being answered
+ * is woken — everyone else is informed.
+ *
+ * ⚠️ Derived from the turns already computed per recipient, so this adds no state and cannot disagree
+ * with the notes those recipients receive.
+ */
+export const isReply = (turns: ReadonlyArray<Turn>): boolean => turns.includes("answer")
 
 /** The delivered body: the colleague's own words, then the note. Kept as one function so the two
  *  call sites (the tool and any future one) cannot drift on the spacing or the order. */

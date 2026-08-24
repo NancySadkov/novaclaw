@@ -218,6 +218,8 @@ const landColleagueMessage = (
     readonly participants?: ReadonlyArray<string> | undefined
     /** Who this copy is FOR — used to leave them out of "the others" in their own note. */
     readonly recipient?: string | undefined
+    /** Wake the chat, or leave it durable but dormant. Defaults to waking — the 1:1 behaviour. */
+    readonly wake?: boolean | undefined
   },
 ) =>
   Effect.gen(function* () {
@@ -263,6 +265,11 @@ const landColleagueMessage = (
     }).pipe(Effect.orDie)
     // Strictly AFTER the admit: the executor's drain reads the queued row from the database, so
     // waking first is a race that ends in an empty turn (`spawner.ts` learned this).
+    //
+    // ⚠️ Not waking is a REAL outcome, not a failure: the message is durably in their chat and they
+    // read it on their next turn. `false` here means "nothing is running it", which is exactly what
+    // `Delivery.started` has always meant.
+    if (args.wake === false) return false
     return yield* deps.wake(args.chatID)
   })
 
@@ -429,22 +436,41 @@ export const fromParts = (input: {
     // The sender is IN the list: a reply has to reach them too, and rebuilding "the set plus
     // whoever wrote to me" from two fields is how one of them ends up wrong.
     const participants = [label ?? String(request.from), ...reachable]
+    // 🔴 A REPLY INFORMS THE ROOM; IT DOES NOT SUMMON IT.
+    //
+    // Waking every recipient makes a four-person room amplify: one question is three wakes, each
+    // reply is three more, and it settles only when the hop cap or the rate window refuses
+    // something. Convergence by refusal is not convergence — it spends every bystander's context on
+    // a question that was not theirs, and the bill arrives as a refusal they cannot act on.
+    //
+    // ⚠️ No new state. `turnFor` already says, per recipient, whether this delivery answers THEM. If
+    // it answers anybody, this is a reply: wake that one and land it for the others durable but
+    // dormant — `started: false` is an existing, documented outcome, not a new mode.
+    const turns = reachable.map((colleague) => ({
+      colleague,
+      turn: ColleagueNote.turnFor({ askedByRecipient: context.label === colleague }),
+    }))
+    const replying = ColleagueNote.isReply(turns.map((entry) => entry.turn))
     let started = false
-    for (const colleague of reachable) {
-      const chat = yield* RosterChat.chatFor(input.db, colleague)
+    for (const entry of turns) {
+      const chat = yield* RosterChat.chatFor(input.db, entry.colleague)
       if (chat === undefined) continue
+      // A bystander to a reply is ANNOUNCED to, and the note changes with the wake: a fixed sentence
+      // under a changed control is the copy defect principle 12 names. The announcement says nobody
+      // is waiting on them AND how to speak up, which is what keeps a room a room.
+      const announced = replying && entry.turn !== "answer"
       const woke = yield* landColleagueMessage(input, {
         chatID: chat.id as SessionSchema.ID,
         from: request.from,
         message: request.message,
         label,
-        // Per recipient: an answer's note differs from a question's, and in a group one participant
-        // may be answering the sender while the others are being asked for the first time.
-        turn: ColleagueNote.turnFor({ askedByRecipient: context.label === colleague }),
+        turn: announced ? "announce" : entry.turn,
         hop,
         conversation,
         participants,
-        recipient: colleague,
+        recipient: entry.colleague,
+        // Durable but dormant: it is in their chat and they will read it when they next run.
+        wake: !announced,
       })
       started = started || woke
     }
