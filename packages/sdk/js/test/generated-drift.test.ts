@@ -231,7 +231,19 @@ const GENERATE_TIMEOUT_MS = 60_000
 // So this re-pin asserts something WEAKER than the usual one, and deliberately: not "the additions
 // were reviewed" but "there was nothing to review -- the public naming table is identical as a set".
 // A future reader must not read this entry as precedent for re-pinning past a real rename.
-const SCHEMA_NAME_FINGERPRINT = "fab60443ca4987df25ed01d15b29d2aa4a65d858512e491735c5236f269bf87d"
+//
+// 2026-08-24 — the SAME weaker class again, and measured the same way before re-pinning.
+// `session.switchAgent` gained a second declared error (`ConflictError`, 409: one chat per colleague),
+// which moved the fingerprint. Measured against the previous commit: **536 schemas before, 536 after,
+// nothing ADDED and nothing REMOVED** — `ConflictError` was already public, reached through other
+// endpoints — and exactly ONE path changed shape, `/api/session/{sessionID}/agent`, which is the
+// endpoint that was edited. So again: the naming table is identical as a set, and only the ORDER the
+// emitter walks it in moved, because `switchAgent` now reaches `ConflictError` earlier.
+//
+// ⚠️ The same warning still stands, and applies to this entry too: set-identity is what makes the
+// re-pin safe. A fingerprint change that ADDS, REMOVES or REPOINTS a `source -> emitted` pair is a
+// public API change and must be reviewed as one, not re-pinned by copying the received hash.
+const SCHEMA_NAME_FINGERPRINT = "04d4e8d4d157eb9b193656e2a67ee7c987ace962c7abd51e6f12d474a3b61b54"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

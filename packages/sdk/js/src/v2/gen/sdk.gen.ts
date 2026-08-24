@@ -4384,7 +4384,7 @@ class ApiV2Session extends NovaClawApiClient {
   /**
    * Switch session agent
    *
-   * Switch the agent used by subsequent provider turns.
+   * Switch the agent used by subsequent provider turns. Refuses with 409 when that colleague already has a chat — a colleague has exactly one.
    */
   public switchAgent<ThrowOnError extends boolean = false>(
     parameters: {

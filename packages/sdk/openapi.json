@@ -15514,9 +15514,19 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "ConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictError"
+                }
+              }
+            }
           }
         },
-        "description": "Switch the agent used by subsequent provider turns.",
+        "description": "Switch the agent used by subsequent provider turns. Refuses with 409 when that colleague already has a chat — a colleague has exactly one.",
         "summary": "Switch session agent",
         "requestBody": {
           "content": {
@@ -32278,6 +32288,23 @@
         "required": ["_tag", "message"],
         "additionalProperties": false
       },
+      "ConflictError": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": ["ConflictError"]
+          },
+          "message": {
+            "type": "string"
+          },
+          "resource": {
+            "type": "string"
+          }
+        },
+        "required": ["_tag", "message"],
+        "additionalProperties": false
+      },
       "PromptInput": {
         "type": "object",
         "properties": {
@@ -32301,23 +32328,6 @@
           }
         },
         "required": ["text"],
-        "additionalProperties": false
-      },
-      "ConflictError": {
-        "type": "object",
-        "properties": {
-          "_tag": {
-            "type": "string",
-            "enum": ["ConflictError"]
-          },
-          "message": {
-            "type": "string"
-          },
-          "resource": {
-            "type": "string"
-          }
-        },
-        "required": ["_tag", "message"],
         "additionalProperties": false
       },
       "ServiceUnavailableError": {
