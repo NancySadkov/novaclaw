@@ -23,6 +23,38 @@ function eventID() {
   return EventV2.ID.create()
 }
 
+/**
+ * A SUBSCRIPTION OUTLIVES AN INSTANCE REBUILD.
+ *
+ * 🔴 This used to end on `server.instance.disposed`:
+ *
+ * ```ts
+ * Stream.takeUntil((event) => event.type === "server.instance.disposed")
+ * ```
+ *
+ * and that single line was the `attach mode` flake. `configUpdate` disposes EVERY instance after any
+ * accepted config write, so anybody changing a setting — in another window, on another device —
+ * disconnected every live subscriber. A CLI turn mid-flight simply died; the desktop UI hid it by
+ * reconnecting. Measured 2026-08-24: `notes/reports/attach-flake-2026-08-24.md`.
+ *
+ * ⚠️ **Ending the stream was never necessary, only assumed.** The subscription does NOT live inside
+ * the instance: it listens on `EventV2Bridge`, which is GLOBAL-tagged precisely so one bus is shared
+ * across locations, and it filters by `location.directory` — a string that is identical before and
+ * after a rebuild. So a disposed-then-reloaded instance's events keep matching this subscriber's
+ * filter. The stream had a reason to survive all along.
+ *
+ * The disposal is still DELIVERED — clients that refresh on it (the app's `event-reducer`) keep
+ * working. What changes is that it is news, not a hang-up. It is the OS metaphor holding: config
+ * changing is `SIGHUP`, and an operating system does not kill every process because a setting moved.
+ *
+ * The stream still ends when `live` ends — that is the request scope closing, which is a real
+ * goodbye rather than an inferred one.
+ */
+export const subscriptionOutput = <A extends { readonly type: string }>(
+  live: Stream.Stream<A>,
+  disposals: Stream.Stream<A>,
+): Stream.Stream<A> => live.pipe(Stream.merge(disposals, { haltStrategy: "left" }))
+
 function eventResponse(events: EventV2.Interface) {
   return Effect.gen(function* () {
     const instance = yield* InstanceState.context
@@ -57,10 +89,7 @@ function eventResponse(events: EventV2.Interface) {
         () => Effect.sync(() => GlobalBus.off("event", listener)),
       )
     })
-    const output = stream.pipe(
-      Stream.merge(disposed, { haltStrategy: "left" }),
-      Stream.takeUntil((event) => event.type === "server.instance.disposed"),
-    )
+    const output = subscriptionOutput(stream, disposed)
     const heartbeat = Stream.tick("5 seconds").pipe(
       Stream.drop(1),
       Stream.map(() => ({ id: eventID(), type: "server.heartbeat", properties: {} })),
