@@ -101,6 +101,26 @@ export const turnFor = (input: { readonly askedByRecipient: boolean }): Turn =>
  */
 export const isReply = (turns: ReadonlyArray<Turn>): boolean => turns.includes("answer")
 
+/**
+ * The colleague's OWN WORDS, with the reply note removed.
+ *
+ * 🔴 For compaction. The note is a route back, and a route is spent once the exchange is over —
+ * summarising it drags a tool instruction (*"call the `colleague` tool with op ask…"*) into the
+ * record of a finished conversation, and a group note drags the whole roster in with it, so the
+ * summary keeps who was in the room and loses who spoke.
+ *
+ * ⚠️ Matched on the backticked tool name rather than "a trailing bracket", because a colleague's own
+ * message may legitimately end in one. Every note `replyNote` composes names the tool; nothing else
+ * this function sees does.
+ */
+export const stripReplyNote = (text: string): string => {
+  const at = text.lastIndexOf("\n\n[")
+  if (at < 0) return text
+  const tail = text.slice(at)
+  if (!tail.trimEnd().endsWith("]") || !tail.includes("`colleague`")) return text
+  return text.slice(0, at).trimEnd()
+}
+
 /** The delivered body: the colleague's own words, then the note. Kept as one function so the two
  *  call sites (the tool and any future one) cannot drift on the spacing or the order. */
 export const compose = (input: {

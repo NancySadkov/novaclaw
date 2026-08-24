@@ -8,6 +8,7 @@ import { CompactionPrune } from "./compaction-prune"
 import { SessionEvent } from "./event"
 import { SessionMessage } from "./message"
 import { SessionSchema } from "./schema"
+import { ColleagueNote } from "./colleague-note"
 import { isSteerText, stripSteerProvenance } from "./steer-provenance"
 import { Token } from "../util/token"
 import { CalloutPolicy } from "../callout-policy"
@@ -128,6 +129,19 @@ export const serializeMessage = (message: SessionMessage.Message) => {
     // Ask the provenance question BEFORE claiming the user said this (session/steer-provenance.ts).
     if (isSteerText(message.text)) return `${STEER_LABEL}${stripSteerProvenance(message.text)}`
     const files = message.files?.map((file) => `[Attached ${file.mime}: ${file.name ?? file.uri}]`) ?? []
+    // 🔴 A DELIVERED PEER MESSAGE IS A USER MESSAGE, and labelling it `[User]` launders a colleague's
+    // question into something the owner asked. Durable, too: after one compaction nothing downstream
+    // can recover who actually said it. Same misattribution the line above prevents for steers —
+    // the provenance question, asked of the other writer that lands here.
+    const origin = message.origin
+    if (origin?.via === "agent" && origin.relation === "peer") {
+      const who = origin.label ?? origin.sessionID
+      // A group message names the room, because "who spoke" and "who heard it" are different facts
+      // and a summary keeping only the roster has kept the wrong one.
+      const room = origin.conversation !== undefined ? ", to the room" : ""
+      // The reply note is a route back, spent once the exchange is over — see `stripReplyNote`.
+      return [`[Colleague ${who}${room}]: ${ColleagueNote.stripReplyNote(message.text)}`, ...files].join("\n")
+    }
     return [`[User]: ${message.text}`, ...files].join("\n")
   }
   if (message.type === "assistant") {

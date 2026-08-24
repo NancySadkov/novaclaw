@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { ColleagueNote } from "@novaclaw/core/session/colleague-note"
 import { SessionCompaction } from "@novaclaw/core/session/compaction"
 import { applySteerProvenance, STEER_PROVENANCE_PREFIX } from "@novaclaw/core/session/steer-provenance"
 import type { SessionMessage } from "@novaclaw/core/session/message"
@@ -122,5 +123,57 @@ describe("a steer is never attributed to the user in the compaction summary", ()
     const selected = SessionCompaction.selectContext(entries(steer(NUDGE)), 100_000)
     expect(selected).toBeDefined()
     expect(`${selected!.head}\n${selected!.recent}`).not.toContain("[User]:")
+  })
+})
+
+describe("a colleague is never attributed to the user either", () => {
+  const peer = (text: string, over: Record<string, unknown> = {}): SessionMessage.Message =>
+    ({
+      type: "user",
+      text,
+      origin: { via: "agent", relation: "peer", label: "theron", sessionID: "ses_theron", ...over },
+    }) as unknown as SessionMessage.Message
+
+  test("🔴 a delivered peer message is labelled by WHO SAID IT, not [User]", () => {
+    // A peer message IS a user-role message, so it took the `[User]` label — and after one
+    // compaction a colleague's question reads as something the owner asked. Durable: nothing
+    // downstream can recover who spoke. Same class as the steer label one describe block up.
+    const line = SessionCompaction.serializeMessage(peer("did the quarter close?"))
+    expect(line).not.toContain("[User]:")
+    expect(line).toContain("[Colleague theron]:")
+    expect(line).toContain("did the quarter close?")
+  })
+
+  test("a GROUP message says it was to the room — who spoke and who heard are different facts", () => {
+    const line = SessionCompaction.serializeMessage(
+      peer("did the quarter close?", { conversation: "cnv_1", participants: ["aris", "theron", "kallias"] }),
+    )
+    expect(line).toContain("[Colleague theron, to the room]:")
+  })
+
+  test("the reply note is STRIPPED — a route back is spent once the exchange is over", () => {
+    // Otherwise the summary of a finished conversation carries a live tool instruction, and a group
+    // note drags the whole roster in with it.
+    const delivered = ColleagueNote.compose({ message: "the ledger balances", from: "theron", turn: "ask" })
+    const line = SessionCompaction.serializeMessage(peer(delivered))
+    expect(line).toContain("the ledger balances")
+    expect(line).not.toContain("`colleague`")
+    expect(line).not.toContain('op "ask"')
+  })
+
+  test("a colleague's own trailing bracket is NOT mistaken for a note", () => {
+    // The strip matches the backticked tool name, not "ends with a bracket" — a colleague may
+    // legitimately end on one, and eating its last line would be a silent edit of what it said.
+    const line = SessionCompaction.serializeMessage(peer("see the table\n\n[row 3 is the one]"))
+    expect(line).toContain("[row 3 is the one]")
+  })
+
+  test("the colleague label is distinct from the user and steer labels", () => {
+    const labels = [
+      SessionCompaction.serializeMessage(peer("x")),
+      SessionCompaction.serializeMessage(user("x")),
+      SessionCompaction.serializeMessage(steer(NUDGE)),
+    ]
+    expect(new Set(labels.map((line) => line.slice(0, line.indexOf("]") + 1))).size).toBe(3)
   })
 })
