@@ -1,3 +1,12 @@
+import { and, eq, gte, isNull } from "drizzle-orm"
+import { Effect } from "effect"
+import type { Database } from "../database/database"
+import type { EventV2 } from "../event"
+import { SessionInput } from "./input"
+import { SessionMessage } from "./message"
+import type { SessionSchema } from "./schema"
+import { SessionInputTable, SessionTable } from "./sql"
+
 export * as ColleagueStall from "./colleague-stall"
 
 /**
@@ -104,3 +113,96 @@ export const notice = (input: Stalled & { readonly minutes: number }): string =>
   `[${input.colleague} has not answered you. You asked ${input.minutes} minutes ago and nothing has ` +
   `come back. Nobody is waiting on you here — but if you promised this answer to someone, say where ` +
   `it stands rather than keep waiting: ask again, do it yourself, or tell the user it is outstanding.]`
+
+/**
+ * How far back a sweep looks.
+ *
+ * ⚠️ Bounded on purpose: this runs every 30 s, and a scan of every input row an instance has ever
+ * admitted would be a guard that becomes the problem it guards against. A day is far past the point
+ * where a notice is still useful — nobody needs telling on Thursday that Tuesday's ask went
+ * unanswered, and the asker's own chat has moved on.
+ */
+export const LOOKBACK_MS = 24 * 60 * 60_000
+
+/**
+ * Find stalled asks and tell each asker, once, in its own chat.
+ *
+ * ⚠️ **Lands DORMANT.** It obeys the wake discipline: a stall notice that summons a worker to read it
+ * has traded one waste for another. It is read when that chat next runs.
+ *
+ * ⚠️ **Never throws into the caller.** This rides the calendar tick rather than a timer of its own
+ * (a sweeper for one notice is a subsystem to keep alive), so a failure here must not stop schedules
+ * from firing.
+ */
+export const sweep = (
+  db: Database.Interface["db"],
+  events: EventV2.Interface,
+  now: number,
+): Effect.Effect<number> =>
+  Effect.gen(function* () {
+    const sessions = yield* db
+      .select({ id: SessionTable.id, agent: SessionTable.agent })
+      .from(SessionTable)
+      .where(isNull(SessionTable.time_archived))
+      .all()
+      .pipe(Effect.orDie)
+    const agentOf: Record<string, string> = {}
+    const chatOf: Record<string, string> = {}
+    for (const row of sessions) {
+      if (!row.agent) continue
+      agentOf[row.id] = row.agent
+      // One chat per agent, so the first is the only.
+      chatOf[row.agent] ??= row.id
+    }
+
+    const rows = yield* db
+      .select({ session: SessionInputTable.session_id, prompt: SessionInputTable.prompt, at: SessionInputTable.time_created })
+      .from(SessionInputTable)
+      .where(and(gte(SessionInputTable.time_created, now - LOOKBACK_MS)))
+      .all()
+      .pipe(Effect.orDie)
+
+    const landed: Landed[] = []
+    for (const row of rows) {
+      const origin = (row.prompt as { origin?: { via?: string; relation?: string; label?: string } }).origin
+      if (origin?.via !== "agent" || origin.relation !== "peer" || typeof origin.label !== "string") continue
+      landed.push({ sessionID: String(row.session), from: origin.label, at: Number(row.at) })
+    }
+
+    let told = 0
+    for (const stall of stalled({ landed, agentOf, chatOf, now })) {
+      const chat = chatOf[stall.asker]
+      if (chat === undefined) continue
+      const id = SessionMessage.ID.make(noticeID(stall))
+      // 🔴 The id IS the memory of having told them — a second sweep derives the same one. Asking
+      // first is only about the COUNT: `SessionInput.admit` is already idempotent (it finds the row
+      // and returns it), so without this the sweep reports a fresh notice every 30 s for one that was
+      // sent hours ago. The row cannot duplicate either way, which is what makes the check-then-act
+      // safe against a concurrent tick: the worst case is two ticks both reporting one write.
+      const already = yield* db
+        .select({ id: SessionInputTable.id })
+        .from(SessionInputTable)
+        .where(eq(SessionInputTable.id, id))
+        .get()
+        .pipe(Effect.orDie)
+      if (already !== undefined) continue
+      const written = yield* SessionInput.admit(db, events, {
+        id,
+        sessionID: chat as SessionSchema.ID,
+        prompt: {
+          text: notice({ ...stall, minutes: Math.round((now - stall.askedAt) / 60_000) }),
+          files: [],
+          agents: [],
+          // No peer origin: this is the instance reporting silence, not a colleague speaking. Giving
+          // it one would put the notice on the next path and make it answerable.
+          origin: undefined,
+        },
+        delivery: "queue",
+      }).pipe(
+        Effect.as(true),
+        Effect.orElseSucceed(() => false),
+      )
+      if (written) told += 1
+    }
+    return told
+  }).pipe(Effect.orElseSucceed(() => 0))

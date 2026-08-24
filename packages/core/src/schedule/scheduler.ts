@@ -12,9 +12,11 @@ import { Clock, Context, Duration, Effect, Layer, Schedule } from "effect"
 import { AgentV2 } from "../agent"
 import { AgentConfigStore } from "../agent-config-store"
 import { AgentWorkspace } from "../agent/workspace"
+import { ColleagueStall } from "../session/colleague-stall"
 import { Database } from "../database/database"
 import { makeGlobalNode, tags } from "../effect/app-node"
 import { LayerNode } from "../effect/layer-node"
+import { EventV2 } from "../event"
 import { Global } from "../global"
 import { ModelV2 } from "../model"
 import { AbsolutePath } from "../schema"
@@ -179,6 +181,8 @@ export const layer = Layer.effect(
     const { db } = yield* Database.Service
     const sessions = yield* SessionV2.Service
     const global = yield* Global.Service
+    // For the stall sweep below — it admits a notice, which publishes.
+    const events = yield* EventV2.Service
     const roster = yield* AgentConfigStore.Service
     // The store is GLOBAL (it needs only `db`), which is why this is reachable at all: `AgentV2` — the
     // per-location view of the same rows — is a LOCATION node, and a global node listing it as a dep
@@ -199,6 +203,10 @@ export const layer = Layer.effect(
     yield* Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis
       yield* tick(db, launch, now)
+      // ⚠️ Riding THIS tick rather than a timer of its own, deliberately: a sweeper kept alive for one
+      // notice is a subsystem, and two schedulers drift. `sweep` never throws into here, so a stall
+      // sweep cannot stop a schedule from firing (`todo/named-agents.md`).
+      yield* ColleagueStall.sweep(db, events, now)
     }).pipe(
       Effect.catchCause((cause) => Log.event("instance.scheduler.tick.failed", { "instance.cause": Log.fault(cause) })),
       Effect.repeat(Schedule.spaced(Duration.seconds(TICK_INTERVAL_SECONDS))),
@@ -212,7 +220,7 @@ export const layer = Layer.effect(
 export const node = makeGlobalNode({
   service: Service,
   layer,
-  deps: [Database.node, SessionV2.node, Global.node, AgentConfigStore.node],
+  deps: [Database.node, SessionV2.node, Global.node, AgentConfigStore.node, EventV2.node],
 })
 
 export const sharedServiceNode = makeGlobalNode({
@@ -223,6 +231,7 @@ export const sharedServiceNode = makeGlobalNode({
     LayerNode.external(SessionV2.Service, tags.values.global),
     LayerNode.external(Global.Service, tags.values.global),
     LayerNode.external(AgentConfigStore.Service, tags.values.global),
+    LayerNode.external(EventV2.Service, tags.values.global),
   ],
 })
 
