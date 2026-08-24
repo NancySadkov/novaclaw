@@ -1071,6 +1071,37 @@ export const EVENTS = {
     file: "packages/novaclaw/src/project/instance-store.ts",
   },
   /** One cached instance is about to be disposed. */
+  /**
+   * The live session-worker fleet crossed a memory ceiling. WARN-ONLY: nothing is shed yet.
+   *
+   * ⚠️ Structured rather than a sentence, and that is not merely style: the reason string would be a
+   * `text` attribute, which this vocabulary classes as USER content, and this event carries none —
+   * only counts. Declaring it `text` would over-restrict a log that is safe to keep.
+   *
+   * ⚠️ No `worker.pid` on purpose. A FLEET breach has no offender — shedding picks the heaviest as
+   * the best candidate — so a pid here would read as "this one is at fault" when the finding is
+   * "there are too many". The pid belongs to the shed event, once shedding is armed.
+   */
+  "resource.fleet.exceeded": {
+    level: "warn",
+    message: "session worker fleet is over its memory ceiling",
+    attributes: {
+      "resource.breach": "id",
+      "resource.count": "count",
+      "resource.bytes": "count",
+      "resource.limit": "count",
+    },
+    content: "none",
+    file: "packages/novaclaw/src/storage/worker-watch.ts",
+  },
+  /** What the live fleet is holding, sampled from OUTSIDE the workers. */
+  "resource.fleet.measure": {
+    level: "debug",
+    message: "session worker fleet memory",
+    attributes: { "resource.count": "count", "resource.bytes": "count", "resource.metric": "id" },
+    content: "none",
+    file: "packages/novaclaw/src/storage/worker-watch.ts",
+  },
   "instance.store.dispose": {
     level: "info",
     message: "disposing instance",

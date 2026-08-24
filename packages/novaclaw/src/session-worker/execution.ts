@@ -38,6 +38,7 @@ import { ColleagueHandoff } from "@novaclaw/core/session/colleague-handoff"
 import { SessionJoin } from "@novaclaw/core/session/join"
 import { SessionLocationRecovery } from "@novaclaw/core/session/location-recovery"
 import { SessionWorkerLocation } from "./location"
+import { WorkerRegistry } from "@/storage/worker-registry"
 
 const failure = (outcome: SessionWorkerSupervisor.Outcome) =>
   outcome.type === "failed"
@@ -286,7 +287,17 @@ export const layer = Layer.effect(
               detail: error instanceof Error ? error.message : String(error),
             }
           } else {
+            // 🔴 The instance's ONLY fleet view. Without it every memory bound stays per-worker, and
+            // N workers each within their own limit can exhaust the host with nobody able to see it.
+            // Released on EVERY exit — success, failure and interrupt — via `ensuring` below, because
+            // a registry that leaks entries names pids the OS may have handed to somebody else.
+            const releaseWorker = WorkerRegistry.register({
+              pid: spawned.value.pid,
+              sessionID: String(sessionID),
+              at: Date.now(),
+            })
             outcome = yield* Effect.promise(() => spawned.value.result).pipe(
+              Effect.ensuring(Effect.sync(releaseWorker)),
               Effect.onInterrupt(() =>
                 Effect.promise(() => spawned.value.interrupt()).pipe(
                   Effect.flatMap(() => attempts.settle(lease, "interrupted", { classification: "interrupt" })),

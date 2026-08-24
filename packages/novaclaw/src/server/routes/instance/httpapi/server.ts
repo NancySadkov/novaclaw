@@ -56,6 +56,7 @@ import { Truncate } from "@/tool/truncate"
 import { Worktree } from "@/worktree"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import * as SpawnPressure from "@/storage/spawn-pressure"
+import { WorkerWatch } from "@/storage/worker-watch"
 import { MoveSession } from "@novaclaw/core/control-plane/move-session"
 import { Credential } from "@novaclaw/core/credential"
 import { CredentialCipher } from "@novaclaw/core/credential-cipher"
@@ -336,6 +337,10 @@ const app = LayerNode.group([
   // two above are: `SpawnAdmission.check()` admits when nobody answers, so an unregistered probe is a
   // guard that ships inert rather than one that fails loudly.
   SpawnPressure.node,
+  // Watches what the LIVE WORKER FLEET is holding, sampled from outside the workers. Listed here for
+  // the same reason as the three above — an unlisted node ships dead — and warn-only by design: the
+  // kill path must not be armed before this has shown what a healthy fleet looks like.
+  WorkerWatch.node,
   RuntimeFlags.node,
   EventV2Bridge.node,
   MCP.node,

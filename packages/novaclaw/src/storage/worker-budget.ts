@@ -31,10 +31,27 @@ export interface Limits {
   readonly consecutiveSamples: number
 }
 
+/** WHICH ceiling was crossed. Structured because the two lead to different conclusions — one
+ *  runaway worker, or a fleet simply too large for this host — and because a log that carries only a
+ *  sentence cannot be filtered on. */
+export type Breach = "per-worker" | "fleet"
+
 export type Decision =
   | { readonly action: "none" }
-  | { readonly action: "warn"; readonly reason: string; readonly pid?: number | undefined }
-  | { readonly action: "shed"; readonly pid: number; readonly reason: string }
+  | {
+      readonly action: "warn"
+      readonly breach: Breach
+      readonly reason: string
+      readonly limitBytes: number
+      readonly pid?: number | undefined
+    }
+  | {
+      readonly action: "shed"
+      readonly breach: Breach
+      readonly pid: number
+      readonly reason: string
+      readonly limitBytes: number
+    }
 
 const mib = (bytes: number) => Math.round(bytes / (1024 * 1024))
 
@@ -63,6 +80,8 @@ export const decide = (input: {
   // Name the SPECIFIC breach. "Memory is high" sends nobody anywhere; "this worker is at 3,100 MiB
   // against a 2,048 MiB ceiling" names the thing to look at, and the two breaches lead to different
   // conclusions — one runaway, or a fleet that is simply too large for this host.
+  const breach: Breach = overWorker !== undefined ? "per-worker" : "fleet"
+  const limitBytes = overWorker !== undefined ? limits.perWorkerBytes : limits.fleetBytes
   const reason =
     overWorker !== undefined
       ? `session worker ${overWorker.pid} holds ${mib(overWorker.bytes)} MiB against a ${mib(limits.perWorkerBytes)} MiB ceiling`
@@ -70,11 +89,11 @@ export const decide = (input: {
 
   // `streak` counts samples BEFORE this one, so this sample is the (streak + 1)th in a row.
   if (input.streak + 1 < limits.consecutiveSamples)
-    return { action: "warn", reason, ...(overWorker === undefined ? {} : { pid: overWorker.pid }) }
+    return { action: "warn", breach, reason, limitBytes, ...(overWorker === undefined ? {} : { pid: overWorker.pid }) }
 
   // Shed the heaviest either way: under a fleet breach it is the one that buys the most room, and
   // under a per-worker breach it IS the offender.
   const target = overWorker ?? worst
-  if (target === undefined) return { action: "warn", reason }
-  return { action: "shed", pid: target.pid, reason }
+  if (target === undefined) return { action: "warn", breach, reason, limitBytes }
+  return { action: "shed", breach, pid: target.pid, reason, limitBytes }
 }

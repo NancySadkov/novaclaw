@@ -35,6 +35,7 @@ describe("who gets shed", () => {
     const decision = WorkerBudget.decide({ readings, streak: 0, limits })
     expect(decision.action).toBe("warn")
     expect(decision.action === "warn" && decision.pid).toBe(7)
+    expect(decision.action === "warn" && decision.breach).toBe("per-worker")
   })
 
   test("a breach that PERSISTS sheds the offender", () => {
@@ -42,8 +43,10 @@ describe("who gets shed", () => {
     // streak 2 + this sample = 3 consecutive, which is the configured limit.
     expect(WorkerBudget.decide({ readings, streak: 2, limits })).toEqual({
       action: "shed",
+      breach: "per-worker",
       pid: 7,
       reason: "session worker 7 holds 3000 MiB against a 2048 MiB ceiling",
+      limitBytes: limits.perWorkerBytes,
     })
   })
 
@@ -61,6 +64,9 @@ describe("who gets shed", () => {
     const decision = WorkerBudget.decide({ readings, streak: 2, limits })
     expect(decision.action).toBe("shed")
     expect(decision.action === "shed" && decision.reason).toContain("4 session workers")
+    // 🔴 The BREACH KIND, structured — a fleet breach and a runaway lead to different conclusions,
+    // and a log carrying only a sentence cannot be filtered on.
+    expect(decision.action === "shed" && decision.breach).toBe("fleet")
   })
 
   test("shedding takes the HEAVIEST — the one that buys room", () => {
