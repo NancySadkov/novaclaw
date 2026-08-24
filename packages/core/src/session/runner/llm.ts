@@ -129,6 +129,9 @@ import { CalloutPolicy } from "../../callout-policy"
 import { ProjectGrounding } from "./project-grounding"
 import { UnfinishedSet } from "./unfinished-set"
 import { lastRealUserText } from "../steer-provenance"
+import { ColleagueHop } from "../colleague-hop"
+import { ColleagueTool } from "../../tool/colleague"
+import { ColleagueBound } from "../colleague-bound"
 import { VisionCopy } from "./vision-copy"
 
 // Ordering can only choose among retrieved candidates — fetch wider than the recall budget.
@@ -1293,6 +1296,19 @@ export const layer = Layer.effect(
                 modelID: modelRef?.id ?? model.id,
               })(name),
             discoveredTools,
+            // 🔴 WITHHELD AT THE CAP, not advertised and refused. `ask`/`ask_group` cannot succeed
+            // once the chain is at `HOP_CAP`, so offering them spends a turn on a refusal the model
+            // then has to interpret. `list`, `hire` and `retire` are unrelated to the bound and stay,
+            // which is why this is a variant rather than withholding the tool.
+            //
+            // ⚠️ Free to consult: the hop rides the transcript this turn already holds
+            // (`ColleagueHop.fromContext`), not a database read — the concern the item raised, and
+            // measured away.
+            (name) =>
+              name === ColleagueTool.name &&
+              ColleagueBound.exceedsHopCap(ColleagueBound.nextHop(ColleagueHop.fromContext(context)))
+                ? ColleagueTool.CAPPED
+                : undefined,
           )
       const promptCacheKey = /^ses_[0-9a-f]{64}$/.test(session.id) ? session.id.slice(4) : session.id
       // P3 (3A/3B): appraise the per-session mood from what has happened so far (runs BEFORE
@@ -1378,6 +1394,12 @@ export const layer = Layer.effect(
             // or the ruleset — a section naming a tool the turn cannot call is a false description.
             // Same source `perception`'s `canSpawn` already uses, and for the same reason.
             delegation: SystemCompose.delegationSection({
+              // Read from the SAME condition that withheld the ops, so the sentence and the tool
+              // list cannot disagree — "a section naming a tool the turn cannot call is a false
+              // description", and a silent absence is the converse.
+              colleaguesAtCap: ColleagueBound.exceedsHopCap(
+                ColleagueBound.nextHop(ColleagueHop.fromContext(context)),
+              ),
               canSpawn: (toolMaterialization?.definitions ?? []).some((tool) => tool.name === "spawn"),
               canAddressColleagues: (toolMaterialization?.definitions ?? []).some(
                 (tool) => tool.name === "colleague",

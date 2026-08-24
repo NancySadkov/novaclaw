@@ -90,6 +90,22 @@ const RetireOp = Schema.Struct({
 
 export const Input = Schema.Union([ListOp, AskOp, AskGroupOp, HireOp, RetireOp])
 
+/**
+ * The key for the turn's narrowed surface at the colleague-loop cap.
+ *
+ * 🔴 Our own standing constraint, one level down: *a wholly denied tool is withdrawn, never
+ * advertised and refused*. At the cap `ask` and `ask_group` cannot succeed, so offering them is an
+ * invitation to spend a turn discovering that. `list`, `hire` and `retire` have nothing to do with
+ * the bound and stay — which is why this is a VARIANT rather than withholding `colleague` itself.
+ *
+ * ⚠️ The prompt must say WHY, and the two must land together: an absent tool teaches nothing, and the
+ * refusal text is what teaches a floor model to go back to the user.
+ */
+export const CAPPED = "capped"
+
+/** What `colleague` offers at the cap: everything the loop bound has nothing to do with. */
+export const CappedInput = Schema.Union([ListOp, HireOp, RetireOp])
+
 const Output = Schema.Struct({ ok: Schema.Boolean, message: Schema.String })
 type Output = typeof Output.Type
 
@@ -151,6 +167,8 @@ export const layer = Layer.effectDiscard(
             "`hire` and `retire` staff the organization and are Nova's alone — a hire is given a name from the " +
             "instance's own pool, so colleagues never read as people.",
           input: Input,
+  // At the cap the asking ops are not offered at all — see `CAPPED`.
+  variants: { [CAPPED]: CappedInput },
           output: Output,
           toModelOutput: ({ output }) => [{ type: "text", text: output.message }],
           execute: (input, context) =>

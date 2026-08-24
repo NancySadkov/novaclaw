@@ -386,6 +386,15 @@ export const perceptionSection = (input: {
 export const delegationSection = (input: {
   readonly canSpawn: boolean
   readonly canAddressColleagues: boolean
+  /**
+   * The colleague-loop cap is reached, so the asking ops were WITHHELD from this turn's tool list.
+   *
+   * 🔴 The absence must be EXPLAINED. Withholding alone teaches nothing — a model that cannot see
+   * `ask` does not conclude "the chain is too long", it concludes nothing and tries something else.
+   * The refusal text is what sends it back to the user, and withholding removes the refusal, so the
+   * sentence has to move here.
+   */
+  readonly colleaguesAtCap?: boolean
 }): string | undefined => {
   const lines: string[] = []
   if (input.canSpawn)
@@ -404,6 +413,14 @@ export const delegationSection = (input: {
         "opposite of a sub-agent: you use it when the work BELONGS to somebody else, not when you " +
         "simply want more hands. Never address yourself — a message to your own name lands in this " +
         "same conversation.",
+    )
+  if (input.canAddressColleagues && input.colleaguesAtCap === true)
+    lines.push(
+      "⚠️ You cannot ASK a colleague on this turn. This conversation is already several colleague " +
+        "hand-offs deep with nobody outside it, so `colleague` is offered WITHOUT its asking ops — " +
+        "that is why you cannot see them, and not an oversight. Passing it on again would not help. " +
+        "Say what you have and what is still open, and let the user decide: the limit resets as soon " +
+        "as they say anything. You can still call `colleague` to `list` who works here.",
     )
   if (input.canSpawn && input.canAddressColleagues)
     lines.push(

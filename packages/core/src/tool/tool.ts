@@ -92,6 +92,23 @@ type Config<
   readonly sideEffect?: SideEffectClass
   readonly description: string
   readonly input: Input
+  /**
+   * Narrowed inputs a turn may be OFFERED instead of the whole schema, by key.
+   *
+   * 🔴 For withholding part of a tool rather than all of it. Our standing constraint is that a wholly
+   * denied tool is withdrawn, never advertised and refused — and the same reasoning applies one level
+   * down: `colleague` at the hop cap should stop offering `ask`, while `list`, `hire` and `retire`
+   * have nothing to do with the bound and must stay.
+   *
+   * ⚠️ **Advertised only.** `settle` still decodes against the FULL `input`, so a model that calls a
+   * withheld op anyway is refused by the bound that withheld it rather than crashing on a schema it
+   * was never shown. Narrowing the executable surface as well would make a withheld op a hard error,
+   * which is a worse answer to the same question.
+   *
+   * ⚠️ The definition cache below keys on name AND variant, so a variant costs one extra
+   * `toJsonSchema` per process — not one per turn.
+   */
+  readonly variants?: Readonly<Record<string, Schema.Top>>
   readonly output: Output
   readonly outputPreview?: ToolTruncation.PreviewPolicy
   readonly structured?: Structured
@@ -114,7 +131,7 @@ type Runtime = {
   readonly permission?: string
   readonly deferred?: boolean
   readonly outputPreview?: ToolTruncation.PreviewPolicy
-  readonly definition: (name: string) => ToolDefinition
+  readonly definition: (name: string, variant?: string | undefined) => ToolDefinition
   readonly settle: (call: ToolCall, context: Context) => Effect.Effect<ToolOutput, ToolFailure>
 }
 
@@ -130,16 +147,19 @@ export function make<
   runtimes.set(tool, {
     sideEffect: config.sideEffect ?? "external-unknown",
     outputPreview: config.outputPreview,
-    definition: (name) => {
-      const cached = definitions.get(name)
+    definition: (name, variant) => {
+      // Keyed on both, so a variant is a second cache entry rather than a recomputation per turn.
+      const key = variant === undefined ? name : `${name}#${variant}`
+      const cached = definitions.get(key)
       if (cached) return cached
+      const narrowed = variant === undefined ? undefined : config.variants?.[variant]
       const definition = new ToolDefinition({
         name,
         description: config.description,
-        inputSchema: toJsonSchema(config.input),
+        inputSchema: toJsonSchema(narrowed ?? config.input),
         outputSchema: toJsonSchema(config.structured ?? config.output),
       })
-      definitions.set(name, definition)
+      definitions.set(key, definition)
       return definition
     },
     settle: (call, context) =>
@@ -370,7 +390,8 @@ export const withDeferred = <Input extends SchemaType<any>, Output extends Schem
  */
 export const permission = (tool: AnyTool, name: string) => runtimeOf(tool).permission ?? name
 export const isDeferred = (tool: AnyTool) => runtimeOf(tool).deferred === true
-export const definition = (name: string, tool: AnyTool) => runtimeOf(tool).definition(name)
+export const definition = (name: string, tool: AnyTool, variant?: string) =>
+  runtimeOf(tool).definition(name, variant)
 export const sideEffect = (tool: AnyTool) => runtimeOf(tool).sideEffect
 export const outputPreview = (tool: AnyTool) => runtimeOf(tool).outputPreview ?? "balanced"
 export const settle = (tool: AnyTool, call: ToolCall, context: Context) => {

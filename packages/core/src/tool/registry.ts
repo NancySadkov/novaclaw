@@ -51,6 +51,15 @@ export interface Interface {
     permissions?: PermissionV2.Ruleset,
     offered?: (name: string) => boolean,
     discovered?: ReadonlySet<string>,
+    /**
+     * Which NARROWED variant of a tool this turn should be offered, if any.
+     *
+     * 🔴 `offered` can only say yes or no to a whole tool. Withholding PART of one — `colleague`'s
+     * `ask` at the hop cap, while `list`, `hire` and `retire` stay — needs a third answer, and this
+     * is it. The variant names a key in the tool's own `variants`; a tool that declares none is
+     * unaffected.
+     */
+    variantOf?: (name: string) => string | undefined,
   ) => Effect.Effect<Materialization>
   /** Internal registration capability exposed publicly only through Tools.Service. */
   readonly register: (tools: Readonly<Record<string, AnyTool>>) => Effect.Effect<void, RegistrationError, Scope.Scope>
@@ -319,6 +328,7 @@ const registryLayer = Layer.effect(
         permissions = [],
         offered = () => true,
         discovered = new Set<string>(),
+        variantOf = () => undefined,
       ) {
         type MaterializedRegistration = Registration & { readonly server: string; readonly deferred: boolean }
         const registrations = new Map<string, MaterializedRegistration>()
@@ -363,7 +373,9 @@ const registryLayer = Layer.effect(
         const callableDeferred = new Map([...deferredByName].filter(([name]) => discovered.has(name)))
         const callableNames = [...resident.keys(), ...callableDeferred.keys()]
         return {
-          definitions: Array.from(resident, ([name, registration]) => definition(name, registration.tool)),
+          definitions: Array.from(resident, ([name, registration]) =>
+            definition(name, registration.tool, variantOf(name)),
+          ),
           sideEffects: Object.fromEntries(
             [...resident, ...callableDeferred].map(([name, registration]) => [name, sideEffect(registration.tool)]),
           ),
