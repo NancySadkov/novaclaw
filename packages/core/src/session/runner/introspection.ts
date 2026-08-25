@@ -96,20 +96,50 @@ function clip(text: string, max: number): string {
 }
 
 /**
+ * The four things a closed yes/no question can actually come back as.
+ *
+ * 🔴 **`empty` and `unparsed` are NOT `no`, and folding them there is a rate summing two failure
+ * modes.** An `empty` reply is a BUDGET fault — a thinking model given too small an allowance returns
+ * no content and no reasoning (measured: 18/24 at 300 tokens against 24/24 at 2048) — and an
+ * `unparsed` one is a COMPREHENSION fault. Both are facts about the instrument; `no` is a fact about
+ * the subject. A caller that cannot tell them apart reports the instrument's failure as the subject's
+ * answer, and an empty rate that is not zero stays invisible exactly when it matters.
+ *
+ * This is why the parse is exposed as four outcomes and the boolean is a WRAPPER over it: the
+ * collapse is a per-caller POLICY, not a property of parsing.
+ */
+export type Verdict = "yes" | "no" | "empty" | "unparsed"
+
+/**
  * Tolerant verdict parse — small models decorate ("Yes.", "**YES** — the agent…",
  * reasoning followed by a verdict line). Look for a yes/no token near the START of the
- * reply, then fall back to the final line; anything ambiguous is NO (never interject on
- * an unclear verdict).
+ * reply, then fall back to the final line.
+ *
+ * ⚠️ Whitespace-only counts as `empty`, not `unparsed` — a model that returned nothing and a model
+ * that returned prose we could not read are different diagnoses with different fixes (raise the
+ * budget vs. reword the question).
+ */
+export function verdictOf(reply: string): Verdict {
+  const trimmed = reply.trim()
+  if (!trimmed) return "empty"
+  const head = trimmed.slice(0, 40).toLowerCase()
+  if (/^\W*no\b/.test(head)) return "no"
+  if (/^\W*yes\b/.test(head)) return "yes"
+  const lines = trimmed.split(/\r?\n/)
+  const last = (lines[lines.length - 1] ?? "").trim().toLowerCase()
+  if (/^\W*no\b/.test(last)) return "no"
+  if (/^\W*yes\b/.test(last)) return "yes"
+  return "unparsed"
+}
+
+/**
+ * Introspection's own POLICY over `verdictOf`: anything that is not a clear yes is treated as no,
+ * because interjecting on an unclear verdict interrupts a healthy agent. Behaviour is unchanged from
+ * when this was the only parse — the difference is that the collapse is now stated here, at the
+ * caller that wants it, instead of being welded into the parser every other caller shares.
  */
 export function isYesVerdict(reply: string): boolean {
-  const head = reply.trim().slice(0, 40).toLowerCase()
-  if (/^\W*no\b/.test(head)) return false
-  if (/^\W*yes\b/.test(head)) return true
-  const lines = reply.trim().split(/\r?\n/)
-  const last = (lines[lines.length - 1] ?? "").trim().toLowerCase()
-  if (/^\W*no\b/.test(last)) return false
-  if (/^\W*yes\b/.test(last)) return true
-  return false
+  return verdictOf(reply) === "yes"
 }
 
 /** The user message the judge receives (question + excerpt). */

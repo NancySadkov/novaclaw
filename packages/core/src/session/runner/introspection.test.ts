@@ -6,6 +6,7 @@ import {
   MAX_EXCERPT_CHARS,
   generatePrompt,
   isYesVerdict,
+  verdictOf,
   judgeExcerpt,
   judgePrompt,
   parseModelRef,
@@ -121,6 +122,42 @@ describe("isYesVerdict (tolerant parse)", () => {
     expect(isYesVerdict("Maybe? Hard to tell.")).toBe(false)
     expect(isYesVerdict("")).toBe(false)
     expect(isYesVerdict("The answer is unclear but yes-adjacent behavior appears mid-sentence")).toBe(false)
+  })
+})
+
+describe("verdictOf — four outcomes, because empty and unparsed are not NO", () => {
+  test("yes and no are unchanged from the boolean parse", () => {
+    expect(verdictOf("YES")).toBe("yes")
+    expect(verdictOf("no")).toBe("no")
+    expect(verdictOf("**Yes** — the agent keeps re-running the same command.")).toBe("yes")
+    expect(verdictOf("The agent retried the same edit four times.\nYES")).toBe("yes")
+  })
+
+  // 🔴 The whole point of the type. Each of these would be `false` under `isYesVerdict`, and a
+  // completion check that folded them into "not done" would convert an instrument fault into a
+  // statement about the subject — nudging a finished agent because the judge's budget was too small.
+  test("an EMPTY reply is a budget fault, not a no", () => {
+    expect(verdictOf("")).toBe("empty")
+    expect(verdictOf("   \n  \t ")).toBe("empty")
+  })
+  test("an UNREADABLE reply is a comprehension fault, not a no", () => {
+    expect(verdictOf("Maybe? Hard to tell.")).toBe("unparsed")
+    expect(verdictOf("The answer is unclear but yes-adjacent behavior appears mid-sentence")).toBe("unparsed")
+  })
+  test("empty and unparsed are DISTINGUISHABLE from each other", () => {
+    // Separate diagnoses with separate fixes: raise the budget vs. reword the question.
+    expect(verdictOf("")).not.toBe(verdictOf("Maybe? Hard to tell."))
+  })
+
+  test("all four outcomes are reachable — a parser that cannot produce one of them is broken", () => {
+    const seen = new Set([verdictOf("yes"), verdictOf("no"), verdictOf(""), verdictOf("hmm, unclear")])
+    expect(seen).toEqual(new Set(["yes", "no", "empty", "unparsed"]))
+  })
+
+  test("isYesVerdict is exactly `=== \"yes\"` over verdictOf, for every outcome", () => {
+    // Pins the wrapper to the parse so the two can never drift into two different tolerant parsers.
+    for (const reply of ["YES", "no", "", "Maybe? Hard to tell.", "It reads different files.\nno"])
+      expect(isYesVerdict(reply)).toBe(verdictOf(reply) === "yes")
   })
 })
 
