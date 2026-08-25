@@ -105,9 +105,25 @@ export interface EdgeRow {
   readonly type: string
 }
 
+/**
+ * How the slice was chosen — see `graph-slice.ts`.
+ *
+ * ⚠️ Carried on the RESULT, not derivable by the client. "600 nodes came back" and "600 nodes exist"
+ * look identical from outside, so a viewer without this cannot tell a complete map from a corner of
+ * one, and will quietly present the corner as the whole.
+ */
+export interface GraphSlice {
+  readonly partial: boolean
+  readonly total: number
+  readonly returned: number
+  readonly omitted: number
+  readonly reason: "complete" | "connected-first" | "scan-capped"
+}
+
 export interface MemoryGraph {
   readonly nodes: ReadonlyArray<MemoryRow>
   readonly edges: ReadonlyArray<EdgeRow>
+  readonly slice: GraphSlice
 }
 
 export interface Interface {
@@ -330,16 +346,31 @@ export const stub = (): Interface => {
           .map(stripValid),
       ),
     graph: (input) => {
-      const nodes = [...mems.values()]
+      const inScope = [...mems.values()]
         .filter((m) => m.valid)
         .filter((m) => (input?.scopes ? input.scopes.includes(m.scope) : true))
-        .slice(0, input?.limit ?? 500)
-        .map(stripValid)
+      const limit = input?.limit ?? 500
+      const nodes = inScope.slice(0, limit).map(stripValid)
       const ids = new Set(nodes.map((n) => n.id))
       const graphEdges = edges
         .filter((e) => ids.has(e.from) && ids.has(e.to))
         .map((e) => ({ from: e.from, to: e.to, type: e.type }))
-      return ok({ nodes, edges: graphEdges })
+      // ⚠️ The in-memory client keeps the newest-first truncation on purpose — it is a TEST double,
+      // not a second implementation of the real engine's structure/recency split. What it must get
+      // right is the CONTRACT: a truncated answer says `partial`, so a caller written against this
+      // double cannot forget the field and pass against the real one.
+      const partial = nodes.length < inScope.length
+      return ok({
+        nodes,
+        edges: graphEdges,
+        slice: {
+          partial,
+          total: inScope.length,
+          returned: nodes.length,
+          omitted: inScope.length - nodes.length,
+          reason: partial ? ("connected-first" as const) : ("complete" as const),
+        },
+      })
     },
   }
 }

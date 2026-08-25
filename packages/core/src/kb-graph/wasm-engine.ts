@@ -14,6 +14,7 @@ import {
 } from "node:fs"
 import path, { join } from "node:path"
 import { Global } from "../global"
+import { selectSlice, type SliceMeta } from "./graph-slice"
 
 // The in-process Ladybug graph-memory engine (WASM) — the single engine that runs EVERYWHERE
 // (notes/kb-graph-plan.md §2.0, the 2026-07-19 pivot). The native addon can't run in a phone app and
@@ -104,6 +105,28 @@ export interface GraphInput {
   readonly scopes?: readonly string[]
   readonly limit?: number
 }
+
+export interface MemoryGraphResult {
+  readonly nodes: MemoryRow[]
+  readonly edges: EdgeRow[]
+  readonly slice: SliceMeta
+}
+
+/**
+ * How many ids the selection may consider per requested node — the pool the structure/recency split
+ * chooses FROM. Larger than `limit` on purpose: choosing 600 nodes out of the newest 600 is the
+ * defect, not the fix. Bounded because a scan of a very large store must stay one bounded read.
+ */
+const NODE_SCAN_FACTOR = 8
+const NODE_SCAN_CAP = 20_000
+/**
+ * A memory bound on this process, NOT a guess at how many edges the client wants.
+ *
+ * ⚠️ The old code used `limit * 4` and applied it BEFORE filtering to the selected nodes, so the cap
+ * was spent on edges of memories that were never returned and the edges actually on screen went
+ * missing — silently, and worse the larger the store.
+ */
+const EDGE_SCAN_CAP = 200_000
 
 export interface EdgeRow {
   readonly from: string
@@ -824,28 +847,73 @@ export class WasmMemory {
     })
   }
 
-  /** The graph slice for the visualizer: up to `limit` valid nodes + the valid edges among them. */
-  graph(opts: GraphInput = {}): Promise<{ nodes: MemoryRow[]; edges: EdgeRow[] }> {
+  /**
+   * A COHERENT graph slice for the visualizer: `limit` nodes chosen for structure and recency, the
+   * valid edges among them, and metadata saying what was left out.
+   *
+   * 🔴 Two defects this replaces, both silent.
+   *
+   * **The selection was `ORDER BY t_created DESC LIMIT n`.** Ingesting one document writes hundreds
+   * of passages in a burst, so the newest `n` rows become that one document and every older entity
+   * hub falls off the end — the graph got emptier the more was put into it. `graph-slice.ts` has the
+   * reasoning and the budget split; the selection is computed HERE in JS because this engine hangs on
+   * `WHERE m.id IN $ids` and on `WITH m ORDER BY … RETURN …`, which is what a query-side selection
+   * would need.
+   *
+   * **The edge query took `LIMIT limit * 4` BEFORE filtering to the selected nodes.** So the cap was
+   * spent on edges belonging to memories that were never returned, and edges among the nodes actually
+   * on screen were dropped — arbitrarily, and more often the larger the store. The scan is now bounded
+   * by its own cap and filtered afterwards, and `EDGE_SCAN_CAP` is a memory bound on this process
+   * rather than a guess at how many edges the client wants.
+   *
+   * ⚠️ The scan reads IDS, never text: a table scan on this engine can return an empty string for
+   * `text` while the row is intact (see `hydrate`). Only the chosen ids are hydrated, so the cost is
+   * one scan plus `limit` single-key lookups, not a scan of every body in the store.
+   */
+  graph(opts: GraphInput = {}): Promise<MemoryGraphResult> {
     return this.serialize(async () => {
       const scopeFilter = opts.scopes ? `AND m.scope IN $scopes` : ``
+      const params = { ...(opts.scopes ? { scopes: opts.scopes } : {}) }
       const limit = Math.max(1, Math.min(opts.limit ?? 500, 5000))
-      const selected = await this.rows(
-        `MATCH (m:Memory) WHERE m.t_invalid IS NULL ${scopeFilter}
-         RETURN m.id AS id
-         ORDER BY m.t_created DESC LIMIT ${limit}`,
-        { ...(opts.scopes ? { scopes: opts.scopes } : {}) },
+
+      // The count is asked SEPARATELY so `total` describes the store rather than the scan — a scan
+      // that hit its cap cannot tell you how much it did not read.
+      const counted = await this.rows(
+        `MATCH (m:Memory) WHERE m.t_invalid IS NULL ${scopeFilter} RETURN count(m) AS n`,
+        params,
       )
-      const nodes = await this.hydrate(selected.map((row) => String(row.id)))
-      const ids = new Set(nodes.map((n) => n.id))
-      // Edges among the returned nodes only (so the client never gets a dangling endpoint).
+      const total = Number(counted[0]?.n ?? 0)
+
+      const scanCap = Math.min(Math.max(limit * NODE_SCAN_FACTOR, limit), NODE_SCAN_CAP)
+      const scanned = await this.rows(
+        `MATCH (m:Memory) WHERE m.t_invalid IS NULL ${scopeFilter}
+         RETURN m.id AS id, m.kind AS kind
+         ORDER BY m.t_created DESC LIMIT ${scanCap}`,
+        params,
+      )
+      const candidates = scanned.map((row) => ({ id: String(row.id), kind: String(row.kind ?? "entity") }))
+
       const edgeRows = await this.rows(
         `MATCH (a:Memory)-[r:Rel]->(b:Memory) WHERE r.t_invalid IS NULL
-         RETURN a.id AS from, b.id AS to, r.type AS type LIMIT ${limit * 4}`,
+         RETURN a.id AS from, b.id AS to, r.type AS type LIMIT ${EDGE_SCAN_CAP}`,
       )
-      const edges = edgeRows
-        .map((e) => ({ from: String(e.from), to: String(e.to), type: String(e.type ?? "") }))
-        .filter((e) => ids.has(e.from) && ids.has(e.to))
-      return { nodes, edges }
+      const allEdges = edgeRows.map((e) => ({
+        from: String(e.from),
+        to: String(e.to),
+        type: String(e.type ?? ""),
+      }))
+
+      const slice = selectSlice(candidates, allEdges, {
+        limit,
+        total,
+        ...(candidates.length >= scanCap && total > candidates.length ? { scanCapped: true } : {}),
+      })
+      const nodes = await this.hydrate(slice.ids)
+      // Hydration is the authority on what exists NOW, so the edge filter keys on the rows that came
+      // back rather than on the ids that were asked for — a memory purged between the two is gone.
+      const present = new Set(nodes.map((n) => n.id))
+      const edges = allEdges.filter((e) => present.has(e.from) && present.has(e.to))
+      return { nodes, edges, slice: { ...slice.meta, returned: nodes.length } }
     })
   }
 

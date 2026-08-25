@@ -72,7 +72,11 @@ describe("MemoryClient.fromEngine", () => {
       discardLegacyGlobalExtracts: async () => 0,
       stats: async () => ({ total: 1, valid: 1 }),
       list: async () => [],
-      graph: async () => ({ nodes: [], edges: [] }),
+      graph: async () => ({
+        nodes: [],
+        edges: [],
+        slice: { partial: false, total: 0, returned: 0, omitted: 0, reason: "complete" as const },
+      }),
     }
     const c = MemoryClient.fromEngine(engine)
     expect(await run(c.health())).toBe(true)

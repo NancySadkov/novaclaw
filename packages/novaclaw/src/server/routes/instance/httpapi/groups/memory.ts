@@ -27,7 +27,20 @@ const SearchHit = Schema.Struct({ ...MemoryRow.fields, score: Schema.Number })
 const Neighbor = Schema.Struct({ id: Schema.String, type: Schema.String, text: Schema.String })
 const EdgeRow = Schema.Struct({ from: Schema.String, to: Schema.String, type: Schema.String })
 const Stats = Schema.Struct({ total: Schema.Number, valid: Schema.Number })
-const MemoryGraph = Schema.Struct({ nodes: Schema.Array(MemoryRow), edges: Schema.Array(EdgeRow) })
+/** ⚠️ DECLARED, because an undeclared field is silently stripped on the way out — the whole point of
+ *  this struct is that the client can tell a slice from the complete graph. */
+const GraphSlice = Schema.Struct({
+  partial: Schema.Boolean,
+  total: Schema.Number,
+  returned: Schema.Number,
+  omitted: Schema.Number,
+  reason: Schema.Literals(["complete", "connected-first", "scan-capped"]),
+})
+const MemoryGraph = Schema.Struct({
+  nodes: Schema.Array(MemoryRow),
+  edges: Schema.Array(EdgeRow),
+  slice: GraphSlice,
+})
 const PathResult = Schema.NullOr(Schema.Struct({ ids: Schema.Array(Schema.String), hops: Schema.Number }))
 
 const CsvOptional = Schema.optional(Schema.String) // comma-separated scopes/kinds in the query string

@@ -62,7 +62,8 @@ const EDGES: EdgeRow[] = [
   // Dragon's ONLY link. Before the projection, hiding passages deleted it and left Dragon floating.
   { from: "p1", to: "Dragon", type: "mentions" },
 ]
-const FIXTURE: MemoryGraph = { nodes: NODES, edges: EDGES }
+const COMPLETE = { partial: false, total: 7, returned: 7, omitted: 0, reason: "complete" } as const
+const FIXTURE: MemoryGraph = { nodes: NODES, edges: EDGES, slice: COMPLETE }
 /** Memories drawn as themselves when passages are hidden: everything but the two passages. */
 const VISIBLE_MEMORIES = 5
 
@@ -405,7 +406,7 @@ describe("MemoryGraphPage renders", () => {
   })
 
   test("a genuinely empty graph still says so — the honest empty is not lost", async () => {
-    mount([() => ({ nodes: [], edges: [] })])
+    mount([() => ({ nodes: [], edges: [], slice: { ...COMPLETE, total: 0, returned: 0 } })])
     await settle()
     showGraph()
     await settle()
@@ -420,7 +421,7 @@ describe("MemoryGraphPage renders", () => {
     // "Nothing remembered yet — the graph fills as you chat" to a user whose engine was dead.
     memoryBoardStatus = "problem"
     memoryBoardDetail = "the graph store failed to open"
-    mount([() => ({ nodes: [], edges: [] })])
+    mount([() => ({ nodes: [], edges: [], slice: { ...COMPLETE, total: 0, returned: 0 } })])
     await settle()
     showGraph()
     await settle()
@@ -432,7 +433,7 @@ describe("MemoryGraphPage renders", () => {
 
   test("a board with no DETAIL still says something a person can act on", async () => {
     memoryBoardStatus = "problem"
-    mount([() => ({ nodes: [], edges: [] })])
+    mount([() => ({ nodes: [], edges: [], slice: { ...COMPLETE, total: 0, returned: 0 } })])
     await settle()
     showGraph()
     await settle()
@@ -445,7 +446,7 @@ describe("MemoryGraphPage renders", () => {
     // "not opened yet". Treating that as broken would put an error in front of everyone who has
     // simply not chatted yet — the opposite failure, and just as wrong.
     memoryBoardStatus = "unknown"
-    mount([() => ({ nodes: [], edges: [] })])
+    mount([() => ({ nodes: [], edges: [], slice: { ...COMPLETE, total: 0, returned: 0 } })])
     await settle()
     showGraph()
     await settle()
@@ -573,6 +574,58 @@ describe("MemoryGraphPage renders", () => {
       maxY: Math.max(...core.map((m) => m.y)),
     }
     expect(orphan.x < box.minX || orphan.x > box.maxX || orphan.y < box.minY || orphan.y > box.maxY).toBe(true)
+  })
+
+  test("🔴 a SLICE says so — `n memories` beside a truncated graph reads as everything", async () => {
+    mount([
+      () => ({
+        nodes: NODES,
+        edges: EDGES,
+        slice: { partial: true, total: 900, returned: 7, omitted: 893, reason: "connected-first" },
+      }),
+    ])
+    await settle()
+    showGraph()
+    await settle()
+    const chip = document.querySelector('[data-slot="memory-graph-slice"]') as HTMLElement
+    expect(chip).not.toBeNull()
+    expect(chip.textContent).toContain("893 not shown")
+    expect(chip.getAttribute("title")).toContain("Showing 7 of 900")
+  })
+
+  test("a COMPLETE graph carries no notice at all", async () => {
+    mount([() => FIXTURE])
+    await settle()
+    showGraph()
+    await settle()
+    expect(document.querySelector('[data-slot="memory-graph-slice"]')).toBeNull()
+  })
+
+  test("⚠️ an instance too OLD to report a slice says nothing rather than guessing", async () => {
+    // A missing field is not evidence of truncation. Inventing a notice from it would be the same
+    // class of lie as the empty cabinet — a confident statement about something nobody reported.
+    mount([() => ({ nodes: NODES, edges: EDGES }) as unknown as MemoryGraph])
+    await settle()
+    showGraph()
+    await settle()
+    expect(state()).toBe("ready")
+    expect(document.querySelector('[data-slot="memory-graph-slice"]')).toBeNull()
+  })
+
+  test("a scan-capped answer says PARTIAL without pretending to a number", async () => {
+    mount([
+      () => ({
+        nodes: NODES,
+        edges: EDGES,
+        slice: { partial: true, total: 7, returned: 7, omitted: 0, reason: "scan-capped" },
+      }),
+    ])
+    await settle()
+    showGraph()
+    await settle()
+    const chip = document.querySelector('[data-slot="memory-graph-slice"]') as HTMLElement
+    expect(chip.textContent).toContain("partial view")
+    expect(chip.dataset.reason).toBe("scan-capped")
   })
 
   test("showing passages refits to include them", async () => {

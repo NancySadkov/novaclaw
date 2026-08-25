@@ -515,6 +515,29 @@ export function MemoryGraphPage() {
   const count = () => loaded()?.nodes.length ?? 0
 
   /**
+   * What to say when the server sent a SLICE — one chip, with the detail on hover.
+   *
+   * ⚠️ `undefined` when the field is absent, which is what an instance older than the field sends.
+   * Inventing a notice from a missing field would be the same class of lie as the empty cabinet: a
+   * confident statement about something nobody reported.
+   */
+  const sliceNotice = (): { label: string; title: string } | undefined => {
+    const slice = loaded()?.slice
+    if (!slice?.partial) return undefined
+    if (slice.reason === "scan-capped")
+      return {
+        label: "partial view",
+        title: `This instance holds more memories than one read can gather. Showing ${slice.returned}.`,
+      }
+    return {
+      label: `${slice.omitted} not shown`,
+      title:
+        `Showing ${slice.returned} of ${slice.total}. The most connected memories come first, ` +
+        `with room kept for the newest — so a large document cannot crowd out everything else.`,
+    }
+  }
+
+  /**
    * WHICH LABELS FIT — screen-space, priority-ordered, overlap-culled (`memory-graph/labels.ts`).
    *
    * 🔴 What this replaces: `visibleCount() <= 40`. Under forty marks every one got a label and they
@@ -706,6 +729,22 @@ export function MemoryGraphPage() {
         <span class="text-xs opacity-50">
           {count()} {count() === 1 ? "memory" : "memories"} · {loaded()?.edges.length ?? 0} links
         </span>
+        {/* 🔴 SAY WHEN THIS IS A CORNER OF THE MAP. `n memories` beside a graph the server truncated
+            reads as "this is everything", and the count is even true — of what arrived. The server
+            now reports how it chose (`core/kb-graph/graph-slice.ts`); without that line the client
+            cannot tell a complete graph from a slice, because both are just n rows. */}
+        <Show when={appView() === "graph" ? sliceNotice() : undefined}>
+          {(notice) => (
+            <span
+              class="rounded bg-v2-background-bg-layer-02 px-1.5 py-0.5 text-[11px] opacity-70"
+              data-slot="memory-graph-slice"
+              data-reason={loaded()?.slice?.reason}
+              title={notice().title}
+            >
+              {notice().label}
+            </span>
+          )}
+        </Show>
         <div class="ml-auto flex items-center gap-3 text-xs">
           {/* Three scopes, three marks. The legend used to name two because there WERE two; leaving
               it at two after the roster landed would be the one place still describing the old model

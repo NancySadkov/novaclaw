@@ -79,7 +79,16 @@ export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (h
               ...(csv(ctx.query.scopes) ? { scopes: csv(ctx.query.scopes)! } : {}),
               ...(ctx.query.limit === undefined ? {} : { limit: ctx.query.limit }),
             })
-            .pipe(Effect.orElseSucceed(() => ({ nodes: [], edges: [] })))
+            // ⚠️ The degrade keeps a TRUTHFUL slice: `complete` would claim this empty answer is the
+            // whole graph. `scan-capped` is the honest shape for "we could not read it", and the app
+            // additionally reads the diagnosis board to say WHY (`utils/memory-health.ts`).
+            .pipe(
+              Effect.orElseSucceed(() => ({
+                nodes: [],
+                edges: [],
+                slice: { partial: true, total: 0, returned: 0, omitted: 0, reason: "scan-capped" as const },
+              })),
+            )
         }),
       )
       .handle(

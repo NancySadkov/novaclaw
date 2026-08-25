@@ -40,9 +40,25 @@ export interface EdgeRow {
   readonly type: string
 }
 
+/**
+ * How the server chose what it sent — mirrors `core/kb-graph/graph-slice.ts`.
+ *
+ * ⚠️ `partial` is not derivable here. "600 nodes came back" and "600 nodes exist" are the same bytes
+ * from this side, so without the server saying so a viewer presents a corner of the map as the map.
+ */
+export interface GraphSlice {
+  readonly partial: boolean
+  readonly total: number
+  readonly returned: number
+  readonly omitted: number
+  readonly reason: "complete" | "connected-first" | "scan-capped"
+}
+
 export interface MemoryGraph {
   readonly nodes: readonly MemoryRow[]
   readonly edges: readonly EdgeRow[]
+  /** ⚠️ Optional on the WIRE only: an older instance predates the field. Absent = say nothing. */
+  readonly slice?: GraphSlice
 }
 
 export interface MemoryStats {
