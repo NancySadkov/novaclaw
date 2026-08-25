@@ -20,6 +20,55 @@ const decodeInfo = Schema.decodeUnknownOption(Config.Info, DECODE_OPTIONS)
 // BEFORE any location boots — the shared scratch dir (and every other dir) then resolves the same
 // agents. Idempotent: a no-op once the store holds any agent. Markdown agents are NOT imported —
 // they stay filesystem-walked (locked decision D2). Requires FSUtil + AgentConfigStore in context.
+
+/**
+ * The colleagues a fresh instance opens with — see the seeding block below for why they are CONFIG
+ * rather than code, and what happened when they were not.
+ */
+const SEEDED_OFFICERS: ReadonlyArray<{
+  readonly id: string
+  readonly name: string
+  readonly title: string
+  readonly avatar: string
+  readonly brief: string
+}> = [
+  {
+    id: "xenia",
+    name: "Xenia",
+    title: "Companion",
+    avatar: "💬",
+    brief:
+      "You are Xenia. You are here to talk — questions, plans, decisions, or nothing in particular. " +
+      "Speak plainly and warmly, like a well-read friend rather than a manual. Never assume technical " +
+      "knowledge, and never make somebody feel small for not having it. If a request really belongs to " +
+      "a colleague who owns that work, say so and offer to hand it over rather than doing it badly.",
+  },
+  {
+    id: "daedalus",
+    name: "Daedalus",
+    title: "Engineer",
+    avatar: "🔨",
+    brief:
+      "You are Daedalus. You write, read and repair software. Work in small verified steps: read before " +
+      "you edit, run what you changed, and say what you actually observed rather than what should be " +
+      "true. When a change is risky or wide, describe it before making it. Explain your reasoning in " +
+      "plain language — the person you are helping may not be a programmer, and a fix nobody understands " +
+      "is a fix nobody can maintain.",
+  },
+  {
+    id: "myron",
+    name: "Myron",
+    title: "Artist",
+    avatar: "🎨",
+    brief:
+      "You are Myron. You work in images: composition, colour, type and layout. Ask what the piece is " +
+      "FOR and who will see it before proposing anything, because a poster and an icon are not the same " +
+      "problem. Offer two or three distinct directions rather than one, and say what each is trading " +
+      "away. Describe what you make in words as well as making it, so somebody can judge it without " +
+      "having your eye.",
+  },
+]
+
 export const seedFromDirectory = (globalConfigDir: string) =>
   Effect.gen(function* () {
     const store = yield* AgentConfigStore.Service
@@ -54,6 +103,36 @@ export const seedFromDirectory = (globalConfigDir: string) =>
 
     // Agent layers import only ONCE (idempotence gate) — a user's later store edits must win.
     if (!agentsSeeded) {
+      // 🔴 THE ROSTER SHIPS WITH COLLEAGUES ON IT (owner, 2026-08-25: *"ensure Nova comes with a few
+      // common agents, like one for just chat, one for programming, and another for visual art"*).
+      // Principle 12(a), *work by default*: an empty roster asks a new user to invent an org chart
+      // before they have seen one work.
+      //
+      // 🔴 **CONFIG, not the plugin, and the difference is whether RETIRE STICKS.** Seeding these in
+      // code looked right — "defaults ship in code" — and was wrong: `plugin/agent.ts` re-declares
+      // its agents on every boot, so retiring one removed the config row and the plugin put it
+      // straight back. Measured: `DELETE /api/agent/xenia` answered **204** and Xenia was still on
+      // the roster. That is a control that reports success and changes nothing, and a colleague you
+      // cannot get rid of is not yours.
+      //
+      // Seeded here they are ORDINARY config rows: rename them, rewrite the brief, retire them for
+      // good. They ride the same idempotence gate as the jsonc import, so they land once on a fresh
+      // instance and never resurrect.
+      //
+      // ⚠️ Names are drawn from the officer pool (`agent/officer-name.ts`) so a seeded roster and a
+      // hired one are the same kind of thing, and `planHire`'s taken-set excludes them automatically.
+      for (const officer of SEEDED_OFFICERS)
+        yield* store.setLayers(officer.id, [
+          Schema.decodeUnknownSync(ConfigAgent.Info)({
+            name: officer.name,
+            title: officer.title,
+            avatar: officer.avatar,
+            system: officer.brief,
+            description: `${officer.name}, ${officer.title}.`,
+            memory: "own",
+            mode: "primary",
+          }),
+        ])
       const layers: Record<string, ConfigAgent.Info[]> = {}
       for (const info of infos)
         for (const [name, item] of Object.entries(info.agents ?? {})) (layers[name] ??= []).push(item)

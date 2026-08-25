@@ -2398,6 +2398,7 @@ export type PromptOrigin =
       path?: Array<string>
       conversation?: string
       participants?: Array<string>
+      announce?: boolean
     }
   | {
       via: "messenger"
@@ -3855,6 +3856,7 @@ export type ConfigV2Log = {
   level?: "debug" | "info" | "warn" | "error"
   retention_days?: number
   subsystems?: {
+    agent?: "debug" | "info" | "warn" | "error"
     client?: "debug" | "info" | "warn" | "error"
     community?: "debug" | "info" | "warn" | "error"
     config?: "debug" | "info" | "warn" | "error"
