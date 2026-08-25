@@ -1,6 +1,6 @@
 import { For, Show, type Component } from "solid-js"
 import type { ServerStreamStatus } from "@/context/server-sdk"
-import { FEED_MAX, type FeedEntry, type FeedTone } from "./activity"
+import { FEED_MAX, linkSentence, type FeedEntry, type FeedTone } from "./activity"
 
 /**
  * THE ACTIVITY RAIL — what the memory store just did, in sentences.
@@ -33,14 +33,6 @@ const clock = (at: number) => {
   } catch {
     return ""
   }
-}
-
-/** What the connection is doing, in the vision's words: calm, never a stack trace. */
-export function linkSentence(status: ServerStreamStatus, reconciling: boolean): string | undefined {
-  if (status === "connected") return reconciling ? "Catching up…" : undefined
-  if (status === "reconnecting") return "Connection lost — reconnecting…"
-  if (status === "connecting") return "Connecting…"
-  return "Not watching yet."
 }
 
 export const MemoryActivityFeedRail: Component<{

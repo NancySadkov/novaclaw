@@ -12,6 +12,7 @@ import {
   foldActivity,
   initialLink,
   isBurst,
+  linkSentence,
   markSynced,
   mayReconcile,
   pruneActivity,
@@ -306,6 +307,26 @@ describe("mayReconcile", () => {
     expect(mayReconcile(undefined, 5000)).toBe(true)
     expect(mayReconcile(5000, 5000 + RECONCILE_MIN_GAP_MS - 1)).toBe(false)
     expect(mayReconcile(5000, 5000 + RECONCILE_MIN_GAP_MS)).toBe(true)
+  })
+})
+
+describe("linkSentence", () => {
+  test("🔴 a HEALTHY stream says nothing — a permanent status light is one nobody reads", () => {
+    expect(linkSentence("connected", false)).toBeUndefined()
+  })
+
+  test("every unhealthy state gets a calm sentence, never a stack trace", () => {
+    expect(linkSentence("reconnecting", false)).toBe("Connection lost — reconnecting…")
+    expect(linkSentence("connecting", false)).toBe("Connecting…")
+    expect(linkSentence("idle", false)).toBe("Not watching yet.")
+    for (const status of ["reconnecting", "connecting", "idle"] as const)
+      expect(linkSentence(status, false)!).not.toMatch(/error|failed|Error/)
+  })
+
+  test("connected-but-reconciling is its own state, and says so", () => {
+    // The stream is back and the store has not been re-read yet. Saying nothing here would let the
+    // user act on a picture that is knowingly out of date.
+    expect(linkSentence("connected", true)).toBe("Catching up…")
   })
 })
 

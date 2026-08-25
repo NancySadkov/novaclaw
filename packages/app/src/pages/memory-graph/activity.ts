@@ -641,6 +641,24 @@ export function stepLink(link: LinkState, status: ServerStreamStatus): { link: L
  */
 export const RECONCILE_MIN_GAP_MS = 1500
 
+/**
+ * WHAT THE CONNECTION IS DOING, in one calm line — or `undefined` when there is nothing to say.
+ *
+ * 🔴 The vision's rule, literally: *a calm "connection lost — reconnecting…", never a stack trace
+ * or a white screen.* A healthy stream says NOTHING, because a permanent "connected" badge is a
+ * status light nobody reads, and the moment it matters it has already trained the eye to skip it.
+ *
+ * ⚠️ It lives here rather than in the component so the sentence can be checked without a DOM. Every
+ * branch is a state a real user reaches, and each has to be true of that state rather than merely
+ * reassuring.
+ */
+export function linkSentence(status: ServerStreamStatus, reconciling: boolean): string | undefined {
+  if (status === "connected") return reconciling ? "Catching up…" : undefined
+  if (status === "reconnecting") return "Connection lost — reconnecting…"
+  if (status === "connecting") return "Connecting…"
+  return "Not watching yet."
+}
+
 export const mayReconcile = (lastAt: number | undefined, now: number): boolean =>
   lastAt === undefined || now - lastAt >= RECONCILE_MIN_GAP_MS
 
