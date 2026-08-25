@@ -2268,6 +2268,14 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/session/runner/maintenance.ts",
   },
+  /** A claim's cited file is gone, so the claim is flagged for review — never silently forgotten. */
+  "session.memory.evidence.moved": {
+    level: "info",
+    message: "flagged claims for review after their cited path went missing",
+    attributes: { "session.id": "correlate", "session.memory.flagged": "count" },
+    content: "correlated",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   "session.memory.invalidate.stale": {
     level: "info",
     message: "invalidated recalled file memories after a confirmed missing-path read",

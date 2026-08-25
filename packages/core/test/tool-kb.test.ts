@@ -83,7 +83,9 @@ describe("KbTool (memory)", () => {
       const saved = text(
         yield* executeTool(registry, call({ op: "remember", text: "The user prefers strict typing", name: "prefs" })),
       )
-      expect(saved).toContain("Remembered (mem_")
+      // ⚠️ `clm_`, not `mem_`: a NAMED remember is a governed claim now, filed against its subject.
+      // The prefix is the visible difference, and the test says so rather than matching both.
+      expect(saved).toContain("Remembered (clm_")
 
       const found = text(yield* executeTool(registry, call({ op: "search", query: "strict" })))
       expect(found).toContain("prefs")
@@ -129,7 +131,7 @@ describe("KbTool (memory)", () => {
   it.effect("relate links two remembered memories; neighbors then traverses the link", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
-      const idOf = (out: string) => out.match(/mem_[A-Za-z0-9]+/)?.[0] ?? ""
+      const idOf = (out: string) => out.match(/clm_[A-Za-z0-9_]+/)?.[0] ?? ""
       const a = idOf(text(yield* executeTool(registry, call({ op: "remember", text: "Ada Lovelace", name: "Ada" }))))
       const b = idOf(
         text(yield* executeTool(registry, call({ op: "remember", text: "the Analytical Engine notes", name: "Note" }))),
@@ -143,6 +145,99 @@ describe("KbTool (memory)", () => {
       const nb = text(yield* executeTool(registry, call({ op: "neighbors", id: a })))
       expect(nb).toContain(b)
       expect(nb).toContain("wrote_about")
+    }),
+  )
+
+  it.effect("🔴 a correction through the TOOL leaves one answer, and `history` explains it", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const idOf = (out: string) => out.match(/clm_[A-Za-z0-9_]+/)?.[0] ?? ""
+      const old = idOf(
+        text(
+          yield* executeTool(
+            registry,
+            call({ op: "remember", text: "Priya works at Initech.", name: "Priya", predicate: "employer" }),
+          ),
+        ),
+      )
+      const corrected = text(
+        yield* executeTool(
+          registry,
+          call({ op: "remember", text: "Priya works at Acme Robotics.", name: "Priya", predicate: "employer" }),
+        ),
+      )
+      expect(old).not.toBe("")
+      expect(corrected).toContain("This replaces")
+      expect(corrected).toContain(old)
+
+      // ONE answer comes back, and it is the new one.
+      const found = text(yield* executeTool(registry, call({ op: "search", query: "Priya works" })))
+      expect(found).toContain("Acme Robotics")
+      expect(found).not.toContain("Initech")
+
+      // …and the old assertion is still explainable, which is the other half of the gate.
+      const story = text(yield* executeTool(registry, call({ op: "history", id: idOf(corrected) })))
+      expect(story).toContain("Initech")
+      expect(story).toContain("superseded")
+    }),
+  )
+
+  it.effect("🔴 another chat cannot read a private claim's history by knowing its id", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const idOf = (out: string) => out.match(/clm_[A-Za-z0-9_]+/)?.[0] ?? ""
+      // Saved into THIS chat only, so it lives in `session:ses_kb_tool_test`.
+      const mine = idOf(
+        text(
+          yield* executeTool(
+            registry,
+            call({
+              op: "remember",
+              text: "Tomas lives in Utrecht.",
+              name: "Tomas",
+              predicate: "location",
+              scope: "session",
+            }),
+          ),
+        ),
+      )
+      expect(mine).not.toBe("")
+      // …and the owning chat can still read it. Proving refusal alone would not show the product works.
+      expect(text(yield* executeTool(registry, call({ op: "history", id: mine })))).toContain("Utrecht")
+
+      const stranger = {
+        sessionID: SessionV2.ID.make("ses_kb_tool_other"),
+        ...toolIdentity,
+        call: {
+          type: "tool-call" as const,
+          id: "call-kb-other",
+          name: KbTool.name,
+          input: { op: "history", id: mine },
+        },
+      }
+      const refused = text(yield* executeTool(registry, stranger))
+      expect(refused).not.toContain("Utrecht")
+      expect(refused).toContain("No memory")
+    }),
+  )
+
+  it.effect("an ACCUMULATING predicate keeps both, so nothing is silently retired", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      yield* executeTool(
+        registry,
+        call({ op: "remember", text: "Rahul knows Rust.", name: "Rahul", predicate: "knows" }),
+      )
+      const second = text(
+        yield* executeTool(
+          registry,
+          call({ op: "remember", text: "Rahul knows TypeScript.", name: "Rahul", predicate: "knows" }),
+        ),
+      )
+      expect(second).not.toContain("This replaces")
+      const found = text(yield* executeTool(registry, call({ op: "search", query: "Rahul knows" })))
+      expect(found).toContain("Rust")
+      expect(found).toContain("TypeScript")
     }),
   )
 

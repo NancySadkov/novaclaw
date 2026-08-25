@@ -67,6 +67,13 @@ describe("MemoryClient.fromEngine", () => {
           name: null,
           scope: "global",
           source: null,
+          status: "active",
+          subject: null,
+          predicate: null,
+          conflictKey: null,
+          supersededBy: null,
+          evidence: null,
+          evidenceKind: null,
           confidence: null,
           relation: "staged",
           score: 1,
@@ -78,6 +85,10 @@ describe("MemoryClient.fromEngine", () => {
       purge: async () => {
         throw new Error("boom")
       },
+      addClaim: async (i) => ({ ok: true, id: `clm:${i.statement}`, superseded: [] }),
+      claimHistory: async () => null,
+      reviewEvidence: async () => 0,
+      setClaimStatus: async () => true,
       clearScope: async () => {},
       eraseAll: async () => 0,
       discardLegacyGlobalExtracts: async () => 0,
@@ -94,6 +105,9 @@ describe("MemoryClient.fromEngine", () => {
     await run(c.addMemory({ id: "m1", kind: "entity", text: "hi", scope: "global" }))
     expect(calls).toEqual(["add:m1"])
     expect((await run(c.search({ query: "x" }))).map((h) => h.id)).toEqual(["z"])
+    // The lifecycle rides the same adapter. Asserted here because a new op that reaches the Interface
+    // but not `fromEngine` type-checks perfectly and does nothing at run time.
+    expect((await run(c.addClaim({ scope: "global", statement: "hi" }, MemoryAccess.owner()))).id).toBe("clm:hi")
     // an engine throw collapses to a MemoryError carrying the message
     const err = await run(c.purge("m1", MemoryAccess.owner()).pipe(Effect.flip))
     expect(err).toBeInstanceOf(MemoryClient.MemoryError)
@@ -126,5 +140,38 @@ describe("stub fidelity vs the real engine", () => {
     expect(rows).toHaveLength(1)
     // Last-write-wins here would let re-write code pass in tests and behave differently in production.
     expect(rows[0]!.text).toBe("original")
+  })
+
+  test("🔴 the double REFUSES a claim written outside the caller's reach, exactly as the engine does", async () => {
+    const c = MemoryClient.stub()
+    const bob = MemoryAccess.of(["global", "session:bob"])
+    const mine = await run(
+      c.addClaim(
+        { scope: "session:alice", subject: "Sofia", predicate: "employer", statement: "Sofia works at Initech." },
+        MemoryAccess.owner(),
+      ),
+    )
+    const attempt = await run(
+      c.addClaim(
+        { scope: "session:alice", subject: "Sofia", predicate: "employer", statement: "Sofia works at Acme." },
+        bob,
+      ),
+    )
+    expect(attempt.ok).toBe(false)
+    expect(attempt.reason).toBe("refused-scope")
+    // A double that let this through would certify the write-side hole rather than catch it — which is
+    // the failure mode this whole describe block exists for.
+    expect((await run(c.claimHistory(mine.id!, MemoryAccess.owner())))!.claim.status).toBe("active")
+  })
+
+  test("the double separates current truth from history exactly as retrieval does", async () => {
+    const c = MemoryClient.stub()
+    const claim = { scope: "global" as const, subject: "Sofia", predicate: "employer" }
+    await run(c.addClaim({ ...claim, statement: "Sofia works at Initech." }, MemoryAccess.owner()))
+    const now = await run(c.addClaim({ ...claim, statement: "Sofia works at Acme." }, MemoryAccess.owner()))
+    const hits = await run(c.search({ query: "Sofia works" }))
+    expect(hits.filter((hit) => hit.kind === "claim").map((hit) => hit.id)).toEqual([now.id!])
+    // …and the retired one is still enumerable, because `list` has no lifecycle lens by default.
+    expect((await run(c.list({ kinds: ["claim"] }))).length).toBe(2)
   })
 })

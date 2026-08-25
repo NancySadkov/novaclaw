@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { DEFAULT_WEIGHTS, maxSwing, rankHits, recencyFactor } from "./ranking"
+import { DEFAULT_WEIGHTS, confidenceFactor, maxSwing, rankHits, recencyFactor } from "./ranking"
 import type { SearchHit } from "./wasm-engine"
 
 // P8c — the falsifiable target for recall ORDERING, written before trusting the ranking.
@@ -17,6 +17,13 @@ const hit = (over: Partial<SearchHit> & { id: string; score: number }): SearchHi
   scope: "global",
   source: null,
   confidence: null,
+  status: "active",
+  subject: null,
+  predicate: null,
+  conflictKey: null,
+  supersededBy: null,
+  evidence: null,
+  evidenceKind: null,
   relation: "staged",
   ...over,
 })
@@ -43,22 +50,78 @@ describe("recall ordering — the owner's case", () => {
 describe("the guard — weighting must not hijack relevance", () => {
   // maxSwing is the documented ceiling on how much provenance can overturn. Assert BOTH sides of it so
   // the constants can't drift into "recency decides everything" without failing here.
+  //
+  // ⚠️ The two hits below sit at the EXTREMES of every factor at once — the best case against the
+  // worst case — because that is the only pair the ceiling actually describes. An earlier version used
+  // a pair that varied recency and provenance only, so adding kind, status and confidence raised the
+  // real ceiling while this test went on comparing against the old one.
+  const best = (score: number) =>
+    hit({ id: "recent-core", score, validAt: daysAgo(0), relation: "core", status: "active", confidence: 1 })
+  const worst = (score: number) =>
+    hit({
+      id: "old-passage",
+      score,
+      validAt: daysAgo(1095),
+      source: "ingest",
+      kind: "passage",
+      status: "needs_review",
+      confidence: 0,
+    })
+
   test("a relevance gap WIDER than maxSwing survives weighting", () => {
-    const ratio = maxSwing() + 0.3
-    const relevant = hit({ id: "old-but-far-better", score: ratio, validAt: daysAgo(1095), source: "auto-extract" })
-    const shiny = hit({ id: "recent-core-but-weak", score: 1.0, validAt: daysAgo(0), relation: "core" })
-    expect(order([relevant, shiny])[0]).toBe("old-but-far-better")
+    expect(order([worst(maxSwing() + 0.3), best(1.0)])[0]).toBe("old-passage")
   })
 
   test("a relevance gap NARROWER than maxSwing can be overturned", () => {
-    const ratio = maxSwing() - 1.2
-    const relevant = hit({ id: "old-slightly-better", score: ratio, validAt: daysAgo(1095), source: "auto-extract" })
-    const shiny = hit({ id: "recent-core", score: 1.0, validAt: daysAgo(0), relation: "core" })
-    expect(order([relevant, shiny])[0]).toBe("recent-core")
+    expect(order([worst(maxSwing() - 1.2), best(1.0)])[0]).toBe("recent-core")
   })
 
   test("maxSwing matches the weights it documents", () => {
-    expect(maxSwing(DEFAULT_WEIGHTS)).toBeCloseTo(1.5 / (0.55 * 0.85), 6)
+    expect(maxSwing(DEFAULT_WEIGHTS)).toBeCloseTo(1.5 / (0.55 * 0.7 * 0.85 * 0.9), 6)
+  })
+
+  test("🔴 …and it stays inside the policy bound — a new signal may not quietly widen it", () => {
+    // The ceiling grew from ~3.2 to ~5.1 when status, confidence and kind landed, deliberately.
+    // 6 is the line: past it, a hit six times less relevant could win on metadata alone, which is no
+    // longer "re-rank comparable candidates".
+    expect(maxSwing(DEFAULT_WEIGHTS)).toBeLessThan(6)
+  })
+})
+
+describe("the lifecycle signals", () => {
+  test("a governed CLAIM outranks an ordinary memory of equal relevance", () => {
+    const claim = hit({ id: "claim", score: 1, kind: "claim", validAt: daysAgo(10) })
+    const plain = hit({ id: "plain", score: 1, kind: "episode", validAt: daysAgo(10) })
+    expect(order([plain, claim])[0]).toBe("claim")
+  })
+
+  test("🔴 an AUTO-EXTRACTED claim does not — a guess is not laundered by having a subject", () => {
+    const guessed = hit({ id: "guessed", score: 1, kind: "claim", source: "auto-extract", validAt: daysAgo(10) })
+    const stated = hit({ id: "stated", score: 1, kind: "entity", validAt: daysAgo(10) })
+    expect(order([guessed, stated])[0]).toBe("stated")
+  })
+
+  test("a raw passage ranks below an equally relevant memory", () => {
+    const passage = hit({ id: "passage", score: 1, kind: "passage", source: "ingest", validAt: daysAgo(10) })
+    const memory = hit({ id: "memory", score: 1, kind: "entity", validAt: daysAgo(10) })
+    expect(order([passage, memory])[0]).toBe("memory")
+  })
+
+  test("needs_review is DISCOUNTED, never buried — it is still the only answer we have", () => {
+    const flagged = hit({ id: "flagged", score: 1, kind: "claim", status: "needs_review", validAt: daysAgo(10) })
+    const sound = hit({ id: "sound", score: 1, kind: "claim", status: "active", validAt: daysAgo(10) })
+    expect(order([flagged, sound])).toEqual(["sound", "flagged"])
+    // Shallow enough that a clearly better match still wins.
+    expect(order([hit({ ...flagged, score: 1.4 }), sound])[0]).toBe("flagged")
+  })
+
+  test("confidence lifts, and a MISSING one is neutral — no writer has ever set this column", () => {
+    expect(confidenceFactor(hit({ id: "x", score: 1 }))).toBe(1)
+    expect(confidenceFactor(hit({ id: "x", score: 1, confidence: 1 }))).toBe(1)
+    expect(confidenceFactor(hit({ id: "x", score: 1, confidence: 0 }))).toBe(DEFAULT_WEIGHTS.confidenceFloor)
+    const sure = hit({ id: "sure", score: 1, confidence: 1, validAt: daysAgo(10) })
+    const unsure = hit({ id: "unsure", score: 1, confidence: 0, validAt: daysAgo(10) })
+    expect(order([unsure, sure])[0]).toBe("sure")
   })
 })
 

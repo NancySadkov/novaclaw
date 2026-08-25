@@ -1755,11 +1755,21 @@ export const layer = Layer.effect(
                     ) {
                       const requested = event.input.path.trim()
                       if (requested !== "") {
+                        const resolved = path.resolve(location.directory, requested)
+                        // A CLAIM that CITED this file is flagged for review by traversal: it need not
+                        // have been recalled this turn, and its wording is never consulted. Flagged,
+                        // not forgotten — a moved citation is no evidence the fact is false.
+                        const flagged = yield* MemoryCorrection.reviewMovedEvidence({ memory, requested, resolved })
+                        if (flagged > 0)
+                          yield* Log.event("session.memory.evidence.moved", {
+                            "session.id": session.id,
+                            "session.memory.flagged": flagged,
+                          })
                         const count = yield* MemoryCorrection.correctMissingRead({
                           memory,
                           recalled: recalledMemories,
                           requested,
-                          resolved: path.resolve(location.directory, requested),
+                          resolved,
                         })
                         if (count > 0)
                           yield* Log.event("session.memory.invalidate.stale", {

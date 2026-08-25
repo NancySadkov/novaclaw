@@ -14,6 +14,8 @@ import {
 } from "node:fs"
 import path, { join } from "node:path"
 import { Global } from "../global"
+import { KbChunk } from "./chunk"
+import { KbClaim } from "./claim"
 import { selectSlice, type SliceMeta } from "./graph-slice"
 import { GraphSnapshot } from "./snapshot"
 
@@ -54,7 +56,14 @@ export interface SnapshotRecovery {
   quarantined: string[]
 }
 
-export type MemoryKind = "entity" | "episode" | "passage"
+/**
+ * ⚠️ `claim` and `source` are the lifecycle's two kinds and they are NOT interchangeable with the
+ * older three. A `claim` is a governed statement — it carries a status, an identity and a supersession
+ * chain. A `source` is the EVIDENCE a claim cites, and it is deliberately not a memory in its own
+ * right: "evidence is not the claim", so a source never answers a question, it only says where an
+ * answer came from.
+ */
+export type MemoryKind = "entity" | "episode" | "passage" | "claim" | "source"
 export type Relation = "staged" | "core"
 
 export interface MemoryInput {
@@ -69,6 +78,15 @@ export interface MemoryInput {
   readonly relation?: Relation
   readonly embedding?: readonly number[]
   readonly validFrom?: string
+  /** Lifecycle status. Claims only; everything else stores `active` and never changes it. */
+  readonly status?: KbClaim.ClaimStatus
+  /** Claim identity, denormalized onto the node so a scan can key on it without a traversal. */
+  readonly subject?: string
+  readonly predicate?: string
+  readonly conflictKey?: string
+  /** Source nodes only: what can MOVE, and what kind of thing it is. */
+  readonly evidence?: string
+  readonly evidenceKind?: KbClaim.EvidenceKind
 }
 
 export interface EdgeInput {
@@ -86,6 +104,15 @@ export interface SearchInput {
   readonly k?: number
   readonly scopes?: readonly string[]
   readonly kinds?: readonly MemoryKind[]
+  /**
+   * Which lifecycle statuses may come back. Defaults to `KbClaim.RECALL_STATUSES` — CURRENT TRUTH.
+   *
+   * 🔴 This default is the "separate current truth from history at retrieval" requirement, and it is a
+   * DEFAULT rather than a filter the caller opts into for the same reason `MemoryAccess` is required:
+   * a rule every call site must remember is a rule some call site will not. Timeline and explanation
+   * reads pass the wider set explicitly, so the privileged view is visible at its call site.
+   */
+  readonly statuses?: readonly KbClaim.ClaimStatus[]
 }
 
 export interface MemoryRow {
@@ -97,6 +124,16 @@ export interface MemoryRow {
   readonly source: string | null
   readonly confidence: number | null
   readonly relation: Relation
+  /** Lifecycle status. A row written before the lifecycle, or a non-claim, reads `active`. */
+  readonly status: KbClaim.ClaimStatus
+  readonly subject: string | null
+  readonly predicate: string | null
+  readonly conflictKey: string | null
+  /** The claim that replaced this one, when it was superseded. */
+  readonly supersededBy: string | null
+  /** Source nodes: the locator that can move. */
+  readonly evidence: string | null
+  readonly evidenceKind: KbClaim.EvidenceKind | null
 }
 
 export interface SearchHit extends MemoryRow {
@@ -117,9 +154,66 @@ export interface ListInput {
   readonly scopes?: readonly string[]
   readonly kinds?: readonly MemoryKind[]
   readonly includeInvalid?: boolean
+  /** Lifecycle lens. Unset = every status, because the Memory app's job is to show what is THERE. */
+  readonly statuses?: readonly KbClaim.ClaimStatus[]
   readonly limit?: number
   readonly offset?: number
 }
+
+/** What a caller asks the lifecycle to record. Every identity field is a PROPOSAL until validated. */
+export interface ClaimInput {
+  readonly scope: string
+  /** The claim itself, as one standalone sentence. */
+  readonly statement: string
+  /** What it is about — an entity NAME, resolved to a node by `KbChunk.entityID`. */
+  readonly subject?: string
+  /** Which question about the subject it answers. Validated against `KbClaim.CLAIM_PREDICATES`. */
+  readonly predicate?: string
+  readonly confidence?: number
+  readonly relation?: Relation
+  readonly source?: string
+  readonly agent?: string
+  readonly embedding?: readonly number[]
+  readonly validFrom?: string
+  readonly evidence?: readonly KbClaim.Evidence[]
+  /** The caller's reach. A scope outside it is REFUSED — see `addClaim`. */
+  readonly scopes?: readonly string[]
+}
+
+export interface ClaimResult {
+  readonly ok: boolean
+  readonly id?: string
+  readonly status?: KbClaim.ClaimStatus
+  /** Did the harness accept a conflict identity? `false` = this claim corrects nothing, by design. */
+  readonly identified?: boolean
+  /** The statement was already recorded, unchanged; nothing new was written. */
+  readonly deduped?: boolean
+  /** Claims this one retired. Empty when there was nothing to correct. */
+  readonly superseded: readonly string[]
+  readonly reason?: "empty" | "refused-scope" | "too-many-revisions"
+}
+
+export interface EvidenceRow {
+  readonly claimID: string
+  readonly id: string
+  readonly kind: KbClaim.EvidenceKind
+  readonly locator: string
+  readonly label: string
+}
+
+export interface ClaimHistory {
+  /** The claim that was asked for. */
+  readonly claim: MemoryRow
+  /** The claim that answers this question NOW, when the one asked for has been replaced. */
+  readonly current: MemoryRow | null
+  /** The asked-for claim first, then everything it replaced, transitively. */
+  readonly timeline: readonly MemoryRow[]
+  /** Every source cited by anything on the timeline. */
+  readonly evidence: readonly EvidenceRow[]
+}
+
+/** A supersession chain long enough to be a corruption rather than a history. Bounds both walks. */
+const MAX_CLAIM_CHAIN = 64
 
 export interface GraphInput {
   readonly scopes?: readonly string[]
@@ -163,10 +257,38 @@ const toRow = (r: Record<string, unknown>): MemoryRow => ({
   source: (r.source as string | null) ?? null,
   confidence: (r.confidence as number | null) ?? null,
   relation: (r.relation as Relation) ?? "staged",
+  // ⚠️ A NULL status reads `active`, not "unknown". Every non-claim row has no lifecycle, and a row
+  // that predates the lifecycle was the current answer when it was written; making the absent case
+  // mean "retired" would silently empty an upgraded store's recall.
+  status: (r.status as KbClaim.ClaimStatus | null) ?? "active",
+  subject: (r.subject as string | null) ?? null,
+  predicate: (r.predicate as string | null) ?? null,
+  conflictKey: (r.conflict_key as string | null) ?? null,
+  supersededBy: (r.superseded_by as string | null) ?? null,
+  evidence: (r.evidence as string | null) ?? null,
+  evidenceKind: (r.evidence_kind as KbClaim.EvidenceKind | null) ?? null,
 })
+
+/** Every column `hydrate` and the history reads project. One list, because a column added to one of
+ *  them and forgotten in the other is a field that is null in half the product. */
+const ROW_PROJECTION =
+  `m.id AS id, m.kind AS kind, m.text AS text, m.name AS name, m.scope AS scope, ` +
+  `m.source AS source, m.confidence AS confidence, m.relation AS relation, m.status AS status, ` +
+  `m.subject AS subject, m.predicate AS predicate, m.conflict_key AS conflict_key, ` +
+  `m.superseded_by AS superseded_by, m.evidence AS evidence, m.evidence_kind AS evidence_kind`
 
 const DEFAULT_DIM = 1024
 const RRF_K = 60
+/**
+ * The exact-identifier leg's RRF weight.
+ *
+ * Two fuzzy legs contribute at most `2/(RRF_K+1)` to one id — the ceiling reached by a row that tops
+ * BOTH vector and keyword search at once. 3 clears that ceiling STRICTLY, which is the property worth
+ * having: at 2 the exact hit merely ties and survives on the stable sort's insertion order, and a
+ * guarantee that rests on which loop ran first is not a guarantee. Measured by A/B — at 1 the
+ * two-leg test reddens, at 2 it passes only by that tie-break.
+ */
+const EXACT_RANK_WEIGHT = 3
 const SNAPSHOT_DEBOUNCE_MS = 1_000
 
 const vectorLiteral = (v: readonly number[]) => `[${v.map((n) => (Number.isFinite(n) ? n : 0)).join(",")}]`
@@ -511,7 +633,18 @@ export class WasmMemory {
         await candidate.ensureSchema()
         // ⚠️ The DDL alone is not proof: `ensureSchema` swallows "already exists", which is exactly
         // what a restored store reports. A read that touches the storage is what says the bytes work.
-        await candidate.q(`MATCH (m:Memory) RETURN count(m)`)
+        //
+        // 🔴 And it names `m.status` on purpose. A generation written before the claim lifecycle has a
+        // `Memory` table WITHOUT the lifecycle columns, and `CREATE NODE TABLE` on a table that
+        // already exists is swallowed as "already exists" — so that store would open and then fail on
+        // the first governed read, at recall time, in front of a user. Referencing a new column here
+        // turns that into an ordinary unusable generation: skipped, quarantined for diagnosis, and the
+        // graph starts over.
+        //
+        // This IS the no-migration ruling (AGENTS.md principle 1) executed rather than argued: memory
+        // is a re-derivable tier, there is no install whose rows we owe continuity to, and the cost of
+        // the clean schema is that a dev instance's old graph is dropped instead of carried.
+        await candidate.q(`MATCH (m:Memory) WHERE m.status IS NULL RETURN count(m)`)
         store = candidate
         recovery.opened = gen.name
         break
@@ -567,12 +700,33 @@ export class WasmMemory {
       `CREATE NODE TABLE Memory(
          id STRING, kind STRING, text STRING, name STRING, scope STRING,
          source STRING, agent STRING, confidence DOUBLE, relation STRING,
+         status STRING, subject STRING, predicate STRING, conflict_key STRING, superseded_by STRING,
+         evidence STRING, evidence_kind STRING,
          t_valid TIMESTAMP, t_invalid TIMESTAMP, t_created TIMESTAMP, t_expired TIMESTAMP,
          embedding FLOAT[${this.dim}], PRIMARY KEY(id))`,
     )
+    /**
+     * 🔴 **`Rel` NO LONGER STORES A SCOPE, and the derivation went with it.**
+     *
+     * Measured 2026-08-25 and re-measured here before removing it: `neighbors`, `path` and `graph` all
+     * filter on NODE scopes, and no query in the tree ever selected `r.scope`. So the column was a
+     * value nothing could read — which also means nothing could keep it honest, and it was already
+     * dishonest: `moveScope` retargets a whole cabinet with one `SET m.scope`, leaving every edge
+     * still carrying the scope its endpoints had before the retirement.
+     *
+     * Under narrowest-derivation the stored value was a pure function of the two endpoints, so it was
+     * a second copy of a fact the endpoints already held — and the copy is the one that goes stale.
+     * The claim lifecycle did not change that: a claim's reach is the CLAIM NODE's scope, which is
+     * exactly why the claim is a node rather than an edge property.
+     *
+     * ⚠️ **What did NOT go away is the refusal.** `addEdge` still rejects a pair no scope contains,
+     * and still REPORTS the narrower endpoint — computed at write time and returned to the caller,
+     * where a reader and a test can both check it. The rule moved from an unreadable column into a
+     * value on the result.
+     */
     await this.ddl(
       `CREATE REL TABLE Rel(
-         FROM Memory TO Memory, type STRING, scope STRING, source STRING, confidence DOUBLE,
+         FROM Memory TO Memory, type STRING, source STRING, confidence DOUBLE,
          t_valid TIMESTAMP, t_invalid TIMESTAMP, t_created TIMESTAMP, t_expired TIMESTAMP)`,
     )
     await this.ddl(`CALL CREATE_VECTOR_INDEX('Memory', 'mem_vec', 'embedding', metric := 'cosine')`)
@@ -641,13 +795,28 @@ export class WasmMemory {
   addMemory(input: MemoryInput): Promise<void> {
     if (input.embedding && input.embedding.length !== this.dim)
       return Promise.reject(new Error(`embedding length ${input.embedding.length} != store dim ${this.dim}`))
-    return this.serialize(async () => {
+    return this.serialize(() => this._addMemory(input))
+  }
+
+  /**
+   * ⚠️ **UNSERIALIZED — every public op must wrap this in `serialize`, and a composite op must call
+   * THIS one rather than the public `addMemory`.**
+   *
+   * The lock is a promise chain: `serialize` queues behind whatever is already running, including
+   * itself. So a claim write — which is several node and edge writes that must be atomic against the
+   * debounced snapshot — cannot reach the public methods without waiting forever on the lock it is
+   * already holding. Splitting the body out is what lets one lock cover the whole transaction.
+   */
+  private async _addMemory(input: MemoryInput): Promise<void> {
+    {
       const validFrom = input.validFrom ? `timestamp($validFrom)` : `current_timestamp()`
       const embedding = input.embedding ? `, embedding: ${vectorLiteral(input.embedding)}` : ``
       await this.q(
         `CREATE (:Memory {
            id: $id, kind: $kind, text: $text, name: $name, scope: $scope,
            source: $source, agent: $agent, confidence: $confidence, relation: $relation,
+           status: $status, subject: $subject, predicate: $predicate, conflict_key: $conflictKey,
+           evidence: $evidence, evidence_kind: $evidenceKind,
            t_valid: ${validFrom}, t_created: current_timestamp()${embedding} })`,
         {
           id: input.id,
@@ -659,11 +828,20 @@ export class WasmMemory {
           agent: input.agent ?? null,
           confidence: input.confidence ?? null,
           relation: input.relation ?? "staged",
+          // Every row carries a status, including the ones with no lifecycle. A nullable column would
+          // make "no status" and "active" two spellings of one state, and the search filter would then
+          // need to know about both forever.
+          status: input.status ?? "active",
+          subject: input.subject ?? null,
+          predicate: input.predicate ?? null,
+          conflictKey: input.conflictKey ?? null,
+          evidence: input.evidence ?? null,
+          evidenceKind: input.evidenceKind ?? null,
           ...(input.validFrom ? { validFrom: input.validFrom } : {}),
         },
       )
       this.touch()
-    })
+    }
   }
 
   /**
@@ -682,15 +860,27 @@ export class WasmMemory {
    * ⚠️ Two DIFFERENT private scopes are REFUSED, not narrowed. No scope contains both, so any edge
    * between them widens one of them. `ok: false` comes back rather than a silent no-op — a relation
    * that quietly did not happen is how a model learns to believe a graph that is not there.
+   *
+   * ⚠️ **The narrower endpoint is COMPUTED AND RETURNED, and no longer stored.** It used to be written
+   * into a `Rel.scope` column that no query in the tree ever read, and that `moveScope` never updated
+   * — so it was a second copy of the endpoints' truth, unobservable and already stale. Returning it
+   * puts the same value where a caller, a user-facing message and a test can all check it, which is
+   * the only form in which a rule stays honest. See `ensureSchema` for the full argument.
    */
   addEdge(input: EdgeInput & { readonly scopes?: readonly string[] }): Promise<{ ok: boolean; scope?: string }> {
-    return this.serialize(async () => {
+    return this.serialize(() => this._addEdge(input))
+  }
+
+  /** ⚠️ UNSERIALIZED — see `_addMemory`. */
+  private async _addEdge(
+    input: EdgeInput & { readonly scopes?: readonly string[] },
+  ): Promise<{ ok: boolean; scope?: string }> {
+    {
       const access = input.scopes ? `AND a.scope IN $scopes AND b.scope IN $scopes` : ``
       const rows = await this.rows(
         `MATCH (a:Memory {id: $from}), (b:Memory {id: $to})
          WHERE (a.scope = b.scope OR a.scope = 'global' OR b.scope = 'global') ${access}
          CREATE (a)-[:Rel { type: $type,
-                            scope: CASE WHEN a.scope = 'global' THEN b.scope ELSE a.scope END,
                             source: $source, confidence: $confidence,
                             t_valid: current_timestamp(), t_created: current_timestamp() }]->(b)
          RETURN CASE WHEN a.scope = 'global' THEN b.scope ELSE a.scope END AS scope`,
@@ -706,6 +896,305 @@ export class WasmMemory {
       this.touch()
       const scope = rows[0]?.scope
       return scope === undefined || scope === null ? { ok: false } : { ok: true, scope: String(scope) }
+    }
+  }
+
+  // --- the claim lifecycle ----------------------------------------------------------------------
+
+  /**
+   * WRITE A GOVERNED CLAIM — the whole transaction, under one lock.
+   *
+   * `Entity <-subject- Claim -supported_by-> Source`, plus `Claim -supersedes-> Claim` when a
+   * correction fires. All of it happens inside a single `serialize`, because a claim that landed
+   * without its subject edge, or a supersession that marked the old claim before the new one existed,
+   * is a graph state no reader can make sense of and the debounced snapshot could publish either.
+   *
+   * 🔴 **Supersession keys ONLY on the validated conflict key**, never on how the sentences read.
+   * `KbClaim.conflictKey` returns one for a `single`-cardinality predicate and `undefined` for
+   * everything else, so "works at Acme" retires "works at Initech" and "knows Rust" retires nothing.
+   * When no key exists the new claim is simply stored, and the two statements coexist for a person to
+   * reconcile — which is the honest outcome, not a degraded one.
+   *
+   * 🔴 **The write is ACCESS-CHECKED, and this is not decoration.** Without it, a chat could hand
+   * `scope: "session:alice"` to its own `remember` and have supersession retire Alice's current
+   * answer — mutating another chat's private claim without ever naming its id. Reads were already
+   * guarded; this closes the write door the lifecycle opened.
+   */
+  addClaim(input: ClaimInput): Promise<ClaimResult> {
+    if (input.embedding && input.embedding.length !== this.dim)
+      return Promise.reject(new Error(`embedding length ${input.embedding.length} != store dim ${this.dim}`))
+    return this.serialize(async () => {
+      const scope = input.scope.trim()
+      const statement = input.statement.trim()
+      if (scope === "" || statement === "") return { ok: false, reason: "empty" as const, superseded: [] }
+      if (input.scopes && !input.scopes.includes(scope))
+        return { ok: false, reason: "refused-scope" as const, superseded: [] }
+
+      const identity = KbClaim.proposeIdentity({ scope, subject: input.subject, predicate: input.predicate })
+      const key = identity === undefined ? undefined : KbClaim.conflictKey(identity)
+      const subject = input.subject?.trim()
+
+      // The id is content-addressed over identity + statement, so a genuine restatement dedupes. A
+      // RE-assertion of something already retired is different: reviving the old row in place would
+      // rewrite history, so it gets a fresh id and supersedes whatever is current now.
+      let id = KbClaim.claimID(identity, scope, statement)
+      const existing = await this.rows(`MATCH (m:Memory {id: $id}) RETURN m.status AS status`, { id })
+      const priorStatus = existing[0]?.status as KbClaim.ClaimStatus | undefined
+      if (priorStatus !== undefined && !KbClaim.isRetired(priorStatus))
+        return { ok: true, id, status: priorStatus, deduped: true, identified: key !== undefined, superseded: [] }
+      if (priorStatus !== undefined) {
+        // ⚠️ BOUNDED. An open `for (;;)` doing a database read per turn is a hang wearing a loop's
+        // clothes, and this file already carries two query shapes that hang the engine outright. The
+        // bound is far past any real history — nobody asserts, retires and re-asserts one sentence
+        // five hundred times — so reaching it means something is wrong, and saying so beats spinning.
+        let minted: string | undefined
+        for (let n = 2; n <= MAX_CLAIM_CHAIN * 8; n++) {
+          const candidate = `${id}_r${n}`
+          const taken = await this.rows(`MATCH (m:Memory {id: $id}) RETURN m.id AS id`, { id: candidate })
+          if (taken.length === 0) {
+            minted = candidate
+            break
+          }
+        }
+        if (minted === undefined) return { ok: false, reason: "too-many-revisions" as const, superseded: [] }
+        id = minted
+      }
+
+      // WHAT THIS CORRECTION REPLACES, decided before anything is written. Scoped twice over: the key
+      // already hashes the scope, and the query filters on it again — a hash is a compression, and the
+      // cabinet boundary is not something to leave resting on 96 bits of one.
+      const priors =
+        key === undefined
+          ? []
+          : (
+              await this.rows(
+                `MATCH (m:Memory)
+                 WHERE m.conflict_key = $key AND m.scope = $scope AND m.t_invalid IS NULL
+                   AND m.status IN $live
+                 RETURN m.id AS id LIMIT 100`,
+                { key, scope, live: ["active", "needs_review"] },
+              )
+            )
+              .map((row) => String(row.id))
+              .filter((prior) => prior !== id)
+
+      await this._addMemory({
+        id,
+        kind: "claim",
+        text: statement,
+        ...(subject === undefined || subject === "" ? {} : { name: subject }),
+        scope,
+        ...(input.source === undefined ? {} : { source: input.source }),
+        ...(input.agent === undefined ? {} : { agent: input.agent }),
+        ...(input.confidence === undefined ? {} : { confidence: input.confidence }),
+        relation: input.relation ?? "staged",
+        status: "active",
+        // The PROPOSAL is stored even when it failed validation: it is what somebody said this claim
+        // was about, and a reader deserves to see it. Only `conflict_key` is gated on validation,
+        // because only the key carries authority to retire another claim.
+        ...(subject === undefined || subject === "" ? {} : { subject }),
+        ...(input.predicate === undefined ? {} : { predicate: input.predicate }),
+        ...(key === undefined ? {} : { conflictKey: key }),
+        ...(input.embedding === undefined ? {} : { embedding: input.embedding }),
+        ...(input.validFrom === undefined ? {} : { validFrom: input.validFrom }),
+      })
+
+      // The SUBJECT edge, onto the shared entity node. `KbChunk.entityID` is the same formula
+      // conversational extraction and document ingestion use, so a claim about "TypeScript" lands on
+      // the node the rest of the graph already calls TypeScript instead of minting a private twin.
+      if (subject !== undefined && subject !== "") {
+        const entity = KbChunk.entityID(scope, subject)
+        await this._addMemory({ id: entity, kind: "entity", text: subject, name: subject, scope, status: "active" })
+        await this._addEdge({
+          from: id,
+          to: entity,
+          type: KbClaim.SUBJECT_EDGE,
+          scope,
+          source: input.source ?? "claim",
+        })
+      }
+
+      // EVIDENCE IS NOT THE CLAIM. A source is its own node with its own locator, shared by every
+      // claim that cites it, so one moved file flags every claim that rested on it — and so a
+      // citation never competes with the fact it supports at retrieval.
+      for (const item of input.evidence ?? []) {
+        const locator = item.locator.trim()
+        if (locator === "") continue
+        const sourceNode = KbClaim.sourceID(scope, item.kind, locator)
+        await this._addMemory({
+          id: sourceNode,
+          kind: "source",
+          text: KbClaim.describeEvidence(item, new Date()),
+          name: locator,
+          scope,
+          source: input.source ?? "claim",
+          status: "active",
+          evidence: locator,
+          evidenceKind: item.kind,
+        })
+        await this._addEdge({
+          from: id,
+          to: sourceNode,
+          type: KbClaim.SUPPORTED_BY_EDGE,
+          scope,
+          source: input.source ?? "claim",
+        })
+      }
+
+      // Retire the priors LAST, so there is never a window in which the old answer is marked replaced
+      // and the replacement does not exist yet.
+      for (const prior of priors) {
+        await this.q(
+          `MATCH (m:Memory {id: $prior}) SET m.status = 'superseded', m.superseded_by = $id,
+             m.t_expired = current_timestamp()`,
+          { prior, id },
+        )
+        await this._addEdge({ from: id, to: prior, type: KbClaim.SUPERSEDES_EDGE, scope, source: "supersede" })
+      }
+      this.touch()
+      return { ok: true, id, status: "active" as const, identified: key !== undefined, superseded: priors }
+    })
+  }
+
+  /**
+   * THE TIMELINE AND THE EXPLANATION — what this claim is now, and every claim it replaced.
+   *
+   * ⚠️ Access-checked on EVERY row, not only the one asked for. The chain is the disclosure surface
+   * the lifecycle adds: knowing one id and walking `superseded_by` would otherwise read out a whole
+   * history the caller was never entitled to. Rows the caller may not see are dropped, and an
+   * inaccessible head returns `null` — indistinguishable from a claim that does not exist, which is
+   * the same rule `path` follows and for the same reason.
+   */
+  claimHistory(id: string, opts: { scopes?: readonly string[] } = {}): Promise<ClaimHistory | null> {
+    return this.serialize(async () => {
+      const admits = (scope: string) => opts.scopes === undefined || opts.scopes.includes(scope)
+      const load = async (target: string): Promise<MemoryRow | undefined> => {
+        const rows = await this.rows(`MATCH (m:Memory {id: $id}) RETURN ${ROW_PROJECTION}`, { id: target })
+        const row = rows[0]
+        if (!row) return undefined
+        const built = toRow(row)
+        return admits(built.scope) ? built : undefined
+      }
+      const head = await load(id)
+      if (head === undefined) return null
+
+      // FORWARD to the answer that is current now, so "you asked about a retired claim" can say what
+      // replaced it. Bounded: a corrupted chain must not spin.
+      let current = head
+      for (let hop = 0; hop < MAX_CLAIM_CHAIN && current.supersededBy !== null; hop++) {
+        const next = await load(current.supersededBy)
+        if (next === undefined) break
+        current = next
+      }
+
+      // BACKWARD through what this claim replaced. `supersedes` edges, one hop at a time — a variable
+      // -length traversal would need the shapes this engine hangs on.
+      const timeline: MemoryRow[] = [head]
+      const seen = new Set([head.id])
+      const frontier = [head.id]
+      while (frontier.length > 0 && timeline.length < MAX_CLAIM_CHAIN) {
+        const from = frontier.shift()!
+        const rows = await this.rows(
+          `MATCH (a:Memory {id: $from})-[r:Rel {type: '${KbClaim.SUPERSEDES_EDGE}'}]->(b:Memory)
+           RETURN b.id AS id LIMIT 50`,
+          { from },
+        )
+        for (const row of rows) {
+          const prior = String(row.id)
+          if (seen.has(prior)) continue
+          seen.add(prior)
+          const loaded = await load(prior)
+          if (loaded === undefined) continue
+          timeline.push(loaded)
+          frontier.push(prior)
+        }
+      }
+
+      const evidence: EvidenceRow[] = []
+      for (const entry of timeline) {
+        const rows = await this.rows(
+          `MATCH (a:Memory {id: $from})-[r:Rel {type: '${KbClaim.SUPPORTED_BY_EDGE}'}]->(b:Memory)
+           WHERE b.t_invalid IS NULL
+           RETURN b.id AS id, b.evidence AS evidence, b.evidence_kind AS kind, b.text AS text LIMIT 25`,
+          { from: entry.id },
+        )
+        for (const row of rows)
+          evidence.push({
+            claimID: entry.id,
+            id: String(row.id),
+            locator: String(row.evidence ?? ""),
+            kind: (row.kind as KbClaim.EvidenceKind | null) ?? "chat",
+            label: String(row.text ?? ""),
+          })
+      }
+      return { claim: head, current: current.id === head.id ? null : current, timeline, evidence }
+    })
+  }
+
+  /**
+   * THE EVIDENCE MOVED — flag every claim that rested on it, deterministically.
+   *
+   * 🔴 This is what replaces guessing from prose. The retired approach read a failed file access and
+   * invalidated any recalled memory whose TEXT mentioned that path, which both over-fires (a sentence
+   * that merely names the file) and under-fires (a claim that came from the file but never quotes its
+   * path). Here the link is a stored edge to a source node whose locator IS the thing that moved, so
+   * the set of affected claims is a traversal rather than a judgement.
+   *
+   * ⚠️ It marks `needs_review`, never `superseded` or invalid. A file being renamed is not evidence
+   * that the fact is false; it is evidence that the CITATION is stale, and destroying a true claim
+   * because its footnote moved is a worse error than carrying a flagged one.
+   */
+  reviewEvidence(locator: string, opts: { scopes?: readonly string[] } = {}): Promise<number> {
+    return this.serialize(async () => {
+      const target = locator.trim()
+      if (target === "") return 0
+      const sources = await this.rows(
+        `MATCH (m:Memory) WHERE m.kind = 'source' AND m.evidence = $locator RETURN m.id AS id LIMIT 200`,
+        { locator: target },
+      )
+      let flagged = 0
+      for (const row of sources) {
+        const scopeFilter = opts.scopes ? `AND c.scope IN $scopes` : ``
+        const claims = await this.rows(
+          `MATCH (c:Memory)-[r:Rel {type: '${KbClaim.SUPPORTED_BY_EDGE}'}]->(s:Memory {id: $source})
+           WHERE c.status = 'active' AND c.t_invalid IS NULL ${scopeFilter}
+           RETURN c.id AS id LIMIT 500`,
+          { source: String(row.id), ...(opts.scopes ? { scopes: opts.scopes } : {}) },
+        )
+        for (const claim of claims) {
+          await this.q(`MATCH (m:Memory {id: $id}) SET m.status = 'needs_review'`, { id: String(claim.id) })
+          flagged++
+        }
+      }
+      if (flagged > 0) this.touch()
+      return flagged
+    })
+  }
+
+  /**
+   * Move a claim between the statuses a PERSON controls — `archived` (retire it, reversibly) and
+   * `active` (restore it).
+   *
+   * ⚠️ `superseded` is deliberately not settable here. That status exists only as the other half of a
+   * `superseded_by` pointer and a `supersedes` edge, and a status set without them is a claim that
+   * claims it was replaced by nothing. Corrections go through `addClaim`; this is the Archive/Restore
+   * pair and nothing else.
+   */
+  setClaimStatus(
+    id: string,
+    status: "active" | "archived" | "needs_review",
+    opts: { scopes?: readonly string[] } = {},
+  ): Promise<boolean> {
+    return this.serialize(async () => {
+      const scopeFilter = opts.scopes ? `AND m.scope IN $scopes` : ``
+      const rows = await this.rows(
+        `MATCH (m:Memory {id: $id}) WHERE m.kind = 'claim' ${scopeFilter}
+         SET m.status = $status RETURN m.id AS id`,
+        { id, status, ...(opts.scopes ? { scopes: opts.scopes } : {}) },
+      )
+      if (rows.length === 0) return false
+      this.touch()
+      return true
     })
   }
 
@@ -718,7 +1207,41 @@ export class WasmMemory {
     const k = input.k ?? 10
     const pool = Math.max(k * 4, 20)
     const ranks = new Map<string, number>()
-    const fuse = (ids: string[]) => ids.forEach((id, i) => ranks.set(id, (ranks.get(id) ?? 0) + 1 / (RRF_K + i + 1)))
+    const fuse = (ids: string[], weight = 1) =>
+      ids.forEach((id, i) => ranks.set(id, (ranks.get(id) ?? 0) + weight / (RRF_K + i + 1)))
+
+    /**
+     * THE EXACT LEG — "exact identifiers stay reachable when semantic similarity is weak".
+     *
+     * 🔴 Both fuzzy legs are bad at exactly this and in opposite ways: a vector index has no useful
+     * neighbourhood for `clm_9f2a…` or `packages/core/src/tool/kb.ts`, and FTS tokenizes a path into
+     * common words that match half the store. So an identifier-shaped token in the query is looked up
+     * by EQUALITY — by primary key when it is one of our ids, and against `name`/`evidence` otherwise.
+     *
+     * ⚠️ **Its WEIGHT is what makes it win, not the order it runs in.** RRF is a sum, so fusing this
+     * leg "first" contributes nothing on its own; `EXACT_RANK_WEIGHT` holds the arithmetic.
+     *
+     * ⚠️ No `WHERE m.id IN $ids` and no `WITH … ORDER BY` — both HANG this engine. Ids go through
+     * single-key lookups and the rest through one equality scan projecting no long string.
+     */
+    for (const token of KbClaim.identifierTokens(input.query ?? "")) {
+      const byKey = await this.rows(`MATCH (m:Memory {id: $id}) RETURN m.id AS id`, { id: token })
+      if (byKey.length > 0) {
+        fuse(
+          byKey.map((row) => String(row.id)),
+          EXACT_RANK_WEIGHT,
+        )
+        continue
+      }
+      const byLabel = await this.rows(
+        `MATCH (m:Memory) WHERE m.name = $token OR m.evidence = $token RETURN m.id AS id LIMIT ${pool}`,
+        { token },
+      )
+      fuse(
+        byLabel.map((row) => String(row.id)),
+        EXACT_RANK_WEIGHT,
+      )
+    }
 
     if (input.embedding) {
       if (input.embedding.length !== this.dim)
@@ -741,22 +1264,64 @@ export class WasmMemory {
     const ordered = [...ranks.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id)
     const scopeFilter = input.scopes ? `AND m.scope IN $scopes` : ``
     const kindFilter = input.kinds ? `AND m.kind IN $kinds` : ``
+    // 🔴 CURRENT TRUTH ONLY, unless the caller says otherwise out loud. A superseded claim is still in
+    // the graph, still a neighbour, still in `list` and still in the visualizer — it is excluded HERE,
+    // at retrieval, which is the one place where competing with the current answer does damage.
+    const statuses = input.statuses ?? KbClaim.RECALL_STATUSES
     // The filter pass carries NO long string: the ranked ids are checked for validity, scope and kind
     // here, and the bodies come back by primary key below (`hydrate` holds the why). Keeping `text`
     // in this projection is what made every hit render blank.
     const allowed = await this.rows(
-      `MATCH (m:Memory) WHERE m.id IN $ids AND m.t_invalid IS NULL ${scopeFilter} ${kindFilter}
-       RETURN m.id AS id, m.t_valid AS validAt`,
+      `MATCH (m:Memory) WHERE m.id IN $ids AND m.t_invalid IS NULL AND m.status IN $statuses
+       ${scopeFilter} ${kindFilter}
+       RETURN m.id AS id, m.t_valid AS validAt, m.kind AS kind`,
       {
         ids: ordered,
+        statuses,
         ...(input.scopes ? { scopes: input.scopes } : {}),
         ...(input.kinds ? { kinds: input.kinds } : {}),
       },
     )
     const validAtOf = new Map(allowed.map((row) => [String(row.id), row.validAt]))
+    const kindOf = new Map(allowed.map((row) => [String(row.id), String(row.kind ?? "")]))
     // Only as many as the caller asked for — hydration costs one lookup per row, so the `k` cut moves
     // ahead of it rather than after it.
-    const wanted = ordered.filter((id) => validAtOf.has(id)).slice(0, k)
+    const eligible = ordered.filter((id) => validAtOf.has(id))
+    /**
+     * 🔴 **RAW PASSAGES MAY NOT TAKE THE WHOLE ANSWER.**
+     *
+     * "Raw passages are source material, not hundreds of equal-weight top-level memories" — and the
+     * measurement behind that sentence is that ONE ingested document is hundreds of rows, every one a
+     * plausible lexical match for anything it discusses. Measured here on the shipping engine: 20
+     * handbook passages echoing a claim's own words took every slot of a `k = 10` recall and the claim
+     * did not appear at all.
+     *
+     * ⚠️ **A ranking weight cannot fix that, and believing it could is the trap.** Re-ranking chooses
+     * among what retrieval RETURNED; a fact crowded out of the candidate pool is not slow to appear,
+     * it is absent. So the demotion has to happen here, at selection, and the ranker's `kindPassage`
+     * only orders what survives.
+     *
+     * ⚠️ It is a CAP, not an exclusion, and the deferred passages are backfilled. A question whose
+     * only answers are passages — "ingest this manual, then search it", the shipped promise — still
+     * gets a full page of them, because the cap releases when nothing else is competing.
+     */
+    const passageCap = Math.max(1, Math.ceil(k / 2))
+    const wanted: string[] = []
+    const deferred: string[] = []
+    let passagesTaken = 0
+    for (const id of eligible) {
+      if (wanted.length >= k) break
+      if (kindOf.get(id) === "passage" && passagesTaken >= passageCap) {
+        deferred.push(id)
+        continue
+      }
+      if (kindOf.get(id) === "passage") passagesTaken++
+      wanted.push(id)
+    }
+    for (const id of deferred) {
+      if (wanted.length >= k) break
+      wanted.push(id)
+    }
     const props = await this.hydrate(wanted)
     const byId = new Map(props.map((p) => [String(p.id), p]))
     const hits: SearchHit[] = []
@@ -764,14 +1329,9 @@ export class WasmMemory {
       const p = byId.get(id)
       if (!p) continue
       hits.push({
-        id,
-        kind: p.kind as MemoryKind,
-        text: String(p.text ?? ""),
-        name: (p.name as string | null) ?? null,
-        scope: String(p.scope),
-        source: (p.source as string | null) ?? null,
-        confidence: (p.confidence as number | null) ?? null,
-        relation: (p.relation as Relation) ?? "staged",
+        // `hydrate` already produced a complete row through `toRow`; re-listing the columns here is
+        // how a field added to the store arrives everywhere except search results.
+        ...p,
         score: ranks.get(id)!,
         // VALID time (when the fact became true — e.g. the date of the statement), not ingestion time:
         // the recency signal a ranker should weigh. Optional — an engine row predating this projection
@@ -1005,12 +1565,7 @@ export class WasmMemory {
   private async hydrate(ids: readonly string[]): Promise<MemoryRow[]> {
     const out: MemoryRow[] = []
     for (const id of ids) {
-      const rows = await this.rows(
-        `MATCH (m:Memory {id: $id})
-         RETURN m.id AS id, m.kind AS kind, m.text AS text, m.name AS name, m.scope AS scope,
-                m.source AS source, m.confidence AS confidence, m.relation AS relation`,
-        { id },
-      )
+      const rows = await this.rows(`MATCH (m:Memory {id: $id}) RETURN ${ROW_PROJECTION}`, { id })
       const row = rows[0]
       if (row) out.push(toRow(row))
     }
@@ -1022,17 +1577,23 @@ export class WasmMemory {
       const validity = opts.includeInvalid ? `` : `AND m.t_invalid IS NULL`
       const scopeFilter = opts.scopes ? `AND m.scope IN $scopes` : ``
       const kindFilter = opts.kinds ? `AND m.kind IN $kinds` : ``
+      // ⚠️ NO default lens here, unlike `search`. Enumeration answers "what do you remember", and a
+      // superseded claim IS remembered — it is the history the Memory app's timeline is made of. The
+      // separation the lifecycle needs is at RETRIEVAL, where a retired answer would compete with the
+      // current one; hiding it from the list as well would make the correction unexplainable.
+      const statusFilter = opts.statuses ? `AND m.status IN $statuses` : ``
       const limit = Math.max(1, Math.min(opts.limit ?? 200, 2000))
       const offset = Math.max(0, opts.offset ?? 0)
       // Select ids with the scan (ordering and pagination unchanged), then hydrate by key — see
       // `hydrate`. The projection here carries no long string, which is the column a scan loses.
       const selected = await this.rows(
-        `MATCH (m:Memory) WHERE true ${validity} ${scopeFilter} ${kindFilter}
+        `MATCH (m:Memory) WHERE true ${validity} ${scopeFilter} ${kindFilter} ${statusFilter}
          RETURN m.id AS id
          ORDER BY m.t_created DESC SKIP ${offset} LIMIT ${limit}`,
         {
           ...(opts.scopes ? { scopes: opts.scopes } : {}),
           ...(opts.kinds ? { kinds: opts.kinds } : {}),
+          ...(opts.statuses ? { statuses: opts.statuses } : {}),
         },
       )
       return this.hydrate(selected.map((row) => String(row.id)))
@@ -1132,11 +1693,19 @@ export class WasmMemory {
     return this.serialize(async () => {
       // Only AUTO-EXTRACTED session memories flow up. A deliberate `remember` scoped "session" is a
       // "this chat only" note the user chose — never force it global.
+      //
+      // ⚠️ **CLAIMS DO NOT FLOW UP, and that is a decision rather than an omission.** The twin is
+      // built by the CREATE below, which copies text, name, kind and confidence — not the conflict
+      // key. A claim promoted through here would land in `global` as a claim with NO identity: it
+      // could never be corrected, and nothing could correct it, which is a worse state than the
+      // session claim it came from. Carrying the key instead is not a free fix either — it would let
+      // a claim made in one chat retire the household's current answer, which is a promotion of
+      // AUTHORITY and belongs to whoever decides that deliberately. Excluded until then.
       const rows = await this.rows(
         `MATCH (m:Memory)
          WHERE m.t_invalid IS NULL AND starts_with(m.scope, 'session:') AND m.source = 'auto-extract'
-         RETURN m.id AS id, m.kind AS kind, m.text AS text, m.name AS name, m.scope AS scope,
-                m.source AS source, m.confidence AS confidence, m.relation AS relation`,
+           AND m.status = 'active' AND m.kind <> 'claim'
+         RETURN ${ROW_PROJECTION}`,
       )
       let promoted = 0
       /** session memory id -> its global twin id, so promoted EDGES can be remapped below. */
@@ -1151,9 +1720,13 @@ export class WasmMemory {
         })
         if (existing.length === 0) {
           await this.q(
+            // ⚠️ `status` is written explicitly, like every other CREATE in this file. The search
+            // filter is `m.status IN $statuses` in the ENGINE, so a twin created without one would be
+            // NULL there and invisible to recall — the promotion would report success and the fact
+            // would be unreachable, which is the exact shape of the consolidation bug above it.
             `CREATE (:Memory {
                id: $id, kind: $kind, text: $text, name: $name, scope: 'global',
-               source: 'consolidated', confidence: $confidence, relation: $relation,
+               source: 'consolidated', confidence: $confidence, relation: $relation, status: 'active',
                t_valid: current_timestamp(), t_created: current_timestamp() })`,
             {
               id: gid,
@@ -1186,10 +1759,10 @@ export class WasmMemory {
         if (already.length === 0) {
           await this.q(
             `MATCH (t:Memory {id: $gid}), (o:Memory {id: $origin})
-             CREATE (t)-[:Rel { type: 'consolidated_from', scope: $scope, source: 'consolidated',
+             CREATE (t)-[:Rel { type: 'consolidated_from', source: 'consolidated',
                                 confidence: null,
                                 t_valid: current_timestamp(), t_created: current_timestamp() }]->(o)`,
-            { gid, origin: String(row.id), scope: String(row.scope ?? "global") },
+            { gid, origin: String(row.id) },
           )
         }
         // Supersede the session original (bitemporal): it's now represented globally.
@@ -1226,7 +1799,7 @@ export class WasmMemory {
           if (dup.length > 0) continue
           await this.q(
             `MATCH (a:Memory {id: $from}), (b:Memory {id: $to})
-             CREATE (a)-[:Rel { type: $type, scope: 'global', source: $source, confidence: $confidence,
+             CREATE (a)-[:Rel { type: $type, source: $source, confidence: $confidence,
                                 t_valid: current_timestamp(), t_created: current_timestamp() }]->(b)`,
             {
               from,
