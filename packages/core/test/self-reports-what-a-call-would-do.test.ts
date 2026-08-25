@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { Effect } from "effect"
 import { PermissionV2 } from "@novaclaw/core/permission"
 import { SelfTool } from "@novaclaw/core/tool/self"
 
@@ -57,42 +58,62 @@ describe("what `self` reports", () => {
     { id: "explore", mode: "subagent" },
     { id: "build", mode: "primary" },
   ]
-  const can = (rules: PermissionV2.Ruleset, paused?: boolean) =>
-    SelfTool.addressableByMe({ permissions: rules, paused }, "aris", ROSTER)
 
-  test("🔴 a later deny wins — the field no longer promises what a call refuses", () => {
-    expect(can([allow("colleague", "*"), deny("colleague", "*")])).toBe(false)
-    expect(can([allow("colleague", "*")])).toBe(true)
+  /**
+   * 🔴 The verdict comes from what a REAL CALL would answer, not from re-evaluating rules here.
+   * An earlier version evaluated the agent ruleset alone and documented the gap, on the belief that
+   * `ask` records a pending request so a capability REPORT could not use it. That was STALE — `ask`
+   * stopped creating pending records when `evaluateInput` lost its "ask" outcome, and its own
+   * comment says so. These stub the verdict to pin the SHAPE: which colleagues get asked about, and
+   * what the answers mean.
+   */
+  const can = (input: { allowed?: readonly string[]; paused?: boolean }) => {
+    const asked: string[] = []
+    const result = Effect.runSync(
+      SelfTool.addressableByMe({
+        own: { paused: input.paused },
+        selfID: "aris",
+        roster: ROSTER,
+        verdict: (colleague) => {
+          asked.push(colleague)
+          return Effect.succeed((input.allowed ?? []).includes(colleague))
+        },
+      }),
+    )
+    return { result, asked }
+  }
+
+  test("🔴 it reports what the call would do — allowed for one colleague is CAN", () => {
+    expect(can({ allowed: ["bookkeeper"] }).result).toBe(true)
   })
 
-  test("🔴 a PAUSED colleague reports false whatever its rules say", () => {
-    // The evaluator answers deny-`*` for a set-aside colleague, and no configured rule reflects that.
-    // Reporting true tells the model it may delegate, and every attempt is then refused.
-    expect(can([allow("*", "*")], true)).toBe(false)
-    expect(can([allow("*", "*")], false)).toBe(true)
+  test("🔴 refused everywhere is CANNOT, however permissive the agent's own rules are", () => {
+    // The gap this closed: the agent ruleset could say allow while the mode overlay, a saved answer
+    // or the project file denied — and `self` promised what every call then refused.
+    expect(can({ allowed: [] }).result).toBe(false)
   })
 
-  test("a NARROW allow still counts as CAN address colleagues", () => {
-    // Asking against `resource: "*"` would answer "may address EVERY colleague" and report false
-    // here — the same lie in the other direction.
-    expect(can([allow("colleague", "bookkeeper")])).toBe(true)
+  test("🔴 a PAUSED colleague reports false without asking anybody", () => {
+    const { result, asked } = can({ allowed: ["theron"], paused: true })
+    expect(result).toBe(false)
+    expect(asked).toEqual([])
   })
 
-  test("⚠️ SELF does not count, and neither does a sub-agent or a posture", () => {
-    // A roster of one — yourself — is not somebody to delegate to. Nor is `explore` (machinery) or
-    // `build` (a posture, excluded by `isColleague`).
-    expect(
-      SelfTool.addressableByMe({ permissions: [allow("*", "*")] }, "aris", [{ id: "aris", mode: "primary" }]),
-    ).toBe(false)
-    expect(
-      SelfTool.addressableByMe({ permissions: [allow("*", "*")] }, "aris", [
-        { id: "explore", mode: "subagent" },
-        { id: "build", mode: "primary" },
-      ]),
-    ).toBe(false)
+  test("⚠️ SELF, sub-agents and postures are never asked about", () => {
+    // `explore` is machinery and `build` is a posture; asking about either would spend an
+    // evaluation on somebody you cannot address anyway.
+    expect(can({ allowed: [] }).asked).toEqual(["theron", "bookkeeper"])
+  })
+
+  test('⚠️ it STOPS at the first yes — the question is "any", not "all"', () => {
+    expect(can({ allowed: ["theron"] }).asked).toEqual(["theron"])
   })
 
   test("an empty roster reports false rather than throwing", () => {
-    expect(SelfTool.addressableByMe({ permissions: [allow("*", "*")] }, "aris", [])).toBe(false)
+    expect(
+      Effect.runSync(
+        SelfTool.addressableByMe({ own: {}, selfID: "aris", roster: [], verdict: () => Effect.succeed(true) }),
+      ),
+    ).toBe(false)
   })
 })

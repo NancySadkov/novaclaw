@@ -88,32 +88,36 @@ export const toModelOutput = (output: Output): string => {
  * different question here than the call asks is how this field drifted from the truth in the first
  * place.
  *
- * ⏳ Known gap, stated rather than implied: this reads the AGENT's ruleset. A real call composes more
- * — the mode overlay, saved answers, the project file — through `PermissionV2.configured`, which is
- * not reachable read-only today (`ask` records a pending request, so a capability REPORT cannot use
- * it). So this can still be more permissive than a call, but no longer for the three reasons above.
+ * 🔴 It asks what a REAL CALL would answer, through `PermissionV2.ask` — which composes everything:
+ * the agent ruleset, the mode overlay, saved answers, the project file. An earlier version evaluated
+ * the agent's rules alone and said so, on the belief that `ask` records a pending request and so a
+ * capability REPORT could not use it. That was STALE: `ask` stopped creating pending records when
+ * `evaluateInput` lost its "ask" outcome (owner ruling 2026-08-20), and its own comment says so. It
+ * is a read-only evaluation now, so the report and the call cannot disagree.
  */
-export const addressableByMe = (
-  own: { readonly permissions?: PermissionV2.Ruleset | undefined; readonly paused?: boolean | undefined },
-  selfID: string,
-  roster: ReadonlyArray<{ readonly id: string; readonly mode?: string | undefined; readonly hidden?: boolean }>,
-): boolean => {
-  // A paused colleague is answered deny-`*` by the evaluator whatever its rules say. Reporting `true`
-  // here tells the model it may delegate, and every attempt is then refused.
-  if (own.paused === true) return false
-  const rules = own.permissions ?? []
-  return roster.some(
-    (peer) =>
-      String(peer.id) !== selfID &&
-      AgentV2.isColleague(peer) &&
-      PermissionV2.evaluate("colleague", String(peer.id), rules).effect === "allow",
-  )
-}
+export const addressableByMe = (input: {
+  readonly own: { readonly paused?: boolean | undefined }
+  readonly selfID: string
+  readonly roster: ReadonlyArray<{ readonly id: string; readonly mode?: string | undefined; readonly hidden?: boolean }>
+  /** What a REAL call would answer for this colleague — see the note above. */
+  readonly verdict: (colleague: string) => Effect.Effect<boolean>
+}): Effect.Effect<boolean> =>
+  Effect.gen(function* () {
+    // A paused colleague is answered deny-`*` by the evaluator whatever its rules say. Asking per
+    // colleague would reach the same answer, but short-circuiting says why in one line.
+    if (input.own.paused === true) return false
+    for (const peer of input.roster) {
+      if (String(peer.id) === input.selfID || !AgentV2.isColleague(peer)) continue
+      if (yield* input.verdict(String(peer.id))) return true
+    }
+    return false
+  })
 
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
     const agents = yield* AgentV2.Service
+    const permission = yield* PermissionV2.Service
 
     // `.orDie` like every other builtin: a tool that cannot REGISTER is a boot-time defect, not a
     // condition a turn can handle. Without it the registration error rides the layer's error channel
@@ -159,7 +163,32 @@ export const layer = Layer.effectDiscard(
               // invisible to an `=== "colleague"` test), and it ignored the PAUSED deny-all
               // (`permission.ts` answers deny-`*` for a set-aside colleague, which no configured
               // rule reflects).
-              canAddressColleagues: addressableByMe(own, id, roster),
+              canAddressColleagues: yield* addressableByMe({
+                own,
+                selfID: id,
+                roster,
+                verdict: (colleague) =>
+                  permission
+                    .ask({
+                      action: "colleague",
+                      resources: [colleague],
+                      save: ["*"],
+                      sessionID: context.sessionID,
+                      agent: context.agent,
+                      source: {
+                        type: "tool" as const,
+                        messageID: context.assistantMessageID,
+                        callID: context.toolCallID,
+                      },
+                    })
+                    .pipe(
+                      Effect.map((result) => result.effect === "allow"),
+                      // A capability REPORT must not fail a turn. An unanswerable question reads as
+                      // "no", which is the direction that cannot mislead: the model tries, and the
+                      // real call gives it the real answer.
+                      Effect.orElseSucceed(() => false),
+                    ),
+              }),
               workingInOwnScratch: AgentWorkspace.isOwnScratch({ agentID: id, directory: text("directory") }),
             } satisfies Output
           }),
@@ -172,5 +201,5 @@ export const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/self",
   layer,
-  deps: [ToolRegistry.node, AgentV2.node],
+  deps: [ToolRegistry.node, AgentV2.node, PermissionV2.node],
 })
