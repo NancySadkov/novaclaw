@@ -14,6 +14,7 @@ import { FrontmatterError } from "@novaclaw/core/config/error"
 import { ConfigMarkdown } from "@/config/markdown"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Glob } from "@novaclaw/core/util/glob"
+import { SkillBuiltin } from "@novaclaw/core/skill/builtin"
 import { SkillDiscovery } from "@novaclaw/core/skill/discovery"
 import { isRecord } from "@/util/record"
 import { escapeHtml } from "@/util/html"
@@ -278,6 +279,24 @@ export const layer = Layer.effect(
     const state = yield* InstanceState.make(
       Effect.fn("Skill.state")(function* () {
         const s: State = { skills: {}, dirs: new Set() }
+        /**
+         * Built-ins FIRST, so discovery can override them.
+         *
+         * 🔴 A skill the product promises must exist on a machine with no skills directory and no
+         * network — an officer's prompt that names one cannot depend on the user having installed it.
+         * Seeding before `loadSkills` means a file of the same name in the config dir or a project's
+         * `.novaclaw/skills` replaces the bundled copy, and `add` logs that override: shipping a
+         * default must never take away the ability to replace it.
+         */
+        for (const builtin of SkillBuiltin.ALL)
+          s.skills[builtin.name] = {
+            name: builtin.name,
+            description: builtin.description,
+            // ⚠️ Not a path. This reaches the model in the verbose skill listing, and a plausible-looking
+            // file path would invite it to read a file that does not exist in a compiled build.
+            location: "(bundled with NovaClaw — no file on disk)",
+            content: builtin.content,
+          }
         yield* loadSkills(s, yield* InstanceState.get(discovered), events)
         return s
       }),
