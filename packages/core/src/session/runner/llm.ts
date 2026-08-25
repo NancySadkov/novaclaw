@@ -1210,6 +1210,7 @@ export const layer = Layer.effect(
             query: recallQuery,
             k: SessionRecall.recallPoolSize(budget),
             scopes: memoryScopes,
+            surface: "auto-recall",
             ...(recallVector === undefined ? {} : { embedding: recallVector }),
           })
           .pipe(Effect.orElseSucceed(() => []))

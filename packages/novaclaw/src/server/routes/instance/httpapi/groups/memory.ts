@@ -13,6 +13,14 @@ const root = "/memory"
 
 // --- wire schemas (mirror core kb-graph/memory-client types; the client is the source of truth) ---
 
+/**
+ * ⚠️ **An undeclared field is silently STRIPPED on the way out**, which is how the whole claim
+ * lifecycle stayed invisible to the Memory app after P1 shipped it: the store returned `status`,
+ * `subject`, `predicate`, `supersededBy` and the evidence columns on every row, and this struct
+ * dropped all six without a word. The app could not distinguish a current answer from one that had
+ * been corrected, so its own "Incl. forgotten" toggle was inert — a control that could not have
+ * worked, under a schema that answered 200.
+ */
 const MemoryRow = Schema.Struct({
   id: Schema.String,
   kind: Schema.String,
@@ -22,6 +30,13 @@ const MemoryRow = Schema.Struct({
   source: Schema.NullOr(Schema.String),
   confidence: Schema.NullOr(Schema.Number),
   relation: Schema.String,
+  status: Schema.String,
+  subject: Schema.NullOr(Schema.String),
+  predicate: Schema.NullOr(Schema.String),
+  conflictKey: Schema.NullOr(Schema.String),
+  supersededBy: Schema.NullOr(Schema.String),
+  evidence: Schema.NullOr(Schema.String),
+  evidenceKind: Schema.NullOr(Schema.String),
 })
 const SearchHit = Schema.Struct({ ...MemoryRow.fields, score: Schema.Number })
 const Neighbor = Schema.Struct({ id: Schema.String, type: Schema.String, text: Schema.String })
@@ -49,6 +64,8 @@ const ListQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
   scopes: CsvOptional,
   kinds: CsvOptional,
+  /** The lifecycle lens: a comma-separated status set. Unset = every status, history included. */
+  statuses: CsvOptional,
   includeInvalid: Schema.optional(Schema.String),
   limit: Schema.optional(Schema.NumberFromString),
   offset: Schema.optional(Schema.NumberFromString),

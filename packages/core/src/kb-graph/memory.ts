@@ -10,6 +10,7 @@ import { Global } from "../global"
 import { Log } from "@novaclaw/schema/log"
 import { KbEmbedder } from "./embedder"
 import { MemoryClient } from "./memory-client"
+import { MemoryObserved } from "./memory-observed"
 import { MemorySetting } from "./memory-setting"
 import { WasmMemory } from "./wasm-engine"
 
@@ -234,8 +235,22 @@ export const node = LayerNode.capability(serviceNode, {
   repair: ["runtime_flags.NOVACLAW_KB_MEMORY"],
 })
 
-/** Preserve the MemoryClient operation contract while deferring capability acquisition per call. */
-export const client = (capability: Capability.Capability<MemoryClient.Interface>): MemoryClient.Interface => {
+/**
+ * Preserve the MemoryClient operation contract while deferring capability acquisition per call.
+ *
+ * 🔴 **This is where the store becomes observable**, because it is the ONE funnel every production
+ * caller takes: the `kb` tool, auto-recall in the runner, auto-extraction, the memory HTTP routes
+ * and an officer's retirement all obtain their client here. `MemoryObserved.observed` wraps the
+ * result, so a lifecycle change announces itself identically whoever caused it — which is the
+ * difference between a Memory app that shows the store and one that shows the surfaces somebody
+ * remembered to instrument. See `memory-observed.ts` for why it publishes on writes and recalls
+ * and on nothing the viewer itself does.
+ */
+export const client = (capability: Capability.Capability<MemoryClient.Interface>): MemoryClient.Interface =>
+  MemoryObserved.observed(unobserved(capability))
+
+/** The bare funnel. Exported for tests that need to prove `observed` is what adds the events. */
+export const unobserved = (capability: Capability.Capability<MemoryClient.Interface>): MemoryClient.Interface => {
   const withClient = <A>(
     run: (memory: MemoryClient.Interface) => Effect.Effect<A, MemoryClient.MemoryError>,
   ): Effect.Effect<A, MemoryClient.MemoryError> =>

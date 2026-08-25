@@ -63,6 +63,15 @@ export interface SearchInput {
   readonly kinds?: readonly MemoryKind[]
   /** Lifecycle statuses to return. Defaults to CURRENT TRUTH — see `KbClaim.RECALL_STATUSES`. */
   readonly statuses?: readonly ClaimStatus[]
+  /**
+   * Who is asking, for the activity feed and the P3 access ledger.
+   *
+   * The store cannot infer this: auto-recall, a model's `kb search` and the Memory app's own search
+   * box arrive as the same call. It rides on the INPUT rather than as a second argument so it
+   * survives the `proxy`/`client`/`observed` indirections without changing four signatures, and an
+   * omitted value records `unknown` instead of guessing.
+   */
+  readonly surface?: "auto-recall" | "kb-tool" | "http" | "unknown"
 }
 
 export interface MemoryRow {

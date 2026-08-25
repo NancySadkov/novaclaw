@@ -9,6 +9,7 @@ import { FileSystemWatcher } from "./filesystem-watcher"
 import { InstallationEvent } from "./installation-event"
 import { Integration } from "./integration"
 import { McpEvent } from "./mcp-event"
+import { MemoryEvent } from "./memory-event"
 import { Messenger } from "./messenger"
 import { ModelsDev } from "./models-dev"
 import { Permission } from "./permission"
@@ -46,6 +47,12 @@ const foundationDefinitions = Event.inventory(
 
 const featureDefinitions = Event.inventory(
   ...AppEvent.Definitions,
+  // The memory store's lifecycle. SERVER-visible on purpose: auto-recall and auto-extraction run
+  // inside the session worker, and `session-worker/services.ts` forwards a publish to the host bus
+  // only for types in `ServerDefinitions`. Leaving them out would have made every memory event
+  // raised by an actual turn a process-local no-op, which is the one producer the Memory app most
+  // needs to see.
+  ...MemoryEvent.Definitions,
   ...FileSystem.Event.Definitions,
   ...Reference.Event.Definitions,
   ...Permission.Event.Definitions,

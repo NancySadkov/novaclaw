@@ -66,6 +66,7 @@ export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (h
             .list({
               ...(csv(ctx.query.scopes) ? { scopes: csv(ctx.query.scopes)! } : {}),
               ...(csv(ctx.query.kinds) ? { kinds: csv(ctx.query.kinds)! as never } : {}),
+              ...(csv(ctx.query.statuses) ? { statuses: csv(ctx.query.statuses)! as never } : {}),
               ...(truthy(ctx.query.includeInvalid) ? { includeInvalid: true } : {}),
               ...(ctx.query.limit === undefined ? {} : { limit: ctx.query.limit }),
               ...(ctx.query.offset === undefined ? {} : { offset: ctx.query.offset }),
@@ -102,6 +103,7 @@ export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (h
               ...(ctx.payload.k === undefined ? {} : { k: ctx.payload.k }),
               ...(ctx.payload.scopes ? { scopes: ctx.payload.scopes } : {}),
               ...(ctx.payload.kinds ? { kinds: ctx.payload.kinds as never } : {}),
+              surface: "http",
             })
             .pipe(Effect.orElseSucceed(() => []))
         }),

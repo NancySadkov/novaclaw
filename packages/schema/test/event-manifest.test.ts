@@ -37,12 +37,29 @@ describe("public event manifest", () => {
     // stopped at the first mismatch, so the 2026-08-19 drift reported ONLY "ServerDefinitions 76 vs
     // 75" while Definitions and Latest had BOTH also moved — a reviewer reading that failure would
     // have reviewed a third of the change. A contract pin must report the whole delta in one run.
+    //
+    // 2026-08-25 — the five `memory.*` store events (`todo/rag.md` P2). Reviewed, not bumped:
+    //   Â· NOT durable â none takes a `durable` block, so `Durable.size` stays 48. The graph is its
+    //     own record and `claimHistory` is the timeline; a replayable second log of the same
+    //     lifecycle is a copy that drifts. A missed event costs an animation, never a fact.
+    //   Â· Payload content: ids, scopes, a lifecycle status, and a TRUNCATED statement/text for the
+    //     feed's caption â the same user content the memory routes already serve to the same
+    //     authenticated clients. `memory.recalled` deliberately carries a FINGERPRINT and never the
+    //     query, because a recall query is built from the user's own words and a bus is the wrong
+    //     place to copy the prompt stream to.
+    //   Â· Server-visible by NECESSITY, not merely by design: auto-recall and auto-extraction run
+    //     inside the session worker, and `session-worker/services.ts` forwards a publish to the host
+    //     bus only for types in `ServerDefinitions`. Outside it, every memory event raised by a real
+    //     turn would be a process-local no-op â the one producer the Memory app most needs to see.
+    //   Â· Availability domain is the instance's own memory graph, which the memory routes already
+    //     expose to the same clients. No new reach, so no new server.
+    // Verdict: accepted as public wire events. ServerDefinitions 76 -> 81, Definitions/Latest 97 -> 102.
     expect({
       server: EventManifest.ServerDefinitions.length,
       all: EventManifest.Definitions.length,
       latest: EventManifest.Latest.size,
       durable: EventManifest.Durable.size,
-    }).toEqual({ server: 76, all: 97, latest: 97, durable: 48 })
+    }).toEqual({ server: 81, all: 102, latest: 102, durable: 48 })
     // V1-nuke slice D: the record lifecycle events are native (Session.Info payloads, durable
     // v2); session.diff + command.executed died with the V1 wire schemas (no publishers).
     expect(SessionRecordEvent.Definitions).toEqual([
