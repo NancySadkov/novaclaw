@@ -68,6 +68,8 @@ const VISIBLE_MEMORIES = 5
 
 // --- DOM seams ----------------------------------------------------------------------------------
 let paneSize = { width: 900, height: 600 }
+/** Has the user switched to the Graph view? Until then the canvas is `display: none` and has no box. */
+let paneShown = false
 const resizeCallbacks: (() => void)[] = []
 const rect = (width: number, height: number) =>
   ({ x: 0, y: 0, top: 0, left: 0, width, height, right: width, bottom: height, toJSON: () => ({}) }) as DOMRect
@@ -80,12 +82,25 @@ let host: HTMLDivElement | undefined
 
 beforeEach(() => {
   paneSize = { width: 900, height: 600 }
+  paneShown = false
   resizeCallbacks.length = 0
   originalRect = HTMLElement.prototype.getBoundingClientRect
   HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
     // ONLY the graph canvas reports a size; everything else keeps happy-dom's zeroes, so no other
     // code silently starts depending on a measurement this test invented.
-    return this.dataset?.slot === "memory-graph-canvas" ? rect(paneSize.width, paneSize.height) : rect(0, 0)
+    if (this.dataset?.slot !== "memory-graph-canvas") return rect(0, 0)
+    // 🔴 A HIDDEN PANE HAS NO BOX. The page opens on Remembered, so the canvas carries Tailwind's
+    // `hidden` (`display: none`) at mount — and an element with no box measures 0x0 AND is never
+    // reported by a `ResizeObserver` armed on it. The first draft of this stub returned the pane size
+    // unconditionally, which is why every camera and label assertion here passed while the shipped app
+    // drew at `translate(0 0) scale(1)` with zero labels. Instrumented live 2026-08-25: the observer
+    // logged its `observe(w=0)` and never fired once.
+    // ⚠️ `paneShown`, not the element's class. Solid applies `classList` in an EFFECT, which runs
+    // AFTER the `ref` callback — so at the moment `attachCanvas` measures, the class is not on the
+    // element yet and a class-based stub reports a full-size box. That draft still passed with the
+    // fix removed. The browser has no such window: the style is in effect before anything is laid
+    // out. What has to be modelled is the PAGE state — the pane has no box until the user opens it.
+    return paneShown && !this.classList.contains("hidden") ? rect(paneSize.width, paneSize.height) : rect(0, 0)
   }
   originalRO = (globalThis as Record<string, unknown>).ResizeObserver
   ;(globalThis as Record<string, unknown>).ResizeObserver = class {
@@ -197,6 +212,7 @@ const showGraph = () => {
   const button = [...document.querySelectorAll('[data-slot="memory-view-switch"]')].find(
     (b) => (b as HTMLElement).dataset.view === "graph",
   ) as HTMLButtonElement | undefined
+  paneShown = true
   button?.click()
 }
 
@@ -404,7 +420,10 @@ describe("MemoryGraphPage renders", () => {
     await settle()
     expect(drawnPoints().length).toBe(VISIBLE_MEMORIES + 1)
     paneSize = { width: 300, height: 240 }
+    // BOTH signals, because the page must not depend on either alone — a ResizeObserver armed on this
+    // canvas was measured delivering nothing at all in the web build (see `attachCanvas`).
     for (const cb of resizeCallbacks) cb()
+    window.dispatchEvent(new Event("resize"))
     await settle()
     const points = drawnPoints()
     expect(points.length).toBe(VISIBLE_MEMORIES + 1)

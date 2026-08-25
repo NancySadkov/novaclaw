@@ -333,18 +333,42 @@ export function MemoryGraphPage() {
   })
   const fitted = () => fitView(contentBounds(visiblePoints()), viewport())
 
+  let canvasEl: HTMLDivElement | undefined
   const measure = (el: HTMLElement) => {
     const rect = el.getBoundingClientRect()
-    // happy-dom and a hidden pane both report 0x0; keeping the last real size beats fitting to nothing.
+    // A hidden pane reports 0x0; keeping the last real size beats fitting to nothing.
     if (rect.width > 0 && rect.height > 0) setViewport({ width: rect.width, height: rect.height })
   }
+  const remeasure = () => {
+    if (canvasEl) measure(canvasEl)
+  }
+  /**
+   * THREE INDEPENDENT SIGNALS, because one of them was measured inert.
+   *
+   * 🔴 On 2026-08-25, in the web build under the Browser pane, a `ResizeObserver` armed on this canvas
+   * never delivered a single callback — not across the `display: none` → visible transition, and not
+   * across a DOM-originated layout change from 638px to 300px, which is the case an observer exists
+   * for. A second observer armed by hand from the console behaved identically, so it is not this
+   * component's wiring. ⚠️ **What that does NOT establish** is that `ResizeObserver` is broken in
+   * Electron or in an ordinary browser; that surface has not been measured, and six other call sites
+   * in this app use `createResizeObserver`. The observer therefore STAYS — it is correct where it
+   * works — and a measurement this page depends on simply stops resting on it alone.
+   *
+   * `window.resize` covers the case that actually resizes this pane (the window), and the visibility
+   * effect below covers the first measurement. Each is cheap, and `measure` is idempotent.
+   */
   const attachCanvas = (el: HTMLDivElement) => {
+    canvasEl = el
     measure(el)
+    const onResize = () => measure(el)
+    window.addEventListener("resize", onResize)
+    onCleanup(() => window.removeEventListener("resize", onResize))
     if (typeof ResizeObserver === "undefined") return
     const observer = new ResizeObserver(() => measure(el))
     observer.observe(el)
     onCleanup(() => observer.disconnect())
   }
+
 
   /**
    * Refit when the CONTENT or the WINDOW changes — and only then.
@@ -419,6 +443,34 @@ export function MemoryGraphPage() {
    * it connect", which is the second question. Opening on the graph led with the harder view.
    */
   const [appView, setAppView] = createSignal<"list" | "graph" | "settings">("list")
+
+  /**
+   * 🔴 MEASURE WHEN THE PANE BECOMES VISIBLE. Found by running the app, not by any test.
+   *
+   * The page opens on Remembered, so the canvas carries Tailwind's `hidden` (`display: none`) at mount.
+   * A `display: none` element generates no CSS box, so the ref's own `getBoundingClientRect()` is 0x0
+   * — and the `ResizeObserver` armed on it **never fires**, not even when the class comes off.
+   * Instrumented live on 2026-08-25: the observer logged its `observe(memory-graph-canvas, w=0)` and
+   * never delivered a single callback, so `viewport` stayed `{0,0}` for the life of the page. The
+   * canvas then drew at `translate(0 0) scale(1)` into a 1278x591 pane with zero labels — every
+   * symptom the camera and label work was supposed to have fixed, in the shipped app, with the whole
+   * suite green.
+   *
+   * ⚠️ The RESIZE OBSERVER STAYS. It is right for every LATER change and wrong only for the first
+   * one, because at arming time there was nothing to observe. This is the other half, not a
+   * replacement.
+   *
+   * The second pass on the next frame is the load-bearing one: this effect and the `classList` that
+   * un-hides the pane are both Solid effects, and nothing orders them. The synchronous call is what
+   * covers the case where the class won that race; the frame is what covers the case where it did not.
+   */
+  createEffect(
+    on(appView, (current) => {
+      if (current !== "graph") return
+      remeasure()
+      if (typeof requestAnimationFrame === "function") requestAnimationFrame(remeasure)
+    }),
+  )
 
   const count = () => loaded()?.nodes.length ?? 0
 
