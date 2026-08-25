@@ -9,7 +9,18 @@ import { memoryGraph, type MemoryGraph, type MemoryRow } from "@/utils/memory-ap
 import { ownerFromKey, ownersFor, scopeOwnerName, type MemoryOwner } from "@/apps/memory-owner"
 import { type AgentLike } from "@/apps/contacts"
 import { layoutGraph, type Vec } from "./memory-graph/layout"
-import { centerOn, contentBounds, fitView, IDENTITY, isVisible, MAX_SCALE, MIN_SCALE, type View } from "./memory-graph/camera"
+import {
+  centerOn,
+  contentBounds,
+  fitView,
+  IDENTITY,
+  isVisible,
+  MAX_SCALE,
+  MIN_SCALE,
+  project,
+  type View,
+} from "./memory-graph/camera"
+import { nearestNeighborDistance, placeLabels, Priority, type LabelCandidate } from "./memory-graph/labels"
 import { graphFault, type GraphFault } from "./memory-graph/fault"
 import { hubLabel, isHub, projectGraph, type ProjectedNode } from "./memory-graph/project"
 
@@ -90,6 +101,15 @@ export const edgeWidth = (count: number, active: boolean): number => {
   const base = active ? 1.5 : 0.75
   return base * (1 + Math.min(1.5, Math.log10(Math.max(1, count))))
 }
+
+/**
+ * How far a mark must be from its nearest neighbour, in SCREEN px, to count as standing on its own.
+ *
+ * Roughly one label's width. Below that its text is competing with somebody's; above it, the label is
+ * free — it cannot be the thing crowding another out, so drawing it costs nothing and the orphan band
+ * (`layout.ts`) becomes readable without spending the crowded centre's budget.
+ */
+const ISOLATED_PX = 110
 
 /**
  * What one graph fetch produced — a TAGGED result, never a bare `MemoryGraph`.
@@ -274,6 +294,8 @@ export function MemoryGraphPage() {
     if (!node) return id
     return isHub(node) ? hubLabel(node) : node.row.text
   }
+  /** What goes on the CANVAS beside a mark — the short form, not the prose. */
+  const markText = (node: ProjectedNode) => (isHub(node) ? hubLabel(node) : nodeLabel(node.row))
   const selectedEdges = createMemo(() => {
     const sel = selected()
     if (!sel) return []
@@ -399,16 +421,55 @@ export function MemoryGraphPage() {
   const [appView, setAppView] = createSignal<"list" | "graph" | "settings">("list")
 
   const count = () => loaded()?.nodes.length ?? 0
+
   /**
-   * How many nodes are actually ON SCREEN — the number the label threshold must use.
+   * WHICH LABELS FIT — screen-space, priority-ordered, overlap-culled (`memory-graph/labels.ts`).
    *
-   * 🔴 The threshold read `count()`, the TOTAL. Measured 2026-08-12 after ingesting a document:
-   * 303 nodes of which 302 were passages, hidden by default, so the canvas held exactly ONE node —
-   * and it was drawn UNLABELLED, because 303 > 40. A single anonymous dot on an empty canvas is the
-   * worst version of the complaint that opened this work ("no way to see what node represents
-   * what"), and it appeared precisely BECAUSE the filter was doing its job.
+   * 🔴 What this replaces: `visibleCount() <= 40`. Under forty marks every one got a label and they
+   * piled on top of each other; over forty nobody did. Measured 2026-08-12, a document ingest left
+   * ONE visible node on the canvas and it was drawn unlabelled, because the threshold counted the 303
+   * TOTAL rows rather than what was on screen — a single anonymous dot, produced precisely BECAUSE the
+   * filter was doing its job. A count was never the right question; whether the text FITS is.
    */
-  const visibleCount = () => projected().nodes.length
+  const labelled = createMemo<ReadonlySet<string>>(() => {
+    const nodes = projected().nodes
+    const port = viewport()
+    if (nodes.length === 0 || port.width === 0) return new Set<string>()
+    const pos = positions()
+    const v = view()
+    const screen = nodes.map((node) => {
+      const p = pos[node.id]
+      return p ? project(p, v) : { x: Number.NaN, y: Number.NaN }
+    })
+    const sel = selected()
+    const near = neighborIds()
+    const candidates: LabelCandidate[] = []
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i]!
+      const at = screen[i]!
+      if (Number.isNaN(at.x)) continue
+      const priority = isHub(node)
+        ? Priority.Hub
+        : node.id === sel
+          ? Priority.Selected
+          : near.has(node.id)
+            ? Priority.Neighbor
+            : // Spatially alone: its label cannot be the thing crowding anyone out, so it is free.
+              nearestNeighborDistance(screen, i) > ISOLATED_PX
+              ? Priority.Isolated
+              : Priority.Ordinary
+      // ⚠️ Selected outranks Hub even when the selection IS a hub — clicking a mark must always be
+      // able to read its own label back.
+      candidates.push({
+        id: node.id,
+        text: markText(node),
+        x: at.x,
+        y: at.y,
+        priority: node.id === sel ? Priority.Selected : priority,
+      })
+    }
+    return placeLabels(candidates, { viewport: port })
+  })
 
   /**
    * Which of the four things is true — the single value the canvas branches on, and the one a test
@@ -763,21 +824,41 @@ export function MemoryGraphPage() {
                             stroke-opacity={0.85}
                           />
                         </Show>
-                        {/* A hub is ALWAYS labelled. Its entire content IS its count, so an
-                            unlabelled one is a dashed shape that means nothing. */}
-                        <Show when={hub() || isSel() || isNeighbor() || visibleCount() <= 40}>
-                          <text
-                            x={13}
-                            y={4}
-                            font-size="11"
-                            fill="currentColor"
-                            opacity={hub() ? 0.6 : 0.8}
-                            font-style={hub() ? "italic" : undefined}
-                          >
-                            {hub() ? hubLabel(hub()!) : nodeLabel(row()!)}
-                          </text>
-                        </Show>
                       </g>
+                    </Show>
+                  )
+                }}
+              </For>
+            </g>
+            {/* LABELS, in SCREEN space — outside the zoomed group on purpose.
+                Inside it they scaled with the view: illegible when zoomed out, billboards when zoomed
+                in, and "do these two overlap?" had no stable answer to cull on. Here they are always
+                11px and `placeLabels` can decide what fits. */}
+            <g data-slot="memory-graph-labels">
+              <For each={projected().nodes}>
+                {(node) => {
+                  const at = () => {
+                    const p = positions()[node.id]
+                    return p ? project(p, view()) : undefined
+                  }
+                  const isSel = () => selected() === node.id
+                  const isNeighbor = () => neighborIds().has(node.id)
+                  const dim = () => selected() !== undefined && !isSel() && !isNeighbor()
+                  return (
+                    <Show when={labelled().has(node.id) && at()}>
+                      <text
+                        x={at()!.x + 13}
+                        y={at()!.y + 4}
+                        font-size="11"
+                        fill="currentColor"
+                        class="pointer-events-none select-none"
+                        data-slot="memory-graph-label"
+                        data-node-id={node.id}
+                        opacity={dim() ? 0.2 : isHub(node) ? 0.6 : 0.8}
+                        font-style={isHub(node) ? "italic" : undefined}
+                      >
+                        {markText(node)}
+                      </text>
                     </Show>
                   )
                 }}

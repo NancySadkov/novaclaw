@@ -16,6 +16,11 @@ export interface LayoutEdge {
   readonly to: string
 }
 
+/** Fraction of each plane axis the connected core may use when there are orphans to band around it. */
+const CORE_INSET = 0.62
+/** Fraction of each plane axis the orphan band sits at. Must exceed CORE_INSET — see `bandOrphans`. */
+const BAND_RADIUS = 0.47
+
 export interface LayoutOptions {
   width?: number
   height?: number
@@ -73,11 +78,38 @@ export function layoutGraph(
   const present = new Set(ids)
   const es = edges.filter((e) => present.has(e.from) && present.has(e.to) && e.from !== e.to)
 
-  // Fruchterman–Reingold ideal edge length k, and a linear cooling schedule.
-  const area = width * height
+  // Who has no link at all. An orphan is pulled to the centre by the same gravity as everything else,
+  // so it lands among the connected nodes and reads as part of the structure — the map implying a
+  // relationship that does not exist. It gets its own band instead; see `bandOrphans`.
+  const linked = new Set<string>()
+  for (const e of es) {
+    linked.add(e.from)
+    linked.add(e.to)
+  }
+  const orphans = ids.filter((id) => !linked.has(id))
+
+  // THE CORE BOX. With orphans to place, the connected nodes are confined to the middle of the plane
+  // so the band has somewhere to be. Without them the core is the whole plane, unchanged — measured
+  // reason: three nodes on a 1000x700 plane spread to its four corners, leaving a "band" no room and
+  // an orphan indistinguishable from a linked node at the same radius.
+  //
+  // ⚠️ This means a linked node MOVES when an unrelated orphan appears. That is a real cost and it is
+  // accepted: the alternative is a picture that cannot say which memories stand alone. The camera
+  // refits either way, so on screen the core keeps its size — only the plane coordinates change.
+  const banding = orphans.length > 0 && linked.size > 0
+  const coreW = banding ? width * CORE_INSET : width
+  const coreH = banding ? height * CORE_INSET : height
+  const minX = cx - coreW / 2
+  const maxX = cx + coreW / 2
+  const minY = cy - coreH / 2
+  const maxY = cy + coreH / 2
+
+  // Fruchterman–Reingold ideal edge length k, and a linear cooling schedule — both sized to the CORE,
+  // not the plane, or the layout keeps trying to fill space the band owns.
+  const area = coreW * coreH
   const k = Math.sqrt(area / n) * 0.8
   const repel = n <= maxNodes // skip the O(n²) pass on very large graphs
-  let temp = Math.min(width, height) / 8
+  let temp = Math.min(coreW, coreH) / 8
 
   for (let iter = 0; iter < iterations; iter++) {
     const disp: Record<string, Vec> = {}
@@ -137,11 +169,59 @@ export function layoutGraph(
       const len = Math.hypot(d.x, d.y) || 0.01
       const step = Math.min(len, temp)
       const p = pos[id]!
-      p.x = Math.max(0, Math.min(width, p.x + (d.x / len) * step))
-      p.y = Math.max(0, Math.min(height, p.y + (d.y / len) * step))
+      p.x = Math.max(minX, Math.min(maxX, p.x + (d.x / len) * step))
+      p.y = Math.max(minY, Math.min(maxY, p.y + (d.y / len) * step))
     }
     temp = Math.max(temp * 0.97, 0.5)
   }
 
+  bandOrphans(pos, orphans, linked, { width, height })
   return pos
+}
+
+/**
+ * Put every unlinked memory in a deliberate OUTER BAND, outside whatever the connected core occupies.
+ *
+ * 🔴 Why it is not enough to simply not draw an edge. The layout's gravity pulls every node toward the
+ * centre, so an orphan settles wherever the repulsion happens to leave it — usually among the
+ * connected nodes, reading as one of them. The user then sees a memory sitting inside a cluster it has
+ * no relationship with, which is the map asserting something the store never said. The honest
+ * alternatives are to invent a link (never) or to give unlinked memories a place of their own.
+ *
+ * ⚠️ **The band OVERRIDES the seed**, unlike every other position here. A cached position is worth
+ * respecting because it keeps a node where the user last saw it; a cached position for an orphan is
+ * just an older accident, and honouring it would scatter the band it exists to form. A memory that
+ * gains its first edge therefore MOVES — correctly, because it stopped being an orphan.
+ *
+ * ⚠️ **No edges at all means no band.** A band is "outside the core", and a graph with no links has no
+ * core to be outside of — a ring there would be a shape invented from nothing, and it would also throw
+ * away the seeded positions that make a re-open stable.
+ */
+function bandOrphans(
+  pos: Record<string, Vec>,
+  orphans: readonly string[],
+  linked: ReadonlySet<string>,
+  plane: { width: number; height: number },
+): void {
+  if (orphans.length === 0 || linked.size === 0) return
+  const cx = plane.width / 2
+  const cy = plane.height / 2
+  // An ELLIPSE matching the plane's aspect, not a circle. `CORE_INSET` confines the connected nodes to
+  // the middle 62% of each axis, and `BAND_RADIUS` is 47% — so a band point can only be inside the
+  // core's box if BOTH |cos| and |sin| are under 0.62/0.47, which they cannot be at once. That is the
+  // whole geometric claim: outside the core in at least one axis, always, at every angle. A circle
+  // would fail it on the short axis of a wide plane.
+  const rx = plane.width * BAND_RADIUS
+  const ry = plane.height * BAND_RADIUS
+
+  // Sorted, so the band's order is a property of the ids rather than of the order rows arrived in —
+  // two loads of the same memories put the same one at the top.
+  const ring = [...orphans].sort()
+  for (let i = 0; i < ring.length; i++) {
+    const angle = (i / ring.length) * Math.PI * 2 - Math.PI / 2
+    pos[ring[i]!] = {
+      x: Math.max(0, Math.min(plane.width, cx + Math.cos(angle) * rx)),
+      y: Math.max(0, Math.min(plane.height, cy + Math.sin(angle) * ry)),
+    }
+  }
 }

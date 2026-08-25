@@ -216,6 +216,47 @@ function drawnPoints(): { x: number; y: number }[] {
 const insidePane = (p: { x: number; y: number }) =>
   p.x >= 0 && p.y >= 0 && p.x <= paneSize.width && p.y <= paneSize.height
 
+/** Every drawn mark with its kind and its SCREEN centre. */
+function drawnMarks(): { kind: string; x: number; y: number }[] {
+  const group = document.querySelector('[data-slot="memory-graph-canvas"] svg > g') as SVGGElement | null
+  const parsed = /translate\(([-\d.e]+) ([-\d.e]+)\) scale\(([-\d.e]+)\)/.exec(group?.getAttribute("transform") ?? "")
+  if (!group || !parsed) return []
+  const [tx, ty, scale] = [Number(parsed[1]), Number(parsed[2]), Number(parsed[3])]
+  return [...document.querySelectorAll('[data-slot="memory-graph-node"]')].map((el) => {
+    const m = /translate\(([-\d.e]+) ([-\d.e]+)\)/.exec(el.getAttribute("transform")!)!
+    return {
+      kind: (el as HTMLElement).dataset.nodeKind ?? "",
+      x: Number(m[1]) * scale + tx,
+      y: Number(m[2]) * scale + ty,
+    }
+  })
+}
+
+/**
+ * Every drawn label as a screen-space BOX, using the same character metrics `labels.ts` places with.
+ *
+ * ⚠️ happy-dom does no text layout, so a real measured width is not available here — this is the
+ * placement contract restated, which is what the overlap assertion is actually about. The metrics
+ * being an estimate is the module's own design (`charWidth`), not a shortcut taken by the test.
+ */
+function drawnLabels(): { id: string; x: number; y: number; w: number; h: number }[] {
+  return [...document.querySelectorAll('[data-slot="memory-graph-label"]')].map((el) => {
+    const text = el.textContent ?? ""
+    return {
+      id: (el as HTMLElement).dataset.nodeId ?? "",
+      x: Number(el.getAttribute("x")),
+      y: Number(el.getAttribute("y")) - 4 - 13 / 2,
+      w: text.length * 5.6,
+      h: 13,
+    }
+  })
+}
+
+const boxesOverlap = (
+  a: { x: number; y: number; w: number; h: number },
+  b: { x: number; y: number; w: number; h: number },
+) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+
 /** The `data-node-kind` of every drawn mark — `entity` / `episode` / `passage` / `hub`. */
 const markKinds = () =>
   [...document.querySelectorAll('[data-slot="memory-graph-node"]')].map((el) => (el as HTMLElement).dataset.nodeKind)
@@ -368,6 +409,75 @@ describe("MemoryGraphPage renders", () => {
     const points = drawnPoints()
     expect(points.length).toBe(VISIBLE_MEMORIES + 1)
     for (const p of points) expect(insidePane(p)).toBe(true)
+  })
+
+  test("🔴 labels are CULLED under crowding, never piled on top of each other", async () => {
+    // A tiny pane projects every mark into a small box, so their labels want the same pixels. The old
+    // rule drew all of them (under forty marks) or none (over forty); neither is readable.
+    paneSize = { width: 240, height: 200 }
+    mount([() => FIXTURE])
+    await settle()
+    showGraph()
+    await settle()
+    const labels = drawnLabels()
+    expect(labels.length).toBeGreaterThan(0)
+    expect(labels.length).toBeLessThan(VISIBLE_MEMORIES + 1)
+    // The property, stated directly: no two drawn labels share pixels.
+    for (let i = 0; i < labels.length; i++) {
+      for (let j = i + 1; j < labels.length; j++) {
+        expect(boxesOverlap(labels[i]!, labels[j]!)).toBe(false)
+      }
+    }
+  })
+
+  test("the SELECTED mark keeps its label however crowded the pane is", async () => {
+    paneSize = { width: 240, height: 200 }
+    mount([() => FIXTURE])
+    await settle()
+    showGraph()
+    await settle()
+    const mark = [...document.querySelectorAll('[data-slot="memory-graph-node"]')].find(
+      (el) => (el as HTMLElement).dataset.nodeKind === "episode",
+    ) as SVGGElement
+    mark.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    await settle()
+    const selectedID = document.querySelector('[data-slot="memory-graph-detail"]') ? true : false
+    expect(selectedID).toBe(true)
+    // The episode is `ep1`; whatever else was culled, the thing the user clicked is named.
+    expect(drawnLabels().some((l) => l.id === "ep1")).toBe(true)
+  })
+
+  test("every drawn label lies inside the viewport", async () => {
+    paneSize = { width: 420, height: 320 }
+    mount([() => FIXTURE])
+    await settle()
+    showGraph()
+    await settle()
+    for (const label of drawnLabels()) {
+      expect(label.x).toBeGreaterThanOrEqual(0)
+      expect(label.y).toBeGreaterThanOrEqual(0)
+      expect(label.x + label.w).toBeLessThanOrEqual(paneSize.width)
+      expect(label.y + label.h).toBeLessThanOrEqual(paneSize.height)
+    }
+  })
+
+  test("🔴 an unlinked memory sits OUTSIDE the connected marks, not among them", async () => {
+    // `ep1` is the episode with no edges. Gravity used to leave it inside the cluster, where a memory
+    // with no relationships reads as one of the related ones.
+    mount([() => FIXTURE])
+    await settle()
+    showGraph()
+    await settle()
+    const marks = drawnMarks()
+    const orphan = marks.find((m) => m.kind === "episode")!
+    const core = marks.filter((m) => m.kind !== "episode")
+    const box = {
+      minX: Math.min(...core.map((m) => m.x)),
+      maxX: Math.max(...core.map((m) => m.x)),
+      minY: Math.min(...core.map((m) => m.y)),
+      maxY: Math.max(...core.map((m) => m.y)),
+    }
+    expect(orphan.x < box.minX || orphan.x > box.maxX || orphan.y < box.minY || orphan.y > box.maxY).toBe(true)
   })
 
   test("showing passages refits to include them", async () => {
