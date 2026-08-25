@@ -835,9 +835,32 @@ export class WasmMemory {
     })
   }
 
+  /**
+   * Hard-delete every memory in a scope — and any consolidated twin that scope was the last origin of.
+   *
+   * 🔴 **A twin outlived the chat it came from.** Consolidation promotes an ownerless auto-extracted
+   * fact to a GLOBAL twin, and deleting the chat cleared `session:<id>` while the twin stayed —
+   * readable forever, from a conversation the product promised was gone permanently. The twin now
+   * carries a `consolidated_from` edge to each original it was promoted from, so this can ask a
+   * question it could not before: does anything still support it?
+   *
+   * ⚠️ **The LAST origin, not the first.** The twin id is a content hash, so the same fact learned in
+   * two chats is ONE twin with two origins. Deleting either chat must not remove a fact the other
+   * still supports — so the twin goes only when no origin remains. That is why this counts edges
+   * rather than deleting the twin alongside its origin.
+   *
+   * ⚠️ `DETACH DELETE` removes the origin edges with the originals, so the count is already correct by
+   * the time the second statement runs — the two must stay in this order.
+   */
   clearScope(scope: string): Promise<void> {
     return this.serialize(async () => {
       await this.q(`MATCH (m:Memory) WHERE m.scope = $scope DETACH DELETE m`, { scope })
+      await this.q(
+        `MATCH (t:Memory)
+         WHERE t.scope = 'global' AND t.source = 'consolidated'
+           AND NOT EXISTS { MATCH (t)-[:Rel {type: 'consolidated_from'}]->(:Memory) }
+         DETACH DELETE t`,
+      )
       this.touch()
     })
   }
@@ -1008,7 +1031,7 @@ export class WasmMemory {
       const rows = await this.rows(
         `MATCH (m:Memory)
          WHERE m.t_invalid IS NULL AND starts_with(m.scope, 'session:') AND m.source = 'auto-extract'
-         RETURN m.id AS id, m.kind AS kind, m.text AS text, m.name AS name,
+         RETURN m.id AS id, m.kind AS kind, m.text AS text, m.name AS name, m.scope AS scope,
                 m.source AS source, m.confidence AS confidence, m.relation AS relation`,
       )
       let promoted = 0
@@ -1039,6 +1062,32 @@ export class WasmMemory {
           )
         }
         twinOf.set(String(row.id), gid)
+        /**
+         * PROVENANCE: the twin points back at the original it was promoted from.
+         *
+         * Without it, deleting the chat left the twin behind with nothing to say where it came from —
+         * and `clearScope` had no way to tell a twin whose chat is gone from one whose chat is not.
+         * The edge is scoped to the ORIGINAL's scope, so it dies with that chat, which is exactly the
+         * signal `clearScope` counts.
+         *
+         * ⚠️ Guarded against duplication: this pass re-runs every few minutes, and an already-promoted
+         * original is skipped by the validity filter above — but a re-promoted twin (its own chat
+         * deleted, the same fact learned again elsewhere) must not accumulate parallel edges.
+         */
+        const already = await this.rows(
+          `MATCH (t:Memory {id: $gid})-[r:Rel {type: 'consolidated_from'}]->(o:Memory {id: $origin})
+           RETURN r.type AS type`,
+          { gid, origin: String(row.id) },
+        )
+        if (already.length === 0) {
+          await this.q(
+            `MATCH (t:Memory {id: $gid}), (o:Memory {id: $origin})
+             CREATE (t)-[:Rel { type: 'consolidated_from', scope: $scope, source: 'consolidated',
+                                confidence: null,
+                                t_valid: current_timestamp(), t_created: current_timestamp() }]->(o)`,
+            { gid, origin: String(row.id), scope: String(row.scope ?? "global") },
+          )
+        }
         // Supersede the session original (bitemporal): it's now represented globally.
         await this.q(`MATCH (m:Memory {id: $id}) SET m.t_invalid = current_timestamp()`, { id: String(row.id) })
         promoted++

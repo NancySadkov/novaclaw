@@ -94,6 +94,87 @@ describe("consolidation survives the startup discard", () => {
     expect(await engine.search({ query: "chat", scopes: ["global"] })).toEqual([])
   }, 60_000)
 
+  test("🔴 deleting the chat REVOKES the twin it was promoted from", async () => {
+    // The twin outlived the conversation the product promised was removed permanently — readable
+    // forever from `global`, and `clearScope` had no way to tell it apart from a twin whose chat still
+    // exists. The `consolidated_from` edge is what lets it ask.
+    const engine = await open()
+    await engine.addMemory({
+      id: "a1",
+      kind: "entity",
+      text: "the passport number is 12345",
+      scope: "session:alpha",
+      source: "auto-extract",
+    })
+    await engine.consolidate()
+    expect((await engine.search({ query: "passport", scopes: ["global"] })).length).toBe(1)
+
+    await engine.clearScope("session:alpha")
+    expect(await engine.search({ query: "passport", scopes: ["global"] })).toEqual([])
+  }, 60_000)
+
+  test("🔴 the LAST origin, not the first — a fact two chats support survives losing one", async () => {
+    // The twin id is a content hash, so one fact learned in two chats is ONE twin with two origins.
+    // Deleting either chat must not remove what the other still supports.
+    const engine = await open()
+    await engine.addMemory({
+      id: "b1",
+      kind: "entity",
+      text: "the cat is called Mittens",
+      scope: "session:alpha",
+      source: "auto-extract",
+    })
+    await engine.addMemory({
+      id: "b2",
+      kind: "entity",
+      text: "the cat is called Mittens",
+      scope: "session:beta",
+      source: "auto-extract",
+    })
+    await engine.consolidate()
+
+    await engine.clearScope("session:alpha")
+    expect((await engine.search({ query: "Mittens", scopes: ["global"] })).map((h) => h.text)).toEqual([
+      "the cat is called Mittens",
+    ])
+
+    // …and when the last chat holding it goes, so does the fact.
+    await engine.clearScope("session:beta")
+    expect(await engine.search({ query: "Mittens", scopes: ["global"] })).toEqual([])
+  }, 60_000)
+
+  test("⚠️ clearing an UNRELATED scope revokes nothing", async () => {
+    // `clearScope` now deletes twins with no surviving origin, so it must not mistake "this twin's
+    // origins are elsewhere" for "this twin has none".
+    const engine = await open()
+    await engine.addMemory({
+      id: "c1",
+      kind: "entity",
+      text: "a fact worth keeping",
+      scope: "session:alpha",
+      source: "auto-extract",
+    })
+    await engine.consolidate()
+    await engine.clearScope("session:unrelated")
+    expect((await engine.search({ query: "keeping", scopes: ["global"] })).length).toBe(1)
+  }, 60_000)
+
+  test("⚠️ a global memory the USER wrote is never revoked by a chat deletion", async () => {
+    // Only `consolidated` rows carry origins. A deliberate global `remember` has no chat to outlive.
+    const engine = await open()
+    await engine.addMemory({ id: "mine", kind: "entity", text: "I chose to keep this", scope: "global" })
+    await engine.addMemory({
+      id: "d1",
+      kind: "entity",
+      text: "something automatic",
+      scope: "session:alpha",
+      source: "auto-extract",
+    })
+    await engine.consolidate()
+    await engine.clearScope("session:alpha")
+    expect((await engine.search({ query: "chose", scopes: ["global"] })).map((h) => h.id)).toEqual(["mine"])
+  }, 60_000)
+
   test("consolidating twice promotes once — the pass runs every few minutes", async () => {
     const engine = await open()
     await engine.addMemory({ id: "m", kind: "entity", text: "y", scope: "session:s1", source: "auto-extract" })
