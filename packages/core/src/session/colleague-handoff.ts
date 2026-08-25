@@ -192,6 +192,25 @@ export interface Interface {
     readonly title: string
     readonly brief: string
     readonly personality?: string | undefined
+    /**
+     * WHO is staffing. Checked here, not only at the tool.
+     *
+     * 🔴 Hiring is the CEO's alone (AGENTS.md — the structural metaphor: an officer that could hire
+     * would be a second CEO, and an org with two CEOs has none). `tool/colleague.ts` checks
+     * `mayStaff`, but that tool runs INSIDE THE WORKER — so the check is the worker's own, and
+     * `session-worker/interaction-bridge` then asked the host to hire on the worker's word. The host
+     * obeyed. Same shape as the retire hole beside it: a guard the guarded party applies to itself.
+     *
+     * ⚠️ A SESSION, not an agent name. The caller passes the id it was granted — the worker's lease,
+     * the tool's own context — and the agent is derived HERE from the session row, using the same
+     * lookup `deliver` uses to decide who a hand-off is from. An untrusted caller therefore supplies
+     * only an id the host already validated, and cannot name itself Nova.
+     *
+     * ⚠️ Optional, and absent means REFUSED rather than allowed. A caller that cannot say which
+     * session is asking has not proved it may staff, and defaulting the other way would leave the
+     * hole open for anything added later that forgets the field.
+     */
+    readonly bySession?: SessionSchema.ID | undefined
   }) => Effect.Effect<Hired>
   /**
    * Retire a colleague: remove the role, forget what it spent, and CLEAR ITS CABINET.
@@ -410,6 +429,14 @@ export const fromParts = (input: {
   readonly paused?: (colleague: string) => Effect.Effect<boolean>
 }): Interface => ({
   hire: Effect.fn("ColleagueHandoff.hire")(function* (request) {
+    // 🔴 The org chart itself, enforced where every door reaches it — see `by` on the interface.
+    // Returns an empty hire rather than failing, matching `retire`'s `false`: the bridge maps a
+    // non-success onto its refusal, and the tool door still produces the sentence a model reads.
+    const staffing = request.bySession === undefined ? undefined : (yield* input.session(request.bySession))?.agent
+    if (!AgentV2.mayStaff(staffing))
+      return yield* Effect.die(
+        new Error(`${staffing ?? "an unnamed session"} may not staff the roster — hiring is Nova's alone`),
+      )
     // The name is DRAWN, never chosen by a model: a roster sits in an address book beside real
     // people, and a colleague called "Sarah" is one misread from being taken for one. Taken names —
     // ids and display names alike — are avoided, because the collision that matters is a reading one.

@@ -147,7 +147,7 @@ export const formatRoster = (
  * would be a second CEO, and an org with two CEOs has none. The permission check still runs, because
  * "Nova may do this" and "this instance allows it right now" are different questions.
  */
-export const mayStaff = (selfID: string): boolean => selfID === AgentV2.NOVA_ID
+export const mayStaff = (selfID: string): boolean => AgentV2.mayStaff(selfID)
 
 /** Colleagues you can address: the roster, minus the staff and the machinery, minus yourself. */
 export const addressable = (agents: ReadonlyArray<AgentV2.Info>, selfID: string): ReadonlyArray<AgentV2.Info> =>
@@ -218,6 +218,10 @@ export const layer = Layer.effectDiscard(
                   title: input.title,
                   brief: input.brief,
                   ...(input.personality === undefined ? {} : { personality: input.personality }),
+                  // WHICH SESSION is staffing, so the host can derive the agent itself. `mayStaff`
+                  // ran above, but that was this tool checking itself inside the worker — see
+                  // `bySession` on the handoff interface.
+                  bySession: context.sessionID,
                 })
                 return {
                   ok: true,

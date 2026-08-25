@@ -59,6 +59,23 @@ export const PROTECTED_IDS: ReadonlySet<string> = new Set([NOVA_ID])
 export const isProtected = (id: string): boolean => PROTECTED_IDS.has(id)
 
 /**
+ * May this agent STAFF the roster — hire and retire?
+ *
+ * 🔴 The CEO's alone (AGENTS.md — the structural metaphor: Nova "creates the role when none exists,
+ * and retires one that no longer earns its keep"). An officer that could hire would be a second CEO,
+ * and an org with two CEOs has none.
+ *
+ * ⚠️ It lives HERE, beside `isProtected`, rather than in `tool/colleague.ts` where it started —
+ * because the tool is not the only door. The tool runs INSIDE THE WORKER, so its check is the
+ * worker's own; the host reaches `ColleagueHandoff.hire` on the worker's word and needs the same
+ * rule without importing the tool (which imports the handoff, and would close a cycle).
+ *
+ * ⚠️ Enforced as WELL as by permission rules, and the two are not redundant. A rule is the operator's
+ * dial and can be widened; this is the org chart itself.
+ */
+export const mayStaff = (agentID: string | undefined): boolean => agentID === NOVA_ID
+
+/**
  * The POSTURE agents. `build` and `plan` are permission modes wearing an agent's shape (owner,
  * 2026-08-22), not people — and `build` is this instance's DEFAULT agent (see `defaultID` above), so
  * an ordinary chat that never named a colleague still carries `agent: "build"` on its row.

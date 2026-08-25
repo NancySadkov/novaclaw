@@ -128,11 +128,16 @@ export const handle = Effect.fn("SessionWorkerInteractionBridge.handle")(functio
   if (input.message.type === "colleague-request") {
     const request = input.message.input
     if (request.op === "hire") {
+      // 🔴 THE LEASE, never the request. The tool's `mayStaff` check runs INSIDE the worker, so it is
+      // the worker checking itself; the host must decide from something the worker cannot choose. The
+      // lease is that — it is what this worker was granted, and `event-bridge` already refuses any
+      // event whose session id is not it. The handoff derives the AGENT from it host-side.
       const hired = yield* input.colleague
         .hire({
           title: request.title,
           brief: request.brief,
           ...(request.personality === undefined ? {} : { personality: request.personality }),
+          bySession: input.lease.sessionID,
         })
         .pipe(Effect.exit)
       if (!Exit.isSuccess(hired)) return reject()
