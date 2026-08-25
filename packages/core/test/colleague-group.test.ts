@@ -368,6 +368,29 @@ describe("a reply INFORMS the room, it does not summon it", () => {
   )
 
   it.effect(
+    "🔴 the bystander's copy is MARKED an announce, so it is not read as an unanswered ask",
+    Effect.gen(function* () {
+      const { db, events } = yield* threeChats
+      yield* peerMessageFrom(db, THERON, "aris")
+      yield* handoff(db, events, ROSTER).deliverGroup({
+        from: THERON,
+        colleagues: ["aris", "kallias"],
+        message: "the quarter closed cleanly",
+      })
+
+      // The JOIN, and the half a pure test cannot reach: the note's wording already differed, but
+      // nothing downstream reads wording. `colleague-stall.ts` reads the ORIGIN, and until this was
+      // stamped the copy was byte-identical to an ask — so kallias staying (correctly) silent
+      // minted a false stall against theron, whose "ask again" then woke the room.
+      expect((yield* admitted(db, KALLIAS))[0]!.origin["announce"]).toBe(true)
+
+      // ⚠️ The ANSWER recipient is not marked. aris asked, so aris is owed a reply, and marking
+      // that copy would silence a stall that SHOULD fire.
+      expect((yield* admitted(db, ARIS)).at(-1)!.origin["announce"]).toBeUndefined()
+    }),
+  )
+
+  it.effect(
     "a fresh QUESTION still wakes everyone — the damper is on replies only",
     Effect.gen(function* () {
       const { db, events } = yield* threeChats

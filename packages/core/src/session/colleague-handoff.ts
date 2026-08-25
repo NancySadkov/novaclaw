@@ -279,6 +279,10 @@ const landColleagueMessage = (
           // Stamped so the RECEIVER knows how far from a person it is: without this the chain is
           // invisible to everyone in it, which is how a loop that every hop finds reasonable runs.
           hops: args.hop,
+          // 🔴 An ANNOUNCE copy is marked so `colleague-stall.ts` does not read it as a question.
+          // Without this the two are byte-identical here and differ only in the note's WORDING, so a
+          // bystander who correctly stays silent looked exactly like a colleague ignoring an ask.
+          ...(args.turn === "announce" ? { announce: true as const } : {}),
           // Absent when empty rather than an empty array: a fresh chain should not carry a field.
           ...(args.path === undefined || args.path.length === 0 ? {} : { path: [...args.path] }),
           ...(args.label === undefined ? {} : { label: args.label }),

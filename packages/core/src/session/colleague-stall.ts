@@ -32,6 +32,15 @@ export interface Landed {
   /** The agent that sent it. */
   readonly from: string
   readonly at: number
+  /**
+   * This copy INFORMED the reader; it asked them nothing.
+   *
+   * 🔴 A conference reply is copied to every bystander, and those copies were byte-identical to an
+   * ask. So each bystander who correctly said nothing looked like a colleague ignoring a question,
+   * and a ≥3-party room minted a false stall PER BYSTANDER on every reply — whose "ask again" then
+   * woke the room, which is the amplification the announce discipline exists to remove.
+   */
+  readonly announce?: boolean | undefined
 }
 
 export interface Stalled {
@@ -110,6 +119,10 @@ export const stalled = (input: {
   const after = input.after ?? AFTER_MS
   const out: Stalled[] = []
   for (const ask of input.landed) {
+    // 🔴 AN ANNOUNCE IS NOT AN ASK. Nobody is waiting on a bystander, so silence from one is the
+    // room working, not a stall — and reporting it would teach everyone to ignore the notice, which
+    // `AFTER_MS`'s own comment calls the fatal outcome.
+    if (ask.announce === true) continue
     const colleague = input.agentOf[ask.sessionID]
     // A delivery into a chat with no agent cannot be attributed, and an agent asking itself is not a
     // thing `deliver` permits — either way there is nobody to tell.
@@ -196,9 +209,16 @@ export const sweep = (
 
     const landed: Landed[] = []
     for (const row of rows) {
-      const origin = (row.prompt as { origin?: { via?: string; relation?: string; label?: string } }).origin
+      const origin = (
+        row.prompt as { origin?: { via?: string; relation?: string; label?: string; announce?: boolean } }
+      ).origin
       if (origin?.via !== "agent" || origin.relation !== "peer" || typeof origin.label !== "string") continue
-      landed.push({ sessionID: String(row.session), from: origin.label, at: Number(row.at) })
+      landed.push({
+        sessionID: String(row.session),
+        from: origin.label,
+        at: Number(row.at),
+        announce: origin.announce === true,
+      })
     }
 
     let told = 0

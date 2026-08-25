@@ -140,6 +140,21 @@ export const Origin = Schema.Union([
      * turn one lap into six for the price of one.
      */
     participants: Schema.Array(Schema.String).pipe(optional),
+    /**
+     * This copy INFORMS the reader; it does not ask them anything.
+     *
+     * 🔴 A conference reply is copied to every bystander so the room stays a room. Those copies used
+     * to be byte-identical to an ask — same `via`, same `relation: "peer"`, same label — with the
+     * difference living only in the NOTE's wording. So `colleague-stall.ts`, which finds an ask by
+     * looking for a peer message nobody answered, read every announce copy as an unanswered
+     * question: each bystander who (correctly) said nothing minted a false stall notice back at the
+     * replier, whose *"ask again"* then woke the room — the exact amplification the announce
+     * discipline exists to remove. And a stall notice that fires on healthy traffic teaches models to
+     * ignore stall notices, which `ColleagueStall.AFTER_MS`'s own comment calls the fatal outcome.
+     *
+     * ⚠️ Absent means "a real hand-off", so every 1:1 exchange stays byte-identical to before.
+     */
+    announce: Schema.Boolean.pipe(optional),
   }),
   Schema.Struct({
     via: Schema.Literal("messenger"),
