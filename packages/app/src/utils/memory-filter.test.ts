@@ -54,6 +54,20 @@ describe("matches", () => {
     const none: MemoryFilter = { ...filter, kinds: new Set() }
     expect(matches(row("Nancy", "anything"), none)).toBe(false)
   })
+
+  test("🔴 the LENS is real — `Current` rejects a corrected claim, `History` admits it", () => {
+    // This field was INERT: `matches()` ignored it, so the header's toggle changed its own label and
+    // nothing else. If this test ever goes green with the lens check deleted, the control is a lie
+    // again.
+    const corrected = { ...row("Ann", "Ann works at Initech"), status: "superseded" }
+    expect(matches(corrected, filter)).toBe(false)
+    expect(matches(corrected, { ...filter, lens: "history" })).toBe(true)
+    expect(matches({ ...corrected, status: "active" }, filter)).toBe(true)
+  })
+
+  test("a row with no status at all still passes — a filter narrows, it does not erase", () => {
+    expect(matches(row("Ann", "Ann works at Acme"), filter)).toBe(true)
+  })
 })
 
 describe("isNarrowed", () => {
@@ -61,9 +75,9 @@ describe("isNarrowed", () => {
     expect(isNarrowed(defaultFilter())).toBe(false)
   })
 
-  test("a query, a status change, or a kind change all count", () => {
+  test("a query, a LENS change, or a kind change all count", () => {
     expect(isNarrowed({ ...defaultFilter(), query: "x" })).toBe(true)
-    expect(isNarrowed({ ...defaultFilter(), status: "all" })).toBe(true)
+    expect(isNarrowed({ ...defaultFilter(), lens: "history" })).toBe(true)
     expect(isNarrowed(toggleKind(defaultFilter(), "passage"))).toBe(true)
     expect(isNarrowed(toggleKind(defaultFilter(), "entity"))).toBe(true)
   })
