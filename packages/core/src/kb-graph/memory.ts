@@ -199,13 +199,13 @@ export const layerFromConfig = (
       )
       const consolidateEvery = Duration.millis(cfg.consolidateEveryMs ?? 5 * 60_000)
       /**
-       * The instance database, when this instance has one.
+       * CONSOLIDATE, THEN FORGET — the background pass, now with the access ledger in the loop.
        *
-       * 🔴 It is what makes the forgetting pass read USEFULNESS rather than only age (`prune-policy.ts`).
-       * `Memory.serviceNode` declares `Database.node` as a dependency so it is actually here; the
-       * `serviceOption` is not a hedge against that wiring but against the environments that build the
-       * memory layer alone — the absorb evaluator, a bare engine harness — where the honest behaviour
-       * is the pre-ledger policy rather than a boot failure.
+       * 🔴 `ledger` is the `db` captured above, and it is what makes forgetting read USEFULNESS
+       * rather than only age (`forget` below, and `prune-policy.ts` for the reasoning). It is a hard
+       * dependency rather than an optional read for the same reason the bus is: an optional one
+       * would have made this pass silently fall back to the old age-ordered policy in exactly the
+       * environments nobody looks at.
        */
       yield* Effect.forkScoped(
         Effect.gen(function* () {
