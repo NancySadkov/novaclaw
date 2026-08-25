@@ -1,4 +1,4 @@
-import { and, eq, gte, isNull } from "drizzle-orm"
+import { and, eq, gte, isNull, sql } from "drizzle-orm"
 import { Effect } from "effect"
 import type { Database } from "../database/database"
 import type { EventV2 } from "../event"
@@ -118,6 +118,17 @@ export const stalled = (input: {
 }): Stalled[] => {
   const after = input.after ?? AFTER_MS
   const out: Stalled[] = []
+  // ⚠️ INDEXED ONCE. Both lookups below are "what else is in the ASKER's chat", and doing them with a
+  // `filter`/`some` over every landed message made this O(n²) in the number of peer messages on the
+  // instance — inside a sweep that runs every 30 s. Grouping by session first makes each lookup touch
+  // only that chat's own rows, which is the set the question was always about.
+  const bySession = new Map<string, Landed[]>()
+  for (const row of input.landed) {
+    const list = bySession.get(row.sessionID)
+    if (list === undefined) bySession.set(row.sessionID, [row])
+    else list.push(row)
+  }
+  for (const list of bySession.values()) list.sort((left, right) => left.at - right.at)
   for (const ask of input.landed) {
     // 🔴 AN ANNOUNCE IS NOT AN ASK. Nobody is waiting on a bystander, so silence from one is the
     // room working, not a stall — and reporting it would teach everyone to ignore the notice, which
@@ -137,17 +148,19 @@ export const stalled = (input: {
     // The test mirrors `ColleagueNote.turnFor` rather than inventing a second rule: this is an answer
     // when the last peer message the sender received BEFORE writing came from the colleague it is now
     // writing to. Two rules for one distinction is how they drift apart.
-    const priorInSendersChat = input.landed
-      .filter((row) => row.sessionID === askerChat && row.at < ask.at)
-      .sort((a, b) => b.at - a.at)[0]
+    const inAskersChat = bySession.get(askerChat) ?? []
+    // Sorted ascending, so the last row before `ask.at` is the newest one that precedes it.
+    let priorInSendersChat: Landed | undefined
+    for (const row of inAskersChat) {
+      if (row.at >= ask.at) break
+      priorInSendersChat = row
+    }
     if (priorInSendersChat?.from === colleague) continue
     // ⚠️ ANY later message from that colleague counts as an answer, not only one that parses as one.
     // A reply the asker can read is the outcome that matters, and a stricter test would report a
     // colleague that answered in its own words as silent — the worst kind of false alarm, because
     // the asker can see the answer sitting in its chat.
-    const answered = input.landed.some(
-      (reply) => reply.sessionID === askerChat && reply.from === colleague && reply.at > ask.at,
-    )
+    const answered = inAskersChat.some((reply) => reply.from === colleague && reply.at > ask.at)
     if (!answered) out.push({ asker: ask.from, colleague, askedAt: ask.at })
   }
   return out
@@ -200,24 +213,41 @@ export const sweep = (
       chatOf[row.agent] ??= row.id
     }
 
+    // 🔴 THE DATABASE DOES THE FILTERING, and it is not a micro-optimisation: this runs every 30 s.
+    // Selecting whole `prompt` blobs for every input row in 24 h meant decoding every user message,
+    // every attachment list and every steer on an instance — to keep the handful that carry a peer
+    // origin. The cost grew with HISTORY rather than with the thing being looked for, which is the
+    // shape of a guard that eventually becomes the problem it guards against.
+    //
+    // ⚠️ `json_extract` reads the SAME fields the loop below used to read off the decoded object, so
+    // there is one definition of "a peer message" and it did not move — it just runs where the rows
+    // are. `announce` comes back as SQLite's 0/1, hence the `=== 1`.
     const rows = yield* db
-      .select({ session: SessionInputTable.session_id, prompt: SessionInputTable.prompt, at: SessionInputTable.time_created })
+      .select({
+        session: SessionInputTable.session_id,
+        at: SessionInputTable.time_created,
+        from: sql<string | null>`json_extract(${SessionInputTable.prompt}, '$.origin.label')`,
+        announce: sql<number | null>`json_extract(${SessionInputTable.prompt}, '$.origin.announce')`,
+      })
       .from(SessionInputTable)
-      .where(and(gte(SessionInputTable.time_created, now - LOOKBACK_MS)))
+      .where(
+        and(
+          gte(SessionInputTable.time_created, now - LOOKBACK_MS),
+          sql`json_extract(${SessionInputTable.prompt}, '$.origin.via') = 'agent'`,
+          sql`json_extract(${SessionInputTable.prompt}, '$.origin.relation') = 'peer'`,
+        ),
+      )
       .all()
       .pipe(Effect.orDie)
 
     const landed: Landed[] = []
     for (const row of rows) {
-      const origin = (
-        row.prompt as { origin?: { via?: string; relation?: string; label?: string; announce?: boolean } }
-      ).origin
-      if (origin?.via !== "agent" || origin.relation !== "peer" || typeof origin.label !== "string") continue
+      if (typeof row.from !== "string" || row.from === "") continue
       landed.push({
         sessionID: String(row.session),
-        from: origin.label,
+        from: row.from,
         at: Number(row.at),
-        announce: origin.announce === true,
+        announce: row.announce === 1,
       })
     }
 

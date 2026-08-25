@@ -44,14 +44,25 @@ const chat = (db: Database.Interface["db"], id: SessionSchema.ID, agent: string)
     .pipe(Effect.orDie)
 
 /** A peer message that landed in `session`, sent by `from`, at `at`. */
-const landed = (db: Database.Interface["db"], session: SessionSchema.ID, from: string, at: number) =>
+const landed = (
+  db: Database.Interface["db"],
+  session: SessionSchema.ID,
+  from: string,
+  at: number,
+  announce?: boolean,
+) =>
   db
     .insert(SessionInputTable)
     .values([
       {
         id: `msg_in_${from}_${session}_${at}`,
         session_id: session,
-        prompt: { text: "the ledger?", files: [], agents: [], origin: { via: "agent", relation: "peer", label: from } },
+        prompt: {
+          text: "the ledger?",
+          files: [],
+          agents: [],
+          origin: { via: "agent", relation: "peer", label: from, ...(announce ? { announce: true } : {}) },
+        },
         delivery: "queue",
         admitted_seq: at,
         time_created: at,
@@ -96,6 +107,22 @@ describe("the stall sweep", () => {
       const notices = yield* noticesIn(db, ARIS)
       expect(notices.length).toBe(1)
       expect(JSON.stringify(notices[0]!.prompt)).toContain("theron")
+    }),
+  )
+
+  it.effect(
+    "🔴 an ANNOUNCE copy in the database produces no notice — through the real query",
+    Effect.gen(function* () {
+      const { db, events } = yield* twoChats
+      const now = 10 * HOUR
+      yield* landed(db, THERON, "aris", now - 2 * HOUR, true)
+
+      // ⚠️ The pure rule is tested elsewhere; this pins the WIRE. The sweep reads `announce`
+      // with `json_extract`, which returns SQLite's 0/1 rather than a boolean — so a mapping
+      // written as `announce: row.announce` would be truthy for BOTH values and silence every
+      // genuine stall, while `=== true` would be false for both and silence none.
+      expect(yield* ColleagueStall.sweep(db, events, now)).toBe(0)
+      expect((yield* noticesIn(db, ARIS)).length).toBe(0)
     }),
   )
 
