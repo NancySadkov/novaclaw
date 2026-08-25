@@ -140,7 +140,7 @@ input.on("line", (line) => {
           ...identity,
           type: "await-child",
           requestID,
-          input: { childID, timeoutMs: 1_000 },
+          input: { childID },
         })
       return
     }
