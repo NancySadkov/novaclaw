@@ -541,10 +541,20 @@ export const fromParts = (input: {
     // the recipients would answer someone who never heard the question and nobody could tell.
     let reachable: string[] = []
     const missing: string[] = []
+    // 🔴 RESOLVED ONCE, and the id is KEPT. The landing loop used to call `chatFor` a second time and
+    // `continue` on a miss, so a chat archived between the scan and the land was skipped silently —
+    // while `participants` (stamped from the scan) still named that colleague to everyone else, and
+    // the rate budget was still charged for the copy. That is the file's own invariant inverted: the
+    // recipients would answer someone who never heard the question, and nobody in the room could
+    // tell. One lookup means the two lists cannot disagree, by construction rather than by care.
+    const chats = new Map<string, SessionSchema.ID>()
     for (const colleague of named) {
       const chat = yield* RosterChat.chatFor(input.db, colleague)
       if (chat === undefined) missing.push(colleague)
-      else reachable.push(colleague)
+      else {
+        reachable.push(colleague)
+        chats.set(colleague, chat.id as SessionSchema.ID)
+      }
     }
     if (reachable.length === 0) return { delivered: [], missing, started: false }
 
@@ -606,14 +616,15 @@ export const fromParts = (input: {
     const replying = ColleagueNote.isReply(turns.map((entry) => entry.turn))
     let started = false
     for (const entry of turns) {
-      const chat = yield* RosterChat.chatFor(input.db, entry.colleague)
-      if (chat === undefined) continue
+      // The id from the scan above — never a second lookup. See the comment there.
+      const chatID = chats.get(entry.colleague)
+      if (chatID === undefined) continue
       // A bystander to a reply is ANNOUNCED to, and the note changes with the wake: a fixed sentence
       // under a changed control is the copy defect principle 12 names. The announcement says nobody
       // is waiting on them AND how to speak up, which is what keeps a room a room.
       const announced = replying && entry.turn !== "answer"
       const woke = yield* landColleagueMessage(input, {
-        chatID: chat.id as SessionSchema.ID,
+        chatID,
         from: request.from,
         message: request.message,
         label,

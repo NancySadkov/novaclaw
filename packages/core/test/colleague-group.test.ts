@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect } from "bun:test"
+import fs from "node:fs"
+import path from "node:path"
+import { beforeEach, describe, expect, test } from "bun:test"
 import { Clock, Effect } from "effect"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
@@ -389,6 +391,52 @@ describe("a reply INFORMS the room, it does not summon it", () => {
       expect((yield* admitted(db, ARIS)).at(-1)!.origin["announce"]).toBeUndefined()
     }),
   )
+
+  it.effect(
+    "🔴 `participants` names EXACTLY who received it, and rate is charged for exactly those",
+    Effect.gen(function* () {
+      const { db, events } = yield* threeChats
+      const result = yield* handoff(db, events, ROSTER).deliverGroup({
+        from: NOVA,
+        // `ghost` is on nobody's roster and has no chat — the same shape a colleague archived
+        // between the scan and the land used to produce.
+        colleagues: ["aris", "kallias", "ghost"],
+        message: "the quarter closed cleanly",
+      })
+
+      expect(result.delivered.toSorted()).toEqual(["aris", "kallias"])
+      expect(result.missing).toContain("ghost")
+
+      // 🔴 The invariant this file states about itself: a partially delivered conference is worse
+      // than a refused one, because the `participants` list every recipient can SEE would name
+      // colleagues who never got the message — so they would answer a room that was never
+      // assembled, and nobody in it could tell.
+      for (const session of [ARIS, KALLIAS]) {
+        const origin = (yield* admitted(db, session))[0]!.origin as { participants?: string[] }
+        expect(origin.participants?.toSorted()).toEqual(["aris", "kallias", "nova"])
+      }
+
+      // ⚠️ And the sender is charged for TWO copies, not three. The bound is charged once per
+      // recipient, so counting a copy that was never written spends an allowance on nothing.
+      expect(ColleagueBound.recent(String(NOVA), yield* Clock.currentTimeMillis)).toBe(2)
+    }),
+  )
+
+  test("🔴 the landing loop resolves NO chat of its own — the race is removed, not handled", () => {
+    // ⚠️ A STRUCTURAL assertion, and the reason is worth stating: the defect is a window between
+    // two lookups, and the test harness has no seam between them — `input.session` runs before the
+    // scan, `wake` runs after the land. Adding a seam to the production code purely to make the
+    // race reachable would be a worse change than the bug. So the fix is the REMOVAL of the second
+    // lookup, and this asserts exactly that.
+    //
+    // Verified by A/B: the behavioural test above passes with the second lookup restored, so it
+    // does NOT pin this. This does.
+    const source = fs.readFileSync(path.join(import.meta.dir, "..", "src", "session", "colleague-handoff.ts"), "utf8")
+    const group = source.slice(source.indexOf("deliverGroup: Effect.fn"))
+    const landing = group.slice(group.indexOf("for (const entry of turns)"))
+    expect(landing).toContain("chats.get(entry.colleague)")
+    expect(landing).not.toContain("chatFor")
+  })
 
   it.effect(
     "a fresh QUESTION still wakes everyone — the damper is on replies only",
