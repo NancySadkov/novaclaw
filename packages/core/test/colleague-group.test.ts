@@ -300,6 +300,7 @@ const peerMessageFrom = (
   session: SessionSchema.ID,
   from: string,
   path?: ReadonlyArray<string>,
+  participants?: ReadonlyArray<string>,
 ) =>
   db
     .insert(SessionMessageTable)
@@ -311,7 +312,14 @@ const peerMessageFrom = (
         seq: 1,
         data: {
           text: "earlier question",
-          origin: { via: "agent", relation: "peer", label: from, hops: 1, ...(path ? { path: [...path] } : {}) },
+          origin: {
+            via: "agent",
+            relation: "peer",
+            label: from,
+            hops: 1,
+            ...(path ? { path: [...path] } : {}),
+            ...(participants ? { participants: [...participants] } : {}),
+          },
         },
         time_created: 1,
       } as never,
@@ -437,6 +445,29 @@ describe("a reply INFORMS the room, it does not summon it", () => {
     expect(landing).toContain("chats.get(entry.colleague)")
     expect(landing).not.toContain("chatFor")
   })
+
+  it.effect(
+    "🔴 a BYSTANDER taking up the invitation reaches the originator, who is on its path",
+    Effect.gen(function* () {
+      const { db, events } = yield* threeChats
+      // aris asked the room; the chain reached kallias via theron, so aris and theron are both on
+      // kallias's path — which is how every participant of a room always looks.
+      yield* peerMessageFrom(db, KALLIAS, "theron", ["aris", "theron"], ["aris", "theron", "kallias"])
+
+      const result = yield* handoff(db, events, ROSTER).deliverGroup({
+        from: KALLIAS,
+        colleagues: ["aris", "theron"],
+        message: "one more thing about the ledger",
+      })
+
+      // 🔴 The JOIN. The rule being right is not enough: `lastPeerContext` has to carry the room
+      // to it. Before this, aris — the person who ASKED — was dropped as a cycle, so the room
+      // invited a reply and then withheld it from the only one it was for.
+      expect(result.delivered.toSorted()).toEqual(["aris", "theron"])
+      expect(result.refused).toBeUndefined()
+      expect((yield* admitted(db, ARIS)).length).toBe(1)
+    }),
+  )
 
   it.effect(
     "a fresh QUESTION still wakes everyone — the damper is on replies only",

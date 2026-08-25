@@ -51,6 +51,20 @@ interface PeerContext {
   /** Which colleague last wrote in as a peer, skipping the user's own interjections. */
   readonly label: string | undefined
   /**
+   * Everyone in the ROOM this session was last addressed as part of, sender included.
+   *
+   * 🔴 What makes an invited speak-up reach the person who asked. A bystander is told, in its own
+   * note, that it may address the room — and then `closesCycle` dropped the ORIGINATOR as a loop,
+   * because the only cycle exemption was "the party you are answering", and a bystander is not
+   * answering the asker. So the room invited a reply it then refused to deliver, and the bystander
+   * could not tell: its message was accepted for everyone except the one who asked.
+   *
+   * Within one conversation every current participant is answerable. The chain still bounds itself
+   * by the hop cap and the rate window — this exempts only the ROOM from the cycle rule, not the
+   * chain from its budget.
+   */
+  readonly participants: ReadonlyArray<string>
+  /**
    * The agent ids this chain has already passed through, in order.
    *
    * 🔴 What makes a CYCLE decidable rather than merely deep: `hops` cannot tell `A→B→C→A` from
@@ -83,6 +97,7 @@ const lastPeerContext = (db: Database.Interface["db"], session: SessionSchema.ID
         let label: string | undefined
         let hops: number | undefined
         let path: ReadonlyArray<string> | undefined
+        let participants: ReadonlyArray<string> | undefined
         for (const row of rows) {
           // 🔴 Step over an instance NOTICE — it is nobody's turn. Without this the `hops = 0` line
           // below reads a notice as the user at the composer and resets the chain, so the notice's
@@ -96,6 +111,7 @@ const lastPeerContext = (db: Database.Interface["db"], session: SessionSchema.ID
                 readonly label?: string
                 readonly hops?: number
                 readonly path?: ReadonlyArray<string>
+                readonly participants?: ReadonlyArray<string>
               }
             }
           )?.origin
@@ -110,9 +126,13 @@ const lastPeerContext = (db: Database.Interface["db"], session: SessionSchema.ID
           // Absent means EMPTY, the same convention `hops` uses: a message written before the field
           // existed reads as a fresh chain rather than an unknown one.
           if (path === undefined) path = peer && Array.isArray(origin?.path) ? origin.path : []
+          // The room comes from the SAME message the path did, so "who may I answer" and "where has
+          // this been" can never describe two different exchanges.
+          if (participants === undefined)
+            participants = peer && Array.isArray(origin?.participants) ? origin.participants : []
           if (label !== undefined && hops !== undefined) break
         }
-        return { label, hops: hops ?? 0, path: path ?? [] } satisfies PeerContext
+        return { label, hops: hops ?? 0, path: path ?? [], participants: participants ?? [] } satisfies PeerContext
       }),
       Effect.orDie,
     )
@@ -491,7 +511,16 @@ export const fromParts = (input: {
     const path = ColleagueBound.extendPath(context.path, label)
     // 🔴 CYCLE BEFORE DEPTH. A loop refused as "too deep" sends a model to wait and retry, which is
     // the one thing that cannot help — so the check that can name the loop runs first.
-    if (ColleagueBound.closesCycle({ path, target: request.colleague, answering: askedByRecipient })) {
+    // The 1:1 door reaches the same rule: a bystander that answers the room ONE colleague at a time
+    // must not be refused where the same message to the same person as a group would be allowed.
+    if (
+      ColleagueBound.closesCycle({
+        path,
+        target: request.colleague,
+        answering: askedByRecipient,
+        room: context.participants,
+      })
+    ) {
       yield* notifyOriginator(input, { path, from: request.from, refusedBy: label, target: request.colleague })
       return {
         delivered: false,
@@ -565,7 +594,14 @@ export const fromParts = (input: {
     // the whole conference. The all-or-nothing rule belongs to the RATE budget, which is a property
     // of the sender; one colleague already in the chain says nothing about the others.
     const cycling = reachable.filter((colleague) =>
-      ColleagueBound.closesCycle({ path, target: colleague, answering: context.label === colleague }),
+      ColleagueBound.closesCycle({
+        path,
+        target: colleague,
+        answering: context.label === colleague,
+        // The room this sender was last addressed as part of — so a bystander taking up the
+        // invitation reaches the originator instead of having them silently dropped.
+        room: context.participants,
+      }),
     )
     reachable = reachable.filter((colleague) => !cycling.includes(colleague))
     for (const colleague of cycling)

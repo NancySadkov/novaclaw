@@ -139,7 +139,28 @@ export const closesCycle = (input: {
   readonly path: ReadonlyArray<string>
   readonly target: string
   readonly answering: boolean
-}): boolean => !input.answering && input.path.includes(input.target)
+  /**
+   * Everyone in the ROOM this message belongs to, if it belongs to one.
+   *
+   * 🔴 **A conference is not a chain, and applying the chain's rule to it broke the room.** A
+   * bystander's own note invites it to address the group — and every participant is already ON the
+   * path, because that is how they were reached. So the invited speak-up was accepted for everyone
+   * except the ORIGINATOR, who was dropped as a cycle: the room asked for a reply and then refused
+   * to deliver it to the person who asked, with nothing telling the bystander.
+   *
+   * `answering` does not cover this: it exempts the ONE party you are replying to, and a bystander
+   * is not replying to the asker.
+   *
+   * ⚠️ This exempts the room from the CYCLE rule only. The hop cap and the rate window still apply
+   * unchanged, so a room cannot loop for ever — it runs out of budget like anything else. And it is
+   * scoped to the CURRENT participants: an id that has left the room is a cycle again.
+   */
+  readonly room?: ReadonlyArray<string> | undefined
+}): boolean => {
+  if (input.answering) return false
+  if (input.room !== undefined && input.room.includes(input.target)) return false
+  return input.path.includes(input.target)
+}
 
 /**
  * Why that hop was not sent — in the same NOT SENT vocabulary as the other two bounds, and naming
