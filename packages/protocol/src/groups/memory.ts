@@ -18,6 +18,81 @@ import { InvalidRequestError } from "../errors"
  * compares it against core's own list. A vocabulary copy goes stale in the direction that looks
  * fine — a kind added upstream would come back as a 400 that reads like a caller mistake.
  */
+/**
+ * ─── THE NOISE VIEWS' WIRE SHAPES (P3) ───────────────────────────────────────────────────────────
+ *
+ * ⚠️ **Every field a handler intends to return is declared here.** An undeclared field is silently
+ * stripped on the way out and the route still answers 200 — which is how the whole claim lifecycle
+ * stayed invisible to the Memory app after P1 shipped it.
+ */
+const MemoryRow = Schema.Struct({
+  id: Schema.String,
+  kind: Schema.String,
+  text: Schema.String,
+  name: Schema.NullOr(Schema.String),
+  scope: Schema.String,
+  source: Schema.NullOr(Schema.String),
+  confidence: Schema.NullOr(Schema.Number),
+  relation: Schema.String,
+  status: Schema.String,
+  subject: Schema.NullOr(Schema.String),
+  predicate: Schema.NullOr(Schema.String),
+  conflictKey: Schema.NullOr(Schema.String),
+  supersededBy: Schema.NullOr(Schema.String),
+  evidence: Schema.NullOr(Schema.String),
+  evidenceKind: Schema.NullOr(Schema.String),
+})
+
+const UsageCounts = Schema.Struct({
+  accesses: Schema.Number,
+  uses: Schema.Number,
+  useful: Schema.Number,
+  corrections: Schema.Number,
+  firstAccessedAt: Schema.Number,
+  lastAccessedAt: Schema.Number,
+})
+
+/** A memory in a noise view: the row, plus the ledger's verdict on it. */
+const UsageItem = Schema.Struct({ ...MemoryRow.fields, usage: Schema.optional(UsageCounts) })
+
+const NeverUsedResult = Schema.Struct({
+  items: Schema.Array(UsageItem),
+  scanned: Schema.Number,
+  partial: Schema.Boolean,
+})
+const UsefulResult = Schema.Struct({ items: Schema.Array(UsageItem) })
+const CorrectionGroup = Schema.Struct({
+  conflictKey: Schema.String,
+  scope: Schema.String,
+  corrected: Schema.Number,
+  corrections: Schema.Number,
+  lastAccessedAt: Schema.Number,
+  items: Schema.Array(UsageItem),
+})
+const CorrectionsResult = Schema.Struct({ groups: Schema.Array(CorrectionGroup) })
+const AccessRow = Schema.Struct({
+  fingerprint: Schema.String,
+  surface: Schema.String,
+  rank: Schema.Number,
+  score: Schema.Number,
+  accessedAt: Schema.Number,
+  usedAt: Schema.NullOr(Schema.Number),
+  usefulAt: Schema.NullOr(Schema.Number),
+  correctedAt: Schema.NullOr(Schema.Number),
+})
+const UsageDetail = Schema.Struct({ usage: Schema.NullOr(UsageCounts), accesses: Schema.Array(AccessRow) })
+
+/**
+ * ⚠️ **POST for a read, and no `urlParams`** — the house rule `groups/log.ts` records. `scopes` is a
+ * list of store keys, one of which is `session:<id>`; a query string lands in access logs, proxy logs
+ * and referrers, and a session id is `correlate`-class data that may not egress. The filters ride the
+ * body for the same reason `log.read`'s do.
+ */
+const UsageFilter = Schema.Struct({
+  scopes: Schema.optional(Schema.Array(Schema.String)),
+  limit: Schema.optional(Schema.Number),
+})
+
 export const EVIDENCE_KINDS = ["chat", "message", "passage", "file", "url", "test", "command", "commit"] as const
 
 /**
@@ -142,6 +217,103 @@ export const MemoryGroup = HttpApiGroup.make("server.memory").add(
           "Write a governed claim: file it against its subject and its evidence, and retire the claim " +
           "it corrects. Supersession is keyed on scope + subject + predicate, so a claim that names " +
           "both replaces the current answer to that question and the reply lists what it retired.",
+      }),
+    ),
+  )
+  .add(
+    /**
+     * 🔴 **THE FOUR NOISE VIEWS AND THE VOUCH — MOVED HERE FROM `/memory/*`, not newly added.**
+     *
+     * They landed on the LEGACY surface, which ruling 11 freezes to shrink-only, and the ledger that
+     * enforces it (`sdk/js/test/legacy-path-ledger.test.ts`) went red the moment they did: it pins 82
+     * legacy paths and the spec had 87. Moving them is what makes the ledger honest again, and it
+     * needs no ledger edit at all — the pin was already correct and the surface had grown past it.
+     *
+     * ⚠️ The pruning protection depends on these being REACHABLE. `usage/useful` is the list of
+     * memories a person vouched for, and `POST /memory/feedback` is the only way to become one; a
+     * vouched memory is excluded from the forgetting pass outright rather than merely weighted. A
+     * protection whose only door has no caller is a protection nobody has.
+     */
+    HttpApiEndpoint.post("memory.usage.neverUsed", "/api/memory/usage/never-used", {
+      payload: Schema.Struct({
+        ...UsageFilter.fields,
+        /** How deep the never-used scan may go before it answers `partial`. */
+        scan: Schema.optional(Schema.Number),
+      }),
+      success: NeverUsedResult,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.memory.usage.neverUsed",
+        summary: "Never recalled",
+        description:
+          "Memories no recall has ever returned, oldest first. `scanned`/`partial` say how far the " +
+          "scan reached — a short answer is not proof there are no more.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("memory.usage.useful", "/api/memory/usage/useful", {
+      payload: UsageFilter,
+      success: UsefulResult,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.memory.usage.useful",
+        summary: "Vouched for",
+        description:
+          "Memories a person marked useful. These are protected from the forgetting pass outright, " +
+          "not merely weighted.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("memory.usage.corrections", "/api/memory/usage/corrections", {
+      payload: Schema.Struct({
+        ...UsageFilter.fields,
+        /** How many corrected claims an identity needs before it counts as "repeatedly". Default 2. */
+        minCorrected: Schema.optional(Schema.Number),
+      }),
+      success: CorrectionsResult,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.memory.usage.corrections",
+        summary: "Keeps being corrected",
+        description:
+          "Grouped by claim IDENTITY, not by claim: a single claim is superseded at most once, so " +
+          "'repeatedly' can only be a property of the question.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("memory.usage.detail", "/api/memory/usage/detail", {
+      payload: Schema.Struct({ id: Schema.String }),
+      success: UsageDetail,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.memory.usage.detail",
+        summary: "Why is this here",
+        description:
+          "Every recall that returned one memory: when, from which surface, at what rank, and " +
+          "whether it was used, vouched for or later corrected. The query is a fingerprint and " +
+          "never the words.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("memory.feedback", "/api/memory/feedback", {
+      payload: Schema.Struct({
+        id: Schema.String,
+        /** `false` RETRACTS a vouch rather than counting a negative — the flag exists to protect,
+         *  and the only two states that matter are "somebody vouched" and "nobody did". */
+        useful: Schema.Boolean,
+      }),
+      success: Schema.Boolean,
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.memory.feedback",
+        summary: "Mark useful",
+        description:
+          "Vouch for a memory recall handed you, or retract the vouch. A vouched memory is never pruned.",
       }),
     ),
   )

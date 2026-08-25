@@ -12,8 +12,6 @@ import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionRunnerModel } from "@novaclaw/core/session/runner/model"
 import { Log } from "@novaclaw/schema/log"
 import { EffectBridge } from "@/effect/bridge"
-import { Database } from "@novaclaw/core/database/database"
-import { MemoryAccessLedger } from "@novaclaw/core/kb-graph/access-ledger"
 import { Memory } from "@novaclaw/core/kb-graph/memory"
 import { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
 import { ascending } from "@novaclaw/schema/identifier"
@@ -37,16 +35,6 @@ const csv = (value: string | undefined): string[] | undefined => {
 }
 const truthy = (value: string | undefined) => value === "1" || value === "true"
 
-/** The ledger's verdict, on the wire. Named once so every noise view answers with the same shape. */
-const counts = (usage: MemoryAccessLedger.Usage) => ({
-  accesses: usage.accesses,
-  uses: usage.uses,
-  useful: usage.useful,
-  corrections: usage.corrections,
-  firstAccessedAt: usage.firstAccessedAt,
-  lastAccessedAt: usage.lastAccessedAt,
-})
-
 /** Bound a single ingest request; the 4MB tool cap in characters, roughly. */
 const MAX_INGEST_CHARS = 4_000_000
 
@@ -63,32 +51,6 @@ export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (h
 
     const bridge = yield* EffectBridge.make()
     const memory = Memory.client(yield* Memory.node.service)
-    /**
-     * The P3 access ledger lives in the instance database, beside the store rather than inside it.
-     *
-     * ⚠️ Resolved HERE, in the group's build, and captured — not read per request. The handler
-     * effects run with the request's context, which is not this one; a service read inside them is
-     * the shape that made every `memory.*` event a silent no-op in the `kb` tool (see
-     * `kb-graph/memory-observed.ts`).
-     */
-    const { db } = yield* Database.Service
-
-    /**
-     * Hydrate the memories behind a set of ledger rollups, keeping the verdict beside each row.
-     *
-     * ⚠️ A rollup whose memory is GONE simply drops out — `byIds` skips ids it cannot find rather
-     * than faking a row. That is the honest answer: the ledger is a record of what recall did, and a
-     * memory that has since been invalidated is not something a noise view should offer to act on.
-     */
-    const withUsage = (usage: ReadonlyArray<MemoryAccessLedger.Usage>) =>
-      Effect.gen(function* () {
-        const rows = yield* memory.byIds(usage.map((row) => row.memoryID)).pipe(Effect.orElseSucceed(() => []))
-        const byID = new Map(usage.map((row) => [row.memoryID, row] as const))
-        return rows.map((row) => {
-          const found = byID.get(row.id)
-          return found === undefined ? row : { ...row, usage: counts(found) }
-        })
-      })
 
     return (
       handlers
@@ -334,84 +296,6 @@ export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (h
          * recalled, this answers empty while never-used memories exist further along — and a viewer
          * that could not tell would present "nothing to clean up" as a finding.
          */
-        .handle(
-          "neverUsed",
-          Effect.fn("MemoryHttpApi.neverUsed")(function* (ctx) {
-            const limit = Math.max(1, Math.min(ctx.query.limit ?? 50, 500))
-            const scan = Math.max(limit, Math.min(ctx.query.scan ?? 2000, 20000))
-            const candidates = yield* memory
-              .candidates({
-                ...(csv(ctx.query.scopes) ? { scopes: csv(ctx.query.scopes)! } : {}),
-                order: "oldest",
-                limit: scan,
-              })
-              .pipe(Effect.orElseSucceed(() => []))
-            const seen = yield* MemoryAccessLedger.everAccessed(
-              db,
-              candidates.map((row) => row.id),
-            )
-            const unused = candidates.filter((row) => !seen.has(row.id)).slice(0, limit)
-            const rows = yield* memory.byIds(unused.map((row) => row.id)).pipe(Effect.orElseSucceed(() => []))
-            return { items: rows, scanned: candidates.length, partial: candidates.length >= scan }
-          }),
-        )
-        .handle(
-          "usefulMemories",
-          Effect.fn("MemoryHttpApi.usefulMemories")(function* (ctx) {
-            const usage = yield* MemoryAccessLedger.usefulMemories(
-              db,
-              Math.max(1, Math.min(ctx.query.limit ?? 50, 500)),
-            )
-            return { items: yield* withUsage(usage) }
-          }),
-        )
-        .handle(
-          "correctionProne",
-          Effect.fn("MemoryHttpApi.correctionProne")(function* (ctx) {
-            const groups = yield* MemoryAccessLedger.correctionProne(db, {
-              ...(ctx.query.minCorrected === undefined ? {} : { minCorrected: ctx.query.minCorrected }),
-              ...(ctx.query.limit === undefined ? {} : { limit: ctx.query.limit }),
-            })
-            const usage = yield* MemoryAccessLedger.usageForConflictKeys(
-              db,
-              groups.map((group) => group.conflictKey),
-            )
-            const items = yield* withUsage(usage)
-            const keyOf = new Map(usage.map((row) => [row.memoryID, row.conflictKey] as const))
-            return {
-              groups: groups.map((group) => ({
-                ...group,
-                items: items.filter((item) => keyOf.get(item.id) === group.conflictKey),
-              })),
-            }
-          }),
-        )
-        .handle(
-          "usageDetail",
-          Effect.fn("MemoryHttpApi.usageDetail")(function* (ctx) {
-            const usage = yield* MemoryAccessLedger.usageFor(db, [ctx.query.id])
-            const accesses = yield* MemoryAccessLedger.accessesFor(db, ctx.query.id)
-            const row = usage.get(ctx.query.id)
-            return { usage: row === undefined ? null : counts(row), accesses }
-          }),
-        )
-        .handle(
-          "feedback",
-          Effect.fn("MemoryHttpApi.feedback")(function* (ctx) {
-            // A vouch may be the FIRST thing the ledger ever hears about this memory — a person can
-            // mark one useful that recall has never returned — so the row it inserts needs a real
-            // scope, and only the store knows it. A memory that no longer exists looks up empty and
-            // files under `""`, which is honest: nothing will ever match it again.
-            const row = (yield* memory.byIds([ctx.payload.id]).pipe(Effect.orElseSucceed(() => [])))[0]
-            yield* MemoryAccessLedger.feedback(db, {
-              id: ctx.payload.id,
-              useful: ctx.payload.useful,
-              at: Date.now(),
-              ...(row === undefined ? {} : { scope: row.scope }),
-            })
-            return true
-          }),
-        )
         .handle(
           "clearScope",
           Effect.fn("MemoryHttpApi.clearScope")(function* (ctx) {

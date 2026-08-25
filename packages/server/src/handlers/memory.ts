@@ -1,5 +1,7 @@
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { Database } from "@novaclaw/core/database/database"
+import { MemoryAccessLedger } from "@novaclaw/core/kb-graph/access-ledger"
 import { InvalidRequestError } from "@novaclaw/protocol/errors"
 import { Log } from "@novaclaw/schema/log"
 import * as MemoryAccess from "@novaclaw/core/kb-graph/memory-access"
@@ -27,9 +29,51 @@ const asBadRequest = <A, R>(effect: Effect.Effect<A, MemoryClient.MemoryError, R
  * that the only surface offering it asks first (Settings → Health), and that the COUNT comes back so
  * the answer is auditable afterwards — "erased 0" and "erased 1,412" are different facts.
  */
+/** The ledger's verdict, on the wire. Named once so every noise view answers with the same shape. */
+const counts = (usage: MemoryAccessLedger.Usage) => ({
+  accesses: usage.accesses,
+  uses: usage.uses,
+  useful: usage.useful,
+  corrections: usage.corrections,
+  firstAccessedAt: usage.firstAccessedAt,
+  lastAccessedAt: usage.lastAccessedAt,
+})
+
+const bounded = (value: number | undefined, fallback: number, max: number) =>
+  Math.max(1, Math.min(value ?? fallback, max))
+
 export const MemoryHandler = handlerLayer(
   HttpApiBuilder.group(MemoryApi, "server.memory", (handlers) =>
-    handlers
+    Effect.gen(function* () {
+      /**
+       * The P3 access ledger lives in the instance database, beside the store rather than inside it.
+       *
+       * ⚠️ Resolved HERE, in the group's build, and captured — not read per request. The handler
+       * effects run with the request's context, which is not this one; a service read inside them is
+       * the shape that made every `memory.*` event a silent no-op in the `kb` tool (see
+       * `kb-graph/memory-observed.ts`).
+       */
+      const { db } = yield* Database.Service
+
+      /**
+       * Hydrate the memories behind a set of ledger rollups, keeping the verdict beside each row.
+       *
+       * ⚠️ A rollup whose memory is GONE simply drops out — `byIds` skips ids it cannot find rather
+       * than faking a row. That is the honest answer: the ledger is a record of what recall did, and
+       * a memory that has since been invalidated is not something a noise view should offer to act
+       * on.
+       */
+      const withUsage = (memory: MemoryClient.Interface, usage: ReadonlyArray<MemoryAccessLedger.Usage>) =>
+        Effect.gen(function* () {
+          const rows = yield* memory.byIds(usage.map((row) => row.memoryID)).pipe(Effect.orElseSucceed(() => []))
+          const byID = new Map(usage.map((row) => [row.memoryID, row] as const))
+          return rows.map((row) => {
+            const found = byID.get(row.id)
+            return found === undefined ? row : { ...row, usage: counts(found) }
+          })
+        })
+
+      return handlers
       .handle(
         "memory.erase",
         Effect.fn(function* () {
@@ -111,6 +155,91 @@ export const MemoryHandler = handlerLayer(
             ...(result.reason === undefined ? {} : { reason: result.reason }),
           }
         }),
-      ),
+        )
+        /**
+         * 🔴 THE FOUR NOISE VIEWS AND THE VOUCH, moved here from the legacy `/memory/*` group.
+         *
+         * They are what makes the pruning protection reachable: `usage/useful` is the list of
+         * memories somebody vouched for, `feedback` is the only way to become one, and a vouched
+         * memory is excluded from the forgetting pass outright rather than merely weighted.
+         */
+        .handle(
+          "memory.usage.neverUsed",
+          Effect.fn(function* (ctx) {
+            const memory = Memory.client(yield* Memory.node.service)
+            const limit = bounded(ctx.payload.limit, 50, 500)
+            const scan = Math.max(limit, Math.min(ctx.payload.scan ?? 2000, 20000))
+            const candidates = yield* memory
+              .candidates({
+                ...(ctx.payload.scopes && ctx.payload.scopes.length > 0 ? { scopes: ctx.payload.scopes } : {}),
+                order: "oldest",
+                limit: scan,
+              })
+              .pipe(Effect.orElseSucceed(() => []))
+            const seen = yield* MemoryAccessLedger.everAccessed(
+              db,
+              candidates.map((row) => row.id),
+            )
+            const unused = candidates.filter((row) => !seen.has(row.id)).slice(0, limit)
+            const rows = yield* memory.byIds(unused.map((row) => row.id)).pipe(Effect.orElseSucceed(() => []))
+            // `partial` is the honest half: a short answer is not proof there are no more.
+            return { items: rows, scanned: candidates.length, partial: candidates.length >= scan }
+          }),
+        )
+        .handle(
+          "memory.usage.useful",
+          Effect.fn(function* (ctx) {
+            const memory = Memory.client(yield* Memory.node.service)
+            const usage = yield* MemoryAccessLedger.usefulMemories(db, bounded(ctx.payload.limit, 50, 500))
+            return { items: yield* withUsage(memory, usage) }
+          }),
+        )
+        .handle(
+          "memory.usage.corrections",
+          Effect.fn(function* (ctx) {
+            const memory = Memory.client(yield* Memory.node.service)
+            const groups = yield* MemoryAccessLedger.correctionProne(db, {
+              ...(ctx.payload.minCorrected === undefined ? {} : { minCorrected: ctx.payload.minCorrected }),
+              ...(ctx.payload.limit === undefined ? {} : { limit: ctx.payload.limit }),
+            })
+            const usage = yield* MemoryAccessLedger.usageForConflictKeys(
+              db,
+              groups.map((group) => group.conflictKey),
+            )
+            const items = yield* withUsage(memory, usage)
+            const keyOf = new Map(usage.map((row) => [row.memoryID, row.conflictKey] as const))
+            return {
+              groups: groups.map((group) => ({
+                ...group,
+                items: items.filter((item) => keyOf.get(item.id) === group.conflictKey),
+              })),
+            }
+          }),
+        )
+        .handle(
+          "memory.usage.detail",
+          Effect.fn(function* (ctx) {
+            const usage = yield* MemoryAccessLedger.usageFor(db, [ctx.payload.id])
+            const accesses = yield* MemoryAccessLedger.accessesFor(db, ctx.payload.id)
+            const row = usage.get(ctx.payload.id)
+            return { usage: row === undefined ? null : counts(row), accesses }
+          }),
+        )
+        .handle(
+          "memory.feedback",
+          Effect.fn(function* (ctx) {
+            const memory = Memory.client(yield* Memory.node.service)
+            // The scope rides along so a cleared cabinet can drop its ledger rows with it.
+            const row = (yield* memory.byIds([ctx.payload.id]).pipe(Effect.orElseSucceed(() => [])))[0]
+            yield* MemoryAccessLedger.feedback(db, {
+              id: ctx.payload.id,
+              useful: ctx.payload.useful,
+              at: Date.now(),
+              ...(row === undefined ? {} : { scope: row.scope }),
+            })
+            return true
+          }),
+        )
+    }),
   ),
 )

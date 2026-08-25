@@ -5,7 +5,15 @@ import { SettingsMemoryV2 } from "@/components/settings-v2/memory"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { useGlobal } from "@/context/global"
 import { useServer, ServerConnection } from "@/context/server"
-import { memoryClaimStatus, memoryGraph, type MemoryGraph, type MemoryRow } from "@/utils/memory-api"
+import {
+  memoryClaimStatus,
+  memoryGraph,
+  memoryUsageDetail,
+  type MemoryGraph,
+  type MemoryRow,
+  type UsageAccess,
+  type UsageCounts,
+} from "@/utils/memory-api"
 import { instanceDiagnosis } from "@/utils/resource-api"
 import { showToast } from "@/utils/toast"
 import { memoryFaultDetail, memoryUnavailable } from "@/utils/memory-health"
@@ -216,6 +224,30 @@ export function MemoryGraphPage() {
    * status — the same reconcile-then-animate rule the activity overlay follows — and patching the
    * row here would make the canvas and the cabinet disagree the first time a write is refused.
    */
+  /**
+   * 🔴 "WHY IS THIS HERE" — the access ledger's own answer, on demand.
+   *
+   * `/memory/usage/detail` answered correctly and had no caller, so the one question a person asks
+   * about a memory they did not expect to see — *where did this come from, and has it ever been any
+   * use?* — had no surface at all. It is behind a disclosure rather than always on, per principle
+   * 12(d): the row states what is in force in one line, and everything longer is asked for.
+   *
+   * ⚠️ Fetched per open, never cached across selections. The ledger changes on every recall, and a
+   * stale answer here is a claim about a measurement rather than the measurement.
+   */
+  const [whyOpen, setWhyOpen] = createSignal<string | undefined>()
+  const [why] = createResource(
+    () => {
+      const cn = conn()
+      const id = whyOpen()
+      return cn && id ? { cn, dir: directory(), id } : undefined
+    },
+    ({ cn, dir, id }) =>
+      memoryUsageDetail(cn.http, { directory: dir, id })
+        .then((answer) => ({ ok: true, ...answer }) as const)
+        .catch(() => ({ ok: false, usage: null as UsageCounts | null, accesses: [] as readonly UsageAccess[] }) as const),
+  )
+
   const [lifecycleBusy, setLifecycleBusy] = createSignal<string | undefined>()
   const setLifecycle = async (id: string) => {
     const cn = conn()
@@ -1646,6 +1678,74 @@ export function MemoryGraphPage() {
                           rather than offering a button that would answer `false`. Restoring it would
                           put two current answers to one question in the cabinet, which is the state
                           the lifecycle exists to prevent; the way back is to make a new claim. */}
+                      {/* WHY IS THIS HERE — the ledger's answer, asked for rather than always shown. */}
+                      <div class="mb-3" data-slot="memory-inspector-why">
+                        <button
+                          type="button"
+                          data-slot="memory-inspector-why-toggle"
+                          class="text-xs underline opacity-60 hover:opacity-100"
+                          onClick={() => setWhyOpen((current) => (current === sel().id ? undefined : sel().id))}
+                        >
+                          {whyOpen() === sel().id ? "Hide why this is here" : "Why is this here?"}
+                        </button>
+                        <Show when={whyOpen() === sel().id}>
+                          <Show
+                            when={why()}
+                            fallback={<p class="mt-1 text-[11px] opacity-50">Asking the ledger…</p>}
+                          >
+                            {(answer) => (
+                              <div class="mt-1 text-[11px] opacity-70">
+                                <Show
+                                  when={answer().ok}
+                                  fallback={
+                                    <p class="opacity-60">
+                                      This instance could not answer — it may not be recording which memories get
+                                      recalled.
+                                    </p>
+                                  }
+                                >
+                                  <Show
+                                    when={answer().usage}
+                                    fallback={
+                                      /* ⚠️ Not "never useful". No recall has ever RETURNED it, which is a
+                                         different and much weaker statement, and the one the ledger can
+                                         actually make. */
+                                      <p class="opacity-60">No recall has ever returned this one.</p>
+                                    }
+                                  >
+                                    {(usage) => (
+                                      <p>
+                                        Returned {usage().accesses}×, reached the model {usage().uses}×
+                                        {usage().useful > 0 ? ", vouched for" : ""}
+                                        {usage().corrections > 0
+                                          ? `, and cost ${usage().corrections} wrong answer${usage().corrections === 1 ? "" : "s"} before it was corrected`
+                                          : ""}
+                                        .
+                                      </p>
+                                    )}
+                                  </Show>
+                                  {/* ⚠️ The QUESTION is a fingerprint and never the words — a recall query
+                                      is built from the user's own prompt, and putting it on this panel
+                                      would make an open Memory app a copy of the prompt stream. */}
+                                  <Show when={answer().accesses.length > 0}>
+                                    <ul class="mt-1 flex flex-col gap-0.5">
+                                      <For each={answer().accesses.slice(0, 6)}>
+                                        {(access) => (
+                                          <li class="opacity-60">
+                                            {new Date(access.accessedAt).toLocaleString()} · {access.surface} · rank{" "}
+                                            {access.rank}
+                                            {access.usedAt === null ? " · not shown to the model" : ""}
+                                          </li>
+                                        )}
+                                      </For>
+                                    </ul>
+                                  </Show>
+                                </Show>
+                              </div>
+                            )}
+                          </Show>
+                        </Show>
+                      </div>
                       <div class="mb-3 flex items-center gap-2" data-slot="memory-inspector-lifecycle">
                         <Show
                           when={rowOf(sel().id)?.status !== "superseded"}

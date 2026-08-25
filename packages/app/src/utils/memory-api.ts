@@ -183,15 +183,105 @@ export interface NeverUsedResult {
   readonly partial: boolean
 }
 
+/**
+ * ─── THE NOISE VIEWS, ON THE ONE CONTRACT ────────────────────────────────────────────────────────
+ *
+ * ⚠️ **POST for a read.** `scopes` carries `session:<id>`, which is `correlate`-class data that may
+ * not egress, and a query string lands in access logs, proxy logs and referrers. Same shape and same
+ * reason as `POST /api/log/read`; no `/api/*` group declares `urlParams`.
+ */
+
 /** Memories no recall has ever returned, oldest first — the `Never used` lens's data source. */
 export function memoryNeverUsed(
   server: ServerConnection.HttpBase,
   input: { directory: string; scopes?: readonly string[]; limit?: number; scan?: number },
 ) {
-  return call<NeverUsedResult>(server, "GET", "memory/usage/never-used", input.directory, undefined, {
-    scopes: csv(input.scopes),
-    limit: input.limit === undefined ? undefined : String(input.limit),
-    scan: input.scan === undefined ? undefined : String(input.scan),
+  return call<NeverUsedResult>(server, "POST", "api/memory/usage/never-used", input.directory, {
+    ...(input.scopes === undefined ? {} : { scopes: input.scopes }),
+    ...(input.limit === undefined ? {} : { limit: input.limit }),
+    ...(input.scan === undefined ? {} : { scan: input.scan }),
+  })
+}
+
+/** Memories somebody vouched for — the `Vouched for` lens. These are never pruned. */
+export function memoryUseful(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; scopes?: readonly string[]; limit?: number },
+) {
+  return call<{ items: readonly UsageItem[] }>(server, "POST", "api/memory/usage/useful", input.directory, {
+    ...(input.scopes === undefined ? {} : { scopes: input.scopes }),
+    ...(input.limit === undefined ? {} : { limit: input.limit }),
+  })
+}
+
+/**
+ * One question whose recalled answers keep being corrected.
+ *
+ * ⚠️ Grouped by claim IDENTITY, not by claim — a single claim is superseded at most once, so
+ * "repeatedly" can only ever be a property of the question.
+ */
+export interface CorrectionGroup {
+  readonly conflictKey: string
+  readonly scope: string
+  readonly corrected: number
+  readonly corrections: number
+  readonly lastAccessedAt: number
+  readonly items: readonly UsageItem[]
+}
+
+export function memoryCorrectionProne(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; minCorrected?: number; limit?: number },
+) {
+  return call<{ groups: readonly CorrectionGroup[] }>(
+    server,
+    "POST",
+    "api/memory/usage/corrections",
+    input.directory,
+    {
+      ...(input.minCorrected === undefined ? {} : { minCorrected: input.minCorrected }),
+      ...(input.limit === undefined ? {} : { limit: input.limit }),
+    },
+  )
+}
+
+/** One recall that returned a memory. The query is a FINGERPRINT and never the words. */
+export interface UsageAccess {
+  readonly fingerprint: string
+  readonly surface: string
+  readonly rank: number
+  readonly score: number
+  readonly accessedAt: number
+  readonly usedAt: number | null
+  readonly usefulAt: number | null
+  readonly correctedAt: number | null
+}
+
+/** "Why is this here" — every recall that returned one memory, and what became of each. */
+export function memoryUsageDetail(server: ServerConnection.HttpBase, input: { directory: string; id: string }) {
+  return call<{ usage: UsageCounts | null; accesses: readonly UsageAccess[] }>(
+    server,
+    "POST",
+    "api/memory/usage/detail",
+    input.directory,
+    { id: input.id },
+  )
+}
+
+/**
+ * Vouch for a memory, or retract the vouch.
+ *
+ * ⚠️ `false` RETRACTS rather than counting a negative. The flag exists to PROTECT — a vouched memory
+ * is excluded from the forgetting pass outright — so the only two states that matter are "somebody
+ * vouched" and "nobody did".
+ */
+export function memoryFeedback(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; id: string; useful: boolean },
+) {
+  return call<boolean>(server, "POST", "api/memory/feedback", input.directory, {
+    id: input.id,
+    useful: input.useful,
   })
 }
 

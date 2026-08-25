@@ -19,7 +19,7 @@
 /** The statuses core's `claim.ts` defines. Named here so a lens cannot invent a fifth. */
 export const CLAIM_STATUSES = ["active", "needs_review", "superseded", "archived"] as const
 
-export type LensID = "current" | "needs-review" | "never-used" | "history"
+export type LensID = "current" | "needs-review" | "never-used" | "useful" | "corrections" | "history"
 
 export interface Lens {
   readonly id: LensID
@@ -53,7 +53,7 @@ export interface Lens {
    * fact about the ACCESS LEDGER, not about the claim. It therefore reads its own route, and the
    * lens says so rather than leaving the list to guess from the id.
    */
-  readonly source: "list" | "never-used"
+  readonly source: "list" | "never-used" | "useful" | "corrections"
   /** ONE line saying what is in force, per principle 12(d). The rest belongs in the panel. */
   readonly hint: string
   /**
@@ -99,6 +99,36 @@ export const LENSES: readonly Lens[] = [
     includeInvalid: false,
     source: "never-used",
     hint: "No recall has ever returned these — oldest first.",
+    measured: true,
+  },
+  {
+    id: "useful",
+    label: "Vouched for",
+    /**
+     * ⚠️ No status set, for the same reason `never-used` has none: "somebody vouched for this" is a
+     * fact about the ACCESS LEDGER, and asking for a status here would silently narrow an answer the
+     * ledger already decided.
+     *
+     * 🔴 This lens is also the ONLY place the pruning protection is visible. A vouched memory is
+     * excluded from the forgetting pass outright rather than merely weighted, and until this existed
+     * `/memory/usage/useful` answered correctly and nothing called it — so the protection was
+     * reachable and unused, which is indistinguishable from absent.
+     */
+    statuses: undefined,
+    includeInvalid: false,
+    source: "useful",
+    hint: "You marked these useful. The forgetting pass never touches them.",
+    measured: true,
+  },
+  {
+    id: "corrections",
+    label: "Keeps being corrected",
+    statuses: undefined,
+    // The groups are built from claim IDENTITIES, and a superseded claim is exactly what they are
+    // about — so the retired rows must come through rather than be filtered out from under them.
+    includeInvalid: true,
+    source: "corrections",
+    hint: "Questions whose answer keeps being replaced — worth checking the source.",
     measured: true,
   },
   {

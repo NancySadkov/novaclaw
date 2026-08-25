@@ -12613,268 +12613,6 @@ export type MemoryIngestResponses = {
 
 export type MemoryIngestResponse = MemoryIngestResponses[keyof MemoryIngestResponses]
 
-export type MemoryNeverUsedData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-    scopes?: string
-    limit?: string
-    scan?: string
-    minCorrected?: string
-  }
-  url: "/memory/usage/never-used"
-}
-
-export type MemoryNeverUsedErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type MemoryNeverUsedError = MemoryNeverUsedErrors[keyof MemoryNeverUsedErrors]
-
-export type MemoryNeverUsedResponses = {
-  /**
-   * Memories recall has never returned, oldest first
-   */
-  200: {
-    items: Array<{
-      id: string
-      kind: string
-      text: string
-      name: string | null
-      scope: string
-      source: string | null
-      confidence: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
-      relation: string
-      status: string
-      subject: string | null
-      predicate: string | null
-      conflictKey: string | null
-      supersededBy: string | null
-      evidence: string | null
-      evidenceKind: string | null
-      usage?: {
-        accesses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        uses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        useful: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        corrections: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        firstAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        lastAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      }
-    }>
-    scanned: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    partial: boolean
-  }
-}
-
-export type MemoryNeverUsedResponse = MemoryNeverUsedResponses[keyof MemoryNeverUsedResponses]
-
-export type MemoryUsefulMemoriesData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-    scopes?: string
-    limit?: string
-    scan?: string
-    minCorrected?: string
-  }
-  url: "/memory/usage/useful"
-}
-
-export type MemoryUsefulMemoriesErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type MemoryUsefulMemoriesError = MemoryUsefulMemoriesErrors[keyof MemoryUsefulMemoriesErrors]
-
-export type MemoryUsefulMemoriesResponses = {
-  /**
-   * Memories somebody vouched for — protected from pruning
-   */
-  200: {
-    items: Array<{
-      id: string
-      kind: string
-      text: string
-      name: string | null
-      scope: string
-      source: string | null
-      confidence: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
-      relation: string
-      status: string
-      subject: string | null
-      predicate: string | null
-      conflictKey: string | null
-      supersededBy: string | null
-      evidence: string | null
-      evidenceKind: string | null
-      usage?: {
-        accesses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        uses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        useful: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        corrections: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        firstAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        lastAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      }
-    }>
-  }
-}
-
-export type MemoryUsefulMemoriesResponse = MemoryUsefulMemoriesResponses[keyof MemoryUsefulMemoriesResponses]
-
-export type MemoryCorrectionProneData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-    scopes?: string
-    limit?: string
-    scan?: string
-    minCorrected?: string
-  }
-  url: "/memory/usage/corrections"
-}
-
-export type MemoryCorrectionProneErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type MemoryCorrectionProneError = MemoryCorrectionProneErrors[keyof MemoryCorrectionProneErrors]
-
-export type MemoryCorrectionProneResponses = {
-  /**
-   * Questions whose recalled answers keep being corrected
-   */
-  200: {
-    groups: Array<{
-      conflictKey: string
-      scope: string
-      corrected: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      corrections: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      lastAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      items: Array<{
-        id: string
-        kind: string
-        text: string
-        name: string | null
-        scope: string
-        source: string | null
-        confidence: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
-        relation: string
-        status: string
-        subject: string | null
-        predicate: string | null
-        conflictKey: string | null
-        supersededBy: string | null
-        evidence: string | null
-        evidenceKind: string | null
-        usage?: {
-          accesses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-          uses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-          useful: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-          corrections: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-          firstAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-          lastAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-        }
-      }>
-    }>
-  }
-}
-
-export type MemoryCorrectionProneResponse = MemoryCorrectionProneResponses[keyof MemoryCorrectionProneResponses]
-
-export type MemoryUsageDetailData = {
-  body?: never
-  path?: never
-  query: {
-    directory?: string
-    workspace?: string
-    id: string
-  }
-  url: "/memory/usage/detail"
-}
-
-export type MemoryUsageDetailErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type MemoryUsageDetailError = MemoryUsageDetailErrors[keyof MemoryUsageDetailErrors]
-
-export type MemoryUsageDetailResponses = {
-  /**
-   * One memory's access history — fingerprints, never the queries
-   */
-  200: {
-    usage: {
-      accesses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      uses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      useful: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      corrections: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      firstAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      lastAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    } | null
-    accesses: Array<{
-      fingerprint: string
-      surface: string
-      rank: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      score: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      accessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      usedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
-      usefulAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
-      correctedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
-    }>
-  }
-}
-
-export type MemoryUsageDetailResponse = MemoryUsageDetailResponses[keyof MemoryUsageDetailResponses]
-
-export type MemoryFeedbackData = {
-  body?: {
-    id: string
-    useful: boolean
-  }
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/memory/feedback"
-}
-
-export type MemoryFeedbackErrors = {
-  /**
-   * InvalidRequestError
-   */
-  400: InvalidRequestError | InvalidRequestError
-}
-
-export type MemoryFeedbackError = MemoryFeedbackErrors[keyof MemoryFeedbackErrors]
-
-export type MemoryFeedbackResponses = {
-  /**
-   * True on success
-   */
-  200: boolean
-}
-
-export type MemoryFeedbackResponse = MemoryFeedbackResponses[keyof MemoryFeedbackResponses]
-
 export type MemoryClearScopeData = {
   body?: {
     scope: string
@@ -13984,6 +13722,274 @@ export type V2MemoryClaimAddResponses = {
 }
 
 export type V2MemoryClaimAddResponse = V2MemoryClaimAddResponses[keyof V2MemoryClaimAddResponses]
+
+export type V2MemoryUsageNeverUsedData = {
+  body: {
+    scopes?: Array<string>
+    limit?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    scan?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+  path?: never
+  query?: never
+  url: "/api/memory/usage/never-used"
+}
+
+export type V2MemoryUsageNeverUsedErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2MemoryUsageNeverUsedError = V2MemoryUsageNeverUsedErrors[keyof V2MemoryUsageNeverUsedErrors]
+
+export type V2MemoryUsageNeverUsedResponses = {
+  /**
+   * Success
+   */
+  200: {
+    items: Array<{
+      id: string
+      kind: string
+      text: string
+      name: string | null
+      scope: string
+      source: string | null
+      confidence: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
+      relation: string
+      status: string
+      subject: string | null
+      predicate: string | null
+      conflictKey: string | null
+      supersededBy: string | null
+      evidence: string | null
+      evidenceKind: string | null
+      usage?: {
+        accesses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        uses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        useful: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        corrections: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        firstAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        lastAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      }
+    }>
+    scanned: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    partial: boolean
+  }
+}
+
+export type V2MemoryUsageNeverUsedResponse = V2MemoryUsageNeverUsedResponses[keyof V2MemoryUsageNeverUsedResponses]
+
+export type V2MemoryUsageUsefulData = {
+  body: {
+    scopes?: Array<string>
+    limit?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+  path?: never
+  query?: never
+  url: "/api/memory/usage/useful"
+}
+
+export type V2MemoryUsageUsefulErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2MemoryUsageUsefulError = V2MemoryUsageUsefulErrors[keyof V2MemoryUsageUsefulErrors]
+
+export type V2MemoryUsageUsefulResponses = {
+  /**
+   * Success
+   */
+  200: {
+    items: Array<{
+      id: string
+      kind: string
+      text: string
+      name: string | null
+      scope: string
+      source: string | null
+      confidence: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
+      relation: string
+      status: string
+      subject: string | null
+      predicate: string | null
+      conflictKey: string | null
+      supersededBy: string | null
+      evidence: string | null
+      evidenceKind: string | null
+      usage?: {
+        accesses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        uses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        useful: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        corrections: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        firstAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        lastAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      }
+    }>
+  }
+}
+
+export type V2MemoryUsageUsefulResponse = V2MemoryUsageUsefulResponses[keyof V2MemoryUsageUsefulResponses]
+
+export type V2MemoryUsageCorrectionsData = {
+  body: {
+    scopes?: Array<string>
+    limit?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    minCorrected?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+  path?: never
+  query?: never
+  url: "/api/memory/usage/corrections"
+}
+
+export type V2MemoryUsageCorrectionsErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2MemoryUsageCorrectionsError = V2MemoryUsageCorrectionsErrors[keyof V2MemoryUsageCorrectionsErrors]
+
+export type V2MemoryUsageCorrectionsResponses = {
+  /**
+   * Success
+   */
+  200: {
+    groups: Array<{
+      conflictKey: string
+      scope: string
+      corrected: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      corrections: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      lastAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      items: Array<{
+        id: string
+        kind: string
+        text: string
+        name: string | null
+        scope: string
+        source: string | null
+        confidence: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
+        relation: string
+        status: string
+        subject: string | null
+        predicate: string | null
+        conflictKey: string | null
+        supersededBy: string | null
+        evidence: string | null
+        evidenceKind: string | null
+        usage?: {
+          accesses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          uses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          useful: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          corrections: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          firstAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          lastAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        }
+      }>
+    }>
+  }
+}
+
+export type V2MemoryUsageCorrectionsResponse =
+  V2MemoryUsageCorrectionsResponses[keyof V2MemoryUsageCorrectionsResponses]
+
+export type V2MemoryUsageDetailData = {
+  body: {
+    id: string
+  }
+  path?: never
+  query?: never
+  url: "/api/memory/usage/detail"
+}
+
+export type V2MemoryUsageDetailErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2MemoryUsageDetailError = V2MemoryUsageDetailErrors[keyof V2MemoryUsageDetailErrors]
+
+export type V2MemoryUsageDetailResponses = {
+  /**
+   * Success
+   */
+  200: {
+    usage: {
+      accesses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      uses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      useful: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      corrections: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      firstAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      lastAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    } | null
+    accesses: Array<{
+      fingerprint: string
+      surface: string
+      rank: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      score: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      accessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      usedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
+      usefulAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
+      correctedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
+    }>
+  }
+}
+
+export type V2MemoryUsageDetailResponse = V2MemoryUsageDetailResponses[keyof V2MemoryUsageDetailResponses]
+
+export type V2MemoryFeedbackData = {
+  body: {
+    id: string
+    useful: boolean
+  }
+  path?: never
+  query?: never
+  url: "/api/memory/feedback"
+}
+
+export type V2MemoryFeedbackErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError | InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2MemoryFeedbackError = V2MemoryFeedbackErrors[keyof V2MemoryFeedbackErrors]
+
+export type V2MemoryFeedbackResponses = {
+  /**
+   * Success
+   */
+  200: boolean
+}
+
+export type V2MemoryFeedbackResponse = V2MemoryFeedbackResponses[keyof V2MemoryFeedbackResponses]
 
 export type V2LocationGetData = {
   body?: never
