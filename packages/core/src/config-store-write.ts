@@ -324,8 +324,17 @@ const LAYERED_ARMS = [
         // open holding a stranger's memories — measured 2026-08-22 through this exact door.
         //
         // Announced rather than done here: this module has no memory client (see `agent/removal.ts`).
+        // 🔴 A PROTECTED agent's row is removed WITHOUT announcing a retirement, and the difference
+        // is the whole point of allowing the removal at all. Deleting Nova's row does not delete
+        // Nova — it RESTORES the shipped brief (see the `remove` verb's own note). But the announce
+        // is what `AgentRemoval.node` turns into `AgentRetire.everything`: chats archived, the
+        // private cabinet set aside, usage cleared. So the documented repair for a stale override
+        // quietly retired the governing agent, and the roster kept a Nova whose history had been
+        // filed away underneath it.
         removeEntity: (name) =>
-          agents.removeAgent(name).pipe(Effect.andThen(AgentRemoval.announce(name))),
+          agents
+            .removeAgent(name)
+            .pipe(Effect.andThen(AgentV2.isProtected(name) ? Effect.void : AgentRemoval.announce(name))),
       }
     }),
     ...agentCodec,

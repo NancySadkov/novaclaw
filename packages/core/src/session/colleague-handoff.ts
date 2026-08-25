@@ -408,6 +408,19 @@ export const fromParts = (input: {
     return { id: drawn, name: display }
   }),
   retire: Effect.fn("ColleagueHandoff.retire")(function* (colleague) {
+    // 🔴 THE GOVERNING AGENT IS NOT RETIRABLE, checked in the SHARED implementation rather than at
+    // each door. AGENTS.md: *"the charter is not editable from inside … an instance whose governing
+    // agent can be neutered by a stray prompt has no floor to stand on."*
+    //
+    // The tool door checks too, and that is not redundant: the tool runs INSIDE THE WORKER, so its
+    // `mayStaff` and `isProtected` checks are the worker's own. `session-worker/interaction-bridge`
+    // then asks the host to retire whoever the worker names, and the host obeyed. A host that trusts
+    // a worker's framing has no guard at all — it has a guard the guarded party applies to itself.
+    //
+    // ⚠️ Returns FALSE rather than failing. `retire` answers "did this happen", the bridge already
+    // maps a non-success onto its refusal, and the tool door — which is where a model actually meets
+    // this — still produces the sentence explaining why.
+    if (AgentV2.isProtected(colleague)) return false
     yield* input.store.removeAgent(colleague)
     yield* input.forget(colleague)
     yield* input.refresh
