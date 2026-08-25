@@ -47,6 +47,27 @@ import type { SessionMessage } from "./message"
 export const isRealUserTurn = (message: SessionMessage.Message): message is SessionMessage.User =>
   message.type === "user" && !isSteerText(message.text)
 
+/**
+ * Is this a COLLEAGUE's message riding the user role?
+ *
+ * 🔴 A delivered peer message is stored as a `user`-type message — the same shape a steer uses, and
+ * the same trap. `isRealUserTurn` above screens out steers but not colleagues, so anything anchoring
+ * on it treats a colleague's question as something the owner said.
+ *
+ * ⚠️ Deliberately NOT folded into `isRealUserTurn`. A colleague's message really is a turn of this
+ * conversation: it starts a goal (`doom-loop`), it is what the session is about (auto-recall's
+ * query), and it is a legitimate title seed. The one thing it is not is the OWNER speaking, so the
+ * distinction belongs at the call sites that claim authorship — see `runner/extract.ts`.
+ *
+ * The same test `compaction.ts` applies before labelling a line `[User]`, kept here so the two
+ * cannot drift into disagreeing about who spoke.
+ */
+export const isPeerTurn = (message: SessionMessage.Message): boolean => {
+  if (message.type !== "user") return false
+  const origin = (message as { origin?: { via?: string; relation?: string } }).origin
+  return origin?.via === "agent" && origin.relation === "peer"
+}
+
 /** A located real user turn: where it sits in the transcript, and its trimmed (non-empty) text. */
 export interface RealUserTurn {
   readonly index: number

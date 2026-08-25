@@ -3,7 +3,7 @@ export * as SessionExtract from "./extract"
 import { createHash } from "node:crypto"
 import { KbChunk } from "../../kb-graph/chunk"
 import type { SessionType } from "@novaclaw/schema/session-type"
-import { lastRealUserTurn } from "../steer-provenance"
+import { isPeerTurn, lastRealUserTurn } from "../steer-provenance"
 import type { SessionMessage } from "../message"
 
 // Auto-extraction (notes/kb-graph-plan.md §1.3.3): at each drain end a model pass reads the latest
@@ -87,6 +87,19 @@ export interface Extracted {
 export const buildExchange = (context: ReadonlyArray<SessionMessage.Message>): string | undefined => {
   const anchor = lastRealUserTurn(context)
   if (anchor === undefined) return undefined
+  // 🔴 B2's OTHER writer. A delivered peer message is stored as a `user`-type message too, so the
+  // anchor can be a COLLEAGUE's question — and the line below then hands the extractor
+  // `User: <what a colleague asked>`. Every fact it produces is written to memory as a fact about
+  // the owner, and `consolidate()` promotes it to a durable GLOBAL twin: one colleague's words,
+  // laundered into something the user is recorded as having said, on every instance they federate
+  // with. Exactly the steer defect above, through the door beside it.
+  //
+  // ⚠️ EXTRACT NOTHING rather than reach further back. Skipping to an older owner turn — the way
+  // steers are skipped — would attach a colleague-driven exchange to words the user said before it,
+  // which is a subtler version of the same misattribution. A turn with no user assertion in it has
+  // no user facts to extract, and memory that manufactures a candidate is the failure this whole
+  // module is bounded against.
+  if (isPeerTurn(context[anchor.index]!)) return undefined
   return `User: ${anchor.text}`
 }
 
