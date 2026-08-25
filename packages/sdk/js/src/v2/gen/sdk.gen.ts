@@ -2795,6 +2795,7 @@ class ApiMemory extends NovaClawApiClient {
       workspace?: string
       scopes?: string
       kinds?: string
+      statuses?: string
       includeInvalid?: string
       limit?: string
       offset?: string
@@ -2806,6 +2807,7 @@ class ApiMemory extends NovaClawApiClient {
       workspace: parameters?.["workspace"],
       scopes: parameters?.["scopes"],
       kinds: parameters?.["kinds"],
+      statuses: parameters?.["statuses"],
       includeInvalid: parameters?.["includeInvalid"],
       limit: parameters?.["limit"],
       offset: parameters?.["offset"],
@@ -3032,6 +3034,153 @@ class ApiMemory extends NovaClawApiClient {
     }
     return (options?.client ?? this.client).post<T.MemoryIngestResponses, T.MemoryIngestErrors, ThrowOnError>({
       url: "/memory/ingest",
+      ...options,
+      query,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Never recalled
+   *
+   * Memories no recall has ever returned, oldest first. `scanned`/`partial` say how far the scan reached — a short answer is not proof there are no more.
+   */
+  public neverUsed<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      scopes?: string
+      limit?: string
+      scan?: string
+      minCorrected?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = {
+      directory: parameters?.["directory"],
+      workspace: parameters?.["workspace"],
+      scopes: parameters?.["scopes"],
+      limit: parameters?.["limit"],
+      scan: parameters?.["scan"],
+      minCorrected: parameters?.["minCorrected"],
+    }
+    return (options?.client ?? this.client).get<T.MemoryNeverUsedResponses, T.MemoryNeverUsedErrors, ThrowOnError>({
+      url: "/memory/usage/never-used",
+      ...options,
+      query,
+    })
+  }
+
+  /**
+   * Vouched for
+   *
+   * Memories a person marked useful. These are protected from the forgetting pass outright, not merely weighted.
+   */
+  public usefulMemories<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      scopes?: string
+      limit?: string
+      scan?: string
+      minCorrected?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = {
+      directory: parameters?.["directory"],
+      workspace: parameters?.["workspace"],
+      scopes: parameters?.["scopes"],
+      limit: parameters?.["limit"],
+      scan: parameters?.["scan"],
+      minCorrected: parameters?.["minCorrected"],
+    }
+    return (options?.client ?? this.client).get<
+      T.MemoryUsefulMemoriesResponses,
+      T.MemoryUsefulMemoriesErrors,
+      ThrowOnError
+    >({
+      url: "/memory/usage/useful",
+      ...options,
+      query,
+    })
+  }
+
+  /**
+   * Keeps being corrected
+   *
+   * Grouped by claim IDENTITY, not by claim: a single claim is superseded at most once, so 'repeatedly' can only be a property of the question.
+   */
+  public correctionProne<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      scopes?: string
+      limit?: string
+      scan?: string
+      minCorrected?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = {
+      directory: parameters?.["directory"],
+      workspace: parameters?.["workspace"],
+      scopes: parameters?.["scopes"],
+      limit: parameters?.["limit"],
+      scan: parameters?.["scan"],
+      minCorrected: parameters?.["minCorrected"],
+    }
+    return (options?.client ?? this.client).get<
+      T.MemoryCorrectionProneResponses,
+      T.MemoryCorrectionProneErrors,
+      ThrowOnError
+    >({
+      url: "/memory/usage/corrections",
+      ...options,
+      query,
+    })
+  }
+
+  /**
+   * Why is this here
+   *
+   * Every recall that returned one memory: when, from which surface, at what rank, and whether it was used, vouched for or later corrected. The query is a fingerprint and never the words.
+   */
+  public usageDetail<ThrowOnError extends boolean = false>(
+    parameters: {
+      directory?: string
+      workspace?: string
+      id: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"], id: parameters?.["id"] }
+    return (options?.client ?? this.client).get<T.MemoryUsageDetailResponses, T.MemoryUsageDetailErrors, ThrowOnError>({
+      url: "/memory/usage/detail",
+      ...options,
+      query,
+    })
+  }
+
+  /**
+   * Mark useful
+   *
+   * Vouch for a memory recall handed you, or retract the vouch. A vouched memory is never pruned.
+   */
+  public feedback<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      id?: string
+      useful?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
+    const body = { id: parameters?.["id"], useful: parameters?.["useful"] }
+    return (options?.client ?? this.client).post<T.MemoryFeedbackResponses, T.MemoryFeedbackErrors, ThrowOnError>({
+      url: "/memory/feedback",
       ...options,
       query,
       body,

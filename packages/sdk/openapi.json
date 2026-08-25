@@ -9783,6 +9783,14 @@
             "required": false
           },
           {
+            "name": "statuses",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
             "name": "includeInvalid",
             "in": "query",
             "schema": {
@@ -9877,9 +9885,88 @@
                       },
                       "relation": {
                         "type": "string"
+                      },
+                      "status": {
+                        "type": "string"
+                      },
+                      "subject": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "predicate": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "conflictKey": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "supersededBy": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "evidence": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "evidenceKind": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       }
                     },
-                    "required": ["id", "kind", "text", "name", "scope", "source", "confidence", "relation"],
+                    "required": [
+                      "id",
+                      "kind",
+                      "text",
+                      "name",
+                      "scope",
+                      "source",
+                      "confidence",
+                      "relation",
+                      "status",
+                      "subject",
+                      "predicate",
+                      "conflictKey",
+                      "supersededBy",
+                      "evidence",
+                      "evidenceKind"
+                    ],
                     "additionalProperties": false
                   },
                   "description": "Memories, newest first (valid only unless includeInvalid)"
@@ -10019,9 +10106,88 @@
                           },
                           "relation": {
                             "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "subject": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "predicate": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "conflictKey": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "supersededBy": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "evidence": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "evidenceKind": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
-                        "required": ["id", "kind", "text", "name", "scope", "source", "confidence", "relation"],
+                        "required": [
+                          "id",
+                          "kind",
+                          "text",
+                          "name",
+                          "scope",
+                          "source",
+                          "confidence",
+                          "relation",
+                          "status",
+                          "subject",
+                          "predicate",
+                          "conflictKey",
+                          "supersededBy",
+                          "evidence",
+                          "evidenceKind"
+                        ],
                         "additionalProperties": false
                       }
                     },
@@ -10043,9 +10209,92 @@
                         "required": ["from", "to", "type"],
                         "additionalProperties": false
                       }
+                    },
+                    "slice": {
+                      "type": "object",
+                      "properties": {
+                        "partial": {
+                          "type": "boolean"
+                        },
+                        "total": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["NaN"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["-Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity", "-Infinity", "NaN"]
+                            }
+                          ]
+                        },
+                        "returned": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["NaN"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["-Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity", "-Infinity", "NaN"]
+                            }
+                          ]
+                        },
+                        "omitted": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["NaN"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["-Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity", "-Infinity", "NaN"]
+                            }
+                          ]
+                        },
+                        "reason": {
+                          "type": "string",
+                          "enum": ["complete", "connected-first", "scan-capped"]
+                        }
+                      },
+                      "required": ["partial", "total", "returned", "omitted", "reason"],
+                      "additionalProperties": false
                     }
                   },
-                  "required": ["nodes", "edges"],
+                  "required": ["nodes", "edges", "slice"],
                   "additionalProperties": false,
                   "description": "Graph slice: nodes + the edges among them"
                 }
@@ -10166,6 +10415,69 @@
                       "relation": {
                         "type": "string"
                       },
+                      "status": {
+                        "type": "string"
+                      },
+                      "subject": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "predicate": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "conflictKey": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "supersededBy": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "evidence": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "evidenceKind": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
                       "score": {
                         "anyOf": [
                           {
@@ -10190,7 +10502,24 @@
                         ]
                       }
                     },
-                    "required": ["id", "kind", "text", "name", "scope", "source", "confidence", "relation", "score"],
+                    "required": [
+                      "id",
+                      "kind",
+                      "text",
+                      "name",
+                      "scope",
+                      "source",
+                      "confidence",
+                      "relation",
+                      "status",
+                      "subject",
+                      "predicate",
+                      "conflictKey",
+                      "supersededBy",
+                      "evidence",
+                      "evidenceKind",
+                      "score"
+                    ],
                     "additionalProperties": false
                   },
                   "description": "Ranked memory hits"
@@ -10943,6 +11272,1775 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.memory.ingest({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/memory/usage/never-used": {
+      "get": {
+        "tags": ["memory"],
+        "operationId": "memory.neverUsed",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "scopes",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "scan",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "minCorrected",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Memories recall has never returned, oldest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string"
+                          },
+                          "text": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "scope": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "confidence": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["NaN"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["-Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity", "-Infinity", "NaN"]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "relation": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "subject": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "predicate": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "conflictKey": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "supersededBy": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "evidence": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "evidenceKind": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "usage": {
+                            "type": "object",
+                            "properties": {
+                              "accesses": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              },
+                              "uses": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              },
+                              "useful": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              },
+                              "corrections": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              },
+                              "firstAccessedAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              },
+                              "lastAccessedAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "accesses",
+                              "uses",
+                              "useful",
+                              "corrections",
+                              "firstAccessedAt",
+                              "lastAccessedAt"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind",
+                          "text",
+                          "name",
+                          "scope",
+                          "source",
+                          "confidence",
+                          "relation",
+                          "status",
+                          "subject",
+                          "predicate",
+                          "conflictKey",
+                          "supersededBy",
+                          "evidence",
+                          "evidenceKind"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "scanned": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["NaN"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["-Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    },
+                    "partial": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": ["items", "scanned", "partial"],
+                  "additionalProperties": false,
+                  "description": "Memories recall has never returned, oldest first"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Memories no recall has ever returned, oldest first. `scanned`/`partial` say how far the scan reached — a short answer is not proof there are no more.",
+        "summary": "Never recalled",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.memory.neverUsed({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/memory/usage/useful": {
+      "get": {
+        "tags": ["memory"],
+        "operationId": "memory.usefulMemories",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "scopes",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "scan",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "minCorrected",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Memories somebody vouched for — protected from pruning",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string"
+                          },
+                          "text": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "scope": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "confidence": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["NaN"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["-Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity", "-Infinity", "NaN"]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "relation": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "subject": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "predicate": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "conflictKey": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "supersededBy": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "evidence": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "evidenceKind": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "usage": {
+                            "type": "object",
+                            "properties": {
+                              "accesses": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              },
+                              "uses": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              },
+                              "useful": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              },
+                              "corrections": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              },
+                              "firstAccessedAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              },
+                              "lastAccessedAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "accesses",
+                              "uses",
+                              "useful",
+                              "corrections",
+                              "firstAccessedAt",
+                              "lastAccessedAt"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind",
+                          "text",
+                          "name",
+                          "scope",
+                          "source",
+                          "confidence",
+                          "relation",
+                          "status",
+                          "subject",
+                          "predicate",
+                          "conflictKey",
+                          "supersededBy",
+                          "evidence",
+                          "evidenceKind"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": ["items"],
+                  "additionalProperties": false,
+                  "description": "Memories somebody vouched for — protected from pruning"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Memories a person marked useful. These are protected from the forgetting pass outright, not merely weighted.",
+        "summary": "Vouched for",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.memory.usefulMemories({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/memory/usage/corrections": {
+      "get": {
+        "tags": ["memory"],
+        "operationId": "memory.correctionProne",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "scopes",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "scan",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "minCorrected",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Questions whose recalled answers keep being corrected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "groups": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "conflictKey": {
+                            "type": "string"
+                          },
+                          "scope": {
+                            "type": "string"
+                          },
+                          "corrected": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["NaN"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["-Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity", "-Infinity", "NaN"]
+                              }
+                            ]
+                          },
+                          "corrections": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["NaN"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["-Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity", "-Infinity", "NaN"]
+                              }
+                            ]
+                          },
+                          "lastAccessedAt": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["NaN"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["-Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity", "-Infinity", "NaN"]
+                              }
+                            ]
+                          },
+                          "items": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "type": "string"
+                                },
+                                "text": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "scope": {
+                                  "type": "string"
+                                },
+                                "source": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "confidence": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "string",
+                                      "enum": ["NaN"]
+                                    },
+                                    {
+                                      "type": "string",
+                                      "enum": ["Infinity"]
+                                    },
+                                    {
+                                      "type": "string",
+                                      "enum": ["-Infinity"]
+                                    },
+                                    {
+                                      "type": "string",
+                                      "enum": ["Infinity", "-Infinity", "NaN"]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "relation": {
+                                  "type": "string"
+                                },
+                                "status": {
+                                  "type": "string"
+                                },
+                                "subject": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "predicate": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "conflictKey": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "supersededBy": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "evidence": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "evidenceKind": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "usage": {
+                                  "type": "object",
+                                  "properties": {
+                                    "accesses": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "string",
+                                          "enum": ["NaN"]
+                                        },
+                                        {
+                                          "type": "string",
+                                          "enum": ["Infinity"]
+                                        },
+                                        {
+                                          "type": "string",
+                                          "enum": ["-Infinity"]
+                                        },
+                                        {
+                                          "type": "string",
+                                          "enum": ["Infinity", "-Infinity", "NaN"]
+                                        }
+                                      ]
+                                    },
+                                    "uses": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "string",
+                                          "enum": ["NaN"]
+                                        },
+                                        {
+                                          "type": "string",
+                                          "enum": ["Infinity"]
+                                        },
+                                        {
+                                          "type": "string",
+                                          "enum": ["-Infinity"]
+                                        },
+                                        {
+                                          "type": "string",
+                                          "enum": ["Infinity", "-Infinity", "NaN"]
+                                        }
+                                      ]
+                                    },
+                                    "useful": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "string",
+                                          "enum": ["NaN"]
+                                        },
+                                        {
+                                          "type": "string",
+                                          "enum": ["Infinity"]
+                                        },
+                                        {
+                                          "type": "string",
+                                          "enum": ["-Infinity"]
+                                        },
+                                        {
+                                          "type": "string",
+                                          "enum": ["Infinity", "-Infinity", "NaN"]
+                                        }
+                                      ]
+                                    },
+                                    "corrections": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "string",
+                                          "enum": ["NaN"]
+                                        },
+                                        {
+                                          "type": "string",
+                                          "enum": ["Infinity"]
+                                        },
+                                        {
+                                          "type": "string",
+                                          "enum": ["-Infinity"]
+                                        },
+                                        {
+                                          "type": "string",
+                                          "enum": ["Infinity", "-Infinity", "NaN"]
+                                        }
+                                      ]
+                                    },
+                                    "firstAccessedAt": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "string",
+                                          "enum": ["NaN"]
+                                        },
+                                        {
+                                          "type": "string",
+                                          "enum": ["Infinity"]
+                                        },
+                                        {
+                                          "type": "string",
+                                          "enum": ["-Infinity"]
+                                        },
+                                        {
+                                          "type": "string",
+                                          "enum": ["Infinity", "-Infinity", "NaN"]
+                                        }
+                                      ]
+                                    },
+                                    "lastAccessedAt": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "string",
+                                          "enum": ["NaN"]
+                                        },
+                                        {
+                                          "type": "string",
+                                          "enum": ["Infinity"]
+                                        },
+                                        {
+                                          "type": "string",
+                                          "enum": ["-Infinity"]
+                                        },
+                                        {
+                                          "type": "string",
+                                          "enum": ["Infinity", "-Infinity", "NaN"]
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "accesses",
+                                    "uses",
+                                    "useful",
+                                    "corrections",
+                                    "firstAccessedAt",
+                                    "lastAccessedAt"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "kind",
+                                "text",
+                                "name",
+                                "scope",
+                                "source",
+                                "confidence",
+                                "relation",
+                                "status",
+                                "subject",
+                                "predicate",
+                                "conflictKey",
+                                "supersededBy",
+                                "evidence",
+                                "evidenceKind"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": ["conflictKey", "scope", "corrected", "corrections", "lastAccessedAt", "items"],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": ["groups"],
+                  "additionalProperties": false,
+                  "description": "Questions whose recalled answers keep being corrected"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Grouped by claim IDENTITY, not by claim: a single claim is superseded at most once, so 'repeatedly' can only be a property of the question.",
+        "summary": "Keeps being corrected",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.memory.correctionProne({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/memory/usage/detail": {
+      "get": {
+        "tags": ["memory"],
+        "operationId": "memory.usageDetail",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One memory's access history — fingerprints, never the queries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "usage": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "accesses": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["NaN"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["Infinity"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["-Infinity"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["Infinity", "-Infinity", "NaN"]
+                                }
+                              ]
+                            },
+                            "uses": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["NaN"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["Infinity"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["-Infinity"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["Infinity", "-Infinity", "NaN"]
+                                }
+                              ]
+                            },
+                            "useful": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["NaN"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["Infinity"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["-Infinity"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["Infinity", "-Infinity", "NaN"]
+                                }
+                              ]
+                            },
+                            "corrections": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["NaN"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["Infinity"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["-Infinity"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["Infinity", "-Infinity", "NaN"]
+                                }
+                              ]
+                            },
+                            "firstAccessedAt": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["NaN"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["Infinity"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["-Infinity"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["Infinity", "-Infinity", "NaN"]
+                                }
+                              ]
+                            },
+                            "lastAccessedAt": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["NaN"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["Infinity"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["-Infinity"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["Infinity", "-Infinity", "NaN"]
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "accesses",
+                            "uses",
+                            "useful",
+                            "corrections",
+                            "firstAccessedAt",
+                            "lastAccessedAt"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "accesses": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "fingerprint": {
+                            "type": "string"
+                          },
+                          "surface": {
+                            "type": "string"
+                          },
+                          "rank": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["NaN"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["-Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity", "-Infinity", "NaN"]
+                              }
+                            ]
+                          },
+                          "score": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["NaN"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["-Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity", "-Infinity", "NaN"]
+                              }
+                            ]
+                          },
+                          "accessedAt": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["NaN"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["-Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity", "-Infinity", "NaN"]
+                              }
+                            ]
+                          },
+                          "usedAt": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["NaN"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["-Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity", "-Infinity", "NaN"]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "usefulAt": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["NaN"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["-Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity", "-Infinity", "NaN"]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "correctedAt": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["NaN"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["-Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity", "-Infinity", "NaN"]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "fingerprint",
+                          "surface",
+                          "rank",
+                          "score",
+                          "accessedAt",
+                          "usedAt",
+                          "usefulAt",
+                          "correctedAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": ["usage", "accesses"],
+                  "additionalProperties": false,
+                  "description": "One memory's access history — fingerprints, never the queries"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Every recall that returned one memory: when, from which surface, at what rank, and whether it was used, vouched for or later corrected. The query is a fingerprint and never the words.",
+        "summary": "Why is this here",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.memory.usageDetail({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/memory/feedback": {
+      "post": {
+        "tags": ["memory"],
+        "operationId": "memory.feedback",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "True on success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean",
+                  "description": "True on success"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Vouch for a memory recall handed you, or retract the vouch. A vouched memory is never pruned.",
+        "summary": "Mark useful",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "useful": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["id", "useful"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.memory.feedback({\n  ...\n})"
           }
         ]
       }
@@ -26143,6 +28241,21 @@
             "$ref": "#/components/schemas/EventAppRegistered"
           },
           {
+            "$ref": "#/components/schemas/EventMemoryClaimRecorded"
+          },
+          {
+            "$ref": "#/components/schemas/EventMemoryItemRecorded"
+          },
+          {
+            "$ref": "#/components/schemas/EventMemoryClaimStatus"
+          },
+          {
+            "$ref": "#/components/schemas/EventMemoryForgotten"
+          },
+          {
+            "$ref": "#/components/schemas/EventMemoryRecalled"
+          },
+          {
             "$ref": "#/components/schemas/EventFileEdited"
           },
           {
@@ -29291,6 +31404,238 @@
                       }
                     },
                     "required": ["id", "title"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": ["memory.claim.recorded"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "scope": {
+                        "type": "string"
+                      },
+                      "subject": {
+                        "type": "string"
+                      },
+                      "predicate": {
+                        "type": "string"
+                      },
+                      "statement": {
+                        "type": "string"
+                      },
+                      "status": {
+                        "type": "string"
+                      },
+                      "identified": {
+                        "type": "boolean"
+                      },
+                      "deduped": {
+                        "type": "boolean"
+                      },
+                      "superseded": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": ["id", "scope", "statement", "status", "identified", "deduped", "superseded"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": ["memory.item.recorded"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "scope": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "text": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["id", "scope", "kind", "text"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": ["memory.claim.status"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "status": {
+                        "type": "string"
+                      },
+                      "reason": {
+                        "type": "string",
+                        "enum": ["archived", "restored", "flagged", "evidence-moved"]
+                      }
+                    },
+                    "required": ["id", "status", "reason"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": ["memory.forgotten"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "mode": {
+                        "type": "string",
+                        "enum": ["invalidate", "purge"]
+                      }
+                    },
+                    "required": ["id", "mode"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": ["memory.recalled"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "fingerprint": {
+                        "type": "string"
+                      },
+                      "surface": {
+                        "type": "string",
+                        "enum": ["auto-recall", "kb-tool", "http", "unknown"]
+                      },
+                      "scopes": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "hits": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "rank": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "score": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["NaN"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["Infinity"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["-Infinity"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["Infinity", "-Infinity", "NaN"]
+                                }
+                              ]
+                            },
+                            "scope": {
+                              "type": "string"
+                            }
+                          },
+                          "required": ["id", "rank", "score", "scope"],
+                          "additionalProperties": false
+                        }
+                      },
+                      "considered": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    },
+                    "required": ["fingerprint", "surface", "scopes", "hits", "considered"],
                     "additionalProperties": false
                   }
                 },
@@ -33001,6 +35346,21 @@
           },
           {
             "$ref": "#/components/schemas/AppRegistered"
+          },
+          {
+            "$ref": "#/components/schemas/MemoryClaimRecorded"
+          },
+          {
+            "$ref": "#/components/schemas/MemoryItemRecorded"
+          },
+          {
+            "$ref": "#/components/schemas/MemoryClaimStatus"
+          },
+          {
+            "$ref": "#/components/schemas/MemoryForgotten"
+          },
+          {
+            "$ref": "#/components/schemas/MemoryRecalled"
           },
           {
             "$ref": "#/components/schemas/FileEdited"
@@ -47740,6 +50100,344 @@
         "required": ["id", "type", "data"],
         "additionalProperties": false
       },
+      "MemoryClaimRecorded": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["memory.claim.recorded"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "scope": {
+                "type": "string"
+              },
+              "subject": {
+                "type": "string"
+              },
+              "predicate": {
+                "type": "string"
+              },
+              "statement": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "identified": {
+                "type": "boolean"
+              },
+              "deduped": {
+                "type": "boolean"
+              },
+              "superseded": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["id", "scope", "statement", "status", "identified", "deduped", "superseded"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
+      "MemoryItemRecorded": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["memory.item.recorded"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "scope": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "scope", "kind", "text"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
+      "MemoryClaimStatus": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["memory.claim.status"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string",
+                "enum": ["archived", "restored", "flagged", "evidence-moved"]
+              }
+            },
+            "required": ["id", "status", "reason"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
+      "MemoryForgotten": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["memory.forgotten"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "mode": {
+                "type": "string",
+                "enum": ["invalidate", "purge"]
+              }
+            },
+            "required": ["id", "mode"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
+      "MemoryRecalled": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["memory.recalled"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "fingerprint": {
+                "type": "string"
+              },
+              "surface": {
+                "type": "string",
+                "enum": ["auto-recall", "kb-tool", "http", "unknown"]
+              },
+              "scopes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "hits": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "rank": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "score": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["NaN"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["-Infinity"]
+                        }
+                      ]
+                    },
+                    "scope": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["id", "rank", "score", "scope"],
+                  "additionalProperties": false
+                }
+              },
+              "considered": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": ["fingerprint", "surface", "scopes", "hits", "considered"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
       "FileEdited": {
         "type": "object",
         "properties": {
@@ -52114,6 +54812,234 @@
               }
             },
             "required": ["id", "title"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventMemoryClaimRecorded": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["memory.claim.recorded"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "scope": {
+                "type": "string"
+              },
+              "subject": {
+                "type": "string"
+              },
+              "predicate": {
+                "type": "string"
+              },
+              "statement": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "identified": {
+                "type": "boolean"
+              },
+              "deduped": {
+                "type": "boolean"
+              },
+              "superseded": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["id", "scope", "statement", "status", "identified", "deduped", "superseded"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventMemoryItemRecorded": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["memory.item.recorded"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "scope": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "scope", "kind", "text"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventMemoryClaimStatus": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["memory.claim.status"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string",
+                "enum": ["archived", "restored", "flagged", "evidence-moved"]
+              }
+            },
+            "required": ["id", "status", "reason"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventMemoryForgotten": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["memory.forgotten"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "mode": {
+                "type": "string",
+                "enum": ["invalidate", "purge"]
+              }
+            },
+            "required": ["id", "mode"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventMemoryRecalled": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["memory.recalled"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "fingerprint": {
+                "type": "string"
+              },
+              "surface": {
+                "type": "string",
+                "enum": ["auto-recall", "kb-tool", "http", "unknown"]
+              },
+              "scopes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "hits": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "rank": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "score": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["NaN"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["-Infinity"]
+                        }
+                      ]
+                    },
+                    "scope": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["id", "rank", "score", "scope"],
+                  "additionalProperties": false
+                }
+              },
+              "considered": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": ["fingerprint", "surface", "scopes", "hits", "considered"],
             "additionalProperties": false
           }
         },

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { EventV2 } from "@novaclaw/core/event"
+import { Scope } from "effect"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { Database } from "@novaclaw/core/database/database"
@@ -42,16 +43,23 @@ const OFFENDER = SessionStatusEvent.Status
  */
 const CARRIED = Catalog.Event.Updated
 
-const wireTypes = new Set(EventManifest.ServerDefinitions.map((one) => one.type))
+// ⚠️ `Set<string>`, not the inferred narrow union. These sets are membership ORACLES asked about
+// types deliberately outside them — `wireTypes.has(OFFENDER.type)` is the whole assertion — and a set
+// inferred over its own members rejects that question at the type level while the runtime answers it
+// correctly.
+const wireTypes = new Set<string>(EventManifest.ServerDefinitions.map((one) => one.type))
 
 const layer = AppNodeBuilder.build(LayerNode.group([Database.node, EventV2.node]))
 
-const run = <A>(effect: Effect.Effect<A, unknown, EventV2.Service | Database.Service>) =>
+// ⚠️ `Scope` belongs in the REQUIREMENTS this accepts. The body already discharges it with
+// `Effect.scoped`, so the runtime was always correct — but a caller using `Effect.forkScoped` (which
+// the stream test must, to read while publishing) carries `Scope` in its type and could not be passed.
+const run = <A>(effect: Effect.Effect<A, unknown, EventV2.Service | Database.Service | Scope.Scope>) =>
   Effect.runPromise(effect.pipe(Effect.scoped, Effect.provide(layer)) as Effect.Effect<A>)
 
 describe("the public event stream's manifest asymmetry", () => {
   test("the fixture is real: the offender is published but unwireable, the control is wireable", () => {
-    const published = new Set(EventManifest.Definitions.map((one) => one.type))
+    const published = new Set<string>(EventManifest.Definitions.map((one) => one.type))
     expect(published.has(OFFENDER.type)).toBe(true)
     expect(wireTypes.has(OFFENDER.type)).toBe(false)
     expect(wireTypes.has(CARRIED.type)).toBe(true)

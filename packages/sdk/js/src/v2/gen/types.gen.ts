@@ -65,6 +65,11 @@ export type Event =
   | EventInstallationUpdated
   | EventInstallationUpdateAvailable
   | EventAppRegistered
+  | EventMemoryClaimRecorded
+  | EventMemoryItemRecorded
+  | EventMemoryClaimStatus
+  | EventMemoryForgotten
+  | EventMemoryRecalled
   | EventFileEdited
   | EventReferenceUpdated
   | EventPermissionV2Asked
@@ -1001,6 +1006,65 @@ export type GlobalEvent = {
         properties: {
           id: string
           title: string
+        }
+      }
+    | {
+        id: string
+        type: "memory.claim.recorded"
+        properties: {
+          id: string
+          scope: string
+          subject?: string
+          predicate?: string
+          statement: string
+          status: string
+          identified: boolean
+          deduped: boolean
+          superseded: Array<string>
+        }
+      }
+    | {
+        id: string
+        type: "memory.item.recorded"
+        properties: {
+          id: string
+          scope: string
+          kind: string
+          name?: string
+          text: string
+        }
+      }
+    | {
+        id: string
+        type: "memory.claim.status"
+        properties: {
+          id: string
+          status: string
+          reason: "archived" | "restored" | "flagged" | "evidence-moved"
+        }
+      }
+    | {
+        id: string
+        type: "memory.forgotten"
+        properties: {
+          id: string
+          mode: "invalidate" | "purge"
+        }
+      }
+    | {
+        id: string
+        type: "memory.recalled"
+        properties: {
+          fingerprint: string
+          surface: "auto-recall" | "kb-tool" | "http" | "unknown"
+          scopes: Array<string>
+          hits: Array<{
+            id: string
+            rank: number
+            score: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            scope: string
+          }>
+          considered: number
         }
       }
     | {
@@ -2122,6 +2186,11 @@ export type V2Event =
   | InstallationUpdated
   | InstallationUpdateAvailable
   | AppRegistered
+  | MemoryClaimRecorded
+  | MemoryItemRecorded
+  | MemoryClaimStatus
+  | MemoryForgotten
+  | MemoryRecalled
   | FileEdited
   | ReferenceUpdated
   | PermissionV2Asked
@@ -6491,6 +6560,115 @@ export type AppRegistered = {
   }
 }
 
+export type MemoryClaimRecorded = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "memory.claim.recorded"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    id: string
+    scope: string
+    subject?: string
+    predicate?: string
+    statement: string
+    status: string
+    identified: boolean
+    deduped: boolean
+    superseded: Array<string>
+  }
+}
+
+export type MemoryItemRecorded = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "memory.item.recorded"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    id: string
+    scope: string
+    kind: string
+    name?: string
+    text: string
+  }
+}
+
+export type MemoryClaimStatus = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "memory.claim.status"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    id: string
+    status: string
+    reason: "archived" | "restored" | "flagged" | "evidence-moved"
+  }
+}
+
+export type MemoryForgotten = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "memory.forgotten"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    id: string
+    mode: "invalidate" | "purge"
+  }
+}
+
+export type MemoryRecalled = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "memory.recalled"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    fingerprint: string
+    surface: "auto-recall" | "kb-tool" | "http" | "unknown"
+    scopes: Array<string>
+    hits: Array<{
+      id: string
+      rank: number
+      score: number | "NaN" | "Infinity" | "-Infinity"
+      scope: string
+    }>
+    considered: number
+  }
+}
+
 export type FileEdited = {
   id: string
   metadata?: {
@@ -7925,6 +8103,70 @@ export type EventAppRegistered = {
   properties: {
     id: string
     title: string
+  }
+}
+
+export type EventMemoryClaimRecorded = {
+  id: string
+  type: "memory.claim.recorded"
+  properties: {
+    id: string
+    scope: string
+    subject?: string
+    predicate?: string
+    statement: string
+    status: string
+    identified: boolean
+    deduped: boolean
+    superseded: Array<string>
+  }
+}
+
+export type EventMemoryItemRecorded = {
+  id: string
+  type: "memory.item.recorded"
+  properties: {
+    id: string
+    scope: string
+    kind: string
+    name?: string
+    text: string
+  }
+}
+
+export type EventMemoryClaimStatus = {
+  id: string
+  type: "memory.claim.status"
+  properties: {
+    id: string
+    status: string
+    reason: "archived" | "restored" | "flagged" | "evidence-moved"
+  }
+}
+
+export type EventMemoryForgotten = {
+  id: string
+  type: "memory.forgotten"
+  properties: {
+    id: string
+    mode: "invalidate" | "purge"
+  }
+}
+
+export type EventMemoryRecalled = {
+  id: string
+  type: "memory.recalled"
+  properties: {
+    fingerprint: string
+    surface: "auto-recall" | "kb-tool" | "http" | "unknown"
+    scopes: Array<string>
+    hits: Array<{
+      id: string
+      rank: number
+      score: number | "NaN" | "Infinity" | "-Infinity"
+      scope: string
+    }>
+    considered: number
   }
 }
 
@@ -12017,6 +12259,7 @@ export type MemoryListData = {
     workspace?: string
     scopes?: string
     kinds?: string
+    statuses?: string
     includeInvalid?: string
     limit?: string
     offset?: string
@@ -12046,6 +12289,13 @@ export type MemoryListResponses = {
     source: string | null
     confidence: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
     relation: string
+    status: string
+    subject: string | null
+    predicate: string | null
+    conflictKey: string | null
+    supersededBy: string | null
+    evidence: string | null
+    evidenceKind: string | null
   }>
 }
 
@@ -12086,12 +12336,26 @@ export type MemoryGraphResponses = {
       source: string | null
       confidence: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
       relation: string
+      status: string
+      subject: string | null
+      predicate: string | null
+      conflictKey: string | null
+      supersededBy: string | null
+      evidence: string | null
+      evidenceKind: string | null
     }>
     edges: Array<{
       from: string
       to: string
       type: string
     }>
+    slice: {
+      partial: boolean
+      total: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      returned: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      omitted: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      reason: "complete" | "connected-first" | "scan-capped"
+    }
   }
 }
 
@@ -12134,6 +12398,13 @@ export type MemorySearchResponses = {
     source: string | null
     confidence: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
     relation: string
+    status: string
+    subject: string | null
+    predicate: string | null
+    conflictKey: string | null
+    supersededBy: string | null
+    evidence: string | null
+    evidenceKind: string | null
     score: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   }>
 }
@@ -12341,6 +12612,268 @@ export type MemoryIngestResponses = {
 }
 
 export type MemoryIngestResponse = MemoryIngestResponses[keyof MemoryIngestResponses]
+
+export type MemoryNeverUsedData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+    scopes?: string
+    limit?: string
+    scan?: string
+    minCorrected?: string
+  }
+  url: "/memory/usage/never-used"
+}
+
+export type MemoryNeverUsedErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type MemoryNeverUsedError = MemoryNeverUsedErrors[keyof MemoryNeverUsedErrors]
+
+export type MemoryNeverUsedResponses = {
+  /**
+   * Memories recall has never returned, oldest first
+   */
+  200: {
+    items: Array<{
+      id: string
+      kind: string
+      text: string
+      name: string | null
+      scope: string
+      source: string | null
+      confidence: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
+      relation: string
+      status: string
+      subject: string | null
+      predicate: string | null
+      conflictKey: string | null
+      supersededBy: string | null
+      evidence: string | null
+      evidenceKind: string | null
+      usage?: {
+        accesses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        uses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        useful: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        corrections: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        firstAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        lastAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      }
+    }>
+    scanned: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    partial: boolean
+  }
+}
+
+export type MemoryNeverUsedResponse = MemoryNeverUsedResponses[keyof MemoryNeverUsedResponses]
+
+export type MemoryUsefulMemoriesData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+    scopes?: string
+    limit?: string
+    scan?: string
+    minCorrected?: string
+  }
+  url: "/memory/usage/useful"
+}
+
+export type MemoryUsefulMemoriesErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type MemoryUsefulMemoriesError = MemoryUsefulMemoriesErrors[keyof MemoryUsefulMemoriesErrors]
+
+export type MemoryUsefulMemoriesResponses = {
+  /**
+   * Memories somebody vouched for — protected from pruning
+   */
+  200: {
+    items: Array<{
+      id: string
+      kind: string
+      text: string
+      name: string | null
+      scope: string
+      source: string | null
+      confidence: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
+      relation: string
+      status: string
+      subject: string | null
+      predicate: string | null
+      conflictKey: string | null
+      supersededBy: string | null
+      evidence: string | null
+      evidenceKind: string | null
+      usage?: {
+        accesses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        uses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        useful: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        corrections: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        firstAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        lastAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      }
+    }>
+  }
+}
+
+export type MemoryUsefulMemoriesResponse = MemoryUsefulMemoriesResponses[keyof MemoryUsefulMemoriesResponses]
+
+export type MemoryCorrectionProneData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+    scopes?: string
+    limit?: string
+    scan?: string
+    minCorrected?: string
+  }
+  url: "/memory/usage/corrections"
+}
+
+export type MemoryCorrectionProneErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type MemoryCorrectionProneError = MemoryCorrectionProneErrors[keyof MemoryCorrectionProneErrors]
+
+export type MemoryCorrectionProneResponses = {
+  /**
+   * Questions whose recalled answers keep being corrected
+   */
+  200: {
+    groups: Array<{
+      conflictKey: string
+      scope: string
+      corrected: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      corrections: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      lastAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      items: Array<{
+        id: string
+        kind: string
+        text: string
+        name: string | null
+        scope: string
+        source: string | null
+        confidence: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
+        relation: string
+        status: string
+        subject: string | null
+        predicate: string | null
+        conflictKey: string | null
+        supersededBy: string | null
+        evidence: string | null
+        evidenceKind: string | null
+        usage?: {
+          accesses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          uses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          useful: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          corrections: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          firstAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          lastAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        }
+      }>
+    }>
+  }
+}
+
+export type MemoryCorrectionProneResponse = MemoryCorrectionProneResponses[keyof MemoryCorrectionProneResponses]
+
+export type MemoryUsageDetailData = {
+  body?: never
+  path?: never
+  query: {
+    directory?: string
+    workspace?: string
+    id: string
+  }
+  url: "/memory/usage/detail"
+}
+
+export type MemoryUsageDetailErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type MemoryUsageDetailError = MemoryUsageDetailErrors[keyof MemoryUsageDetailErrors]
+
+export type MemoryUsageDetailResponses = {
+  /**
+   * One memory's access history — fingerprints, never the queries
+   */
+  200: {
+    usage: {
+      accesses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      uses: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      useful: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      corrections: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      firstAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      lastAccessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    } | null
+    accesses: Array<{
+      fingerprint: string
+      surface: string
+      rank: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      score: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      accessedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      usedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
+      usefulAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
+      correctedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
+    }>
+  }
+}
+
+export type MemoryUsageDetailResponse = MemoryUsageDetailResponses[keyof MemoryUsageDetailResponses]
+
+export type MemoryFeedbackData = {
+  body?: {
+    id: string
+    useful: boolean
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/memory/feedback"
+}
+
+export type MemoryFeedbackErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError | InvalidRequestError
+}
+
+export type MemoryFeedbackError = MemoryFeedbackErrors[keyof MemoryFeedbackErrors]
+
+export type MemoryFeedbackResponses = {
+  /**
+   * True on success
+   */
+  200: boolean
+}
+
+export type MemoryFeedbackResponse = MemoryFeedbackResponses[keyof MemoryFeedbackResponses]
 
 export type MemoryClearScopeData = {
   body?: {

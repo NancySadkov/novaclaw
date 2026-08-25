@@ -77,7 +77,11 @@ export const publicEventStream = (events: EventV2.Interface, capacity = subscrib
               Effect.andThen(Log.event("server.event.dropped", { "instance.event.type": event.type })),
             ),
       ),
-      Stream.filter((one): one is { event: { readonly type: string }; encoded: Sse.Event } => one.encoded !== undefined),
+      // ⚠️ Narrow ONLY the field being tested. Spelling the element out as
+      // `{ event: { readonly type: string }; encoded: Sse.Event }` widens `event` to a supertype of
+      // what the stream carries, so the predicate's type is not assignable to its parameter's and
+      // tsgo refuses it (TS2677) — while `bunx tsgo -b <pkg>` reports clean from stale project refs.
+      Stream.filter((one): one is typeof one & { encoded: Sse.Event } => one.encoded !== undefined),
       Stream.map((one) => one.encoded),
     )
   })
