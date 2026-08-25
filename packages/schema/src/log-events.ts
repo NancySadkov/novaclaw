@@ -83,6 +83,12 @@
  * never in advance. The value is the human label that surface will show.
  */
 export const SUBSYSTEMS = {
+  // The ROSTER's own lifecycle — hire, retire, reassign, and the cleanups each one owes. Its own
+  // subsystem rather than folded into `session`, for the reason the whole set exists: these give
+  // per-subsystem log LEVELS, and an operator watching colleagues being staffed and retired should
+  // not have to turn up every session event to see them. Under the structural metaphor an agent is a
+  // first-class entity, not a property of a chat. Added 2026-08-25 with the retire/reassign events.
+  agent: "Agents and the roster",
   // Log lines RELAYED from a client process (the renderer's ring, via `POST /log`) rather than
   // produced here. Its own subsystem instead of folding into `server`, because these subsystems exist
   // to give per-subsystem log LEVELS: an operator turning down renderer chatter should not have to
@@ -1015,13 +1021,14 @@ export const EVENTS = {
     level: "warn",
     message: "a declared cleanup step was never wired, so it did not run",
     attributes: { "agent.id": "correlate", "agent.cleaner": "id" },
-    content: "user",
+    // No user content: an agent id and the NAME of a cleanup step, both ours.
+    content: "correlated",
     file: "packages/core/src/agent/retire.ts",
   },
   "agent.reassign.successor.failed": {
     level: "warn",
     message: "could not open a reassigned colleague's new chat; the archive was rolled back",
-    attributes: { "agent.id": "correlate", "session.id": "id", "agent.fault": "fault" },
+    attributes: { "agent.id": "correlate", "session.id": "correlate", "agent.fault": "fault" },
     content: "user",
     file: "packages/core/src/agent/reassignment.ts",
   },
@@ -1032,7 +1039,7 @@ export const EVENTS = {
   "agent.reassign.notice.failed": {
     level: "warn",
     message: "could not deliver the notice explaining a colleague's reassignment",
-    attributes: { "agent.id": "correlate", "session.id": "id", "agent.fault": "fault" },
+    attributes: { "agent.id": "correlate", "session.id": "correlate", "agent.fault": "fault" },
     content: "user",
     file: "packages/core/src/agent/reassignment.ts",
   },

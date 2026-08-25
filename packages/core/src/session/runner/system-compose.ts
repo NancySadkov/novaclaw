@@ -497,28 +497,46 @@ export interface SystemPromptParts {
  * it means a well-meaning agent prompt cannot bury the rule under later instructions. `base` stays
  * last, exactly as the header above documents.
  */
+/**
+ * THE ORDER, and the ONE list that decides it.
+ *
+ * 🔴 `system-accounting.ts` used to keep a second, hand-written list of the same names so it could
+ * count each block — and it was already stale: `delegation` and `workspace` are composed here and
+ * were missing there, so the instrument UNDERCOUNTED every colleague turn, which is exactly the turn
+ * whose prompt anyone would want measured. Two lists of one thing is how the measurement and the
+ * thing measured drift apart, and the drift is invisible because both sides look right on their own.
+ *
+ * So the order lives here once. `composeSystemParts` joins it; `SystemAccounting.of` counts it.
+ */
+export const systemPartsInOrder = (parts: SystemPromptParts): ReadonlyArray<{ block: string; text?: string }> => [
+  { block: "persona", text: parts.persona },
+  { block: "modelPrePrompt", text: parts.modelPrePrompt },
+  { block: "expertiseHint", text: parts.expertiseHint },
+  { block: "tierHint", text: parts.tierHint },
+  { block: "systemPromptOverride", text: parts.systemPromptOverride },
+  { block: "agentSystem", text: parts.agentSystem },
+  { block: "toolDiscovery", text: parts.toolDiscovery },
+  // Beside `toolDiscovery` and for the same reason: both are facts about what this runtime can
+  // REACH — one about tools, one about perception — and both are kernel material a persona or an
+  // agent prompt must not be able to bury. Absent when the model declares no image modality, so a
+  // text-only model's prompt is byte-identical to the pre-feature one.
+  { block: "perception", text: parts.perception },
+  // Beside those two for the third time and the same reason: a fact about what this runtime keeps.
+  // A persona that says "I'll remember that for you" must not be able to sit on top of it.
+  { block: "delegation", text: parts.delegation },
+  { block: "memoryStance", text: parts.memoryStance },
+  { block: "projectScope", text: parts.projectScope },
+  // AFTER `projectScope` on purpose: that section tells a session to keep scratch inside the
+  // working folder, which is right until the colleague has a workspace of its own. The specific
+  // instruction has to land last or a model is left reconciling two rules.
+  { block: "workspace", text: parts.workspace },
+  // LAST: the durable context the session carries. It is the largest block on most turns and the one
+  // a reader scrolls to, so everything that frames how to behave comes before what to work on.
+  { block: "base", text: parts.base },
+]
+
+/** The system prompt's parts, in order, with the absent ones dropped. */
 export const composeSystemParts = (parts: SystemPromptParts): string[] =>
-  [
-    parts.persona,
-    parts.modelPrePrompt,
-    parts.expertiseHint,
-    parts.tierHint,
-    parts.systemPromptOverride,
-    parts.agentSystem,
-    parts.toolDiscovery,
-    // Beside `toolDiscovery` and for the same reason: both are facts about what this runtime can
-    // REACH — one about tools, one about perception — and both are kernel material a persona or an
-    // agent prompt must not be able to bury. Absent when the model declares no image modality, so a
-    // text-only model's prompt is byte-identical to the pre-feature one.
-    parts.perception,
-    // Beside those two for the third time and the same reason: a fact about what this runtime keeps.
-    // A persona that says "I'll remember that for you" must not be able to sit on top of it.
-    parts.delegation,
-    parts.memoryStance,
-    parts.projectScope,
-    // AFTER `projectScope` on purpose: that section tells a session to keep scratch inside the
-    // working folder, which is right until the colleague has a workspace of its own. The specific
-    // instruction has to land last or a model is left reconciling two rules.
-    parts.workspace,
-    parts.base,
-  ].filter((part): part is string => part !== undefined && part.length > 0)
+  systemPartsInOrder(parts)
+    .map((part) => part.text)
+    .filter((text): text is string => text !== undefined && text.length > 0)

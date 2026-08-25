@@ -1,7 +1,7 @@
 export * as SystemAccounting from "./system-accounting"
 
 import { Token } from "../../util/token"
-import type { SystemCompose } from "./system-compose"
+import { SystemCompose } from "./system-compose"
 
 // PER-BLOCK PROMPT ACCOUNTING (`todo/tool-scale.md`, adopted from
 // `notes/survey/agent-office-research.md` §1.2).
@@ -22,21 +22,20 @@ import type { SystemCompose } from "./system-compose"
 // which is the order the todo asks for.
 
 /** The blocks, in the order `composeSystemParts` emits them. */
-export const BLOCKS = [
-  "persona",
-  "modelPrePrompt",
-  "expertiseHint",
-  "tierHint",
-  "systemPromptOverride",
-  "agentSystem",
-  "toolDiscovery",
-  "perception",
-  "memoryStance",
-  "projectScope",
-  "base",
-] as const
+/**
+ * The block names, DERIVED from the one list that decides the order.
+ *
+ * 🔴 This was a second hand-written list, and it was already stale: `composeSystemParts` emits
+ * `delegation` and `workspace`, neither of which was here — so the instrument UNDERCOUNTED every
+ * colleague turn, which is precisely the turn whose prompt anyone would want measured. Two lists of
+ * one thing drift, and the drift is invisible because each side looks right on its own.
+ *
+ * ⚠️ Read off a call with every part absent: `systemPartsInOrder` returns the full sequence whatever
+ * is populated, so this is the membership and the ORDER without needing a value for anything.
+ */
+export const BLOCKS = SystemCompose.systemPartsInOrder({} as SystemCompose.SystemPromptParts).map((part) => part.block)
 
-export type Block = (typeof BLOCKS)[number]
+export type Block = string
 
 export interface BlockCount {
   readonly block: Block
@@ -63,10 +62,11 @@ export interface Accounting {
  */
 export const of = (parts: SystemCompose.SystemPromptParts): Accounting => {
   const blocks: BlockCount[] = []
-  for (const block of BLOCKS) {
-    const text = (parts as Record<string, string | undefined>)[block]
-    if (text === undefined || text.length === 0) continue
-    blocks.push({ block, chars: text.length, tokens: Token.estimate(text) })
+  // The same sequence `composeSystemParts` joins — so a block that reaches the model is a block that
+  // gets counted, by construction rather than by two lists agreeing.
+  for (const part of SystemCompose.systemPartsInOrder(parts)) {
+    if (part.text === undefined || part.text.length === 0) continue
+    blocks.push({ block: part.block, chars: part.text.length, tokens: Token.estimate(part.text) })
   }
   const chars = blocks.reduce((total, entry) => total + entry.chars, 0)
   return {
