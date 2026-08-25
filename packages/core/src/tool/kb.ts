@@ -6,6 +6,7 @@ import { ascending } from "@novaclaw/schema/identifier"
 import { Effect, Layer, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
 import { KbChunk } from "../kb-graph/chunk"
+import { KbClaim } from "../kb-graph/claim"
 import { KbEmbedder } from "../kb-graph/embedder"
 import * as MemoryAccess from "../kb-graph/memory-access"
 import { MemoryClient } from "../kb-graph/memory-client"
@@ -38,12 +39,10 @@ const SearchOp = Schema.Struct({
   op: Schema.Literal("search"),
   query: Schema.String.annotate({ description: "Free-text query; matches remembered facts by keyword" }),
   k: Schema.Finite.pipe(Schema.optional).annotate({ description: "Max results (default 8)" }),
-  scope: Schema.Literals(["session", "agent", "global", "all"])
-    .pipe(Schema.optional)
-    .annotate({
-      description:
-        "session = this chat only · agent = your own memory, across your chats · global = shared facts every agent knows · all (default)",
-    }),
+  scope: Schema.Literals(["session", "agent", "global", "all"]).pipe(Schema.optional).annotate({
+    description:
+      "session = this chat only · agent = your own memory, across your chats · global = shared facts every agent knows · all (default)",
+  }),
 })
 
 const RememberOp = Schema.Struct({
@@ -52,12 +51,34 @@ const RememberOp = Schema.Struct({
   name: Schema.String.pipe(Schema.optional).annotate({
     description: "Short subject/label (e.g. the person or thing it's about)",
   }),
-  scope: Schema.Literals(["session", "agent", "global"])
+  /**
+   * 🔴 A CLOSED PICK, never free text — the measured rule from the query-surface eval: a model picks
+   * from a list reliably and generates a vocabulary badly, and with guided decoding an invalid value
+   * becomes unsamplable. That matters more here than anywhere else in this tool, because this field
+   * is what authorises one memory to RETIRE another. An open field would be an invitation to invent a
+   * predicate, and every invented predicate is a correction that silently does not happen.
+   */
+  predicate: Schema.Literals(KbClaim.CLAIM_PREDICATE_NAMES)
     .pipe(Schema.optional)
     .annotate({
       description:
-        "agent (default) = your own durable memory · global = a fact about the user or household that every agent should know · session = only this chat",
+        "Which question about `name` this answers. Use it when the fact REPLACES an older answer: " +
+        "employer, role, location, email, phone, timezone, language, birthday, preference, status, " +
+        "version, path, owner and name each have ONE current answer, so saving a new one retires the " +
+        "old one (kept in history). about/likes/dislikes/knows/uses/works_on accumulate instead. " +
+        "Default: about.",
     }),
+  scope: Schema.Literals(["session", "agent", "global"]).pipe(Schema.optional).annotate({
+    description:
+      "agent (default) = your own durable memory · global = a fact about the user or household that every agent should know · session = only this chat",
+  }),
+})
+
+const HistoryOp = Schema.Struct({
+  op: Schema.Literal("history"),
+  id: Schema.String.annotate({
+    description: "A memory id (clm_… or mem_…) whose history to show — what it replaced, and why",
+  }),
 })
 
 const ForgetOp = Schema.Struct({
@@ -92,15 +113,13 @@ const IngestOp = Schema.Struct({
   name: Schema.String.pipe(Schema.optional).annotate({
     description: "Short label for the source (defaults to the file name)",
   }),
-  scope: Schema.Literals(["session", "agent", "global"])
-    .pipe(Schema.optional)
-    .annotate({
-      description:
-        "agent (default) = readable in your own chats · global = readable by every agent · session = only this chat",
-    }),
+  scope: Schema.Literals(["session", "agent", "global"]).pipe(Schema.optional).annotate({
+    description:
+      "agent (default) = readable in your own chats · global = readable by every agent · session = only this chat",
+  }),
 })
 
-export const Input = Schema.Union([SearchOp, RememberOp, ForgetOp, NeighborsOp, RelateOp, IngestOp])
+export const Input = Schema.Union([SearchOp, RememberOp, ForgetOp, NeighborsOp, RelateOp, IngestOp, HistoryOp])
 
 /** Refuse pathological inputs rather than melting the index on a 500MB blob. */
 export const MAX_INGEST_BYTES = 4_000_000
@@ -126,9 +145,31 @@ export const formatHits = (hits: ReadonlyArray<MemoryClient.SearchHit>): string 
     .map((hit) => {
       const provenance = [hit.relation, hit.source].filter(Boolean).join("/")
       const label = hit.name ? `${hit.name}: ` : ""
-      return `${hit.id} · ${label}${oneLine(hit.text)}${provenance ? ` · ${provenance}` : ""}`
+      // ⚠️ The flag rides the LINE, not a separate field. A claim whose citation moved is still the
+      // best answer available, and the model can only caveat it if it can see the caveat — a status
+      // the retrieval layer knows and the rendering drops is a status nobody acts on.
+      const flag = hit.status === "needs_review" ? " · NEEDS CHECKING (its source moved)" : ""
+      return `${hit.id} · ${label}${oneLine(hit.text)}${provenance ? ` · ${provenance}` : ""}${flag}`
     })
     .join("\n")
+
+/** Render a claim's timeline: what it says now, what it replaced, and what each rested on. This IS
+ *  the "explains the old assertion" half of the lifecycle — a correction nobody can read the reason
+ *  for is indistinguishable from a memory that went missing. */
+export const formatHistory = (history: MemoryClient.ClaimHistory): string => {
+  const cite = (claimID: string) => {
+    const rows = history.evidence.filter((row) => row.claimID === claimID)
+    return rows.length === 0 ? "" : ` — ${rows.map((row) => oneLine(row.label)).join("; ")}`
+  }
+  const lines = history.timeline.map((entry, index) => {
+    const mark = index === 0 ? "" : "replaced: "
+    const state = entry.status === "active" ? "current" : entry.status.replaceAll("_", " ")
+    return `${entry.id} · ${mark}${oneLine(entry.text)} · ${state}${cite(entry.id)}`
+  })
+  if (history.current !== null)
+    lines.push(`The current answer is now ${history.current.id}: ${oneLine(history.current.text)}`)
+  return lines.join("\n")
+}
 
 export const formatNeighbors = (rows: ReadonlyArray<MemoryClient.Neighbor>): string =>
   rows.map((row) => `${row.id} · [${row.type}] ${oneLine(row.text)}`).join("\n")
@@ -196,7 +237,9 @@ export const layer = Layer.effectDiscard(
           Tool.make({
             description:
               "The agent's long-term memory — a knowledge GRAPH. Ops: search (find things you've remembered, " +
-              "by keyword) · remember (save a fact; returns its id — default durably across all chats) · relate " +
+              "by keyword) · remember (save a fact; returns its id — default durably across all chats; give " +
+              "`name` + `predicate` and a NEW answer retires the old one instead of piling up beside it) · " +
+              "history (what a memory replaced, and what it rested on) · relate " +
               "(link two remembered ids with a relationship like works_at, so you can later trace multi-step " +
               "connections neighbors/search alone can't) · forget (drop a memory by id) · neighbors (memories " +
               "linked to one you found) · ingest (read a text DOCUMENT at a path into memory as searchable " +
@@ -264,17 +307,84 @@ export const layer = Layer.effectDiscard(
                     return { ok: true, message: formatHits(hits) } satisfies Output
                   }
                   case "remember": {
-                    const id = "mem_" + ascending()
                     const scope = scopeForWrite(sessionScope, agentID, input.scope)
                     // Embed on write so this memory is reachable by the vector leg later; degrades to
                     // an FTS-only memory when no device is configured.
                     const vector = yield* Effect.promise(() => KbEmbedder.embedOne(input.text))
+                    const chatOnly = input.scope === "session" ? " — this chat only" : ""
+                    /**
+                     * 🔴 A NAMED remember is a CLAIM, and an unnamed one is not.
+                     *
+                     * The subject is what makes a statement governable: it is the entity the claim
+                     * hangs off, and half of the key a correction is allowed to fire on. Without one
+                     * there is nothing to file the statement against, so it stays an ordinary memory
+                     * rather than a claim with a null subject pretending to be governed.
+                     *
+                     * ⚠️ Routing named remembers through the lifecycle also fixes something older:
+                     * `remember` wrote a lone entity node with NO edge to anything, so every
+                     * deliberate fact the user saved was an island in the very graph the tool
+                     * describes as a knowledge GRAPH. It now lands attached to its subject.
+                     */
+                    if (input.name !== undefined && input.name.trim() !== "") {
+                      const evidence: KbClaim.Evidence[] = [
+                        {
+                          kind: "message",
+                          locator: context.assistantMessageID,
+                          label: KbClaim.describeEvidence({ kind: "message", locator: "" }, new Date()),
+                        },
+                      ]
+                      return yield* memory
+                        .addClaim(
+                          {
+                            scope,
+                            statement: input.text,
+                            subject: input.name,
+                            predicate: input.predicate ?? KbClaim.DEFAULT_PREDICATE,
+                            relation: "staged",
+                            evidence,
+                            ...(vector === undefined ? {} : { embedding: vector }),
+                          },
+                          access,
+                        )
+                        .pipe(
+                          Effect.map((result) => {
+                            if (!result.ok || result.id === undefined)
+                              return {
+                                ok: false,
+                                message:
+                                  result.reason === "refused-scope"
+                                    ? "That memory belongs to a place this chat can't write to."
+                                    : "There was nothing to remember in that.",
+                              } satisfies Output
+                            if (result.deduped)
+                              return {
+                                ok: true,
+                                message: `Already remembered (${result.id})${chatOnly}.`,
+                              } satisfies Output
+                            const corrected =
+                              result.superseded.length === 0
+                                ? ""
+                                : ` This replaces ${result.superseded.join(", ")}, kept in history — ` +
+                                  `{"op":"history","id":"${result.id}"} shows what changed.`
+                            return {
+                              ok: true,
+                              message: `Remembered (${result.id})${chatOnly}.${corrected}`,
+                            } satisfies Output
+                          }),
+                          Effect.catch((error) =>
+                            Effect.succeed({
+                              ok: false,
+                              message: `Couldn't save that memory right now (${error.reason}).`,
+                            } satisfies Output),
+                          ),
+                        )
+                    }
+                    const id = "mem_" + ascending()
                     return yield* memory
                       .addMemory({
                         id,
                         kind: "entity",
                         text: input.text,
-                        ...(input.name === undefined ? {} : { name: input.name }),
                         scope,
                         relation: "staged",
                         ...(vector === undefined ? {} : { embedding: vector }),
@@ -282,7 +392,7 @@ export const layer = Layer.effectDiscard(
                       .pipe(
                         Effect.as({
                           ok: true,
-                          message: `Remembered (${id})${input.scope === "session" ? " — this chat only" : ""}.`,
+                          message: `Remembered (${id})${chatOnly}.`,
                         } satisfies Output),
                         Effect.catch((error) =>
                           Effect.succeed({
@@ -291,6 +401,20 @@ export const layer = Layer.effectDiscard(
                           } satisfies Output),
                         ),
                       )
+                  }
+                  case "history": {
+                    // ⚠️ The SAME `access` as every other id-based op. History is the widest read the
+                    // lifecycle adds — one id walks a whole chain — so it is the last place to reach
+                    // for a wider reach "because it is only reading".
+                    const history = yield* memory.claimHistory(input.id, access).pipe(Effect.orElseSucceed(() => null))
+                    if (history === null)
+                      return {
+                        ok: false,
+                        message:
+                          `No memory "${input.id}" you can see. Ids come from search or remember results ` +
+                          `(clm_… or mem_…).`,
+                      } satisfies Output
+                    return { ok: true, message: formatHistory(history) } satisfies Output
                   }
                   case "forget": {
                     return yield* (
@@ -317,7 +441,7 @@ export const layer = Layer.effectDiscard(
                     if (rows.length === 0)
                       return {
                         ok: false,
-                        message: `No memories linked to "${input.id}" yet. Create links with {"op":"relate","from":"…","to":"…","type":"…"}; ids come from remember/search results (mem_…).`,
+                        message: `No memories linked to "${input.id}" yet. Create links with {"op":"relate","from":"…","to":"…","type":"…"}; ids come from remember/search results (mem_… or clm_…).`,
                       } satisfies Output
                     return { ok: true, message: formatNeighbors(rows) } satisfies Output
                   }
@@ -465,13 +589,13 @@ export const layer = Layer.effectDiscard(
                                 message:
                                   `Couldn't link those. Either an id doesn't exist, or the two memories are ` +
                                   `private to different places — a link between them would make one of them ` +
-                                  `visible where it isn't. Both ids come from remember/search results (mem_…).`,
+                                  `visible where it isn't. Both ids come from remember/search results (mem_… or clm_…).`,
                               } satisfies Output),
                         ),
                         Effect.catch((error) =>
                           Effect.succeed({
                             ok: false,
-                            message: `Couldn't link those (${error.reason}). Both ids come from remember/search results (mem_…).`,
+                            message: `Couldn't link those (${error.reason}). Both ids come from remember/search results (mem_… or clm_…).`,
                           } satisfies Output),
                         ),
                       )
