@@ -1,6 +1,8 @@
 export * as MemoryClient from "./memory-client"
 
 import { Context, Effect, Layer, Schema } from "effect"
+import { KbChunk } from "./chunk"
+import { KbClaim } from "./claim"
 import type { MemoryAccess } from "./memory-access"
 
 // The memory tier's Effect-facing surface (notes/kb-graph-plan.md §2.0): the `Interface` the kb tool +
@@ -16,8 +18,10 @@ export class MemoryError extends Schema.TaggedErrorClass<MemoryError>()("MemoryC
   reason: Schema.String,
 }) {}
 
-export type MemoryKind = "entity" | "episode" | "passage"
+export type MemoryKind = "entity" | "episode" | "passage" | "claim" | "source"
 export type Relation = "staged" | "core"
+export type ClaimStatus = KbClaim.ClaimStatus
+export type EvidenceKind = KbClaim.EvidenceKind
 
 export interface MemoryInput {
   readonly id: string
@@ -33,6 +37,12 @@ export interface MemoryInput {
   readonly embedding?: readonly number[]
   /** Valid-time start (ISO, world time). Defaults to now. */
   readonly validFrom?: string
+  readonly status?: ClaimStatus
+  readonly subject?: string
+  readonly predicate?: string
+  readonly conflictKey?: string
+  readonly evidence?: string
+  readonly evidenceKind?: EvidenceKind
 }
 
 export interface EdgeInput {
@@ -51,6 +61,8 @@ export interface SearchInput {
   /** Scopes to search (a memory matches if its scope is in this set). Defaults to all scopes. */
   readonly scopes?: readonly string[]
   readonly kinds?: readonly MemoryKind[]
+  /** Lifecycle statuses to return. Defaults to CURRENT TRUTH — see `KbClaim.RECALL_STATUSES`. */
+  readonly statuses?: readonly ClaimStatus[]
 }
 
 export interface MemoryRow {
@@ -62,6 +74,13 @@ export interface MemoryRow {
   readonly source: string | null
   readonly confidence: number | null
   readonly relation: Relation
+  readonly status: ClaimStatus
+  readonly subject: string | null
+  readonly predicate: string | null
+  readonly conflictKey: string | null
+  readonly supersededBy: string | null
+  readonly evidence: string | null
+  readonly evidenceKind: EvidenceKind | null
 }
 
 export interface SearchHit extends MemoryRow {
@@ -91,8 +110,52 @@ export interface ListInput {
   readonly scopes?: readonly string[]
   readonly kinds?: readonly MemoryKind[]
   readonly includeInvalid?: boolean
+  /** Lifecycle lens for the Memory app. Unset = every status, history included. */
+  readonly statuses?: readonly ClaimStatus[]
   readonly limit?: number
   readonly offset?: number
+}
+
+/** What a caller asks the lifecycle to record — every identity field is a PROPOSAL until validated. */
+export interface ClaimInput {
+  readonly scope: string
+  readonly statement: string
+  readonly subject?: string
+  readonly predicate?: string
+  readonly confidence?: number
+  readonly relation?: Relation
+  readonly source?: string
+  readonly agent?: string
+  readonly embedding?: readonly number[]
+  readonly validFrom?: string
+  readonly evidence?: readonly KbClaim.Evidence[]
+}
+
+export interface ClaimResult {
+  readonly ok: boolean
+  readonly id?: string
+  readonly status?: ClaimStatus
+  /** Did the harness accept a conflict identity? `false` = this claim corrects nothing, by design. */
+  readonly identified?: boolean
+  readonly deduped?: boolean
+  readonly superseded: readonly string[]
+  readonly reason?: "empty" | "refused-scope"
+}
+
+export interface EvidenceRow {
+  readonly claimID: string
+  readonly id: string
+  readonly kind: EvidenceKind
+  readonly locator: string
+  readonly label: string
+}
+
+export interface ClaimHistory {
+  readonly claim: MemoryRow
+  /** The claim that answers this question NOW, when the one asked for has been replaced. */
+  readonly current: MemoryRow | null
+  readonly timeline: ReadonlyArray<MemoryRow>
+  readonly evidence: ReadonlyArray<EvidenceRow>
 }
 
 export interface GraphInput {
@@ -162,6 +225,28 @@ export interface Interface {
   ) => Effect.Effect<PathResult | null, MemoryError>
   readonly invalidate: (id: string, access: MemoryAccess, at?: string) => Effect.Effect<void, MemoryError>
   readonly purge: (id: string, access: MemoryAccess) => Effect.Effect<void, MemoryError>
+  /**
+   * 🔴 Record a governed claim: write it, file it against its subject and its evidence, and retire the
+   * claim it corrects — all under one lock.
+   *
+   * `access` is REQUIRED for the same reason it is on the read side, and the write direction is the
+   * one the lifecycle newly exposes: supersession is keyed on `scope + subject + predicate`, so a
+   * caller that could name any scope could retire another chat's current answer WITHOUT ever knowing
+   * its id. A scope outside the caller's reach comes back `ok: false, reason: "refused-scope"`.
+   */
+  readonly addClaim: (input: ClaimInput, access: MemoryAccess) => Effect.Effect<ClaimResult, MemoryError>
+  /** The timeline and the explanation. `null` when the claim does not exist OR is out of reach — the
+   *  same answer for both, so an id cannot be probed for existence. */
+  readonly claimHistory: (id: string, access: MemoryAccess) => Effect.Effect<ClaimHistory | null, MemoryError>
+  /** The cited evidence moved: flag every claim resting on `locator` as `needs_review`. Returns how
+   *  many were flagged. */
+  readonly reviewEvidence: (locator: string, access: MemoryAccess) => Effect.Effect<number, MemoryError>
+  /** Archive / restore — the statuses a PERSON controls. `superseded` is not settable here. */
+  readonly setClaimStatus: (
+    id: string,
+    status: "active" | "archived" | "needs_review",
+    access: MemoryAccess,
+  ) => Effect.Effect<boolean, MemoryError>
   /** Move a whole scope's memories elsewhere — what a retirement does instead of deleting them. */
   readonly moveScope: (from: string, to: string) => Effect.Effect<void, MemoryError>
   readonly clearScope: (scope: string) => Effect.Effect<void, MemoryError>
@@ -194,14 +279,17 @@ export interface Engine {
   addEdge(input: EdgeInput & { readonly scopes?: readonly string[] }): Promise<EdgeResult>
   search(input: SearchInput): Promise<ReadonlyArray<SearchHit>>
   neighbors(id: string, opts?: { scopes?: readonly string[]; k?: number }): Promise<ReadonlyArray<Neighbor>>
-  path(
-    from: string,
-    to: string,
-    maxHops?: number,
-    opts?: { scopes?: readonly string[] },
-  ): Promise<PathResult | null>
+  path(from: string, to: string, maxHops?: number, opts?: { scopes?: readonly string[] }): Promise<PathResult | null>
   invalidate(id: string, at?: string, opts?: { scopes?: readonly string[] }): Promise<void>
   purge(id: string, opts?: { scopes?: readonly string[] }): Promise<void>
+  addClaim(input: ClaimInput & { readonly scopes?: readonly string[] }): Promise<ClaimResult>
+  claimHistory(id: string, opts?: { scopes?: readonly string[] }): Promise<ClaimHistory | null>
+  reviewEvidence(locator: string, opts?: { scopes?: readonly string[] }): Promise<number>
+  setClaimStatus(
+    id: string,
+    status: "active" | "archived" | "needs_review",
+    opts?: { scopes?: readonly string[] },
+  ): Promise<boolean>
   moveScope(from: string, to: string): Promise<void>
   clearScope(scope: string): Promise<void>
   eraseAll(): Promise<number>
@@ -233,6 +321,13 @@ export const fromEngine = (engine: Engine): Interface => {
     invalidate: (id, access, at) =>
       wrap(() => engine.invalidate(id, at, access.scopes ? { scopes: access.scopes } : {})),
     purge: (id, access) => wrap(() => engine.purge(id, access.scopes ? { scopes: access.scopes } : {})),
+    addClaim: (input, access) =>
+      wrap(() => engine.addClaim({ ...input, ...(access.scopes ? { scopes: access.scopes } : {}) })),
+    claimHistory: (id, access) => wrap(() => engine.claimHistory(id, access.scopes ? { scopes: access.scopes } : {})),
+    reviewEvidence: (locator, access) =>
+      wrap(() => engine.reviewEvidence(locator, access.scopes ? { scopes: access.scopes } : {})),
+    setClaimStatus: (id, status, access) =>
+      wrap(() => engine.setClaimStatus(id, status, access.scopes ? { scopes: access.scopes } : {})),
     moveScope: (from, to) => wrap(() => engine.moveScope(from, to)),
     clearScope: (scope) => wrap(() => engine.clearScope(scope)),
     eraseAll: () => wrap(() => engine.eraseAll()),
@@ -255,6 +350,10 @@ export const proxy = (get: () => Interface): Interface => ({
   path: (from, to, access, maxHops) => Effect.suspend(() => get().path(from, to, access, maxHops)),
   invalidate: (id, access, at) => Effect.suspend(() => get().invalidate(id, access, at)),
   purge: (id, access) => Effect.suspend(() => get().purge(id, access)),
+  addClaim: (input, access) => Effect.suspend(() => get().addClaim(input, access)),
+  claimHistory: (id, access) => Effect.suspend(() => get().claimHistory(id, access)),
+  reviewEvidence: (locator, access) => Effect.suspend(() => get().reviewEvidence(locator, access)),
+  setClaimStatus: (id, status, access) => Effect.suspend(() => get().setClaimStatus(id, status, access)),
   moveScope: (from, to) => Effect.suspend(() => get().moveScope(from, to)),
   clearScope: (scope) => Effect.suspend(() => get().clearScope(scope)),
   eraseAll: () => Effect.suspend(() => get().eraseAll()),
@@ -282,6 +381,10 @@ export const disabled = (reason = "memory is not available"): Interface => {
     path: fail,
     invalidate: fail,
     purge: fail,
+    addClaim: fail,
+    claimHistory: fail,
+    reviewEvidence: fail,
+    setClaimStatus: fail,
     moveScope: fail,
     clearScope: fail,
     eraseAll: fail,
@@ -318,6 +421,13 @@ export const stub = (): Interface => {
           source: input.source ?? null,
           confidence: input.confidence ?? null,
           relation: input.relation ?? "staged",
+          status: input.status ?? "active",
+          subject: input.subject ?? null,
+          predicate: input.predicate ?? null,
+          conflictKey: input.conflictKey ?? null,
+          supersededBy: null,
+          evidence: input.evidence ?? null,
+          evidenceKind: input.evidenceKind ?? null,
           valid: true,
         })
       }),
@@ -336,10 +446,14 @@ export const stub = (): Interface => {
         edges.push({ from: input.from, to: input.to, type: input.type, scope })
         return { ok: true, scope }
       }),
+    // ⚠️ The status filter is DUPLICATED here on purpose, defaulting exactly as the engine does. A
+    // double that returned superseded claims where production hides them would let a caller pass its
+    // tests while shipping the "two answers to one question" defect the lifecycle exists to end.
     search: (input) =>
       ok(
         [...mems.values()]
           .filter((m) => m.valid)
+          .filter((m) => (input.statuses ?? KbClaim.RECALL_STATUSES).includes(m.status))
           .filter((m) => (input.scopes ? input.scopes.includes(m.scope) : true))
           .filter((m) => (input.kinds ? input.kinds.includes(m.kind) : true))
           .filter((m) =>
@@ -382,6 +496,184 @@ export const stub = (): Interface => {
       Effect.sync(() => {
         const m = mems.get(id)
         if (m && (access.scopes === undefined || access.scopes.includes(m.scope))) mems.delete(id)
+      }),
+    /**
+     * The lifecycle, at double fidelity: the SAME identity validation, the SAME conflict key, and the
+     * SAME scope refusal as the engine. Only the storage is a Map.
+     *
+     * ⚠️ It reuses `KbClaim` rather than re-deriving the rules. A double with its own copy of the
+     * supersession rule is a second implementation, and the two drift in exactly the direction that
+     * makes the double easier to satisfy — which this file has already been burned by once.
+     */
+    addClaim: (input, access) =>
+      Effect.sync(() => {
+        const scope = input.scope.trim()
+        const statement = input.statement.trim()
+        if (scope === "" || statement === "") return { ok: false, reason: "empty" as const, superseded: [] }
+        if (access.scopes !== undefined && !access.scopes.includes(scope))
+          return { ok: false, reason: "refused-scope" as const, superseded: [] }
+        const identity = KbClaim.proposeIdentity({ scope, subject: input.subject, predicate: input.predicate })
+        const key = identity === undefined ? undefined : KbClaim.conflictKey(identity)
+        let id = KbClaim.claimID(identity, scope, statement)
+        const prior = mems.get(id)
+        if (prior !== undefined && !KbClaim.isRetired(prior.status))
+          return { ok: true, id, status: prior.status, deduped: true, identified: key !== undefined, superseded: [] }
+        if (prior !== undefined) {
+          // Re-asserting something already retired mints a NEW claim rather than reviving the old row
+          // — the engine does the same, and for the same reason: history is never rewritten.
+          let n = 2
+          while (mems.has(`${id}_r${n}`)) n++
+          id = `${id}_r${n}`
+        }
+        const superseded =
+          key === undefined
+            ? []
+            : [...mems.values()]
+                .filter((m) => m.conflictKey === key && m.scope === scope && !KbClaim.isRetired(m.status) && m.valid)
+                .map((m) => m.id)
+                .filter((other) => other !== id)
+        mems.set(id, {
+          id,
+          kind: "claim",
+          text: statement,
+          name: input.subject?.trim() || null,
+          scope,
+          source: input.source ?? null,
+          confidence: input.confidence ?? null,
+          relation: input.relation ?? "staged",
+          status: "active",
+          subject: input.subject?.trim() || null,
+          predicate: input.predicate ?? null,
+          conflictKey: key ?? null,
+          supersededBy: null,
+          evidence: null,
+          evidenceKind: null,
+          valid: true,
+        })
+        if (input.subject?.trim()) {
+          const entity = KbChunk.entityID(scope, input.subject.trim())
+          if (!mems.has(entity))
+            mems.set(entity, {
+              id: entity,
+              kind: "entity",
+              text: input.subject.trim(),
+              name: input.subject.trim(),
+              scope,
+              source: input.source ?? null,
+              confidence: null,
+              relation: "staged",
+              status: "active",
+              subject: null,
+              predicate: null,
+              conflictKey: null,
+              supersededBy: null,
+              evidence: null,
+              evidenceKind: null,
+              valid: true,
+            })
+          edges.push({ from: id, to: entity, type: KbClaim.SUBJECT_EDGE, scope })
+        }
+        for (const item of input.evidence ?? []) {
+          const locator = item.locator.trim()
+          if (locator === "") continue
+          const sourceNode = KbClaim.sourceID(item.kind, locator)
+          if (!mems.has(sourceNode))
+            mems.set(sourceNode, {
+              id: sourceNode,
+              kind: "source",
+              text: KbClaim.describeEvidence(item, new Date()),
+              name: locator,
+              scope,
+              source: input.source ?? null,
+              confidence: null,
+              relation: "staged",
+              status: "active",
+              subject: null,
+              predicate: null,
+              conflictKey: null,
+              supersededBy: null,
+              evidence: locator,
+              evidenceKind: item.kind,
+              valid: true,
+            })
+          edges.push({ from: id, to: sourceNode, type: KbClaim.SUPPORTED_BY_EDGE, scope })
+        }
+        for (const old of superseded) {
+          const row = mems.get(old)
+          if (row) mems.set(old, { ...row, status: "superseded", supersededBy: id })
+          edges.push({ from: id, to: old, type: KbClaim.SUPERSEDES_EDGE, scope })
+        }
+        return { ok: true, id, status: "active" as const, identified: key !== undefined, superseded }
+      }),
+    claimHistory: (id, access) =>
+      Effect.sync(() => {
+        const visible = (row: (MemoryRow & { valid: boolean }) | undefined) =>
+          row !== undefined && (access.scopes === undefined || access.scopes.includes(row.scope))
+        const head = mems.get(id)
+        if (!visible(head)) return null
+        let current = head!
+        for (let hop = 0; hop < 64 && current.supersededBy !== null; hop++) {
+          const next = mems.get(current.supersededBy)
+          if (!visible(next)) break
+          current = next!
+        }
+        const timeline: MemoryRow[] = [stripValid(head!)]
+        const frontier = [head!.id]
+        const seen = new Set(frontier)
+        while (frontier.length > 0 && timeline.length < 64) {
+          const from = frontier.shift()!
+          for (const edge of edges.filter((e) => e.from === from && e.type === KbClaim.SUPERSEDES_EDGE)) {
+            if (seen.has(edge.to)) continue
+            seen.add(edge.to)
+            const row = mems.get(edge.to)
+            if (!visible(row)) continue
+            timeline.push(stripValid(row!))
+            frontier.push(edge.to)
+          }
+        }
+        const evidence: EvidenceRow[] = []
+        for (const entry of timeline)
+          for (const edge of edges.filter((e) => e.from === entry.id && e.type === KbClaim.SUPPORTED_BY_EDGE)) {
+            const row = mems.get(edge.to)
+            if (!row) continue
+            evidence.push({
+              claimID: entry.id,
+              id: row.id,
+              kind: row.evidenceKind ?? "chat",
+              locator: row.evidence ?? "",
+              label: row.text,
+            })
+          }
+        return {
+          claim: stripValid(head!),
+          current: current.id === head!.id ? null : stripValid(current),
+          timeline,
+          evidence,
+        }
+      }),
+    reviewEvidence: (locator, access) =>
+      Effect.sync(() => {
+        const target = locator.trim()
+        if (target === "") return 0
+        const sources = [...mems.values()].filter((m) => m.kind === "source" && m.evidence === target)
+        let flagged = 0
+        for (const source of sources)
+          for (const edge of edges.filter((e) => e.to === source.id && e.type === KbClaim.SUPPORTED_BY_EDGE)) {
+            const claim = mems.get(edge.from)
+            if (!claim || claim.status !== "active" || !claim.valid) continue
+            if (access.scopes !== undefined && !access.scopes.includes(claim.scope)) continue
+            mems.set(claim.id, { ...claim, status: "needs_review" })
+            flagged++
+          }
+        return flagged
+      }),
+    setClaimStatus: (id, status, access) =>
+      Effect.sync(() => {
+        const row = mems.get(id)
+        if (!row || row.kind !== "claim") return false
+        if (access.scopes !== undefined && !access.scopes.includes(row.scope)) return false
+        mems.set(id, { ...row, status })
+        return true
       }),
     moveScope: (from, to) =>
       Effect.sync(() => {

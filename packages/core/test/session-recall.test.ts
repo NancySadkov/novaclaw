@@ -18,6 +18,13 @@ const hit = (text: string, name: string | null = null): MemoryClient.SearchHit =
   scope: "global",
   source: null,
   confidence: null,
+  status: "active",
+  subject: null,
+  predicate: null,
+  conflictKey: null,
+  supersededBy: null,
+  evidence: null,
+  evidenceKind: null,
   relation: "staged",
   score: 1,
 })

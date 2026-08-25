@@ -90,9 +90,7 @@ export const layerFromConfig = (cfg: MemoryConfig): Layer.Layer<MemoryClient.Ser
                   detail:
                     `recovered: opened ${opened.recovery.opened}; skipped ` +
                     `${opened.recovery.skipped.map((s) => `${s.name} (${s.reason})`).join(", ")}` +
-                    (opened.recovery.quarantined.length > 0
-                      ? `; kept: ${opened.recovery.quarantined.join(", ")}`
-                      : ""),
+                    (opened.recovery.quarantined.length > 0 ? `; kept: ${opened.recovery.quarantined.join(", ")}` : ""),
                 }
               : { stage: "ready" }
             return MemoryClient.fromEngine(opened)
@@ -121,6 +119,10 @@ export const layerFromConfig = (cfg: MemoryConfig): Layer.Layer<MemoryClient.Ser
         path: (from, to, access, maxHops) => client((live) => live.path(from, to, access, maxHops)),
         invalidate: (id, access, at) => client((live) => live.invalidate(id, access, at)),
         purge: (id, access) => client((live) => live.purge(id, access)),
+        addClaim: (input, access) => client((live) => live.addClaim(input, access)),
+        claimHistory: (id, access) => client((live) => live.claimHistory(id, access)),
+        reviewEvidence: (locator, access) => client((live) => live.reviewEvidence(locator, access)),
+        setClaimStatus: (id, status, access) => client((live) => live.setClaimStatus(id, status, access)),
         moveScope: (from, to) => client((live) => live.moveScope(from, to)),
         clearScope: (scope) => client((live) => live.clearScope(scope)),
         eraseAll: () => client((live) => live.eraseAll()),
@@ -250,6 +252,10 @@ export const client = (capability: Capability.Capability<MemoryClient.Interface>
     path: (from, to, access, maxHops) => withClient((memory) => memory.path(from, to, access, maxHops)),
     invalidate: (id, access, at) => withClient((memory) => memory.invalidate(id, access, at)),
     purge: (id, access) => withClient((memory) => memory.purge(id, access)),
+    addClaim: (input, access) => withClient((memory) => memory.addClaim(input, access)),
+    claimHistory: (id, access) => withClient((memory) => memory.claimHistory(id, access)),
+    reviewEvidence: (locator, access) => withClient((memory) => memory.reviewEvidence(locator, access)),
+    setClaimStatus: (id, status, access) => withClient((memory) => memory.setClaimStatus(id, status, access)),
     moveScope: (from, to) => withClient((memory) => memory.moveScope(from, to)),
     clearScope: (scope) => withClient((memory) => memory.clearScope(scope)),
     eraseAll: () => withClient((memory) => memory.eraseAll()),
