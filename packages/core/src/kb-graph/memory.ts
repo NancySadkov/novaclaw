@@ -218,22 +218,7 @@ export const layerFromConfig = (
               // Consolidate session → global, then forget/decay: bound unbounded global staged growth
               // (§1.3.5/§4.7) — drop the lowest-importance staged over the cap; core is never touched.
               yield* Effect.tryPromise(() => live.consolidate()).pipe(Effect.ignore)
-              yield* forget(live, ledger, "global", stagedCap)
-              // 🔴 …AND EVERY COLLEAGUE'S CABINET, each capped on its own.
-              //
-              // Until 2026-08-22 auto-extracted facts were written to `session:<id>` and this pass
-              // promoted them into `global`, where the cap above bounded them. That promotion was a
-              // LEAK — it made one colleague's automatically-learned facts readable by every other
-              // (`runner/maintenance.ts` now files them in `agent:<id>`, which `consolidate` does not
-              // touch). Stopping the leak also removed the only thing that bounded them, so the bound
-              // moves here: without it a cabinet grows forever and recall quality decays with it.
-              //
-              // ⚠️ Per scope, never one cap over `agent:%` together: a shared cap lets one talkative
-              // officer evict another's memories. Same rule as the colleague rate window.
-              for (const scope of yield* Effect.tryPromise(() => live.stagedScopes("agent:")).pipe(
-                Effect.orElseSucceed(() => [] as string[]),
-              ))
-                yield* forget(live, ledger, scope, stagedCap)
+              yield* forgetEverywhere(live, ledger, stagedCap)
               // Embed drain: attach vectors to memories stored BEFORE a device was configured (or while
               // it was unreachable), so the vector leg covers the WHOLE graph rather than only new
               // writes — otherwise an instance with history stays effectively keyword-only. Bounded per
@@ -280,11 +265,50 @@ export const layerFromConfig = (
  * valuable one until the window grows to reach it. It converges — the pass runs every five minutes and
  * the window is four times the excess — and the alternative is scanning a whole cabinet every pass.
  *
+ * ⚠️ **Exported for its test.** `kb-graph-forgetting-pass.test.ts` drives THIS function against a real
+ * engine and a real ledger, which is what replaced a source ledger that asserted the shape of the call
+ * this one used to make. A guard that reads the source cannot see whether the quiet cabinet survived.
+ *
  * ⚠️ **`WasmMemory.prune` is now unreachable from production and stays as it is.** It is the engine's
  * own last-resort bound, still exercised by the engine's tests; what changed is who decides, not what
  * the engine is capable of.
  */
-const forget = (live: WasmMemory, db: Database.Interface["db"], scope: string, cap: number): Effect.Effect<void> =>
+/**
+ * ONE PASS OVER EVERY PILE THAT HAS A CAP: the household's, then each colleague's cabinet.
+ *
+ * 🔴 **…AND EVERY COLLEAGUE'S CABINET, each capped on its own.** Until 2026-08-22 auto-extracted
+ * facts were written to `session:<id>` and consolidation promoted them into `global`, where the
+ * household cap bounded them. That promotion was a LEAK — it made one colleague's automatically
+ * learned facts readable by every other (`runner/maintenance.ts` now files them in `agent:<id>`,
+ * which `consolidate` does not touch). Stopping the leak also removed the only thing that bounded
+ * them, so the bound moved here: without it a cabinet grows forever and recall decays with it.
+ *
+ * ⚠️ **Per scope, never one cap over `agent:%` together.** A shared cap lets one talkative officer
+ * evict another's memories — the same rule the colleague rate window follows, and the reason the
+ * cabinets are DISCOVERED rather than named: a hardcoded list goes stale the first time somebody is
+ * hired.
+ *
+ * ⚠️ **Extracted from the background fiber so a test can drive it.** The wiring — discover per
+ * scope, cap per scope — used to be checked by a guard that read this file's SOURCE for the shape of
+ * the call, which went red for a spelling the day the call changed and could never have seen whether
+ * the quiet cabinet actually survived. `kb-graph-forgetting-pass.test.ts` drives this against a real
+ * engine and a real ledger instead.
+ */
+export const forgetEverywhere = (live: WasmMemory, db: Database.Interface["db"], cap: number): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    yield* forgetOverCap(live, db, "global", cap)
+    for (const scope of yield* Effect.tryPromise(() => live.stagedScopes("agent:")).pipe(
+      Effect.orElseSucceed(() => [] as string[]),
+    ))
+      yield* forgetOverCap(live, db, scope, cap)
+  })
+
+export const forgetOverCap = (
+  live: WasmMemory,
+  db: Database.Interface["db"],
+  scope: string,
+  cap: number,
+): Effect.Effect<void> =>
   Effect.gen(function* () {
     const count = yield* Effect.tryPromise(() => live.stagedCount(scope)).pipe(Effect.orElseSucceed(() => 0))
     const excess = count - Math.max(0, Math.floor(cap))
