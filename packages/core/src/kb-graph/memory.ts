@@ -10,6 +10,7 @@ import { EventV2 } from "../event"
 import { Flag } from "../flag/flag"
 import { Global } from "../global"
 import { Log } from "@novaclaw/schema/log"
+import { MemoryEvent } from "@novaclaw/schema/memory-event"
 import { MemoryAccessLedger } from "./access-ledger"
 import { KbEmbedder } from "./embedder"
 import { MemoryPrunePolicy } from "./prune-policy"
@@ -218,7 +219,7 @@ export const layerFromConfig = (
               // Consolidate session → global, then forget/decay: bound unbounded global staged growth
               // (§1.3.5/§4.7) — drop the lowest-importance staged over the cap; core is never touched.
               yield* Effect.tryPromise(() => live.consolidate()).pipe(Effect.ignore)
-              yield* forgetEverywhere(live, ledger, stagedCap)
+              yield* forgetEverywhere(live, ledger, events, stagedCap)
               // Embed drain: attach vectors to memories stored BEFORE a device was configured (or while
               // it was unreachable), so the vector leg covers the WHOLE graph rather than only new
               // writes — otherwise an instance with history stays effectively keyword-only. Bounded per
@@ -294,18 +295,24 @@ export const layerFromConfig = (
  * the quiet cabinet actually survived. `kb-graph-forgetting-pass.test.ts` drives this against a real
  * engine and a real ledger instead.
  */
-export const forgetEverywhere = (live: WasmMemory, db: Database.Interface["db"], cap: number): Effect.Effect<void> =>
+export const forgetEverywhere = (
+  live: WasmMemory,
+  db: Database.Interface["db"],
+  events: EventV2.Interface,
+  cap: number,
+): Effect.Effect<void> =>
   Effect.gen(function* () {
-    yield* forgetOverCap(live, db, "global", cap)
+    yield* forgetOverCap(live, db, events, "global", cap)
     for (const scope of yield* Effect.tryPromise(() => live.stagedScopes("agent:")).pipe(
       Effect.orElseSucceed(() => [] as string[]),
     ))
-      yield* forgetOverCap(live, db, scope, cap)
+      yield* forgetOverCap(live, db, events, scope, cap)
   })
 
 export const forgetOverCap = (
   live: WasmMemory,
   db: Database.Interface["db"],
+  events: EventV2.Interface,
   scope: string,
   cap: number,
 ): Effect.Effect<void> =>
@@ -327,8 +334,27 @@ export const forgetOverCap = (
       candidates.map((row) => row.id),
     )
     const choice = MemoryPrunePolicy.choose({ candidates, usage, excess, now: Date.now() })
-    for (const id of choice.victims)
+    for (const id of choice.victims) {
       yield* Effect.tryPromise(() => live.invalidate(id, undefined, { scopes: [scope] })).pipe(Effect.ignore)
+      /**
+       * 🔴 **THE PASS HAS TO ANNOUNCE ITSELF, and it did not.**
+       *
+       * `MemoryObserved` wraps the STORE precisely so that "a memory was forgotten" means the same
+       * thing whoever forgot it. This loop holds the raw `WasmMemory` — it needs `stagedScopes`,
+       * `stagedCount` and `consolidate`, which are engine methods and not on the client — so its
+       * `invalidate` reaches around the observed wrapper, and every eviction was silent. Measured
+       * 2026-08-26 by `test/kb-graph-forgetting-loop.test.ts`, driving the real layer: the store
+       * shrank from six memories to three and the bus carried ZERO `memory.forgotten` events, so an
+       * open Memory app kept drawing memories that were gone until something else made it re-read.
+       *
+       * ⚠️ `events` is a REQUIRED parameter rather than an optional service read, for the reason
+       * `memory-observed.ts` records at length: an optional dependency read at the call site means
+       * every call site must remember, and the one that forgot is always the one nobody watches.
+       */
+      yield* events
+        .publish(MemoryEvent.Forgotten, { id, mode: "invalidate" })
+        .pipe(Effect.ignore)
+    }
     if (choice.victims.length > 0)
       yield* Log.event("kb.memory.forget.done", {
         "memory.scope": scope,
