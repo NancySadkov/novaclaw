@@ -91,6 +91,53 @@ describe("selectSlice", () => {
     )
   })
 
+  test("🔴 a SMALL OLD document survives a huge new one — the live shape, at live scale", () => {
+    // Measured against a real store on 2026-08-25 and it FAILED: an old 5-node document and a newly
+    // ingested 701-node one, budget 600, returned the new document plus 599 of its passages and NOT
+    // ONE node of the old one. A single breadth-first walk drains its component before reaching the
+    // second root, so "the newest crowd out the older hub" had merely become "the biggest crowds out
+    // the older hub". Every earlier test in this file passed throughout, because in all of them both
+    // components fit inside the budget — scale was the variable, not shape.
+    const nodes: SliceNode[] = []
+    const edges: SliceEdge[] = []
+    // Newest first: the big new document and its 700 passages.
+    for (let i = 0; i < 700; i++) {
+      nodes.push(node(`new-p${i}`, "passage"))
+      edges.push({ from: `new-p${i}`, to: "new-doc" })
+    }
+    nodes.push(node("new-doc"))
+    // Then the old one, oldest of all.
+    for (let i = 0; i < 4; i++) {
+      nodes.push(node(`old-p${i}`, "passage"))
+      edges.push({ from: `old-p${i}`, to: "old-doc" })
+    }
+    nodes.push(node("old-doc"))
+
+    const out = selectSlice(nodes, edges, { limit: 600, total: nodes.length })
+    expect(out.ids).toContain("old-doc")
+    // And WITH its passages, or the old document is a lone mark whose edges point nowhere.
+    const kept = out.ids.filter((id) => id.startsWith("old-p"))
+    expect(kept.length).toBe(4)
+    // The new document is still there too — this must not fix one starvation by creating another.
+    expect(out.ids).toContain("new-doc")
+    expect(out.ids.length).toBe(600)
+  })
+
+  test("a dozen documents all appear, not one document and its leaves", () => {
+    const nodes: SliceNode[] = []
+    const edges: SliceEdge[] = []
+    for (let d = 0; d < 12; d++) {
+      for (let i = 0; i < 200; i++) {
+        nodes.push(node(`d${d}-p${i}`, "passage"))
+        edges.push({ from: `d${d}-p${i}`, to: `d${d}` })
+      }
+      nodes.push(node(`d${d}`))
+    }
+    const out = selectSlice(nodes, edges, { limit: 300, total: nodes.length })
+    const docs = out.ids.filter((id) => /^d\d+$/.test(id))
+    expect(docs.length).toBe(12)
+  })
+
   test("several components are all represented, best-connected first", () => {
     // Two clusters and a lone node. A slice that only ever walks one component would answer
     // "how does it connect" with one answer.
