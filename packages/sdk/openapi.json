@@ -15749,6 +15749,243 @@
         ]
       }
     },
+    "/api/memory/claim/status": {
+      "post": {
+        "tags": ["novaclaw HttpApi"],
+        "operationId": "v2.memory.claim.status",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Move one claim between the statuses a person controls: `archived` (kept, never recalled), `active` (restored), `needs_review` (flagged). `superseded` is the lifecycle's own and cannot be set here. Answers whether the status actually changed.",
+        "summary": "Archive, restore or flag a claim",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": ["active", "archived", "needs_review"]
+                  }
+                },
+                "required": ["id", "status"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.memory.claim.status({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/memory/claim": {
+      "post": {
+        "tags": ["novaclaw HttpApi"],
+        "operationId": "v2.memory.claim.add",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "identified": {
+                      "type": "boolean"
+                    },
+                    "deduped": {
+                      "type": "boolean"
+                    },
+                    "superseded": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "reason": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["ok", "superseded"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Write a governed claim: file it against its subject and its evidence, and retire the claim it corrects. Supersession is keyed on scope + subject + predicate, so a claim that names both replaces the current answer to that question and the reply lists what it retired.",
+        "summary": "Record a claim",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "statement": {
+                    "type": "string"
+                  },
+                  "scope": {
+                    "type": "string"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "predicate": {
+                    "type": "string"
+                  },
+                  "confidence": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["NaN"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["-Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity", "-Infinity", "NaN"]
+                      }
+                    ]
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
+                  "validFrom": {
+                    "type": "string"
+                  },
+                  "evidence": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": ["chat", "message", "passage", "file", "url", "test", "command", "commit"]
+                        },
+                        "locator": {
+                          "type": "string"
+                        },
+                        "label": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["kind", "locator"],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": ["statement"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.memory.claim.add({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/location": {
       "get": {
         "tags": ["novaclaw HttpApi"],

@@ -3711,6 +3711,75 @@ class ApiV2Health extends NovaClawApiClient {
   }
 }
 
+class ApiV2MemoryClaim extends NovaClawApiClient {
+  /**
+   * Archive, restore or flag a claim
+   *
+   * Move one claim between the statuses a person controls: `archived` (kept, never recalled), `active` (restored), `needs_review` (flagged). `superseded` is the lifecycle's own and cannot be set here. Answers whether the status actually changed.
+   */
+  public status<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+      status: "active" | "archived" | "needs_review"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { id: parameters?.["id"], status: parameters?.["status"] }
+    return (options?.client ?? this.client).post<
+      T.V2MemoryClaimStatusResponses,
+      T.V2MemoryClaimStatusErrors,
+      ThrowOnError
+    >({
+      url: "/api/memory/claim/status",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Record a claim
+   *
+   * Write a governed claim: file it against its subject and its evidence, and retire the claim it corrects. Supersession is keyed on scope + subject + predicate, so a claim that names both replaces the current answer to that question and the reply lists what it retired.
+   */
+  public add<ThrowOnError extends boolean = false>(
+    parameters: {
+      statement: string
+      scope?: string
+      subject?: string
+      predicate?: string
+      confidence?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      source?: string
+      agent?: string
+      validFrom?: string
+      evidence?: Array<{
+        kind: "chat" | "message" | "passage" | "file" | "url" | "test" | "command" | "commit"
+        locator: string
+        label?: string
+      }>
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = {
+      statement: parameters?.["statement"],
+      scope: parameters?.["scope"],
+      subject: parameters?.["subject"],
+      predicate: parameters?.["predicate"],
+      confidence: parameters?.["confidence"],
+      source: parameters?.["source"],
+      agent: parameters?.["agent"],
+      validFrom: parameters?.["validFrom"],
+      evidence: parameters?.["evidence"],
+    }
+    return (options?.client ?? this.client).post<T.V2MemoryClaimAddResponses, T.V2MemoryClaimAddErrors, ThrowOnError>({
+      url: "/api/memory/claim",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+}
+
 class ApiV2Memory extends NovaClawApiClient {
   /**
    * Erase all memory
@@ -3722,6 +3791,11 @@ class ApiV2Memory extends NovaClawApiClient {
       url: "/api/memory/erase",
       ...options,
     })
+  }
+
+  private _claim?: ApiV2MemoryClaim
+  get claim(): ApiV2MemoryClaim {
+    return (this._claim ??= new ApiV2MemoryClaim({ client: this.client }))
   }
 }
 

@@ -13902,6 +13902,89 @@ export type V2MemoryEraseResponses = {
 
 export type V2MemoryEraseResponse = V2MemoryEraseResponses[keyof V2MemoryEraseResponses]
 
+export type V2MemoryClaimStatusData = {
+  body: {
+    id: string
+    status: "active" | "archived" | "needs_review"
+  }
+  path?: never
+  query?: never
+  url: "/api/memory/claim/status"
+}
+
+export type V2MemoryClaimStatusErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError | InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2MemoryClaimStatusError = V2MemoryClaimStatusErrors[keyof V2MemoryClaimStatusErrors]
+
+export type V2MemoryClaimStatusResponses = {
+  /**
+   * Success
+   */
+  200: boolean
+}
+
+export type V2MemoryClaimStatusResponse = V2MemoryClaimStatusResponses[keyof V2MemoryClaimStatusResponses]
+
+export type V2MemoryClaimAddData = {
+  body: {
+    statement: string
+    scope?: string
+    subject?: string
+    predicate?: string
+    confidence?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    source?: string
+    agent?: string
+    validFrom?: string
+    evidence?: Array<{
+      kind: "chat" | "message" | "passage" | "file" | "url" | "test" | "command" | "commit"
+      locator: string
+      label?: string
+    }>
+  }
+  path?: never
+  query?: never
+  url: "/api/memory/claim"
+}
+
+export type V2MemoryClaimAddErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError | InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2MemoryClaimAddError = V2MemoryClaimAddErrors[keyof V2MemoryClaimAddErrors]
+
+export type V2MemoryClaimAddResponses = {
+  /**
+   * Success
+   */
+  200: {
+    ok: boolean
+    id?: string
+    status?: string
+    identified?: boolean
+    deduped?: boolean
+    superseded: Array<string>
+    reason?: string
+  }
+}
+
+export type V2MemoryClaimAddResponse = V2MemoryClaimAddResponses[keyof V2MemoryClaimAddResponses]
+
 export type V2LocationGetData = {
   body?: never
   path?: never

@@ -435,6 +435,36 @@ describe("evidence that MOVES flags the claim, and never destroys it", () => {
     expect(await engine.setClaimStatus(claim.id!, "active")).toBe(true)
     expect(answers(await engine.search({ query: "Sofia works", scopes: ["global"] }))).toEqual([claim.id!])
   }, 120_000)
+
+  test("🔴 a SUPERSEDED claim cannot be restored — that would leave two current answers to one question", async () => {
+    const engine = await open()
+    const first = await engine.addClaim({
+      scope: "global",
+      subject: "Tam",
+      predicate: "employer",
+      statement: "Tam works at Initech.",
+    })
+    const second = await engine.addClaim({
+      scope: "global",
+      subject: "Tam",
+      predicate: "employer",
+      statement: "Tam works at Acme.",
+    })
+    expect(second.superseded).toEqual([first.id!])
+
+    // Setting `superseded` was already refused at the type level. This is the OTHER direction, which
+    // was not: the retired row keeps its `superseded_by` pointer and its `supersedes` edge, so
+    // flipping it back to `active` produces a claim that is simultaneously current and replaced.
+    expect(await engine.setClaimStatus(first.id!, "active")).toBe(false)
+    expect(await engine.setClaimStatus(first.id!, "archived")).toBe(false)
+    expect((await engine.claimHistory(first.id!))!.claim.status).toBe("superseded")
+    // The property that matters, stated as the reader would ask it: ONE answer comes back.
+    expect(answers(await engine.search({ query: "Tam works", scopes: ["global"] }))).toEqual([second.id!])
+
+    // …and the control: an ordinary active claim in the same store still archives, so the refusal
+    // above is about the claim's lifecycle state and not about the operation being broken.
+    expect(await engine.setClaimStatus(second.id!, "archived")).toBe(true)
+  }, 120_000)
 })
 
 describe("exact identifiers stay reachable when similarity is weak", () => {

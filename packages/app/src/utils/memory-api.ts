@@ -275,3 +275,68 @@ export function memoryIngest(
 export function memoryClearScope(server: ServerConnection.HttpBase, input: { directory: string; scope: string }) {
   return call<boolean>(server, "POST", "memory/clearScope", input.directory, { scope: input.scope })
 }
+
+// --- the claim lifecycle, on the ONE contract (`/api/*`) ---
+
+/** The statuses a PERSON controls. `superseded` is the lifecycle's own and is not settable. */
+export type PersonClaimStatus = "active" | "archived" | "needs_review"
+
+/**
+ * Archive, restore or flag one claim.
+ *
+ * ⚠️ Answers whether the status actually MOVED. `false` is a real answer — the claim is gone, or it
+ * was already in that state — and a caller that drew a lifecycle change on `false` would be showing
+ * the user something that did not happen.
+ */
+export function memoryClaimStatus(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; id: string; status: PersonClaimStatus },
+) {
+  return call<boolean>(server, "POST", "api/memory/claim/status", input.directory, {
+    id: input.id,
+    status: input.status,
+  })
+}
+
+export interface ClaimEvidence {
+  readonly kind: "chat" | "message" | "passage" | "file" | "url" | "test" | "command" | "commit"
+  readonly locator: string
+  readonly label?: string
+}
+
+export interface ClaimWriteResult {
+  readonly ok: boolean
+  readonly id?: string
+  readonly status?: string
+  /** Did the store accept a conflict identity? `false` = this claim corrects nothing, by design. */
+  readonly identified?: boolean
+  readonly deduped?: boolean
+  /** What this claim RETIRED. Empty is the common case; non-empty is a correction. */
+  readonly superseded: readonly string[]
+  readonly reason?: string
+}
+
+/**
+ * Record a governed claim — the only write on the HTTP surface that can CORRECT anything.
+ *
+ * `memory/remember` writes a plain node with no subject or predicate, so nothing it creates can ever
+ * be superseded. Naming a subject and a predicate is what makes this claim the answer to a question,
+ * and what lets the next one replace it.
+ */
+export function memoryAddClaim(
+  server: ServerConnection.HttpBase,
+  input: {
+    directory: string
+    statement: string
+    scope?: string
+    subject?: string
+    predicate?: string
+    confidence?: number
+    source?: string
+    validFrom?: string
+    evidence?: readonly ClaimEvidence[]
+  },
+) {
+  const { directory, ...body } = input
+  return call<ClaimWriteResult>(server, "POST", "api/memory/claim", directory, body)
+}
