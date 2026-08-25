@@ -85,6 +85,11 @@ const LEDGER: readonly Entry[] = [
     why: "`existsSafely` decides whether a home is OFFERABLE in a picker; an unreadable home is correctly not offered.",
   },
   {
+    file: "core/src/kb-graph/snapshot.ts",
+    kind: "fallback",
+    why: "asks whether the generation `CURRENT` names is present; a wrong `false` falls back to the next candidate, and no sentence about the user's machine is built from it.",
+  },
+  {
     file: "core/src/kb-graph/wasm-engine.ts",
     kind: "fallback",
     why: "a write-then-look drive-reach sentinel and two shape checks on a directory this process owns.",

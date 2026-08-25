@@ -79,7 +79,22 @@ export const layerFromConfig = (cfg: MemoryConfig): Layer.Layer<MemoryClient.Ser
         opening = WasmMemory.open(dbDir, cfg.dim === undefined ? {} : { dim: cfg.dim })
           .then((opened) => {
             engine = opened
-            currentRuntimeStatus = { stage: "ready" }
+            // A store that opened by FALLING BACK is ready, but not the same ready — the user is
+            // reading an older generation and some of their newest memories are gone. Reporting it
+            // through `detail` puts it in front of nova-health and the instance status without a
+            // schema change; a silent fallback is indistinguishable from a healthy boot.
+            const fell = opened.recovery.skipped.length > 0
+            currentRuntimeStatus = fell
+              ? {
+                  stage: "ready",
+                  detail:
+                    `recovered: opened ${opened.recovery.opened}; skipped ` +
+                    `${opened.recovery.skipped.map((s) => `${s.name} (${s.reason})`).join(", ")}` +
+                    (opened.recovery.quarantined.length > 0
+                      ? `; kept: ${opened.recovery.quarantined.join(", ")}`
+                      : ""),
+                }
+              : { stage: "ready" }
             return MemoryClient.fromEngine(opened)
           })
           .catch((cause) => {

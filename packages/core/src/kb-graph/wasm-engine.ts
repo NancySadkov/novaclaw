@@ -15,6 +15,7 @@ import {
 import path, { join } from "node:path"
 import { Global } from "../global"
 import { selectSlice, type SliceMeta } from "./graph-slice"
+import { GraphSnapshot } from "./snapshot"
 
 // The in-process Ladybug graph-memory engine (WASM) — the single engine that runs EVERYWHERE
 // (notes/kb-graph-plan.md §2.0, the 2026-07-19 pivot). The native addon can't run in a phone app and
@@ -33,6 +34,25 @@ import { selectSlice, type SliceMeta } from "./graph-slice"
 // ⚠️ WASM API: `@ladybugdb/wasm-core/nodejs/sync` is require-only (createRequire); `init()` once,
 // globally; queries are SYNC (`conn.query`), rows via `.getAllObjects()`; params via prepare→execute.
 // Open a SUBDIR (`/x/graph`), never the FS root. POSIX virtual paths only.
+
+/** The `opened` value when no retained generation could be used and the graph started over. */
+export const EMPTY_GENERATION = "(empty)"
+
+/**
+ * What it took to get a usable store open — NC-REL-018.
+ *
+ * ⚠️ Reported rather than logged-and-forgotten because a silent fallback is indistinguishable from a
+ * healthy boot, and the user whose newest writes were dropped is entitled to know which generation
+ * they are actually reading.
+ */
+export interface SnapshotRecovery {
+  /** The generation in use, or `EMPTY_GENERATION`. */
+  opened: string
+  /** Generations passed over, newest first, each with why. */
+  skipped: { name: string; reason: string }[]
+  /** Damaged generations kept on disk for diagnosis instead of deleted. */
+  quarantined: string[]
+}
 
 export type MemoryKind = "entity" | "episode" | "passage"
 export type Relation = "staged" | "core"
@@ -381,6 +401,16 @@ export class WasmMemory {
   private snapshotTimer: ReturnType<typeof setTimeout> | undefined
   private dirty = false
   private closed = false
+  /**
+   * What `open()` had to do to get a usable store. `opened` is the generation actually in use, so
+   * `"(empty)"` means every retained generation was unusable and the graph started over.
+   */
+  recovery: SnapshotRecovery = { opened: EMPTY_GENERATION, skipped: [], quarantined: [] }
+  private lastCheckpointError: string | undefined
+  /** Why durable writes are not currently landing, or `undefined` when they are. */
+  get publishBlocked(): string | undefined {
+    return this.lastCheckpointError
+  }
   // The WASM connection is single-threaded: an op does several awaited engine calls that must be
   // atomic w.r.t. the debounced snapshot (a CHECKPOINT interleaved mid-result-read corrupts it). All
   // public ops + persist run through this serial lock so they never interleave.
@@ -437,15 +467,77 @@ export class WasmMemory {
     if (existsSync(realDir) && !statSync(realDir).isDirectory()) {
       rmSync(realDir, { recursive: true, force: true })
     }
-    // Restore our snapshot: copy the real-disk files into the scratch dir before opening.
     mkdirSync(realDir, { recursive: true })
-    for (const f of readdirSync(realDir)) {
-      FS.writeFile(`${memfsDir}/${f}`, readFileSync(join(realDir, f)))
+
+    /**
+     * RESTORE, NEWEST GENERATION FIRST, FALLING BACK RATHER THAN FAILING — NC-REL-018.
+     *
+     * 🔴 The old restore copied whatever sat in `realDir` into MEMFS and opened it. A generation torn
+     * by a crash mid-publish therefore came back on every single retry: the wrapper cleared its
+     * in-process promise and re-read the same bytes, so a one-second window could cost the user every
+     * durable memory they had. Each candidate now has to VERIFY (manifest digests) and then actually
+     * OPEN before it is accepted; one that does neither is moved aside, not deleted, and the previous
+     * generation is tried.
+     *
+     * ⚠️ Starting empty is the last resort, not the first branch. Memory is a re-derivable tier (§4.9)
+     * so an empty store is survivable, but reaching for it before exhausting the retained generations
+     * would turn recoverable damage into permanent loss.
+     */
+    const clearScratch = () => {
+      for (const f of (FS.readdir(memfsDir) as string[]).filter((n) => n !== "." && n !== "..")) {
+        try {
+          FS.unlink(`${memfsDir}/${f}`)
+        } catch {
+          /* nothing to remove */
+        }
+      }
     }
-    const db = new lbug.Database(`${memfsDir}/graph`)
-    const conn = new lbug.Connection(db)
-    const store = new WasmMemory(lbug, db, conn, memfsDir, realDir, dim)
-    await store.ensureSchema()
+    const recovery: SnapshotRecovery = { opened: EMPTY_GENERATION, skipped: [], quarantined: [] }
+    let store: WasmMemory | undefined
+    for (const gen of GraphSnapshot.candidates(realDir)) {
+      const files = GraphSnapshot.read(gen)
+      if (!files) {
+        recovery.skipped.push({ name: gen.name, reason: "did not verify" })
+        const held = GraphSnapshot.quarantine(realDir, gen)
+        if (held) recovery.quarantined.push(held)
+        continue
+      }
+      clearScratch()
+      for (const [name, bytes] of files) FS.writeFile(`${memfsDir}/${name}`, bytes)
+      try {
+        const db = new lbug.Database(`${memfsDir}/graph`)
+        const conn = new lbug.Connection(db)
+        const candidate = new WasmMemory(lbug, db, conn, memfsDir, realDir, dim)
+        await candidate.ensureSchema()
+        // ⚠️ The DDL alone is not proof: `ensureSchema` swallows "already exists", which is exactly
+        // what a restored store reports. A read that touches the storage is what says the bytes work.
+        await candidate.q(`MATCH (m:Memory) RETURN count(m)`)
+        store = candidate
+        recovery.opened = gen.name
+        break
+      } catch (error) {
+        recovery.skipped.push({ name: gen.name, reason: (error as Error).message.slice(0, 200) })
+        const held = GraphSnapshot.quarantine(realDir, gen)
+        if (held) recovery.quarantined.push(held)
+      }
+    }
+    if (!store) {
+      clearScratch()
+      const db = new lbug.Database(`${memfsDir}/graph`)
+      const conn = new lbug.Connection(db)
+      store = new WasmMemory(lbug, db, conn, memfsDir, realDir, dim)
+      await store.ensureSchema()
+    }
+    store.recovery = recovery
+    // Publishing here is what makes a fresh store durable and what retires the legacy flat layout. A
+    // restored store is not dirty and already has a generation, so for it this is a no-op.
+    await store.flush()
+    if (recovery.skipped.length > 0)
+      console.warn(
+        `kb-memory: fell back to ${recovery.opened === EMPTY_GENERATION ? "an EMPTY store" : recovery.opened}; ` +
+          `unusable: ${recovery.skipped.map((skip) => `${skip.name} (${skip.reason})`).join(", ")}` +
+          `${recovery.quarantined.length > 0 ? `; kept for diagnosis: ${recovery.quarantined.join(", ")}` : ""}`,
+      )
     return store
   }
 
@@ -485,7 +577,9 @@ export class WasmMemory {
     )
     await this.ddl(`CALL CREATE_VECTOR_INDEX('Memory', 'mem_vec', 'embedding', metric := 'cosine')`)
     await this.ddl(`CALL CREATE_FTS_INDEX('Memory', 'mem_fts', ['text', 'name'])`)
-    await this.persist() // flush the freshly-created schema to disk
+    // ⚠️ No publish here. `open()` runs this against every CANDIDATE generation while deciding which
+    // one is usable, and a publish from inside that trial would commit a generation built from bytes
+    // that had not been accepted yet. `open()` flushes once, after it has chosen.
   }
 
   // --- persistence (MEMFS ↔ real disk snapshot) ------------------------------------------------
@@ -497,26 +591,36 @@ export class WasmMemory {
       clearTimeout(this.snapshotTimer)
       this.snapshotTimer = undefined
     }
-    if (!this.dirty && existsSync(join(this.realDir, "graph"))) return
+    // ⚠️ The old guard asked whether `realDir/graph` existed. Under generations the db file lives one
+    // level down, so that test would answer "no snapshot" forever and every flush would republish.
+    if (!this.dirty && GraphSnapshot.exists(this.realDir)) return
     await this.serialize(() => this.persist())
   }
 
   private async persist(): Promise<void> {
     try {
       await this.q(`CHECKPOINT`)
-    } catch {
-      /* nothing to checkpoint / transient */
+    } catch (error) {
+      /**
+       * 🔴 A FAILED CHECKPOINT NOW STOPS THE PUBLISH. It used to be swallowed as "nothing to
+       * checkpoint / transient", which meant a generation could be staged out of a file set whose
+       * consistency had never been established.
+       *
+       * ⚠️ Measured on this engine 2026-08-25: `CHECKPOINT` succeeds on a fresh database and succeeds
+       * again immediately afterwards with nothing to merge. So a throw here is NOT routine, and the
+       * swallowing comment described a case that does not arise. `dirty` stays set and the prior
+       * generation stays live, so the next debounced attempt retries against the same memory state.
+       */
+      this.lastCheckpointError = (error as Error).message
+      console.warn(`kb-memory: checkpoint failed, keeping the prior snapshot generation: ${this.lastCheckpointError}`)
+      return
     }
+    this.lastCheckpointError = undefined
     const FS = this.lbug.getFS()
-    const memFiles = (FS.readdir(this.memfsDir) as string[]).filter((f) => f !== "." && f !== "..")
-    mkdirSync(this.realDir, { recursive: true })
-    for (const f of memFiles) {
-      writeFileSync(join(this.realDir, f), Buffer.from(FS.readFile(`${this.memfsDir}/${f}`) as Uint8Array))
-    }
-    // Drop stale on-disk files the checkpoint merged away (e.g. a prior .wal) so restore stays clean.
-    for (const f of readdirSync(this.realDir)) {
-      if (!memFiles.includes(f)) rmSync(join(this.realDir, f), { force: true })
-    }
+    const files = new Map<string, Uint8Array>()
+    for (const f of (FS.readdir(this.memfsDir) as string[]).filter((n) => n !== "." && n !== ".."))
+      files.set(f, FS.readFile(`${this.memfsDir}/${f}`) as Uint8Array)
+    GraphSnapshot.publish(this.realDir, files)
     this.dirty = false
   }
 
