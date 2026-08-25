@@ -1,5 +1,5 @@
 import { A, useSearchParams } from "@solidjs/router"
-import { createMemo, createResource, createSignal, For, Show } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, Show } from "solid-js"
 import { MemoryRemembered } from "@/components/memory-remembered"
 import { SettingsMemoryV2 } from "@/components/settings-v2/memory"
 import { Icon } from "@novaclaw/ui/v2/icon"
@@ -9,6 +9,8 @@ import { memoryGraph, type MemoryGraph, type MemoryRow } from "@/utils/memory-ap
 import { ownerFromKey, ownersFor, scopeOwnerName, type MemoryOwner } from "@/apps/memory-owner"
 import { type AgentLike } from "@/apps/contacts"
 import { layoutGraph, type Vec } from "./memory-graph/layout"
+import { centerOn, contentBounds, fitView, IDENTITY, isVisible, MAX_SCALE, MIN_SCALE, type View } from "./memory-graph/camera"
+import { graphFault, type GraphFault } from "./memory-graph/fault"
 
 // The Memory graph viewer (notes/kb-graph-plan.md §5 — the advanced, node-link surface for
 // path-tracing) — renders the graph memory as an interactive node-link diagram over /memory/graph +
@@ -19,8 +21,11 @@ import { layoutGraph, type Vec } from "./memory-graph/layout"
 // (custom deterministic layout + inline SVG); local-first/airgap-friendly and no npm graph lib. Strings
 // stay untranslated on purpose — a Developer diagnostic surface, like Registry/Debug.
 
-const W = 1000
-const H = 700
+// The layout PLANE — a fixed coordinate space, deliberately NOT the viewport. See `memory-graph/camera.ts`:
+// the plane is cached per instance so a re-open never reshuffles, and the camera is what fits it to the
+// window. These two used to be the same numbers, which is why a small window clipped nodes.
+const PLANE_W = 1000
+const PLANE_H = 700
 const GRAPH_LIMIT = 600
 
 // Node colour by scope. THREE now, since memory belongs to colleagues (AGENTS.md — the structural
@@ -63,6 +68,19 @@ const KIND_LEGEND = [
 ] as const
 
 const truncate = (text: string, n = 40) => (text.length > n ? text.slice(0, n - 1) + "…" : text)
+
+/**
+ * What one graph fetch produced — a TAGGED result, never a bare `MemoryGraph`.
+ *
+ * 🔴 The failure is carried in the value rather than thrown into Solid's resource error path on
+ * purpose. This page already learned that lesson once: an uncaught rejection here reached the root
+ * `ErrorBoundary` and replaced the whole UI with the error page (see the roster comment below). The
+ * rule the vision states is that the UI degrades and recovers — it never crashes to a dead end — so
+ * the fault has to be a state this screen can RENDER, which means it has to survive as data.
+ */
+type GraphLoad =
+  | { readonly status: "ready"; readonly graph: MemoryGraph }
+  | { readonly status: "unavailable"; readonly fault: GraphFault }
 
 // Cross-open stability: cache the laid-out positions per instance so a re-open never reshuffles, and
 // growth only settles the new nodes (existing ones seed from the cache).
@@ -125,24 +143,40 @@ export function MemoryGraphPage() {
       // whose entire promise is that they are separate.
       return cn && scopes ? { cn, dir: directory(), scopes, t: tick() } : undefined
     },
-    ({ cn, dir, scopes }) =>
-      memoryGraph(cn.http, { directory: dir, limit: GRAPH_LIMIT, scopes }).catch(
-        () => ({ nodes: [], edges: [] }) as MemoryGraph,
-      ),
+    ({ cn, dir, scopes }): Promise<GraphLoad> =>
+      memoryGraph(cn.http, { directory: dir, limit: GRAPH_LIMIT, scopes })
+        .then((graph) => ({ status: "ready", graph }) as const)
+        .catch((error) => ({ status: "unavailable", fault: graphFault(error) }) as const),
   )
+
+  /**
+   * The graph, or `undefined` while it is loading or unavailable.
+   *
+   * ⚠️ `graph.latest`, not `graph()`: a refetch (Refresh, or an owner switch) must keep the marks on
+   * screen instead of blanking the canvas back to the loading text and then re-fitting the camera.
+   */
+  const load = () => graph.latest
+  const loaded = createMemo(() => {
+    const current = load()
+    return current?.status === "ready" ? current.graph : undefined
+  })
+  const fault = (): GraphFault | undefined => {
+    const current = load()
+    return current?.status === "unavailable" ? current.fault : undefined
+  }
 
   // Deterministic layout, seeded from the per-instance cache (stable across opens); positions written
   // back so a later open reuses them and only new nodes settle.
   const positions = createMemo<Record<string, Vec>>(() => {
-    const g = graph()
+    const g = loaded()
     if (!g || g.nodes.length === 0) return {}
     const key = conn() ? ServerConnection.key(conn()!) : "default"
     const cached = readCache(key)
     const ids = g.nodes.map((n) => n.id)
     const allCached = ids.every((id) => cached[id])
     const pos = layoutGraph(ids, g.edges, {
-      width: W,
-      height: H,
+      width: PLANE_W,
+      height: PLANE_H,
       seed: cached,
       // If nothing is new, don't re-simulate — reuse the cached layout verbatim (perfect stability).
       iterations: allCached ? 0 : 300,
@@ -153,7 +187,7 @@ export function MemoryGraphPage() {
 
   const nodeById = createMemo(() => {
     const map = new Map<string, MemoryRow>()
-    for (const n of graph()?.nodes ?? []) map.set(n.id, n)
+    for (const n of loaded()?.nodes ?? []) map.set(n.id, n)
     return map
   })
 
@@ -171,7 +205,7 @@ export function MemoryGraphPage() {
       else next.add(kind)
       return next
     })
-  const hiddenCount = createMemo(() => (graph()?.nodes ?? []).filter((n) => !kindVisible(n.kind)).length)
+  const hiddenCount = createMemo(() => (loaded()?.nodes ?? []).filter((n) => !kindVisible(n.kind)).length)
 
   const [selected, setSelected] = createSignal<string | undefined>()
   // The set of node ids adjacent to the selected node (both directions) — used to highlight.
@@ -179,7 +213,7 @@ export function MemoryGraphPage() {
     const sel = selected()
     const set = new Set<string>()
     if (!sel) return set
-    for (const e of graph()?.edges ?? []) {
+    for (const e of loaded()?.edges ?? []) {
       if (e.from === sel) set.add(e.to)
       if (e.to === sel) set.add(e.from)
     }
@@ -189,16 +223,85 @@ export function MemoryGraphPage() {
   const selectedEdges = createMemo(() => {
     const sel = selected()
     if (!sel) return []
-    return (graph()?.edges ?? [])
+    return (loaded()?.edges ?? [])
       .filter((e) => e.from === sel || e.to === sel)
       .map((e) => ({ type: e.type, other: e.from === sel ? e.to : e.from, dir: e.from === sel ? "→" : "←" }))
   })
 
-  // --- pan / zoom (a transform on the content group; wheel zooms toward the pointer) ---
-  const [view, setView] = createSignal({ tx: 0, ty: 0, scale: 1 })
+  // --- the camera: pan / zoom, and the fit that makes the plane meet a real window ---
+  //
+  // 🔴 The viewport is MEASURED, never assumed. The canvas used to draw a 1000x700 plane at scale 1
+  // into whatever box the flex layout handed it: narrower than 1000 and the right-hand memories were
+  // simply gone, wider and the whole graph huddled in the top-left with the rest of the pane empty.
+  // Both are the same bug — a drawing surface that never asked how big it was.
+  const [view, setView] = createSignal<View>(IDENTITY)
+  const [viewport, setViewport] = createSignal({ width: 0, height: 0 })
   let dragging = false
   let last = { x: 0, y: 0 }
   let svgEl: SVGSVGElement | undefined
+
+  /** The plane points the camera has to cover — the VISIBLE ones, so hiding passages refits. */
+  const visiblePoints = createMemo<Vec[]>(() => {
+    const pos = positions()
+    const out: Vec[] = []
+    for (const node of loaded()?.nodes ?? []) {
+      if (!kindVisible(node.kind)) continue
+      const p = pos[node.id]
+      if (p) out.push(p)
+    }
+    return out
+  })
+  const fitted = () => fitView(contentBounds(visiblePoints()), viewport())
+
+  const measure = (el: HTMLElement) => {
+    const rect = el.getBoundingClientRect()
+    // happy-dom and a hidden pane both report 0x0; keeping the last real size beats fitting to nothing.
+    if (rect.width > 0 && rect.height > 0) setViewport({ width: rect.width, height: rect.height })
+  }
+  const attachCanvas = (el: HTMLDivElement) => {
+    measure(el)
+    if (typeof ResizeObserver === "undefined") return
+    const observer = new ResizeObserver(() => measure(el))
+    observer.observe(el)
+    onCleanup(() => observer.disconnect())
+  }
+
+  /**
+   * Refit when the CONTENT or the WINDOW changes — and only then.
+   *
+   * The user's own zoom and pan are theirs to keep: this effect tracks the content bounds and the
+   * measured viewport, so dragging the graph around does not retrigger it, while resizing the window,
+   * toggling a kind, switching owner or loading a new slice does. That is exactly the rule the ledger
+   * asks for, expressed as a dependency list rather than as a flag somebody has to remember to clear.
+   */
+  createEffect(
+    on(
+      () => {
+        const b = contentBounds(visiblePoints())
+        const v = viewport()
+        return b && v.width > 0 ? `${b.minX},${b.minY},${b.maxX},${b.maxY}|${v.width}x${v.height}` : undefined
+      },
+      (key) => {
+        if (key === undefined) return
+        setView(fitted())
+      },
+    ),
+  )
+
+  /**
+   * A selection the camera cannot see is a detail panel describing an invisible mark. Clicking a link
+   * in that panel is a request to SEE the other end, so pan to it — without changing the zoom the user
+   * chose (`centerOn`).
+   */
+  createEffect(
+    on(selected, (id) => {
+      if (!id) return
+      const p = positions()[id]
+      const port = viewport()
+      if (!p || port.width === 0) return
+      if (!isVisible(p, view(), port)) setView((v) => centerOn(p, v, port))
+    }),
+  )
 
   const onWheel = (e: WheelEvent) => {
     e.preventDefault()
@@ -208,7 +311,7 @@ export function MemoryGraphPage() {
     const my = e.clientY - rect.top
     const v = view()
     const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1
-    const scale = Math.max(0.2, Math.min(5, v.scale * factor))
+    const scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, v.scale * factor))
     // Keep the point under the cursor fixed while zooming.
     const k = scale / v.scale
     setView({ tx: mx - (mx - v.tx) * k, ty: my - (my - v.ty) * k, scale })
@@ -227,7 +330,9 @@ export function MemoryGraphPage() {
   const onPointerUp = () => {
     dragging = false
   }
-  const resetView = () => setView({ tx: 0, ty: 0, scale: 1 })
+  // Reset FITS; it does not return to the identity transform. "Reset view" means "show me everything
+  // again", and an identity transform on a plane larger than the window shows a corner of it.
+  const resetView = () => setView(fitted())
 
   /**
    * LIST first. "What do you know about me" is answered in sentences; the graph answers "how does
@@ -235,7 +340,7 @@ export function MemoryGraphPage() {
    */
   const [appView, setAppView] = createSignal<"list" | "graph" | "settings">("list")
 
-  const count = () => graph()?.nodes.length ?? 0
+  const count = () => loaded()?.nodes.length ?? 0
   /**
    * How many nodes are actually ON SCREEN — the number the label threshold must use.
    *
@@ -245,7 +350,20 @@ export function MemoryGraphPage() {
    * worst version of the complaint that opened this work ("no way to see what node represents
    * what"), and it appeared precisely BECAUSE the filter was doing its job.
    */
-  const visibleCount = () => (graph()?.nodes ?? []).filter((n) => kindVisible(n.kind)).length
+  const visibleCount = () => (loaded()?.nodes ?? []).filter((n) => kindVisible(n.kind)).length
+
+  /**
+   * Which of the four things is true — the single value the canvas branches on, and the one a test
+   * can read off the DOM (`data-state`).
+   *
+   * ⚠️ `loading` outranks `unavailable`: a Retry that is in flight must not keep showing the reason
+   * it is retrying, or the button reads as if it did nothing.
+   */
+  const graphState = (): "loading" | "unavailable" | "empty" | "ready" => {
+    if (graph.loading && count() === 0) return "loading"
+    if (fault()) return "unavailable"
+    return count() > 0 ? "ready" : "empty"
+  }
 
   return (
     <div class="flex h-full w-full flex-col bg-v2-background-bg-base text-v2-text-text-base">
@@ -369,7 +487,7 @@ export function MemoryGraphPage() {
           </span>
         </Show>
         <span class="text-xs opacity-50">
-          {count()} {count() === 1 ? "memory" : "memories"} · {graph()?.edges.length ?? 0} links
+          {count()} {count() === 1 ? "memory" : "memories"} · {loaded()?.edges.length ?? 0} links
         </span>
         <div class="ml-auto flex items-center gap-3 text-xs">
           {/* Three scopes, three marks. The legend used to name two because there WERE two; leaving
@@ -413,12 +531,52 @@ export function MemoryGraphPage() {
         </div>
       </Show>
 
-      <div class="relative flex min-h-0 flex-1" classList={{ hidden: appView() !== "graph" }}>
+      {/* ⚠️ `ref={attachCanvas}` on the CANVAS wrapper, not on the svg: the svg is inside the `Show`
+          and is torn down and rebuilt as the state changes, so an observer bound to it would be
+          discarded on every fault and re-created with a stale size. The wrapper is always mounted. */}
+      <div
+        ref={attachCanvas}
+        class="relative flex min-h-0 flex-1"
+        classList={{ hidden: appView() !== "graph" }}
+        data-slot="memory-graph-canvas"
+        data-state={graphState()}
+      >
         <Show
           when={count() > 0}
           fallback={
-            <div class="flex flex-1 items-center justify-center text-sm opacity-50">
-              {graph.loading ? "Loading the memory graph…" : "Nothing remembered yet — the graph fills as you chat."}
+            /* FOUR states, not two. "Loading", "unavailable" and "empty" used to collapse into one
+               sentence — and because every rejection was caught as an empty graph, the sentence a
+               broken engine produced was "Nothing remembered yet", a confident lie about the one
+               thing this screen exists to report. */
+            <div
+              class="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center text-sm"
+              data-slot="memory-graph-state"
+              data-state={graphState()}
+            >
+              <Show when={graphState() === "loading"}>
+                <span class="opacity-50">Loading the memory graph…</span>
+              </Show>
+              <Show when={graphState() === "unavailable" ? fault() : undefined}>
+                {(f) => (
+                  <>
+                    <span class="opacity-70">Memory is unavailable right now.</span>
+                    <span class="max-w-md opacity-50">{f().reason}</span>
+                    <Show when={f().retryable}>
+                      <button
+                        type="button"
+                        data-slot="memory-graph-retry"
+                        class="rounded bg-v2-background-bg-layer-02 px-2.5 py-1 text-xs opacity-80 hover:opacity-100"
+                        onClick={() => setTick((t) => t + 1)}
+                      >
+                        Retry
+                      </button>
+                    </Show>
+                  </>
+                )}
+              </Show>
+              <Show when={graphState() === "empty"}>
+                <span class="opacity-50">Nothing remembered yet — the graph fills as you chat.</span>
+              </Show>
             </div>
           }
         >
@@ -435,7 +593,7 @@ export function MemoryGraphPage() {
           >
             <g transform={`translate(${view().tx} ${view().ty}) scale(${view().scale})`}>
               {/* edges */}
-              <For each={graph()?.edges ?? []}>
+              <For each={loaded()?.edges ?? []}>
                 {(e) => {
                   // An edge whose endpoint is filtered out would be a line to nowhere.
                   const shown = () =>
@@ -459,7 +617,7 @@ export function MemoryGraphPage() {
                 }}
               </For>
               {/* nodes */}
-              <For each={graph()?.nodes ?? []}>
+              <For each={loaded()?.nodes ?? []}>
                 {(node) => {
                   // Hidden at RENDER, not before layout — see `positions`: filtering the layout
                   // input would re-simulate and move every remaining node on each toggle.
