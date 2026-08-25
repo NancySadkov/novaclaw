@@ -17,8 +17,7 @@ import {
 } from "@/utils/messenger-api"
 import type { PromptProjectControls } from "@/components/prompt-project-selector"
 import { useDirectoryPicker } from "@/components/directory-picker"
-import { listAgents } from "@/apps/agent-list"
-import type { AgentLike } from "@/apps/contacts"
+
 import type { ComposerAgentOption } from "@/components/composer/agent-option"
 import { useLanguage } from "@/context/language"
 import { displayName, errorMessage } from "@/pages/layout/helpers"
@@ -55,6 +54,7 @@ export function createPromptInputController(input: {
   const sync = useSync()
   const sdk = useSDK()
   const server = useServer()
+  const global = useGlobal()
   const pickDirectory = useDirectoryPicker()
   // The per-session facade (ui-arch P5): record/working/scope/key come from ONE place —
   // no hand-picking between sync/serverSync or threading a sessionKey from the route.
@@ -66,19 +66,20 @@ export function createPromptInputController(input: {
   // carries no display NAME — while the roster reads `v2.agent.list`. Measured 2026-08-21: the chip
   // rendered the id `zenon` where every other surface says `Zenon`. One roster, one loader.
   //
-  // ⚠️ The rejection is CAUGHT. A `createResource` read from an eager memo below rethrows into the
-  // root ErrorBoundary, so one failed roster fetch replaced the entire UI with the error page — for a
-  // chip whose only job is to show a name. Degrading to an empty list renders the id instead, which
-  // is what this call site already falls back to when a row is missing.
+  // 🔴 The server context's ONE shared roster, like every other surface. It used to be a THIRD
+  // `listAgents` resource with no `.catch`, and a `createResource` read from an eager memo rethrows —
+  // so one failed roster fetch replaced the entire UI with the root error page, for a chip whose only
+  // job is to show a name. `ctx.agents` carries that catch, degrading to `[]` (the chip then renders
+  // the id, which is what this call site already falls back to for a missing row).
   //
-  // ⏳ Unlike `calendar.tsx` and `memory-graph.tsx`, this cannot use the server context's ONE shared
-  // roster: those hold a `ServerConnection` and can call `ensureServerCtx`, and this scope has only
-  // an SDK client. Worth unifying when the composer gains the connection — it would remove the third
-  // fetch as well as the crash.
-  const [rosterAgents] = createResource(
-    () => (input.sessionID() ? sdk() : undefined),
-    (client) => listAgents(client.client.v2).catch(() => [] as AgentLike[]),
-  )
+  // ⚠️ It ALSO makes a rename visible. The composer's Tune dialog refetches this roster on save; when
+  // the chip owned a private resource, nothing refreshed it and the new name never appeared — the
+  // rename read as a failed save.
+  const rosterCtx = createMemo(() => {
+    const conn = server.current
+    return conn ? global.ensureServerCtx(conn) : undefined
+  })
+  const rosterAgents = () => rosterCtx()?.agents.list()
   /** Whose chat this is, as the chip needs it: the name a person sees, and where they work. */
   const rosterOption = createMemo<ComposerAgentOption | undefined>(() => {
     const id = (sessionView.record() as { agent?: string } | undefined)?.agent

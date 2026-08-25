@@ -35,12 +35,28 @@ describe("no page owns a second, uncaught roster fetch", () => {
     expect(source).not.toContain("listAgents(")
   })
 
-  test("🔴 the composer's own fetch CATCHES, since it cannot reach the shared roster", () => {
-    // It holds an SDK client rather than a `ServerConnection`, so `ensureServerCtx` is out of reach.
-    // Degrading to an empty list renders the agent id instead of its name — which is what this call
-    // site already falls back to for a missing row.
+  test("🔴 the composer reads the shared roster too — all three, no exceptions", () => {
+    // It was the one holdout, on the belief that this scope had only an SDK client. It does not:
+    // `const server = useServer()` sits in the same function, so `ensureServerCtx` was always
+    // reachable. Sharing the roster removes the third fetch AND makes a rename visible.
     const source = read("session", "composer", "session-composer-controls.ts")
-    expect(source).toContain("listAgents(client.client.v2).catch(")
+    expect(source).toContain("rosterCtx()?.agents.list()")
+    expect(source).not.toContain("listAgents(")
+  })
+})
+
+describe("a rename made from a CHAT", () => {
+  const source = fs.readFileSync(
+    path.join(import.meta.dir, "..", "components", "composer", "features-control.tsx"),
+    "utf8",
+  )
+
+  test("🔴 the composer's Tune refreshes the roster on save", () => {
+    // It used to omit `onChanged` deliberately — "opened from a CHAT, there is no roster on screen to
+    // refresh" — which was true until the composer's own chip started reading the roster for a display
+    // NAME. After that, a rename left the chip showing the old one and the save looked like it failed.
+    expect(source).toContain("agents.refetch()")
+    expect(source).not.toContain("No `onChanged` here on purpose")
   })
 })
 

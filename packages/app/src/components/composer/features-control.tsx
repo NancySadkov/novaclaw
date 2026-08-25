@@ -7,6 +7,8 @@ import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { AgentConfigDialog } from "@/components/agent-config-dialog"
 import { SettingsExplainV2 } from "@/components/settings-v2/explain"
 import { useLanguage } from "@/context/language"
+import { useGlobal } from "@/context/global"
+import { useServer } from "@/context/server"
 import { pathKey } from "@/utils/path-key"
 import { inForceState, makeDefaultPayload, planMakeDefault } from "./make-default"
 
@@ -693,6 +695,11 @@ function MakeDefaultSection(props: {
  * writes the per-chat override; the helpers' internals stay in Settings.
  */
 export function ComposerFeaturesControl(props: { state: ComposerFeaturesControlState }) {
+  // The ONE shared roster, refreshed after a Tune save — see the dialog mount below for why. Resolved
+  // here rather than threaded in as a prop: it is a singleton per connection, so every surface that
+  // needs it reaches for the same one, and a prop would make each caller responsible for remembering.
+  const rosterServer = useServer()
+  const rosterGlobal = useGlobal()
   const language = useLanguage()
   const dialog = useDialog()
   const enabledCount = () => COMPOSER_FEATURES.filter((feature) => props.state.current[feature]).length
@@ -738,8 +745,16 @@ export function ComposerFeaturesControl(props: { state: ComposerFeaturesControlS
       () => (
         <AgentConfigDialog
           agentID={props.state.agent}
-          // No `onChanged` here on purpose: opened from a CHAT, there is no roster on screen to
-          // refresh, and the config's own fields re-read the agent list themselves.
+          // 🔴 It DOES refresh the roster, and the comment that used to sit here explains why nobody
+          // noticed: *"opened from a CHAT, there is no roster on screen to refresh."* That was true
+          // until the composer's own agent chip started reading the roster for a display NAME. After
+          // that, renaming a colleague here left the chip showing the old one — so the save looked
+          // like it had failed, which is the one impression `agentConfig.saveFailed` exists to
+          // reserve for saves that actually did.
+          onChanged={() => {
+            const conn = rosterServer.current
+            if (conn) rosterGlobal.ensureServerCtx(conn).agents.refetch()
+          }}
           onDismiss={() => dialog.close()}
           tuning={() => <TuningPanel state={props.state} onDismiss={() => dialog.close()} embedded />}
         />
