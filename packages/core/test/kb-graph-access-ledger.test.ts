@@ -70,6 +70,38 @@ describe("MemoryAccessLedger", () => {
     }),
   )
 
+  it.effect("a `kb search` is used on arrival; the Memory app's search box is not", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      // The MODEL asked, and the results go straight into its next turn — nothing downstream can
+      // drop one, so the store can honestly say "used" itself.
+      yield* MemoryAccessLedger.record(db, {
+        recallID: "rcl_tool",
+        fingerprint: "qf_tool",
+        surface: "kb-tool",
+        at: 2_600,
+        hits: [hit("clm_tool", 1)],
+      })
+      // A PERSON asked. Counting that as "the model used it" would let browsing the store inflate
+      // the very signal that decides what survives pruning — a viewer changing what it is viewing.
+      yield* MemoryAccessLedger.record(db, {
+        recallID: "rcl_http",
+        fingerprint: "qf_http",
+        surface: "http",
+        at: 2_700,
+        hits: [hit("clm_browsed", 1)],
+      })
+
+      expect((yield* MemoryAccessLedger.accessesFor(db, "clm_tool"))[0]?.usedAt).toBe(2_600)
+      expect((yield* MemoryAccessLedger.accessesFor(db, "clm_browsed"))[0]?.usedAt).toBeNull()
+      // …and it moves the ROLLUP, which is what the pruning policy reads. A signal visible only in
+      // the detail view is a signal no decision is ever made with.
+      const usage = yield* MemoryAccessLedger.usageFor(db, ["clm_tool", "clm_browsed"])
+      expect(usage.get("clm_tool")?.uses).toBe(1)
+      expect(usage.get("clm_browsed")?.uses).toBe(0)
+    }),
+  )
+
   it.effect("a correction is charged only to memories recall had actually handed out", () =>
     Effect.gen(function* () {
       const { db } = yield* Database.Service

@@ -57,10 +57,25 @@ export interface RecordInput {
 
 const degradeWrite = <A, E, R>(effect: Effect.Effect<A, E, R>) => effect.pipe(Effect.ignore, Effect.asVoid)
 
+/**
+ * Which surfaces hand every returned memory straight to the model, with no budget in between.
+ *
+ * 🔴 `kb-tool` is a search the MODEL asked for and the results go directly into its next turn —
+ * there is nothing downstream that could drop one, so "returned" and "used" are the same event and
+ * the store can say so itself. `auto-recall` cannot: it gets a POOL and the runner keeps what fits a
+ * token budget, which is why that one reports back through `markUsed`.
+ *
+ * ⚠️ `http` is deliberately NOT here. The Memory app's search box shows results to a PERSON, and
+ * counting that as "the model used it" would let browsing the store inflate the usefulness signal
+ * that decides what survives pruning — a viewer changing what it is viewing.
+ */
+const SELF_USING_SURFACES: ReadonlySet<string> = new Set(["kb-tool"])
+
 /** Record one recall: a raw row per returned memory, and the durable rollup each one belongs to. */
 export const record = (db: Db, input: RecordInput) =>
   Effect.suspend(() => {
     if (input.hits.length === 0) return Effect.void
+    const selfUsing = SELF_USING_SURFACES.has(input.surface)
     const rows = input.hits.map((hit) => ({
       id: "acc_" + ascending(),
       recall_id: input.recallID,
@@ -71,6 +86,7 @@ export const record = (db: Db, input: RecordInput) =>
       rank: hit.rank,
       score: hit.score,
       accessed_at: input.at,
+      ...(selfUsing ? { used_at: input.at } : {}),
     }))
     return db
       .insert(MemoryAccessTable)
@@ -94,11 +110,16 @@ export const record = (db: Db, input: RecordInput) =>
                   first_accessed_at: input.at,
                   last_accessed_at: input.at,
                   accesses: 1,
+                  // The rollup is what the pruning policy reads, so a self-using surface has to
+                  // move it here too — setting `used_at` on the raw row alone would leave the
+                  // signal visible in the detail view and absent from every decision made with it.
+                  uses: selfUsing ? 1 : 0,
                 })
                 .onConflictDoUpdate({
                   target: MemoryUsageTable.memory_id,
                   set: {
                     accesses: sql`${MemoryUsageTable.accesses} + 1`,
+                    ...(selfUsing ? { uses: sql`${MemoryUsageTable.uses} + 1` } : {}),
                     last_accessed_at: input.at,
                     // The scope and the identity are re-stamped because a memory can MOVE cabinets
                     // (`moveScope` on a colleague retirement) and its identity is only known when it
