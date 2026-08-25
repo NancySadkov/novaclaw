@@ -250,6 +250,42 @@ describe("the claim is filed against its subject and its evidence", () => {
     expect(linked.some((row) => row.id === KbChunk.entityID("global", "Sofia"))).toBe(true)
   }, 120_000)
 
+  test("🔴 the SAME file cited from two cabinets: both claims keep their evidence", async () => {
+    const engine = await open()
+    const file = "src/auth.ts"
+    const alices = await engine.addClaim({
+      scope: "session:alice",
+      subject: "auth",
+      predicate: "path",
+      statement: "Alice's note about the auth entry point.",
+      evidence: [{ kind: "file", locator: file }],
+      scopes: ALICE,
+    })
+    const bobs = await engine.addClaim({
+      scope: "session:bob",
+      subject: "auth",
+      predicate: "path",
+      statement: "Bob's note about the auth entry point.",
+      evidence: [{ kind: "file", locator: file }],
+      scopes: BOB,
+    })
+
+    // Before the source id carried the scope, the second claim landed pointing at a node in a scope it
+    // does not share — `addEdge` refuses two different private scopes, so the edge was silently
+    // dropped and the claim LOOKED cited while citing nothing.
+    for (const [claim, scopes] of [
+      [alices, ALICE],
+      [bobs, BOB],
+    ] as const)
+      expect(
+        (await engine.neighbors(claim.id!, { scopes })).some((row) => row.type === KbClaim.SUPPORTED_BY_EDGE),
+      ).toBe(true)
+
+    // …and one moved file flags both, each within its own cabinet.
+    expect(await engine.reviewEvidence(file, { scopes: ALICE })).toBe(1)
+    expect(await engine.reviewEvidence(file, { scopes: BOB })).toBe(1)
+  }, 120_000)
+
   test("🔴 a raw passage is SOURCE MATERIAL — it does not outrank the claim it merely echoes", async () => {
     const engine = await open()
     const claim = await engine.addClaim({

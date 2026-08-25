@@ -190,7 +190,7 @@ export interface ClaimResult {
   readonly deduped?: boolean
   /** Claims this one retired. Empty when there was nothing to correct. */
   readonly superseded: readonly string[]
-  readonly reason?: "empty" | "refused-scope"
+  readonly reason?: "empty" | "refused-scope" | "too-many-revisions"
 }
 
 export interface EvidenceRow {
@@ -943,14 +943,21 @@ export class WasmMemory {
       if (priorStatus !== undefined && !KbClaim.isRetired(priorStatus))
         return { ok: true, id, status: priorStatus, deduped: true, identified: key !== undefined, superseded: [] }
       if (priorStatus !== undefined) {
-        for (let n = 2; ; n++) {
+        // ⚠️ BOUNDED. An open `for (;;)` doing a database read per turn is a hang wearing a loop's
+        // clothes, and this file already carries two query shapes that hang the engine outright. The
+        // bound is far past any real history — nobody asserts, retires and re-asserts one sentence
+        // five hundred times — so reaching it means something is wrong, and saying so beats spinning.
+        let minted: string | undefined
+        for (let n = 2; n <= MAX_CLAIM_CHAIN * 8; n++) {
           const candidate = `${id}_r${n}`
           const taken = await this.rows(`MATCH (m:Memory {id: $id}) RETURN m.id AS id`, { id: candidate })
           if (taken.length === 0) {
-            id = candidate
+            minted = candidate
             break
           }
         }
+        if (minted === undefined) return { ok: false, reason: "too-many-revisions" as const, superseded: [] }
+        id = minted
       }
 
       // WHAT THIS CORRECTION REPLACES, decided before anything is written. Scoped twice over: the key
@@ -1013,7 +1020,7 @@ export class WasmMemory {
       for (const item of input.evidence ?? []) {
         const locator = item.locator.trim()
         if (locator === "") continue
-        const sourceNode = KbClaim.sourceID(item.kind, locator)
+        const sourceNode = KbClaim.sourceID(scope, item.kind, locator)
         await this._addMemory({
           id: sourceNode,
           kind: "source",

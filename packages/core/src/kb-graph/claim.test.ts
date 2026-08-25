@@ -86,8 +86,12 @@ describe("a claim's id keys on the statement as well as the identity", () => {
 
 describe("evidence", () => {
   test("one locator is one source node however it is labelled", () => {
-    expect(KbClaim.sourceID("file", "src/auth.ts")).toBe(KbClaim.sourceID("file", "SRC/AUTH.TS"))
-    expect(KbClaim.sourceID("file", "src/auth.ts")).not.toBe(KbClaim.sourceID("commit", "src/auth.ts"))
+    expect(KbClaim.sourceID("global", "file", "src/auth.ts")).toBe(KbClaim.sourceID("global", "file", "SRC/AUTH.TS"))
+    expect(KbClaim.sourceID("global", "file", "src/auth.ts")).not.toBe(
+      KbClaim.sourceID("global", "commit", "src/auth.ts"),
+    )
+    // The cabinet boundary: one chat's citation of a file is not the same node as another's.
+    expect(KbClaim.sourceID("session:a", "file", "x.ts")).not.toBe(KbClaim.sourceID("session:b", "file", "x.ts"))
   })
 
   test("a personal memory reads as the product promises", () => {

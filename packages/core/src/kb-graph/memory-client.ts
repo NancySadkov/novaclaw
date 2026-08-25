@@ -139,7 +139,7 @@ export interface ClaimResult {
   readonly identified?: boolean
   readonly deduped?: boolean
   readonly superseded: readonly string[]
-  readonly reason?: "empty" | "refused-scope"
+  readonly reason?: "empty" | "refused-scope" | "too-many-revisions"
 }
 
 export interface EvidenceRow {
@@ -576,7 +576,7 @@ export const stub = (): Interface => {
         for (const item of input.evidence ?? []) {
           const locator = item.locator.trim()
           if (locator === "") continue
-          const sourceNode = KbClaim.sourceID(item.kind, locator)
+          const sourceNode = KbClaim.sourceID(scope, item.kind, locator)
           if (!mems.has(sourceNode))
             mems.set(sourceNode, {
               id: sourceNode,

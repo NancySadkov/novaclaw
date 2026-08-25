@@ -226,15 +226,23 @@ export interface Evidence {
 }
 
 /**
- * A source node's id: content-addressed over kind + locator, so one file cited by forty claims is ONE
- * source node with forty edges rather than forty copies of the same citation.
+ * A source node's id: content-addressed over scope + kind + locator, so one file cited by forty claims
+ * in the same cabinet is ONE source node with forty edges rather than forty copies of the citation.
+ *
+ * 🔴 **The SCOPE is in it, and leaving it out was a real defect in the first cut of this.** A source
+ * node is written with the citing claim's scope, and on this engine a duplicate id is a silent no-op
+ * that keeps the FIRST row — so the same file cited first from one chat and later from another left
+ * the second claim pointing at a node in a scope it does not share. Two different private scopes are
+ * refused by `addEdge`, so the second claim was stored with its evidence edge quietly missing: a claim
+ * that looked cited and was not. Keying on the scope makes each cabinet's citation its own node, which
+ * is also the honest boundary — a citation is exactly as private as the claim that makes it.
  *
  * ⚠️ Not hashed over the LABEL. Two claims describing the same file differently ("the auth module",
  * "auth.ts") must still converge, or `reviewEvidence` would have to flag several nodes for one moved
  * file and would miss whichever spelling it did not see.
  */
-export const sourceID = (kind: EvidenceKind, locator: string): string =>
-  "src_" + digest([kind, locator.trim().toLowerCase()])
+export const sourceID = (scope: string, kind: EvidenceKind, locator: string): string =>
+  "src_" + digest([scope, kind, locator.trim().toLowerCase()])
 
 /**
  * The human sentence a personal memory shows instead of an id — "you told Nova on 3 March 2026".
