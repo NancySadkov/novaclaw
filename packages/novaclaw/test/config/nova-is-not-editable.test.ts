@@ -15,7 +15,7 @@ import { testEffect } from "../lib/effect"
 /**
  * THE USER CANNOT DAMAGE NOVA — refused at the API, not merely hidden in the UI.
  *
- * 🔴 This is a GATE criterion of `todo/named-agents.md`, and it had no test. The refusal exists
+ * 🔴 This is a GATE criterion of `notes/named-agents.md`, and it had no test. The refusal exists
  * (`config-store-write.ts`, the pre-flight `isProtected` check) and `config-remove.test.ts` covers the
  * one thing that IS allowed — removing the stored row, which restores the coded brief rather than
  * deleting the agent. Nothing covered the write side at all, so all four verbs the gate names could

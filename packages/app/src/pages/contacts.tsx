@@ -36,7 +36,7 @@ import { AgentConfigDialog } from "@/components/agent-config-dialog"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 
 // The Contacts app — the roster of colleagues this instance employs (AGENTS.md → *the structural
-// metaphor*; `todo/named-agents.md`).
+// metaphor*; `notes/named-agents.md`).
 //
 // This replaces "a list of chats that only grows" with "the people you work with", and the swap is
 // the point: a session list is a machine's view of history, while a roster is a person's view of an

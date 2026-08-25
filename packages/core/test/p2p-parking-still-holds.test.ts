@@ -5,7 +5,7 @@ import path from "node:path"
 /**
  * THE PARKING, MADE SELF-INVALIDATING.
  *
- * `todo/named-agents.md` parks *"reuse the colleague-loop envelope on the P2P community path"* as
+ * `notes/named-agents.md` parks *"reuse the colleague-loop envelope on the P2P community path"* as
  * NOT URGENT. That was true and is still true, but the item recorded no way to CHECK it — it claimed
  * "three conditions" and listed none, so nobody, including a later me, could tell whether the parking
  * still held. A parking nobody can re-check is not parked, it is forgotten.
@@ -42,7 +42,7 @@ describe("the colleague bound and the community path", () => {
   })
 
   test("🔴 no community module reaches ColleagueHandoff or the loop bound", () => {
-    // If this fails, the parking in `todo/named-agents.md` is void: a hand-off can now cross to
+    // If this fails, the parking in `notes/named-agents.md` is void: a hand-off can now cross to
     // another user's instance, where `bound-enforcement-is-on-the-attackers-path` applies and the
     // hop path is untrusted (`schema/prompt.ts` says a peer strips or forges it for free).
     const offenders = community.filter((file) => {

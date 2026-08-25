@@ -1,6 +1,6 @@
 export * as ColleagueBound from "./colleague-bound"
 
-// BOUNDING the colleague loop with a mechanism, not a sentence (`todo/named-agents.md`, adopted from
+// BOUNDING the colleague loop with a mechanism, not a sentence (`notes/named-agents.md`, adopted from
 // `notes/survey/agent-office-research.md` §1.1; vision-answered under principle 10).
 //
 // 🔴 **The whole bound used to be the wording of a note.** `colleague-note.ts` gives an `ask` a note

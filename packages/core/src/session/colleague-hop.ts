@@ -7,7 +7,7 @@ import { isSteerText } from "./steer-provenance"
 /**
  * HOW FAR FROM A PERSON THIS TURN IS — read from the transcript already in hand.
  *
- * 🔴 **Free, and that is the point.** `todo/named-agents.md` flags withholding the colleague ops at
+ * 🔴 **Free, and that is the point.** `notes/named-agents.md` flags withholding the colleague ops at
  * the hop cap with a warning to *"measure what that costs per turn, since the hop is a
  * `lastPeerContext` read and materialisation is on the hot path"*. It is not a read at all: the
  * runner already holds the turn's messages there — the gate immediately above tool materialisation

@@ -12,7 +12,7 @@ import { listAgents } from "./agent-list"
  *
  * 🔴 So this one is derived from the SOURCE: every field the wire schema declares must either survive
  * `listAgents` or be named in {@link NOT_CARRIED} with a reason. Adding a field to `AgentV2.Info` fails
- * here until somebody decides which it is. That is the standing constraint in `todo/named-agents.md`
+ * here until somebody decides which it is. That is the standing constraint in `notes/named-agents.md`
  * — *"derive from the schema with a reasoned exclusion list, or ledger against the SOURCE's keys"* —
  * applied to the loader that broke it.
  *

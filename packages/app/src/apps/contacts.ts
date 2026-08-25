@@ -1,4 +1,4 @@
-// The Contacts roster — the presentation half of the named-agents programme (`todo/named-agents.md`,
+// The Contacts roster — the presentation half of the named-agents programme (`notes/named-agents.md`,
 // and AGENTS.md → *the structural metaphor: the user is a shareholder, Nova is the CEO*).
 //
 // This module holds the decisions, so every one of them is testable and none of them lives inside a

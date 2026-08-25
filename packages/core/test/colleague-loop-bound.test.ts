@@ -12,7 +12,7 @@ import { Database } from "@novaclaw/core/database/database"
 import { desc, eq } from "drizzle-orm"
 import { testEffect } from "./lib/effect"
 
-// THE LOOP BOUND, driven rather than asserted (`todo/named-agents.md`).
+// THE LOOP BOUND, driven rather than asserted (`notes/named-agents.md`).
 //
 // 🔴 `colleague-bound.test.ts` proves the arithmetic; this proves the CHAIN — that a hop stamped on
 // one delivery is read back by the next, through a real database and a real admit. The two are not

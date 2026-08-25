@@ -11,7 +11,7 @@ import { SystemCompose } from "./system-compose"
 // and a prompt that grows names nothing. The blocks already exist and are already named
 // (`SystemCompose.composeSystemParts` orders them); what was missing was counting them.
 //
-// ⚠️ **ONE instrument, deliberately.** `todo/named-agents.md` needs this to prove a chit-chat role
+// ⚠️ **ONE instrument, deliberately.** `notes/named-agents.md` needs this to prove a chit-chat role
 // packs less than an engineering one, and the standing instruction is "one instrument, not two". It
 // uses `Token.estimate` — the same chars/4 estimator `context-pack` bills the window with — so a
 // block's cost here and its cost there cannot disagree.

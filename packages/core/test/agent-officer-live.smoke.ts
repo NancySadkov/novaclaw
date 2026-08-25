@@ -189,7 +189,7 @@ describe.skipIf(skip !== undefined)("an officer with a real model", () => {
       //
       // What this test is for is the SHAPE: a direct order produces a fleet, every worker starts, and
       // the officer collects. Three shows all of that. Six is the hand-driven reproduction, run when
-      // somebody is watching the machine — see `todo/named-agents.md`.
+      // somebody is watching the machine — see `notes/named-agents.md`.
       const rows = await turn(
         chat,
         "Spawn 3 sub-agents in parallel. Give each one this exact task: reply with the single word ACK " +

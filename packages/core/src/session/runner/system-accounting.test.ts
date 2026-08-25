@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { SystemAccounting } from "./system-accounting"
 import { SystemCompose } from "./system-compose"
 
-// The instrument `todo/tool-scale.md` says is missing, and `todo/named-agents.md` needs.
+// The instrument `todo/tool-scale.md` says is missing, and `notes/named-agents.md` needs.
 
 describe("per-block accounting", () => {
   test("every block a prompt actually has is counted, in emission order", () => {

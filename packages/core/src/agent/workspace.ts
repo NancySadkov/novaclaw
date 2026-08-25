@@ -24,7 +24,7 @@ import { Scratch } from "../scratch"
 // refuses it outright (`DestinationProjectMismatchError`); it moves a session between worktrees of one
 // project, not between projects. So the notice now says what is true: the assignment changed, this
 // conversation did not, and the way to start work on the new folder is to clear the chat. Making the
-// chat follow the colleague is filed in `todo/named-agents.md`.
+// chat follow the colleague is filed in `notes/named-agents.md`.
 
 /** Where a colleague works: its configured folder, or its own scratch when it has none. */
 export const folderFor = (input: {

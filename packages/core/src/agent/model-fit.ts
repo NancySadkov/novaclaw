@@ -2,7 +2,7 @@ export * as AgentModelFit from "./model-fit"
 
 import type { ModelV2 } from "../model"
 
-// WHETHER THE MODEL BEHIND A COLLEAGUE IS UP TO ITS JOB (`todo/named-agents.md` — "role/model fit
+// WHETHER THE MODEL BEHIND A COLLEAGUE IS UP TO ITS JOB (`notes/named-agents.md` — "role/model fit
 // warning"; the owner's rule is *"it warns; it never refuses"*).
 //
 // 🔴 **A role can now outrun its model silently, and this session is why.** A colleague's model is

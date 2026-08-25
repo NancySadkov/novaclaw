@@ -21,7 +21,7 @@ import { memoryList } from "@/utils/memory-api"
 import { useNavigate } from "@solidjs/router"
 
 // ONE agent configuration dialog, opened from two places (AGENTS.md → *the structural metaphor*;
-// `todo/named-agents.md`).
+// `notes/named-agents.md`).
 //
 // 🔴 **This is where the composer's Tune button now leads.** Tune used to be a chat-scoped popover
 // under the message box, which said the quiet part: settings belonged to a *conversation*. Under the

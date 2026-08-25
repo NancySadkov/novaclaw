@@ -576,7 +576,7 @@ export const createSessionRecord = (
       // (`configured(sessionID, agentID)`) and never consulted the session row. v0.2.0 ruling 16
       // removed per-session `permissionRules` for having zero consumers; this was its successor
       // field, quietly carrying the same defect. Removed rather than wired up: one authority for
-      // permissions is the decision (todo/named-agents.md), and a second one on the session row is
+      // permissions is the decision (notes/named-agents.md), and a second one on the session row is
       // the widening path the org chart calls a coup.
       // not resolve through the chain walk (ruling 16). Generating from the descriptor excludes it
       // by construction, so it stays listed here on purpose.

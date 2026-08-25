@@ -34,7 +34,7 @@ import { testEffect } from "./lib/effect"
  * `lib/effect.ts` gives `it.effect` a `TestClock`, so no duration ever elapses: every bound —
  * `Effect.timeoutOrElse`, `Stream.interruptWhen`, `Stream.timeoutOrElse` — parks forever and reads
  * exactly like a product deadlock. A "deadlock in `wait`" was filed against this suite and retracted
- * (`todo/named-agents.md`). Anything whose correctness IS a duration belongs on the real clock.
+ * (`notes/named-agents.md`). Anything whose correctness IS a duration belongs on the real clock.
  */
 
 const it = testEffect(AppNodeBuilder.build(LayerNode.group([Database.node, EventV2.node, SessionProjector.node])))

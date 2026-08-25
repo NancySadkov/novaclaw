@@ -9,7 +9,7 @@ import type { SessionMessage } from "@novaclaw/core/session/message"
 // can locate and datamine it later" is a claim about retrieval, not about storage.
 //
 // ⚠️ **What this does NOT prove**: that a live compaction calls it. That needs a conversation big
-// enough to overflow a real model's window, and is still owed (`todo/named-agents.md`). This closes
+// enough to overflow a real model's window, and is still owed (`notes/named-agents.md`). This closes
 // the half that can be closed here — the plan → store → search loop, including the scope isolation
 // the roster promises.
 

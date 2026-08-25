@@ -5,7 +5,7 @@ import type { SessionMessage } from "@novaclaw/core/session/message"
 /**
  * Reading the hop depth from the transcript the turn already holds.
  *
- * This exists so the loop bound can be consulted where TOOLS are materialised — `todo/named-agents.md`
+ * This exists so the loop bound can be consulted where TOOLS are materialised — `notes/named-agents.md`
  * asks for the colleague ops to be WITHHELD at the cap rather than advertised and refused, which is
  * our own standing constraint applied. That item warns to measure the cost first; this is the answer:
  * no query, a backwards walk over messages the runner already has.

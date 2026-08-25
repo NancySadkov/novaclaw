@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { AgentModelFit } from "./model-fit"
 
-// Whether the model behind a colleague is up to its job (`todo/named-agents.md`).
+// Whether the model behind a colleague is up to its job (`notes/named-agents.md`).
 
 describe("the floor comparison", () => {
   test("a model beneath the declared floor is below it", () => {

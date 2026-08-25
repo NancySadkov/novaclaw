@@ -1036,7 +1036,7 @@ export const layer = Layer.effect(
       const tier = yield* models.tier(modelSession)
       const tierHint = TierScaffold.tierScaffold(tier)
       // 🔴 ROLE/MODEL FIT — tell the colleague when the model behind it is beneath what its role
-      // declared (`agent/model-fit.ts`; `todo/named-agents.md`). It warns and never refuses.
+      // declared (`agent/model-fit.ts`; `notes/named-agents.md`). It warns and never refuses.
       //
       // Placed HERE because this is the first point that holds all three facts at once: the role's
       // floor, the model the turn will actually run on (after any fallback), and its tier. Reading
@@ -1356,7 +1356,7 @@ export const layer = Layer.effect(
       // it is `persona` + `base`, which `composeSystemParts` emits in that order, so the prompt is
       // byte-identical (`short-chat.test.ts` pins it). What it buys is that
       // `SystemAccounting` can now count a chit-chat role's prompt and an engineering one's on the
-      // same scale — the comparison `todo/named-agents.md` asks for and had no instrument to make.
+      // same scale — the comparison `notes/named-agents.md` asks for and had no instrument to make.
       const promptParts: SystemCompose.SystemPromptParts = ShortChat.enabled(config.shortChat)
         ? { ...(harness.chatPersona === undefined ? {} : { persona: harness.chatPersona }), base: ShortChat.GUIDANCE }
         : {

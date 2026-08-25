@@ -11,7 +11,7 @@ import type { SessionLike, UsageMinute } from "./roster-live"
  *  ⚠️ Deliberately NOT the global sync store's `data.agent`: that reads the legacy `GET /agent`
  *  projection whose entries are keyed by `name` and carry no `title`, `personality`, `avatar` or
  *  `memory`. Two shapes for one concept is a migration this page must not silently depend on — filed
- *  in `todo/named-agents.md`. */
+ *  in `notes/named-agents.md`. */
 export const listAgents = async (sdk: { agent: { list: () => Promise<{ data?: unknown }> } }): Promise<AgentLike[]> => {
   const response = await sdk.agent.list()
   // ⚠️ TWO `data` hops, and they are different things. The SDK wraps the HTTP body as

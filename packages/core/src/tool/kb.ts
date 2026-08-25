@@ -144,7 +144,7 @@ const OVERFETCH_CAP = 40
 /** The agent's own filing cabinet, or `undefined` when this session has no agent to own one.
  *
  *  🔴 **Why the surface grew a third literal instead of re-pointing `session`** (the decision
- *  `todo/named-agents.md` reserved). Under the roster (AGENTS.md — the structural metaphor) there are
+ *  `notes/named-agents.md` reserved). Under the roster (AGENTS.md — the structural metaphor) there are
  *  genuinely three durable places a fact can belong: this chat, this OFFICER across its chats, and the
  *  household every agent shares. Re-pointing `session` at the agent would have kept the vocabulary
  *  two-wide by making its own description ("this chat only") false, and a lying enum is worse than a

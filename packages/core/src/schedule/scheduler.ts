@@ -237,7 +237,7 @@ export const layer = Layer.effect(
       // registered by the plugin and may author no config layers at all, so treating "absent" as
       // "cannot act" would refuse every task on a stock instance. Only an explicit `disabled: true`
       // stands anyone down. A RETIRED colleague also has no row, and its schedules are the retire
-      // path's job to clear — see `todo/named-agents.md`.
+      // path's job to clear — see `notes/named-agents.md`.
       Effect.fn("CalendarScheduler.canAct")(function* (agentID: string) {
         const declared = AgentConfigStore.fold((yield* roster.agents())[agentID] ?? [])
         return declared?.disabled !== true
@@ -248,7 +248,7 @@ export const layer = Layer.effect(
       yield* tick(db, launch, now)
       // ⚠️ Riding THIS tick rather than a timer of its own, deliberately: a sweeper kept alive for one
       // notice is a subsystem, and two schedulers drift. `sweep` never throws into here, so a stall
-      // sweep cannot stop a schedule from firing (`todo/named-agents.md`).
+      // sweep cannot stop a schedule from firing (`notes/named-agents.md`).
       yield* ColleagueStall.sweep(db, events, now)
     }).pipe(
       Effect.catchCause((cause) => Log.event("instance.scheduler.tick.failed", { "instance.cause": Log.fault(cause) })),

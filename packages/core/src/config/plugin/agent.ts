@@ -103,7 +103,7 @@ function applyItem(draft: AgentDraft, agentID: AgentV2.ID, item: ConfigAgent.Inf
     )
     return
   }
-  // 🔴 `disabled` PAUSES; it does not remove (owner decision, 2026-08-23 — `todo/named-agents.md`).
+  // 🔴 `disabled` PAUSES; it does not remove (owner decision, 2026-08-23 — `notes/named-agents.md`).
   //
   // It used to `draft.remove(agentID)`, which was a fourth removal door bypassing every guarantee of
   // `agent/retire.ts` — no `AgentUsage.forget`, no `archiveChats`, no `agent:<id>` → `retired:<id>:<at>`

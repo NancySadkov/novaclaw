@@ -1,7 +1,7 @@
 import { describe, expect, test, beforeEach } from "bun:test"
 import { ColleagueBound } from "./colleague-bound"
 
-// The MECHANISM behind the colleague loop bound (`todo/named-agents.md`). Every case here is one the
+// The MECHANISM behind the colleague loop bound (`notes/named-agents.md`). Every case here is one the
 // wording of a note cannot enforce — which is the reason the mechanism exists.
 
 describe("hop cap", () => {
