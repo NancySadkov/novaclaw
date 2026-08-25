@@ -34,7 +34,11 @@ export const correctMissingRead = (input: {
   // instructional, or intentionally phrased in a way filesystem evidence cannot interpret; Nova
   // must leave that deliberate record for the user to edit or forget explicitly.
   const stale = SessionRecall.memoriesMentioningPath(input.recalled, [input.requested, input.resolved]).filter(
-    (hit) => hit.source === "auto-extract",
+    // ⚠️ `consolidated` counts too. A consolidated twin is an auto-extracted fact that outlived its
+    // chat, so it is exactly as automatic — and exactly as correctable — as the original. Matching
+    // only `auto-extract` would have made a promoted claim permanently un-correctable the moment it
+    // was promoted, which is the wrong half to protect.
+    (hit) => hit.source === "auto-extract" || hit.source === "consolidated",
   )
   const unique = [...new Map(stale.map((hit) => [hit.id, hit])).values()]
   return Effect.forEach(

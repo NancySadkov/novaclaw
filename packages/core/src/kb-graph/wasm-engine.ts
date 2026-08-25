@@ -813,6 +813,11 @@ export class WasmMemory {
    * facts became readable by every other. Extraction now files into `agent:<id>` and consolidate does
    * not touch those, so `global` + `auto-extract` names exactly the legacy set and nothing current.
    *
+   * ⚠️ **That last clause was FALSE until 2026-08-25** and it cost a data-loss bug: consolidation
+   * copied its source from the original, so every twin it promoted was `global` + `auto-extract` and
+   * this pass deleted it at the next boot — after the original had already been invalidated. Twins
+   * are `source: 'consolidated'` now, which is what makes the sentence true.
+   *
    * ⚠️ Idempotent BY CONSTRUCTION rather than by a marker: after one run the predicate matches
    * nothing, and nothing writes rows that match it again. A "have I run this?" flag would be a second
    * thing to keep true.
@@ -977,12 +982,25 @@ export class WasmMemory {
     })
   }
 
-  /** Consolidation (§1.3.4): promote each still-valid SESSION-scope memory to a GLOBAL twin (so
-   *  auto-extracted facts become cross-session), then supersede the session original bitemporally
-   *  (invalidate — kept in history, dropped from search). Deduped by a content-hash global id, so the
-   *  same fact from two sessions collapses to one global memory, and re-running is idempotent (already-
-   *  invalidated originals are skipped). Returns the number promoted. Safe to run repeatedly in the
-   *  background. */
+  /**
+   * Consolidation (§1.3.4): promote each still-valid SESSION-scope memory to a GLOBAL twin (so
+   * auto-extracted facts become cross-session), then supersede the session original bitemporally
+   * (invalidate — kept in history, dropped from search). Deduped by a content-hash global id, so the
+   * same fact from two sessions collapses to one global memory, and re-running is idempotent
+   * (already-invalidated originals are skipped). Returns the number promoted.
+   *
+   * 🔴 **The twin's `source` is `consolidated`, NOT the original's `auto-extract`, and that one word
+   * was a DATA-LOSS bug.** `discardLegacyGlobalExtracts` deletes every `global` + `auto-extract` row
+   * at startup, and its comment asserted that predicate "names exactly the legacy set and nothing
+   * current". It did not: consolidation copied the original's source, so every twin it made matched.
+   * Measured 2026-08-25 against this engine — consolidate, then discard, and the fact is GONE: the
+   * twin deleted, and the session original left invalidated on the assumption the twin represented
+   * it. An ownerless auto-extracted fact silently vanished at the next restart.
+   *
+   * ⚠️ The two passes were fighting, and the loss was invisible from either side: consolidation
+   * reported a promotion, the discard reported a legacy cleanup, and both were telling the truth
+   * about themselves.
+   */
   consolidate(): Promise<number> {
     return this.serialize(async () => {
       // Only AUTO-EXTRACTED session memories flow up. A deliberate `remember` scoped "session" is a
@@ -1008,14 +1026,13 @@ export class WasmMemory {
           await this.q(
             `CREATE (:Memory {
                id: $id, kind: $kind, text: $text, name: $name, scope: 'global',
-               source: $source, confidence: $confidence, relation: $relation,
+               source: 'consolidated', confidence: $confidence, relation: $relation,
                t_valid: current_timestamp(), t_created: current_timestamp() })`,
             {
               id: gid,
               kind: String(row.kind ?? "episode"),
               text,
               name: (row.name as string | null) ?? null,
-              source: (row.source as string | null) ?? null,
               confidence: (row.confidence as number | null) ?? null,
               relation: (row.relation as string) ?? "staged",
             },
