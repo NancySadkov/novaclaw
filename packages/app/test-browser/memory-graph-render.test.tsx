@@ -293,6 +293,15 @@ function drawnLabels(): { id: string; x: number; y: number; w: number; h: number
   })
 }
 
+const drawnNodes = () => [...document.querySelectorAll('[data-slot="memory-graph-node"]')]
+const searchCount = () =>
+  (document.querySelector('[data-slot="memory-search-count"]') as HTMLElement | null)?.textContent ?? null
+const typeSearch = (text: string) => {
+  const input = document.querySelector('[data-slot="memory-search"] input') as HTMLInputElement
+  input.value = text
+  input.dispatchEvent(new Event("input", { bubbles: true }))
+}
+
 const boxesOverlap = (
   a: { x: number; y: number; w: number; h: number },
   b: { x: number; y: number; w: number; h: number },
@@ -626,6 +635,79 @@ describe("MemoryGraphPage renders", () => {
     const chip = document.querySelector('[data-slot="memory-graph-slice"]') as HTMLElement
     expect(chip.textContent).toContain("partial view")
     expect(chip.dataset.reason).toBe("scan-capped")
+  })
+
+  test("🔴 ONE search box drives BOTH views — a query typed on the list narrows the map", async () => {
+    // The hazard this file exists to police: two surfaces of one cabinet answering the same question
+    // separately. The roster did it, the health signal did it. A filter would do it silently.
+    mount([() => FIXTURE])
+    await settle()
+    showGraph()
+    await settle()
+    typeSearch("dragon")
+    await settle()
+    // Exactly one memory in the fixture says "Dragon".
+    expect(searchCount()).toBe("1 found")
+    const dimmed = drawnNodes().filter((el) => el.getAttribute("opacity") === "0.25")
+    expect(dimmed.length).toBe(VISIBLE_MEMORIES + 1 - 1)
+    // …and it earns a LABEL, or the search answers with a dot nobody can read.
+    expect(drawnLabels().some((l) => l.id === "Dragon")).toBe(true)
+  })
+
+  test("a search never REMOVES marks — the map would lose what the memory connects to", async () => {
+    mount([() => FIXTURE])
+    await settle()
+    showGraph()
+    await settle()
+    const before = drawnMarks().length
+    typeSearch("dragon")
+    await settle()
+    expect(drawnMarks().length).toBe(before)
+    expect(edgeEndpoints()).toBe(3)
+  })
+
+  test("a query matching nothing says so, and shows zero", async () => {
+    mount([() => FIXTURE])
+    await settle()
+    showGraph()
+    await settle()
+    typeSearch("zzzznotamemory")
+    await settle()
+    expect(searchCount()).toBe("0 found")
+  })
+
+  test("clearing the query restores every mark to full strength", async () => {
+    mount([() => FIXTURE])
+    await settle()
+    showGraph()
+    await settle()
+    typeSearch("dragon")
+    await settle()
+    typeSearch("")
+    await settle()
+    expect(document.querySelector('[data-slot="memory-search-count"]')).toBeNull()
+    expect(drawnNodes().filter((el) => el.getAttribute("opacity") === "0.25").length).toBe(0)
+  })
+
+  test("the status toggle flips between current and forgotten, and says which", async () => {
+    mount([() => FIXTURE])
+    await settle()
+    showGraph()
+    await settle()
+    const toggle = document.querySelector('[data-slot="memory-status-toggle"]') as HTMLButtonElement
+    expect(toggle.dataset.status).toBe("active")
+    expect(toggle.textContent).toContain("Current")
+    toggle.click()
+    await settle()
+    expect(toggle.dataset.status).toBe("all")
+    expect(toggle.textContent).toContain("forgotten")
+  })
+
+  test("search is offered on the LIST too, not only the map", async () => {
+    mount([() => FIXTURE])
+    await settle()
+    // Still on Remembered — the shared header owns the box, so it is there before the map is opened.
+    expect(document.querySelector('[data-slot="memory-search"]')).not.toBeNull()
   })
 
   test("showing passages refits to include them", async () => {

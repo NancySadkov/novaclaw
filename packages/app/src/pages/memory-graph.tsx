@@ -8,6 +8,14 @@ import { useServer, ServerConnection } from "@/context/server"
 import { memoryGraph, type MemoryGraph, type MemoryRow } from "@/utils/memory-api"
 import { instanceDiagnosis } from "@/utils/resource-api"
 import { memoryFaultDetail, memoryUnavailable } from "@/utils/memory-health"
+import {
+  defaultFilter,
+  describeScope,
+  isNarrowed,
+  matches,
+  toggleKind as toggleKindIn,
+  type MemoryFilter,
+} from "@/utils/memory-filter"
 import { ownerFromKey, ownersFor, scopeOwnerName, type MemoryOwner } from "@/apps/memory-owner"
 import { type AgentLike } from "@/apps/contacts"
 import { layoutGraph, type Vec } from "./memory-graph/layout"
@@ -248,19 +256,23 @@ export function MemoryGraphPage() {
   }
 
   /**
-   * Which kinds to draw. Passages are OFF by default: measured on a real instance, they were 202 of
-   * 281 nodes, and the graph reads as a wall of identical marks with them on. The chip shows its off
-   * state and the header counts what is hidden, so this is a default rather than a concealment.
+   * ONE FILTER, read by the Map and by the Remembered list (`utils/memory-filter.ts`).
+   *
+   * 🔴 It lives HERE, above both views, because this page has twice shipped two surfaces answering
+   * the same question separately and disagreeing — the roster, and the memory-health signal. A filter
+   * is the same hazard and quieter: each view would show a different subset of one cabinet with
+   * nothing on screen saying they were answering different questions.
+   *
+   * Passages are OFF by default: measured on a real instance they were 202 of 281 nodes, and the
+   * graph reads as a wall of identical marks with them on. The chip shows its off state and the
+   * header counts what is hidden, so it is a default rather than a concealment.
    */
-  const [visibleKinds, setVisibleKinds] = createSignal<ReadonlySet<string>>(new Set(["entity", "episode"]))
-  const kindVisible = (kind?: string) => visibleKinds().has(kind ?? "entity")
-  const toggleKind = (kind: string) =>
-    setVisibleKinds((current) => {
-      const next = new Set(current)
-      if (next.has(kind)) next.delete(kind)
-      else next.add(kind)
-      return next
-    })
+  const [filter, setFilter] = createSignal<MemoryFilter>(defaultFilter())
+  const kindVisible = (kind?: string) => filter().kinds.has(kind ?? "entity")
+  const toggleKind = (kind: string) => setFilter((current) => toggleKindIn(current, kind))
+  const setQuery = (query: string) => setFilter((current) => ({ ...current, query }))
+  const toggleStatus = () =>
+    setFilter((current) => ({ ...current, status: current.status === "active" ? "all" : "active" }))
 
   /**
    * WHAT IS ON THE CANVAS — the visible projection, not the raw graph.
@@ -269,10 +281,40 @@ export function MemoryGraphPage() {
    * edge touching one was simply not drawn. `memory-graph/project.ts` has the full reasoning; the
    * short version is that an ingested document's extracted entities reach it ONLY through passages,
    * so the default view kept the marks and deleted the structure.
+   *
+   * ⚠️ **The KIND chips fold; the SEARCH does not.** They are different questions and it matters which
+   * mechanism each gets. Hiding a kind is "I am not interested in these", so the hidden ones collapse
+   * into an honest hub and the structure survives. A text query is "where is this", and removing
+   * everything that does not match would delete the very connections the Map exists to show — you
+   * would find your memory and lose what it is attached to. So search HIGHLIGHTS here and FILTERS in
+   * the list, which is the surface whose job is answering "what do you remember".
    */
   const projected = createMemo(() =>
     projectGraph(loaded()?.nodes ?? [], loaded()?.edges ?? [], (kind) => kindVisible(kind)),
   )
+
+  /**
+   * What the Remembered list is showing, reported up by the list itself.
+   *
+   * ⚠️ Not recomputed here. The list owns its own fetch on purpose — the two callers refresh on
+   * different events — so a count derived from a second fetch would be a second number about one
+   * cabinet, free to disagree with the first.
+   */
+  const [listCounts, setListCounts] = createSignal<{ visible: number; loaded: number; total: number | undefined }>({
+    visible: 0,
+    loaded: 0,
+    total: undefined,
+  })
+  const listMatchCount = () => listCounts().visible
+
+  /** Marks the current query picks out. Empty query = empty set, never "everything". */
+  const matched = createMemo<ReadonlySet<string>>(() => {
+    const current = filter()
+    if (current.query.trim().length === 0) return new Set<string>()
+    const hits = new Set<string>()
+    for (const row of loaded()?.nodes ?? []) if (matches(row, current)) hits.add(row.id)
+    return hits
+  })
   const hiddenCount = () => projected().hiddenCount
 
   // Deterministic layout of the PROJECTION, seeded from the per-instance cache (stable across opens);
@@ -558,6 +600,7 @@ export function MemoryGraphPage() {
     })
     const sel = selected()
     const near = neighborIds()
+    const hits = matched()
     const candidates: LabelCandidate[] = []
     for (let i = 0; i < nodes.length; i++) {
       const node = nodes[i]!
@@ -567,12 +610,17 @@ export function MemoryGraphPage() {
         ? Priority.Hub
         : node.id === sel
           ? Priority.Selected
-          : near.has(node.id)
-            ? Priority.Neighbor
-            : // Spatially alone: its label cannot be the thing crowding anyone out, so it is free.
-              nearestNeighborDistance(screen, i) > ISOLATED_PX
-              ? Priority.Isolated
-              : Priority.Ordinary
+          : // A SEARCH HIT outranks a neighbour: the user asked for these by name, and picking out
+            // marks they cannot read would answer the question with dots. This is the rung reserved
+            // for it (`labels.ts` — `RecallHit`), now that something fills it.
+            hits.has(node.id)
+            ? Priority.RecallHit
+            : near.has(node.id)
+              ? Priority.Neighbor
+              : // Spatially alone: its label cannot be the thing crowding anyone out, so it is free.
+                nearestNeighborDistance(screen, i) > ISOLATED_PX
+                ? Priority.Isolated
+                : Priority.Ordinary
       // ⚠️ Selected outranks Hub even when the selection IS a hub — clicking a mark must always be
       // able to read its own label back.
       candidates.push({
@@ -681,6 +729,48 @@ export function MemoryGraphPage() {
           </For>
         </div>
 
+        {/* SEARCH, on both views. It sits in the shared header rather than inside either one, because
+            it IS shared — the same query narrows the list and picks out the marks. A copy per view is
+            how the two would drift apart. Hidden on Settings, which has nothing to search. */}
+        <Show when={appView() !== "settings"}>
+          <label class="flex items-center gap-1.5" data-slot="memory-search">
+            <input
+              type="search"
+              value={filter().query}
+              placeholder="Search memories"
+              aria-label="Search memories"
+              class="w-40 rounded bg-v2-background-bg-layer-01 px-2 py-1 text-[11px] placeholder:opacity-40"
+              onInput={(event) => setQuery(event.currentTarget.value)}
+            />
+            {/* The COUNT is the whole point of a search that highlights rather than hides: without it
+                a query that matches nothing looks identical to a query that matched something
+                off-screen. */}
+            <Show when={filter().query.trim().length > 0}>
+              <span class="text-[11px] opacity-60" data-slot="memory-search-count">
+                {appView() === "graph" ? matched().size : listMatchCount()} found
+              </span>
+            </Show>
+          </label>
+          {/* STATUS. `active` is what the store considers current; `all` also shows what has been
+              forgotten or superseded, which is the only way to see that a correction happened. */}
+          <button
+            type="button"
+            data-slot="memory-status-toggle"
+            data-status={filter().status}
+            aria-pressed={filter().status === "all"}
+            onClick={toggleStatus}
+            title={
+              filter().status === "active"
+                ? "Showing current memories. Click to include forgotten ones."
+                : "Including forgotten memories. Click to show current only."
+            }
+            class="rounded px-1.5 py-1 text-[11px] hover:bg-v2-background-bg-layer-02"
+            classList={{ "opacity-50": filter().status === "active" }}
+          >
+            {filter().status === "active" ? "Current" : "Incl. forgotten"}
+          </button>
+        </Show>
+
         {/* The legend belongs to the GRAPH, so it appears with it — a legend for marks that are not
             on screen is noise. */}
         <Show when={appView() === "graph"}>
@@ -773,7 +863,7 @@ export function MemoryGraphPage() {
         <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
           {/* The list obeys the same picker as the graph: two views of ONE colleague's memory,
               never one scoped and one not. */}
-          <MemoryRemembered scopes={owner()?.scopes} />
+          <MemoryRemembered scopes={owner()?.scopes} filter={filter()} onCounts={setListCounts} />
         </div>
       </Show>
 
@@ -878,7 +968,11 @@ export function MemoryGraphPage() {
                   const p = () => positions()[node.id]
                   const isSel = () => selected() === node.id
                   const isNeighbor = () => neighborIds().has(node.id)
-                  const dim = () => selected() !== undefined && !isSel() && !isNeighbor()
+                  // Dimmed by a SELECTION or by a SEARCH — two ways of asking "which of these",
+                  // and a mark that answers neither question steps back for the ones that do.
+                  const dim = () =>
+                    (selected() !== undefined && !isSel() && !isNeighbor()) ||
+                    (matched().size > 0 && !matched().has(node.id))
                   const hub = () => (isHub(node) ? node : undefined)
                   const row = () => (isHub(node) ? undefined : node.row)
                   // A hub carries no scope of its own unless every member agrees on one — see
@@ -980,7 +1074,11 @@ export function MemoryGraphPage() {
                   }
                   const isSel = () => selected() === node.id
                   const isNeighbor = () => neighborIds().has(node.id)
-                  const dim = () => selected() !== undefined && !isSel() && !isNeighbor()
+                  // Dimmed by a SELECTION or by a SEARCH — two ways of asking "which of these",
+                  // and a mark that answers neither question steps back for the ones that do.
+                  const dim = () =>
+                    (selected() !== undefined && !isSel() && !isNeighbor()) ||
+                    (matched().size > 0 && !matched().has(node.id))
                   return (
                     <Show when={labelled().has(node.id) && at()}>
                       <text

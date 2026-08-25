@@ -1,0 +1,88 @@
+import type { MemoryRow } from "@/utils/memory-api"
+
+/**
+ * WHAT THE USER IS LOOKING FOR — one filter, read by both the Remembered list and the Map.
+ *
+ * 🔴 Shared for the reason this page has already learned twice. The roster was fetched separately by
+ * two surfaces and they disagreed about who existed; the memory-health signal was asked by one tab and
+ * not the other, so one said "unavailable" while the other reported an empty cabinet. A filter is the
+ * same shape of hazard and worse, because disagreement is silent: List and Map would each show a
+ * different subset of one cabinet and nothing on screen would say they were answering different
+ * questions.
+ *
+ * ⚠️ **It filters what is LOADED, and the surfaces already say what that is.** The list fetches 500
+ * rows and reports how many are not listed; the map asks for a slice and reports what the server left
+ * out. Searching the whole STORE is a retrieval question — ranking, embeddings, the `memory/search`
+ * endpoint — and answering it here would quietly turn a filter into a search engine whose results the
+ * graph could not draw. What must never happen is a confident "no matches" over a partial load, so
+ * `describeScope` exists to make the boundary a sentence rather than an assumption.
+ */
+export interface MemoryFilter {
+  /** Free text. Empty means "no text filter", never "match nothing". */
+  readonly query: string
+  /** Which kinds to admit. Empty set means NOTHING passes — that is a real state the chips can reach. */
+  readonly kinds: ReadonlySet<string>
+  /** `active` hides memories that have been superseded or forgotten; `all` includes them. */
+  readonly status: "active" | "all"
+}
+
+export const ALL_KINDS: readonly string[] = ["entity", "episode", "passage"]
+
+/** The default a surface opens with: everything the store considers current, passages folded away. */
+export const defaultFilter = (): MemoryFilter => ({
+  query: "",
+  kinds: new Set(["entity", "episode"]),
+  status: "active",
+})
+
+/** Is the filter doing anything at all? Drives whether a surface bothers to report counts. */
+export const isNarrowed = (filter: MemoryFilter): boolean =>
+  filter.query.trim().length > 0 || filter.status !== "active" || filter.kinds.size !== 2 || !filter.kinds.has("entity")
+
+/**
+ * Does one memory match the text?
+ *
+ * Case-insensitive, matched against the NAME and the TEXT — the two things a person can see. Not
+ * against the id: nobody types `mem_0375fa4180015YK5c81emlzz3f`, and matching it would make a search
+ * for "mem" return the entire cabinet.
+ *
+ * ⚠️ Every whitespace-separated term must appear (AND, not OR). "dragon manual" means both, which is
+ * what someone narrowing a list intends; OR would make each extra word widen the result and the
+ * control would feel broken.
+ */
+export function matchesQuery(row: Pick<MemoryRow, "name" | "text">, query: string): boolean {
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  if (terms.length === 0) return true
+  const haystack = `${row.name ?? ""}\n${row.text ?? ""}`.toLowerCase()
+  return terms.every((term) => haystack.includes(term))
+}
+
+/** Does one memory pass the whole filter? */
+export function matches(row: Pick<MemoryRow, "name" | "text" | "kind">, filter: MemoryFilter): boolean {
+  if (!filter.kinds.has(row.kind)) return false
+  return matchesQuery(row, filter.query)
+}
+
+/**
+ * One sentence naming what the result is a result OF — shown whenever the filter narrowed something
+ * AND the surface is holding less than the store does.
+ *
+ * "No matches" over a partial load is the empty cabinet in a new costume: true of what was searched,
+ * false as an answer to the question the user asked.
+ */
+export function describeScope(input: {
+  readonly loaded: number
+  readonly total: number | undefined
+}): string | undefined {
+  const total = input.total
+  if (total === undefined || total <= input.loaded) return undefined
+  return `Searched the ${input.loaded} loaded here, not all ${total}.`
+}
+
+/** Toggle one kind, returning a NEW set — the chips are the only writer of this field. */
+export function toggleKind(filter: MemoryFilter, kind: string): MemoryFilter {
+  const kinds = new Set(filter.kinds)
+  if (kinds.has(kind)) kinds.delete(kind)
+  else kinds.add(kind)
+  return { ...filter, kinds }
+}

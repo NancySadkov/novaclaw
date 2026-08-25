@@ -1,4 +1,4 @@
-import { type Component, For, Show, createMemo, createResource, createSignal } from "solid-js"
+import { type Component, For, Show, createEffect, createMemo, createResource, createSignal } from "solid-js"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { useConfirm } from "@/components/dialog-confirm"
 import { useGlobal } from "@/context/global"
@@ -9,6 +9,7 @@ import { showToast } from "@/utils/toast"
 import { memoryClearScope, memoryInvalidate, memoryList, memoryStats, type MemoryRow } from "@/utils/memory-api"
 import { instanceDiagnosis } from "@/utils/resource-api"
 import { memoryUnavailable } from "@/utils/memory-health"
+import { describeScope, isNarrowed, matches, type MemoryFilter } from "@/utils/memory-filter"
 
 /**
  * The **Remembered** list — what NovaClaw has learned, in plain sentences.
@@ -33,6 +34,20 @@ export const MemoryRemembered: Component<{
    * or the household's shared facts, because "what do you know about me" now has a subject.
    */
   scopes?: readonly string[]
+  /**
+   * The SHARED filter (`utils/memory-filter.ts`). Absent = show everything this list fetched, which is
+   * what the in-session panel wants; the Memory app passes the one its header owns, so a query typed
+   * once narrows the list and picks out the marks on the Map.
+   */
+  filter?: MemoryFilter
+  /**
+   * Report what the filter left visible, so the shared header can show ONE count.
+   *
+   * ⚠️ Reported UP rather than computed twice. The header cannot see these rows (the list owns its
+   * own fetch, deliberately — the two callers refresh on different events), and a second count
+   * derived from a second fetch is how two numbers about one cabinet start disagreeing.
+   */
+  onCounts?: (counts: { visible: number; loaded: number; total: number | undefined }) => void
   class?: string
 }> = (props) => {
   const language = useLanguage()
@@ -82,8 +97,29 @@ export const MemoryRemembered: Component<{
     ({ cn, dir }) => memoryStats(cn.http, { directory: dir }).catch(() => undefined),
   )
 
-  const count = () => memories()?.length ?? 0
-  const notListed = () => Math.max(0, (totals()?.total ?? 0) - count())
+  const loadedRows = () => memories() ?? []
+  /** The rows after the shared filter — what the user is actually looking at. */
+  const visibleRows = createMemo(() => {
+    const filter = props.filter
+    if (!filter) return loadedRows()
+    return loadedRows().filter((row) => matches(row, filter))
+  })
+  const count = () => visibleRows().length
+  const notListed = () => Math.max(0, (totals()?.total ?? 0) - loadedRows().length)
+  /**
+   * What the search actually covered, when it covered less than the store holds.
+   *
+   * "Nothing matches" over a partial load is the empty cabinet in a new costume — true of what was
+   * searched, false as an answer to the question that was asked.
+   */
+  const scopeNote = () =>
+    props.filter && isNarrowed(props.filter)
+      ? describeScope({ loaded: loadedRows().length, total: totals()?.total })
+      : undefined
+
+  createEffect(() =>
+    props.onCounts?.({ visible: count(), loaded: loadedRows().length, total: totals()?.total }),
+  )
 
   /**
    * 🔴 Is the store BROKEN, or merely empty?
@@ -240,15 +276,40 @@ export const MemoryRemembered: Component<{
       >
       <Show
         when={count() > 0}
-        fallback={<p class="settings-v2-field-description">{language.t("settings.memory.list.empty")}</p>}
+        fallback={
+          // ⚠️ Two different emptinesses. "Nothing remembered" is a fact about the cabinet; "nothing
+          // matches" is a fact about the query, and saying the first when the second is true tells a
+          // user their memories are gone.
+          <div class="flex flex-col gap-1" data-slot="memory-list-empty">
+            <p class="settings-v2-field-description">
+              {loadedRows().length > 0
+                ? "No memory here matches that search."
+                : language.t("settings.memory.list.empty")}
+            </p>
+            <Show when={scopeNote()}>
+              {(note) => (
+                <p class="settings-v2-field-description" data-slot="memory-search-scope">
+                  {note()}
+                </p>
+              )}
+            </Show>
+          </div>
+        }
       >
         <Show when={notListed() > 0}>
           <p class="settings-v2-field-description" data-slot="memory-passages-hidden">
             {language.t("settings.memory.list.sourceHidden", { count: notListed() })}
           </p>
         </Show>
+        <Show when={scopeNote()}>
+          {(note) => (
+            <p class="settings-v2-field-description" data-slot="memory-search-scope">
+              {note()}
+            </p>
+          )}
+        </Show>
         <div class="flex flex-col gap-1.5 overflow-y-auto pr-1">
-          <For each={memories()}>
+          <For each={visibleRows()}>
             {(row) => (
               <div class="flex items-start justify-between gap-3 rounded-md border border-[var(--nc-border-subtle,rgba(255,255,255,0.08))] px-3 py-2">
                 <div class="flex min-w-0 flex-col gap-0.5">
