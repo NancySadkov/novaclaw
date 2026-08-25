@@ -1,4 +1,6 @@
-import { describe, expect } from "bun:test"
+import fs from "node:fs"
+import path from "node:path"
+import { describe, expect, test } from "bun:test"
 import { Effect, Layer } from "effect"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { Database } from "@novaclaw/core/database/database"
@@ -58,6 +60,23 @@ describe("switching a chat onto a colleague", () => {
       expect(String((refusal as { operation?: string }).operation)).toBe("switchAgent")
     }),
   )
+
+  test("🔴 the COMMAND door goes through the SAME guard, not a bare publish", () => {
+    // `V2Session.command` published `AgentSwitched` DIRECTLY, so a saved command declaring
+    // `agent: writer` could point a second session at Wren while `switchAgent`, one function away,
+    // refused exactly that. Two doors, one unguarded, is the shape this invariant keeps being broken
+    // by — `createSessionRecord` and `switchAgent` were the first pair.
+    //
+    // ⚠️ STRUCTURAL, and the reason is worth stating. Driving the command path needs a saved
+    // command visible to `CommandV2`, which reads through a location service this fixture does not
+    // stand up; wiring it here would be fixture archaeology testing the command LOADER rather than
+    // the guard. The RULE is already covered behaviourally by the four cases in this file, so what
+    // is left to pin is the JOIN: that the command path calls it at all.
+    const source = fs.readFileSync(path.join(import.meta.dir, "..", "src", "session.ts"), "utf8")
+    const command = source.slice(source.indexOf('command: Effect.fn("V2Session.command")'))
+    const switchBlock = command.slice(0, command.indexOf("SessionEvent.AgentSwitched"))
+    expect(switchBlock).toContain("guardOneChat(session, resolved.agent")
+  })
 
   it.effect(
     "…and ALLOWS it when that colleague has none",

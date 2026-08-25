@@ -386,7 +386,14 @@ export interface Interface {
     skill: string
     resume?: boolean
   }) => Effect.Effect<void, OperationUnavailableError>
-  readonly command: (input: CommandInput) => Effect.Effect<CommandResult, NotFoundError | PromptConflictError>
+  /**
+   * ⚠️ `OperationUnavailableError` because a command may declare its own `agent:`, and repointing a
+   * session onto a colleague who already has a chat is refused — the same rule `switchAgent` applies,
+   * reached through the shared guard rather than a second copy.
+   */
+  readonly command: (
+    input: CommandInput,
+  ) => Effect.Effect<CommandResult, NotFoundError | OperationUnavailableError | PromptConflictError>
   readonly compact: (input: CompactInput) => Effect.Effect<void, NotFoundError | OperationUnavailableError>
   readonly wait: (id: SessionSchema.ID) => Effect.Effect<void, NotFoundError | OperationUnavailableError>
   readonly active: Effect.Effect<ReadonlySet<SessionSchema.ID>>
@@ -433,6 +440,35 @@ const liveRootFor = (db: Database.Interface["db"], agent: string) =>
     .orderBy(desc(SessionTable.time_updated))
     .get()
     .pipe(Effect.orDie)
+
+/**
+ * ONE CHAT PER COLLEAGUE, applied to a session being MOVED onto an agent.
+ *
+ * 🔴 Shared by every door that repoints a session, because there is more than one and they failed
+ * differently. `switchAgent` is the public endpoint; a saved command's `agent:` frontmatter published
+ * `AgentSwitched` DIRECTLY from `V2Session.command`, bypassing the endpoint and its check entirely —
+ * so a command could hand a colleague a second live root that the roster can never show, while the
+ * endpoint one function away refused exactly that. Written twice, the two drift; the symptom of the
+ * drift is the thing the rule exists to prevent.
+ *
+ * ⚠️ Three exemptions, each matching `createSessionRecord`'s:
+ *   · switching onto the agent this chat ALREADY runs as is a no-op, not a conflict — otherwise
+ *     re-issuing the same command fails the second time;
+ *   · a POSTURE may hold many chats (`build` is the mode most chats run as);
+ *   · only a ROOT can conflict — a sub-agent inherits its officer's id by design.
+ */
+const guardOneChat = (
+  session: { readonly agent?: string | undefined; readonly parentID?: SessionSchema.ID | undefined },
+  agent: string,
+  sessionID: SessionSchema.ID,
+  db: Database.Interface["db"],
+) =>
+  Effect.gen(function* () {
+    if (session.agent === agent || AgentV2.POSTURE_IDS.has(agent)) return
+    const live = yield* liveRootFor(db, agent)
+    if (live && live.id !== String(sessionID) && session.parentID === undefined)
+      return yield* new OperationUnavailableError({ operation: "switchAgent" })
+  })
 
 export const createSessionRecord = (
   deps: {
@@ -903,13 +939,19 @@ export const layer = Layer.effect(
         // Prompt path only: a command may declare its own agent/model — switch the session to them
         // BEFORE the turn (persisted, mirroring how promptAsync applies a per-turn model/agent) so
         // the command runs under its declared config. Residue: V1's per-turn (non-persisted) override.
-        if (resolved.agent)
+        // 🔴 THROUGH THE SHARED GUARD, not a bare publish. This used to write `AgentSwitched`
+        // directly, so a saved command's `agent:` frontmatter could point a second session at a
+        // colleague who already had a chat — the exact conflict `switchAgent` refuses one function
+        // away. One rule, every door.
+        if (resolved.agent) {
+          yield* guardOneChat(session, resolved.agent, input.sessionID, db)
           yield* events.publish(SessionEvent.AgentSwitched, {
             sessionID: input.sessionID,
             messageID: SessionMessage.ID.create(),
             timestamp: yield* DateTime.now,
             agent: resolved.agent,
           })
+        }
         if (resolved.model)
           yield* events.publish(SessionEvent.ModelSwitched, {
             sessionID: input.sessionID,
@@ -959,13 +1001,7 @@ export const layer = Layer.effect(
        */
       switchAgent: Effect.fn("V2Session.switchAgent")(function* (input) {
         const session = yield* result.get(input.sessionID)
-        if (session.agent !== input.agent && !AgentV2.POSTURE_IDS.has(input.agent)) {
-          const live = yield* liveRootFor(db, input.agent)
-          // Only a ROOT can conflict: a sub-agent inherits its officer's id by design.
-          if (live && live.id !== String(input.sessionID) && session.parentID === undefined) {
-            return yield* new OperationUnavailableError({ operation: "switchAgent" })
-          }
-        }
+        yield* guardOneChat(session, input.agent, input.sessionID, db)
         yield* events.publish(SessionEvent.AgentSwitched, {
           sessionID: input.sessionID,
           messageID: SessionMessage.ID.create(),
