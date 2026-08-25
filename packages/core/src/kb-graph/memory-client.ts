@@ -72,6 +72,17 @@ export interface SearchInput {
    * omitted value records `unknown` instead of guessing.
    */
   readonly surface?: "auto-recall" | "kb-tool" | "http" | "unknown"
+  /**
+   * Correlates this recall's ledger rows with the consumer's later "these actually reached the
+   * model" report (P3).
+   *
+   * ⚠️ The CALLER mints it, and that is the point: the store writes one ledger row per returned
+   * memory and then hands the pool back, but only the consumer knows which of them survived its
+   * context budget. Without a shared id the consumer would have to guess which rows it just caused —
+   * "the newest ones for these ids" — which is wrong the moment two sessions recall at once. Absent
+   * means nobody will report back, and the store mints a private id so the rows still group.
+   */
+  readonly recallID?: string
 }
 
 export interface MemoryRow {

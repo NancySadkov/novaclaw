@@ -3,7 +3,10 @@ export * as MemoryObserved from "./memory-observed"
 import { Effect, Option } from "effect"
 import { createHash } from "node:crypto"
 import { MemoryEvent } from "@novaclaw/schema/memory-event"
+import { ascending } from "@novaclaw/schema/identifier"
+import { Database } from "../database/database"
 import { EventV2 } from "../event"
+import { MemoryAccessLedger } from "./access-ledger"
 import { MemoryClient } from "./memory-client"
 
 /**
@@ -47,11 +50,7 @@ const caption = (text: string) => (text.length <= CAPTION_CHARS ? text : text.sl
  * digest over raw bytes recognises almost nothing.
  */
 export const fingerprint = (query: string): string =>
-  "qf_" +
-  createHash("sha256")
-    .update(query.trim().replace(/\s+/g, " ").toLowerCase())
-    .digest("hex")
-    .slice(0, 16)
+  "qf_" + createHash("sha256").update(query.trim().replace(/\s+/g, " ").toLowerCase()).digest("hex").slice(0, 16)
 
 /** Where a recall came from, when the caller says. Unknown is honest, not a default to hide behind. */
 export type Surface = MemoryEvent.RecallSurface
@@ -60,6 +59,26 @@ const publishing = (run: (events: EventV2.Interface) => Effect.Effect<unknown>) 
   Effect.serviceOption(EventV2.Service).pipe(
     Effect.flatMap((maybe) =>
       Option.isSome(maybe) ? run(maybe.value).pipe(Effect.ignore, Effect.asVoid) : Effect.void,
+    ),
+    Effect.ignore,
+  )
+
+/**
+ * The P3 ACCESS LEDGER's write side — the same argument as the bus, one layer more durable.
+ *
+ * 🔴 It hangs off the STORE, not the call sites, for the reason at the top of this file: "this
+ * memory answered that question" has to mean the same thing whether auto-recall, the `kb` tool or
+ * the Memory app asked. A ledger fed from instrumented call sites measures the instrumentation.
+ *
+ * ⚠️ **The database is read with `serviceOption`, exactly like the bus.** Memory is reachable from
+ * environments that have no `Database` — the `kb` tool's unit fixtures, the absorb evaluator, a bare
+ * engine harness — and a hard requirement would make measuring the store a breaking change for every
+ * one of them. No database ⇒ no ledger ⇒ a no-op, never a failed recall.
+ */
+const ledgering = (run: (db: Database.Interface["db"]) => Effect.Effect<unknown>) =>
+  Effect.serviceOption(Database.Service).pipe(
+    Effect.flatMap((maybe) =>
+      Option.isSome(maybe) ? run(maybe.value.db).pipe(Effect.ignore, Effect.asVoid) : Effect.void,
     ),
     Effect.ignore,
   )
@@ -110,6 +129,23 @@ export const observed = (inner: MemoryClient.Interface): MemoryClient.Interface 
             )
           : Effect.void,
       ),
+      /**
+       * 🔴 WHERE "caused a correction" COMES FROM, and why no model is asked.
+       *
+       * The lifecycle already returns the ids this claim RETIRED, under the same lock that retired
+       * them. If one of those ids is in the access ledger, recall handed that answer to somebody and
+       * it has now been corrected — so the correction is charged to it. Deterministic, derived from
+       * nothing but the store's own result.
+       *
+       * ⚠️ Ids the ledger has never seen are charged NOTHING (see `markCorrected`). A claim edited
+       * before it was ever recalled cost no one a wrong answer, and counting it would turn the
+       * review list into a list of ordinary edits.
+       */
+      Effect.tap((result) =>
+        result.ok && result.superseded.length > 0
+          ? ledgering((db) => MemoryAccessLedger.markCorrected(db, { ids: result.superseded, at: Date.now() }))
+          : Effect.void,
+      ),
     ),
 
   setClaimStatus: (id, status, access) =>
@@ -136,25 +172,57 @@ export const observed = (inner: MemoryClient.Interface): MemoryClient.Interface 
   invalidate: (id, access, at) =>
     inner
       .invalidate(id, access, at)
-      .pipe(Effect.tap(() => publishing((events) => events.publish(MemoryEvent.Forgotten, { id, mode: "invalidate" })))),
+      .pipe(
+        Effect.tap(() => publishing((events) => events.publish(MemoryEvent.Forgotten, { id, mode: "invalidate" }))),
+      ),
 
+  // ⚠️ `purge` exists for SECRETS, so the ledger row goes with the memory. Holding an id and a query
+  // fingerprint for something the user asked us to erase is a smaller leak than the text, not an
+  // acceptable one. `invalidate` deliberately keeps its rows: the memory is still there.
   purge: (id, access) =>
-    inner
-      .purge(id, access)
-      .pipe(Effect.tap(() => publishing((events) => events.publish(MemoryEvent.Forgotten, { id, mode: "purge" })))),
+    inner.purge(id, access).pipe(
+      Effect.tap(() => publishing((events) => events.publish(MemoryEvent.Forgotten, { id, mode: "purge" }))),
+      Effect.tap(() => ledgering((db) => MemoryAccessLedger.forget(db, [id]))),
+    ),
 
   search: (input) =>
     inner.search(input).pipe(
-      Effect.tap((hits) =>
-        publishing((events) =>
+      Effect.tap((hits) => {
+        const print = fingerprint(input.query ?? "")
+        const surface = input.surface ?? "unknown"
+        return publishing((events) =>
           events.publish(MemoryEvent.Recalled, {
-            fingerprint: fingerprint(input.query ?? ""),
-            surface: input.surface ?? "unknown",
+            fingerprint: print,
+            surface,
             scopes: input.scopes ?? [],
             hits: hits.map((hit, index) => ({ id: hit.id, rank: index + 1, score: hit.score, scope: hit.scope })),
             considered: hits.length,
           }),
-        ),
-      ),
+        ).pipe(
+          Effect.andThen(
+            ledgering((db) =>
+              MemoryAccessLedger.record(db, {
+                recallID: input.recallID ?? "rcl_" + ascending(),
+                fingerprint: print,
+                surface,
+                at: Date.now(),
+                hits: hits.map((hit, index) => ({
+                  id: hit.id,
+                  scope: hit.scope,
+                  rank: index + 1,
+                  score: hit.score,
+                  conflictKey: hit.conflictKey,
+                })),
+              }),
+            ),
+          ),
+        )
+      }),
     ),
+
+  // Clearing a cabinet clears what the ledger learned about it. A rollup naming ids in a scope the
+  // user just emptied is a measurement of memories that no longer exist — and on `session:<id>` it
+  // would outlive the chat the confirmation said was removed permanently.
+  clearScope: (scope) =>
+    inner.clearScope(scope).pipe(Effect.tap(() => ledgering((db) => MemoryAccessLedger.forgetScope(db, scope)))),
 })
