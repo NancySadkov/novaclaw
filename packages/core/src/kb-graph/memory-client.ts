@@ -126,6 +126,38 @@ export interface Stats {
   readonly valid: number
 }
 
+/**
+ * What `candidates` selects: a memory described by everything EXCEPT its body.
+ *
+ * 🔴 The projection carries NO long text on purpose. A table scan on the shipping engine can return
+ * an empty string for `text` while the row is intact, so a policy or a noise view that scanned for
+ * bodies would silently work with blanks. `byIds` hydrates the handful the caller actually chose.
+ */
+export interface CandidateInput {
+  readonly scopes?: readonly string[]
+  readonly kinds?: readonly MemoryKind[]
+  readonly statuses?: readonly ClaimStatus[]
+  readonly relation?: Relation
+  readonly includeInvalid?: boolean
+  /** `oldest` (the default) is what "never used, oldest first" and the prune policy both want. */
+  readonly order?: "oldest" | "newest"
+  readonly limit?: number
+}
+
+export interface CandidateRow {
+  readonly id: string
+  readonly scope: string
+  readonly kind: MemoryKind
+  readonly name: string | null
+  readonly source: string | null
+  readonly confidence: number | null
+  readonly relation: Relation
+  readonly status: ClaimStatus
+  readonly conflictKey: string | null
+  /** ISO, when the engine had one. Absent rather than faked. */
+  readonly createdAt?: string
+}
+
 export interface ListInput {
   readonly scopes?: readonly string[]
   readonly kinds?: readonly MemoryKind[]
@@ -277,6 +309,10 @@ export interface Interface {
   readonly stats: () => Effect.Effect<Stats, MemoryError>
   /** Enumerate memories (viewer/editor) — no query, newest first, filterable + paginated. */
   readonly list: (input?: ListInput) => Effect.Effect<ReadonlyArray<MemoryRow>, MemoryError>
+  /** Short rows, oldest first by default — what the pruning policy and the P3 noise views scan. */
+  readonly candidates: (input?: CandidateInput) => Effect.Effect<ReadonlyArray<CandidateRow>, MemoryError>
+  /** Full rows for ids the caller already chose, by primary key. Missing ids are SKIPPED, not faked. */
+  readonly byIds: (ids: readonly string[]) => Effect.Effect<ReadonlyArray<MemoryRow>, MemoryError>
   /** The graph slice for the visualizer: nodes + the edges among them. */
   readonly graph: (input?: GraphInput) => Effect.Effect<MemoryGraph, MemoryError>
 }
@@ -316,6 +352,8 @@ export interface Engine {
   discardLegacyGlobalExtracts(): Promise<number>
   stats(): Promise<Stats>
   list(input?: ListInput): Promise<ReadonlyArray<MemoryRow>>
+  candidates(input?: CandidateInput): Promise<ReadonlyArray<CandidateRow>>
+  byIds(ids: readonly string[]): Promise<ReadonlyArray<MemoryRow>>
   graph(input?: GraphInput): Promise<MemoryGraph>
 }
 
@@ -354,6 +392,8 @@ export const fromEngine = (engine: Engine): Interface => {
     discardLegacyGlobalExtracts: () => wrap(() => engine.discardLegacyGlobalExtracts()),
     stats: () => wrap(() => engine.stats()),
     list: (input) => wrap(() => engine.list(input)),
+    candidates: (input) => wrap(() => engine.candidates(input)),
+    byIds: (ids) => wrap(() => engine.byIds(ids)),
     graph: (input) => wrap(() => engine.graph(input)),
   }
 }
@@ -380,6 +420,8 @@ export const proxy = (get: () => Interface): Interface => ({
   discardLegacyGlobalExtracts: () => Effect.suspend(() => get().discardLegacyGlobalExtracts()),
   stats: () => Effect.suspend(() => get().stats()),
   list: (input) => Effect.suspend(() => get().list(input)),
+  candidates: (input) => Effect.suspend(() => get().candidates(input)),
+  byIds: (ids) => Effect.suspend(() => get().byIds(ids)),
   graph: (input) => Effect.suspend(() => get().graph(input)),
 })
 
@@ -411,6 +453,8 @@ export const disabled = (reason = "memory is not available"): Interface => {
     discardLegacyGlobalExtracts: fail,
     stats: fail,
     list: fail,
+    candidates: fail,
+    byIds: fail,
     graph: fail,
   }
 }
@@ -732,6 +776,35 @@ export const stub = (): Interface => {
           .slice(input?.offset ?? 0, (input?.offset ?? 0) + (input?.limit ?? 200))
           .map(stripValid),
       ),
+    // ⚠️ The double keeps INSERTION order and calls it age. It is a test double, not a second
+    // implementation of the engine's timestamps — what it must get right is the CONTRACT (short rows,
+    // oldest first, no body), so a caller written against it cannot forget to hydrate.
+    candidates: (input) =>
+      Effect.sync(() => {
+        const rows = [...mems.values()]
+          .filter((m) => (input?.includeInvalid ? true : m.valid))
+          .filter((m) => (input?.scopes ? input.scopes.includes(m.scope) : true))
+          .filter((m) => (input?.kinds ? input.kinds.includes(m.kind) : true))
+          .filter((m) => (input?.statuses ? input.statuses.includes(m.status) : true))
+          .filter((m) => (input?.relation ? m.relation === input.relation : true))
+          .map((m) => ({
+            id: m.id,
+            scope: m.scope,
+            kind: m.kind,
+            name: m.name,
+            source: m.source,
+            confidence: m.confidence,
+            relation: m.relation,
+            status: m.status,
+            conflictKey: m.conflictKey,
+          }))
+        // A Map keeps insertion order, so the natural order is already oldest-first; `newest` is that
+        // order reversed. Honoured rather than ignored, so a caller cannot pass against this double
+        // on an ordering it never actually asked the real engine for.
+        const ordered = input?.order === "newest" ? rows.toReversed() : rows
+        return ordered.slice(0, input?.limit ?? 500)
+      }),
+    byIds: (ids) => ok(ids.map((id) => mems.get(id)).flatMap((m) => (m ? [stripValid(m)] : []))),
     graph: (input) => {
       const inScope = [...mems.values()]
         .filter((m) => m.valid)

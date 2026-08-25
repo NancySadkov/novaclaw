@@ -1,6 +1,6 @@
 export * as MemoryObserved from "./memory-observed"
 
-import { Effect, Option } from "effect"
+import { Effect } from "effect"
 import { createHash } from "node:crypto"
 import { MemoryEvent } from "@novaclaw/schema/memory-event"
 import { ascending } from "@novaclaw/schema/identifier"
@@ -24,11 +24,9 @@ import { MemoryClient } from "./memory-client"
  * and the store's own result is returned untouched. This is the same stance as the client itself:
  * memory degrades, it does not take the turn down with it.
  *
- * ⚠️ **The bus is read with `serviceOption`.** Memory is reachable from environments that have no
- * `EventV2` — the `kb` tool's unit fixtures, the absorb evaluator, a bare engine harness — and a
- * hard requirement there would make instrumenting the store a breaking change for every one of
- * them. Where there is no bus there is also no viewer, so a no-op is the honest behaviour rather
- * than a swallowed error.
+ * 🔴 **The bus and the ledger are handed in at CONSTRUCTION, never read per call.** See `Deps` below
+ * for the measurement that forced this: an optional per-call service read made every event a silent
+ * no-op in the one environment that mattered most, with the whole unit suite green.
  *
  * ⚠️ **Reads that are not recalls publish nothing.** `list`, `graph`, `stats`, `neighbors` and
  * `path` are how the Memory app itself reads the store, and publishing on them would make an open
@@ -55,13 +53,33 @@ export const fingerprint = (query: string): string =>
 /** Where a recall came from, when the caller says. Unknown is honest, not a default to hide behind. */
 export type Surface = MemoryEvent.RecallSurface
 
-const publishing = (run: (events: EventV2.Interface) => Effect.Effect<unknown>) =>
-  Effect.serviceOption(EventV2.Service).pipe(
-    Effect.flatMap((maybe) =>
-      Option.isSome(maybe) ? run(maybe.value).pipe(Effect.ignore, Effect.asVoid) : Effect.void,
-    ),
-    Effect.ignore,
-  )
+/**
+ * What the observed store needs to observe WITH.
+ *
+ * 🔴 **Both fields are stated at construction, and that is the fix for a measured dead feature.**
+ * This wrapper used to read the bus per call with `Effect.serviceOption(EventV2.Service)`. Measured
+ * 2026-08-25 on a real serve against a real model: the `kb` tool's node declares no `EventV2` among
+ * its dependencies, so at the moment the tool's Effect ran the service was simply not in its
+ * environment — `serviceOption` answered `None`, every publish was a silent no-op, and an outside
+ * subscriber saw ZERO `memory.*` events across three turns in which the store wrote a claim,
+ * corrected it and recalled it. Every unit test passed, because a unit test provides the bus.
+ *
+ * That is the same shape as `MemoryAccess` on the read side, and it takes the same answer: an
+ * OPTIONAL dependency read at the call site means every call site must remember, while a required
+ * one at construction means the compiler finds them all. `memory.ts` captures both when it builds
+ * the client, which is once per instance, in a context the node graph controls.
+ *
+ * ⚠️ `ledger` is nullable but NOT optional — a caller must write `ledger: undefined` rather than
+ * leave it out. An environment with no database (a bare engine harness) is real; forgetting the
+ * ledger by omission is exactly the failure above with a different service in it.
+ */
+export interface Deps {
+  readonly events: EventV2.Interface
+  readonly ledger: Database.Interface["db"] | undefined
+}
+
+const publishing = (events: EventV2.Interface, run: (events: EventV2.Interface) => Effect.Effect<unknown>) =>
+  run(events).pipe(Effect.ignore, Effect.asVoid)
 
 /**
  * The P3 ACCESS LEDGER's write side — the same argument as the bus, one layer more durable.
@@ -70,18 +88,15 @@ const publishing = (run: (events: EventV2.Interface) => Effect.Effect<unknown>) 
  * memory answered that question" has to mean the same thing whether auto-recall, the `kb` tool or
  * the Memory app asked. A ledger fed from instrumented call sites measures the instrumentation.
  *
- * ⚠️ **The database is read with `serviceOption`, exactly like the bus.** Memory is reachable from
- * environments that have no `Database` — the `kb` tool's unit fixtures, the absorb evaluator, a bare
- * engine harness — and a hard requirement would make measuring the store a breaking change for every
- * one of them. No database ⇒ no ledger ⇒ a no-op, never a failed recall.
+ * ⚠️ **A missing database is a no-op, never a failed recall.** Environments without one are real —
+ * a bare engine harness, the absorb evaluator — and there the honest behaviour is to measure
+ * nothing. What is NOT allowed is reaching that state by forgetting to pass it, which is why `Deps`
+ * makes `ledger: undefined` something a caller has to write down.
  */
-const ledgering = (run: (db: Database.Interface["db"]) => Effect.Effect<unknown>) =>
-  Effect.serviceOption(Database.Service).pipe(
-    Effect.flatMap((maybe) =>
-      Option.isSome(maybe) ? run(maybe.value.db).pipe(Effect.ignore, Effect.asVoid) : Effect.void,
-    ),
-    Effect.ignore,
-  )
+const ledgering = (
+  db: Database.Interface["db"] | undefined,
+  run: (db: Database.Interface["db"]) => Effect.Effect<unknown>,
+) => (db === undefined ? Effect.void : run(db).pipe(Effect.ignore, Effect.asVoid))
 
 /**
  * Wrap a client so every lifecycle-changing operation announces itself.
@@ -89,13 +104,13 @@ const ledgering = (run: (db: Database.Interface["db"]) => Effect.Effect<unknown>
  * The returned interface is behaviourally identical to `inner` — same results, same errors, same
  * ordering. Only the observations are new.
  */
-export const observed = (inner: MemoryClient.Interface): MemoryClient.Interface => ({
+export const observed = (inner: MemoryClient.Interface, deps: Deps): MemoryClient.Interface => ({
   ...inner,
 
   addMemory: (input) =>
     inner.addMemory(input).pipe(
       Effect.tap(() =>
-        publishing((events) =>
+        publishing(deps.events, (events) =>
           events.publish(MemoryEvent.ItemRecorded, {
             id: input.id,
             scope: input.scope,
@@ -114,7 +129,7 @@ export const observed = (inner: MemoryClient.Interface): MemoryClient.Interface 
         // change nothing too, but the overlay still wants it: "Nova already knew that" is the
         // answer to a question a person watching a write actually asks.
         result.ok && result.id !== undefined
-          ? publishing((events) =>
+          ? publishing(deps.events, (events) =>
               events.publish(MemoryEvent.ClaimRecorded, {
                 id: result.id!,
                 scope: input.scope,
@@ -143,7 +158,9 @@ export const observed = (inner: MemoryClient.Interface): MemoryClient.Interface 
        */
       Effect.tap((result) =>
         result.ok && result.superseded.length > 0
-          ? ledgering((db) => MemoryAccessLedger.markCorrected(db, { ids: result.superseded, at: Date.now() }))
+          ? ledgering(deps.ledger, (db) =>
+              MemoryAccessLedger.markCorrected(db, { ids: result.superseded, at: Date.now() }),
+            )
           : Effect.void,
       ),
     ),
@@ -152,7 +169,7 @@ export const observed = (inner: MemoryClient.Interface): MemoryClient.Interface 
     inner.setClaimStatus(id, status, access).pipe(
       Effect.tap((changed) =>
         changed
-          ? publishing((events) =>
+          ? publishing(deps.events, (events) =>
               events.publish(MemoryEvent.ClaimStatusChanged, {
                 id,
                 status,
@@ -173,7 +190,9 @@ export const observed = (inner: MemoryClient.Interface): MemoryClient.Interface 
     inner
       .invalidate(id, access, at)
       .pipe(
-        Effect.tap(() => publishing((events) => events.publish(MemoryEvent.Forgotten, { id, mode: "invalidate" }))),
+        Effect.tap(() =>
+          publishing(deps.events, (events) => events.publish(MemoryEvent.Forgotten, { id, mode: "invalidate" })),
+        ),
       ),
 
   // ⚠️ `purge` exists for SECRETS, so the ledger row goes with the memory. Holding an id and a query
@@ -181,8 +200,10 @@ export const observed = (inner: MemoryClient.Interface): MemoryClient.Interface 
   // acceptable one. `invalidate` deliberately keeps its rows: the memory is still there.
   purge: (id, access) =>
     inner.purge(id, access).pipe(
-      Effect.tap(() => publishing((events) => events.publish(MemoryEvent.Forgotten, { id, mode: "purge" }))),
-      Effect.tap(() => ledgering((db) => MemoryAccessLedger.forget(db, [id]))),
+      Effect.tap(() =>
+        publishing(deps.events, (events) => events.publish(MemoryEvent.Forgotten, { id, mode: "purge" })),
+      ),
+      Effect.tap(() => ledgering(deps.ledger, (db) => MemoryAccessLedger.forget(db, [id]))),
     ),
 
   search: (input) =>
@@ -190,7 +211,7 @@ export const observed = (inner: MemoryClient.Interface): MemoryClient.Interface 
       Effect.tap((hits) => {
         const print = fingerprint(input.query ?? "")
         const surface = input.surface ?? "unknown"
-        return publishing((events) =>
+        return publishing(deps.events, (events) =>
           events.publish(MemoryEvent.Recalled, {
             fingerprint: print,
             surface,
@@ -200,7 +221,7 @@ export const observed = (inner: MemoryClient.Interface): MemoryClient.Interface 
           }),
         ).pipe(
           Effect.andThen(
-            ledgering((db) =>
+            ledgering(deps.ledger, (db) =>
               MemoryAccessLedger.record(db, {
                 recallID: input.recallID ?? "rcl_" + ascending(),
                 fingerprint: print,
@@ -224,5 +245,7 @@ export const observed = (inner: MemoryClient.Interface): MemoryClient.Interface 
   // user just emptied is a measurement of memories that no longer exist — and on `session:<id>` it
   // would outlive the chat the confirmation said was removed permanently.
   clearScope: (scope) =>
-    inner.clearScope(scope).pipe(Effect.tap(() => ledgering((db) => MemoryAccessLedger.forgetScope(db, scope)))),
+    inner
+      .clearScope(scope)
+      .pipe(Effect.tap(() => ledgering(deps.ledger, (db) => MemoryAccessLedger.forgetScope(db, scope)))),
 })

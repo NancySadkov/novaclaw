@@ -37,6 +37,20 @@ const SCOPE = "session:ses_observed"
 const access = MemoryAccess.of([SCOPE])
 
 /**
+ * Build the observed store the way the instance does: the bus and the ledger handed in ONCE.
+ *
+ * ⚠️ They used to be read per call with `serviceOption`, and this file passed either way — which is
+ * exactly why it could not see that the `kb` tool's environment has no `EventV2` in it and every
+ * event in the product was a silent no-op. Constructing it the way `memory.ts` does is what keeps
+ * this file honest about the shape being shipped.
+ */
+const observing = Effect.gen(function* () {
+  const events = yield* EventV2.Service
+  const ledger = (yield* Database.Service).db
+  return MemoryObserved.observed(MemoryClient.stub(), { events, ledger })
+})
+
+/**
  * Collect the memory events published while `body` runs.
  *
  * ⚠️ **`listen`, not a stream take.** A `Stream.take(n)` collector cannot distinguish "no events"
@@ -45,7 +59,7 @@ const access = MemoryAccess.of([SCOPE])
  * event it caused has already been recorded and the assertion is about a settled array. A test whose
  * negative case hangs is a test you cannot A/B, which is the same as a test you cannot trust.
  */
-const watching = <A>(body: Effect.Effect<A>) =>
+const watching = <A, E, R>(body: Effect.Effect<A, E, R>) =>
   Effect.gen(function* () {
     const events = yield* EventV2.Service
     const seen: { type: string; data: unknown }[] = []
@@ -61,8 +75,9 @@ const watching = <A>(body: Effect.Effect<A>) =>
 describe("the observed memory store", () => {
   it.effect("a claim, its correction and the retirement it causes all reach the bus", () =>
     Effect.gen(function* () {
-      const store = MemoryObserved.observed(MemoryClient.stub())
-      const { result, seen } = yield* watching(Effect.gen(function* () {
+      const store = yield* observing
+      const { result, seen } = yield* watching(
+        Effect.gen(function* () {
           yield* store.addClaim(
             { scope: SCOPE, statement: "Ann works at Initech", subject: "Ann", predicate: "employer" },
             access,
@@ -91,8 +106,9 @@ describe("the observed memory store", () => {
 
   it.effect("a recall announces its hits in rank order, with a fingerprint and never the query", () =>
     Effect.gen(function* () {
-      const store = MemoryObserved.observed(MemoryClient.stub())
-      const { seen } = yield* watching(Effect.gen(function* () {
+      const store = yield* observing
+      const { seen } = yield* watching(
+        Effect.gen(function* () {
           yield* store.addMemory({ id: "mem_a", kind: "episode", text: "the harbour at dawn", scope: SCOPE })
           yield* store.addMemory({ id: "mem_b", kind: "episode", text: "the harbour at dusk", scope: SCOPE })
           return yield* store.search({ query: "Harbour At", scopes: [SCOPE], surface: "auto-recall" })
@@ -123,8 +139,9 @@ describe("the observed memory store", () => {
 
   it.effect("a write the store REFUSES announces nothing, while the accepted one beside it does", () =>
     Effect.gen(function* () {
-      const store = MemoryObserved.observed(MemoryClient.stub())
-      const { result, seen } = yield* watching(Effect.gen(function* () {
+      const store = yield* observing
+      const { result, seen } = yield* watching(
+        Effect.gen(function* () {
           // Out of this caller's reach: the lifecycle refuses it rather than retiring a stranger's
           // current answer. Nothing changed, so nothing may be announced.
           const refused = yield* store.addClaim(
@@ -147,8 +164,9 @@ describe("the observed memory store", () => {
 
   it.effect("reading the store the way the Memory app does publishes nothing", () =>
     Effect.gen(function* () {
-      const store = MemoryObserved.observed(MemoryClient.stub())
-      const { seen } = yield* watching(Effect.gen(function* () {
+      const store = yield* observing
+      const { seen } = yield* watching(
+        Effect.gen(function* () {
           yield* store.list({ scopes: [SCOPE] })
           yield* store.graph({ scopes: [SCOPE] })
           yield* store.stats()
@@ -161,14 +179,20 @@ describe("the observed memory store", () => {
     }),
   )
 
-  test("without a bus in the environment the store still works", async () => {
-    // Memory is reachable from environments that have no EventV2 — the `kb` tool's unit fixtures,
-    // the absorb evaluator, a bare engine harness. Instrumenting the store must not make the bus a
-    // hard dependency there, so this one runs with NO layer at all.
-    const store = MemoryObserved.observed(MemoryClient.stub())
-    const result = await Effect.runPromise(
-      store.addClaim({ scope: SCOPE, statement: "still works", subject: "it", predicate: "status" }, access),
-    )
-    expect(result.ok).toBe(true)
-  })
+  it.effect("with no ledger the store still works, and still announces itself", () =>
+    Effect.gen(function* () {
+      // Environments without a database are real: a bare engine harness, the absorb evaluator. What
+      // changed is that `ledger: undefined` is now something a caller has to TYPE, so the state
+      // cannot be arrived at by forgetting — which is the failure mode that made every event in the
+      // product a silent no-op. The bus stays required, because there is no environment in which
+      // losing it quietly is the right answer.
+      const events = yield* EventV2.Service
+      const store = MemoryObserved.observed(MemoryClient.stub(), { events, ledger: undefined })
+      const { result, seen } = yield* watching(
+        store.addClaim({ scope: SCOPE, statement: "still works", subject: "it", predicate: "status" }, access),
+      )
+      expect(result.ok).toBe(true)
+      expect(seen.map((event) => event.type)).toEqual(["memory.claim.recorded"])
+    }),
+  )
 })

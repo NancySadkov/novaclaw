@@ -1091,6 +1091,17 @@ export const EVENTS = {
     content: "none",
     file: "packages/server/src/handlers/memory.ts",
   },
+  "kb.memory.forget.done": {
+    level: "info",
+    message: "forgot the least valuable staged memories in a scope",
+    attributes: {
+      "memory.scope": "id",
+      "memory.forgotten": "count",
+      "memory.protected": "count",
+    },
+    content: "none",
+    file: "packages/core/src/kb-graph/memory.ts",
+  },
   "kb.memory.legacy.discarded": {
     level: "warn",
     message: "discarded pre-roster memories that had leaked into the shared pile",

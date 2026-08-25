@@ -5,10 +5,14 @@ import { Duration, Effect, Layer } from "effect"
 import { makeGlobalNode } from "../effect/app-node"
 import { Capability } from "../effect/capability"
 import { LayerNode } from "../effect/layer-node"
+import { Database } from "../database/database"
+import { EventV2 } from "../event"
 import { Flag } from "../flag/flag"
 import { Global } from "../global"
 import { Log } from "@novaclaw/schema/log"
+import { MemoryAccessLedger } from "./access-ledger"
 import { KbEmbedder } from "./embedder"
+import { MemoryPrunePolicy } from "./prune-policy"
 import { MemoryClient } from "./memory-client"
 import { MemoryObserved } from "./memory-observed"
 import { MemorySetting } from "./memory-setting"
@@ -61,13 +65,40 @@ export const configFromFlags = (): MemoryConfig => ({
 
 /** Build the memory layer from an explicit config. The WASM engine opens on first use; the finalizer
  * flushes + closes it on instance shutdown. Disabled / open-failure never prevents instance boot. */
-export const layerFromConfig = (cfg: MemoryConfig): Layer.Layer<MemoryClient.Service> =>
+export const layerFromConfig = (
+  cfg: MemoryConfig,
+): Layer.Layer<MemoryClient.Service, never, EventV2.Service | Database.Service> =>
   Layer.effect(
     MemoryClient.Service,
     Effect.gen(function* () {
+      /**
+       * 🔴 THE BUS AND THE LEDGER ARE CAPTURED HERE, ONCE, AND THE OBSERVED CLIENT IS WHAT THIS
+       * LAYER PROVIDES.
+       *
+       * They used to be read per call inside `MemoryObserved`, with `serviceOption`. Measured
+       * 2026-08-25 on a real serve against a real model: the `kb` tool's node does not declare
+       * `EventV2`, so that read answered `None` and every `memory.*` event was a silent no-op — an
+       * outside subscriber saw nothing across three turns in which the store wrote a claim,
+       * corrected it and recalled it, with the whole unit suite green. Capturing at layer build puts
+       * the dependency where the node graph can guarantee it (`serviceNode`'s `deps`) and where the
+       * compiler enforces it, instead of where each caller has to have remembered it.
+       *
+       * ⚠️ **And it moves observation off `Memory.client`.** Every consumer resolves
+       * `MemoryClient.Service`, so observing what this layer PROVIDES means a caller cannot obtain
+       * an unobserved store at all — where before it merely had to remember to call the right
+       * helper.
+       */
+      const events = yield* EventV2.Service
+      const ledger = (yield* Database.Service).db
       if (!cfg.enabled) {
         currentRuntimeStatus = { stage: "disabled" }
-        return MemoryClient.disabled("memory is disabled (NOVACLAW_KB_MEMORY off)")
+        // A disabled client fails every operation, so there is nothing for the wrapper to observe —
+        // but it is wrapped anyway, because "which client did I get" must never change the shape of
+        // what a caller holds.
+        return MemoryObserved.observed(MemoryClient.disabled("memory is disabled (NOVACLAW_KB_MEMORY off)"), {
+          events,
+          ledger,
+        })
       }
       const dbDir = cfg.dbDir ?? join(Global.Path.data, "memory", "graph")
       currentRuntimeStatus = { stage: "not-loaded" }
@@ -130,6 +161,8 @@ export const layerFromConfig = (cfg: MemoryConfig): Layer.Layer<MemoryClient.Ser
         discardLegacyGlobalExtracts: () => client((live) => live.discardLegacyGlobalExtracts()),
         stats: () => client((live) => live.stats()),
         list: (input) => client((live) => live.list(input)),
+        candidates: (input) => client((live) => live.candidates(input)),
+        byIds: (ids) => client((live) => live.byIds(ids)),
         graph: (input) => client((live) => live.graph(input)),
       }
       // Background consolidation (§1.3.4): periodically promote this instance's session memories to
@@ -165,6 +198,15 @@ export const layerFromConfig = (cfg: MemoryConfig): Layer.Layer<MemoryClient.Ser
         }),
       )
       const consolidateEvery = Duration.millis(cfg.consolidateEveryMs ?? 5 * 60_000)
+      /**
+       * The instance database, when this instance has one.
+       *
+       * 🔴 It is what makes the forgetting pass read USEFULNESS rather than only age (`prune-policy.ts`).
+       * `Memory.serviceNode` declares `Database.node` as a dependency so it is actually here; the
+       * `serviceOption` is not a hedge against that wiring but against the environments that build the
+       * memory layer alone — the absorb evaluator, a bare engine harness — where the honest behaviour
+       * is the pre-ledger policy rather than a boot failure.
+       */
       yield* Effect.forkScoped(
         Effect.gen(function* () {
           const stagedCap = cfg.globalStagedCap ?? DEFAULT_GLOBAL_STAGED_CAP
@@ -176,7 +218,7 @@ export const layerFromConfig = (cfg: MemoryConfig): Layer.Layer<MemoryClient.Ser
               // Consolidate session → global, then forget/decay: bound unbounded global staged growth
               // (§1.3.5/§4.7) — drop the lowest-importance staged over the cap; core is never touched.
               yield* Effect.tryPromise(() => live.consolidate()).pipe(Effect.ignore)
-              yield* Effect.tryPromise(() => live.prune({ scope: "global", maxStaged: stagedCap })).pipe(Effect.ignore)
+              yield* forget(live, ledger, "global", stagedCap)
               // 🔴 …AND EVERY COLLEAGUE'S CABINET, each capped on its own.
               //
               // Until 2026-08-22 auto-extracted facts were written to `session:<id>` and this pass
@@ -191,7 +233,7 @@ export const layerFromConfig = (cfg: MemoryConfig): Layer.Layer<MemoryClient.Ser
               for (const scope of yield* Effect.tryPromise(() => live.stagedScopes("agent:")).pipe(
                 Effect.orElseSucceed(() => [] as string[]),
               ))
-                yield* Effect.tryPromise(() => live.prune({ scope, maxStaged: stagedCap })).pipe(Effect.ignore)
+                yield* forget(live, ledger, scope, stagedCap)
               // Embed drain: attach vectors to memories stored BEFORE a device was configured (or while
               // it was unreachable), so the vector leg covers the WHOLE graph rather than only new
               // writes — otherwise an instance with history stays effectively keyword-only. Bounded per
@@ -213,15 +255,73 @@ export const layerFromConfig = (cfg: MemoryConfig): Layer.Layer<MemoryClient.Ser
       )
       // Flush + close the engine on instance shutdown (best-effort; the snapshot persists the graph).
       yield* Effect.addFinalizer(() => Effect.promise(async () => engine && (await engine.close())))
-      return lazyClient
+      return MemoryObserved.observed(lazyClient, { events, ledger })
     }),
   )
+
+/**
+ * FORGETTING, with the access ledger in the loop.
+ *
+ * 🔴 **What changed and why it matters.** The engine's own `prune` tiers by `source` and then falls
+ * through to `t_created`, because when it was written no other column had any spread in it — so in
+ * practice a scope over its cap forgot its OLDEST rows. That is the naive policy the forgetting design
+ * exists to avoid: it drops the fact recall reaches for every week and keeps the passage nobody has
+ * ever retrieved. `prune-policy.ts` holds the replacement and the reasoning; this is the wiring.
+ *
+ * ⚠️ **Three cheap steps, in this order, because the first two must not run when there is nothing to
+ * do.** A count (one aggregate), then a bounded window of SHORT candidate rows, then the ledger's
+ * rollup for exactly those ids. A scope inside its cap costs one count and nothing else, which is the
+ * common case on every pass.
+ *
+ * ⚠️ **The window is oldest-first and that IS a bound, not a policy.** The pass needs at least
+ * `excess` prunable rows to choose among; it takes them from the old end because that is where stale
+ * ones concentrate, and then REORDERS inside the window on provenance, lifecycle, recency and
+ * usefulness. The cost of the bound is real and worth naming: a young worthless row can outlive an old
+ * valuable one until the window grows to reach it. It converges — the pass runs every five minutes and
+ * the window is four times the excess — and the alternative is scanning a whole cabinet every pass.
+ *
+ * ⚠️ **`WasmMemory.prune` is now unreachable from production and stays as it is.** It is the engine's
+ * own last-resort bound, still exercised by the engine's tests; what changed is who decides, not what
+ * the engine is capable of.
+ */
+const forget = (live: WasmMemory, db: Database.Interface["db"], scope: string, cap: number): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    const count = yield* Effect.tryPromise(() => live.stagedCount(scope)).pipe(Effect.orElseSucceed(() => 0))
+    const excess = count - Math.max(0, Math.floor(cap))
+    if (excess <= 0) return
+    const candidates = yield* Effect.tryPromise(() =>
+      live.candidates({
+        scopes: [scope],
+        relation: "staged",
+        order: "oldest",
+        limit: Math.min(Math.max(excess * 4, 500), 20000),
+      }),
+    ).pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<MemoryClient.CandidateRow>))
+    if (candidates.length === 0) return
+    const usage = yield* MemoryAccessLedger.usageFor(
+      db,
+      candidates.map((row) => row.id),
+    )
+    const choice = MemoryPrunePolicy.choose({ candidates, usage, excess, now: Date.now() })
+    for (const id of choice.victims)
+      yield* Effect.tryPromise(() => live.invalidate(id, undefined, { scopes: [scope] })).pipe(Effect.ignore)
+    if (choice.victims.length > 0)
+      yield* Log.event("kb.memory.forget.done", {
+        "memory.scope": scope,
+        "memory.forgotten": choice.victims.length,
+        "memory.protected": choice.protectedCount,
+      })
+  })
 
 /** The production layer: reads the memory config from env flags. */
 export const layer = layerFromConfig(configFromFlags())
 
 /** The real service node stays replaceable so forced-failure tests can poison only the deferred work. */
-export const serviceNode = makeGlobalNode({ service: MemoryClient.Service, layer, deps: [] })
+export const serviceNode = makeGlobalNode({
+  service: MemoryClient.Service,
+  layer,
+  deps: [Database.node, EventV2.node],
+})
 
 /**
  * Memory is the first client of the generic lazy-capability graph seam. Building the instance now
@@ -238,19 +338,12 @@ export const node = LayerNode.capability(serviceNode, {
 /**
  * Preserve the MemoryClient operation contract while deferring capability acquisition per call.
  *
- * 🔴 **This is where the store becomes observable**, because it is the ONE funnel every production
- * caller takes: the `kb` tool, auto-recall in the runner, auto-extraction, the memory HTTP routes
- * and an officer's retirement all obtain their client here. `MemoryObserved.observed` wraps the
- * result, so a lifecycle change announces itself identically whoever caused it — which is the
- * difference between a Memory app that shows the store and one that shows the surfaces somebody
- * remembered to instrument. See `memory-observed.ts` for why it publishes on writes and recalls
- * and on nothing the viewer itself does.
+ * ⚠️ **Observation no longer lives here.** It used to: this helper wrapped the funnel in
+ * `MemoryObserved.observed`, which meant a caller could obtain an unobserved store simply by not
+ * using it. `layerFromConfig` now observes what it PROVIDES, so every consumer of
+ * `MemoryClient.Service` gets the observed store and this is once again nothing but the deferral.
  */
-export const client = (capability: Capability.Capability<MemoryClient.Interface>): MemoryClient.Interface =>
-  MemoryObserved.observed(unobserved(capability))
-
-/** The bare funnel. Exported for tests that need to prove `observed` is what adds the events. */
-export const unobserved = (capability: Capability.Capability<MemoryClient.Interface>): MemoryClient.Interface => {
+export const client = (capability: Capability.Capability<MemoryClient.Interface>): MemoryClient.Interface => {
   const withClient = <A>(
     run: (memory: MemoryClient.Interface) => Effect.Effect<A, MemoryClient.MemoryError>,
   ): Effect.Effect<A, MemoryClient.MemoryError> =>
@@ -277,6 +370,8 @@ export const unobserved = (capability: Capability.Capability<MemoryClient.Interf
     discardLegacyGlobalExtracts: () => withClient((memory) => memory.discardLegacyGlobalExtracts()),
     stats: () => withClient((memory) => memory.stats()),
     list: (input) => withClient((memory) => memory.list(input)),
+    candidates: (input) => withClient((memory) => memory.candidates(input)),
+    byIds: (ids) => withClient((memory) => memory.byIds(ids)),
     graph: (input) => withClient((memory) => memory.graph(input)),
   }
 }
