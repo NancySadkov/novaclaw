@@ -1,5 +1,6 @@
 import { KbAbsorb } from "@novaclaw/core/kb-graph/absorb"
 import { KbChunk } from "@novaclaw/core/kb-graph/chunk"
+import * as KbIngest from "@novaclaw/core/kb-graph/ingest-plan"
 import { LLMClient } from "@novaclaw/llm"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { llmClient } from "@novaclaw/core/effect/app-node-platform"
@@ -162,63 +163,27 @@ export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (h
                 message: `Document is too large to ingest in one request (${MAX_INGEST_CHARS} character limit). Split it and ingest the parts.`,
               }),
             )
-          const label = ctx.payload.name.trim() || "document"
-          const scope = ctx.payload.scope?.trim() || "global"
-          const passages = KbChunk.chunk(KbChunk.stripGutenberg(ctx.payload.text))
+          // The write PLAN, in the one order that satisfies the endpoint rule — `kb-graph/ingest-plan.ts`
+          // holds it, and the reasoning, and is exercised against a real engine rather than grepped.
+          const plan = KbIngest.planIngest({
+            name: ctx.payload.name,
+            text: ctx.payload.text,
+            ...(ctx.payload.scope === undefined ? {} : { scope: ctx.payload.scope }),
+          })
+          const label = plan.document.name ?? "document"
+          const scope = plan.document.scope
+          const passages = plan.passages.map((passage) => passage.text)
           // MEASURED: a duplicate id does NOT fail on the real engine — addMemory succeeds and the row
           // is deduped by primary key. So counting successful calls would report every passage as
           // "stored" on a re-ingest and tell the user we added content we did not. Count the actual
           // delta instead.
           const before = yield* memory.stats().pipe(Effect.orElseSucceed(() => ({ total: 0, valid: 0 })))
 
-          /**
-           * The document itself is a THING, and every passage is part of it.
-           *
-           * 🔴 Measured 2026-08-12 before this existed: a real store held 280 nodes and **22 edges**,
-           * of which 202 were passages with none at all. Every passage carried `name: <document
-           * label>`, so 280 named nodes shared only 63 distinct names ("EDDS rules" ×102) — a wall of
-           * identical marks with nothing joining them. Writing the document as an entity and hanging
-           * its passages off it turns that wall into one navigable star per document, at zero model
-           * cost, because the association was already in the data and was simply discarded.
-           *
-           * ⚠️ `KbChunk.entityID` is the SAME function conversational extraction uses. That is the
-           * point: a thing mentioned in a chat and a document of the same name land on ONE node. Two
-           * formulas would mint two, which is the fragmentation the entity layer exists to remove.
-           *
-           * ⚠️ This does NOT extract entities from passage CONTENT — a monster manual still has no
-           * `Siege Crab` node. That needs a model pass per chunk and is the open half of this defect;
-           * do not read a connected graph here as evidence that absorption works.
-           */
-          const documentID = KbChunk.entityID(scope, label)
-          yield* memory
-            .addMemory({
-              id: documentID,
-              kind: "entity",
-              text: label,
-              name: label,
-              scope,
-              source: "ingest",
-              relation: "staged",
-            })
-            .pipe(Effect.ignore)
-
-          for (const text of passages) {
-            const id = KbChunk.passageID(label, text)
-            yield* memory
-              .addMemory({
-                id,
-                kind: "passage",
-                text,
-                name: label,
-                scope,
-                source: "ingest",
-                relation: "staged",
-              })
-              .pipe(Effect.ignore)
-            // After the node, never before: an edge needs both endpoints to exist.
-            yield* memory
-              .addEdge({ from: id, to: documentID, type: "part_of", scope, source: "ingest" })
-              .pipe(Effect.ignore)
+          for (const step of plan.steps) {
+            // ⚠️ `Effect.ignore` per step, as before: one unwritable row must not abandon the rest of
+            // a document the user already handed us.
+            if (step.kind === "memory") yield* memory.addMemory(step.input).pipe(Effect.ignore)
+            else yield* memory.addEdge(step.input).pipe(Effect.ignore)
           }
           const after = yield* memory.stats().pipe(Effect.orElseSucceed(() => ({ total: 0, valid: 0 })))
 
