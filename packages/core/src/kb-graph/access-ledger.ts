@@ -312,6 +312,21 @@ export const correctionProne = (
       Effect.orElseSucceed(() => [] as ReadonlyArray<CorrectionGroup>),
     )
 
+/** The rollups filed under a set of identities — what the review list shows once a group is opened. */
+export const usageForConflictKeys = (db: Db, keys: ReadonlyArray<string>): Effect.Effect<ReadonlyArray<Usage>> =>
+  Effect.suspend(() => {
+    if (keys.length === 0) return Effect.succeed([] as ReadonlyArray<Usage>)
+    return db
+      .select()
+      .from(MemoryUsageTable)
+      .where(inArray(MemoryUsageTable.conflict_key, keys))
+      .all()
+      .pipe(
+        Effect.map((rows) => rows.map(toUsage)),
+        Effect.orElseSucceed(() => [] as ReadonlyArray<Usage>),
+      )
+  })
+
 export interface Access {
   readonly fingerprint: string
   readonly surface: string

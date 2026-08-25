@@ -98,10 +98,8 @@ export const recallScopes = (input: {
 /** Where a `remember` writes when the model does not say. An officer's durable facts belong to the
  *  OFFICER, not to whichever chat happened to be open — that is the whole difference between a roster
  *  and a session list. Falls back to the session when there is no agent to own it. */
-export const rememberScope = (input: {
-  readonly sessionID: string
-  readonly agentID: string | undefined
-}): string => (input.agentID !== undefined && input.agentID !== "" ? `agent:${input.agentID}` : `session:${input.sessionID}`)
+export const rememberScope = (input: { readonly sessionID: string; readonly agentID: string | undefined }): string =>
+  input.agentID !== undefined && input.agentID !== "" ? `agent:${input.agentID}` : `session:${input.sessionID}`
 
 /** Recalled facts that cite an exact filesystem target. This is the provenance gate for automatic
  * correction: a failed read may invalidate a remembered file claim only when that memory actually
@@ -115,14 +113,164 @@ export const memoriesMentioningPath = (
   return hits.filter((hit) => uniqueTargets.some((target) => mentionsExactPath(hit.text, target)))
 }
 
-/** Render recalled memories as a system-prompt block (undefined if none). Linearized; the model is
- *  told to USE it silently, not echo the list. */
-export const formatRecall = (hits: ReadonlyArray<MemoryClient.SearchHit>): string | undefined => {
-  if (hits.length === 0) return undefined
-  const lines = hits.map((hit) => `- ${hit.name ? `${hit.name}: ` : ""}${hit.text.replaceAll(/\s+/g, " ").trim()}`)
+// ── the BOUNDED CONTEXT PACK (P3) ────────────────────────────────────────────────────────────────
+
+/**
+ * How many TOKENS of recalled memory a turn may spend, by model tier.
+ *
+ * 🔴 **A count of items is not a bound on context, and that is what this replaces.** `recallBudget`
+ * caps the NUMBER of memories, so five one-line preferences and five ingested passages cost the same
+ * budget while differing by two orders of magnitude in window pressure. On the tiers this harness is
+ * built for — where the whole window is the scarce resource — that is the difference between recall
+ * helping and recall crowding out the task.
+ *
+ * ⚠️ Both bounds survive, and they bound different things: `recallBudget` sizes the CANDIDATE POOL
+ * (rerank cost, measured in latency), and this bounds what the model is actually shown (window
+ * cost). Conflating them is the mistake `recallPoolSize` already exists to avoid, one level up.
+ *
+ * The numbers are deliberately round, because the estimator below is not precise enough for them to
+ * be anything else: a micro/tiny model on a 4–8K window can spare a couple of hundred tokens of
+ * background before the task starts losing room; a full-tier model can spare an order of magnitude
+ * more without noticing.
+ */
+export const recallTokenBudget = (tier: ModelV2.Tier | undefined): number => {
+  switch (tier) {
+    case "micro":
+    case "tiny":
+      return 200
+    case "small":
+      return 400
+    default:
+      return 900
+  }
+}
+
+/**
+ * TOKENS, ESTIMATED — four characters to a token, and what this estimate's error costs.
+ *
+ * 🔴 **Deliberately not a tokenizer call.** This runs inside the user's own turn, before the request
+ * is even built, and every model this harness talks to has a different vocabulary — so a "real"
+ * count would mean either loading a per-model tokenizer on the hot path or producing a number that
+ * is precise about the wrong model. Four characters per token is the standard rough figure for
+ * English prose and it costs nothing.
+ *
+ * ⚠️ **Where it is wrong, and what that costs.** It runs LOW on code, filesystem paths, identifiers
+ * and non-Latin scripts — everything that tokenizes into many short pieces — so a pack of file paths
+ * can genuinely occupy something like 1.5–2x what this claims. The consequence is bounded and
+ * one-directional by design: this is a soft ceiling on BACKGROUND material sitting inside a window
+ * that `context-pack` bounds for real, so an underestimate spends a little more of the memory
+ * category's allowance than intended and can never overrun the request. The opposite error —
+ * overestimating and silently dropping a constraint the user relies on — is the one that would hurt,
+ * and the protected tier is what makes it impossible.
+ */
+export const estimateTokens = (text: string): number => Math.ceil(text.trim().length / 4)
+
+/**
+ * The predicates that are CONSTRAINTS: standing instructions about how to behave, not facts to know.
+ *
+ * A dropped fact makes an answer thinner. A dropped constraint makes it WRONG in a way the user
+ * already told us not to be — the wrong language, the wrong time zone, a preference they stated once
+ * and expect to hold. That asymmetry is the whole reason for a protected tier, and it is why this
+ * set is small: everything in it changes what the model DOES rather than what it knows.
+ */
+const CONSTRAINT_PREDICATES: ReadonlySet<string> = new Set(["preference", "language", "timezone"])
+
+/** Where a hit sits in the pack. Lower is admitted first, and tier 0 is never truncated. */
+export type RecallTier = 0 | 1 | 2
+
+/**
+ * ⚠️ **"High-confidence" reads the LIFECYCLE, not the `confidence` column.** Measured 2026-07-20 and
+ * still true: no writer sets `confidence` — every occurrence is `input.confidence ?? null` plumbing
+ * — so a threshold on it would protect exactly nothing while looking like it protected the right
+ * things. What the store genuinely knows is whether the harness ACCEPTED an identity: an `active`
+ * claim with a validated `{subject, predicate}` is the current answer to a question the predicate
+ * table declares to have exactly one. That is the store's own confidence signal, and unlike the
+ * column it is populated.
+ */
+export const recallTier = (hit: MemoryClient.SearchHit): RecallTier => {
+  if (hit.kind === "claim" && hit.status === "active") {
+    if (hit.predicate !== null && CONSTRAINT_PREDICATES.has(hit.predicate)) return 0
+    if (hit.subject !== null && hit.predicate !== null) return 0
+  }
+  // Evidence: the passages and sources a claim rests on. Useful, and the first thing to give up —
+  // raw source material is what the claim above it already summarises.
+  if (hit.kind === "passage" || hit.kind === "source") return 2
+  return 1
+}
+
+export interface RecallPack {
+  /** What the model is shown, in the order it was ranked. */
+  readonly shown: ReadonlyArray<MemoryClient.SearchHit>
+  /** How many ranked memories did not fit. The block SAYS this — see `formatRecall`. */
+  readonly omitted: number
+  /** Estimated tokens the shown material occupies. */
+  readonly tokens: number
+  /** How many of `shown` were admitted by the protection rather than by the budget. */
+  readonly protectedCount: number
+}
+
+const renderHit = (hit: MemoryClient.SearchHit): string =>
+  `- ${hit.name ? `${hit.name}: ` : ""}${hit.text.replaceAll(/\s+/g, " ").trim()}`
+
+/**
+ * Fill a fixed token budget: constraints and current claims first and unconditionally, then ordinary
+ * context in rank order, then evidence.
+ *
+ * 🔴 **Tier 0 is admitted BEFORE the budget is consulted, and may exceed it.** "Protected from
+ * truncation" is a promise; implementing it as "given the best weight" would leave a long enough
+ * passage able to displace a standing instruction. The pool it draws from is already bounded by `k`,
+ * so the worst case is bounded too — and the honest failure here is a slightly over-budget pack that
+ * kept the user's constraints, not an on-budget one that quietly dropped them.
+ *
+ * ⚠️ A hit that does not fit is SKIPPED, not stopped on: a long passage must not hide three short
+ * facts ranked behind it.
+ */
+export const packRecall = (hits: ReadonlyArray<MemoryClient.SearchHit>, budget: number): RecallPack => {
+  const kept = new Set<string>()
+  let tokens = 0
+  let protectedCount = 0
+  for (const hit of hits)
+    if (recallTier(hit) === 0 && !kept.has(hit.id)) {
+      kept.add(hit.id)
+      tokens += estimateTokens(renderHit(hit))
+      protectedCount += 1
+    }
+  for (const tier of [1, 2] as const)
+    for (const hit of hits) {
+      if (recallTier(hit) !== tier || kept.has(hit.id)) continue
+      const cost = estimateTokens(renderHit(hit))
+      if (tokens + cost > budget) continue
+      kept.add(hit.id)
+      tokens += cost
+    }
+  // Back into RANKED order. The packer walks by tier, but what the model reads should still be the
+  // order the reranker chose — a list that visibly jumps between priorities reads as noise.
+  const shown = hits.filter((hit) => kept.has(hit.id))
+  return { shown, omitted: hits.length - shown.length, tokens, protectedCount }
+}
+
+/**
+ * Render a bounded pack as a system-prompt block (undefined if nothing was shown). Linearized; the
+ * model is told to USE it silently, not echo the list.
+ *
+ * 🔴 **The block SAYS when material was left out**, and that sentence is load-bearing rather than
+ * polite. A model handed a silently truncated list has no way to know it is reasoning from a
+ * fragment, so it answers with the confidence of a complete recall. The harness's rule is that a
+ * model which genuinely cannot continue says so in its reply — it can only do that if it knows
+ * something is missing, and it can only ask for the rest if it knows there is a rest.
+ */
+export const formatRecall = (pack: RecallPack): string | undefined => {
+  if (pack.shown.length === 0) return undefined
+  const lines = pack.shown.map(renderHit)
+  const omission =
+    pack.omitted > 0
+      ? `\n(${pack.omitted} further relevant ${pack.omitted === 1 ? "memory" : "memories"} did not fit this ` +
+        `turn's memory budget — ask with the kb tool if you need more.)`
+      : ""
   return (
     "Relevant things you remember (from earlier in this chat and from other chats). Use them if " +
     "helpful; don't mention or repeat this list:\n" +
-    lines.join("\n")
+    lines.join("\n") +
+    omission
   )
 }

@@ -60,6 +60,96 @@ const PathResult = Schema.NullOr(Schema.Struct({ ids: Schema.Array(Schema.String
 
 const CsvOptional = Schema.optional(Schema.String) // comma-separated scopes/kinds in the query string
 
+/**
+ * THE NOISE VIEWS' wire shapes (P3).
+ *
+ * ⚠️ **Every field a handler intends to return is declared here.** An undeclared field is silently
+ * stripped on the way out and the route still answers 200 — which is how the whole claim lifecycle
+ * stayed invisible to the Memory app after P1 shipped it. These structs were checked by DRIVING the
+ * routes, not by reading the types.
+ */
+const UsageCounts = Schema.Struct({
+  /** How many times recall has RETURNED this memory. */
+  accesses: Schema.Number,
+  /** How many of those survived a turn's context budget and reached the model. */
+  uses: Schema.Number,
+  /** How many times somebody vouched for it. Non-zero = protected from pruning. */
+  useful: Schema.Number,
+  /** How many answers it gave were later superseded. */
+  corrections: Schema.Number,
+  firstAccessedAt: Schema.Number,
+  lastAccessedAt: Schema.Number,
+})
+
+/** A memory in a noise view: the row, plus the ledger's verdict on it. */
+const UsageItem = Schema.Struct({
+  ...MemoryRow.fields,
+  usage: Schema.optional(UsageCounts),
+})
+
+const NeverUsedResult = Schema.Struct({
+  items: Schema.Array(UsageItem),
+  /**
+   * How many memories the scan looked at, and whether it stopped short.
+   *
+   * 🔴 Carried for the same reason `GraphSlice` is: "twelve never-used memories came back" and
+   * "twelve never-used memories exist" look identical from outside, and a viewer without this will
+   * present a corner of the answer as the whole of it.
+   */
+  scanned: Schema.Number,
+  partial: Schema.Boolean,
+})
+
+const UsefulResult = Schema.Struct({ items: Schema.Array(UsageItem) })
+
+/** One IDENTITY whose recalled answers keep being corrected — see `access-ledger.sql.ts` for why the
+ *  unit is the question rather than the claim. */
+const CorrectionGroup = Schema.Struct({
+  conflictKey: Schema.String,
+  scope: Schema.String,
+  /** How many distinct recalled claims under this identity were later superseded. */
+  corrected: Schema.Number,
+  corrections: Schema.Number,
+  lastAccessedAt: Schema.Number,
+  /** The claims themselves, current and retired alike — the review needs the history. */
+  items: Schema.Array(UsageItem),
+})
+const CorrectionsResult = Schema.Struct({ groups: Schema.Array(CorrectionGroup) })
+
+/** One recall that returned a given memory. The query is a FINGERPRINT and never the words. */
+const AccessRow = Schema.Struct({
+  fingerprint: Schema.String,
+  surface: Schema.String,
+  rank: Schema.Number,
+  score: Schema.Number,
+  accessedAt: Schema.Number,
+  usedAt: Schema.NullOr(Schema.Number),
+  usefulAt: Schema.NullOr(Schema.Number),
+  correctedAt: Schema.NullOr(Schema.Number),
+})
+const UsageDetail = Schema.Struct({
+  usage: Schema.NullOr(UsageCounts),
+  accesses: Schema.Array(AccessRow),
+})
+
+const UsageQuery = Schema.Struct({
+  ...WorkspaceRoutingQueryFields,
+  scopes: CsvOptional,
+  limit: Schema.optional(Schema.NumberFromString),
+  /** How deep the never-used scan may go before it answers `partial`. */
+  scan: Schema.optional(Schema.NumberFromString),
+  /** How many corrected claims an identity needs before it counts as "repeatedly". Default 2. */
+  minCorrected: Schema.optional(Schema.NumberFromString),
+})
+const UsageDetailQuery = Schema.Struct({ ...WorkspaceRoutingQueryFields, id: Schema.String })
+
+const FeedbackPayload = Schema.Struct({
+  id: Schema.String,
+  /** `false` RETRACTS a vouch rather than counting a negative — the flag exists to protect, and the
+   *  only two states that matter are "somebody vouched" and "nobody did". */
+  useful: Schema.Boolean,
+})
+
 const ListQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
   scopes: CsvOptional,
@@ -212,6 +302,68 @@ export const MemoryApi = HttpApi.make("memory").add(
           "memory.ingest",
           "Ingest a document",
           "Chunk a text document into searchable passages. Idempotent: re-ingesting the same document stores nothing new. Pass `absorb: <n>` to also READ the first n passages with a model, turning them into named entities — each one costs a model call.",
+        ),
+      ),
+    )
+    .add(
+      HttpApiEndpoint.get("neverUsed", `${root}/usage/never-used`, {
+        query: UsageQuery,
+        success: described(NeverUsedResult, "Memories recall has never returned, oldest first"),
+      }).annotateMerge(
+        meta(
+          "memory.neverUsed",
+          "Never recalled",
+          "Memories no recall has ever returned, oldest first. `scanned`/`partial` say how far the scan reached — a short answer is not proof there are no more.",
+        ),
+      ),
+    )
+    .add(
+      HttpApiEndpoint.get("usefulMemories", `${root}/usage/useful`, {
+        query: UsageQuery,
+        success: described(UsefulResult, "Memories somebody vouched for — protected from pruning"),
+      }).annotateMerge(
+        meta(
+          "memory.usefulMemories",
+          "Vouched for",
+          "Memories a person marked useful. These are protected from the forgetting pass outright, not merely weighted.",
+        ),
+      ),
+    )
+    .add(
+      HttpApiEndpoint.get("correctionProne", `${root}/usage/corrections`, {
+        query: UsageQuery,
+        success: described(CorrectionsResult, "Questions whose recalled answers keep being corrected"),
+      }).annotateMerge(
+        meta(
+          "memory.correctionProne",
+          "Keeps being corrected",
+          "Grouped by claim IDENTITY, not by claim: a single claim is superseded at most once, so 'repeatedly' can only be a property of the question.",
+        ),
+      ),
+    )
+    .add(
+      HttpApiEndpoint.get("usageDetail", `${root}/usage/detail`, {
+        query: UsageDetailQuery,
+        success: described(UsageDetail, "One memory's access history — fingerprints, never the queries"),
+      }).annotateMerge(
+        meta(
+          "memory.usageDetail",
+          "Why is this here",
+          "Every recall that returned one memory: when, from which surface, at what rank, and whether it was used, vouched for or later corrected. The query is a fingerprint and never the words.",
+        ),
+      ),
+    )
+    .add(
+      HttpApiEndpoint.post("feedback", `${root}/feedback`, {
+        query: WorkspaceRoutingQuery,
+        payload: FeedbackPayload,
+        success: described(Schema.Boolean, "True on success"),
+        error: InvalidRequestError,
+      }).annotateMerge(
+        meta(
+          "memory.feedback",
+          "Mark useful",
+          "Vouch for a memory recall handed you, or retract the vouch. A vouched memory is never pruned.",
         ),
       ),
     )
