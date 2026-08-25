@@ -16,6 +16,8 @@ import { SessionMessage } from "./session/message"
 import { Prompt } from "./session/prompt"
 import { PromptInput } from "@novaclaw/schema/prompt-input"
 import { EventV2 } from "./event"
+import { Memory } from "./kb-graph/memory"
+import { SessionMemoryCleanup } from "./session/memory-cleanup"
 import { Database } from "./database/database"
 import { SessionProjector } from "./session/projector"
 import { SessionMessageTable, SessionTable } from "./session/sql"
@@ -642,6 +644,18 @@ export const removeSessionRecord = (
     const { db, events } = deps
     const row = yield* db.select().from(SessionTable).where(eq(SessionTable.id, sessionID)).get().pipe(Effect.orDie)
     if (!row) return yield* new NotFoundError({ sessionID })
+    /**
+     * 🔴 The chat's MEMORIES are a second store, and this function never reached it (NC-SEC-019). The
+     * confirmation promises the whole conversation and its history are removed permanently while every
+     * `scope: "session"` memory survived on disk.
+     *
+     * A tombstone rather than a call: the graph opens lazily and can be down, and there is no
+     * transaction spanning both stores. Writing it FIRST means a crash can leave a tombstone for a
+     * session that still exists, which `SessionMemoryCleanup.sweep` retracts by re-checking — clearing
+     * a live chat's memories is much worse than delaying a dead one's, so the ordering is chosen to
+     * fail in the recoverable direction.
+     */
+    yield* SessionMemoryCleanup.request(db, sessionID)
     if (deps.interrupt) yield* deps.interrupt(sessionID)
     // AFTER the interrupt: the interrupted turn unwinds through its own scheduler release, and
     // evicting first would only leave the dead session's ledger entry to be re-created. Each
@@ -684,6 +698,8 @@ export const layer = Layer.effect(
     const store = yield* SessionStore.Service
     const locations = yield* LocationServiceMap.Service
     const compactionRequests = yield* SessionCompactionRequest.Service
+    // The same seam `session/runner/maintenance.ts` uses to reach memory from the session side.
+    const memory = Memory.client(yield* Memory.node.service)
     // B1 — publish this instance's wake to the cycle-free producers of session work. `spawn` runs
     // inside a LOCATION graph and cannot reach `SessionExecution` (unbound + it depends on
     // `LocationServiceMap`, which builds that very graph — see run-coordinator.ts's wake-seam
@@ -732,6 +748,20 @@ export const layer = Layer.effect(
           evict: (id) => scheduler.evict(id),
         },
         sessionID,
+      ).pipe(
+        /**
+         * …then discharge the memory tombstones the removal just wrote.
+         *
+         * ⚠️ AFTER the removal, and best-effort. The durable row is what guarantees the cleanup
+         * happens; this is only what makes it happen NOW rather than at the next boot. A sweep that
+         * failed here must not fail the deletion, which the user has already been told succeeded —
+         * the tombstone survives and the next sweep takes it.
+         *
+         * ⚠️ `Memory.client(...)` is a PROXY over a lazily-opened engine, so this neither opens the
+         * store nor makes memory a hard dependency of deleting a chat. With memory disabled the sweep
+         * defers every row forever, which is correct: there is no store holding anything to clear.
+         */
+        Effect.tap(() => SessionMemoryCleanup.sweep(db, memory).pipe(Effect.ignore)),
       )
 
     const result = Service.of({
@@ -1423,5 +1453,6 @@ export const node = makeGlobalNode({
     LocationServiceMap.node,
     SessionProjector.node,
     SessionCompactionRequest.node,
+    Memory.node,
   ],
 })
