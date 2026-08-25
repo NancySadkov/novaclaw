@@ -146,11 +146,28 @@ export const markUsed = (
  * `useful: false` RETRACTS rather than counting a negative — the column protects a memory from
  * pruning, so the only two states that matter are "somebody vouched for this" and "nobody did".
  */
-export const feedback = (db: Db, input: { readonly id: string; readonly useful: boolean; readonly at: number }) =>
+export const feedback = (
+  db: Db,
+  input: { readonly id: string; readonly useful: boolean; readonly at: number; readonly scope?: string },
+) =>
   db
-    .update(MemoryUsageTable)
-    .set({ useful: input.useful ? sql`${MemoryUsageTable.useful} + 1` : sql`0` })
-    .where(eq(MemoryUsageTable.memory_id, input.id))
+    // ⚠️ An UPSERT, because a person can vouch for a memory recall has never returned — that is
+    // exactly the case worth protecting, and an `UPDATE` would have touched nothing and answered
+    // success. The inserted row carries `accesses: 0`, which is why `everAccessed` reads the COUNT
+    // rather than the row's existence: a vouch must not make a never-recalled memory look recalled.
+    .insert(MemoryUsageTable)
+    .values({
+      memory_id: input.id,
+      scope: input.scope ?? "",
+      first_accessed_at: input.at,
+      last_accessed_at: input.at,
+      accesses: 0,
+      useful: input.useful ? 1 : 0,
+    })
+    .onConflictDoUpdate({
+      target: MemoryUsageTable.memory_id,
+      set: { useful: input.useful ? sql`${MemoryUsageTable.useful} + 1` : sql`0` },
+    })
     .run()
     .pipe(
       Effect.flatMap(() =>
@@ -247,15 +264,20 @@ export const usefulMemories = (db: Db, limit = 200): Effect.Effect<ReadonlyArray
 export const everAccessed = (db: Db, ids: ReadonlyArray<string>): Effect.Effect<ReadonlySet<string>> =>
   Effect.suspend(() => {
     if (ids.length === 0) return Effect.succeed(new Set<string>())
-    return db
-      .select({ id: MemoryUsageTable.memory_id })
-      .from(MemoryUsageTable)
-      .where(inArray(MemoryUsageTable.memory_id, ids))
-      .all()
-      .pipe(
-        Effect.map((rows) => new Set(rows.map((row) => row.id))),
-        Effect.orElseSucceed(() => new Set<string>()),
-      )
+    return (
+      db
+        .select({ id: MemoryUsageTable.memory_id })
+        .from(MemoryUsageTable)
+        // 🔴 `accesses > 0`, not merely "a row exists". A vouch inserts a row for a memory recall has
+        // never returned, and treating that as an access would quietly remove it from the never-used
+        // list — turning a person's judgement into a fabricated retrieval.
+        .where(and(inArray(MemoryUsageTable.memory_id, ids), sql`${MemoryUsageTable.accesses} > 0`))
+        .all()
+        .pipe(
+          Effect.map((rows) => new Set(rows.map((row) => row.id))),
+          Effect.orElseSucceed(() => new Set<string>()),
+        )
+    )
   })
 
 export interface CorrectionGroup {
@@ -406,6 +428,16 @@ export const forgetScope = (db: Db, scope: string) =>
     .run()
     .pipe(
       Effect.flatMap(() => db.delete(MemoryAccessTable).where(eq(MemoryAccessTable.scope, scope)).run()),
+      degradeWrite,
+    )
+
+/** Every memory in every scope is gone; the measurement of them goes too. */
+export const forgetEverything = (db: Db) =>
+  db
+    .delete(MemoryUsageTable)
+    .run()
+    .pipe(
+      Effect.flatMap(() => db.delete(MemoryAccessTable).run()),
       degradeWrite,
     )
 

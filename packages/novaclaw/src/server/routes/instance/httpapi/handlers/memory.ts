@@ -279,14 +279,12 @@ export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (h
                   // model, so it is fast or it is stuck. Unbounded, a stuck resolve makes the whole
                   // detached pass vanish silently — which is exactly how this failed on 2026-08-12:
                   // zero entities, zero errors, and no way to tell it from "extracted nothing".
-                  const model = yield* models
-                    .resolveDefault()
-                    .pipe(
-                      Effect.timeoutOrElse({
-                        duration: "30 seconds",
-                        orElse: () => Effect.die("resolveDefault timed out"),
-                      }),
-                    )
+                  const model = yield* models.resolveDefault().pipe(
+                    Effect.timeoutOrElse({
+                      duration: "30 seconds",
+                      orElse: () => Effect.die("resolveDefault timed out"),
+                    }),
+                  )
                   const outcome = yield* KbAbsorb.absorb({
                     llm,
                     model,
@@ -400,7 +398,17 @@ export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (h
         .handle(
           "feedback",
           Effect.fn("MemoryHttpApi.feedback")(function* (ctx) {
-            yield* MemoryAccessLedger.feedback(db, { id: ctx.payload.id, useful: ctx.payload.useful, at: Date.now() })
+            // A vouch may be the FIRST thing the ledger ever hears about this memory — a person can
+            // mark one useful that recall has never returned — so the row it inserts needs a real
+            // scope, and only the store knows it. A memory that no longer exists looks up empty and
+            // files under `""`, which is honest: nothing will ever match it again.
+            const row = (yield* memory.byIds([ctx.payload.id]).pipe(Effect.orElseSucceed(() => [])))[0]
+            yield* MemoryAccessLedger.feedback(db, {
+              id: ctx.payload.id,
+              useful: ctx.payload.useful,
+              at: Date.now(),
+              ...(row === undefined ? {} : { scope: row.scope }),
+            })
             return true
           }),
         )

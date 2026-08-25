@@ -183,6 +183,35 @@ describe("MemoryAccessLedger", () => {
     }),
   )
 
+  it.effect("a vouch for a NEVER-RECALLED memory sticks, without inventing a retrieval", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      // Somebody browsing the Memory app marks a memory useful that recall has never returned. An
+      // `UPDATE` would have touched nothing and answered success — the memory would have looked
+      // protected and been pruned anyway.
+      yield* MemoryAccessLedger.feedback(db, { id: "clm_fresh", useful: true, at: 9_000, scope: "global" })
+      expect((yield* MemoryAccessLedger.usefulMemories(db)).map((row) => row.memoryID)).toEqual(["clm_fresh"])
+      // …and it is still never-used, because a judgement is not a retrieval.
+      expect([...(yield* MemoryAccessLedger.everAccessed(db, ["clm_fresh"]))]).toEqual([])
+    }),
+  )
+
+  it.effect("erasing every memory erases the measurement of them", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      yield* MemoryAccessLedger.record(db, {
+        recallID: "rcl_8",
+        fingerprint: "qf_all",
+        surface: "http",
+        at: 10_000,
+        hits: [hit("clm_1", 1), hit("clm_2", 2, { scope: "agent:nova" })],
+      })
+      yield* MemoryAccessLedger.forgetEverything(db)
+      expect((yield* MemoryAccessLedger.usageFor(db, ["clm_1", "clm_2"])).size).toBe(0)
+      expect(yield* MemoryAccessLedger.accessesFor(db, "clm_1")).toEqual([])
+    }),
+  )
+
   it.effect("`never used` is an ABSENCE — nothing writes a zero row on ingest", () =>
     Effect.gen(function* () {
       const { db } = yield* Database.Service

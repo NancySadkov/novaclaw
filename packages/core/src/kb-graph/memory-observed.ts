@@ -241,6 +241,11 @@ export const observed = (inner: MemoryClient.Interface, deps: Deps): MemoryClien
       }),
     ),
 
+  // 🔴 Erasing every memory erases the measurement of them. A rollup naming ids that no longer exist
+  // is a "never used" list built out of ghosts.
+  eraseAll: () =>
+    inner.eraseAll().pipe(Effect.tap(() => ledgering(deps.ledger, (db) => MemoryAccessLedger.forgetEverything(db)))),
+
   // Clearing a cabinet clears what the ledger learned about it. A rollup naming ids in a scope the
   // user just emptied is a measurement of memories that no longer exist — and on `session:<id>` it
   // would outlive the chat the confirmation said was removed permanently.
