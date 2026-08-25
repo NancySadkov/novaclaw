@@ -437,18 +437,44 @@ export const layer = Layer.effectDiscard(
                   }
                   case "relate": {
                     const type = relType(input.type)
-                    return yield* memory.addEdge({ from: input.from, to: input.to, type, scope: "global" }).pipe(
-                      Effect.as({
-                        ok: true,
-                        message: `Linked ${input.from} —[${type}]→ ${input.to}.`,
-                      } satisfies Output),
-                      Effect.catch((error) =>
-                        Effect.succeed({
-                          ok: false,
-                          message: `Couldn't link those (${error.reason}). Both ids come from remember/search results (mem_…).`,
-                        } satisfies Output),
-                      ),
-                    )
+                    /**
+                     * 🔴 `scope: "global"` here WAS the bridge NC-SEC-016 crossed — every relation was
+                     * written shared, so joining a public memory to a private one made the private one
+                     * reachable from every chat, and `neighbors` then handed over its text.
+                     *
+                     * The engine now DERIVES the stored scope from the endpoints and refuses pairs
+                     * that no scope contains, so this value is advisory. What changed here is that
+                     * the refusal is REPORTED: a relation that quietly did not happen teaches a model
+                     * to believe a graph that is not there.
+                     */
+                    return yield* memory
+                      .addEdge({ from: input.from, to: input.to, type, scope: "global" }, access)
+                      .pipe(
+                        Effect.map((result) =>
+                          result.ok
+                            ? ({
+                                ok: true,
+                                message: `Linked ${input.from} —[${type}]→ ${input.to}${
+                                  result.scope === undefined || result.scope === "global"
+                                    ? ""
+                                    : ` (kept to ${result.scope}, the narrower of the two)`
+                                }.`,
+                              } satisfies Output)
+                            : ({
+                                ok: false,
+                                message:
+                                  `Couldn't link those. Either an id doesn't exist, or the two memories are ` +
+                                  `private to different places — a link between them would make one of them ` +
+                                  `visible where it isn't. Both ids come from remember/search results (mem_…).`,
+                              } satisfies Output),
+                        ),
+                        Effect.catch((error) =>
+                          Effect.succeed({
+                            ok: false,
+                            message: `Couldn't link those (${error.reason}). Both ids come from remember/search results (mem_…).`,
+                          } satisfies Output),
+                        ),
+                      )
                   }
                 }
               }),

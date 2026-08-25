@@ -6,6 +6,7 @@ import { Context, DateTime, Duration, Effect, Fiber, FiberSet, Layer, Stream } f
 import { Log } from "@novaclaw/schema/log"
 import { Database } from "../../database/database"
 import { EventV2 } from "../../event"
+import * as MemoryAccess from "../../kb-graph/memory-access"
 import { KbEmbedder } from "../../kb-graph/embedder"
 import { Memory } from "../../kb-graph/memory"
 import { MemoryClient } from "../../kb-graph/memory-client"
@@ -371,7 +372,11 @@ export const layer = Layer.effect(
             type: "mentions",
             scope,
             source: "auto-extract",
-          })
+          },
+          // SYSTEM: extraction's own bookkeeping, no session asking. The engine derives the edge's
+          // scope from its endpoints regardless, so this cannot promote visibility.
+          MemoryAccess.system(),
+          )
           .pipe(Effect.ignore) // duplicate edge = already linked; never fail the drain
       }
       // Stage 2 (KB-D (a)): link the facts we just wrote. Deliberately AFTER the node writes — an edge
@@ -441,7 +446,11 @@ export const layer = Layer.effect(
             type: link.type,
             scope,
             source: "auto-extract",
-          })
+          },
+          // SYSTEM: extraction's own bookkeeping, no session asking. The engine derives the edge's
+          // scope from its endpoints regardless, so this cannot promote visibility.
+          MemoryAccess.system(),
+          )
           .pipe(Effect.ignore) // duplicate edge = already linked; never fail the drain
       }
     })

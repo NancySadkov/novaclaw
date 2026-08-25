@@ -562,22 +562,46 @@ export class WasmMemory {
     })
   }
 
-  addEdge(input: EdgeInput): Promise<void> {
+  /**
+   * 🔴 THE EDGE TAKES THE NARROWEST ENDPOINT, and the caller's `scope` is ADVISORY.
+   *
+   * This is the bridge NC-SEC-016 crossed. The model-facing `relate` wrote every edge as `global`, so
+   * joining a shared memory to a private one made the private one reachable from every chat — and
+   * `neighbors` then handed over its text. An ordinary relation must never PROMOTE visibility;
+   * consolidation is the one deliberate promotion and it says so in its own name.
+   *
+   * Deriving it HERE rather than trusting `input.scope` is the point. A rule enforced at the call site
+   * is a rule every future call site must remember, and the one that forgets is exactly how this
+   * started. `input.scope` is still accepted so existing writers read naturally, but the stored value
+   * is computed from the endpoints.
+   *
+   * ⚠️ Two DIFFERENT private scopes are REFUSED, not narrowed. No scope contains both, so any edge
+   * between them widens one of them. `ok: false` comes back rather than a silent no-op — a relation
+   * that quietly did not happen is how a model learns to believe a graph that is not there.
+   */
+  addEdge(input: EdgeInput & { readonly scopes?: readonly string[] }): Promise<{ ok: boolean; scope?: string }> {
     return this.serialize(async () => {
-      await this.q(
+      const access = input.scopes ? `AND a.scope IN $scopes AND b.scope IN $scopes` : ``
+      const rows = await this.rows(
         `MATCH (a:Memory {id: $from}), (b:Memory {id: $to})
-         CREATE (a)-[:Rel { type: $type, scope: $scope, source: $source, confidence: $confidence,
-                            t_valid: current_timestamp(), t_created: current_timestamp() }]->(b)`,
+         WHERE (a.scope = b.scope OR a.scope = 'global' OR b.scope = 'global') ${access}
+         CREATE (a)-[:Rel { type: $type,
+                            scope: CASE WHEN a.scope = 'global' THEN b.scope ELSE a.scope END,
+                            source: $source, confidence: $confidence,
+                            t_valid: current_timestamp(), t_created: current_timestamp() }]->(b)
+         RETURN CASE WHEN a.scope = 'global' THEN b.scope ELSE a.scope END AS scope`,
         {
           from: input.from,
           to: input.to,
           type: input.type,
-          scope: input.scope,
           source: input.source ?? null,
           confidence: input.confidence ?? null,
+          ...(input.scopes ? { scopes: input.scopes } : {}),
         },
       )
       this.touch()
+      const scope = rows[0]?.scope
+      return scope === undefined || scope === null ? { ok: false } : { ok: true, scope: String(scope) }
     })
   }
 

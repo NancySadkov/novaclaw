@@ -5,6 +5,7 @@ import { LLM, LLMClient, LLMEvent, Message, SystemPart, type Model } from "@nova
 import { Log } from "@novaclaw/schema/log"
 import { Flag } from "../flag/flag"
 import { KbChunk } from "./chunk"
+import * as MemoryAccess from "./memory-access"
 import type { MemoryClient } from "./memory-client"
 import { SessionExtract } from "../session/runner/extract"
 import { ReasoningBudget } from "../session/runner/reasoning-budget"
@@ -150,7 +151,11 @@ export const writeAbsorbed = Effect.fn("KbAbsorb.writeAbsorbed")(function* (inpu
       .pipe(Effect.ignore) // duplicate id = this entity is already known
     // After the node, never before: an edge needs both endpoints to exist.
     yield* input.memory
-      .addEdge({ from: input.passageID, to: id, type: "mentions", scope: input.scope, source: "ingest" })
+      // SYSTEM: absorption runs on the instance's own behalf, joining a passage to what it says.
+      .addEdge(
+        { from: input.passageID, to: id, type: "mentions", scope: input.scope, source: "ingest" },
+        MemoryAccess.system(),
+      )
       .pipe(Effect.ignore)
   }
   return input.facts.length

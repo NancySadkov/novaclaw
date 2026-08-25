@@ -100,7 +100,7 @@ export const layerFromConfig = (cfg: MemoryConfig): Layer.Layer<MemoryClient.Ser
       const lazyClient: MemoryClient.Interface = {
         health: () => client((live) => live.health()).pipe(Effect.orElseSucceed(() => false)),
         addMemory: (input) => client((live) => live.addMemory(input)),
-        addEdge: (input) => client((live) => live.addEdge(input)),
+        addEdge: (input, access) => client((live) => live.addEdge(input, access)),
         search: (input) => client((live) => live.search(input)),
         neighbors: (id, access, opts) => client((live) => live.neighbors(id, access, opts)),
         path: (from, to, access, maxHops) => client((live) => live.path(from, to, access, maxHops)),
@@ -229,7 +229,7 @@ export const client = (capability: Capability.Capability<MemoryClient.Interface>
     health: () =>
       capability.get.pipe(Effect.flatMap((result) => (result.ok ? result.value.health() : Effect.succeed(false)))),
     addMemory: (input) => withClient((memory) => memory.addMemory(input)),
-    addEdge: (input) => withClient((memory) => memory.addEdge(input)),
+    addEdge: (input, access) => withClient((memory) => memory.addEdge(input, access)),
     search: (input) => withClient((memory) => memory.search(input)),
     neighbors: (id, access, opts) => withClient((memory) => memory.neighbors(id, access, opts)),
     path: (from, to, access, maxHops) => withClient((memory) => memory.path(from, to, access, maxHops)),

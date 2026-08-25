@@ -188,7 +188,10 @@ export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (h
             // ⚠️ `Effect.ignore` per step, as before: one unwritable row must not abandon the rest of
             // a document the user already handed us.
             if (step.kind === "memory") yield* memory.addMemory(step.input).pipe(Effect.ignore)
-            else yield* memory.addEdge(step.input).pipe(Effect.ignore)
+            // SYSTEM: the plan's own `part_of` edges, both endpoints written by the same plan in the
+            // same scope, so the engine's derivation is a no-op here — it is spelled anyway, because
+            // an argument left out is exactly what NC-SEC-016 was.
+            else yield* memory.addEdge(step.input, MemoryAccess.system()).pipe(Effect.ignore)
           }
           const after = yield* memory.stats().pipe(Effect.orElseSucceed(() => ({ total: 0, valid: 0 })))
 

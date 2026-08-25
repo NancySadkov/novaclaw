@@ -137,6 +137,99 @@ describe("…and the owner of a memory is not locked out of it", () => {
   })
 })
 
+/**
+ * ⚠️ **What is LOAD-BEARING here, and what is not** — established by A/B, not by reading the code.
+ *
+ * Reverting the derivation reddened exactly ONE of these tests: the refusal of incompatible pairs.
+ * The narrowing itself is currently UNOBSERVABLE through any traversal, because no query reads an
+ * edge's own scope — `neighbors`, `path` and `graph` all filter on NODE scopes (`m`/`n`/`a`/`b`), and
+ * given narrowest-derivation an edge's scope can never be narrower than both its endpoints anyway. So
+ * an edge-scope check would be redundant rather than a second barrier, and claiming two would be
+ * claiming a defence that does not exist.
+ *
+ * It is still worth deriving. Storing `global` on a relation between a shared memory and a private one
+ * is a FALSE RECORD — the row says the relation is shared when it is not — and this whole programme is
+ * about stored data that tells the truth. Writing it correctly now also means no migration if a
+ * traversal ever does consult it, which is the cheaper order given that rows are dropped rather than
+ * migrated.
+ */
+describe("a relation cannot PROMOTE visibility", () => {
+  /** A fresh store per test — these write edges, and a shared one would couple them by order. */
+  const withStore = async (body: (engine: WasmMemory) => Promise<void>) => {
+    const d = mkdtempSync(join(tmpdir(), "kb-rel-"))
+    const engine = await WasmMemory.open(join(d, "graph"), { dim: DIM })
+    try {
+      const add = (id: string, scope: string) => engine.addMemory({ id, kind: "entity", text: id, scope })
+      await add("pub", "global")
+      await add("pub2", "global")
+      await add("mine", "session:alice")
+      await add("theirs", "agent:lysander")
+      await body(engine)
+    } finally {
+      await engine.close()
+      rmSync(d, { recursive: true, force: true })
+    }
+  }
+
+  test("shared joined to private is RECORDED at the private scope, whatever the caller asked for", async () => {
+    // `scope: "global"` is what the `kb` tool passed for every relation. The stored row now says what
+    // is true. ⚠️ The traversal assertions below hold because of the NODE checks, not this one — they
+    // are here as the control proving the derivation broke nothing, not as evidence that it is what
+    // stops Bob.
+    await withStore(async (engine) => {
+      const result = await engine.addEdge({ from: "pub", to: "mine", type: "r", scope: "global" })
+      expect(result).toEqual({ ok: true, scope: "session:alice" })
+      expect(await engine.neighbors("pub", { scopes: BOB })).toEqual([])
+      expect((await engine.neighbors("pub", { scopes: ALICE })).map((n) => n.id)).toEqual(["mine"])
+    })
+  }, 60_000)
+
+  test("direction does not matter — narrowest wins either way", async () => {
+    await withStore(async (engine) => {
+      expect(await engine.addEdge({ from: "mine", to: "pub", type: "r", scope: "global" })).toEqual({
+        ok: true,
+        scope: "session:alice",
+      })
+    })
+  }, 60_000)
+
+  test("🔴 two DIFFERENT private spaces are REFUSED, not narrowed", async () => {
+    // No scope contains both, so any edge between them widens one. Refusing is the only honest answer.
+    await withStore(async (engine) => {
+      expect(await engine.addEdge({ from: "mine", to: "theirs", type: "r", scope: "global" })).toEqual({ ok: false })
+      expect(await engine.neighbors("mine", { scopes: ALICE })).toEqual([])
+    })
+  }, 60_000)
+
+  test("shared to shared stays shared", async () => {
+    await withStore(async (engine) => {
+      expect(await engine.addEdge({ from: "pub", to: "pub2", type: "r", scope: "global" })).toEqual({
+        ok: true,
+        scope: "global",
+      })
+    })
+  }, 60_000)
+
+  test("a restricted caller cannot relate to an endpoint it may not see", async () => {
+    await withStore(async (engine) => {
+      const result = await engine.addEdge({
+        from: "pub",
+        to: "theirs",
+        type: "r",
+        scope: "global",
+        scopes: ["global", "session:alice"],
+      })
+      expect(result).toEqual({ ok: false })
+    })
+  }, 60_000)
+
+  test("⚠️ a REFUSAL is reported, never silent — a quiet no-op teaches a model to trust a graph that is not there", async () => {
+    await withStore(async (engine) => {
+      expect((await engine.addEdge({ from: "pub", to: "nope", type: "r", scope: "global" })).ok).toBe(false)
+    })
+  }, 60_000)
+})
+
 describe("scope arithmetic", () => {
   test("an ordinary relation takes the NARROWEST endpoint, never the widest", () => {
     expect(MemoryAccess.narrowest("global", "session:alice")).toBe("session:alice")

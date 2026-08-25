@@ -16,7 +16,11 @@ describe("MemoryClient.stub (in-memory)", () => {
     // scope filter isolates the session memory
     expect((await run(c.search({ query: "berlin", scopes: ["global"] }))).map((h) => h.id)).toEqual(["a"])
     // edge + neighbors
-    await run(c.addEdge({ from: "a", to: "b", type: "rel", scope: "global" }))
+    // ⚠️ The stored scope is DERIVED: `a` is global and `b` is session-only, so the edge is kept to
+    // the narrower one. Passing `scope: "global"` no longer makes it global — that promotion was the
+    // bridge NC-SEC-016 crossed.
+    const edge = await run(c.addEdge({ from: "a", to: "b", type: "rel", scope: "global" }, MemoryAccess.owner()))
+    expect(edge).toEqual({ ok: true, scope: "session:x" })
     // 🔴 THIS LINE USED TO PIN THE LEAK. It asserted that an unscoped `neighbors("a")` returns the
     // session-only `b` — the cross-scope traversal NC-SEC-016 describes, written down as correct
     // behaviour. A test can certify a bug as easily as it can catch one, and this one did for months.
@@ -53,7 +57,7 @@ describe("MemoryClient.fromEngine", () => {
     const calls: string[] = []
     const engine: MemoryClient.Engine = {
       addMemory: async (i) => void calls.push(`add:${i.id}`),
-      addEdge: async () => {},
+      addEdge: async () => ({ ok: true, scope: "global" }),
       moveScope: async (from, to) => void calls.push(`move:${from}->${to}`),
       search: async () => [
         {

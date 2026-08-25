@@ -131,7 +131,12 @@ export interface Interface {
   /** Liveness probe — never fails (returns false if the sidecar is unreachable). */
   readonly health: () => Effect.Effect<boolean>
   readonly addMemory: (input: MemoryInput) => Effect.Effect<void, MemoryError>
-  readonly addEdge: (input: EdgeInput) => Effect.Effect<void, MemoryError>
+  /**
+   * ⚠️ Returns WHETHER it happened, and at what scope. A relation can now be REFUSED — endpoints in
+   * two different private spaces have no scope that contains both — and a refusal that looked like a
+   * success is how a model comes to believe a graph that is not there.
+   */
+  readonly addEdge: (input: EdgeInput, access: MemoryAccess) => Effect.Effect<EdgeResult, MemoryError>
   readonly search: (input: SearchInput) => Effect.Effect<ReadonlyArray<SearchHit>, MemoryError>
   /**
    * 🔴 `access` is REQUIRED on every id-based operation, and THAT is the fix — not the checks inside
@@ -178,9 +183,15 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2
 
 /** The in-process engine surface the client adapts (WasmMemory satisfies this structurally). Keeps
  *  memory-client free of any engine import — the engine is injected. */
+/** What `addEdge` did: `scope` is the DERIVED scope of the stored edge, absent when it was refused. */
+export interface EdgeResult {
+  readonly ok: boolean
+  readonly scope?: string
+}
+
 export interface Engine {
   addMemory(input: MemoryInput): Promise<void>
-  addEdge(input: EdgeInput): Promise<void>
+  addEdge(input: EdgeInput & { readonly scopes?: readonly string[] }): Promise<EdgeResult>
   search(input: SearchInput): Promise<ReadonlyArray<SearchHit>>
   neighbors(id: string, opts?: { scopes?: readonly string[]; k?: number }): Promise<ReadonlyArray<Neighbor>>
   path(
@@ -209,7 +220,8 @@ export const fromEngine = (engine: Engine): Interface => {
   return {
     health: () => Effect.succeed(true),
     addMemory: (input) => wrap(() => engine.addMemory(input)),
-    addEdge: (input) => wrap(() => engine.addEdge(input)),
+    addEdge: (input, access) =>
+      wrap(() => engine.addEdge({ ...input, ...(access.scopes ? { scopes: access.scopes } : {}) })),
     search: (input) => wrap(() => engine.search(input)),
     // ⚠️ `access.scopes` is `undefined` ONLY for `owner`/`system`, and the engine reads that as "no
     // filter" — the same shape as before, but now it can only be reached by constructing an access
@@ -237,7 +249,7 @@ export const fromEngine = (engine: Engine): Interface => {
 export const proxy = (get: () => Interface): Interface => ({
   health: () => Effect.suspend(() => get().health()),
   addMemory: (input) => Effect.suspend(() => get().addMemory(input)),
-  addEdge: (input) => Effect.suspend(() => get().addEdge(input)),
+  addEdge: (input, access) => Effect.suspend(() => get().addEdge(input, access)),
   search: (input) => Effect.suspend(() => get().search(input)),
   neighbors: (id, access, opts) => Effect.suspend(() => get().neighbors(id, access, opts)),
   path: (from, to, access, maxHops) => Effect.suspend(() => get().path(from, to, access, maxHops)),
@@ -309,8 +321,21 @@ export const stub = (): Interface => {
           valid: true,
         })
       }),
-    addEdge: (input) =>
-      Effect.sync(() => void edges.push({ from: input.from, to: input.to, type: input.type, scope: input.scope })),
+    // ⚠️ Derives the edge scope EXACTLY as the engine does, and refuses the same pairs. A double that
+    // is more permissive than production certifies the bug rather than catching it — which is what
+    // this file's `neighbors` double did until NC-SEC-016.
+    addEdge: (input, access) =>
+      Effect.sync(() => {
+        const from = mems.get(input.from)
+        const to = mems.get(input.to)
+        if (!from || !to) return { ok: false }
+        const visible = (scope: string) => access.scopes === undefined || access.scopes.includes(scope)
+        if (!visible(from.scope) || !visible(to.scope)) return { ok: false }
+        if (!(from.scope === to.scope || from.scope === "global" || to.scope === "global")) return { ok: false }
+        const scope = from.scope === "global" ? to.scope : from.scope
+        edges.push({ from: input.from, to: input.to, type: input.type, scope })
+        return { ok: true, scope }
+      }),
     search: (input) =>
       ok(
         [...mems.values()]
