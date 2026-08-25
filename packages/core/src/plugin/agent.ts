@@ -327,6 +327,72 @@ export const Plugin = define({
         )
       })
 
+      // 🔴 THE ROSTER SHIPS WITH COLLEAGUES ON IT (owner, 2026-08-25: *"ensure Nova comes with a few
+      // common agents, like one for just chat, one for programming, and another for visual art"*).
+      //
+      // Principle 12(a), *work by default*: an empty roster asks a new user to invent an org chart
+      // before they have seen one work, which is the same failure as a setting with no sane default.
+      // A person opening Contacts should find somebody to talk to, and learn what an officer IS by
+      // reading three of them rather than by reading documentation.
+      //
+      // ⚠️ Names are DRAWN FROM THE POOL like any hire (`agent/officer-name.ts`), so the seeded roster
+      // and a hired one are the same kind of thing, and `planHire`'s taken-set excludes these
+      // automatically — a later hire cannot redraw a name already on the roster.
+      //
+      // ⚠️ Every field uses `??=`, so this is a DEFAULT and not a lock: AGENTS.md's self-healing law
+      // is *"defaults ship in code; a store override always wins"*. The user may rewrite any of these
+      // briefs, rename them, or retire them outright — they are ordinary colleagues, not machinery,
+      // and nothing here is on `PROTECTED_IDS`.
+      const officerFloor = floor({ scratchDirs: SCRATCH_DIRS, officer: true })
+      const seeded: ReadonlyArray<{ id: string; name: string; title: string; avatar: string; brief: string }> = [
+        {
+          id: "xenia",
+          name: "Xenia",
+          title: "Companion",
+          avatar: "💬",
+          brief:
+            "You are Xenia. You are here to talk — questions, plans, decisions, or nothing in particular. " +
+            "Speak plainly and warmly, like a well-read friend rather than a manual. Never assume technical " +
+            "knowledge, and never make somebody feel small for not having it. If a request really belongs to " +
+            "a colleague who owns that work, say so and offer to hand it over rather than doing it badly.",
+        },
+        {
+          id: "daedalus",
+          name: "Daedalus",
+          title: "Engineer",
+          avatar: "🔨",
+          brief:
+            "You are Daedalus. You write, read and repair software. Work in small verified steps: read before " +
+            "you edit, run what you changed, and say what you actually observed rather than what should be " +
+            "true. When a change is risky or wide, describe it before making it. Explain your reasoning in " +
+            "plain language — the person you are helping may not be a programmer, and a fix nobody understands " +
+            "is a fix nobody can maintain.",
+        },
+        {
+          id: "myron",
+          name: "Myron",
+          title: "Artist",
+          avatar: "🎨",
+          brief:
+            "You are Myron. You work in images: composition, colour, type and layout. Ask what the piece is " +
+            "FOR and who will see it before proposing anything, because a poster and an icon are not the same " +
+            "problem. Offer two or three distinct directions rather than one, and say what each is trading " +
+            "away. Describe what you make in words as well as making it, so somebody can judge it without " +
+            "having your eye.",
+        },
+      ]
+      for (const entry of seeded)
+        draft.update(AgentV2.ID.make(entry.id), (item) => {
+          item.name ??= entry.name
+          item.title ??= entry.title
+          item.avatar ??= entry.avatar
+          item.system ??= entry.brief
+          item.description ??= `${entry.name}, ${entry.title}.`
+          item.memory ??= "own"
+          item.mode = "primary"
+          item.permissions.push(...officerFloor)
+        })
+
       draft.update(AgentV2.ID.make("general"), (item) => {
         item.description =
           "General-purpose agent for researching complex questions and executing multi-step tasks. Use this agent to execute multiple units of work in parallel."
