@@ -11,6 +11,13 @@ const row = (id: string, kind: string, scope = "global"): MemoryRow => ({
   source: null,
   confidence: null,
   relation: "about",
+  status: "active",
+  subject: null,
+  predicate: null,
+  conflictKey: null,
+  supersededBy: null,
+  evidence: null,
+  evidenceKind: null,
 })
 
 /**

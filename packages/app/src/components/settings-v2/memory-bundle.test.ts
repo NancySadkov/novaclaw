@@ -17,6 +17,13 @@ const row = (over: Partial<MemoryRow>): MemoryRow => ({
   source: "auto-extract",
   confidence: 0.8,
   relation: "staged",
+  status: "active",
+  subject: null,
+  predicate: null,
+  conflictKey: null,
+  supersededBy: null,
+  evidence: null,
+  evidenceKind: null,
   ...over,
 })
 
