@@ -6,6 +6,7 @@ import { MemoryGraphPage } from "@/pages/memory-graph"
 import { GlobalContext } from "@/context/global"
 import { ServerContext } from "@/context/server"
 import { ServerSyncContext } from "@/context/server-sync"
+import { ServerSDKProvider } from "@/context/server-sdk"
 import { LanguageContext } from "@/context/language"
 import type { EdgeRow, MemoryGraph, MemoryRow } from "@/utils/memory-api"
 
@@ -45,6 +46,13 @@ const node = (id: string, kind: string, name: string | null, scope = "global"): 
   source: null,
   confidence: null,
   relation: "about",
+  status: "active",
+  subject: null,
+  predicate: null,
+  conflictKey: null,
+  supersededBy: null,
+  evidence: null,
+  evidenceKind: null,
 })
 const NODES: MemoryRow[] = [
   node("e1", "entity", "Nancy"),
@@ -87,6 +95,7 @@ beforeEach(() => {
   memoryBoardStatus = "ok"
   memoryBoardDetail = undefined
   resizeCallbacks.length = 0
+  busListeners = []
   originalRect = HTMLElement.prototype.getBoundingClientRect
   HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
     // ONLY the graph canvas reports a size; everything else keeps happy-dom's zeroes, so no other
@@ -141,6 +150,23 @@ const json = (body: unknown) =>
  */
 let memoryBoardStatus: "ok" | "problem" | "unknown" | undefined
 let memoryBoardDetail: string | undefined
+
+/**
+ * THE INSTANCE EVENT STREAM, as something this file can DRIVE.
+ *
+ * 🔴 The live overlay's whole claim is "you can see it happen", and that is a claim about what the
+ * DOM does when an event arrives. A unit test of the fold proves the state transition and nothing
+ * about the picture; only a mounted page can answer "did the mark dim". So the SDK's `event.listen`
+ * is stubbed to keep its subscribers, and `emitMemory` is the test's hand on the bus.
+ *
+ * ⚠️ The envelope is the real one — `{ name: directory, details: { type, properties } }` — because
+ * the shape is exactly what the page has to decode. A stub that handed over a pre-decoded activity
+ * would test the renderer against a contract the server does not use.
+ */
+let busListeners: ((event: { name: string; details: unknown }) => void)[] = []
+const emitMemory = (type: string, properties: unknown) => {
+  for (const listener of [...busListeners]) listener({ name: "global", details: { type, properties } })
+}
 
 /** The non-graph routes this page's siblings call, each in its own shape. */
 const sideAnswer = (url: string): unknown => {
@@ -197,9 +223,28 @@ function mount(answers: (() => MemoryGraph)[]) {
   }
 
   const agentsCache = { list: () => [], loading: () => false, error: () => undefined, refetch: () => {} }
+  // The three things the Memory app asks of the SDK: the stream's status, a subscription, and a
+  // start it may call whether or not the shell already did.
+  const sdkStub = {
+    streamStatus: () => "connected" as const,
+    event: {
+      start: () => {},
+      on: () => () => {},
+      listen: (fn: (event: { name: string; details: unknown }) => void) => {
+        busListeners.push(fn)
+        return () => {
+          busListeners = busListeners.filter((entry) => entry !== fn)
+        }
+      },
+    },
+  }
   const globalStub = {
     servers: { list: () => [connection] },
-    ensureServerCtx: () => ({ agents: agentsCache, sync: { data: { path: { directory: "/tmp/p" } } } }),
+    ensureServerCtx: () => ({
+      agents: agentsCache,
+      sync: { data: { path: { directory: "/tmp/p" } } },
+      sdk: sdkStub,
+    }),
   }
   const syncStub = () => ({ data: { path: { directory: "/tmp/p" } }, session: { data: { info: {} } } })
   const languageStub = { t: (key: string) => key, locale: () => "en", setLocale: () => {} }
@@ -214,9 +259,14 @@ function mount(answers: (() => MemoryGraph)[]) {
               <GlobalContext.Provider value={globalStub as never}>
                 <ServerContext.Provider value={{ current: connection } as never}>
                   <ServerSyncContext.Provider value={syncStub as never}>
-                    <DialogProvider>
-                      <MemoryGraphPage />
-                    </DialogProvider>
+                    {/* The real provider, reading the SDK off the global stub — the same path the
+                        shell uses. Wrapping the page in a hand-made context value instead would let
+                        this file drift from how the app actually resolves its SDK. */}
+                    <ServerSDKProvider>
+                      <DialogProvider>
+                        <MemoryGraphPage />
+                      </DialogProvider>
+                    </ServerSDKProvider>
                   </ServerSyncContext.Provider>
                 </ServerContext.Provider>
               </GlobalContext.Provider>
@@ -714,18 +764,87 @@ describe("MemoryGraphPage renders", () => {
     expect(drawnNodes().filter((el) => el.getAttribute("opacity") === "0.25").length).toBe(0)
   })
 
-  test("the status toggle flips between current and forgotten, and says which", async () => {
+  test("the LENS switches, and the header says what is in force in one line", async () => {
+    // This replaces a `Current / Incl. forgotten` toggle whose field nothing read. The old test
+    // passed against it the whole time, because it only ever asserted the button's own label.
     mount([() => FIXTURE])
     await settle()
     showGraph()
     await settle()
-    const toggle = document.querySelector('[data-slot="memory-status-toggle"]') as HTMLButtonElement
-    expect(toggle.dataset.status).toBe("active")
-    expect(toggle.textContent).toContain("Current")
-    toggle.click()
+    const lens = document.querySelector('[data-slot="memory-lens"]') as HTMLElement
+    expect(lens.dataset.lens).toBe("current")
+    const hint = () => document.querySelector('[data-slot="memory-lens-hint"]')?.textContent ?? ""
+    expect(hint()).toContain("true right now")
+    const history = document.querySelector('[data-slot="memory-lens-tab"][data-lens="history"]') as HTMLButtonElement
+    history.click()
     await settle()
-    expect(toggle.dataset.status).toBe("all")
-    expect(toggle.textContent).toContain("forgotten")
+    expect(lens.dataset.lens).toBe("history")
+    expect(hint()).toContain("forgotten")
+    // ⚠️ All four questions are reachable, including the one whose answer may be "not measured".
+    expect([...document.querySelectorAll('[data-slot="memory-lens-tab"]')].map((b) => (b as HTMLElement).dataset.lens)).toEqual([
+      "current",
+      "needs-review",
+      "never-used",
+      "history",
+    ])
+  })
+
+  test("🔴 A WRITE IS CAPTIONED THE MOMENT IT HAPPENS — no reload, no poll", async () => {
+    mount([() => FIXTURE])
+    await settle()
+    expect(document.querySelector('[data-slot="memory-activity-empty"]')).not.toBeNull()
+    emitMemory("memory.item.recorded", { id: "e9", scope: "global", kind: "entity", name: "Ada", text: "Ada writes" })
+    await settle()
+    const entry = document.querySelector('[data-slot="memory-activity-entry"]') as HTMLElement | null
+    expect(entry).not.toBeNull()
+    expect(entry!.dataset.tone).toBe("write")
+    expect(entry!.textContent).toContain("Ada")
+  })
+
+  test("🔴 A RECALL HIGHLIGHTS ITS HITS IN RANK ORDER AND DIMS THE REST", async () => {
+    mount([() => FIXTURE])
+    await settle()
+    showGraph()
+    await settle()
+    emitMemory("memory.recalled", {
+      fingerprint: "qf_x",
+      surface: "auto-recall",
+      scopes: ["global"],
+      hits: [
+        { id: "e1", rank: 1, score: 0.9, scope: "global" },
+        { id: "e2", rank: 2, score: 0.5, scope: "global" },
+      ],
+      considered: 2,
+    })
+    await settle()
+    const ranks = [...document.querySelectorAll('[data-slot="memory-graph-rank"]')].map((el) => ({
+      id: (el as HTMLElement).dataset.nodeId,
+      rank: (el as HTMLElement).dataset.rank,
+    }))
+    expect(ranks.map((r) => `${r.id}#${r.rank}`).sort()).toEqual(["e1#1", "e2#2"])
+    // ...and every mark the recall did NOT use steps back
+    const dimmed = drawnNodes().filter((el) => el.getAttribute("opacity") === "0.25")
+    expect(dimmed.length).toBeGreaterThan(0)
+    expect(dimmed.some((el) => el.dataset.nodeId === "e1")).toBe(false)
+  })
+
+  test("🔴 A RETIREMENT IS VISIBLE, AND THE MARK KEEPS ITS PLACE", async () => {
+    // "Superseded claims visibly retire and stay available as history" — which means the node is
+    // MARKED, never removed. A viewer that deleted it would throw away the connection that
+    // explains why it was retired.
+    mount([() => FIXTURE])
+    await settle()
+    showGraph()
+    await settle()
+    const before = drawnNodes().length
+    emitMemory("memory.forgotten", { id: "e2", mode: "invalidate" })
+    await settle()
+    expect(drawnNodes().length).toBe(before)
+    const retired = [...document.querySelectorAll('[data-slot="memory-graph-retired"]')].map(
+      (el) => (el as HTMLElement).dataset.nodeId,
+    )
+    expect(retired).toContain("e2")
+    expect(document.querySelector('[data-slot="memory-activity-entry"]')?.textContent).toContain("Forgot")
   })
 
   test("search is offered on the LIST too, not only the map", async () => {
