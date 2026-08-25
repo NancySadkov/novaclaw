@@ -1,7 +1,8 @@
 export * as AgentReassignment from "./reassignment"
 
-import { DateTime, Effect, Layer } from "effect"
+import { DateTime, Effect, Exit, Layer } from "effect"
 import { Database } from "../database/database"
+import { Log } from "@novaclaw/schema/log"
 import { makeGlobalNode } from "../effect/app-node"
 import { EventV2 } from "../event"
 import { AbsolutePath } from "../schema"
@@ -126,6 +127,33 @@ export const deliver = (input: {
     // passages (`session/compaction-archive.ts`) and `kb search` reads them back — continuity lives
     // in the cabinet, not the transcript. This is the same archive-then-fresh mechanism **Clear
     // chat** already uses; reassignment is that event with a different trigger.
+    // 🔴 THE FALLIBLE WORK RUNS FIRST, so there is nothing to roll back.
+    //
+    // The archive and the successor-create are two writes with no transaction between them, and a
+    // failure in the gap left the colleague ARCHIVED WITH NO SUCCESSOR — unreachable, because the
+    // roster row is the only door into a colleague's chat. The fix for stranding could strand.
+    //
+    // ⚠️ Compensating afterwards is NOT available and the reason is worth recording: `projector.ts`
+    // writes `undefined` for an absent `time.archived`, deliberately, so that a partial round-trip
+    // does not blank every column — and drizzle omits `undefined` from a SET clause. So "un-archive"
+    // is not expressible through the patch seam at all. A rollback written that way compiles, runs,
+    // and does nothing. (It did. The test caught it.)
+    //
+    // Resolving the project is the part that reaches outside this function, so doing it here shrinks
+    // the gap to a local insert. `createSessionRecord` resolves the same path again; that is a cheap
+    // repeat of a memoised lookup, not a second source of truth.
+    const resolved = yield* Effect.exit(input.projects.resolve(AbsolutePath.make(input.move.to)))
+    if (!Exit.isSuccess(resolved)) {
+      yield* Log.event("agent.reassign.successor.failed", {
+        "agent.id": input.move.agentID,
+        "session.id": chat.id,
+        "agent.fault": Log.fault(resolved.cause),
+      })
+      // Nothing was archived, so the colleague keeps the chat it had. The folder change still
+      // applies — it is read out of the system prompt on the next turn either way.
+      return false
+    }
+
     const at = DateTime.makeUnsafe(Date.now())
     yield* SessionPatch.patchSessionRecord(
       { db: input.db, events: input.events },
@@ -140,15 +168,29 @@ export const deliver = (input: {
     // ⚠️ This only works because an ARCHIVED chat does not block its successor — one of the four
     // exclusions in the one-chat-per-agent guard (`session-one-chat-per-agent.test.ts`). Without
     // that clause this call would hand back the chat just archived.
-    const successor = yield* createSessionRecord(
-      { db: input.db, events: input.events, projects: input.projects, store: input.store },
-      {
-        agent: AgentV2.ID.make(input.move.agentID),
-        // No `title`: `createSessionRecord` defaults to "New session", which is what `isDefault`
-        // recognises — so auto-title is still free to name this chat from its first real exchange.
-        location: { directory: AbsolutePath.make(input.move.to) },
-      },
+    const created = yield* Effect.exit(
+      createSessionRecord(
+        { db: input.db, events: input.events, projects: input.projects, store: input.store },
+        {
+          agent: AgentV2.ID.make(input.move.agentID),
+          // No `title`: `createSessionRecord` defaults to "New session", which is what `isDefault`
+          // recognises — so auto-title is still free to name this chat from its first real exchange.
+          location: { directory: AbsolutePath.make(input.move.to) },
+        },
+      ),
     )
+    if (!Exit.isSuccess(created)) {
+      // The residual window: the project resolved and the insert still failed. It cannot be undone
+      // for the reason above, so it is REPORTED rather than papered over — a colleague with an
+      // archived chat and no successor is a state a person has to be told about.
+      yield* Log.event("agent.reassign.successor.failed", {
+        "agent.id": input.move.agentID,
+        "session.id": chat.id,
+        "agent.fault": Log.fault(created.cause),
+      })
+      return false
+    }
+    const successor = created.value
 
     yield* input.events
       .publish(SessionEvent.Synthetic, {
@@ -159,7 +201,20 @@ export const deliver = (input: {
         // there is nothing to instruct now, because the thing it asked for has been done.
         text: notice(input.move),
       })
-      .pipe(Effect.ignore)
+      // ⚠️ SAID, not swallowed. The header's "nobody registered is not an error" covers a MISSING
+      // listener — an offline config edit with no chat to deliver into. This is the opposite case:
+      // the chat exists and the notice is the only account the user gets of why their colleague's
+      // old conversation ended. Losing it silently is the swallow this module was written to remove,
+      // one seam up.
+      .pipe(
+        Effect.catchCause((cause) =>
+          Log.event("agent.reassign.notice.failed", {
+            "agent.id": input.move.agentID,
+            "session.id": successor.id,
+            "agent.fault": Log.fault(cause),
+          }),
+        ),
+      )
     return true
   })
 

@@ -993,6 +993,29 @@ export const EVENTS = {
    * memories is the one failure the per-agent partition exists to prevent. The scope is in the
    * attributes precisely so an operator can clear it by hand.
    */
+  /**
+   * A reassignment archived a colleague's chat and then could not open the successor, so the archive
+   * was rolled back. The colleague keeps the chat it had; the folder change still applies and it
+   * will read the new folder from its system prompt on its next turn.
+   */
+  "agent.reassign.successor.failed": {
+    level: "warn",
+    message: "could not open a reassigned colleague's new chat; the archive was rolled back",
+    attributes: { "agent.id": "correlate", "session.id": "id", "agent.fault": "fault" },
+    content: "user",
+    file: "packages/core/src/agent/reassignment.ts",
+  },
+  /**
+   * The successor chat opened, but the notice explaining the move could not be published into it. The
+   * colleague is in the right folder with no account of why its old chat ended.
+   */
+  "agent.reassign.notice.failed": {
+    level: "warn",
+    message: "could not deliver the notice explaining a colleague's reassignment",
+    attributes: { "agent.id": "correlate", "session.id": "id", "agent.fault": "fault" },
+    content: "user",
+    file: "packages/core/src/agent/reassignment.ts",
+  },
   "kb.scope.clear.failed": {
     level: "warn",
     message: "could not clear a retired agent's memory scope",

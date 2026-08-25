@@ -21,7 +21,9 @@ import { testEffect } from "./lib/effect"
 // delivery half end to end against a real database and event bus.
 
 const it = testEffect(
-  AppNodeBuilder.build(LayerNode.group([Database.node, EventV2.node, SessionProjector.node, ProjectV2.node, SessionStore.node])),
+  AppNodeBuilder.build(
+    LayerNode.group([Database.node, EventV2.node, SessionProjector.node, ProjectV2.node, SessionStore.node]),
+  ),
 )
 
 const openChat = (db: Database.Interface["db"], id: string, agent: string) =>
@@ -80,6 +82,36 @@ describe("a moved colleague is told, in its own chat", () => {
       // `D:/ledger` fails on Windows against the `D:\ledger` that was actually written. The claim is
       // "the successor is rooted in the new folder", not "the string round-trips unchanged".
       expect(String(live[0]?.directory).replaceAll("\\", "/")).toBe(move.to)
+    }),
+  )
+
+  it.effect(
+    "🔴 a colleague is never left ARCHIVED WITH NO SUCCESSOR",
+    Effect.gen(function* () {
+      const d = yield* deps
+      yield* openChat(d.db, "ses_theron", "theron")
+
+      // The archive and the create are two writes with no transaction between them, so a failure in
+      // the gap used to leave the colleague archived and unreachable — the roster row is the only
+      // door into a colleague's chat. The fix for stranding could strand.
+      //
+      // ⚠️ Compensating afterwards is NOT available: `projector.ts` writes `undefined` for an
+      // absent `time.archived` (deliberately, so a partial round-trip does not blank every column)
+      // and drizzle omits `undefined` from a SET clause — so "un-archive" is not expressible. A
+      // rollback written that way compiles, runs, and does nothing. It did; this test caught it.
+      // The fix is ORDER: the part that reaches outside runs before anything is archived.
+      const brokenProjects = {
+        ...d.projects,
+        resolve: () => Effect.die(new Error("project store is down")),
+      } as typeof d.projects
+      expect(yield* AgentReassignment.deliver({ ...d, projects: brokenProjects, move })).toBe(false)
+
+      const rows = yield* d.db.select().from(SessionTable).all().pipe(Effect.orDie)
+      const live = rows.filter((r) => r.agent === "theron" && r.time_archived === null)
+      // The colleague still HAS its chat. A stale chat in a known folder beats no chat at all: the
+      // folder change still applies, and it is read out of the system prompt on the next turn.
+      expect(live.length).toBe(1)
+      expect(String(live[0]?.id)).toBe("ses_theron")
     }),
   )
 
