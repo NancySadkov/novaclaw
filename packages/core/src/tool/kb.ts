@@ -296,6 +296,7 @@ export const layer = Layer.effectDiscard(
                         // retrieval returned, so the candidate pool must be wider than the answer.
                         k: Math.min(k * OVERFETCH, OVERFETCH_CAP),
                         scopes: scopesForSearch(sessionScope, agentID, input.scope),
+                        surface: "kb-tool",
                         ...(queryVector === undefined ? {} : { embedding: queryVector }),
                       })
                       .pipe(Effect.orElseSucceed(() => []))

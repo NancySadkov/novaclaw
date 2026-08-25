@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "d9f10c28-b582-47bc-8f27-ff8ec6b8e90c",
+  "id": "8eb6ecd5-cfc0-448e-a77f-94738e22e8a3",
   "prevIds": [
-    "1e8c5691-fb74-4222-b236-64058923d8eb"
+    "d9f10c28-b582-47bc-8f27-ff8ec6b8e90c"
   ],
   "ddl": [
     {
@@ -32,6 +32,14 @@
     },
     {
       "name": "data_migration",
+      "entityType": "tables"
+    },
+    {
+      "name": "memory_access",
+      "entityType": "tables"
+    },
+    {
+      "name": "memory_usage",
       "entityType": "tables"
     },
     {
@@ -621,6 +629,216 @@
       "name": "time_completed",
       "entityType": "columns",
       "table": "data_migration"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "memory_access"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "recall_id",
+      "entityType": "columns",
+      "table": "memory_access"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "fingerprint",
+      "entityType": "columns",
+      "table": "memory_access"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "surface",
+      "entityType": "columns",
+      "table": "memory_access"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "memory_id",
+      "entityType": "columns",
+      "table": "memory_access"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "scope",
+      "entityType": "columns",
+      "table": "memory_access"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "rank",
+      "entityType": "columns",
+      "table": "memory_access"
+    },
+    {
+      "type": "real",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "score",
+      "entityType": "columns",
+      "table": "memory_access"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "accessed_at",
+      "entityType": "columns",
+      "table": "memory_access"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "used_at",
+      "entityType": "columns",
+      "table": "memory_access"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "useful_at",
+      "entityType": "columns",
+      "table": "memory_access"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "corrected_at",
+      "entityType": "columns",
+      "table": "memory_access"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "memory_id",
+      "entityType": "columns",
+      "table": "memory_usage"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "scope",
+      "entityType": "columns",
+      "table": "memory_usage"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "conflict_key",
+      "entityType": "columns",
+      "table": "memory_usage"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "first_accessed_at",
+      "entityType": "columns",
+      "table": "memory_usage"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "last_accessed_at",
+      "entityType": "columns",
+      "table": "memory_usage"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "accesses",
+      "entityType": "columns",
+      "table": "memory_usage"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "uses",
+      "entityType": "columns",
+      "table": "memory_usage"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "useful",
+      "entityType": "columns",
+      "table": "memory_usage"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "corrections",
+      "entityType": "columns",
+      "table": "memory_usage"
     },
     {
       "type": "text",
@@ -4797,6 +5015,24 @@
         "id"
       ],
       "nameExplicit": false,
+      "name": "memory_access_pk",
+      "table": "memory_access",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "memory_id"
+      ],
+      "nameExplicit": false,
+      "name": "memory_usage_pk",
+      "table": "memory_usage",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
       "name": "calendar_fire_pk",
       "table": "calendar_fire",
       "entityType": "pks"
@@ -5205,6 +5441,90 @@
       "name": "community_direct_message_peer_idx",
       "entityType": "indexes",
       "table": "community_direct_message"
+    },
+    {
+      "columns": [
+        {
+          "value": "memory_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "memory_access_memory_idx",
+      "entityType": "indexes",
+      "table": "memory_access"
+    },
+    {
+      "columns": [
+        {
+          "value": "recall_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "memory_access_recall_idx",
+      "entityType": "indexes",
+      "table": "memory_access"
+    },
+    {
+      "columns": [
+        {
+          "value": "accessed_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "memory_access_at_idx",
+      "entityType": "indexes",
+      "table": "memory_access"
+    },
+    {
+      "columns": [
+        {
+          "value": "scope",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "memory_usage_scope_idx",
+      "entityType": "indexes",
+      "table": "memory_usage"
+    },
+    {
+      "columns": [
+        {
+          "value": "conflict_key",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "memory_usage_conflict_idx",
+      "entityType": "indexes",
+      "table": "memory_usage"
+    },
+    {
+      "columns": [
+        {
+          "value": "last_accessed_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "memory_usage_last_idx",
+      "entityType": "indexes",
+      "table": "memory_usage"
     },
     {
       "columns": [

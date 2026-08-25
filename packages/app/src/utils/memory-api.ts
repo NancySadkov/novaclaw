@@ -22,6 +22,28 @@ export interface MemoryRow {
   readonly source: string | null
   readonly confidence: number | null
   readonly relation: string
+  // --- the claim lifecycle (P1). ---
+  //
+  // 🔴 These are not optional and they are not new on the wire: the server has been sending all
+  // seven on every row since the claim lifecycle landed, and this interface simply did not name
+  // them. That silence is what made the app's own "Incl. forgotten" toggle inert — a control that
+  // could not have worked, filtering on a field the type said did not exist.
+  //
+  // ⚠️ A row that is not a claim still carries them: `status` is `active`, the identity columns are
+  // null. So `status` is safe to read on every row, and the LENS is safe to apply to every row.
+  /** `active` | `needs_review` | `superseded` | `archived` — see core `kb-graph/claim.ts`. */
+  readonly status: string
+  /** The claim's identity, when the harness accepted one. Null on a plain episode or passage. */
+  readonly subject: string | null
+  readonly predicate: string | null
+  /** Set only for a `single`-cardinality predicate — the key a correction retires the priors by. */
+  readonly conflictKey: string | null
+  /** The claim that replaced this one. Non-null IS what "superseded" means, in one field. */
+  readonly supersededBy: string | null
+  /** Where the claim came from, as a locator the user can recognise (a path, a URL, a message). */
+  readonly evidence: string | null
+  /** What KIND of thing that locator is — `file`, `url`, … — so the panel can label it honestly. */
+  readonly evidenceKind: string | null
 }
 
 export interface SearchHit extends MemoryRow {
@@ -106,6 +128,15 @@ export function memoryList(
     directory: string
     scopes?: readonly string[]
     kinds?: readonly string[]
+    /**
+     * THE LIFECYCLE LENS — a status set the SERVER filters by.
+     *
+     * ⚠️ **Unset means EVERY status, history included**, which is the opposite of the default a
+     * reader expects and is why it is spelled out here rather than left to the endpoint's docs. The
+     * surfaces that want current truth pass it explicitly (`utils/memory-lens.ts`); a caller
+     * that omits it is asking for the whole record and gets it.
+     */
+    statuses?: readonly string[]
     includeInvalid?: boolean
     limit?: number
     offset?: number
@@ -116,9 +147,51 @@ export function memoryList(
   return call<MemoryRow[]>(server, "GET", "memory/list", input.directory, undefined, {
     scopes,
     kinds,
+    statuses: csv(input.statuses),
     includeInvalid: input.includeInvalid ? "1" : undefined,
     limit: input.limit === undefined ? undefined : String(input.limit),
     offset: input.offset === undefined ? undefined : String(input.offset),
+  })
+}
+
+/**
+ * The access ledger's verdict on one memory (P3). Optional on an item: a row nothing has ever
+ * touched has no counters, and inventing zeroes would make "never recalled" and "recalled and
+ * discarded" the same row.
+ */
+export interface UsageCounts {
+  readonly accesses: number
+  readonly uses: number
+  readonly useful: number
+  readonly corrections: number
+  readonly firstAccessedAt: number
+  readonly lastAccessedAt: number
+}
+
+export interface UsageItem extends MemoryRow {
+  readonly usage?: UsageCounts
+}
+
+/**
+ * ⚠️ `scanned`/`partial` for the same reason `GraphSlice` exists: "twelve never-used memories came
+ * back" and "twelve never-used memories exist" are identical bytes from this side, and a viewer
+ * without the distinction presents a corner of the answer as the whole of it.
+ */
+export interface NeverUsedResult {
+  readonly items: readonly UsageItem[]
+  readonly scanned: number
+  readonly partial: boolean
+}
+
+/** Memories no recall has ever returned, oldest first — the `Never used` lens's data source. */
+export function memoryNeverUsed(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; scopes?: readonly string[]; limit?: number; scan?: number },
+) {
+  return call<NeverUsedResult>(server, "GET", "memory/usage/never-used", input.directory, undefined, {
+    scopes: csv(input.scopes),
+    limit: input.limit === undefined ? undefined : String(input.limit),
+    scan: input.scan === undefined ? undefined : String(input.scan),
   })
 }
 

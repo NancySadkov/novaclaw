@@ -1,4 +1,5 @@
 import type { MemoryRow } from "@/utils/memory-api"
+import { defaultLens, lensAdmits, lensByID, type LensID } from "@/utils/memory-lens"
 
 /**
  * WHAT THE USER IS LOOKING FOR — one filter, read by both the Remembered list and the Map.
@@ -22,22 +23,43 @@ export interface MemoryFilter {
   readonly query: string
   /** Which kinds to admit. Empty set means NOTHING passes — that is a real state the chips can reach. */
   readonly kinds: ReadonlySet<string>
-  /** `active` hides memories that have been superseded or forgotten; `all` includes them. */
-  readonly status: "active" | "all"
+  /**
+   * WHICH LIFECYCLE LENS is in force (`utils/memory-lens.ts`).
+   *
+   * 🔴 This field replaces `status: "active" | "all"`, which was **INERT** — `matches()` never read
+   * it and no caller ever passed `includeInvalid`, so the header's toggle changed its own label and
+   * nothing else. It was not an unfinished feature; it was a control that could not work, which
+   * teaches a false model of the app and is strictly worse than not offering one. The lens is read
+   * in two places now: here, by `matches()`, and by the list's fetch, which asks the server for the
+   * lens's status set instead of over-fetching and hiding the remainder.
+   */
+  readonly lens: LensID
 }
 
+/**
+ * The kinds the CHIPS control — not every kind the store has.
+ *
+ * 🔴 The difference is load-bearing. A `claim` is a kind too, and it has no chip: the chips are the
+ * Map's three shapes, and giving claims a fourth shape is a separate piece of work. What must not
+ * happen in the meantime is that the absence of a chip HIDES them — a control that does not exist
+ * cannot be switched off by the user, so it must not be switched off on their behalf. `matches()`
+ * therefore gates only on this list and admits anything outside it.
+ */
 export const ALL_KINDS: readonly string[] = ["entity", "episode", "passage"]
 
 /** The default a surface opens with: everything the store considers current, passages folded away. */
 export const defaultFilter = (): MemoryFilter => ({
   query: "",
   kinds: new Set(["entity", "episode"]),
-  status: "active",
+  lens: defaultLens(),
 })
 
 /** Is the filter doing anything at all? Drives whether a surface bothers to report counts. */
 export const isNarrowed = (filter: MemoryFilter): boolean =>
-  filter.query.trim().length > 0 || filter.status !== "active" || filter.kinds.size !== 2 || !filter.kinds.has("entity")
+  filter.query.trim().length > 0 ||
+  filter.lens !== defaultLens() ||
+  filter.kinds.size !== 2 ||
+  !filter.kinds.has("entity")
 
 /**
  * Does one memory match the text?
@@ -57,9 +79,26 @@ export function matchesQuery(row: Pick<MemoryRow, "name" | "text">, query: strin
   return terms.every((term) => haystack.includes(term))
 }
 
-/** Does one memory pass the whole filter? */
-export function matches(row: Pick<MemoryRow, "name" | "text" | "kind">, filter: MemoryFilter): boolean {
-  if (!filter.kinds.has(row.kind)) return false
+/**
+ * Does one memory pass the whole filter?
+ *
+ * ⚠️ **The lens gates before the kind, and the kind before the text.** Cheapest and most decisive
+ * first, but the ORDER also states the reading: a superseded claim is not "a match that happens to
+ * be retired", it is outside the question the user asked. `status` is optional in the parameter
+ * type only so a caller holding a partial row (the graph's hub members, a test fixture) can still
+ * ask — an absent status reads as `active`, because a filter may narrow and may never erase what it
+ * cannot classify.
+ */
+export function matches(
+  row: Pick<MemoryRow, "name" | "text" | "kind"> & { readonly status?: string },
+  filter: MemoryFilter,
+): boolean {
+  if (!lensAdmits(lensByID(filter.lens), row.status)) return false
+  // ⚠️ Only a kind with a CHIP can be hidden by the chips. A `claim` has no chip yet, and the old
+  // `kinds.has(row.kind)` hid every one of them from the Remembered list — the surface whose entire
+  // job is answering "what do you remember", with the store's first-class unit of memory invisible
+  // in it and no control on screen that could have brought them back.
+  if (ALL_KINDS.includes(row.kind) && !filter.kinds.has(row.kind)) return false
   return matchesQuery(row, filter.query)
 }
 

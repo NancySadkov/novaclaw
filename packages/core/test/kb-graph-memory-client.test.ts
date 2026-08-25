@@ -94,6 +94,8 @@ describe("MemoryClient.fromEngine", () => {
       discardLegacyGlobalExtracts: async () => 0,
       stats: async () => ({ total: 1, valid: 1 }),
       list: async () => [],
+      candidates: async () => [],
+      byIds: async () => [],
       graph: async () => ({
         nodes: [],
         edges: [],

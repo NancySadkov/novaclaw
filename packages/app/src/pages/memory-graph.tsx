@@ -16,6 +16,10 @@ import {
   toggleKind as toggleKindIn,
   type MemoryFilter,
 } from "@/utils/memory-filter"
+import { LENSES, lensByID, statusBadge, type LensID } from "@/utils/memory-lens"
+import { createMemoryActivity } from "./memory-graph/activity-live"
+import { MemoryActivityFeedRail } from "./memory-graph/activity-feed"
+import { FLARE_MS, RANK_RING_R, rankPop } from "./memory-graph/activity"
 import { ownerFromKey, ownersFor, scopeOwnerName, type MemoryOwner } from "@/apps/memory-owner"
 import { type AgentLike } from "@/apps/contacts"
 import { layoutGraph, type Vec } from "./memory-graph/layout"
@@ -57,6 +61,26 @@ const SCOPE_AGENT = "#e0a33e" // gold — this colleague's own
 const SCOPE_SESSION = "#22d3ee" // cyan — this chat only
 const scopeColor = (scope: string) =>
   scope === "global" ? SCOPE_GLOBAL : scope.startsWith("agent:") ? SCOPE_AGENT : SCOPE_SESSION
+/**
+ * WHAT A FLARE MEANS, by colour — the same three the feed's tones use.
+ *
+ * Gold for something LEARNED (the skin's accent, and the colour this app already spends on "new"),
+ * cyan for an EDIT in place, slate for a RETIREMENT. Deliberately not red: nothing here is an
+ * error, and a corrected memory is the system working rather than failing.
+ */
+const FLARE_COLOUR = { new: "#e0a33e", edit: "#22d3ee", retire: "#94a3b8" } as const
+
+/**
+ * WHY ARCHIVE/RESTORE IS DISABLED — a named blocker, not a shrug.
+ *
+ * 🔴 Everything except the route exists: `wasm-engine.setClaimStatus`, `MemoryClient.setClaimStatus`,
+ * and a `memory.claim.status` event the store publishes the moment it moves. There is no HTTP
+ * endpoint for it, so this client has nothing to call. The control is shown DISABLED rather than
+ * hidden because hiding it teaches that archiving is impossible, and enabled-but-inert is the exact
+ * failure this slice deleted from the header — a control that cannot work is worse than none.
+ */
+const ARCHIVE_BLOCKED = "Not reachable yet: this instance has no endpoint for changing a claim's status."
+
 /** ⚠️ Says WHO CAN READ IT, never the raw key. `agent:talent-scout` is a store key; "Talent Scout's
  *  own" is the fact the user needs, and the difference is whether the badge can be acted on. */
 const scopeLabel = (scope: string, owners: readonly MemoryOwner[]) => {
@@ -256,6 +280,68 @@ export function MemoryGraphPage() {
   }
 
   /**
+   * THE LIVE OVERLAY — what the store is doing, as it does it.
+   *
+   * 🔴 **Events, never polling.** The UI is a thin client that may be on another machine, so it is
+   * TOLD what happened rather than asking every few seconds whether anything did. It rides the
+   * shell's single `GET /global/event` subscription (`memory-graph/activity-live.ts`); opening this
+   * page adds no connection and closing it removes no work from the write path, which is both
+   * halves of the P2 gate.
+   *
+   * ⚠️ **An event is a NOTICE, not a row.** `memory.claim.recorded` carries ids and a truncated
+   * caption — deliberately, because a bus is not a second copy of the store — so a write flares
+   * instantly and the NODE it is about appears when the debounced re-read lands. That is why both
+   * callbacks below re-read rather than patching the graph in place: a client-side patch would be a
+   * second, drifting implementation of what the engine already computed.
+   */
+  const [listRevision, setListRevision] = createSignal(0)
+  const reread = () => {
+    setTick((t) => t + 1)
+    setListRevision((r) => r + 1)
+  }
+  const activity = createMemoryActivity({
+    onReconcile: reread,
+    onRefresh: reread,
+    // 🔴 A flare's clock starts when its MARK EXISTS. A written memory is captioned within
+    // milliseconds and drawn only after the debounced re-read, so timing the flare from the event
+    // spent most of it — and on a slow read, all of it — on an empty patch of canvas.
+    isVisible: (id) => positions()[id] !== undefined && nodeById().has(id),
+  })
+  /**
+   * RECONCILE BEFORE ANIMATING. The feed suppresses flares from the moment the stream drops until
+   * this fires, so nothing highlights a node the canvas has not re-read yet.
+   *
+   * ⚠️ Keyed on the graph resource SETTLING, not on the fetch being issued. "We asked" and "we know"
+   * are different facts, and animating on the first would put the flare back in the gap it was
+   * moved out of.
+   */
+  createEffect(
+    on(
+      () => graph.loading,
+      (loading) => {
+        if (!loading) activity.synced()
+      },
+    ),
+  )
+
+  const live = () => activity.state()
+  /** ⚠️ Reduced motion drops FLARES, DRIFT and DIMMING. Captions and state changes stay. */
+  const motion = () => !activity.reducedMotion()
+  const recall = () => live().recall
+  const recallRank = (id: string) => recall()?.ranks.get(id)
+  const flareOf = (id: string) => live().flares.get(id)
+  /**
+   * Is this mark retired?
+   *
+   * TWO sources, on purpose: the store's own `status` (authoritative, arrives with the next fetch)
+   * and what this session just watched retire (instant, from the event). Neither alone is enough —
+   * the first is late by one round trip, and the second is empty for everything that retired before
+   * the page was opened.
+   */
+  const isRetired = (row: MemoryRow | undefined) =>
+    row !== undefined && (row.status === "superseded" || row.status === "archived" || live().retired.has(row.id))
+
+  /**
    * ONE FILTER, read by the Map and by the Remembered list (`utils/memory-filter.ts`).
    *
    * 🔴 It lives HERE, above both views, because this page has twice shipped two surfaces answering
@@ -271,8 +357,16 @@ export function MemoryGraphPage() {
   const kindVisible = (kind?: string) => filter().kinds.has(kind ?? "entity")
   const toggleKind = (kind: string) => setFilter((current) => toggleKindIn(current, kind))
   const setQuery = (query: string) => setFilter((current) => ({ ...current, query }))
-  const toggleStatus = () =>
-    setFilter((current) => ({ ...current, status: current.status === "active" ? "all" : "active" }))
+  /**
+   * THE LIFECYCLE LENS, shared by both views like everything else in this header.
+   *
+   * ⚠️ It replaces a `Current / Incl. forgotten` toggle that was **inert** — `matches()` never read
+   * its field and no caller ever passed `includeInvalid`, so it changed its own label and nothing
+   * else. The four lenses are the questions the claim lifecycle can actually answer, and the one it
+   * cannot (`Never used`) says so rather than rendering an empty list (`utils/memory-lens.ts`).
+   */
+  const lens = () => lensByID(filter().lens)
+  const setLens = (id: LensID) => setFilter((current) => ({ ...current, lens: id }))
 
   /**
    * WHAT IS ON THE CANVAS — the visible projection, not the raw graph.
@@ -350,6 +444,29 @@ export function MemoryGraphPage() {
     return node && !isHub(node) ? node.row : undefined
   }
 
+  /**
+   * WHAT HAPPENED TO THIS CLAIM, in both directions.
+   *
+   * ⚠️ Derived from the rows already on the canvas, because there is no history ENDPOINT: core's
+   * engine has `claimHistory` and the HTTP surface does not expose it. So this shows the links that
+   * are genuinely reachable — the claim that replaced this one, and the ones this one replaced —
+   * and says nothing about anything older. A timeline that invented the missing steps would be the
+   * confident-lie failure this page keeps having to unlearn.
+   */
+  const timeline = (id: string): readonly { readonly label: string; readonly id: string | undefined }[] => {
+    const row = rowOf(id)
+    if (!row) return []
+    const steps: { label: string; id: string | undefined }[] = []
+    if (row.supersededBy) steps.push({ label: "Replaced by", id: row.supersededBy })
+    for (const other of loaded()?.nodes ?? []) {
+      if (other.supersededBy === id) steps.push({ label: "Replaces", id: other.id })
+    }
+    if (row.status === "archived") steps.push({ label: "Archived — not recalled, still here.", id: undefined })
+    if (row.status === "needs_review")
+      steps.push({ label: "Flagged — its source moved, so the citation is stale.", id: undefined })
+    return steps
+  }
+
   const [selected, setSelected] = createSignal<string | undefined>()
   // The set of node ids adjacent to the selected node (both directions) — used to highlight.
   const neighborIds = createMemo(() => {
@@ -362,6 +479,25 @@ export function MemoryGraphPage() {
     }
     return set
   })
+  /**
+   * WHICH MARKS STEP BACK — one predicate, read by the shapes AND by the labels.
+   *
+   * ⚠️ It was two copies of the same expression, and this slice adds a third reason to dim. Three
+   * copies of a rule is how a label ends up bright beside a faded mark: the two would have to be
+   * edited together forever, and nothing on screen would say they had drifted.
+   *
+   * THREE ways of asking "which of these": a selection, a search, and now a RECALL. A mark that
+   * answers none of them steps back for the ones that do.
+   */
+  const dimmed = (id: string) => {
+    if (selected() !== undefined && selected() !== id && !neighborIds().has(id)) return true
+    if (matched().size > 0 && !matched().has(id)) return true
+    // ⚠️ Reduced motion drops the GLOBAL DIMMING, which is the recall's only large visual gesture.
+    // The ranks are still badged on the hits, so the answer survives without the movement.
+    if (motion() && recall() !== undefined && recallRank(id) === undefined) return true
+    return false
+  }
+
   const selectedNode = createMemo(() => (selected() ? nodeById().get(selected()!) : undefined))
   /** Narrowing helpers for the detail panel — a mark is either a stored memory or a hub. */
   const isHubNode = (node: ProjectedNode) => (isHub(node) ? node : undefined)
@@ -562,6 +698,19 @@ export function MemoryGraphPage() {
    * it connect", which is the second question. Opening on the graph led with the harder view.
    */
   const [appView, setAppView] = createSignal<"list" | "graph" | "settings">("list")
+
+  /**
+   * OPEN ONE MEMORY IN THE INSPECTOR — the one act the list, the feed and the map all perform.
+   *
+   * ⚠️ It switches to the Map rather than opening a second detail panel in the list. The inspector
+   * shows relationships, and relationships are what the Map is; a panel in the list would be the
+   * same information with the picture that explains it removed. The camera follows the selection on
+   * its own (the `centerOn` effect below), so a mark chosen from a caption is never off-screen.
+   */
+  const inspect = (id: string) => {
+    setSelected(id)
+    setAppView("graph")
+  }
 
   /**
    * 🔴 MEASURE WHEN THE PANE BECOMES VISIBLE. Found by running the app, not by any test.
@@ -788,24 +937,36 @@ export function MemoryGraphPage() {
               </span>
             </Show>
           </label>
-          {/* STATUS. `active` is what the store considers current; `all` also shows what has been
-              forgotten or superseded, which is the only way to see that a correction happened. */}
-          <button
-            type="button"
-            data-slot="memory-status-toggle"
-            data-status={filter().status}
-            aria-pressed={filter().status === "all"}
-            onClick={toggleStatus}
-            title={
-              filter().status === "active"
-                ? "Showing current memories. Click to include forgotten ones."
-                : "Including forgotten memories. Click to show current only."
-            }
-            class="rounded px-1.5 py-1 text-[11px] hover:bg-v2-background-bg-layer-02"
-            classList={{ "opacity-50": filter().status === "active" }}
+          {/* THE LENS. Four questions, one row, and the one in force says what it means underneath
+              — principle 12(d): what is in force in ONE line, the rest on demand (the `title`). */}
+          <div
+            class="flex items-center gap-0.5 rounded-md bg-v2-background-bg-layer-01 p-0.5 text-[11px]"
+            data-slot="memory-lens"
+            data-lens={filter().lens}
           >
-            {filter().status === "active" ? "Current" : "Incl. forgotten"}
-          </button>
+            <For each={LENSES}>
+              {(entry) => (
+                <button
+                  type="button"
+                  data-slot="memory-lens-tab"
+                  data-lens={entry.id}
+                  aria-pressed={filter().lens === entry.id}
+                  title={entry.hint}
+                  onClick={() => setLens(entry.id)}
+                  class="rounded px-2 py-1"
+                  classList={{
+                    "bg-v2-background-bg-layer-03 text-v2-text-text-base": filter().lens === entry.id,
+                    "opacity-60 hover:opacity-100": filter().lens !== entry.id,
+                  }}
+                >
+                  {entry.label}
+                </button>
+              )}
+            </For>
+          </div>
+          <span class="max-w-56 truncate text-[11px] opacity-50" data-slot="memory-lens-hint" title={lens().hint}>
+            {lens().hint}
+          </span>
         </Show>
 
         {/* FOCUS, stated. A view silently showing a neighborhood instead of a cabinet is the same
@@ -919,6 +1080,10 @@ export function MemoryGraphPage() {
         </div>
       </header>
 
+      {/* One ROW: the view on the left, the activity rail on the right. The rail is a sibling of
+          the views rather than an overlay on one of them, so it never covers the map's inspector
+          and it is present whichever view you are reading. */}
+      <div class="flex min-h-0 flex-1 overflow-hidden">
       {/* The Remembered list, in the app where a person actually asks "what do you know about me".
           It owns its own fetch, so switching views does not depend on the graph having loaded. */}
       <Show when={appView() === "list"}>
@@ -928,10 +1093,12 @@ export function MemoryGraphPage() {
           <MemoryRemembered
             scopes={owner()?.scopes}
             filter={filter()}
+            revision={listRevision()}
             onCounts={setListCounts}
             restrictTo={focusIDs()}
             restrictLabel={focusLabel()}
             onClearRestrict={() => setSelected(undefined)}
+            onInspect={inspect}
           />
         </div>
       </Show>
@@ -1036,12 +1203,7 @@ export function MemoryGraphPage() {
                 {(node) => {
                   const p = () => positions()[node.id]
                   const isSel = () => selected() === node.id
-                  const isNeighbor = () => neighborIds().has(node.id)
-                  // Dimmed by a SELECTION or by a SEARCH — two ways of asking "which of these",
-                  // and a mark that answers neither question steps back for the ones that do.
-                  const dim = () =>
-                    (selected() !== undefined && !isSel() && !isNeighbor()) ||
-                    (matched().size > 0 && !matched().has(node.id))
+                  const dim = () => dimmed(node.id)
                   const hub = () => (isHub(node) ? node : undefined)
                   const row = () => (isHub(node) ? undefined : node.row)
                   // A hub carries no scope of its own unless every member agrees on one — see
@@ -1130,7 +1292,133 @@ export function MemoryGraphPage() {
                   )
                 }}
               </For>
+              {/* THE LIVE OVERLAY, drawn OVER the marks and in PLANE space so it travels with them.
+                  🔴 SMIL (`<animate>`), not CSS. Two reasons, both learned the hard way on this page:
+                  a stylesheet imported from a `.tsx` is UNLAYERED and outranks every Tailwind
+                  utility it collides with, and `getComputedStyle` during an unticked transition
+                  reads the START value — so a CSS animation here would be both a cascade hazard and
+                  unverifiable from the DOM. An `<animate>` element is inspectable: its presence IS
+                  the animation, which is what a test and a person can both check.
+                  ⚠️ Under reduced motion no flare element is created at all (the fold never records
+                  one), so there is nothing here to suppress a second time. */}
+              <g data-slot="memory-graph-overlay" class="pointer-events-none">
+                <For each={projected().nodes}>
+                  {(node) => {
+                    const p = () => positions()[node.id]
+                    const row = () => (isHub(node) ? undefined : node.row)
+                    const flare = () => flareOf(node.id)
+                    const retiredMark = () => isRetired(row())
+                    return (
+                      <Show when={p() && (flare() || retiredMark())}>
+                        <g transform={`translate(${p()!.x} ${p()!.y})`}>
+                          {/* RETIRED: a dashed ring that STAYS. It is a state, not an event, so it
+                              survives reduced motion and outlives the flare that announced it —
+                              and the mark keeps its place on the map, because a corrected claim is
+                              history you can still reach, not a node that was deleted. */}
+                          <Show when={retiredMark()}>
+                            <circle
+                              data-slot="memory-graph-retired"
+                              data-node-id={node.id}
+                              r={12}
+                              fill="none"
+                              stroke="#94a3b8"
+                              stroke-width={1.25}
+                              stroke-dasharray="2 3"
+                              opacity={0.55}
+                            />
+                          </Show>
+                          <Show when={flare()}>
+                            {(mark) => (
+                              <circle
+                                data-slot="memory-graph-flare"
+                                data-node-id={node.id}
+                                data-tone={mark().tone}
+                                r={7}
+                                fill="none"
+                                stroke={FLARE_COLOUR[mark().tone]}
+                                stroke-width={2}
+                                opacity={0.95}
+                              >
+                                {/* ⚠️ Both animations START at the visible value, so a frozen
+                                    timeline (a hidden tab) leaves a static ring that the pruner
+                                    removes on schedule. The degradation is "no movement", never
+                                    "no mark" — see `rankPop` for the measurement that settled it. */}
+                                <animate attributeName="r" from="7" to="26" dur={`${FLARE_MS}ms`} fill="freeze" />
+                                <animate
+                                  attributeName="opacity"
+                                  from="0.95"
+                                  to="0"
+                                  dur={`${FLARE_MS}ms`}
+                                  fill="freeze"
+                                />
+                              </circle>
+                            )}
+                          </Show>
+                        </g>
+                      </Show>
+                    )
+                  }}
+                </For>
+              </g>
             </g>
+            {/* RECALL RANKS, in SCREEN space like the labels and for the same reason — a rank drawn
+                inside the zoomed group is illegible at one zoom and a billboard at another.
+                🔴 The RANK is the point. "These six came back" is a set; "this one first, then this"
+                is what the store actually decided, and it is the only part of ranking a person can
+                check against their own sense of what should have been remembered. */}
+            <Show when={recall()}>
+              {(hit) => (
+                <g data-slot="memory-graph-ranks" class="pointer-events-none">
+                  <For each={projected().nodes}>
+                    {(node) => {
+                      const rank = () => hit().ranks.get(node.id)
+                      const at = () => {
+                        const p = positions()[node.id]
+                        return p ? project(p, view()) : undefined
+                      }
+                      return (
+                        <Show when={rank() !== undefined && at()}>
+                          <g
+                            data-slot="memory-graph-rank"
+                            data-node-id={node.id}
+                            data-rank={rank()}
+                            transform={`translate(${at()!.x} ${at()!.y})`}
+                          >
+                            {/* 🔴 THE STAGGER RIDES THE RADIUS, NEVER THE OPACITY. Measured in the
+                                Browser pane: an animation that has BEGUN pins its attribute to the
+                                first value, and a hidden tab never advances the timeline — so a
+                                badge whose visibility depended on `opacity: 0 → 1` stayed at 0
+                                forever. Frozen here, the ring is merely a few pixels wide of its
+                                resting size. `rankPop` carries the whole reasoning. */}
+                            <circle r={RANK_RING_R} fill="none" stroke="#eab308" stroke-width={2} opacity={0.9}>
+                              <Show when={motion()}>
+                                <animate
+                                  attributeName="r"
+                                  values={rankPop(rank()!).values}
+                                  keyTimes={rankPop(rank()!).keyTimes}
+                                  dur={rankPop(rank()!).dur}
+                                  fill="freeze"
+                                />
+                              </Show>
+                            </circle>
+                            <text
+                              x={0}
+                              y={-14}
+                              font-size="10"
+                              text-anchor="middle"
+                              fill="#eab308"
+                              class="select-none"
+                            >
+                              {rank()}
+                            </text>
+                          </g>
+                        </Show>
+                      )
+                    }}
+                  </For>
+                </g>
+              )}
+            </Show>
             {/* LABELS, in SCREEN space — outside the zoomed group on purpose.
                 Inside it they scaled with the view: illegible when zoomed out, billboards when zoomed
                 in, and "do these two overlap?" had no stable answer to cull on. Here they are always
@@ -1142,13 +1430,7 @@ export function MemoryGraphPage() {
                     const p = positions()[node.id]
                     return p ? project(p, view()) : undefined
                   }
-                  const isSel = () => selected() === node.id
-                  const isNeighbor = () => neighborIds().has(node.id)
-                  // Dimmed by a SELECTION or by a SEARCH — two ways of asking "which of these",
-                  // and a mark that answers neither question steps back for the ones that do.
-                  const dim = () =>
-                    (selected() !== undefined && !isSel() && !isNeighbor()) ||
-                    (matched().size > 0 && !matched().has(node.id))
+                  const dim = () => dimmed(node.id)
                   return (
                     <Show when={labelled().has(node.id) && at()}>
                       <text
@@ -1205,15 +1487,127 @@ export function MemoryGraphPage() {
                   when={isHubNode(sel())}
                   fallback={
                     <>
-                      <p class="mb-1 leading-snug">{rowOf(sel().id)?.text}</p>
-                      <div class="mb-3 flex flex-wrap gap-2 text-xs opacity-60">
+                      <p class="mb-1 leading-snug" data-slot="memory-inspector-text">
+                        {rowOf(sel().id)?.text}
+                      </p>
+                      {/* WHAT IT IS AND HOW IT GOT HERE — the two things that are always true of a
+                          stored memory, on one line each, before anything conditional. */}
+                      <div class="mb-2 flex flex-wrap items-center gap-2 text-xs opacity-60">
                         <span>{rowOf(sel().id)?.kind}</span>
                         <span>·</span>
                         <span>{rowOf(sel().id)?.relation}</span>
-                        <Show when={rowOf(sel().id)?.source}>
-                          <span>·</span>
-                          <span>{rowOf(sel().id)?.source}</span>
+                        <Show when={statusBadge(rowOf(sel().id)?.status)}>
+                          {(badge) => (
+                            <span
+                              class="rounded px-1.5 py-0.5"
+                              data-slot="memory-inspector-status"
+                              style={{ background: badge().tint, color: badge().ink }}
+                              title={badge().title}
+                            >
+                              {badge().label}
+                            </span>
+                          )}
                         </Show>
+                      </div>
+                      {/* PROVENANCE. `source` is who or what wrote it — auto-extraction, the `kb`
+                          tool, an import. It is the first question a person asks of a fact about
+                          themselves that they did not type, and the panel used to bury it in a row
+                          of dot-separated words. */}
+                      <Show when={rowOf(sel().id)?.source}>
+                        {(source) => (
+                          <p class="mb-1 text-xs opacity-60" data-slot="memory-inspector-source">
+                            <span class="opacity-70">Recorded by </span>
+                            {source()}
+                          </p>
+                        )}
+                      </Show>
+                      {/* EVIDENCE IS NOT THE CLAIM. A locator the claim was drawn FROM — and when a
+                          `needs_review` flag is on the row, this is the thing that moved. Showing
+                          them apart is what makes "the citation is stale, the fact is not" a
+                          sentence somebody can check rather than one they have to take on faith. */}
+                      <Show when={rowOf(sel().id)?.evidence}>
+                        {(evidence) => (
+                          <p class="mb-1 text-xs opacity-60 break-words" data-slot="memory-inspector-evidence">
+                            <span class="opacity-70">
+                              {rowOf(sel().id)?.evidenceKind ? `${rowOf(sel().id)!.evidenceKind}: ` : "From: "}
+                            </span>
+                            {evidence()}
+                          </p>
+                        )}
+                      </Show>
+                      {/* IDENTITY — whether this claim can ever be corrected. A claim the harness
+                          accepted a `{subject, predicate}` for is one a later answer can retire; one
+                          without is a fact that can only be forgotten. That difference is invisible
+                          in the text and decides what the user can expect. */}
+                      <Show
+                        when={rowOf(sel().id)?.predicate}
+                        fallback={
+                          <Show when={rowOf(sel().id)?.kind === "claim"}>
+                            <p class="mb-1 text-xs opacity-50" data-slot="memory-inspector-identity">
+                              No identity — nothing can correct this later, only forget it.
+                            </p>
+                          </Show>
+                        }
+                      >
+                        {(predicate) => (
+                          <p class="mb-1 text-xs opacity-60" data-slot="memory-inspector-identity">
+                            <span class="opacity-70">Identity: </span>
+                            {rowOf(sel().id)?.subject ?? "?"} · {predicate()}
+                          </p>
+                        )}
+                      </Show>
+                      {/* THE TIMELINE — what replaced this, and what it replaced. Both directions,
+                          both clickable: a correction you can only read in one direction is half a
+                          story. ⚠️ It is built from the ROWS on the canvas, not from a history
+                          endpoint, because there is no `/memory/claimHistory` on this instance —
+                          the engine has `claimHistory`, the HTTP surface does not expose it. So
+                          this shows the links that ARE reachable and claims nothing further. */}
+                      <Show when={timeline(sel().id).length > 0}>
+                        <div class="mb-3 mt-2" data-slot="memory-inspector-timeline">
+                          <div class="text-xs font-medium opacity-70">Timeline</div>
+                          <ul class="mt-1 flex flex-col gap-1">
+                            <For each={timeline(sel().id)}>
+                              {(step) => (
+                                <li class="text-xs">
+                                  <Show
+                                    when={step.id}
+                                    fallback={<span class="opacity-60">{step.label}</span>}
+                                  >
+                                    {(id) => (
+                                      <button
+                                        class="text-left hover:underline"
+                                        onClick={() => setSelected(id())}
+                                      >
+                                        <span class="opacity-50">{step.label} </span>
+                                        {truncate(markLabel(id()), 28)}
+                                      </button>
+                                    )}
+                                  </Show>
+                                </li>
+                              )}
+                            </For>
+                          </ul>
+                        </div>
+                      </Show>
+                      {/* ARCHIVE / RESTORE — offered, DISABLED, and honest about why.
+                          🔴 The engine has `setClaimStatus` and the store already publishes
+                          `memory.claim.status` when it moves; what is missing is an HTTP endpoint
+                          to reach it. Showing an enabled button that silently does nothing is the
+                          inert-control failure this slice just deleted elsewhere, and hiding the
+                          control entirely would teach that memory is one-way when it is not. So it
+                          says what is missing — which is also how the person who can fix it finds
+                          out. */}
+                      <div class="mb-3 flex items-center gap-2" data-slot="memory-inspector-lifecycle">
+                        <button
+                          type="button"
+                          data-slot="memory-inspector-archive"
+                          disabled
+                          title={ARCHIVE_BLOCKED}
+                          class="cursor-not-allowed rounded bg-v2-background-bg-layer-03 px-2 py-1 text-xs opacity-40"
+                        >
+                          {isRetired(rowOf(sel().id)) ? "Restore" : "Archive"}
+                        </button>
+                        <span class="text-[11px] opacity-40">{ARCHIVE_BLOCKED}</span>
                       </div>
                     </>
                   }
@@ -1263,6 +1657,20 @@ export function MemoryGraphPage() {
             )}
           </Show>
         </Show>
+      </div>
+
+      {/* The activity rail. Not on Settings — that tab is about switches, and a live feed beside a
+          consent toggle is decoration rather than information. */}
+      <Show when={appView() !== "settings"}>
+        <MemoryActivityFeedRail
+          entries={live().entries}
+          streamStatus={activity.streamStatus()}
+          reconciling={activity.reconciling()}
+          reducedMotion={activity.reducedMotion()}
+          skipped={live().skipped}
+          onSelect={inspect}
+        />
+      </Show>
       </div>
     </div>
   )

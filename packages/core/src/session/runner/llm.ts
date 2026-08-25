@@ -20,6 +20,7 @@ import { ModelHealth } from "./model-health"
 import { Config } from "../../config"
 import { ConfigToolRouting } from "../../config/tool-routing"
 import { Global } from "../../global"
+import { ascending } from "@novaclaw/schema/identifier"
 import { Database } from "../../database/database"
 import { EventV2 } from "../../event"
 import { Location } from "../../location"
@@ -71,6 +72,7 @@ import { SessionRecall } from "./recall"
 import { MemoryCorrection } from "./memory-correction"
 import { Memory } from "../../kb-graph/memory"
 import { KbEmbedder } from "../../kb-graph/embedder"
+import { MemoryAccessLedger } from "../../kb-graph/access-ledger"
 import { MemoryClient } from "../../kb-graph/memory-client"
 import { MemoryRanking } from "../../kb-graph/ranking"
 import { MemoryRerank } from "../../kb-graph/rerank"
@@ -399,7 +401,12 @@ export const layer = Layer.effect(
        */
       const evidence = (
         outcome: SessionQualityCheck.Outcome,
-        rest: { readonly at: number; readonly exitCode?: number; readonly timedOut?: boolean; readonly durationMs?: number },
+        rest: {
+          readonly at: number
+          readonly exitCode?: number
+          readonly timedOut?: boolean
+          readonly durationMs?: number
+        },
       ) =>
         SessionQualityCheck.record(db, {
           sessionID,
@@ -808,14 +815,14 @@ export const layer = Layer.effect(
       shortChat
         ? Effect.succeed(SystemContext.empty)
         : Effect.all(
-        [
-          systemContext.load(),
-          skillGuidance.load(agent),
-          referenceGuidance.load(),
-          adhocGuidance.load(sessionID),
-          toolCatalogueGuidance.load(),
-        ],
-        { concurrency: "unbounded" },
+            [
+              systemContext.load(),
+              skillGuidance.load(agent),
+              referenceGuidance.load(),
+              adhocGuidance.load(sessionID),
+              toolCatalogueGuidance.load(),
+            ],
+            { concurrency: "unbounded" },
           ).pipe(Effect.map(SystemContext.combine))
 
     /**
@@ -1200,6 +1207,16 @@ export const layer = Layer.effect(
         const recallVector = yield* Effect.promise(() => KbEmbedder.embedOne(recallQuery))
         yield* timingEnd("memory-embed")
         const budget = SessionRecall.recallBudget(tier)
+        /**
+         * The id that links THIS recall's ledger rows to what the turn ends up doing with them.
+         *
+         * ⚠️ Minted here rather than by the store, because only this end of the call knows which of
+         * the returned pool survives the context budget. The store writes a row per RETURNED memory;
+         * `markUsed` below promotes the ones that actually reached the model. Without a shared id
+         * the report would have to guess which rows it just caused ("the newest for these ids"),
+         * which is wrong the moment two sessions recall at once.
+         */
+        const recallID = "rcl_" + ascending()
         // P8 ordering: over-fetch candidates, then re-rank by recency × authority and keep `budget` of
         // them. What the model sees each turn is the SHORT list, so ordering matters most here — a
         // recent authoritative fact must beat an old passive musing that merely echoes the wording.
@@ -1210,6 +1227,8 @@ export const layer = Layer.effect(
             query: recallQuery,
             k: SessionRecall.recallPoolSize(budget),
             scopes: memoryScopes,
+            surface: "auto-recall",
+            recallID,
             ...(recallVector === undefined ? {} : { embedding: recallVector }),
           })
           .pipe(Effect.orElseSucceed(() => []))
@@ -1241,8 +1260,26 @@ export const layer = Layer.effect(
           if (order) ordered = order.map((index) => recallCandidates[index]!)
           yield* timingEnd("memory-rerank")
         }
-        recalledMemories = ordered.slice(0, budget)
-        memoryRecall = SessionRecall.formatRecall(recalledMemories)
+        /**
+         * A FIXED TOKEN BUDGET, with the user's standing constraints protected from truncation.
+         *
+         * ⚠️ `budget` above still caps the pool the reranker chooses from; what the model is SHOWN
+         * is bounded in tokens, because five one-line preferences and five ingested passages are not
+         * the same amount of window. `recall.ts` holds the tiering, the estimator and what the
+         * estimate's error costs.
+         */
+        const pack = SessionRecall.packRecall(ordered, SessionRecall.recallTokenBudget(tier))
+        recalledMemories = pack.shown
+        memoryRecall = SessionRecall.formatRecall(pack)
+        // 🔴 The other half of the P3 ledger: RETURNED is not USED. The store recorded the whole
+        // pool; this says which of it survived the budget and actually reached the model, which is
+        // the signal the pruning policy weighs and the "never used" list is the absence of.
+        // Best-effort — a measurement must never cost a turn.
+        yield* MemoryAccessLedger.markUsed(db, {
+          recallID,
+          ids: pack.shown.map((hit) => hit.id),
+          at: Date.now(),
+        })
       }
       // The exact wire text of the tail-injected recall block. Carries the 1N provenance prefix for
       // the same reason the todo reminder does: it rides the `user` role, and every real-user walk
@@ -1397,13 +1434,9 @@ export const layer = Layer.effect(
               // Read from the SAME condition that withheld the ops, so the sentence and the tool
               // list cannot disagree — "a section naming a tool the turn cannot call is a false
               // description", and a silent absence is the converse.
-              colleaguesAtCap: ColleagueBound.exceedsHopCap(
-                ColleagueBound.nextHop(ColleagueHop.fromContext(context)),
-              ),
+              colleaguesAtCap: ColleagueBound.exceedsHopCap(ColleagueBound.nextHop(ColleagueHop.fromContext(context))),
               canSpawn: (toolMaterialization?.definitions ?? []).some((tool) => tool.name === "spawn"),
-              canAddressColleagues: (toolMaterialization?.definitions ?? []).some(
-                (tool) => tool.name === "colleague",
-              ),
+              canAddressColleagues: (toolMaterialization?.definitions ?? []).some((tool) => tool.name === "colleague"),
             }),
             projectScope: SystemCompose.projectScopeSection(config.permissionMode),
             // ⚠️ The scratch path is derived from the AGENT id, not from the session: a colleague's
@@ -1431,13 +1464,14 @@ export const layer = Layer.effect(
       const systemParts = SystemCompose.composeSystemParts(promptParts).map(SystemPart.make)
       const providerMessages = toLLMMessages(context, model, modelCapabilities, modelImageLimit)
       const latestCompactionID = context.findLast((message) => message.type === "compaction")?.id
-      const strictEnabled = ({ ...(harness.strict ?? {}), ...(config.strict ?? {}) }).enabled === true
+      const strictEnabled = { ...(harness.strict ?? {}), ...(config.strict ?? {}) }.enabled === true
       const groundingDecision = ProjectGrounding.decide(
         {
           enabled: !strictEnabled && !ShortChat.enabled(config.shortChat),
           directory: location.directory,
           ...(latestCompactionID === undefined ? {} : { compactionID: latestCompactionID }),
-          contextTokens: RequestFootprint.measure({ system: [], messages: providerMessages, tools: [] }).estimatedTokens,
+          contextTokens: RequestFootprint.measure({ system: [], messages: providerMessages, tools: [] })
+            .estimatedTokens,
         },
         projectGroundingStates.get(session.id),
       )
@@ -1840,8 +1874,7 @@ export const layer = Layer.effect(
               // the cap unknown, so `read`'s withholding gate has no number to fire on.
               // ⚠️ Best-effort — a store that will not write must not fail the turn that just
               // recovered, and the map still holds it for this process either way.
-              if (modelRef !== undefined)
-                yield* models.rememberImageLimit(modelRef, discovered).pipe(Effect.ignore)
+              if (modelRef !== undefined) yield* models.rememberImageLimit(modelRef, discovered).pipe(Effect.ignore)
               yield* Log.event("session.media.limit.learned", {
                 "session.id": session.id,
                 "media.limit": discovered,
@@ -2754,12 +2787,12 @@ export const layer = Layer.effect(
             // arms are mutually exclusive `else if`s, so silence from all of them is indistinguishable
             // from silence from one — which is the same trap that cost this programme two days on
             // the fan-out. `false` so the chain below is unchanged.
-            (yield* Log.event("session.finish.arm", {
+            yield* Log.event("session.finish.arm", {
               "session.id": input.sessionID,
               "session.finish.empty": isEmptyAssistantTurn(context),
               "session.finish.announced": announcedToolButCalledNone(context),
               "session.finish.calls": toolCallsSinceLastUser(context).length,
-            }).pipe(Effect.as(false)))
+            }).pipe(Effect.as(false))
           ) {
             // unreachable — the log arm above always yields false
           } else if (isEmptyAssistantTurn(context)) {

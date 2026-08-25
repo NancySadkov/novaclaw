@@ -1091,6 +1091,17 @@ export const EVENTS = {
     content: "none",
     file: "packages/server/src/handlers/memory.ts",
   },
+  "kb.memory.forget.done": {
+    level: "info",
+    message: "forgot the least valuable staged memories in a scope",
+    attributes: {
+      "memory.scope": "id",
+      "memory.forgotten": "count",
+      "memory.protected": "count",
+    },
+    content: "none",
+    file: "packages/core/src/kb-graph/memory.ts",
+  },
   "kb.memory.legacy.discarded": {
     level: "warn",
     message: "discarded pre-roster memories that had leaked into the shared pile",
@@ -1764,6 +1775,18 @@ export const EVENTS = {
     attributes: {},
     content: "none",
     file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/event.ts",
+  },
+  /**
+   * An instance event was not carried on `/api/event` because the route's published wire union
+   * cannot express it. Logged once per type per subscription. Its ABSENCE from a busy instance is
+   * the healthy reading; its presence names exactly which internal types a public client cannot see.
+   */
+  "server.event.dropped": {
+    level: "debug",
+    message: "event omitted from the public stream",
+    attributes: { "instance.event.type": "id" },
+    content: "none",
+    file: "packages/server/src/handlers/event.ts",
   },
   /** The per-instance SSE event stream closed. */
   "server.event.disconnected": {

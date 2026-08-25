@@ -150,6 +150,33 @@ const isoTime = (value: unknown): string | undefined => {
   return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString()
 }
 
+/** What `candidates` selects. Short columns only — see the method for why `text` is not among them. */
+export interface CandidateInput {
+  readonly scopes?: readonly string[]
+  readonly kinds?: readonly MemoryKind[]
+  readonly statuses?: readonly KbClaim.ClaimStatus[]
+  readonly relation?: Relation
+  readonly includeInvalid?: boolean
+  /** `oldest` (the default) is what "never used, oldest first" and the prune policy both want. */
+  readonly order?: "oldest" | "newest"
+  readonly limit?: number
+}
+
+/** A memory described by everything EXCEPT its body. */
+export interface CandidateRow {
+  readonly id: string
+  readonly scope: string
+  readonly kind: MemoryKind
+  readonly name: string | null
+  readonly source: string | null
+  readonly confidence: number | null
+  readonly relation: Relation
+  readonly status: KbClaim.ClaimStatus
+  readonly conflictKey: string | null
+  /** ISO, when the engine had one. Absent rather than faked. */
+  readonly createdAt?: string
+}
+
 export interface ListInput {
   readonly scopes?: readonly string[]
   readonly kinds?: readonly MemoryKind[]
@@ -1847,6 +1874,20 @@ export class WasmMemory {
    * colleague rate window follows ("one loud colleague never spends another's allowance"), and the
    * reason this returns scopes rather than pruning by prefix in one pass.
    */
+  /** How many still-valid `staged` memories a scope holds — the cheap check that decides whether the
+   *  forgetting pass has anything to do at all. Kept separate from `prune` so a ledger-aware policy
+   *  can ask the same question without paying for a candidate scan first. */
+  stagedCount(scope?: string): Promise<number> {
+    return this.serialize(async () => {
+      const scopeFilter = scope ? `AND m.scope = $scope` : ``
+      const rows = await this.rows(
+        `MATCH (m:Memory) WHERE m.t_invalid IS NULL AND m.relation = 'staged' ${scopeFilter} RETURN count(m) AS n`,
+        scope ? { scope } : {},
+      )
+      return Number(rows[0]?.n ?? 0)
+    })
+  }
+
   async stagedScopes(prefix: string): Promise<string[]> {
     const rows = await this.rows(
       `MATCH (m:Memory)
@@ -1855,6 +1896,62 @@ export class WasmMemory {
       { prefix },
     )
     return rows.map((row) => String(row.scope ?? "")).filter((scope) => scope !== "")
+  }
+
+  /**
+   * SHORT rows for the pruning policy and the noise views — id, provenance, lifecycle, age.
+   *
+   * 🔴 **No `text` in the projection, and that is not an optimisation.** A table scan on this engine
+   * can return an empty string for `text` while the row is intact (see `hydrate`), so a scan that
+   * projected it would hand the policy blank bodies and the "never used" list blank captions. Ids,
+   * kinds, scopes, sources, confidences and timestamps all survive a scan; only the long string does
+   * not. Callers that need the body ask `hydrate` for the handful they chose.
+   *
+   * ⚠️ `ORDER BY m.t_created … LIMIT n` returning only short columns is the same shape `list` already
+   * uses. `WITH m ORDER BY … RETURN …` is the shape that HANGS, and it is not used here.
+   */
+  candidates(opts: CandidateInput = {}): Promise<CandidateRow[]> {
+    return this.serialize(async () => {
+      const validity = opts.includeInvalid ? `` : `AND m.t_invalid IS NULL`
+      const scopeFilter = opts.scopes ? `AND m.scope IN $scopes` : ``
+      const relationFilter = opts.relation ? `AND m.relation = $relation` : ``
+      const kindFilter = opts.kinds ? `AND m.kind IN $kinds` : ``
+      const statusFilter = opts.statuses ? `AND m.status IN $statuses` : ``
+      const direction = opts.order === "newest" ? "DESC" : "ASC"
+      // A higher ceiling than `list`/`graph` because these rows are SHORT: no body, so a wide window
+      // costs a scan and a few numbers per row rather than a page of text.
+      const limit = Math.max(1, Math.min(opts.limit ?? 500, 20000))
+      const rows = await this.rows(
+        `MATCH (m:Memory) WHERE true ${validity} ${scopeFilter} ${relationFilter} ${kindFilter} ${statusFilter}
+         RETURN m.id AS id, m.scope AS scope, m.kind AS kind, m.name AS name, m.source AS source,
+                m.confidence AS confidence, m.relation AS relation, m.status AS status,
+                m.conflict_key AS conflict_key, m.t_created AS created_at
+         ORDER BY m.t_created ${direction} LIMIT ${limit}`,
+        {
+          ...(opts.scopes ? { scopes: opts.scopes } : {}),
+          ...(opts.relation ? { relation: opts.relation } : {}),
+          ...(opts.kinds ? { kinds: opts.kinds } : {}),
+          ...(opts.statuses ? { statuses: opts.statuses } : {}),
+        },
+      )
+      return rows.map((row) => ({
+        id: String(row.id),
+        scope: String(row.scope ?? ""),
+        kind: String(row.kind ?? "entity") as MemoryKind,
+        name: (row.name as string | null) ?? null,
+        source: (row.source as string | null) ?? null,
+        confidence: row.confidence === null || row.confidence === undefined ? null : Number(row.confidence),
+        relation: (String(row.relation ?? "staged") as Relation) ?? "staged",
+        status: String(row.status ?? "active") as KbClaim.ClaimStatus,
+        conflictKey: (row.conflict_key as string | null) ?? null,
+        ...(isoTime(row.created_at) === undefined ? {} : { createdAt: isoTime(row.created_at)! }),
+      }))
+    })
+  }
+
+  /** Full rows for ids the caller already chose — the public door onto `hydrate`. */
+  byIds(ids: readonly string[]): Promise<MemoryRow[]> {
+    return this.serialize(async () => this.hydrate(ids))
   }
 
   prune(opts: { scope?: string; maxStaged?: number } = {}): Promise<number> {

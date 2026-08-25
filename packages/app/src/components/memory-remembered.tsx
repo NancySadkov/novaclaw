@@ -6,10 +6,36 @@ import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
-import { memoryClearScope, memoryInvalidate, memoryList, memoryStats, type MemoryRow } from "@/utils/memory-api"
+import {
+  memoryClearScope,
+  memoryInvalidate,
+  memoryList,
+  memoryNeverUsed,
+  memoryStats,
+  type MemoryRow,
+} from "@/utils/memory-api"
 import { instanceDiagnosis } from "@/utils/resource-api"
 import { memoryUnavailable } from "@/utils/memory-health"
 import { describeScope, isNarrowed, matches, type MemoryFilter } from "@/utils/memory-filter"
+import { applyLens, FORGOTTEN_BADGE, forgottenIDs, lensByID, statusBadge } from "@/utils/memory-lens"
+
+/** One shared empty set, so a lens with nothing to mark does not mint a new one per read. */
+const EMPTY_IDS: ReadonlySet<string> = new Set<string>()
+
+/**
+ * ONE READ of the list, whatever answered it.
+ *
+ * The three optional fields are the three ways an answer can be less than it looks: some rows were
+ * forgotten and the wire cannot say which, the lens has no data source on this instance, or the
+ * scan behind it stopped short. Each is carried rather than dropped, because every one of them
+ * turns into a confident lie if the surface renders the rows without it.
+ */
+interface ListPage {
+  readonly rows: readonly MemoryRow[]
+  readonly forgotten: ReadonlySet<string>
+  readonly unanswered?: boolean
+  readonly partialScan?: number
+}
 
 /**
  * The **Remembered** list — what NovaClaw has learned, in plain sentences.
@@ -57,6 +83,13 @@ export const MemoryRemembered: Component<{
   /** What the focus is OF, in the user's words — the list says whose neighborhood it is showing. */
   restrictLabel?: string
   onClearRestrict?: () => void
+  /**
+   * Open one memory in the Map's inspector — the surface that can show provenance, evidence,
+   * timeline and relationships beside the picture that explains them. Absent = there is no such
+   * surface here (the in-session panel has no map), so the control is not offered rather than
+   * offered dead.
+   */
+  onInspect?: (id: string) => void
   class?: string
 }> = (props) => {
   const language = useLanguage()
@@ -70,25 +103,76 @@ export const MemoryRemembered: Component<{
   const directory = () => serverSync().data.path?.directory ?? ""
   const sessionScope = () => (props.sessionID ? `session:${props.sessionID}` : undefined)
 
+  /**
+   * WHICH LIFECYCLE LENS this list reads through (`utils/memory-lens.ts`).
+   *
+   * ⚠️ An absent filter means `Current`, never "everything". `/memory/list` with no `statuses`
+   * returns every status INCLUDING history, so a caller that said nothing would quietly start
+   * showing corrected and archived claims beside current ones — the one distinction the claim
+   * lifecycle exists to draw.
+   */
+  const lens = () => lensByID(props.filter?.lens)
+
   const [memories, { refetch }] = createResource(
     () => {
       const cn = conn()
       return cn
-        ? { cn, dir: directory(), scopes: props.scopes, t: (props.revision ?? 0) + localTick() }
+        ? {
+            cn,
+            dir: directory(),
+            scopes: props.scopes,
+            // The lens is IN the key: changing it asks the server a different question, rather
+            // than being a different way of hiding the same answer.
+            statuses: lens().statuses,
+            includeInvalid: lens().includeInvalid,
+            source: lens().source,
+            t: (props.revision ?? 0) + localTick(),
+          }
         : undefined
     },
-    ({ cn, dir, scopes }) =>
+    async ({ cn, dir, scopes, statuses, includeInvalid, source }): Promise<ListPage> => {
       // ⚠️ Entities and episodes only — NOT passages. "Remembered" answers *what do you know*, and a
       // passage is the raw source text a document was cut into, not something learned. Measured
       // 2026-08-12: ingesting one rulebook put 302 chunks here, so the honest answer to that question
       // became a wall of unreadable fragments. The graph already hides passages by default for the
       // same reason; this keeps the two surfaces telling the same story.
-      memoryList(cn.http, {
+      const query = {
         directory: dir,
         limit: 500,
-        kinds: ["entity", "episode"],
+        // 🔴 CLAIMS BELONG HERE. The claim is the store's first-class unit of memory since P1, and
+        // this list asked for entities and episodes only — so the surface whose whole job is
+        // answering "what do you remember" showed everything EXCEPT the governed facts.
+        kinds: ["entity", "episode", "claim"],
         ...(scopes === undefined ? {} : { scopes }),
-      }).catch(() => [] as MemoryRow[]),
+        ...(statuses === undefined ? {} : { statuses }),
+      }
+      // 🔴 `Never used` is a question for the ACCESS LEDGER, not for a status set: "nothing has
+      // ever recalled this" is not a property of the claim. It reads its own route, which also
+      // reports how deep its scan reached — a short answer is not proof there are no more.
+      if (source === "never-used") {
+        const answer = await memoryNeverUsed(cn.http, {
+          directory: dir,
+          ...(scopes === undefined ? {} : { scopes }),
+          limit: 500,
+        }).catch(() => undefined)
+        // ⚠️ `undefined` — not `[]`. An instance without the usage routes has NOT told us that
+        // nothing is unused, and rendering an empty list would say exactly that.
+        if (!answer) return { rows: [] as MemoryRow[], forgotten: EMPTY_IDS, unanswered: true }
+        return {
+          rows: answer.items as readonly MemoryRow[],
+          forgotten: EMPTY_IDS,
+          ...(answer.partial ? { partialScan: answer.scanned } : {}),
+        }
+      }
+      const rows = await memoryList(cn.http, { ...query, includeInvalid }).catch(() => [] as MemoryRow[])
+      // 🔴 THE SECOND READ EXISTS BECAUSE THE WIRE CARRIES NO VALIDITY FIELD. Measured on a live
+      // instance: a forgotten row comes back from `includeInvalid` still reading `status: "active"`,
+      // so the only way to know which rows those were is to ask the same question again without it
+      // and take the difference. It runs ONLY under History — a lens somebody deliberately opened.
+      if (!includeInvalid) return { rows, forgotten: EMPTY_IDS }
+      const valid = await memoryList(cn.http, query).catch(() => rows)
+      return { rows, forgotten: forgottenIDs(rows, valid) }
+    },
   )
 
   /**
@@ -101,16 +185,32 @@ export const MemoryRemembered: Component<{
     () => {
       const cn = conn()
       const rows = memories()
-      return cn !== undefined && rows !== undefined ? { cn, dir: directory(), settled: rows.length } : undefined
+      return cn !== undefined && rows !== undefined ? { cn, dir: directory(), settled: rows.rows.length } : undefined
     },
     ({ cn, dir }) => memoryStats(cn.http, { directory: dir }).catch(() => undefined),
   )
 
-  const loadedRows = () => memories() ?? []
+  const loadedRows = () => memories()?.rows ?? []
+  /** Which of the loaded rows were FORGOTTEN — only ever non-empty under History. */
+  const forgotten = (): ReadonlySet<string> => memories()?.forgotten ?? EMPTY_IDS
+  /**
+   * WHAT THE LENS COULD NOT ANSWER, in the user's words — `undefined` when it answered fully.
+   *
+   * 🔴 `Never used` has no data source on this instance: `memory.recalled` rides the bus LIVE and
+   * is never written down, and there is no access ledger to ask. An empty list under that tab would
+   * be the empty-cabinet lie in its newest costume — "nothing here is unused" is a confident claim
+   * about a measurement nobody has taken. So the tab says so instead. The wiring point is
+   * `applyLens` in `utils/memory-lens.ts`: one function, when P3 lands.
+   */
+  const unmeasured = () =>
+    memories()?.unanswered ? applyLens({ ...lens(), measured: false }, loadedRows()).unmeasured : undefined
+  /** How far a `Never used` scan reached when it stopped short — `undefined` when it did not. */
+  const partialScan = () => memories()?.partialScan
   /** The rows after the shared filter AND the focus — what the user is actually looking at. */
   const visibleRows = createMemo(() => {
     const filter = props.filter
     const only = props.restrictTo
+    if (unmeasured()) return [] as MemoryRow[]
     let rows = loadedRows()
     if (only) rows = rows.filter((row) => only.has(row.id))
     if (filter) rows = rows.filter((row) => matches(row, filter))
@@ -153,7 +253,7 @@ export const MemoryRemembered: Component<{
     () => {
       const cn = conn()
       const rows = memories()
-      return cn !== undefined && rows !== undefined ? { cn, settled: rows.length } : undefined
+      return cn !== undefined && rows !== undefined ? { cn, settled: rows.rows.length } : undefined
     },
     ({ cn }) => instanceDiagnosis(cn.http).catch(() => undefined),
   )
@@ -296,13 +396,28 @@ export const MemoryRemembered: Component<{
             {/* THREE emptinesses, and telling them apart is the whole point. The cabinet is empty; the
                 query matched nothing; the focused neighborhood holds nothing this list shows. Saying
                 the first when either of the others is true tells someone their memories are gone. */}
-            <p class="settings-v2-field-description">
-              {props.restrictLabel
-                ? `Nothing else here connects to ${props.restrictLabel}.`
-                : loadedRows().length > 0
-                  ? "No memory here matches that search."
-                  : language.t("settings.memory.list.empty")}
-            </p>
+            {/* FOUR emptinesses now, and the fourth is not an emptiness at all: the lens has no
+                data source yet, so "nothing here" would be a claim about a measurement nobody took.
+                It outranks the others — a question that CANNOT be answered is not one that was
+                answered "none". */}
+            <Show
+              when={unmeasured()}
+              fallback={
+                <p class="settings-v2-field-description">
+                  {props.restrictLabel
+                    ? `Nothing else here connects to ${props.restrictLabel}.`
+                    : loadedRows().length > 0
+                      ? "No memory here matches that search."
+                      : language.t("settings.memory.list.empty")}
+                </p>
+              }
+            >
+              {(note) => (
+                <p class="settings-v2-field-description" data-slot="memory-lens-unmeasured">
+                  {note()}
+                </p>
+              )}
+            </Show>
             <Show when={props.restrictLabel}>
               <button
                 type="button"
@@ -335,6 +450,17 @@ export const MemoryRemembered: Component<{
             </p>
           )}
         </Show>
+        {/* ⚠️ A SHORT ANSWER IS NOT PROOF THERE ARE NO MORE. The never-used scan stops at a depth
+            the server chooses, and without this line a list of three would read as "only three
+            memories have never been used" — which is the slice-presented-as-the-whole failure the
+            Map already learned to report. */}
+        <Show when={partialScan()}>
+          {(scanned) => (
+            <p class="settings-v2-field-description" data-slot="memory-usage-partial">
+              Looked at the {scanned()} oldest, not the whole cabinet.
+            </p>
+          )}
+        </Show>
         <Show when={props.restrictLabel}>
           {(label) => (
             <p class="settings-v2-field-description" data-slot="memory-focus-note">
@@ -348,10 +474,44 @@ export const MemoryRemembered: Component<{
         <div class="flex flex-col gap-1.5 overflow-y-auto pr-1">
           <For each={visibleRows()}>
             {(row) => (
-              <div class="flex items-start justify-between gap-3 rounded-md border border-[var(--nc-border-subtle,rgba(255,255,255,0.08))] px-3 py-2">
+              <div
+                class="flex items-start justify-between gap-3 rounded-md border border-[var(--nc-border-subtle,rgba(255,255,255,0.08))] px-3 py-2"
+                data-slot="memory-row"
+                data-memory-id={row.id}
+                data-status={row.status}
+              >
                 <div class="flex min-w-0 flex-col gap-0.5">
                   <span class="text-sm leading-snug break-words">{row.text}</span>
-                  <span class="text-xs opacity-60">{scopeLabel(row.scope)}</span>
+                  <span class="flex flex-wrap items-center gap-1.5 text-xs opacity-60">
+                    <span>{scopeLabel(row.scope)}</span>
+                    {/* 🔴 The badge appears only when the status is NOT the ordinary one. A tag on
+                        every row saying "active" trains the eye to skip exactly the place the one
+                        meaningful word will appear. ⚠️ FORGOTTEN is not a status — it is a closed
+                        validity range the wire does not carry — so it arrives as a set of ids and
+                        falls through to the same badge. */}
+                    <Show when={statusBadge(row.status) ?? (forgotten().has(row.id) ? FORGOTTEN_BADGE : undefined)}>
+                      {(badge) => (
+                        <span
+                          class="rounded px-1.5 py-0.5"
+                          data-slot="memory-row-status"
+                          style={{ background: badge().tint, color: badge().ink }}
+                          title={badge().title}
+                        >
+                          {badge().label}
+                        </span>
+                      )}
+                    </Show>
+                    <Show when={props.onInspect}>
+                      <button
+                        type="button"
+                        data-slot="memory-row-inspect"
+                        class="underline opacity-70 hover:opacity-100"
+                        onClick={() => props.onInspect?.(row.id)}
+                      >
+                        Show on the map
+                      </button>
+                    </Show>
+                  </span>
                 </div>
                 {/* 🔴 **Forgetting was ADVANCED, and that is why the owner reported the Memory app
                     had "no way to remove memories" (2026-08-20) — the button was there and their
