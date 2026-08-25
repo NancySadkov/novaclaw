@@ -1765,6 +1765,18 @@ export const EVENTS = {
     content: "none",
     file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/event.ts",
   },
+  /**
+   * An instance event was not carried on `/api/event` because the route's published wire union
+   * cannot express it. Logged once per type per subscription. Its ABSENCE from a busy instance is
+   * the healthy reading; its presence names exactly which internal types a public client cannot see.
+   */
+  "server.event.dropped": {
+    level: "debug",
+    message: "event omitted from the public stream",
+    attributes: { "instance.event.type": "id" },
+    content: "none",
+    file: "packages/server/src/handlers/event.ts",
+  },
   /** The per-instance SSE event stream closed. */
   "server.event.disconnected": {
     level: "info",
