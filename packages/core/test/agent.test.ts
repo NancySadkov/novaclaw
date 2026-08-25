@@ -124,6 +124,11 @@ describe("AgentV2", () => {
         // ambient authority over what they may run.
         "nova",
         "plan",
+        // The Research Officer, shipped so a question that needs EVIDENCE has somebody whose charter
+        // is the research commandments. It is held to the same floor as every other built-in: the ONE
+        // thing its charter adds is `{action:"skill", resource:"research"}`, which is narrow by
+        // construction and grants no ambient authority over what it may run.
+        "researcher",
         "summary",
         "title",
       ])
