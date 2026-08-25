@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
+import * as MemoryAccess from "@novaclaw/core/kb-graph/memory-access"
 
 // Unit tests for the memory-client surface — the engine-agnostic contract (no WASM, no server): the
 // in-memory `stub`, the `disabled` degrade client, the `fromEngine` adapter, and the `proxy` swap.
@@ -16,15 +17,21 @@ describe("MemoryClient.stub (in-memory)", () => {
     expect((await run(c.search({ query: "berlin", scopes: ["global"] }))).map((h) => h.id)).toEqual(["a"])
     // edge + neighbors
     await run(c.addEdge({ from: "a", to: "b", type: "rel", scope: "global" }))
-    expect((await run(c.neighbors("a"))).map((n) => n.id)).toEqual(["b"])
+    // 🔴 THIS LINE USED TO PIN THE LEAK. It asserted that an unscoped `neighbors("a")` returns the
+    // session-only `b` — the cross-scope traversal NC-SEC-016 describes, written down as correct
+    // behaviour. A test can certify a bug as easily as it can catch one, and this one did for months.
+    // The owner may still see everything, and says so:
+    expect((await run(c.neighbors("a", MemoryAccess.owner()))).map((n) => n.id)).toEqual(["b"])
+    // …and a caller confined to global sees the edge lead nowhere it may go.
+    expect((await run(c.neighbors("a", MemoryAccess.of(["global"])))).map((n) => n.id)).toEqual([])
     // invalidate drops from search but keeps the row in total
-    await run(c.invalidate("a"))
+    await run(c.invalidate("a", MemoryAccess.owner()))
     expect((await run(c.search({ query: "berlin" }))).some((h) => h.id === "a")).toBe(false)
     const s = await run(c.stats())
     expect(s.total).toBe(2)
     expect(s.valid).toBe(1)
     // purge hard-deletes
-    await run(c.purge("b"))
+    await run(c.purge("b", MemoryAccess.owner()))
     expect((await run(c.stats())).total).toBe(1)
   })
 })
@@ -84,7 +91,7 @@ describe("MemoryClient.fromEngine", () => {
     expect(calls).toEqual(["add:m1"])
     expect((await run(c.search({ query: "x" }))).map((h) => h.id)).toEqual(["z"])
     // an engine throw collapses to a MemoryError carrying the message
-    const err = await run(c.purge("m1").pipe(Effect.flip))
+    const err = await run(c.purge("m1", MemoryAccess.owner()).pipe(Effect.flip))
     expect(err).toBeInstanceOf(MemoryClient.MemoryError)
     expect(err.reason).toContain("boom")
   })

@@ -2,6 +2,7 @@ export * as MemoryCorrection from "./memory-correction"
 
 import { Effect } from "effect"
 import fs from "node:fs"
+import * as MemoryAccess from "../../kb-graph/memory-access"
 import type { MemoryClient } from "../../kb-graph/memory-client"
 import { SessionRecall } from "./recall"
 
@@ -39,7 +40,10 @@ export const correctMissingRead = (input: {
   return Effect.forEach(
     unique,
     (hit) =>
-      input.memory.invalidate(hit.id).pipe(
+      // ⚠️ SYSTEM access: this runs on the instance's own behalf, correcting facts it extracted
+      // itself, with no session asking. Spelled rather than reached by omitting an argument — that
+      // omission is what NC-SEC-016 was.
+      input.memory.invalidate(hit.id, MemoryAccess.system()).pipe(
         Effect.as(true),
         Effect.orElseSucceed(() => false),
       ),

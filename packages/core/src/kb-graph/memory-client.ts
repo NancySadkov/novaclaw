@@ -1,6 +1,7 @@
 export * as MemoryClient from "./memory-client"
 
 import { Context, Effect, Layer, Schema } from "effect"
+import type { MemoryAccess } from "./memory-access"
 
 // The memory tier's Effect-facing surface (notes/kb-graph-plan.md §2.0): the `Interface` the kb tool +
 // auto-recall/extract hooks depend on, its types + tagged error, and the ways to construct it —
@@ -132,13 +133,30 @@ export interface Interface {
   readonly addMemory: (input: MemoryInput) => Effect.Effect<void, MemoryError>
   readonly addEdge: (input: EdgeInput) => Effect.Effect<void, MemoryError>
   readonly search: (input: SearchInput) => Effect.Effect<ReadonlyArray<SearchHit>, MemoryError>
+  /**
+   * 🔴 `access` is REQUIRED on every id-based operation, and THAT is the fix — not the checks inside
+   * them. NC-SEC-016 happened because the scope set was OPTIONAL: `neighbors` filtered "only when the
+   * caller supplied `opts.scopes`", so a call site that forgot got a WIDER query rather than an error.
+   * Measured against the shipping engine on 2026-08-25, one chat could read another chat's private
+   * text through a global neighbour and then hard-delete it by the id it had just learned.
+   *
+   * A required parameter moves that from "every call site must remember" to "the compiler finds them
+   * all", and `MemoryAccess` makes the privileged case something a reader can SEE and name
+   * (`MemoryAccess.owner()`) rather than something reached by leaving an argument out.
+   */
   readonly neighbors: (
     id: string,
-    opts?: { scopes?: readonly string[]; k?: number },
+    access: MemoryAccess,
+    opts?: { k?: number },
   ) => Effect.Effect<ReadonlyArray<Neighbor>, MemoryError>
-  readonly path: (from: string, to: string, maxHops?: number) => Effect.Effect<PathResult | null, MemoryError>
-  readonly invalidate: (id: string, at?: string) => Effect.Effect<void, MemoryError>
-  readonly purge: (id: string) => Effect.Effect<void, MemoryError>
+  readonly path: (
+    from: string,
+    to: string,
+    access: MemoryAccess,
+    maxHops?: number,
+  ) => Effect.Effect<PathResult | null, MemoryError>
+  readonly invalidate: (id: string, access: MemoryAccess, at?: string) => Effect.Effect<void, MemoryError>
+  readonly purge: (id: string, access: MemoryAccess) => Effect.Effect<void, MemoryError>
   /** Move a whole scope's memories elsewhere — what a retirement does instead of deleting them. */
   readonly moveScope: (from: string, to: string) => Effect.Effect<void, MemoryError>
   readonly clearScope: (scope: string) => Effect.Effect<void, MemoryError>
@@ -165,9 +183,14 @@ export interface Engine {
   addEdge(input: EdgeInput): Promise<void>
   search(input: SearchInput): Promise<ReadonlyArray<SearchHit>>
   neighbors(id: string, opts?: { scopes?: readonly string[]; k?: number }): Promise<ReadonlyArray<Neighbor>>
-  path(from: string, to: string, maxHops?: number): Promise<PathResult | null>
-  invalidate(id: string, at?: string): Promise<void>
-  purge(id: string): Promise<void>
+  path(
+    from: string,
+    to: string,
+    maxHops?: number,
+    opts?: { scopes?: readonly string[] },
+  ): Promise<PathResult | null>
+  invalidate(id: string, at?: string, opts?: { scopes?: readonly string[] }): Promise<void>
+  purge(id: string, opts?: { scopes?: readonly string[] }): Promise<void>
   moveScope(from: string, to: string): Promise<void>
   clearScope(scope: string): Promise<void>
   eraseAll(): Promise<number>
@@ -188,10 +211,16 @@ export const fromEngine = (engine: Engine): Interface => {
     addMemory: (input) => wrap(() => engine.addMemory(input)),
     addEdge: (input) => wrap(() => engine.addEdge(input)),
     search: (input) => wrap(() => engine.search(input)),
-    neighbors: (id, opts) => wrap(() => engine.neighbors(id, opts)),
-    path: (from, to, maxHops) => wrap(() => engine.path(from, to, maxHops)),
-    invalidate: (id, at) => wrap(() => engine.invalidate(id, at)),
-    purge: (id) => wrap(() => engine.purge(id)),
+    // ⚠️ `access.scopes` is `undefined` ONLY for `owner`/`system`, and the engine reads that as "no
+    // filter" — the same shape as before, but now it can only be reached by constructing an access
+    // that says so out loud.
+    neighbors: (id, access, opts) =>
+      wrap(() => engine.neighbors(id, { ...(access.scopes ? { scopes: access.scopes } : {}), ...opts })),
+    path: (from, to, access, maxHops) =>
+      wrap(() => engine.path(from, to, maxHops, access.scopes ? { scopes: access.scopes } : {})),
+    invalidate: (id, access, at) =>
+      wrap(() => engine.invalidate(id, at, access.scopes ? { scopes: access.scopes } : {})),
+    purge: (id, access) => wrap(() => engine.purge(id, access.scopes ? { scopes: access.scopes } : {})),
     moveScope: (from, to) => wrap(() => engine.moveScope(from, to)),
     clearScope: (scope) => wrap(() => engine.clearScope(scope)),
     eraseAll: () => wrap(() => engine.eraseAll()),
@@ -210,10 +239,10 @@ export const proxy = (get: () => Interface): Interface => ({
   addMemory: (input) => Effect.suspend(() => get().addMemory(input)),
   addEdge: (input) => Effect.suspend(() => get().addEdge(input)),
   search: (input) => Effect.suspend(() => get().search(input)),
-  neighbors: (id, opts) => Effect.suspend(() => get().neighbors(id, opts)),
-  path: (from, to, maxHops) => Effect.suspend(() => get().path(from, to, maxHops)),
-  invalidate: (id, at) => Effect.suspend(() => get().invalidate(id, at)),
-  purge: (id) => Effect.suspend(() => get().purge(id)),
+  neighbors: (id, access, opts) => Effect.suspend(() => get().neighbors(id, access, opts)),
+  path: (from, to, access, maxHops) => Effect.suspend(() => get().path(from, to, access, maxHops)),
+  invalidate: (id, access, at) => Effect.suspend(() => get().invalidate(id, access, at)),
+  purge: (id, access) => Effect.suspend(() => get().purge(id, access)),
   moveScope: (from, to) => Effect.suspend(() => get().moveScope(from, to)),
   clearScope: (scope) => Effect.suspend(() => get().clearScope(scope)),
   eraseAll: () => Effect.suspend(() => get().eraseAll()),
@@ -294,20 +323,41 @@ export const stub = (): Interface => {
           .slice(0, input.k ?? 10)
           .map((m, i) => ({ ...stripValid(m), score: 1 / (i + 1) })),
       ),
-    neighbors: (id, opts) =>
-      ok(
+    // 🔴 The double enforces the SAME rule as the engine, on the NODES. Its previous version filtered
+    // the EDGE's scope and never looked at either endpoint — and a test asserted the resulting
+    // cross-scope traversal as correct behaviour, which is how the leak came to be pinned rather than
+    // caught. A double that is easier to satisfy than production is a test that certifies a bug.
+    neighbors: (id, access, opts) => {
+      const visible = (memoryID: string) => {
+        const row = mems.get(memoryID)
+        return row !== undefined && (access.scopes === undefined || access.scopes.includes(row.scope))
+      }
+      if (!visible(id)) return ok([])
+      return ok(
         edges
-          .filter((e) => e.from === id && (opts?.scopes ? opts.scopes.includes(e.scope) : true))
+          .filter((e) => e.from === id && visible(e.to))
           .slice(0, opts?.k ?? 25)
           .map((e) => ({ id: e.to, type: e.type, text: mems.get(e.to)?.text ?? "" })),
-      ),
-    path: (from, to) => ok(edges.some((e) => e.from === from && e.to === to) ? { ids: [from, to], hops: 1 } : null),
-    invalidate: (id) =>
+      )
+    },
+    path: (from, to, access) => {
+      const visible = (memoryID: string) => {
+        const row = mems.get(memoryID)
+        return row !== undefined && (access.scopes === undefined || access.scopes.includes(row.scope))
+      }
+      if (!visible(from) || !visible(to)) return ok(null)
+      return ok(edges.some((e) => e.from === from && e.to === to) ? { ids: [from, to], hops: 1 } : null)
+    },
+    invalidate: (id, access) =>
       Effect.sync(() => {
         const m = mems.get(id)
-        if (m) m.valid = false
+        if (m && (access.scopes === undefined || access.scopes.includes(m.scope))) m.valid = false
       }),
-    purge: (id) => Effect.sync(() => void mems.delete(id)),
+    purge: (id, access) =>
+      Effect.sync(() => {
+        const m = mems.get(id)
+        if (m && (access.scopes === undefined || access.scopes.includes(m.scope))) mems.delete(id)
+      }),
     moveScope: (from, to) =>
       Effect.sync(() => {
         // Re-inserted rather than mutated: the stub's rows are readonly, and a retirement's move must

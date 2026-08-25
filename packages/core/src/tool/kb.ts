@@ -7,6 +7,7 @@ import { Effect, Layer, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
 import { KbChunk } from "../kb-graph/chunk"
 import { KbEmbedder } from "../kb-graph/embedder"
+import * as MemoryAccess from "../kb-graph/memory-access"
 import { MemoryClient } from "../kb-graph/memory-client"
 import { MemoryRanking } from "../kb-graph/ranking"
 import { Memory } from "../kb-graph/memory"
@@ -226,6 +227,19 @@ export const layer = Layer.effectDiscard(
                 // parent's agent through the config walk, so staff share their officer's cabinet and
                 // cannot reach a sibling's.
                 const agentID = sessionConfig.agent
+                /**
+                 * 🔴 WHAT THIS TURN MAY TOUCH — built once, passed to every id-based operation.
+                 *
+                 * NC-SEC-016: `search` derived a scope set and the other operations did not, so
+                 * `neighbors`/`forget` reached anything by id. Measured on the shipping engine — one
+                 * chat read another chat's private text through a global neighbour and hard-deleted
+                 * it. Deriving the set ONCE and handing it down is the shape that cannot drift: a new
+                 * `op` added below cannot compile without saying what it may reach.
+                 *
+                 * `all` is exactly what `search` already meant by it — this chat, this officer's
+                 * cabinet, and the household's shared facts. Never another officer's.
+                 */
+                const access = MemoryAccess.of(scopesForSearch(sessionScope, agentID, "all"))
                 switch (input.op) {
                   case "search": {
                     // The VECTOR leg: embedding the query makes the engine fuse vector KNN with FTS
@@ -279,7 +293,9 @@ export const layer = Layer.effectDiscard(
                       )
                   }
                   case "forget": {
-                    return yield* (input.secret ? memory.purge(input.id) : memory.invalidate(input.id)).pipe(
+                    return yield* (
+                      input.secret ? memory.purge(input.id, access) : memory.invalidate(input.id, access)
+                    ).pipe(
                       Effect.as({
                         ok: true,
                         message: input.secret
@@ -296,7 +312,7 @@ export const layer = Layer.effectDiscard(
                   }
                   case "neighbors": {
                     const rows = yield* memory
-                      .neighbors(input.id, { k: input.k ?? 10 })
+                      .neighbors(input.id, access, { k: input.k ?? 10 })
                       .pipe(Effect.orElseSucceed(() => []))
                     if (rows.length === 0)
                       return {

@@ -1,6 +1,7 @@
 import { KbAbsorb } from "@novaclaw/core/kb-graph/absorb"
 import { KbChunk } from "@novaclaw/core/kb-graph/chunk"
 import * as KbIngest from "@novaclaw/core/kb-graph/ingest-plan"
+import * as MemoryAccess from "@novaclaw/core/kb-graph/memory-access"
 import { LLMClient } from "@novaclaw/llm"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { llmClient } from "@novaclaw/core/effect/app-node-platform"
@@ -109,7 +110,11 @@ export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (h
         "neighbors",
         Effect.fn("MemoryHttpApi.neighbors")(function* (ctx) {
           return yield* memory
-            .neighbors(ctx.payload.id, ctx.payload.k === undefined ? {} : { k: ctx.payload.k })
+            // ⚠️ OWNER access on the `/memory/*` surface: this is the person's own Memory app, where
+            // "what do you remember about me" must be answerable across every scope. It is the one
+            // legitimately unrestricted caller, and it says so rather than reaching it by omission —
+            // an agent cannot construct this, because its access comes from the session it runs in.
+            .neighbors(ctx.payload.id, MemoryAccess.owner(), ctx.payload.k === undefined ? {} : { k: ctx.payload.k })
             .pipe(Effect.orElseSucceed(() => []))
         }),
       )
@@ -117,7 +122,7 @@ export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (h
         "path",
         Effect.fn("MemoryHttpApi.path")(function* (ctx) {
           return yield* memory
-            .path(ctx.payload.from, ctx.payload.to, ctx.payload.maxHops)
+            .path(ctx.payload.from, ctx.payload.to, MemoryAccess.owner(), ctx.payload.maxHops)
             .pipe(Effect.orElseSucceed(() => null))
         }),
       )
@@ -141,14 +146,14 @@ export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (h
       .handle(
         "invalidate",
         Effect.fn("MemoryHttpApi.invalidate")(function* (ctx) {
-          yield* asBadRequest(memory.invalidate(ctx.payload.id))
+          yield* asBadRequest(memory.invalidate(ctx.payload.id, MemoryAccess.owner()))
           return true
         }),
       )
       .handle(
         "purge",
         Effect.fn("MemoryHttpApi.purge")(function* (ctx) {
-          yield* asBadRequest(memory.purge(ctx.payload.id))
+          yield* asBadRequest(memory.purge(ctx.payload.id, MemoryAccess.owner()))
           return true
         }),
       )

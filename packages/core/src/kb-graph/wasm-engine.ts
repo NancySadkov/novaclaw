@@ -655,12 +655,17 @@ export class WasmMemory {
     return hits
   }
 
+  /**
+   * ⚠️ **The SOURCE node is checked too, not only the targets.** The old query filtered `n.scope` and
+   * never looked at `m` — so knowing a private id let a caller enumerate whatever it pointed at, and
+   * the filter it did apply was skipped entirely when the caller passed no scopes.
+   */
   neighbors(
     id: string,
     opts: { scopes?: readonly string[]; k?: number } = {},
   ): Promise<{ id: string; type: string; text: string }[]> {
     return this.serialize(async () => {
-      const scopeFilter = opts.scopes ? `AND n.scope IN $scopes` : ``
+      const scopeFilter = opts.scopes ? `AND n.scope IN $scopes AND m.scope IN $scopes` : ``
       const rows = await this.rows(
         `MATCH (m:Memory {id: $id})-[r:Rel]->(n:Memory)
          WHERE r.t_invalid IS NULL AND n.t_invalid IS NULL ${scopeFilter}
@@ -673,7 +678,19 @@ export class WasmMemory {
     })
   }
 
-  path(from: string, to: string, maxHops = 5): Promise<{ ids: string[]; hops: number } | null> {
+  /**
+   * ⚠️ EVERY HOP is checked, not the endpoints. A path that merely *passes through* a private memory
+   * still discloses that it exists and how it connects, which is most of what the id was protecting.
+   * The engine's shortest-path call cannot take a per-hop predicate, so the scopes come back with the
+   * nodes and the filter is applied here — a path with any inaccessible hop is `null`, exactly like a
+   * path that does not exist. A caller must not be able to tell those two apart.
+   */
+  path(
+    from: string,
+    to: string,
+    maxHops = 5,
+    opts: { scopes?: readonly string[] } = {},
+  ): Promise<{ ids: string[]; hops: number } | null> {
     return this.serialize(async () => {
       const rows = await this.rows(
         `MATCH p = (a:Memory {id: $from})-[:Rel* SHORTEST 1..${Math.max(1, maxHops | 0)}]->(b:Memory {id: $to})
@@ -682,22 +699,41 @@ export class WasmMemory {
       )
       const r = rows[0]
       if (!r) return null
-      const ns = (r.ns as Array<{ id?: unknown }>) ?? []
+      const ns = (r.ns as Array<{ id?: unknown; scope?: unknown }>) ?? []
+      if (opts.scopes) {
+        const allowed = new Set(opts.scopes)
+        if (!ns.every((n) => allowed.has(String(n?.scope)))) return null
+      }
       return { hops: Number(r.hops), ids: ns.map((n) => String(n?.id)) }
     })
   }
 
-  invalidate(id: string, at?: string): Promise<void> {
+  /**
+   * ⚠️ A restricted caller can only invalidate what it can SEE. Mutating by id alone is how one chat
+   * came to forget another chat's memory — and the silent version of that is worse than an error,
+   * because it looks like spontaneous forgetting.
+   */
+  invalidate(id: string, at?: string, opts: { scopes?: readonly string[] } = {}): Promise<void> {
     return this.serialize(async () => {
       const when = at ? `timestamp($at)` : `current_timestamp()`
-      await this.q(`MATCH (m:Memory {id: $id}) SET m.t_invalid = ${when}`, { id, ...(at ? { at } : {}) })
+      const scopeFilter = opts.scopes ? `WHERE m.scope IN $scopes` : ``
+      await this.q(`MATCH (m:Memory {id: $id}) ${scopeFilter} SET m.t_invalid = ${when}`, {
+        id,
+        ...(at ? { at } : {}),
+        ...(opts.scopes ? { scopes: opts.scopes } : {}),
+      })
       this.touch()
     })
   }
 
-  purge(id: string): Promise<void> {
+  /** ⚠️ Same rule as `invalidate`, and it matters more: this one destroys the history too. */
+  purge(id: string, opts: { scopes?: readonly string[] } = {}): Promise<void> {
     return this.serialize(async () => {
-      await this.q(`MATCH (m:Memory {id: $id}) DETACH DELETE m`, { id })
+      const scopeFilter = opts.scopes ? `WHERE m.scope IN $scopes` : ``
+      await this.q(`MATCH (m:Memory {id: $id}) ${scopeFilter} DETACH DELETE m`, {
+        id,
+        ...(opts.scopes ? { scopes: opts.scopes } : {}),
+      })
       this.touch()
     })
   }
