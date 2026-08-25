@@ -101,6 +101,27 @@ describe("a correction leaves exactly one active answer", () => {
     expect(retired.text).toBe("Sofia works at Initech.")
   }, 120_000)
 
+  test("🔴 history is SEARCHABLE, but only when a caller asks for it out loud", async () => {
+    const engine = await open()
+    const first = await engine.addClaim({
+      scope: "global",
+      subject: "Sofia",
+      predicate: "employer",
+      statement: "Sofia works at Initech.",
+    })
+    await engine.addClaim({
+      scope: "global",
+      subject: "Sofia",
+      predicate: "employer",
+      statement: "Sofia works at Acme Robotics.",
+    })
+    // The default hides it — that is the separation. Naming the status is what reaches it, and the
+    // privileged read is therefore visible at its call site rather than reached by omitting an
+    // argument, which is the same shape as `MemoryAccess`.
+    const retired = await engine.search({ query: "Sofia works", scopes: ["global"], statuses: ["superseded"] })
+    expect(answers(retired)).toEqual([first.id!])
+  }, 120_000)
+
   test("asking for the history explains the change, oldest included, with its evidence", async () => {
     const engine = await open()
     const first = await engine.addClaim({
