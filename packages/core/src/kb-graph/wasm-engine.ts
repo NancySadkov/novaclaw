@@ -1686,10 +1686,18 @@ export class WasmMemory {
     return this.serialize(async () => {
       // Only AUTO-EXTRACTED session memories flow up. A deliberate `remember` scoped "session" is a
       // "this chat only" note the user chose — never force it global.
+      //
+      // ⚠️ **CLAIMS DO NOT FLOW UP, and that is a decision rather than an omission.** The twin is
+      // built by the CREATE below, which copies text, name, kind and confidence — not the conflict
+      // key. A claim promoted through here would land in `global` as a claim with NO identity: it
+      // could never be corrected, and nothing could correct it, which is a worse state than the
+      // session claim it came from. Carrying the key instead is not a free fix either — it would let
+      // a claim made in one chat retire the household's current answer, which is a promotion of
+      // AUTHORITY and belongs to whoever decides that deliberately. Excluded until then.
       const rows = await this.rows(
         `MATCH (m:Memory)
          WHERE m.t_invalid IS NULL AND starts_with(m.scope, 'session:') AND m.source = 'auto-extract'
-           AND m.status = 'active'
+           AND m.status = 'active' AND m.kind <> 'claim'
          RETURN ${ROW_PROJECTION}`,
       )
       let promoted = 0

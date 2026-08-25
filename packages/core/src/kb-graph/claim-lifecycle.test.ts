@@ -528,6 +528,51 @@ describe("🔴 knowing an id is not authority over it", () => {
   }, 120_000)
 })
 
+describe("the Memory app's lenses, and what consolidation may promote", () => {
+  test("`list` takes a lifecycle lens — Current and History are the same store, read twice", async () => {
+    const engine = await open()
+    const first = await engine.addClaim({
+      scope: "global",
+      subject: "Sofia",
+      predicate: "employer",
+      statement: "Sofia works at Initech.",
+    })
+    const second = await engine.addClaim({
+      scope: "global",
+      subject: "Sofia",
+      predicate: "employer",
+      statement: "Sofia works at Acme.",
+    })
+    expect(ids(await engine.list({ kinds: ["claim"], statuses: ["active"] }))).toEqual([second.id!])
+    expect(ids(await engine.list({ kinds: ["claim"], statuses: ["superseded"] }))).toEqual([first.id!])
+    // …and with no lens the app sees everything, which is what "what do you remember?" means.
+    expect((await engine.list({ kinds: ["claim"] })).length).toBe(2)
+  }, 120_000)
+
+  test("🔴 consolidation does NOT promote a claim — a twin would have no identity to be corrected by", async () => {
+    const engine = await open()
+    const claim = await engine.addClaim({
+      scope: "session:alice",
+      subject: "Sofia",
+      predicate: "employer",
+      statement: "Sofia works at Acme.",
+      source: "auto-extract",
+    })
+    await engine.addMemory({
+      id: "ep_1",
+      kind: "episode",
+      text: "an ordinary extracted fact",
+      scope: "session:alice",
+      source: "auto-extract",
+    })
+    // The episode is promoted; the claim is left where it is, still active and still governed.
+    expect(await engine.consolidate()).toBe(1)
+    const rows = await engine.list({ kinds: ["claim"], scopes: ["global"] })
+    expect(rows).toEqual([])
+    expect((await engine.claimHistory(claim.id!))!.claim.status).toBe("active")
+  }, 120_000)
+})
+
 describe("the edge's reach is its ENDPOINTS' — reported, not stored", () => {
   test("a link to a private memory keeps the narrower reach, and says so", async () => {
     const engine = await open()

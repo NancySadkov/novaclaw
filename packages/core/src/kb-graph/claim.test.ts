@@ -118,6 +118,14 @@ describe("the exact-identifier leg only fires on identifier-shaped tokens", () =
   test("🔴 ordinary prose yields NOTHING — every English word would otherwise cost an equality scan", () => {
     expect(KbClaim.identifierTokens("where does the user live and what do they prefer")).toEqual([])
     expect(KbClaim.identifierTokens("")).toEqual([])
+    // Abbreviations are the trap: they are dotted, so a naive symbol pattern accepts them and every
+    // second sentence then buys a scan that can never match.
+    expect(KbClaim.identifierTokens("prefers dark mode, e.g. at night, i.e. always")).toEqual([])
+    expect(KbClaim.identifierTokens("lives in the U.S.A now")).toEqual([])
+  })
+
+  test("a real dotted symbol is still picked up", () => {
+    expect(KbClaim.identifierTokens("uses os.EOL on Windows")).toEqual(["os.EOL"])
   })
 
   test("duplicates collapse and the list is bounded", () => {

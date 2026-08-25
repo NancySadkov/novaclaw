@@ -291,7 +291,10 @@ export const identifierTokens = (query: string): string[] => {
     if (token.length < 3 || token.length > 200) continue
     const isStoredID = /^(mem_|clm_|src_)[A-Za-z0-9_]+$/.test(token)
     const isPath = /[/\\]/.test(token) && /[A-Za-z0-9]/.test(token)
-    const isSymbol = /^[A-Za-z_$][A-Za-z0-9_$]*(?:[._$][A-Za-z0-9_$]+)+$/.test(token)
+    // ⚠️ The first segment must be at least two characters and the whole token at least five, or
+    // "e.g", "i.e" and "U.S.A" all read as dotted symbols and every other English sentence buys an
+    // equality scan it can never satisfy. `os.EOL` and `Session.resolveConfig` still qualify.
+    const isSymbol = token.length >= 5 && /^[A-Za-z_$][A-Za-z0-9_$]+(?:[._$][A-Za-z0-9_$]+)+$/.test(token)
     const isSha = /^[0-9a-f]{7,40}$/.test(token) && /[0-9]/.test(token) && /[a-f]/.test(token)
     if (isStoredID || isPath || isSymbol || isSha) out.push(token)
     if (out.length >= 8) break
