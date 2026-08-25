@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import os from "node:os"
 import path from "node:path"
+import * as MemoryAccess from "@novaclaw/core/kb-graph/memory-access"
 import { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
 import { MemoryCorrection } from "@novaclaw/core/session/runner/memory-correction"
 
@@ -13,6 +14,13 @@ const hit = (id: string, text: string): MemoryClient.SearchHit => ({
   scope: "global",
   source: "auto-extract",
   confidence: null,
+  status: "active",
+  subject: null,
+  predicate: null,
+  conflictKey: null,
+  supersededBy: null,
+  evidence: null,
+  evidenceKind: null,
   relation: "staged",
   score: 1,
 })
@@ -69,6 +77,66 @@ describe("MemoryCorrection", () => {
     expect(
       await Effect.runPromise(
         MemoryCorrection.correctMissingRead({ memory, recalled: [unrelated], requested: resolved, resolved }),
+      ),
+    ).toBe(0)
+    expect(await Effect.runPromise(memory.stats())).toEqual({ total: 1, valid: 1 })
+  })
+
+  test("🔴 a CLAIM that CITED the missing file is flagged for review, not forgotten", async () => {
+    const memory = MemoryClient.stub()
+    const resolved = path.join(os.tmpdir(), `novaclaw-memory-missing-${crypto.randomUUID()}`, "auth.ts")
+    const stored = await Effect.runPromise(
+      memory.addClaim(
+        {
+          scope: "global",
+          subject: "auth",
+          predicate: "path",
+          statement: "The entry point is the login handler.",
+          evidence: [{ kind: "file", locator: resolved }],
+        },
+        MemoryAccess.owner(),
+      ),
+    )
+
+    expect(
+      await Effect.runPromise(MemoryCorrection.reviewMovedEvidence({ memory, requested: resolved, resolved })),
+    ).toBe(1)
+    const rows = await Effect.runPromise(memory.list({ kinds: ["claim"] }))
+    expect(rows.find((row) => row.id === stored.id)!.status).toBe("needs_review")
+    // Flagged, NOT invalidated: a moved citation is not evidence the fact is false.
+    expect((await Effect.runPromise(memory.stats())).valid).toBeGreaterThan(0)
+  })
+
+  test("a claim whose cited file still exists is left alone", async () => {
+    const memory = MemoryClient.stub()
+    const resolved = path.join(process.cwd(), "package.json")
+    await Effect.runPromise(
+      memory.addClaim(
+        {
+          scope: "global",
+          subject: "package",
+          predicate: "path",
+          statement: "The manifest lives at the package root.",
+          evidence: [{ kind: "file", locator: resolved }],
+        },
+        MemoryAccess.owner(),
+      ),
+    )
+    expect(
+      await Effect.runPromise(MemoryCorrection.reviewMovedEvidence({ memory, requested: resolved, resolved })),
+    ).toBe(0)
+  })
+
+  test("🔴 the prose-matching pass no longer touches CLAIMS — the graph already knows what they cite", async () => {
+    const memory = MemoryClient.stub()
+    const resolved = path.join(os.tmpdir(), `novaclaw-memory-missing-${crypto.randomUUID()}`, "pi.c")
+    // A claim that merely MENTIONS the path, with no supporting edge to it. The old heuristic would
+    // have retired it on the strength of the sentence alone.
+    const mention = { ...hit("clm_mentions", `The onboarding doc points at ${resolved}.`), kind: "claim" as const }
+    await Effect.runPromise(store(memory, mention))
+    expect(
+      await Effect.runPromise(
+        MemoryCorrection.correctMissingRead({ memory, recalled: [mention], requested: resolved, resolved }),
       ),
     ).toBe(0)
     expect(await Effect.runPromise(memory.stats())).toEqual({ total: 1, valid: 1 })
