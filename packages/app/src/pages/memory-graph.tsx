@@ -11,6 +11,7 @@ import { type AgentLike } from "@/apps/contacts"
 import { layoutGraph, type Vec } from "./memory-graph/layout"
 import { centerOn, contentBounds, fitView, IDENTITY, isVisible, MAX_SCALE, MIN_SCALE, type View } from "./memory-graph/camera"
 import { graphFault, type GraphFault } from "./memory-graph/fault"
+import { hubLabel, isHub, projectGraph, type ProjectedNode } from "./memory-graph/project"
 
 // The Memory graph viewer (notes/kb-graph-plan.md §5 — the advanced, node-link surface for
 // path-tracing) — renders the graph memory as an interactive node-link diagram over /memory/graph +
@@ -68,6 +69,27 @@ const KIND_LEGEND = [
 ] as const
 
 const truncate = (text: string, n = 40) => (text.length > n ? text.slice(0, n - 1) + "…" : text)
+
+/** The hub's mark — a hexagon at radius 7, the one shape none of the three memory kinds uses. */
+const HEX = [0, 1, 2, 3, 4, 5]
+  .map((i) => {
+    const angle = (Math.PI / 3) * i - Math.PI / 2
+    return `${(Math.cos(angle) * 7).toFixed(2)},${(Math.sin(angle) * 7).toFixed(2)}`
+  })
+  .join(" ")
+
+/**
+ * How thick a merged edge is drawn.
+ *
+ * LOGARITHMIC and capped. A hub's `part_of` edge can stand for 202 stored links while its neighbour
+ * stands for one; drawn proportionally that is a black band beside a hair, and the map would be about
+ * one document's chunk count rather than about what NovaClaw knows. `log10` puts 1, 10 and 100 a
+ * constant distance apart, which is the honest reading of "an order of magnitude more".
+ */
+export const edgeWidth = (count: number, active: boolean): number => {
+  const base = active ? 1.5 : 0.75
+  return base * (1 + Math.min(1.5, Math.log10(Math.max(1, count))))
+}
 
 /**
  * What one graph fetch produced — a TAGGED result, never a bare `MemoryGraph`.
@@ -165,32 +187,6 @@ export function MemoryGraphPage() {
     return current?.status === "unavailable" ? current.fault : undefined
   }
 
-  // Deterministic layout, seeded from the per-instance cache (stable across opens); positions written
-  // back so a later open reuses them and only new nodes settle.
-  const positions = createMemo<Record<string, Vec>>(() => {
-    const g = loaded()
-    if (!g || g.nodes.length === 0) return {}
-    const key = conn() ? ServerConnection.key(conn()!) : "default"
-    const cached = readCache(key)
-    const ids = g.nodes.map((n) => n.id)
-    const allCached = ids.every((id) => cached[id])
-    const pos = layoutGraph(ids, g.edges, {
-      width: PLANE_W,
-      height: PLANE_H,
-      seed: cached,
-      // If nothing is new, don't re-simulate — reuse the cached layout verbatim (perfect stability).
-      iterations: allCached ? 0 : 300,
-    })
-    writeCache(key, pos)
-    return pos
-  })
-
-  const nodeById = createMemo(() => {
-    const map = new Map<string, MemoryRow>()
-    for (const n of loaded()?.nodes ?? []) map.set(n.id, n)
-    return map
-  })
-
   /**
    * Which kinds to draw. Passages are OFF by default: measured on a real instance, they were 202 of
    * 281 nodes, and the graph reads as a wall of identical marks with them on. The chip shows its off
@@ -205,7 +201,52 @@ export function MemoryGraphPage() {
       else next.add(kind)
       return next
     })
-  const hiddenCount = createMemo(() => (loaded()?.nodes ?? []).filter((n) => !kindVisible(n.kind)).length)
+
+  /**
+   * WHAT IS ON THE CANVAS — the visible projection, not the raw graph.
+   *
+   * Hiding a kind used to be a render-time skip: the hidden nodes still pulled on the layout, and any
+   * edge touching one was simply not drawn. `memory-graph/project.ts` has the full reasoning; the
+   * short version is that an ingested document's extracted entities reach it ONLY through passages,
+   * so the default view kept the marks and deleted the structure.
+   */
+  const projected = createMemo(() =>
+    projectGraph(loaded()?.nodes ?? [], loaded()?.edges ?? [], (kind) => kindVisible(kind)),
+  )
+  const hiddenCount = () => projected().hiddenCount
+
+  // Deterministic layout of the PROJECTION, seeded from the per-instance cache (stable across opens);
+  // positions are written back so a later open reuses them and only new nodes settle. Hub ids are
+  // derived from their anchor and kind, so they are cacheable too — toggling a kind off and on again
+  // returns the same picture rather than reshuffling.
+  const positions = createMemo<Record<string, Vec>>(() => {
+    const graph = projected()
+    if (graph.nodes.length === 0) return {}
+    const key = conn() ? ServerConnection.key(conn()!) : "default"
+    const cached = readCache(key)
+    const ids = graph.nodes.map((n) => n.id)
+    const allCached = ids.every((id) => cached[id])
+    const pos = layoutGraph(ids, graph.edges, {
+      width: PLANE_W,
+      height: PLANE_H,
+      seed: cached,
+      // If nothing is new, don't re-simulate — reuse the cached layout verbatim (perfect stability).
+      iterations: allCached ? 0 : 300,
+    })
+    writeCache(key, pos)
+    return pos
+  })
+
+  const nodeById = createMemo(() => {
+    const map = new Map<string, ProjectedNode>()
+    for (const n of projected().nodes) map.set(n.id, n)
+    return map
+  })
+  /** The stored row behind a mark, when there is one — a hub has none. */
+  const rowOf = (id: string): MemoryRow | undefined => {
+    const node = nodeById().get(id)
+    return node && !isHub(node) ? node.row : undefined
+  }
 
   const [selected, setSelected] = createSignal<string | undefined>()
   // The set of node ids adjacent to the selected node (both directions) — used to highlight.
@@ -213,19 +254,37 @@ export function MemoryGraphPage() {
     const sel = selected()
     const set = new Set<string>()
     if (!sel) return set
-    for (const e of loaded()?.edges ?? []) {
+    for (const e of projected().edges) {
       if (e.from === sel) set.add(e.to)
       if (e.to === sel) set.add(e.from)
     }
     return set
   })
   const selectedNode = createMemo(() => (selected() ? nodeById().get(selected()!) : undefined))
+  /** Narrowing helpers for the detail panel — a mark is either a stored memory or a hub. */
+  const isHubNode = (node: ProjectedNode) => (isHub(node) ? node : undefined)
+  const selectedScope = () => {
+    const node = selectedNode()
+    if (!node) return undefined
+    return isHub(node) ? node.scope : node.row.scope
+  }
+  /** What to call a mark in prose — a memory's text, or the hub's count. */
+  const markLabel = (id: string) => {
+    const node = nodeById().get(id)
+    if (!node) return id
+    return isHub(node) ? hubLabel(node) : node.row.text
+  }
   const selectedEdges = createMemo(() => {
     const sel = selected()
     if (!sel) return []
-    return (loaded()?.edges ?? [])
-      .filter((e) => e.from === sel || e.to === sel)
-      .map((e) => ({ type: e.type, other: e.from === sel ? e.to : e.from, dir: e.from === sel ? "→" : "←" }))
+    return projected()
+      .edges.filter((e) => e.from === sel || e.to === sel)
+      .map((e) => ({
+        type: e.type,
+        count: e.count,
+        other: e.from === sel ? e.to : e.from,
+        dir: e.from === sel ? "→" : "←",
+      }))
   })
 
   // --- the camera: pan / zoom, and the fit that makes the plane meet a real window ---
@@ -240,12 +299,11 @@ export function MemoryGraphPage() {
   let last = { x: 0, y: 0 }
   let svgEl: SVGSVGElement | undefined
 
-  /** The plane points the camera has to cover — the VISIBLE ones, so hiding passages refits. */
+  /** The plane points the camera has to cover — every mark in the projection, hubs included. */
   const visiblePoints = createMemo<Vec[]>(() => {
     const pos = positions()
     const out: Vec[] = []
-    for (const node of loaded()?.nodes ?? []) {
-      if (!kindVisible(node.kind)) continue
+    for (const node of projected().nodes) {
       const p = pos[node.id]
       if (p) out.push(p)
     }
@@ -350,7 +408,7 @@ export function MemoryGraphPage() {
    * worst version of the complaint that opened this work ("no way to see what node represents
    * what"), and it appeared precisely BECAUSE the filter was doing its job.
    */
-  const visibleCount = () => (loaded()?.nodes ?? []).filter((n) => kindVisible(n.kind)).length
+  const visibleCount = () => projected().nodes.length
 
   /**
    * Which of the four things is true — the single value the canvas branches on, and the one a test
@@ -592,14 +650,11 @@ export function MemoryGraphPage() {
             onClick={() => setSelected(undefined)}
           >
             <g transform={`translate(${view().tx} ${view().ty}) scale(${view().scale})`}>
-              {/* edges */}
-              <For each={loaded()?.edges ?? []}>
+              {/* edges — the PROJECTION's, so every endpoint is guaranteed to be on the canvas */}
+              <For each={projected().edges}>
                 {(e) => {
-                  // An edge whose endpoint is filtered out would be a line to nowhere.
-                  const shown = () =>
-                    kindVisible(nodeById().get(e.from)?.kind) && kindVisible(nodeById().get(e.to)?.kind)
-                  const a = () => (shown() ? positions()[e.from] : undefined)
-                  const b = () => (shown() ? positions()[e.to] : undefined)
+                  const a = () => positions()[e.from]
+                  const b = () => positions()[e.to]
                   const active = () => selected() === e.from || selected() === e.to
                   return (
                     <Show when={a() && b()}>
@@ -609,7 +664,10 @@ export function MemoryGraphPage() {
                         x2={b()!.x}
                         y2={b()!.y}
                         stroke={active() ? "#eab308" : "currentColor"}
-                        stroke-width={active() ? 1.5 : 0.75}
+                        // A merged edge stands for many stored ones, and WEIGHT is the only channel a
+                        // line has to say so. Logarithmic and capped: 202 passages must read as "more
+                        // than three", not as a band two hundred times thicker.
+                        stroke-width={edgeWidth(e.count, active())}
                         stroke-opacity={active() ? 0.9 : selected() ? 0.08 : 0.22}
                       />
                     </Show>
@@ -617,19 +675,28 @@ export function MemoryGraphPage() {
                 }}
               </For>
               {/* nodes */}
-              <For each={loaded()?.nodes ?? []}>
+              <For each={projected().nodes}>
                 {(node) => {
-                  // Hidden at RENDER, not before layout — see `positions`: filtering the layout
-                  // input would re-simulate and move every remaining node on each toggle.
-                  const p = () => (kindVisible(node.kind) ? positions()[node.id] : undefined)
+                  const p = () => positions()[node.id]
                   const isSel = () => selected() === node.id
                   const isNeighbor = () => neighborIds().has(node.id)
                   const dim = () => selected() !== undefined && !isSel() && !isNeighbor()
+                  const hub = () => (isHub(node) ? node : undefined)
+                  const row = () => (isHub(node) ? undefined : node.row)
+                  // A hub carries no scope of its own unless every member agrees on one — see
+                  // `project.ts`. `undefined` paints it neutral rather than borrowing a colour, since
+                  // a colour here would be a claim about 202 memories made on the strength of one.
+                  const colour = () => {
+                    const scope = hub() ? hub()!.scope : row()!.scope
+                    return scope === undefined ? "currentColor" : scopeColor(scope)
+                  }
                   return (
                     <Show when={p()}>
                       <g
                         transform={`translate(${p()!.x} ${p()!.y})`}
                         class="cursor-pointer"
+                        data-slot="memory-graph-node"
+                        data-node-kind={hub() ? "hub" : row()!.kind}
                         opacity={dim() ? 0.25 : 1}
                         onClick={(ev) => {
                           ev.stopPropagation()
@@ -637,32 +704,48 @@ export function MemoryGraphPage() {
                         }}
                       >
                         {/* SHAPE = kind, COLOUR = scope. Two attributes on two channels; using
-                            colour for both is what made a node unreadable. */}
+                            colour for both is what made a node unreadable.
+                            A HUB gets a fourth shape and a DASHED stroke — the one mark on this
+                            canvas that is not a memory has to look like it, or the map asserts
+                            something the store never said. */}
                         <Show
-                          when={node.kind === "entity"}
+                          when={hub()}
                           fallback={
                             <Show
-                              when={node.kind === "episode"}
+                              when={row()!.kind === "entity"}
                               fallback={
-                                <rect
-                                  x={isSel() ? -6 : -4}
-                                  y={isSel() ? -6 : -4}
-                                  width={isSel() ? 12 : 8}
-                                  height={isSel() ? 12 : 8}
-                                  rx={1}
-                                  fill="none"
-                                  stroke={isSel() ? "#eab308" : scopeColor(node.scope)}
-                                  stroke-width={isSel() ? 2.5 : 1.5}
-                                />
+                                <Show
+                                  when={row()!.kind === "episode"}
+                                  fallback={
+                                    <rect
+                                      x={isSel() ? -6 : -4}
+                                      y={isSel() ? -6 : -4}
+                                      width={isSel() ? 12 : 8}
+                                      height={isSel() ? 12 : 8}
+                                      rx={1}
+                                      fill="none"
+                                      stroke={isSel() ? "#eab308" : colour()}
+                                      stroke-width={isSel() ? 2.5 : 1.5}
+                                    />
+                                  }
+                                >
+                                  <rect
+                                    x={isSel() ? -7 : -5}
+                                    y={isSel() ? -7 : -5}
+                                    width={isSel() ? 14 : 10}
+                                    height={isSel() ? 14 : 10}
+                                    transform="rotate(45)"
+                                    fill={colour()}
+                                    stroke={isSel() ? "#eab308" : "white"}
+                                    stroke-width={isSel() ? 2.5 : 1}
+                                    stroke-opacity={isSel() ? 1 : 0.5}
+                                  />
+                                </Show>
                               }
                             >
-                              <rect
-                                x={isSel() ? -7 : -5}
-                                y={isSel() ? -7 : -5}
-                                width={isSel() ? 14 : 10}
-                                height={isSel() ? 14 : 10}
-                                transform="rotate(45)"
-                                fill={scopeColor(node.scope)}
+                              <circle
+                                r={isSel() ? 9 : 6}
+                                fill={colour()}
                                 stroke={isSel() ? "#eab308" : "white"}
                                 stroke-width={isSel() ? 2.5 : 1}
                                 stroke-opacity={isSel() ? 1 : 0.5}
@@ -670,17 +753,28 @@ export function MemoryGraphPage() {
                             </Show>
                           }
                         >
-                          <circle
-                            r={isSel() ? 9 : 6}
-                            fill={scopeColor(node.scope)}
-                            stroke={isSel() ? "#eab308" : "white"}
-                            stroke-width={isSel() ? 2.5 : 1}
-                            stroke-opacity={isSel() ? 1 : 0.5}
+                          <polygon
+                            points={HEX}
+                            transform={isSel() ? "scale(1.4)" : undefined}
+                            fill="none"
+                            stroke={isSel() ? "#eab308" : colour()}
+                            stroke-width={isSel() ? 2 : 1.25}
+                            stroke-dasharray="2.5 2"
+                            stroke-opacity={0.85}
                           />
                         </Show>
-                        <Show when={isSel() || isNeighbor() || visibleCount() <= 40}>
-                          <text x={13} y={4} font-size="11" fill="currentColor" opacity={0.8}>
-                            {nodeLabel(node)}
+                        {/* A hub is ALWAYS labelled. Its entire content IS its count, so an
+                            unlabelled one is a dashed shape that means nothing. */}
+                        <Show when={hub() || isSel() || isNeighbor() || visibleCount() <= 40}>
+                          <text
+                            x={13}
+                            y={4}
+                            font-size="11"
+                            fill="currentColor"
+                            opacity={hub() ? 0.6 : 0.8}
+                            font-style={hub() ? "italic" : undefined}
+                          >
+                            {hub() ? hubLabel(hub()!) : nodeLabel(row()!)}
                           </text>
                         </Show>
                       </g>
@@ -694,28 +788,71 @@ export function MemoryGraphPage() {
           {/* detail panel for the selected memory */}
           <Show when={selectedNode()}>
             {(sel) => (
-              <aside class="absolute right-0 top-0 h-full w-72 overflow-y-auto border-l border-v2-border-border-muted bg-v2-background-bg-layer-02 p-4 text-sm">
+              <aside
+                class="absolute right-0 top-0 h-full w-72 overflow-y-auto border-l border-v2-border-border-muted bg-v2-background-bg-layer-02 p-4 text-sm"
+                data-slot="memory-graph-detail"
+              >
                 <div class="mb-2 flex items-start justify-between gap-2">
-                  <span
-                    class="rounded px-1.5 py-0.5 text-xs"
-                    style={{ background: scopeColor(sel().scope) + "33", color: scopeColor(sel().scope) }}
+                  {/* A hub has a scope BADGE only when every memory in it agrees on one; otherwise it
+                      says what it is instead of claiming who can read it. */}
+                  <Show
+                    when={selectedScope()}
+                    fallback={<span class="rounded bg-v2-background-bg-layer-03 px-1.5 py-0.5 text-xs opacity-60">Group</span>}
                   >
-                    {scopeLabel(sel().scope, owners())}
-                  </span>
+                    {(scope) => (
+                      <span
+                        class="rounded px-1.5 py-0.5 text-xs"
+                        style={{ background: scopeColor(scope()) + "33", color: scopeColor(scope()) }}
+                      >
+                        {scopeLabel(scope(), owners())}
+                      </span>
+                    )}
+                  </Show>
                   <button class="opacity-60 hover:opacity-100" onClick={() => setSelected(undefined)}>
                     <Icon name="close-small" size="large" />
                   </button>
                 </div>
-                <p class="mb-1 leading-snug">{sel().text}</p>
-                <div class="mb-3 flex flex-wrap gap-2 text-xs opacity-60">
-                  <span>{sel().kind}</span>
-                  <span>·</span>
-                  <span>{sel().relation}</span>
-                  <Show when={sel().source}>
-                    <span>·</span>
-                    <span>{sel().source}</span>
-                  </Show>
-                </div>
+                {/* THE HUB EXPLAINS ITSELF, and offers the one action that dissolves it. A mark the
+                    user cannot account for is worse than the missing structure it was added to fix —
+                    so it names what it stands for, why it is there, and how to see through it. */}
+                <Show
+                  when={isHubNode(sel())}
+                  fallback={
+                    <>
+                      <p class="mb-1 leading-snug">{rowOf(sel().id)?.text}</p>
+                      <div class="mb-3 flex flex-wrap gap-2 text-xs opacity-60">
+                        <span>{rowOf(sel().id)?.kind}</span>
+                        <span>·</span>
+                        <span>{rowOf(sel().id)?.relation}</span>
+                        <Show when={rowOf(sel().id)?.source}>
+                          <span>·</span>
+                          <span>{rowOf(sel().id)?.source}</span>
+                        </Show>
+                      </div>
+                    </>
+                  }
+                >
+                  {(hub) => (
+                    <>
+                      <p class="mb-1 leading-snug">{hubLabel(hub())}, drawn as one mark.</p>
+                      <p class="mb-3 text-xs opacity-60">
+                        They are hidden by the {hub().of} filter. Their links are kept so the rest of the map stays
+                        connected — nothing here is a relationship NovaClaw invented.
+                      </p>
+                      <button
+                        type="button"
+                        data-slot="memory-hub-reveal"
+                        class="mb-3 rounded bg-v2-background-bg-layer-03 px-2 py-1 text-xs opacity-80 hover:opacity-100"
+                        onClick={() => {
+                          toggleKind(hub().of)
+                          setSelected(undefined)
+                        }}
+                      >
+                        Show every {hub().of}
+                      </button>
+                    </>
+                  )}
+                </Show>
                 <Show when={selectedEdges().length > 0} fallback={<p class="text-xs opacity-40">No links.</p>}>
                   <div class="text-xs font-medium opacity-70">Links</div>
                   <ul class="mt-1 flex flex-col gap-1">
@@ -724,9 +861,12 @@ export function MemoryGraphPage() {
                         <li>
                           <button class="w-full text-left hover:underline" onClick={() => setSelected(edge.other)}>
                             <span class="opacity-50">
-                              {edge.dir} [{edge.type}]{" "}
+                              {edge.dir} [{edge.type}]
+                              {/* A merged edge says how many stored links it stands for; without it,
+                                  "1 link" and "202 links" read identically. */}
+                              <Show when={edge.count > 1}>{` ×${edge.count}`}</Show>{" "}
                             </span>
-                            {truncate(nodeById().get(edge.other)?.text ?? edge.other, 32)}
+                            {truncate(markLabel(edge.other), 32)}
                           </button>
                         </li>
                       )}

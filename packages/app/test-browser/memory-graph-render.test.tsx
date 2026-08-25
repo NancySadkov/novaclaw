@@ -31,7 +31,11 @@ import type { EdgeRow, MemoryGraph, MemoryRow } from "@/utils/memory-api"
  * actually do rather than assert about.
  */
 
-// --- the fixture: two connected entities, one lone episode, and a passage hidden by default -----
+/**
+ * The fixture is INGESTION-SHAPED, because that is the case the projection exists for: a document
+ * stored as an entity, passages hanging off it by `part_of`, and an entity whose only path to the
+ * document runs through a passage (`Dragon`). Plus a pair of ordinary entities and a lone episode.
+ */
 const node = (id: string, kind: string, name: string | null, scope = "global"): MemoryRow => ({
   id,
   kind,
@@ -46,13 +50,21 @@ const NODES: MemoryRow[] = [
   node("e1", "entity", "Nancy"),
   node("e2", "entity", "Symta"),
   node("ep1", "episode", null),
+  node("doc", "entity", "Manual"),
+  node("Dragon", "entity", "Dragon"),
   node("p1", "passage", null),
+  node("p2", "passage", null),
 ]
 const EDGES: EdgeRow[] = [
   { from: "e1", to: "e2", type: "wrote" },
-  { from: "p1", to: "e2", type: "mentions" },
+  { from: "p1", to: "doc", type: "part_of" },
+  { from: "p2", to: "doc", type: "part_of" },
+  // Dragon's ONLY link. Before the projection, hiding passages deleted it and left Dragon floating.
+  { from: "p1", to: "Dragon", type: "mentions" },
 ]
 const FIXTURE: MemoryGraph = { nodes: NODES, edges: EDGES }
+/** Memories drawn as themselves when passages are hidden: everything but the two passages. */
+const VISIBLE_MEMORIES = 5
 
 // --- DOM seams ----------------------------------------------------------------------------------
 let paneSize = { width: 900, height: 600 }
@@ -204,16 +216,73 @@ function drawnPoints(): { x: number; y: number }[] {
 const insidePane = (p: { x: number; y: number }) =>
   p.x >= 0 && p.y >= 0 && p.x <= paneSize.width && p.y <= paneSize.height
 
+/** The `data-node-kind` of every drawn mark — `entity` / `episode` / `passage` / `hub`. */
+const markKinds = () =>
+  [...document.querySelectorAll('[data-slot="memory-graph-node"]')].map((el) => (el as HTMLElement).dataset.nodeKind)
+const hubCount = () => markKinds().filter((k) => k === "hub").length
+/** Which marks the drawn edges actually join, as `from->to` over the plane positions. */
+const edgeEndpoints = () => [...document.querySelectorAll('[data-slot="memory-graph-canvas"] svg line')].length
+
 describe("MemoryGraphPage renders", () => {
-  test("the instrument works at all — the graph mounts and draws its visible nodes", async () => {
+  test("the instrument works at all — the graph mounts and draws its visible marks", async () => {
     mount([() => FIXTURE])
     await settle()
     showGraph()
     await settle()
     // Guard on the instrument: if this is wrong every assertion below is vacuous.
     expect(state()).toBe("ready")
-    // Three of four — the passage is hidden by default.
-    expect(drawnPoints().length).toBe(3)
+    // Five memories drawn as themselves, plus ONE hub standing for the two hidden passages.
+    expect(drawnPoints().length).toBe(VISIBLE_MEMORIES + 1)
+    expect(hubCount()).toBe(1)
+  })
+
+  test("🔴 an entity reachable only THROUGH a passage keeps its links when passages are hidden", async () => {
+    mount([() => FIXTURE])
+    await settle()
+    showGraph()
+    await settle()
+    // Dragon's one stored edge is `p1 -mentions-> Dragon`. Before the projection, hiding passages
+    // dropped that edge and Dragon sat unconnected beside a document with nothing attached to it.
+    // Three lines now: e1-e2, hub-doc (×2 merged), hub-Dragon.
+    expect(edgeEndpoints()).toBe(3)
+    expect(document.body.textContent).toContain("2 passages")
+  })
+
+  test("the hub explains itself, and reveals the kind it stands for", async () => {
+    mount([() => FIXTURE])
+    await settle()
+    showGraph()
+    await settle()
+    const hub = [...document.querySelectorAll('[data-slot="memory-graph-node"]')].find(
+      (el) => (el as HTMLElement).dataset.nodeKind === "hub",
+    ) as SVGGElement
+    hub.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    await settle()
+    const detail = document.querySelector('[data-slot="memory-graph-detail"]')!
+    expect(detail.textContent).toContain("2 passages, drawn as one mark.")
+    // The merged `part_of` edge says how many stored links it stands for.
+    expect(detail.textContent).toContain("×2")
+    ;(document.querySelector('[data-slot="memory-hub-reveal"]') as HTMLButtonElement).click()
+    await settle()
+    expect(hubCount()).toBe(0)
+    expect(markKinds().filter((k) => k === "passage").length).toBe(2)
+  })
+
+  test("NO entity-to-entity edge is invented to bridge a hidden passage", async () => {
+    // The cheap repair would draw `doc -> Dragon` because a passage joined them. Every drawn line
+    // must have a stored edge or a hub behind it, so a run with passages VISIBLE must produce the
+    // same number of lines as there are stored edges.
+    mount([() => FIXTURE])
+    await settle()
+    showGraph()
+    await settle()
+    const toggle = [...document.querySelectorAll('[data-slot="memory-kind-toggle"]')].find(
+      (b) => (b as HTMLElement).dataset.kind === "passage",
+    ) as HTMLButtonElement
+    toggle.click()
+    await settle()
+    expect(hubCount()).toBe(0)
+    expect(edgeEndpoints()).toBe(EDGES.length)
   })
 
   test("🔴 a FAULT says unavailable and offers Retry — it never says the cabinet is empty", async () => {
@@ -270,7 +339,7 @@ describe("MemoryGraphPage renders", () => {
     showGraph()
     await settle()
     const points = drawnPoints()
-    expect(points.length).toBe(3)
+    expect(points.length).toBe(VISIBLE_MEMORIES + 1)
     for (const p of points) expect(insidePane(p)).toBe(true)
   })
 
@@ -292,12 +361,12 @@ describe("MemoryGraphPage renders", () => {
     await settle()
     showGraph()
     await settle()
-    expect(drawnPoints().length).toBe(3)
+    expect(drawnPoints().length).toBe(VISIBLE_MEMORIES + 1)
     paneSize = { width: 300, height: 240 }
     for (const cb of resizeCallbacks) cb()
     await settle()
     const points = drawnPoints()
-    expect(points.length).toBe(3)
+    expect(points.length).toBe(VISIBLE_MEMORIES + 1)
     for (const p of points) expect(insidePane(p)).toBe(true)
   })
 
@@ -307,14 +376,16 @@ describe("MemoryGraphPage renders", () => {
     await settle()
     showGraph()
     await settle()
-    const before = drawnPoints().length
+    expect(drawnPoints().length).toBe(VISIBLE_MEMORIES + 1)
     const toggle = [...document.querySelectorAll('[data-slot="memory-kind-toggle"]')].find(
       (b) => (b as HTMLElement).dataset.kind === "passage",
     ) as HTMLButtonElement
     toggle.click()
     await settle()
+    // The hub dissolves back into the two passages it stood for: 5 + 1 hub -> 7 memories.
     const after = drawnPoints()
-    expect(after.length).toBe(before + 1)
+    expect(after.length).toBe(NODES.length)
+    expect(hubCount()).toBe(0)
     for (const p of after) expect(insidePane(p)).toBe(true)
   })
 })
