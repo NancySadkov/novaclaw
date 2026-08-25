@@ -70,6 +70,42 @@ export const cabinetOf = (agent: string): string | undefined => KbTool.agentScop
  * logged with the scope that still holds rows, which is the one thing an operator needs to clean up
  * by hand. (`Effect.ignore` here was the mistake `session.compaction.archive.failed` documents.)
  */
+/**
+ * EVERY SUBSYSTEM THAT KEYS ANYTHING ON AN AGENT ID.
+ *
+ * 🔴 Declared as a LIST rather than left implicit, because the failure this fixes is a subsystem
+ * quietly not being cleared. Three escaped the last time: the workspace directory, `default_agent`
+ * at the tool door, and schedules. Each was found by someone hitting it, which is the expensive way.
+ *
+ * ⚠️ **A registry alone was not enough, and that is measured rather than assumed.** `AgentRemoval`
+ * uses one, and its listener is registered by a node that has to be LISTED in the instance graph —
+ * unlisted, it ships inert and everything still compiles and passes. (Reading that file earlier today
+ * it looked like it had no production caller at all.) So the names are declared here and
+ * {@link everything} reports any that nothing registered: a cleaner that was never wired is a fact
+ * about this instance, not a silence.
+ */
+export const CLEANERS = ["schedules", "default-agent", "workspace"] as const
+
+export type CleanerName = (typeof CLEANERS)[number]
+
+type Cleaner = { readonly name: CleanerName; readonly clear: (agentID: string) => Effect.Effect<void> }
+
+const cleaners = new Set<Cleaner>()
+
+/** Register one subsystem's cleaner for the life of a scope. */
+export const registerCleaner = (name: CleanerName, clear: (agentID: string) => Effect.Effect<void>) =>
+  Effect.acquireRelease(
+    Effect.sync(() => {
+      const entry: Cleaner = { name, clear }
+      cleaners.add(entry)
+      return entry
+    }),
+    (entry) => Effect.sync(() => void cleaners.delete(entry)),
+  )
+
+/** Which declared cleaners are currently wired — the test seam for "did this ship inert?". */
+export const registered = (): ReadonlyArray<CleanerName> => [...cleaners].map((entry) => entry.name)
+
 export const everything = (input: {
   readonly db: Database.Interface["db"]
   readonly events: EventV2.Interface
@@ -109,4 +145,26 @@ export const everything = (input: {
         }),
       ),
     )
+
+    // 🔴 …and every OTHER subsystem that keys something on this id. Each runs independently and each
+    // failure is REPORTED, never fatal: a schedule that could not be cleared must not stop the
+    // memory cabinet being set aside, and half a retirement with no account of which half is the
+    // state an operator cannot clean up by hand.
+    const wired = new Set(registered())
+    for (const entry of [...cleaners])
+      yield* entry.clear(input.agent).pipe(
+        Effect.catchCause((cause) =>
+          Log.event("agent.retire.cleaner.failed", {
+            "agent.id": input.agent,
+            "agent.cleaner": entry.name,
+            "agent.fault": Log.fault(cause),
+          }),
+        ),
+      )
+    // ⚠️ A DECLARED cleaner that nothing registered is reported too. `AgentRemoval`'s own listener
+    // ships inert if its node is left out of the instance graph — everything still compiles and
+    // passes — so "nobody registered" has to be a line in the log rather than a silence.
+    for (const name of CLEANERS)
+      if (!wired.has(name))
+        yield* Log.event("agent.retire.cleaner.missing", { "agent.id": input.agent, "agent.cleaner": name })
   })

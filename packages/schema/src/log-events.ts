@@ -998,6 +998,26 @@ export const EVENTS = {
    * was rolled back. The colleague keeps the chat it had; the folder change still applies and it
    * will read the new folder from its system prompt on its next turn.
    */
+  /** One subsystem's cleanup for a retired agent failed; the rest of the retirement still ran. */
+  "agent.retire.cleaner.failed": {
+    level: "warn",
+    message: "a retired agent's cleanup step failed",
+    attributes: { "agent.id": "correlate", "agent.cleaner": "id", "agent.fault": "fault" },
+    content: "user",
+    file: "packages/core/src/agent/retire.ts",
+  },
+  /**
+   * A DECLARED cleaner had no registration, so that subsystem still holds rows keyed on the retired
+   * id. Usually one node missing from the instance graph — the registration ships inert and nothing
+   * else notices.
+   */
+  "agent.retire.cleaner.missing": {
+    level: "warn",
+    message: "a declared cleanup step was never wired, so it did not run",
+    attributes: { "agent.id": "correlate", "agent.cleaner": "id" },
+    content: "user",
+    file: "packages/core/src/agent/retire.ts",
+  },
   "agent.reassign.successor.failed": {
     level: "warn",
     message: "could not open a reassigned colleague's new chat; the archive was rolled back",

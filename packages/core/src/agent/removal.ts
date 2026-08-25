@@ -1,6 +1,9 @@
 export * as AgentRemoval from "./removal"
 
 import { Effect, Layer } from "effect"
+import { eq } from "drizzle-orm"
+import { AgentConfigStore } from "../agent-config-store"
+import { CalendarScheduleTable } from "../schedule/calendar.sql"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
 import { EventV2 } from "../event"
@@ -81,10 +84,33 @@ export const node = makeGlobalNode({
       const { db } = yield* Database.Service
       const events = yield* EventV2.Service
       const memory = Memory.client(yield* Memory.node.service)
+      // 🔴 The subsystems that key rows on an agent id, registered where their stores are reachable.
+      // Declared in `AgentRetire.CLEANERS`, so one that is never wired is REPORTED rather than
+      // silently skipped — which is the failure mode this whole list exists to answer.
+      const store = yield* AgentConfigStore.Service
+      yield* AgentRetire.registerCleaner("schedules", (agentID) =>
+        // A retired colleague's tasks must stop firing. Left behind they do not merely linger: the
+        // scheduler hands an unrunnable owner's task to NOVA, so a retirement would quietly turn
+        // somebody's scheduled work into the CEO's.
+        db
+          .delete(CalendarScheduleTable)
+          .where(eq(CalendarScheduleTable.agent, agentID))
+          .run()
+          .pipe(Effect.asVoid, Effect.orDie),
+      )
+      yield* AgentRetire.registerCleaner("default-agent", (agentID) =>
+        Effect.gen(function* () {
+          // A dangling `default_agent` reads as configured while resolving to nobody. The HTTP door
+          // already prunes it; the TOOL door did not, so Nova retiring a colleague it had made the
+          // default left the setting pointing at a name that no longer exists.
+          const current = yield* store.getDefault()
+          if (current === agentID) yield* store.clearDefault()
+        }),
+      )
       yield* register((agentID) =>
         AgentRetire.everything({ db, events, memory, agent: agentID, at: Date.now() }).pipe(Effect.asVoid),
       )
     }),
   ),
-  deps: [Database.node, EventV2.node, Memory.node],
+  deps: [AgentConfigStore.node, Database.node, EventV2.node, Memory.node],
 })
