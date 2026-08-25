@@ -93,6 +93,47 @@ const UsageFilter = Schema.Struct({
   limit: Schema.optional(Schema.Number),
 })
 
+/**
+ * 🔴 **THE CLOSED PREDICATE VOCABULARY — offered, not guessed.**
+ *
+ * `predicate` was declared as free `Schema.String`, and a value outside `KbClaim.CLAIM_PREDICATES` is
+ * not an error: `conflictKey` returns `undefined`, so the claim is written with NO identity, nothing
+ * it can ever correct, and a `200` that says `identified: false`. Measured 2026-08-26 against this
+ * endpoint — three claims sent with `predicate: "opening hours"` about one subject produced three
+ * simultaneously-current answers and no supersession, silently.
+ *
+ * That is principle 12 exactly: *a setting may never require a value the user has no way to know*,
+ * and 12(b) — offer what exists. A literal union puts the vocabulary in the OpenAPI document and the
+ * generated SDK, so a wrong predicate is a 400 that names the options instead of a success that
+ * quietly did something else.
+ *
+ * ⚠️ A HAND-KEPT COPY, like `EVIDENCE_KINDS` above and for the same reason — `@novaclaw/protocol`
+ * depends on `@novaclaw/schema` and nothing else, while `claim.ts` lives in core. Exported so
+ * `server/src/handlers/memory-claim.test.ts` can compare it against core's own table.
+ */
+export const CLAIM_PREDICATES = [
+  "about",
+  "birthday",
+  "dislikes",
+  "email",
+  "employer",
+  "knows",
+  "language",
+  "likes",
+  "location",
+  "name",
+  "owner",
+  "path",
+  "phone",
+  "preference",
+  "role",
+  "status",
+  "timezone",
+  "uses",
+  "version",
+  "works_on",
+] as const
+
 export const EVIDENCE_KINDS = ["chat", "message", "passage", "file", "url", "test", "command", "commit"] as const
 
 /**
@@ -184,7 +225,7 @@ export const MemoryGroup = HttpApiGroup.make("server.memory").add(
         statement: Schema.String,
         scope: Schema.optional(Schema.String),
         subject: Schema.optional(Schema.String),
-        predicate: Schema.optional(Schema.String),
+        predicate: Schema.optional(Schema.Literals(CLAIM_PREDICATES)),
         confidence: Schema.optional(Schema.Number),
         source: Schema.optional(Schema.String),
         agent: Schema.optional(Schema.String),

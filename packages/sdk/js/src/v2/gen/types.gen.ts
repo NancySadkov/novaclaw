@@ -13677,7 +13677,27 @@ export type V2MemoryClaimAddData = {
     statement: string
     scope?: string
     subject?: string
-    predicate?: string
+    predicate?:
+      | "about"
+      | "birthday"
+      | "dislikes"
+      | "email"
+      | "employer"
+      | "knows"
+      | "language"
+      | "likes"
+      | "location"
+      | "name"
+      | "owner"
+      | "path"
+      | "phone"
+      | "preference"
+      | "role"
+      | "status"
+      | "timezone"
+      | "uses"
+      | "version"
+      | "works_on"
     confidence?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     source?: string
     agent?: string

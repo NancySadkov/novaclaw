@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test"
 import { KbClaim } from "@novaclaw/core/kb-graph/claim"
-import { EVIDENCE_KINDS, MemoryGroup, PERSON_CLAIM_STATUSES } from "@novaclaw/protocol/groups/memory"
+import {
+  CLAIM_PREDICATES,
+  EVIDENCE_KINDS,
+  MemoryGroup,
+  PERSON_CLAIM_STATUSES,
+} from "@novaclaw/protocol/groups/memory"
 
 /**
  * ─── THE CLAIM ENDPOINTS' VOCABULARIES, DERIVED RATHER THAN TRUSTED ──────────────────────────────
@@ -14,6 +19,24 @@ import { EVIDENCE_KINDS, MemoryGroup, PERSON_CLAIM_STATUSES } from "@novaclaw/pr
  * reads exactly like a caller mistake. This package can see both, so the two are compared here
  * instead of either being trusted.
  */
+
+test("🔴 the claim endpoint's predicates are exactly KbClaim's closed table", () => {
+  // A predicate outside the table is not an error — `conflictKey` returns undefined, the claim is
+  // written with no identity, and the caller gets a 200 saying `identified: false`. Measured: three
+  // claims about one subject sent with `predicate: "opening hours"` produced three simultaneously
+  // current answers and no supersession. The endpoint offers the list so a wrong value is a 400.
+  expect(CLAIM_PREDICATES.length).toBeGreaterThan(0)
+  expect([...CLAIM_PREDICATES].toSorted()).toEqual([...KbClaim.CLAIM_PREDICATE_NAMES].toSorted())
+})
+
+test("⚠️ at least one predicate on each side of the cardinality split, so the union cannot silently lose a half", () => {
+  const single = CLAIM_PREDICATES.filter((one) => KbClaim.CLAIM_PREDICATES[one] === "single")
+  const multi = CLAIM_PREDICATES.filter((one) => KbClaim.CLAIM_PREDICATES[one] === "multi")
+  // `single` is what supersession keys on; `multi` is what must never auto-correct. An endpoint that
+  // offered only one kind would be a different feature wearing this one's name.
+  expect(single.length).toBeGreaterThan(0)
+  expect(multi.length).toBeGreaterThan(0)
+})
 
 test("🔴 the claim endpoint's evidence kinds are exactly KbClaim.EVIDENCE_KINDS", () => {
   // Not vacuous: an empty list would make the comparison trivially true, which is how a guard of

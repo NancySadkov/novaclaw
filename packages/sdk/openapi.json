@@ -14147,7 +14147,29 @@
                     "type": "string"
                   },
                   "predicate": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                      "about",
+                      "birthday",
+                      "dislikes",
+                      "email",
+                      "employer",
+                      "knows",
+                      "language",
+                      "likes",
+                      "location",
+                      "name",
+                      "owner",
+                      "path",
+                      "phone",
+                      "preference",
+                      "role",
+                      "status",
+                      "timezone",
+                      "uses",
+                      "version",
+                      "works_on"
+                    ]
                   },
                   "confidence": {
                     "anyOf": [
