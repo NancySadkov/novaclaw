@@ -50,9 +50,22 @@ describe("matches", () => {
     expect(matches(row("Chapter 1", "rotor", "entity"), { ...filter, query: "rotor" })).toBe(true)
   })
 
-  test("an EMPTY kind set admits nothing — a state the chips can genuinely reach", () => {
+  test("an EMPTY kind set admits nothing THE CHIPS NAME — a state they can genuinely reach", () => {
     const none: MemoryFilter = { ...filter, kinds: new Set() }
     expect(matches(row("Nancy", "anything"), none)).toBe(false)
+  })
+
+  test("🔴 a kind with NO CHIP is never hidden — `claim` was invisible in the Remembered list", () => {
+    // The store's first-class unit of memory has no chip yet (the chips are the Map's three
+    // shapes), and `kinds.has(row.kind)` hid every claim from the surface whose entire job is
+    // answering "what do you remember" — with no control on screen that could have brought them
+    // back. A control that does not exist cannot be switched off by the user, so it must not be
+    // switched off on their behalf.
+    expect(matches(row("Ann", "Ann works at Acme", "claim"), filter)).toBe(true)
+    expect(matches(row("Ann", "Ann works at Acme", "claim"), { ...filter, kinds: new Set() })).toBe(true)
+    // ...and it still obeys every filter that DOES apply to it
+    expect(matches(row("Ann", "Ann works at Acme", "claim"), { ...filter, query: "kotlin" })).toBe(false)
+    expect(matches({ ...row("Ann", "x", "claim"), status: "archived" }, filter)).toBe(false)
   })
 
   test("🔴 the LENS is real — `Current` rejects a corrected claim, `History` admits it", () => {

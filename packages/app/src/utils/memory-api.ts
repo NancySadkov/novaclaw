@@ -154,6 +154,47 @@ export function memoryList(
   })
 }
 
+/**
+ * The access ledger's verdict on one memory (P3). Optional on an item: a row nothing has ever
+ * touched has no counters, and inventing zeroes would make "never recalled" and "recalled and
+ * discarded" the same row.
+ */
+export interface UsageCounts {
+  readonly accesses: number
+  readonly uses: number
+  readonly useful: number
+  readonly corrections: number
+  readonly firstAccessedAt: number
+  readonly lastAccessedAt: number
+}
+
+export interface UsageItem extends MemoryRow {
+  readonly usage?: UsageCounts
+}
+
+/**
+ * ⚠️ `scanned`/`partial` for the same reason `GraphSlice` exists: "twelve never-used memories came
+ * back" and "twelve never-used memories exist" are identical bytes from this side, and a viewer
+ * without the distinction presents a corner of the answer as the whole of it.
+ */
+export interface NeverUsedResult {
+  readonly items: readonly UsageItem[]
+  readonly scanned: number
+  readonly partial: boolean
+}
+
+/** Memories no recall has ever returned, oldest first — the `Never used` lens's data source. */
+export function memoryNeverUsed(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; scopes?: readonly string[]; limit?: number; scan?: number },
+) {
+  return call<NeverUsedResult>(server, "GET", "memory/usage/never-used", input.directory, undefined, {
+    scopes: csv(input.scopes),
+    limit: input.limit === undefined ? undefined : String(input.limit),
+    scan: input.scan === undefined ? undefined : String(input.scan),
+  })
+}
+
 export function memoryGraph(
   server: ServerConnection.HttpBase,
   input: { directory: string; scopes?: readonly string[]; limit?: number },

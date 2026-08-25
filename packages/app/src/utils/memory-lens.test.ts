@@ -57,12 +57,20 @@ describe("applyLens", () => {
     expect(result.unmeasured).toBeUndefined()
   })
 
-  test("🔴 Never used reports that it CANNOT answer, rather than answering 'none'", () => {
-    // There is no access ledger on this instance, so an empty list under this tab would be a
-    // confident claim about a measurement nobody has taken.
-    const result = applyLens(lensByID("never-used"), rows)
+  test("🔴 an UNMEASURED lens reports that it cannot answer, rather than answering 'none'", () => {
+    // The branch an instance without the P3 usage routes falls into. An empty list under `Never
+    // used` would be a confident claim about a measurement nobody has taken.
+    const result = applyLens({ ...lensByID("never-used"), measured: false }, rows)
     expect(result.unmeasured).toBeTruthy()
-    expect(result.unmeasured).toContain("not yet recording")
+    expect(result.unmeasured).toContain("not recording")
+  })
+
+  test("⚠️ Never used reads its OWN route — it is a fact about the ledger, not about the claim", () => {
+    // A status set can never express "nothing has ever recalled this", so the lens names the
+    // endpoint instead of leaving the list to infer it from the id.
+    expect(lensByID("never-used").source).toBe("never-used")
+    expect(lensByID("never-used").statuses).toBeUndefined()
+    for (const id of ["current", "needs-review", "history"]) expect(lensByID(id).source).toBe("list")
   })
 
   test("every lens in the row of tabs is reachable and carries a one-line hint", () => {

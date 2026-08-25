@@ -46,14 +46,23 @@ export interface Lens {
    * reads as current, which is the confident lie this whole slice keeps deleting.
    */
   readonly includeInvalid: boolean
+  /**
+   * WHICH ENDPOINT answers this lens.
+   *
+   * ⚠️ `never-used` is not a status set and never could be — "nothing has ever recalled this" is a
+   * fact about the ACCESS LEDGER, not about the claim. It therefore reads its own route, and the
+   * lens says so rather than leaving the list to guess from the id.
+   */
+  readonly source: "list" | "never-used"
   /** ONE line saying what is in force, per principle 12(d). The rest belongs in the panel. */
   readonly hint: string
   /**
    * Is there a data source behind this lens on THIS instance?
    *
-   * 🔴 `never-used` is `false` until the P3 access ledger lands. Rendering it as an empty list would
-   * be the empty-cabinet lie in its newest costume — "nothing here is unused" is a confident claim
-   * about a measurement nobody has taken. So it renders an honest "not measured yet" instead.
+   * ⚠️ Every lens is measured on an instance that has the P3 usage routes. This flag is what an
+   * OLDER instance's answer falls back to, and it is kept because the failure it guards against is
+   * the worst one this app can commit: rendering "nothing here is unused" — a confident claim about
+   * a measurement nobody took — instead of saying the measurement is missing.
    */
   readonly measured: boolean
 }
@@ -68,6 +77,7 @@ export const LENSES: readonly Lens[] = [
     // what Nova is working from.
     statuses: ["active", "needs_review"],
     includeInvalid: false,
+    source: "list",
     hint: "What NovaClaw treats as true right now.",
     measured: true,
   },
@@ -76,22 +86,27 @@ export const LENSES: readonly Lens[] = [
     label: "Needs review",
     statuses: ["needs_review"],
     includeInvalid: false,
+    source: "list",
     hint: "Claims whose evidence moved — still in use, still down-ranked, worth a look.",
     measured: true,
   },
   {
     id: "never-used",
     label: "Never used",
-    statuses: ["active", "needs_review"],
+    // The route already filters by "no access ever recorded", so no status set is asked of it —
+    // and asking for one here would silently narrow an answer the ledger already decided.
+    statuses: undefined,
     includeInvalid: false,
-    hint: "Not measured yet on this instance.",
-    measured: false,
+    source: "never-used",
+    hint: "No recall has ever returned these — oldest first.",
+    measured: true,
   },
   {
     id: "history",
     label: "History",
     statuses: undefined,
     includeInvalid: true,
+    source: "list",
     hint: "Everything — corrected, archived and forgotten included.",
     measured: true,
   },
@@ -190,13 +205,11 @@ export function forgottenIDs(
 }
 
 /**
- * 🔴 **THE ONE FUNCTION TO SWAP when the P3 access ledger lands.**
+ * Apply a lens's status set, and say so when the lens could not be answered at all.
  *
- * Today no surface can say when a claim was last recalled: `memory.recalled` rides the bus live and
- * is never durable, and there is no `/memory/access` to ask. So this returns the rows UNFILTERED
- * together with the reason it could not answer, and the list renders the reason instead of the
- * rows. When the ledger exists, this becomes `rows.filter(r => ledger.lastUsed(r.id) === undefined)`
- * with `unmeasured: undefined`, and nothing else on the page changes.
+ * ⚠️ `unmeasured` is not dead code waiting for a feature — it is the branch an instance WITHOUT the
+ * usage routes falls into. The list renders that sentence instead of rows, because an empty list
+ * under `Never used` would claim a measurement that was never taken.
  */
 export function applyLens<T extends { readonly status?: string }>(
   lens: Lens,
@@ -207,6 +220,6 @@ export function applyLens<T extends { readonly status?: string }>(
   return {
     rows: admitted,
     unmeasured:
-      "NovaClaw is not yet recording which memories get recalled, so it cannot say which have never been used.",
+      "This instance is not recording which memories get recalled, so it cannot say which have never been used.",
   }
 }

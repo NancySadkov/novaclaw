@@ -6,7 +6,14 @@ import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
-import { memoryClearScope, memoryInvalidate, memoryList, memoryStats, type MemoryRow } from "@/utils/memory-api"
+import {
+  memoryClearScope,
+  memoryInvalidate,
+  memoryList,
+  memoryNeverUsed,
+  memoryStats,
+  type MemoryRow,
+} from "@/utils/memory-api"
 import { instanceDiagnosis } from "@/utils/resource-api"
 import { memoryUnavailable } from "@/utils/memory-health"
 import { describeScope, isNarrowed, matches, type MemoryFilter } from "@/utils/memory-filter"
@@ -14,6 +21,21 @@ import { applyLens, FORGOTTEN_BADGE, forgottenIDs, lensByID, statusBadge } from 
 
 /** One shared empty set, so a lens with nothing to mark does not mint a new one per read. */
 const EMPTY_IDS: ReadonlySet<string> = new Set<string>()
+
+/**
+ * ONE READ of the list, whatever answered it.
+ *
+ * The three optional fields are the three ways an answer can be less than it looks: some rows were
+ * forgotten and the wire cannot say which, the lens has no data source on this instance, or the
+ * scan behind it stopped short. Each is carried rather than dropped, because every one of them
+ * turns into a confident lie if the surface renders the rows without it.
+ */
+interface ListPage {
+  readonly rows: readonly MemoryRow[]
+  readonly forgotten: ReadonlySet<string>
+  readonly unanswered?: boolean
+  readonly partialScan?: number
+}
 
 /**
  * The **Remembered** list — what NovaClaw has learned, in plain sentences.
@@ -103,11 +125,12 @@ export const MemoryRemembered: Component<{
             // than being a different way of hiding the same answer.
             statuses: lens().statuses,
             includeInvalid: lens().includeInvalid,
+            source: lens().source,
             t: (props.revision ?? 0) + localTick(),
           }
         : undefined
     },
-    async ({ cn, dir, scopes, statuses, includeInvalid }) => {
+    async ({ cn, dir, scopes, statuses, includeInvalid, source }): Promise<ListPage> => {
       // ⚠️ Entities and episodes only — NOT passages. "Remembered" answers *what do you know*, and a
       // passage is the raw source text a document was cut into, not something learned. Measured
       // 2026-08-12: ingesting one rulebook put 302 chunks here, so the honest answer to that question
@@ -116,9 +139,30 @@ export const MemoryRemembered: Component<{
       const query = {
         directory: dir,
         limit: 500,
-        kinds: ["entity", "episode"],
+        // 🔴 CLAIMS BELONG HERE. The claim is the store's first-class unit of memory since P1, and
+        // this list asked for entities and episodes only — so the surface whose whole job is
+        // answering "what do you remember" showed everything EXCEPT the governed facts.
+        kinds: ["entity", "episode", "claim"],
         ...(scopes === undefined ? {} : { scopes }),
         ...(statuses === undefined ? {} : { statuses }),
+      }
+      // 🔴 `Never used` is a question for the ACCESS LEDGER, not for a status set: "nothing has
+      // ever recalled this" is not a property of the claim. It reads its own route, which also
+      // reports how deep its scan reached — a short answer is not proof there are no more.
+      if (source === "never-used") {
+        const answer = await memoryNeverUsed(cn.http, {
+          directory: dir,
+          ...(scopes === undefined ? {} : { scopes }),
+          limit: 500,
+        }).catch(() => undefined)
+        // ⚠️ `undefined` — not `[]`. An instance without the usage routes has NOT told us that
+        // nothing is unused, and rendering an empty list would say exactly that.
+        if (!answer) return { rows: [] as MemoryRow[], forgotten: EMPTY_IDS, unanswered: true }
+        return {
+          rows: answer.items as readonly MemoryRow[],
+          forgotten: EMPTY_IDS,
+          ...(answer.partial ? { partialScan: answer.scanned } : {}),
+        }
       }
       const rows = await memoryList(cn.http, { ...query, includeInvalid }).catch(() => [] as MemoryRow[])
       // 🔴 THE SECOND READ EXISTS BECAUSE THE WIRE CARRIES NO VALIDITY FIELD. Measured on a live
@@ -158,7 +202,10 @@ export const MemoryRemembered: Component<{
    * about a measurement nobody has taken. So the tab says so instead. The wiring point is
    * `applyLens` in `utils/memory-lens.ts`: one function, when P3 lands.
    */
-  const unmeasured = () => applyLens(lens(), loadedRows()).unmeasured
+  const unmeasured = () =>
+    memories()?.unanswered ? applyLens({ ...lens(), measured: false }, loadedRows()).unmeasured : undefined
+  /** How far a `Never used` scan reached when it stopped short — `undefined` when it did not. */
+  const partialScan = () => memories()?.partialScan
   /** The rows after the shared filter AND the focus — what the user is actually looking at. */
   const visibleRows = createMemo(() => {
     const filter = props.filter
@@ -400,6 +447,17 @@ export const MemoryRemembered: Component<{
           {(note) => (
             <p class="settings-v2-field-description" data-slot="memory-search-scope">
               {note()}
+            </p>
+          )}
+        </Show>
+        {/* ⚠️ A SHORT ANSWER IS NOT PROOF THERE ARE NO MORE. The never-used scan stops at a depth
+            the server chooses, and without this line a list of three would read as "only three
+            memories have never been used" — which is the slice-presented-as-the-whole failure the
+            Map already learned to report. */}
+        <Show when={partialScan()}>
+          {(scanned) => (
+            <p class="settings-v2-field-description" data-slot="memory-usage-partial">
+              Looked at the {scanned()} oldest, not the whole cabinet.
             </p>
           )}
         </Show>

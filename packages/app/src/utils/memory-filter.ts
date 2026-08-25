@@ -36,6 +36,15 @@ export interface MemoryFilter {
   readonly lens: LensID
 }
 
+/**
+ * The kinds the CHIPS control — not every kind the store has.
+ *
+ * 🔴 The difference is load-bearing. A `claim` is a kind too, and it has no chip: the chips are the
+ * Map's three shapes, and giving claims a fourth shape is a separate piece of work. What must not
+ * happen in the meantime is that the absence of a chip HIDES them — a control that does not exist
+ * cannot be switched off by the user, so it must not be switched off on their behalf. `matches()`
+ * therefore gates only on this list and admits anything outside it.
+ */
 export const ALL_KINDS: readonly string[] = ["entity", "episode", "passage"]
 
 /** The default a surface opens with: everything the store considers current, passages folded away. */
@@ -85,7 +94,11 @@ export function matches(
   filter: MemoryFilter,
 ): boolean {
   if (!lensAdmits(lensByID(filter.lens), row.status)) return false
-  if (!filter.kinds.has(row.kind)) return false
+  // ⚠️ Only a kind with a CHIP can be hidden by the chips. A `claim` has no chip yet, and the old
+  // `kinds.has(row.kind)` hid every one of them from the Remembered list — the surface whose entire
+  // job is answering "what do you remember", with the store's first-class unit of memory invisible
+  // in it and no control on screen that could have brought them back.
+  if (ALL_KINDS.includes(row.kind) && !filter.kinds.has(row.kind)) return false
   return matchesQuery(row, filter.query)
 }
 
