@@ -5,7 +5,6 @@ import { GoldGlyph } from "@/components/gold-glyph"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServer } from "@/context/server"
 import { useGlobal } from "@/context/global"
-import { listAgents } from "@/apps/agent-list"
 import { roster, type AgentLike } from "@/apps/contacts"
 import { useDirectoryPicker } from "@/components/directory-picker"
 import {
@@ -107,7 +106,13 @@ export function CalendarPage() {
     const current = conn()
     return current ? global.ensureServerCtx(current) : undefined
   })
-  const [agentRows] = createResource(rosterCtx, (current) => listAgents(current.sdk.client.v2))
+  // 🔴 The server context's ONE shared roster (review D8), not a second `listAgents` resource.
+  // Two reasons, and the first is the severe one: a rejected `createResource` read from an eager memo
+  // reaches the root ErrorBoundary, so a single failed roster fetch replaced the WHOLE UI with the
+  // error page. `ctx.agents` already carries the `.catch` that call site was missing. The second is
+  // that a second fetch is a second answer — this page and Contacts could disagree about who exists,
+  // which is precisely what "one roster, one loader" exists to prevent.
+  const agentRows = () => rosterCtx()?.agents.list()
   /** How a schedule's owner reads in the list: the colleague's display name, Nova when unowned. */
   const responsibleName = (id: string | null): string => {
     const wanted = id && id.trim() !== "" ? id : "nova"

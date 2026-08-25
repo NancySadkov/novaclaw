@@ -18,6 +18,7 @@ import {
 import type { PromptProjectControls } from "@/components/prompt-project-selector"
 import { useDirectoryPicker } from "@/components/directory-picker"
 import { listAgents } from "@/apps/agent-list"
+import type { AgentLike } from "@/apps/contacts"
 import type { ComposerAgentOption } from "@/components/composer/agent-option"
 import { useLanguage } from "@/context/language"
 import { displayName, errorMessage } from "@/pages/layout/helpers"
@@ -64,9 +65,19 @@ export function createPromptInputController(input: {
   // different shapes: `queryOptions.agents` reads `sdk.app.agents()` — the app-level list, which
   // carries no display NAME — while the roster reads `v2.agent.list`. Measured 2026-08-21: the chip
   // rendered the id `zenon` where every other surface says `Zenon`. One roster, one loader.
+  //
+  // ⚠️ The rejection is CAUGHT. A `createResource` read from an eager memo below rethrows into the
+  // root ErrorBoundary, so one failed roster fetch replaced the entire UI with the error page — for a
+  // chip whose only job is to show a name. Degrading to an empty list renders the id instead, which
+  // is what this call site already falls back to when a row is missing.
+  //
+  // ⏳ Unlike `calendar.tsx` and `memory-graph.tsx`, this cannot use the server context's ONE shared
+  // roster: those hold a `ServerConnection` and can call `ensureServerCtx`, and this scope has only
+  // an SDK client. Worth unifying when the composer gains the connection — it would remove the third
+  // fetch as well as the crash.
   const [rosterAgents] = createResource(
     () => (input.sessionID() ? sdk() : undefined),
-    (client) => listAgents(client.client.v2),
+    (client) => listAgents(client.client.v2).catch(() => [] as AgentLike[]),
   )
   /** Whose chat this is, as the chip needs it: the name a person sees, and where they work. */
   const rosterOption = createMemo<ComposerAgentOption | undefined>(() => {

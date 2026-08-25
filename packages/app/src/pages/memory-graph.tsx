@@ -8,7 +8,6 @@ import { useServer, ServerConnection } from "@/context/server"
 import { memoryGraph, type MemoryGraph, type MemoryRow } from "@/utils/memory-api"
 import { ownerFromKey, ownersFor, scopeOwnerName, type MemoryOwner } from "@/apps/memory-owner"
 import { type AgentLike } from "@/apps/contacts"
-import { listAgents } from "@/apps/agent-list"
 import { layoutGraph, type Vec } from "./memory-graph/layout"
 
 // The Memory graph viewer (notes/kb-graph-plan.md §5 — the advanced, node-link surface for
@@ -98,9 +97,14 @@ export function MemoryGraphPage() {
   }
   const [tick, setTick] = createSignal(0)
 
-  // WHO works here — the same loader the Contacts roster uses, so the two surfaces can never
-  // disagree about who exists.
-  const [agents] = createResource(ctx, (current) => listAgents(current.sdk.client.v2))
+  // WHO works here — the server context's ONE shared roster, so the two surfaces can never disagree
+  // about who exists.
+  //
+  // ⚠️ It used to be a SECOND `listAgents` resource, and the comment above it claimed the same thing
+  // this one does — "the same loader the Contacts roster uses". Same loader, different call: two
+  // fetches, two answers, and a rejection with no `.catch` that reached the root ErrorBoundary and
+  // replaced the whole UI with the error page.
+  const agents = () => ctx()?.agents.list()
   const owners = createMemo(() => ownersFor(agents() ?? ([] as AgentLike[]), "Shared with everyone"))
   // WHOSE memory, taken from the URL first.
   //

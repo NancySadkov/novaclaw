@@ -263,7 +263,12 @@ export function ContactsPage() {
         <button
           type="button"
           class="shrink-0 rounded-md bg-v2-background-bg-layer-03 px-2.5 py-1.5 text-xs font-medium disabled:opacity-40"
-          disabled={hiring() || agentsLoading()}
+          // 🔴 Disabled on a roster ERROR too, not only while loading. `agents()` degrades to `[]` when
+          // the fetch fails, and `planHire` draws a name from the ids NOT taken — so an empty roster
+          // reads as "every name is free" and the drawn id can land on a colleague who already has
+          // it, giving the new hire their cabinet, their chat and their spend. Hiring off a roster we
+          // could not read is the one moment the taken-set is guaranteed wrong.
+          disabled={hiring() || agentsLoading() || agentsError() !== undefined}
           onClick={() => void hire()}
         >
           {hiring() ? language.t("contacts.hiring") : language.t("contacts.hire")}
