@@ -1,3 +1,5 @@
+import fs from "node:fs"
+import path from "node:path"
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { AgentRetire } from "@novaclaw/core/agent/retire"
@@ -47,6 +49,16 @@ describe("the declared cleaner list", () => {
       ),
     )
     expect(AgentRetire.registered()).not.toContain("workspace")
+  })
+
+  test("🔴 every DECLARED cleaner is wired by the instance graph", () => {
+    // ⚠️ The whole reason the list is declared. A registration lives in a node that has to be
+    // LISTED in the graph, and an unlisted one ships inert — everything compiles, everything
+    // passes, and the subsystem silently keeps its rows. This reads the registrations out of the
+    // source so a DECLARED name with no `registerCleaner` call fails here rather than in six months
+    // when an id is redrawn.
+    const source = fs.readFileSync(path.join(import.meta.dir, "..", "src", "agent", "removal.ts"), "utf8")
+    for (const name of AgentRetire.CLEANERS) expect(source).toContain(`registerCleaner("${name}"`)
   })
 
   test("🔴 every registered cleaner RUNS, and one failing does not stop the rest", async () => {

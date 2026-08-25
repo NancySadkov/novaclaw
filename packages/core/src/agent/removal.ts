@@ -2,8 +2,11 @@ export * as AgentRemoval from "./removal"
 
 import { Effect, Layer } from "effect"
 import { eq } from "drizzle-orm"
+import { FileSystem } from "effect"
 import { AgentConfigStore } from "../agent-config-store"
 import { CalendarScheduleTable } from "../schedule/calendar.sql"
+import { Scratch } from "../scratch"
+import * as AppNodePlatform from "../effect/app-node-platform"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
 import { EventV2 } from "../event"
@@ -88,6 +91,7 @@ export const node = makeGlobalNode({
       // Declared in `AgentRetire.CLEANERS`, so one that is never wired is REPORTED rather than
       // silently skipped — which is the failure mode this whole list exists to answer.
       const store = yield* AgentConfigStore.Service
+      const fs = yield* FileSystem.FileSystem
       yield* AgentRetire.registerCleaner("schedules", (agentID) =>
         // A retired colleague's tasks must stop firing. Left behind they do not merely linger: the
         // scheduler hands an unrunnable owner's task to NOVA, so a retirement would quietly turn
@@ -107,10 +111,23 @@ export const node = makeGlobalNode({
           if (current === agentID) yield* store.clearDefault()
         }),
       )
+      yield* AgentRetire.registerCleaner("workspace", (agentID) =>
+        Effect.gen(function* () {
+          // 🔴 Its OWN scratch only. `folderFor` answers "where does this colleague work", which for a
+          // configured colleague is A PROJECT THE USER CHOSE — deleting that on a retirement would
+          // remove the user's own source tree. `Scratch.forAgent` is the folder the instance made for
+          // this id and nobody else's, which is the only thing a retirement owns.
+          //
+          // ⚠️ The id RETURNS (officer names come from a fixed pool), so files left here are handed to
+          // the next colleague drawn on the name — the same bleed the memory cabinet move prevents.
+          const own = Scratch.forAgent(agentID)
+          if (yield* fs.exists(own)) yield* fs.remove(own, { recursive: true })
+        }).pipe(Effect.orDie),
+      )
       yield* register((agentID) =>
         AgentRetire.everything({ db, events, memory, agent: agentID, at: Date.now() }).pipe(Effect.asVoid),
       )
     }),
   ),
-  deps: [AgentConfigStore.node, Database.node, EventV2.node, Memory.node],
+  deps: [AgentConfigStore.node, AppNodePlatform.filesystem, Database.node, EventV2.node, Memory.node],
 })
