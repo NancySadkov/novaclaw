@@ -79,6 +79,27 @@ describe("switching a chat onto a colleague", () => {
   })
 
   it.effect(
+    '🔴 a root with NEITHER agent nor title names its folder, not "New session"',
+    Effect.gen(function* () {
+      // The last ghost shape: a row saying neither who it belongs to nor what it is for.
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({ location })
+      expect(created.title).toBe("New session in project")
+    }),
+  )
+
+  it.effect(
+    "⚠️ a row that names its AGENT is left alone — its title is the colleague's business",
+    Effect.gen(function* () {
+      // Already attributable, and the launcher and Contacts both pass a real title. Naming the
+      // folder here would fight them for it.
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({ location, agent: AgentV2.ID.make("editor") })
+      expect(created.title).toBe("New session")
+    }),
+  )
+
+  it.effect(
     "…and ALLOWS it when that colleague has none",
     Effect.gen(function* () {
       // The control. Without it, a `switchAgent` that refused everything would pass the test above.

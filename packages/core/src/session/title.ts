@@ -63,7 +63,11 @@ Your output must be:
 // machine noise to a lay user — the list already shows relative time). The older ISO-suffixed
 // forms (`New session - <ISO>`, legacy V1 `Child session - <ISO>`) still count so sessions
 // created before the change keep auto-titling away.
-const DEFAULT_TITLE_REGEX = /^(New session|Child session)( - \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)?$/
+// The ` in <folder>` form NAMES a root that arrived with neither an agent nor a title — see
+// `defaultTitle` in `session.ts`. It must stay inside this pattern: `isDefault` is the ONLY state
+// auto-title may replace, so a default that fell outside it would be permanent, and the row would
+// keep a folder name forever instead of gaining a real one on its first exchange.
+const DEFAULT_TITLE_REGEX = /^(New session|Child session)( in .+?)?( - \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)?$/
 
 /** True while the title is still a creation default — the only state auto-title may replace. */
 export function isDefault(title: string): boolean {

@@ -470,6 +470,28 @@ const guardOneChat = (
       return yield* new OperationUnavailableError({ operation: "switchAgent" })
   })
 
+/**
+ * What an untitled row is called.
+ *
+ * 🔴 A root that arrives with NEITHER an agent nor a title is the last shape that could still read as
+ * a ghost: nothing on the row says who it belongs to or what it is for, and the chat list shows the
+ * bare *"New session"* the owner objected to. A colleague's chat is named by its colleague and every
+ * production caller passes one or the other — `messenger/gateway.ts` and `cli/cmd/run.ts` both title
+ * theirs — so this names what is left: WHERE it is.
+ *
+ * ⚠️ Still a DEFAULT, deliberately. `SessionTitle.isDefault` is the only state auto-title may
+ * replace, so this form is inside that pattern — the folder name holds the place until the first real
+ * exchange earns a better one, rather than becoming permanent.
+ *
+ * ⚠️ NOT applied when an agent is named. That row is already attributable, and its title is the
+ * colleague's business (the launcher and Contacts both pass one).
+ */
+const defaultTitle = (input: CreateInput): string => {
+  if (input.agent !== undefined) return "New session"
+  const folder = path.basename(input.location.directory).trim()
+  return folder === "" ? "New session" : `New session in ${folder}`
+}
+
 export const createSessionRecord = (
   deps: {
     readonly db: Database.Interface["db"]
@@ -540,7 +562,7 @@ export const createSessionRecord = (
       subpath: subpath ? RelativePath.make(subpath) : undefined,
       // Bare default — no ISO suffix (a raw timestamp in the chat header is machine noise; the
       // Chats list shows relative time). SessionTitle.isDefault matches this AND the old form.
-      title: input.title ?? "New session",
+      title: input.title ?? defaultTitle(input),
       metadata: input.metadata,
       // The seventeen per-session CONFIG fields, generated from `SESSION_CONFIG_FIELDS` rather than
       // listed here. Until 2026-08-08 this literal named each one — the THIRD hand-written copy of
