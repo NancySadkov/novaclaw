@@ -32,6 +32,7 @@ import { SessionWorkerDeviceBridge } from "./device-bridge"
 import { SessionWorkerEventBridge } from "./event-bridge"
 import { SessionWorkerExecutionBridge } from "./execution-bridge"
 import { SessionWorkerInteractionBridge } from "./interaction-bridge"
+import { SessionWorkerMemoryBridge } from "./memory-bridge"
 import * as SessionWorkerSupervisor from "./supervisor"
 import { SessionSpawner } from "@novaclaw/core/session/spawner"
 import { ColleagueHandoff } from "@novaclaw/core/session/colleague-handoff"
@@ -257,6 +258,17 @@ export const layer = Layer.effect(
                   })
                 }),
               ),
+            /**
+             * 🔴 The host's engine is THE engine. `memory` above is the client this layer resolved
+             * once at build; the worker's `Memory.node` replacement turns every op inside the turn
+             * into one of these, so there is exactly one WASM store on the graph directory.
+             *
+             * ⚠️ NOT inside `runLocated`, unlike the interaction bridge — `MemoryClient` is a GLOBAL
+             * node, and resolving it per request would be the trap `SessionJoin` names above. It is
+             * also why this needs no location: the graph is one per instance, never one per folder.
+             */
+            onMemoryRequest: (message) =>
+              Effect.runPromise(SessionWorkerMemoryBridge.handle({ memory, lease, message })),
             onExecutionRequest: (message) =>
               Effect.runPromise(
                 SessionWorkerExecutionBridge.handle({
