@@ -2,6 +2,7 @@ export * as SelfTool from "./self"
 
 import { Effect, Layer, Schema } from "effect"
 import { AgentV2 } from "../agent"
+import { PermissionV2 } from "../permission"
 import { AgentWorkspace } from "../agent/workspace"
 import { makeLocationNode } from "../effect/app-node"
 import { ToolRegistry } from "./registry"
@@ -75,6 +76,40 @@ export const toModelOutput = (output: Output): string => {
   return lines.join("\n")
 }
 
+/**
+ * May this colleague address ANY of its colleagues right now?
+ *
+ * ⚠️ ANY, not "all". A rule may name one colleague — *"may ask the bookkeeper, not the trader"* — and
+ * the field this feeds decides whether the model is told about delegation at all. Evaluating against
+ * `resource: "*"` would answer "may address EVERY colleague" and report `false` for a colleague that
+ * can perfectly well address one, which is the same lie in the other direction.
+ *
+ * ⚠️ The resource is the COLLEAGUE'S ID, matching what `tool/colleague.ts` actually asserts. Asking a
+ * different question here than the call asks is how this field drifted from the truth in the first
+ * place.
+ *
+ * ⏳ Known gap, stated rather than implied: this reads the AGENT's ruleset. A real call composes more
+ * — the mode overlay, saved answers, the project file — through `PermissionV2.configured`, which is
+ * not reachable read-only today (`ask` records a pending request, so a capability REPORT cannot use
+ * it). So this can still be more permissive than a call, but no longer for the three reasons above.
+ */
+export const addressableByMe = (
+  own: { readonly permissions?: PermissionV2.Ruleset | undefined; readonly paused?: boolean | undefined },
+  selfID: string,
+  roster: ReadonlyArray<{ readonly id: string; readonly mode?: string | undefined; readonly hidden?: boolean }>,
+): boolean => {
+  // A paused colleague is answered deny-`*` by the evaluator whatever its rules say. Reporting `true`
+  // here tells the model it may delegate, and every attempt is then refused.
+  if (own.paused === true) return false
+  const rules = own.permissions ?? []
+  return roster.some(
+    (peer) =>
+      String(peer.id) !== selfID &&
+      AgentV2.isColleague(peer) &&
+      PermissionV2.evaluate("colleague", String(peer.id), rules).effect === "allow",
+  )
+}
+
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
@@ -97,6 +132,7 @@ export const layer = Layer.effectDiscard(
           Effect.gen(function* () {
             const id = String(context.agent ?? "")
             const own = id === "" ? undefined : yield* agents.get(AgentV2.ID.make(id))
+            const roster = yield* agents.all()
             if (own === undefined)
               return {
                 canAddressColleagues: false,
@@ -115,9 +151,15 @@ export const layer = Layer.effectDiscard(
               // Read from the RULESET rather than from the agent's id: "may this colleague delegate"
               // is a permission question, and answering it from a name would go stale the moment the
               // floor changes (it did, twice, on 2026-08-21).
-              canAddressColleagues: (own.permissions ?? []).some(
-                (rule) => rule.action === "colleague" && rule.effect === "allow",
-              ),
+              //
+              // 🔴 …and answered by the EVALUATOR, not by `some(effect === "allow")`. That scan got
+              // three things wrong at once, all in the direction of promising what a call then
+              // refuses: it ignored rule ORDER (a later deny never won, though `evaluate` is
+              // `findLast` precisely so it does), it ignored WILDCARDS (an `action: "*"` deny was
+              // invisible to an `=== "colleague"` test), and it ignored the PAUSED deny-all
+              // (`permission.ts` answers deny-`*` for a set-aside colleague, which no configured
+              // rule reflects).
+              canAddressColleagues: addressableByMe(own, id, roster),
               workingInOwnScratch: AgentWorkspace.isOwnScratch({ agentID: id, directory: text("directory") }),
             } satisfies Output
           }),
