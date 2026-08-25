@@ -48,6 +48,15 @@ export const MemoryRemembered: Component<{
    * derived from a second fetch is how two numbers about one cabinet start disagreeing.
    */
   onCounts?: (counts: { visible: number; loaded: number; total: number | undefined }) => void
+  /**
+   * NEIGHBORHOOD FOCUS: show only these ids. Absent = no focus, which is NOT the same as an empty set
+   * — an empty set is a focus whose neighborhood turned out to hold nothing this list can show, and
+   * that is a real answer the user is entitled to see rather than a reason to fall back to everything.
+   */
+  restrictTo?: ReadonlySet<string>
+  /** What the focus is OF, in the user's words — the list says whose neighborhood it is showing. */
+  restrictLabel?: string
+  onClearRestrict?: () => void
   class?: string
 }> = (props) => {
   const language = useLanguage()
@@ -98,11 +107,14 @@ export const MemoryRemembered: Component<{
   )
 
   const loadedRows = () => memories() ?? []
-  /** The rows after the shared filter — what the user is actually looking at. */
+  /** The rows after the shared filter AND the focus — what the user is actually looking at. */
   const visibleRows = createMemo(() => {
     const filter = props.filter
-    if (!filter) return loadedRows()
-    return loadedRows().filter((row) => matches(row, filter))
+    const only = props.restrictTo
+    let rows = loadedRows()
+    if (only) rows = rows.filter((row) => only.has(row.id))
+    if (filter) rows = rows.filter((row) => matches(row, filter))
+    return rows
   })
   const count = () => visibleRows().length
   const notListed = () => Math.max(0, (totals()?.total ?? 0) - loadedRows().length)
@@ -281,11 +293,26 @@ export const MemoryRemembered: Component<{
           // matches" is a fact about the query, and saying the first when the second is true tells a
           // user their memories are gone.
           <div class="flex flex-col gap-1" data-slot="memory-list-empty">
+            {/* THREE emptinesses, and telling them apart is the whole point. The cabinet is empty; the
+                query matched nothing; the focused neighborhood holds nothing this list shows. Saying
+                the first when either of the others is true tells someone their memories are gone. */}
             <p class="settings-v2-field-description">
-              {loadedRows().length > 0
-                ? "No memory here matches that search."
-                : language.t("settings.memory.list.empty")}
+              {props.restrictLabel
+                ? `Nothing else here connects to ${props.restrictLabel}.`
+                : loadedRows().length > 0
+                  ? "No memory here matches that search."
+                  : language.t("settings.memory.list.empty")}
             </p>
+            <Show when={props.restrictLabel}>
+              <button
+                type="button"
+                data-slot="memory-focus-clear-empty"
+                class="self-start text-xs underline opacity-70 hover:opacity-100"
+                onClick={props.onClearRestrict}
+              >
+                Show everything
+              </button>
+            </Show>
             <Show when={scopeNote()}>
               {(note) => (
                 <p class="settings-v2-field-description" data-slot="memory-search-scope">
@@ -305,6 +332,16 @@ export const MemoryRemembered: Component<{
           {(note) => (
             <p class="settings-v2-field-description" data-slot="memory-search-scope">
               {note()}
+            </p>
+          )}
+        </Show>
+        <Show when={props.restrictLabel}>
+          {(label) => (
+            <p class="settings-v2-field-description" data-slot="memory-focus-note">
+              Showing what connects to <strong>{label()}</strong>.{" "}
+              <button type="button" class="underline opacity-70 hover:opacity-100" onClick={props.onClearRestrict}>
+                Show everything
+              </button>
             </p>
           )}
         </Show>

@@ -160,7 +160,11 @@ const sideAnswer = (url: string): unknown => {
               },
             ],
     }
-  if (url.includes("memory/stats")) return { total: 0, valid: 0 }
+  if (url.includes("memory/stats")) return { total: NODES.length, valid: NODES.length }
+  // ⚠️ The Remembered list fetches its OWN rows, so a stub that answers `[]` leaves it permanently
+  // empty and every assertion about what the list SHOWS passes vacuously. It lists entities and
+  // episodes — never passages — which is the same rule the component documents.
+  if (url.includes("memory/list")) return NODES.filter((n) => n.kind !== "passage")
   return []
 }
 
@@ -294,6 +298,27 @@ function drawnLabels(): { id: string; x: number; y: number; w: number; h: number
 }
 
 const drawnNodes = () => [...document.querySelectorAll('[data-slot="memory-graph-node"]')]
+const listRowCount = () => document.querySelectorAll('[aria-label="settings.memory.forget.action"]').length
+const showList = () => {
+  const button = [...document.querySelectorAll('[data-slot="memory-view-switch"]')].find(
+    (b) => (b as HTMLElement).dataset.view === "list",
+  ) as HTMLButtonElement
+  paneShown = false
+  button.click()
+}
+/** Click the mark whose drawn label reads `text` — addressing a node the way a user does. */
+const clickMarkByLabel = (text: string) => {
+  const label = [...document.querySelectorAll('[data-slot="memory-graph-label"]')].find(
+    (el) => el.textContent === text,
+  ) as HTMLElement
+  const id = label.dataset.nodeId!
+  const mark = drawnNodes().find((el) => (el as HTMLElement).dataset.nodeId === id)!
+  mark.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+}
+const clickMark = (kind: string, index: number) => {
+  const marks = drawnNodes().filter((el) => (el as HTMLElement).dataset.nodeKind === kind)
+  marks[index]!.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+}
 const searchCount = () =>
   (document.querySelector('[data-slot="memory-search-count"]') as HTMLElement | null)?.textContent ?? null
 const typeSearch = (text: string) => {
@@ -708,6 +733,115 @@ describe("MemoryGraphPage renders", () => {
     await settle()
     // Still on Remembered — the shared header owns the box, so it is there before the map is opened.
     expect(document.querySelector('[data-slot="memory-search"]')).not.toBeNull()
+  })
+
+  test("🔴 selecting a mark FOCUSES its neighborhood, and the header says whose", async () => {
+    mount([() => FIXTURE])
+    await settle()
+    showGraph()
+    await settle()
+    clickMark("entity", 0)
+    await settle()
+    const chip = document.querySelector('[data-slot="memory-focus"]') as HTMLElement
+    expect(chip).not.toBeNull()
+    expect(chip.textContent).toContain("Connected to")
+    expect(document.querySelector('[data-slot="memory-focus-clear"]')).not.toBeNull()
+  })
+
+  test("focus CLEARS, and the chip goes with it", async () => {
+    mount([() => FIXTURE])
+    await settle()
+    showGraph()
+    await settle()
+    clickMark("entity", 0)
+    await settle()
+    ;(document.querySelector('[data-slot="memory-focus-clear"]') as HTMLButtonElement).click()
+    await settle()
+    expect(document.querySelector('[data-slot="memory-focus"]')).toBeNull()
+  })
+
+  test("⚠️ focus DIMS the map rather than emptying it — the context is the answer", async () => {
+    // Narrowing the drawing to a neighborhood deletes what makes it a neighborhood. The list filters;
+    // the map dims. Same asymmetry search has, for the same reason.
+    mount([() => FIXTURE])
+    await settle()
+    showGraph()
+    await settle()
+    const before = drawnMarks().length
+    clickMark("entity", 0)
+    await settle()
+    expect(drawnMarks().length).toBe(before)
+    expect(drawnNodes().filter((el) => el.getAttribute("opacity") === "0.25").length).toBeGreaterThan(0)
+  })
+
+  test("the focus chip is offered on the LIST view too, not only the map", async () => {
+    mount([() => FIXTURE])
+    await settle()
+    showGraph()
+    await settle()
+    clickMark("entity", 0)
+    await settle()
+    // Back to Remembered with the focus still set — the chip belongs to the shared header.
+    const list = [...document.querySelectorAll('[data-slot="memory-view-switch"]')].find(
+      (b) => (b as HTMLElement).dataset.view === "list",
+    ) as HTMLButtonElement
+    list.click()
+    await settle()
+    expect(document.querySelector('[data-slot="memory-focus"]')).not.toBeNull()
+  })
+
+  test("🔴 focus NARROWS the list to the neighborhood, and names it", async () => {
+    // The half the map cannot show: the list is where "what connects to this" is answered as rows.
+    mount([() => FIXTURE])
+    await settle()
+    // ⚠️ Counted on the LIST view. The list lives inside a `<Show>` and is UNMOUNTED while the map is
+    // showing, so a count taken after `showGraph()` reads zero for every graph and proves nothing.
+    const before = listRowCount()
+    expect(before).toBe(VISIBLE_MEMORIES)
+    showGraph()
+    await settle()
+    clickMarkByLabel("Nancy")
+    await settle()
+    showList()
+    await settle()
+    expect(listRowCount()).toBeLessThan(before)
+    const note = document.querySelector('[data-slot="memory-focus-note"]') as HTMLElement
+    expect(note.textContent).toContain("Showing what connects to")
+    expect(note.textContent).toContain("Nancy")
+  })
+
+  test("clearing focus from the LIST restores every row", async () => {
+    mount([() => FIXTURE])
+    await settle()
+    const before = listRowCount()
+    showGraph()
+    await settle()
+    clickMarkByLabel("Nancy")
+    await settle()
+    showList()
+    await settle()
+    const clear = [...document.querySelectorAll("button")].find((b) => b.textContent === "Show everything")!
+    clear.click()
+    await settle()
+    expect(document.querySelector('[data-slot="memory-focus-note"]')).toBeNull()
+    expect(listRowCount()).toBe(before)
+  })
+
+  test("a focused neighborhood with nothing else in it says THAT, not \"nothing remembered\"", async () => {
+    mount([() => FIXTURE])
+    await settle()
+    showGraph()
+    await settle()
+    // The lone episode has no edges at all.
+    clickMark("episode", 0)
+    await settle()
+    showList()
+    await settle()
+    const text = (document.querySelector('[data-slot="memory-list-empty"]') as HTMLElement | null)?.textContent
+    // Either it shows just the episode itself, or it says the neighborhood is otherwise empty — both
+    // are honest. What it must never say is that the cabinet is empty.
+    expect(document.body.textContent).not.toContain("Nothing remembered yet. NovaClaw learns")
+    if (text) expect(text).toContain("connects to")
   })
 
   test("showing passages refits to include them", async () => {

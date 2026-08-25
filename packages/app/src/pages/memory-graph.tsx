@@ -378,6 +378,43 @@ export function MemoryGraphPage() {
   }
   /** What goes on the CANVAS beside a mark — the short form, not the prose. */
   const markText = (node: ProjectedNode) => (isHub(node) ? hubLabel(node) : nodeLabel(node.row))
+
+  /**
+   * NEIGHBORHOOD FOCUS — the selection, projected onto the other view.
+   *
+   * 🔴 Selecting and focusing are ONE act here, not two. A separate "Focus" button would be a second
+   * concept for a person to hold, and the roster's lesson is that a legible surface is one somebody
+   * can name what they are looking at on. So clicking a mark focuses its neighborhood, and the header
+   * says so with a Clear beside it — what is in force, in one line, per principle 12.
+   *
+   * ⚠️ The two views focus DIFFERENTLY on purpose, the same asymmetry search has. The Map DIMS,
+   * because narrowing the drawing to a neighborhood throws away the context that answers "how does
+   * this connect" — you would be left looking at the answer with the question deleted. The list
+   * FILTERS, because its job is "what do you remember" and a list of everything is not an answer to
+   * "what connects to this".
+   *
+   * ⚠️ HUBS ARE EXCLUDED from what the list is told. A hub is not a memory; passing its synthetic id
+   * to a surface that shows stored rows would silently match nothing and read as an empty
+   * neighborhood.
+   */
+  const focusIDs = createMemo<ReadonlySet<string> | undefined>(() => {
+    const sel = selected()
+    if (!sel) return undefined
+    const ids = new Set<string>()
+    const keepReal = (id: string) => {
+      const node = nodeById().get(id)
+      if (node && !isHub(node)) ids.add(id)
+    }
+    keepReal(sel)
+    for (const id of neighborIds()) keepReal(id)
+    return ids
+  })
+  /** What the focus is OF, in the user's words — never the raw id. */
+  const focusLabel = () => {
+    const node = selectedNode()
+    if (!node) return undefined
+    return truncate(isHub(node) ? hubLabel(node) : (node.row.name?.trim() || node.row.text), 40)
+  }
   const selectedEdges = createMemo(() => {
     const sel = selected()
     if (!sel) return []
@@ -771,6 +808,31 @@ export function MemoryGraphPage() {
           </button>
         </Show>
 
+        {/* FOCUS, stated. A view silently showing a neighborhood instead of a cabinet is the same
+            class of lie as the empty one — true of what is on screen, wrong as an answer. So it says
+            what it is showing and offers the way out in the same breath (principle 12(d)). */}
+        <Show when={appView() !== "settings" ? focusLabel() : undefined}>
+          {(label) => (
+            <span
+              class="flex items-center gap-1 rounded bg-v2-background-bg-layer-02 px-1.5 py-0.5 text-[11px]"
+              data-slot="memory-focus"
+            >
+              <span class="opacity-70">
+                Connected to <span class="opacity-100">{label()}</span>
+              </span>
+              <button
+                type="button"
+                data-slot="memory-focus-clear"
+                aria-label="Show everything again"
+                class="opacity-60 hover:opacity-100"
+                onClick={() => setSelected(undefined)}
+              >
+                <Icon name="close-small" size="small" />
+              </button>
+            </span>
+          )}
+        </Show>
+
         {/* The legend belongs to the GRAPH, so it appears with it — a legend for marks that are not
             on screen is noise. */}
         <Show when={appView() === "graph"}>
@@ -863,7 +925,14 @@ export function MemoryGraphPage() {
         <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
           {/* The list obeys the same picker as the graph: two views of ONE colleague's memory,
               never one scoped and one not. */}
-          <MemoryRemembered scopes={owner()?.scopes} filter={filter()} onCounts={setListCounts} />
+          <MemoryRemembered
+            scopes={owner()?.scopes}
+            filter={filter()}
+            onCounts={setListCounts}
+            restrictTo={focusIDs()}
+            restrictLabel={focusLabel()}
+            onClearRestrict={() => setSelected(undefined)}
+          />
         </div>
       </Show>
 
@@ -988,6 +1057,7 @@ export function MemoryGraphPage() {
                         transform={`translate(${p()!.x} ${p()!.y})`}
                         class="cursor-pointer"
                         data-slot="memory-graph-node"
+                        data-node-id={node.id}
                         data-node-kind={hub() ? "hub" : row()!.kind}
                         opacity={dim() ? 0.25 : 1}
                         onClick={(ev) => {
