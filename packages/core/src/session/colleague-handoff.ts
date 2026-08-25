@@ -22,6 +22,7 @@ import { SessionSchema } from "./schema"
 import { AgentV2 } from "../agent"
 import { SessionStore } from "./store"
 import { ColleagueStall } from "./colleague-stall"
+import { isSteerText } from "./steer-provenance"
 
 // Handing work from one colleague to another (AGENTS.md — the structural metaphor).
 //
@@ -104,6 +105,10 @@ const lastPeerContext = (db: Database.Interface["db"], session: SessionSchema.ID
           // own "ask again" advice reopened the full budget every thirty minutes. The PATH resets
           // with it, which is worse: a cycle stops being decidable at the hop that would close it.
           if (ColleagueStall.isNotice(String(row.id))) continue
+          // …and a HARNESS STEER, for the same reason: it rides the user role with no origin, so the
+          // `hops = 0` line below read it as the user at the composer and reset the chain AND the
+          // path. A model that was just redirected is the one a cycle check most needs to see.
+          if (isSteerText(String((row.data as { text?: string } | undefined)?.text ?? ""))) continue
           const origin = (
             row.data as {
               readonly origin?: {

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { ColleagueHop } from "@novaclaw/core/session/colleague-hop"
 import { ColleagueStall } from "@novaclaw/core/session/colleague-stall"
+import { STEER_PROVENANCE_PREFIX } from "@novaclaw/core/session/steer-provenance"
 
 /**
  * THE NOTICE MUST NOT RESET THE BOUND IT POLICES.
@@ -19,15 +20,17 @@ import { ColleagueStall } from "@novaclaw/core/session/colleague-stall"
 const peerTurn = (hops: number) => ({
   id: "msg_peer_1",
   type: "user" as const,
+  text: "the ledger?",
   origin: { via: "agent", relation: "peer", label: "theron", hops },
 })
 
 const noticeTurn = () => ({
   id: ColleagueStall.noticeID({ asker: "aris", colleague: "theron", askedAt: 1234 }),
   type: "user" as const,
+  text: "[theron has not answered you.]",
 })
 
-const personTurn = () => ({ id: "msg_user_1", type: "user" as const })
+const personTurn = () => ({ id: "msg_user_1", type: "user" as const, text: "carry on" })
 
 describe("what a stall notice does to the chain", () => {
   test("🔴 a three-hop chain SURVIVES the notice landing on top of it", () => {
@@ -70,5 +73,39 @@ describe("recognising a notice", () => {
     expect(ColleagueStall.noticeID({ asker: "a", colleague: "b", askedAt: 1 })).toStartWith(
       ColleagueStall.NOTICE_PREFIX,
     )
+  })
+})
+
+/**
+ * A HARNESS STEER MUST NOT RESET IT EITHER.
+ *
+ * The item's other clause, verbatim: *"steers reset it identically, including the withhold-at-cap
+ * gate."* A doom-loop redirect, a quality nudge or an introspection prompt is stored as a `user`
+ * message with no origin — the same shape the stall notice had — so the walk read it as a person
+ * speaking and returned 0.
+ *
+ * 🔴 The timing is what makes it bite: the harness steers a model when it is LOOPING, so the
+ * chain most in need of the cap was the one guaranteed to have its count wiped.
+ */
+const steerTurn = () => ({ id: "msg_steer_1", type: "user" as const, text: `${STEER_PROVENANCE_PREFIX}wrap it up` })
+
+describe("what a harness steer does to the chain", () => {
+  test("🔴 a three-hop chain SURVIVES a steer landing on top of it", () => {
+    expect(ColleagueHop.fromContext([peerTurn(3), steerTurn()] as never)).toBe(3)
+  })
+
+  test("⚠️ …and a REAL person still ends it — the steer fix must not break the reset", () => {
+    expect(ColleagueHop.fromContext([peerTurn(3), steerTurn(), personTurn()] as never)).toBe(0)
+  })
+
+  test("a steer and a notice together still preserve the chain", () => {
+    // Both are the instance talking. Neither is a turn.
+    expect(ColleagueHop.fromContext([peerTurn(2), steerTurn(), noticeTurn()] as never)).toBe(2)
+  })
+
+  test("⚠️ an ordinary user turn whose text merely MENTIONS a steer is not one", () => {
+    // The prefix is a provenance marker, not a phrase. A person quoting it is still a person.
+    const quoting = { id: "msg_user_2", type: "user" as const, text: `I saw ${STEER_PROVENANCE_PREFIX} in the log` }
+    expect(ColleagueHop.fromContext([peerTurn(3), quoting] as never)).toBe(0)
   })
 })

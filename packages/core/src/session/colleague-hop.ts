@@ -2,6 +2,7 @@ export * as ColleagueHop from "./colleague-hop"
 
 import type { SessionMessage } from "./message"
 import { ColleagueStall } from "./colleague-stall"
+import { isSteerText } from "./steer-provenance"
 
 /**
  * HOW FAR FROM A PERSON THIS TURN IS — read from the transcript already in hand.
@@ -30,6 +31,16 @@ export const fromContext = (context: readonly SessionMessage.Message[]): number 
     // returns 0 — so the stall notice's own "ask again" handed out a fresh `HOP_CAP` every thirty
     // minutes and the cap could never fire. See `ColleagueStall.isNotice`.
     if (ColleagueStall.isNotice((message as { id?: string }).id)) continue
+    // 🔴 A HARNESS STEER is nobody's turn either — step over it for the same reason. A doom-loop
+    // redirect, a quality nudge or an introspection prompt is stored as a `user` message with no
+    // origin, so the line below read it as A PERSON speaking and returned 0. The harness nudging a
+    // model therefore handed it a fresh `HOP_CAP`, and a chain that had just been redirected — which
+    // is precisely when a model is looping — was the one least likely to be stopped by the cap.
+    //
+    // `isSteerText` is the same test `isRealUserTurn` uses one module over; this walk simply never
+    // asked it. See `steer-provenance.ts` for why a steer riding the user role is the shape that
+    // keeps catching things out.
+    if (isSteerText(message.text)) continue
     const origin = (message as { origin?: { via?: string; hops?: number } }).origin
     if (origin?.via !== "agent") {
       // A REAL person's turn ends the walk: anything older belongs to a previous exchange, and a
