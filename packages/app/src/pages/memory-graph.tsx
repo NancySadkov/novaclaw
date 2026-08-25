@@ -6,6 +6,8 @@ import { Icon } from "@novaclaw/ui/v2/icon"
 import { useGlobal } from "@/context/global"
 import { useServer, ServerConnection } from "@/context/server"
 import { memoryGraph, type MemoryGraph, type MemoryRow } from "@/utils/memory-api"
+import { instanceDiagnosis } from "@/utils/resource-api"
+import { memoryFaultDetail, memoryUnavailable } from "@/utils/memory-health"
 import { ownerFromKey, ownersFor, scopeOwnerName, type MemoryOwner } from "@/apps/memory-owner"
 import { type AgentLike } from "@/apps/contacts"
 import { layoutGraph, type Vec } from "./memory-graph/layout"
@@ -202,9 +204,47 @@ export function MemoryGraphPage() {
     const current = load()
     return current?.status === "ready" ? current.graph : undefined
   })
-  const fault = (): GraphFault | undefined => {
+  const transportFault = (): GraphFault | undefined => {
     const current = load()
     return current?.status === "unavailable" ? current.fault : undefined
+  }
+
+  /**
+   * THE SECOND WAY A BROKEN ENGINE LOOKS LIKE AN EMPTY CABINET.
+   *
+   * The `/memory/*` read handlers fold a `MemoryError` into an empty result and answer **200**
+   * (`handlers/memory.ts`: `Effect.orElseSucceed(() => ({ nodes: [], edges: [] }))`). That degrade is
+   * deliberate and right — an engine outage must not fail a turn — but it means a dead engine and an
+   * empty one send the same bytes, so no amount of care on the transport path can tell them apart.
+   * Only the diagnosis board can, and the Remembered list has been asking it all along. The Graph did
+   * not: the same broken instance said "memory is unavailable" on one tab and "Nothing remembered yet
+   * — the graph fills as you chat" on the next.
+   *
+   * ⚠️ Keyed on the GRAPH having settled, not on the connection, for the same reason the list is: the
+   * engine opens lazily, so a board read at mount reports "not opened yet" (`unknown`, never
+   * `problem`) and this would fall through to the empty state exactly as before. The fetch is what
+   * demands the subsystem; only after it resolves does the board know anything.
+   */
+  const [health, healthActions] = createResource(
+    () => {
+      const cn = conn()
+      const current = load()
+      return cn && current ? { cn, settled: current.status } : undefined
+    },
+    ({ cn }) => instanceDiagnosis(cn.http).catch(() => undefined),
+  )
+  /** Either way of being broken, as one calm sentence — transport first, since it is the more specific. */
+  const fault = (): GraphFault | undefined => {
+    const transport = transportFault()
+    if (transport) return transport
+    if (!memoryUnavailable(health())) return undefined
+    const detail = memoryFaultDetail(health())
+    return { reason: detail ?? "The memory engine is not running on this instance.", retryable: true }
+  }
+  /** One user action, two refreshes: re-ask the engine, then re-read the board it feeds. */
+  const retry = () => {
+    setTick((t) => t + 1)
+    void healthActions.refetch()
   }
 
   /**
@@ -532,8 +572,14 @@ export function MemoryGraphPage() {
    */
   const graphState = (): "loading" | "unavailable" | "empty" | "ready" => {
     if (graph.loading && count() === 0) return "loading"
-    if (fault()) return "unavailable"
-    return count() > 0 ? "ready" : "empty"
+    if (transportFault()) return "unavailable"
+    if (count() > 0) return "ready"
+    // ⚠️ An empty answer is not yet an empty CABINET. The server returns 200 with no rows both when
+    // there is nothing to remember and when the engine is broken, so "empty" may only be claimed once
+    // the board has ruled the second one out — otherwise a dead engine flashes "Nothing remembered
+    // yet" for as long as the diagnosis takes, which is the exact sentence this work exists to delete.
+    if (health.loading && health.latest === undefined) return "loading"
+    return fault() ? "unavailable" : "empty"
   }
 
   return (
@@ -737,7 +783,7 @@ export function MemoryGraphPage() {
                         type="button"
                         data-slot="memory-graph-retry"
                         class="rounded bg-v2-background-bg-layer-02 px-2.5 py-1 text-xs opacity-80 hover:opacity-100"
-                        onClick={() => setTick((t) => t + 1)}
+                        onClick={retry}
                       >
                         Retry
                       </button>

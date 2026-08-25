@@ -8,6 +8,7 @@ import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
 import { memoryClearScope, memoryInvalidate, memoryList, memoryStats, type MemoryRow } from "@/utils/memory-api"
 import { instanceDiagnosis } from "@/utils/resource-api"
+import { memoryUnavailable } from "@/utils/memory-health"
 
 /**
  * The **Remembered** list — what NovaClaw has learned, in plain sentences.
@@ -108,8 +109,10 @@ export const MemoryRemembered: Component<{
     },
     ({ cn }) => instanceDiagnosis(cn.http).catch(() => undefined),
   )
-  const unavailable = () =>
-    health()?.signals.some((signal) => signal.id === "memory" && signal.status === "problem") === true
+  // ⚠️ The SHARED predicate (`utils/memory-health.ts`), not a local copy. The Graph tab asks the same
+  // question, and two surfaces of one cabinet disagreeing about whether it is broken is exactly the
+  // fault this component was written to stop showing.
+  const unavailable = () => memoryUnavailable(health())
 
   const [retrying, setRetrying] = createSignal(false)
   const retry = async () => {

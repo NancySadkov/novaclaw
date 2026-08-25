@@ -83,6 +83,8 @@ let host: HTMLDivElement | undefined
 beforeEach(() => {
   paneSize = { width: 900, height: 600 }
   paneShown = false
+  memoryBoardStatus = "ok"
+  memoryBoardDetail = undefined
   resizeCallbacks.length = 0
   originalRect = HTMLElement.prototype.getBoundingClientRect
   HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
@@ -132,9 +134,31 @@ afterEach(() => {
 const json = (body: unknown) =>
   new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } })
 
+/**
+ * What the diagnosis board reports about the memory engine — the seam a test drives to model an
+ * instance whose engine is down. `undefined` is a healthy board with no memory signal at all.
+ */
+let memoryBoardStatus: "ok" | "problem" | "unknown" | undefined
+let memoryBoardDetail: string | undefined
+
 /** The non-graph routes this page's siblings call, each in its own shape. */
 const sideAnswer = (url: string): unknown => {
-  if (url.includes("api/diagnosis")) return { signals: [], ok: true }
+  if (url.includes("api/diagnosis"))
+    return {
+      overall: memoryBoardStatus === "problem" ? "problem" : "ok",
+      headline: "",
+      signals:
+        memoryBoardStatus === undefined
+          ? []
+          : [
+              {
+                id: "memory",
+                label: "Memory",
+                status: memoryBoardStatus,
+                ...(memoryBoardDetail === undefined ? {} : { detail: memoryBoardDetail }),
+              },
+            ],
+    }
   if (url.includes("memory/stats")) return { total: 0, valid: 0 }
   return []
 }
@@ -387,6 +411,58 @@ describe("MemoryGraphPage renders", () => {
     await settle()
     expect(state()).toBe("empty")
     expect(bodyText()).toContain("Nothing remembered yet")
+  })
+
+  test("🔴 a BROKEN ENGINE answering 200-with-nothing is not an empty cabinet", async () => {
+    // The `/memory/*` read handlers fold a MemoryError into `{nodes:[],edges:[]}` and answer 200, so
+    // the transport is perfectly healthy and the graph is perfectly empty. Only the diagnosis board
+    // can tell the two apart, and the Remembered tab has been asking it all along while this one said
+    // "Nothing remembered yet — the graph fills as you chat" to a user whose engine was dead.
+    memoryBoardStatus = "problem"
+    memoryBoardDetail = "the graph store failed to open"
+    mount([() => ({ nodes: [], edges: [] })])
+    await settle()
+    showGraph()
+    await settle()
+    expect(state()).toBe("unavailable")
+    expect(bodyText()).toContain("Memory is unavailable")
+    expect(bodyText()).toContain("the graph store failed to open")
+    expect(bodyText()).not.toContain("Nothing remembered yet")
+  })
+
+  test("a board with no DETAIL still says something a person can act on", async () => {
+    memoryBoardStatus = "problem"
+    mount([() => ({ nodes: [], edges: [] })])
+    await settle()
+    showGraph()
+    await settle()
+    expect(state()).toBe("unavailable")
+    expect(bodyText()).toContain("The memory engine is not running on this instance.")
+  })
+
+  test("⚠️ `unknown` is NOT a fault — a lazily-opened engine must not error at every new user", async () => {
+    // The engine opens on first demand, so a board read before anything demanded it reports
+    // "not opened yet". Treating that as broken would put an error in front of everyone who has
+    // simply not chatted yet — the opposite failure, and just as wrong.
+    memoryBoardStatus = "unknown"
+    mount([() => ({ nodes: [], edges: [] })])
+    await settle()
+    showGraph()
+    await settle()
+    expect(state()).toBe("empty")
+    expect(bodyText()).toContain("Nothing remembered yet")
+  })
+
+  test("a healthy board with memories present never mentions the board at all", async () => {
+    memoryBoardStatus = "problem"
+    // A problem signal beside a graph that DID return rows: the rows win, because they are the more
+    // direct evidence and a banner over a working map is its own kind of lie.
+    mount([() => FIXTURE])
+    await settle()
+    showGraph()
+    await settle()
+    expect(state()).toBe("ready")
+    expect(bodyText()).not.toContain("Memory is unavailable")
   })
 
   test("🔴 every drawn node fits a NARROW pane — the clipping the fixed plane caused", async () => {
