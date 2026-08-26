@@ -748,8 +748,17 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     // ⚠️ Clears the three scopes auto-recall actually searches (`SessionRecall.recallScopes`), never
     // the whole store: a test that seeds a memory and then builds a harness is doing so deliberately,
     // and wiping everything would break it in a way that looks like the feature failing.
+    //
+    // ⚠️ **The scopes are DERIVED from the store, not hand-listed.** The previous version cleared
+    // `agent:${AgentV2.defaultID}` — and `defaultID` is `build`, while a harness session actually runs
+    // as **nova**, so compaction's archived passages sat in `agent:nova` and were never touched. The
+    // leak this whole comment describes therefore still happened, silently, for four days. A list of
+    // scopes kept by hand beside a value that decides them is the same defect twice; ask the store.
     const memory = Memory.client(yield* Memory.node.service)
-    for (const scope of [`session:${HARNESS_SESSION}`, `agent:${AgentV2.defaultID}`, "global"])
+    const resident = yield* memory.list({ limit: 500 }).pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<{ scope: string }>))
+    const searched = (scope: string) =>
+      scope === "global" || scope === `session:${HARNESS_SESSION}` || scope.startsWith("agent:")
+    for (const scope of new Set(resident.map((m) => m.scope).filter(searched)))
       yield* memory.clearScope(scope).pipe(Effect.ignore)
   })
 

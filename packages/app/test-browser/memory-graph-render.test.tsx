@@ -781,10 +781,16 @@ describe("MemoryGraphPage renders", () => {
     expect(lens.dataset.lens).toBe("history")
     expect(hint()).toContain("forgotten")
     // ⚠️ All four questions are reachable, including the one whose answer may be "not measured".
+    // ⚠️ The ORDER is the assertion, not just the membership: the three usage lenses sit together
+    // between the lifecycle ones and `history`, so a reader scans "what is true / what is unused /
+    // what happened" rather than hunting. `useful` and `corrections` joined when the noise endpoints
+    // gained a UI — they had no caller before, so the pruning protections had no door.
     expect([...document.querySelectorAll('[data-slot="memory-lens-tab"]')].map((b) => (b as HTMLElement).dataset.lens)).toEqual([
       "current",
       "needs-review",
       "never-used",
+      "useful",
+      "corrections",
       "history",
     ])
   })
