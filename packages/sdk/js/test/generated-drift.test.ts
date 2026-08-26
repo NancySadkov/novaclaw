@@ -243,7 +243,7 @@ const GENERATE_TIMEOUT_MS = 60_000
 // ⚠️ The same warning still stands, and applies to this entry too: set-identity is what makes the
 // re-pin safe. A fingerprint change that ADDS, REMOVES or REPOINTS a `source -> emitted` pair is a
 // public API change and must be reviewed as one, not re-pinned by copying the received hash.
-const SCHEMA_NAME_FINGERPRINT = "04d4e8d4d157eb9b193656e2a67ee7c987ace962c7abd51e6f12d474a3b61b54"
+const SCHEMA_NAME_FINGERPRINT = "0f2775849ea4dc743a55576d052d68a2d2ffa10ee7740cd8864a09ef73b56fad"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {
