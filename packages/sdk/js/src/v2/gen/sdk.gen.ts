@@ -4282,7 +4282,6 @@ class ApiV2Session extends NovaClawApiClient {
       responder?: "nova" | "operator"
       location?: T.LocationRef
       title?: string
-      permission?: T.PermissionRuleset
       strict?: T.SessionStrictOverride
       introspection?: boolean
       quality?: boolean
@@ -4311,7 +4310,6 @@ class ApiV2Session extends NovaClawApiClient {
       responder: parameters?.["responder"],
       location: parameters?.["location"],
       title: parameters?.["title"],
-      permission: parameters?.["permission"],
       strict: parameters?.["strict"],
       introspection: parameters?.["introspection"],
       quality: parameters?.["quality"],

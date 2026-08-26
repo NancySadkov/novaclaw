@@ -48,7 +48,6 @@ import { Snapshot } from "./snapshot"
 import { SessionRevert } from "./session/revert"
 import { SessionPatch } from "./session/patch"
 import { SessionTitle } from "./session/title"
-import { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
 import { Revert } from "@novaclaw/schema/revert"
 import { FSUtil } from "./fs-util"
 import { SessionDurable } from "@novaclaw/schema/durable-event-manifest"
@@ -180,11 +179,6 @@ type CreateInput = {
   // F1c fork: a fork seeds its record from the source (title + cloned metadata).
   title?: string
   metadata?: Record<string, unknown>
-  // F1c create: the caller's explicit saved ruleset. Deliberately NOT merged with the
-  // permission-mode overlay here (V1 baked MODE_RULES into the saved rules at create; the V2
-  // runner applies the overlay from `permissionMode` at runtime, so baking would make the
-  // create-time mode stick across later mode switches).
-  permission?: PermissionRuleset.Ruleset
 }
 
 /**

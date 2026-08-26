@@ -11,8 +11,16 @@
 // ⚠️ There were THREE drop points and they had to be fixed together, which is why this file exists
 // rather than a unit test on either half:
 //   1. `packages/protocol/src/groups/session.ts` — the payload schema listed only the first three,
-//      and it is `additionalProperties: false`, so an unlisted field is REJECTED at the edge, not
-//      quietly forwarded. The client could not have worked around it.
+//      and an unlisted field is DROPPED at the edge rather than quietly forwarded: it never reaches
+//      the handler, so the client could not have worked around it.
+//      ⚠️ **DROPPED, not REJECTED — this line said "REJECTED" until 2026-08-26 and that was wrong.**
+//      The OpenAPI projection does say `additionalProperties: false`, which is where the belief came
+//      from, but the projection is not the enforcement: effect 4.0.0-beta.83 decodes an object with
+//      `onExcessProperty: "ignore"` by DEFAULT and `unstable/httpapi` never overrides it (measured —
+//      the option name appears nowhere under `effect/dist/unstable/`). So an unknown property is
+//      stripped and the request SUCCEEDS. That is fine for a field the client merely mistyped and
+//      NOT fine for one that asks for a restriction; see the NC-SEC-012 test at the bottom of this
+//      file, which pins the measured behaviour rather than the documented one.
 //   2. `packages/server/src/handlers/session.ts` — the handler forwarded only those same three into
 //      `session.create(...)`.
 //   3. `packages/app/src/components/prompt-input/submit.ts` — the create call spread only three of
@@ -173,9 +181,10 @@ const createEndpoint = () => {
 /**
  * Decode a JSON body exactly as the HTTP layer would.
  *
- * ⚠️ This is the half a client cannot route around. The payload is `additionalProperties: false`,
- * so a field the schema does not list is not "passed through unread" — it never reaches the
- * handler. Test one below is therefore about `packages/protocol`, not about this package.
+ * ⚠️ This is the half a client cannot route around: a field the schema does not list is stripped
+ * here and never reaches the handler. Test one below is therefore about `packages/protocol`, not
+ * about this package. **Stripped is not refused** — the request still succeeds; see the banner at
+ * the top of this file and the NC-SEC-012 test at the bottom.
  */
 const decodeCreatePayload = (body: Record<string, unknown>) =>
   Schema.decodeUnknownSync(createEndpoint().payload)(body) as Record<string, unknown>
@@ -371,5 +380,47 @@ describe("session.create carries every per-chat switch a draft can stage", () =>
   test("a create that names no responder stays absent", async () => {
     const { stored } = await createAndReload({})
     expect(stored["responder"], "the create invented a responder instead of inheriting one").toBeUndefined()
+  })
+
+  /**
+   * 🔴 **NC-SEC-012 — a saved per-session permission ruleset is not a create field, and must not
+   * come back as one.**
+   *
+   * `session.create` used to declare an optional `permission` member, document it on the wire as
+   * *"the caller's explicit saved permission ruleset"*, and then drop it: ruling 16 had already
+   * deleted the kernel writer, `Session.Info` member and every reader, but the PUBLIC contract was
+   * left advertising it. A client sending `{permission:"bash", pattern:"*", action:"deny"}` got a
+   * successful session with no such restriction, and the live evaluator saw only the agent's V2
+   * rules. A restriction that receives 2xx and vanishes at the boundary is the security-contract
+   * failure, not the dead column underneath it.
+   *
+   * ⚠️ **What this test can and cannot claim.** The property is gone from the payload, the OpenAPI
+   * spec and the generated SDK, so nothing advertises it any more — that is what the first
+   * assertion ratchets. It is NOT refused: effect decodes with `onExcessProperty: "ignore"` and
+   * `unstable/httpapi` does not override it, so an old generated client that still sends the field
+   * gets it stripped and the create still succeeds. Measured, not assumed — the last assertion
+   * pins that residue deliberately so nobody re-derives "additionalProperties: false" from the
+   * OpenAPI projection and believes the edge rejects it. Making the wire strict is a cross-cutting
+   * decode-option change over EVERY endpoint and belongs to its own slice.
+   */
+  test("NC-SEC-012: `permission` is no longer a create field and cannot restrict anything", async () => {
+    const ruleset = [{ permission: "bash", pattern: "*", action: "deny" }]
+
+    // The ratchet: re-declaring the member in `packages/protocol` makes this decode carry it again.
+    const decoded = decodeCreatePayload({ title: "denied", permission: ruleset })
+    expect(
+      decoded["permission"],
+      "`session.create` declares a `permission` payload member again — the handler does not read one, so the caller's deny would be accepted and discarded",
+    ).toBeUndefined()
+
+    // The NEGATIVE half. A decoder that dropped everything would satisfy the line above on its own,
+    // so a supported field on the SAME body has to survive the SAME decode.
+    expect(decoded["title"], "the payload decode dropped a field it does declare").toBe("denied")
+
+    // End to end: no ruleset reaches the row, and the create still SUCCEEDS — the documented residue.
+    const { echoed, stored } = await createAndReload({ title: "denied", permission: ruleset })
+    expect(stored["permission"], "a permission ruleset reached the session row").toBeUndefined()
+    expect(echoed["permission"], "the create response echoed a permission ruleset").toBeUndefined()
+    expect(stored["title"], "the create that carried an obsolete field failed instead of ignoring it").toBe("denied")
   })
 })

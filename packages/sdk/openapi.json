@@ -16293,9 +16293,6 @@
                   "title": {
                     "type": "string"
                   },
-                  "permission": {
-                    "$ref": "#/components/schemas/PermissionRuleset"
-                  },
                   "strict": {
                     "$ref": "#/components/schemas/SessionStrictOverride"
                   },

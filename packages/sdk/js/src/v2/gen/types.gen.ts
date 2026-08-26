@@ -14101,7 +14101,6 @@ export type V2SessionCreateData = {
     responder?: "nova" | "operator"
     location?: LocationRef
     title?: string
-    permission?: PermissionRuleset
     strict?: SessionStrictOverride
     introspection?: boolean
     quality?: boolean

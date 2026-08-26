@@ -129,7 +129,6 @@ describe("promptAsync routes to the V2 native engine (F1b: one engine)", () => {
           const session = yield* Effect.promise(() =>
             sdk.v2.session.create({
               title: "v2 reroute",
-              permission: [{ permission: "*", pattern: "*", action: "allow" }],
             }),
           )
           const sessionID = String(record(record(session.data).data).id)
