@@ -99,6 +99,26 @@ describe("judgeExcerpt", () => {
     expect(excerpt).toContain("a.txt b.txt")
     expect(excerpt).toContain("Listing files…")
   })
+  // 🔴 The judge is ASKED about "progress toward the task", so the task has to be in the excerpt.
+  test("carries the TASK, because the question is about progress toward it", () => {
+    const user = (text: string) =>
+      ({ type: "user", id: "msg_u", text, time: { created: 0 } }) as unknown as SessionMessage.Message
+    const excerpt = judgeExcerpt([user("Describe every icon in the folder."), assistant([textPart("Working on it")])])
+    expect(excerpt).toContain("Describe every icon in the folder.")
+  })
+
+  test("takes the FIRST user message — a steer is not the objective", () => {
+    const user = (id: string, text: string) =>
+      ({ type: "user", id, text, time: { created: 0 } }) as unknown as SessionMessage.Message
+    const excerpt = judgeExcerpt([
+      user("msg_1", "Describe every icon in the folder."),
+      assistant([textPart("ok")]),
+      user("msg_2", "Continue with the next batch."),
+    ])
+    expect(excerpt).toContain("Describe every icon")
+    expect(excerpt).not.toContain("Continue with the next batch")
+  })
+
   test("clips a giant context to the excerpt cap", () => {
     const excerpt = judgeExcerpt([assistant([textPart("x".repeat(20_000))])])
     expect(excerpt!.length).toBeLessThanOrEqual(MAX_EXCERPT_CHARS)

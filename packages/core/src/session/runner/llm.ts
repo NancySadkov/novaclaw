@@ -1318,8 +1318,23 @@ export const layer = Layer.effect(
       // 6 sub-agents, each summarising a sixth"* trips the same `each` cue while the delegation IS the
       // instruction. Measured on Qwen3.6-35B 2026-08-22: the officer called `spawn` six times and every
       // call returned "Unknown tool: spawn", because the user's own order had withheld it.
+      // ⚠️ **LATCHED, not re-derived.** This used to read `lastRealUserText(context)` every step, so
+      // the gate flipped on ordinary speech mid-session and — worse — went FALSE once compaction
+      // evicted the original prompt, re-offering `spawn` in the middle of the very set request it was
+      // withheld for. `setRequests` is the session-scoped decision the drive already keeps for exactly
+      // this reason (see its note above: run 11 read `asked: false` with ~290 files still to go), so
+      // the two halves of the harness now agree by construction instead of by coincidence.
+      //
+      // Each flip also re-prefilled the whole prompt: the `spawn` tool DEFINITION sits ahead of the
+      // system blocks, so a flip invalidated the cache down to `base` plus the entire transcript
+      // (NC-PROMPT-CACHE-001).
+      //
+      // Falls back to the live read only before the latch exists — the first step of a fresh session,
+      // where the prompt is still in the window and the two answers are identical anyway.
+      const latched = setRequests.get(session.id)
       const userText = lastRealUserText(context) ?? ""
-      const drivingASet = UnfinishedSet.asksForSet(userText) && !UnfinishedSet.asksToDelegate(userText)
+      const drivingASet =
+        latched?.asked ?? (UnfinishedSet.asksForSet(userText) && !UnfinishedSet.asksToDelegate(userText))
       const toolMaterialization = isLastStep
         ? undefined
         : yield* tools.materialize(

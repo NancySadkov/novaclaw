@@ -230,13 +230,30 @@ export const selectContext = (
   }
 }
 
+/**
+ * 🔴 **It said "above" and the history is appended BELOW it.** This call carries no system prompt,
+ * so that one sentence is the entire framing, and a bad summary is durable — it replaces the
+ * transcript it summarises. The history is now DELIMITED and named instead of pointed at with a
+ * direction (NC-PROMPT-LANG-002).
+ *
+ * ⚠️ **Order is stable-first.** `SUMMARY_TEMPLATE` is a constant that sat BEHIND the volatile
+ * instruction, so it could never be a reusable prefix and every compaction re-prefilled it. Constant,
+ * then instruction, then previous summary, then history — which is the cache order and the reading
+ * order at once (NC-PROMPT-CACHE-009).
+ */
 export const buildPrompt = (input: { readonly previousSummary?: string; readonly context: readonly string[] }) =>
   [
-    input.previousSummary
-      ? `Update the anchored summary below using the conversation history above.\nPreserve still-true details, remove stale details, and merge in the new facts.\n<previous-summary>\n${input.previousSummary}\n</previous-summary>`
-      : "Create a new anchored summary from the conversation history.",
     SUMMARY_TEMPLATE,
-    ...input.context,
+    input.previousSummary
+      ? `Update the anchored summary in <previous-summary> using the conversation history in <history>.
+Preserve still-true details, remove stale details, and merge in the new facts.
+<previous-summary>
+${input.previousSummary}
+</previous-summary>`
+      : "Create a new anchored summary from the conversation history in <history>.",
+    `<history>
+${input.context.join("\n\n")}
+</history>`,
   ].join("\n\n")
 
 export const make = (dependencies: Dependencies) => {

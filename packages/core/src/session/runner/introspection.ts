@@ -65,6 +65,21 @@ export function shouldJudge(step: number, cadence: number): boolean {
  */
 export function judgeExcerpt(context: ReadonlyArray<SessionMessage.Message>): string | undefined {
   const lines: string[] = []
+  /**
+   * 🔴 **The judge is asked whether the agent is "making no progress toward the task", and until
+   * 2026-08-26 it was never shown the task.** It saw recent tool calls and the last assistant text and
+   * had to infer the goal from them — which is the one thing a stuck agent's output is least able to
+   * convey, because a looping agent's recent turns all look purposeful in isolation.
+   *
+   * ⚠️ The FIRST user message, not the last: a steer or a follow-up is not the objective, and the
+   * drive injects user-role messages of its own. Clipped hard — the judge needs the goal, not the
+   * briefing (NC-PROMPT-LANG-003).
+   */
+  const task = context
+    .filter((message) => message.type === "user")
+    .map((message) => (message as { text?: string }).text ?? "")
+    .find((text) => text.trim())
+  if (task) lines.push("The task the agent was given:", clip(task.trim(), 400))
   const assistants = context.filter((message) => message.type === "assistant")
   const tools: string[] = []
   for (const message of assistants) {

@@ -373,9 +373,14 @@ const registryLayer = Layer.effect(
         const callableDeferred = new Map([...deferredByName].filter(([name]) => discovered.has(name)))
         const callableNames = [...resident.keys(), ...callableDeferred.keys()]
         return {
+          // ⚠️ SORTED, for the same reason the `deferred` list above is: tool definitions are rendered
+          // AHEAD of the system prompt, so an unstable order invalidates the entire prefix cache —
+          // system blocks and transcript included. `registrations` is a Map, so its order is insertion
+          // order: stable within a process, and free to differ across boots or when a plugin registers
+          // late. Nothing downstream depends on the order (NC-PROMPT-CACHE-006).
           definitions: Array.from(resident, ([name, registration]) =>
             definition(name, registration.tool, variantOf(name)),
-          ),
+          ).toSorted((a, b) => a.name.localeCompare(b.name)),
           sideEffects: Object.fromEntries(
             [...resident, ...callableDeferred].map(([name, registration]) => [name, sideEffect(registration.tool)]),
           ),

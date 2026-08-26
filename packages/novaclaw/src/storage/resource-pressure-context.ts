@@ -97,7 +97,10 @@ export function lines(report: Pressure.Report): ReadonlyArray<string> {
     const previous = disks.get(disk.measuredPath)
     if (previous !== "floor") disks.set(disk.measuredPath, diskLevel)
   }
-  for (const [measuredPath, diskLevel] of disks)
+  // ⚠️ SORTED by path: `disks` is keyed in probe order, so two runs could emit the same warnings in a
+  // different order and re-prefill everything after this block for no change in meaning
+  // (NC-PROMPT-CACHE-006).
+  for (const [measuredPath, diskLevel] of [...disks].toSorted((a, b) => a[0].localeCompare(b[0])))
     result.push(`Disk space is ${urgency(diskLevel)} on ${measuredPath}; avoid large writes.`)
   if (result.length > 0)
     result.push("Use tool_search for resource status, then resource_status to inspect and confirm recovery.")

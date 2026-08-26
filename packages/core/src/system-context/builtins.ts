@@ -25,7 +25,12 @@ const builtIns = Layer.effectDiscard(
     // P2P: tell the model about configured peer instances — full free-form HTTP access with the
     // token from env (the bash tool injects NOVACLAW_INSTANCE_<NAME>_URL/_TOKEN; tokens are never
     // printed into the prompt itself).
-    const peers = ((yield* settingsStore.all()).instances ?? []) as Array<{ name: string; url: string }>
+    // ⚠️ SORTED: this renders into the system prompt, and settings order is AUTHORING order —
+    // adding a peer would otherwise reshuffle the block and re-prefill everything after it
+    // (NC-PROMPT-CACHE-007).
+    const peers = (((yield* settingsStore.all()).instances ?? []) as Array<{ name: string; url: string }>).toSorted(
+      (a, b) => a.name.localeCompare(b.name),
+    )
     const peerLines = peers.map((peer) => {
       const key = peer.name.toUpperCase().replace(/[^A-Z0-9]+/g, "_")
       return `  Peer instance "${peer.name}": ${peer.url} — same HTTP API as this instance (sessions, registry, config). Drive it from bash, e.g. curl -u "novaclaw:$NOVACLAW_INSTANCE_${key}_TOKEN" $NOVACLAW_INSTANCE_${key}_URL/api/session (the env vars are preset).`

@@ -41,11 +41,16 @@ export const layer = (
     Service,
     Effect.gen(function* () {
       const context = yield* Effect.context<unknown>()
+      // ⚠️ SORTED by name: these reach the model's per-turn environment block, and `nodes` is in
+      // registration order — stable in one process, free to differ across boots or when a layer is
+      // added. An unstable list re-prefills everything after it (NC-PROMPT-CACHE-006).
       const entries = new Map(
-        nodes.map((node) => [
-          node.capabilityName,
-          Context.get(context, node.service) as Capability.Capability<unknown>,
-        ]),
+        nodes
+          .toSorted((a, b) => a.capabilityName.localeCompare(b.capabilityName))
+          .map((node) => [
+            node.capabilityName,
+            Context.get(context, node.service) as Capability.Capability<unknown>,
+          ]),
       )
 
       const inspect = Effect.fn("CapabilityRegistry.inspect")(function* () {
