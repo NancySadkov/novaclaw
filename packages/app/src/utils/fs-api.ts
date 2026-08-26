@@ -294,8 +294,18 @@ const sessionPost = (
     body,
   })
 
-// Export a whole session as a Markdown file into `directory` (Chats → Export). Returns where it landed
-// plus whether the session was still running — the caller says so in its toast, and the file says so too.
+// Export a whole session as a Markdown file INSIDE the session's own project folder. Returns where it
+// landed plus whether the session was still running — the caller says so in its toast, and the file
+// says so too.
+//
+// ⚠️ `into` is RELATIVE to that project folder, and the server refuses an absolute path or one that
+// resolves outside it (Codex review NC-SEC-017 — the endpoint used to take an absolute server path
+// and truncate whatever was there). `path` in the result is where the bytes actually went: the server
+// never replaces an existing file, so a name collision lands beside it under a suffixed name.
+//
+// ⚠️ There is currently NO call site — the old Chats → Export action is gone. Kept rather than deleted
+// because the endpoint is live and this is its only typed client; if it is still unused when the
+// export UI is designed, delete it then rather than leaving a second stale contract behind.
 export interface SessionExportResult {
   path: string
   messageCount: number
@@ -306,14 +316,17 @@ export interface SessionExportResult {
 // over the status line — the behaviour this function used to hand-roll on its own.
 export function exportSessionMarkdown(
   server: ServerConnection.HttpBase,
-  input: { directory: string; sessionID: string; into: string; filename?: string },
+  input: { directory: string; sessionID: string; into?: string; filename?: string },
 ): Promise<SessionExportResult> {
   return instanceFetch<SessionExportResult>(server, {
     method: "POST",
     route: `api/session/${input.sessionID}/export-markdown`,
     directory: input.directory,
     directoryVia: "header",
-    body: { directory: input.into, ...(input.filename ? { filename: input.filename } : {}) },
+    body: {
+      ...(input.into ? { directory: input.into } : {}),
+      ...(input.filename ? { filename: input.filename } : {}),
+    },
   })
 }
 

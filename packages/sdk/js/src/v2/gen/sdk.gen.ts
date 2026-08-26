@@ -5038,12 +5038,12 @@ class ApiV2Session extends NovaClawApiClient {
   /**
    * Export a session as Markdown
    *
-   * Render the whole session to a Markdown file in the given folder. A session that is still running exports what exists so far and is marked as captured mid-turn.
+   * Render the whole session to a Markdown file inside the session's own project folder. The destination is relative to that folder and never replaces an existing file — a name collision is written alongside it, and the response says where the bytes actually landed. A session that is still running exports what exists so far and is marked as captured mid-turn.
    */
   public exportMarkdown<ThrowOnError extends boolean = false>(
     parameters: {
       sessionID: string
-      directory: string
+      directory?: string
       filename?: string
     },
     options?: Options<never, ThrowOnError>,
