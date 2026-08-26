@@ -52,8 +52,14 @@ describe("the runner actually applies it", () => {
     const source = fs.readFileSync(path.join(import.meta.dir, "../src/session/runner/llm.ts"), "utf8")
     expect(source).toContain("drivingASet")
     expect(source).toContain("!(drivingASet && name === SpawnTool.name)")
-    // Gated on the shared predicate rather than a second, drifting copy of the rule.
-    expect(source).toContain("const drivingASet = UnfinishedSet.asksForSet(")
+    // Gated on the drive's OWN latched decision rather than a second, drifting copy of the rule.
+    // 🔴 It used to read `UnfinishedSet.asksForSet(lastRealUserText(context))` afresh every step, which
+    // meant compaction could evict the original prompt, flip the gate false and RE-OFFER `spawn` in
+    // the middle of the very set request it was withheld for. `setRequests` is the session-scoped
+    // record the drive already keeps for exactly that reason, so the two halves now agree by
+    // construction. The live read survives only as the first-step fallback, before the latch exists.
+    expect(source).toContain("const latched = setRequests.get(session.id)")
+    expect(source).toContain("latched?.asked ?? (UnfinishedSet.asksForSet(")
   })
 
   test("it withholds by the tool's OWN name, so a rename cannot silently disable it", () => {
