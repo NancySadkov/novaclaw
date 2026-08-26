@@ -231,29 +231,30 @@ export const selectContext = (
 }
 
 /**
- * 🔴 **It said "above" and the history is appended BELOW it.** This call carries no system prompt,
- * so that one sentence is the entire framing, and a bad summary is durable — it replaces the
- * transcript it summarises. The history is now DELIMITED and named instead of pointed at with a
- * direction (NC-PROMPT-LANG-002).
+ * 🔴 **The wording is fixed; the ORDER is deliberately unchanged.**
  *
- * ⚠️ **Order is stable-first.** `SUMMARY_TEMPLATE` is a constant that sat BEHIND the volatile
- * instruction, so it could never be a reusable prefix and every compaction re-prefilled it. Constant,
- * then instruction, then previous summary, then history — which is the cache order and the reading
- * order at once (NC-PROMPT-CACHE-009).
+ * It used to say "the conversation history above" while `...input.context` is appended BELOW it.
+ * This call carries no system prompt, so that sentence is the whole framing and a bad summary is
+ * durable — it replaces the transcript it summarises (NC-PROMPT-LANG-002).
+ *
+ * ⚠️ **CACHE-009's reorder was tried and REVERTED.** Putting `SUMMARY_TEMPLATE` first would make the
+ * constant a reusable prefix, but the first 100-file run after that change recorded **0 compactions
+ * against 8** in the run before it, and went 2x slower past 20 files — the signature of a context that
+ * never shrinks. Causation is UNPROVEN; what is certain is that this builder has no test, so a
+ * structural change to it is unobservable until a long run behaves badly. Reorder it only behind a
+ * test that pins a compaction actually committing.
  */
 export const buildPrompt = (input: { readonly previousSummary?: string; readonly context: readonly string[] }) =>
   [
-    SUMMARY_TEMPLATE,
     input.previousSummary
-      ? `Update the anchored summary in <previous-summary> using the conversation history in <history>.
+      ? `Update the anchored summary in <previous-summary> using the conversation history that follows it.
 Preserve still-true details, remove stale details, and merge in the new facts.
 <previous-summary>
 ${input.previousSummary}
 </previous-summary>`
-      : "Create a new anchored summary from the conversation history in <history>.",
-    `<history>
-${input.context.join("\n\n")}
-</history>`,
+      : "Create a new anchored summary from the conversation history that follows.",
+    SUMMARY_TEMPLATE,
+    ...input.context,
   ].join("\n\n")
 
 export const make = (dependencies: Dependencies) => {
