@@ -17,6 +17,7 @@ import { Global } from "../global"
 import { KbChunk } from "./chunk"
 import { KbClaim } from "./claim"
 import { selectSlice, type SliceMeta } from "./graph-slice"
+import { EngineFault } from "./engine-fault"
 import { GraphSnapshot } from "./snapshot"
 
 // The in-process Ladybug graph-memory engine (WASM) — the single engine that runs EVERYWHERE
@@ -540,6 +541,9 @@ const loadWasm = (): Promise<any> => {
   return initPromise
 }
 
+/** How long `close()` will wait for a final flush before giving up and saying so. */
+const CLOSE_FLUSH_DEADLINE_MS = 10_000
+
 export class WasmMemory {
   private readonly lbug: any
   private readonly db: any
@@ -550,6 +554,11 @@ export class WasmMemory {
   private snapshotTimer: ReturnType<typeof setTimeout> | undefined
   private dirty = false
   private closed = false
+  /**
+   * Set once the WASM module has suffered a FATAL fault. Non-undefined means every later call must
+   * fail immediately with this message rather than queue behind a lock that will never release.
+   */
+  private dead: string | undefined
   /**
    * What `open()` had to do to get a usable store. `opened` is the generation actually in use, so
    * `"(empty)"` means every retained generation was unusable and the graph started over.
@@ -564,6 +573,25 @@ export class WasmMemory {
   // atomic w.r.t. the debounced snapshot (a CHECKPOINT interleaved mid-result-read corrupts it). All
   // public ops + persist run through this serial lock so they never interleave.
   private lock: Promise<unknown> = Promise.resolve()
+
+  /**
+   * Await `work`, but never past `ms`. Resolves true if it finished, false if the deadline won.
+   *
+   * The loser is left dangling on purpose: the only caller is `close()`, and a promise chained to a
+   * dead WASM module will never settle, so there is nothing to cancel and nobody left to await it.
+   */
+  private async bounded(work: Promise<unknown>, ms: number): Promise<boolean> {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const deadline = new Promise<false>((resolve) => {
+      timer = setTimeout(() => resolve(false), ms)
+      timer.unref?.()
+    })
+    try {
+      return await Promise.race([work.then(() => true, () => true), deadline])
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
+  }
 
   private serialize<T>(fn: () => Promise<T>): Promise<T> {
     const run = this.lock.then(fn, fn)
@@ -779,6 +807,7 @@ export class WasmMemory {
   }
 
   private async persist(): Promise<void> {
+    if (this.dead) return
     try {
       await this.q(`CHECKPOINT`)
     } catch (error) {
@@ -793,6 +822,21 @@ export class WasmMemory {
        * generation stays live, so the next debounced attempt retries against the same memory state.
        */
       this.lastCheckpointError = (error as Error).message
+      /**
+       * 🔴 A FATAL fault is not a failed statement — the module is gone, and retrying is what WEDGED
+       * this store for ~30 minutes at 0.1% CPU with nothing in the log after the abort. Mark it dead
+       * so `touch()` stops re-arming the debounce and every later call fails LOUD instead of hanging.
+       */
+      if (EngineFault.isFatal(error)) {
+        this.dead = EngineFault.deadMessage(this.lastCheckpointError)
+        if (this.snapshotTimer) {
+          clearTimeout(this.snapshotTimer)
+          this.snapshotTimer = undefined
+        }
+        this.dirty = false // nothing can ever flush it now; leaving it set only re-arms the retry
+        console.error(this.dead)
+        return
+      }
       console.warn(`kb-memory: checkpoint failed, keeping the prior snapshot generation: ${this.lastCheckpointError}`)
       return
     }
@@ -808,7 +852,7 @@ export class WasmMemory {
   /** After a mutation: mark dirty and (re)arm a debounced snapshot so bursts coalesce into one write. */
   private touch(): void {
     this.dirty = true
-    if (this.closed) return
+    if (this.closed || this.dead) return // re-arming against a dead module is the wedge itself
     if (this.snapshotTimer) clearTimeout(this.snapshotTimer)
     this.snapshotTimer = setTimeout(() => {
       this.snapshotTimer = undefined
@@ -2022,10 +2066,22 @@ export class WasmMemory {
   async close(): Promise<void> {
     if (this.closed) return
     this.closed = true
-    await this.flush()
+    /**
+     * 🔴 **`close()` MUST RETURN.** It used to `await this.flush()`, which awaits `serialize()`, which
+     * chains on `this.lock` — so one call that never settles against a dead module made closing the
+     * store hang forever. That is the wedge: measured 2026-08-26 at 0.1% CPU with commit charge frozen
+     * to the byte, a process that could not finish and could not be diagnosed from its own output.
+     *
+     * ⚠️ The deadline is a BOUND, not a fix for slowness. A flush that genuinely needs longer than this
+     * has already written its files durably or is not going to; either way the last VERIFIED generation
+     * is on disk (`GraphSnapshot`'s `LASTGOOD` pin), so giving up here costs the newest writes, never
+     * the store. Silence is the one outcome that is not acceptable, so it SAYS it gave up.
+     */
+    if (!(await this.bounded(this.flush(), CLOSE_FLUSH_DEADLINE_MS)))
+      console.error(`kb-memory: the final flush did not finish within ${CLOSE_FLUSH_DEADLINE_MS}ms — closing anyway`)
     try {
-      await this.conn.close?.()
-      await this.db.close?.()
+      await this.bounded(Promise.resolve(this.conn.close?.()), CLOSE_FLUSH_DEADLINE_MS)
+      await this.bounded(Promise.resolve(this.db.close?.()), CLOSE_FLUSH_DEADLINE_MS)
     } catch {
       /* already closed */
     }
