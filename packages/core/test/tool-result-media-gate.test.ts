@@ -475,8 +475,15 @@ describe("per-request image budget", () => {
     // ⚠️ Two arguments now: `read` names the file it opened, so the notice points back at that exact
     // path and "read it again" becomes a step the model can take rather than advice it cannot act
     // on. Passing one argument here would assert the pathless wording and pass only by accident.
-    expect(lowered).toContain(budgetedImageNotice("icon_1.png", "icon_1.png"))
-    expect(lowered).toContain(budgetedImageNotice("icon_3.png", "icon_3.png"))
+    // ⚠️ THREE arguments now. When the model spoke between this image and the next, the notice
+    // hands those words BACK instead of ordering a re-read (see `budgetedImageNotice`). In this
+    // fixture the intervening text is the tool's own "Image read successfully", which is exactly why
+    // the notice ATTRIBUTES it ("what you said straight after opening it") rather than calling it a
+    // description — a model reading that knows it is not one, and the path is still offered.
+    expect(lowered).toContain(noticeFor("icon_1.png"))
+    expect(lowered).toContain(noticeFor("icon_3.png"))
+    // Never the PATHLESS variant: `read` names the file, so the notice must point back at it.
+    expect(lowered).not.toContain("If this task needs it, read it again.")
   })
 
   /**
@@ -572,6 +579,47 @@ describe("per-request image budget", () => {
    * it — so the test passed with the preference deleted. The described image has to be NEWER than a
    * silent one for the two policies to disagree at all.
    */
+  /**
+   * ⚠️ Matches the notice for ONE named image without pinning its whole wording. The notice now has
+   * an optional tail — when the model spoke between this image and the next, its own words are handed
+   * back instead of an order to re-read — so an exact-string compare breaks on a change that is the
+   * point of the feature. The name is what discriminates, and the pathless form is asserted absent
+   * separately so this cannot pass by matching the wrong variant.
+   */
+  const noticeFor = (name: string) => `An image (${name}) you opened earlier is NOT in this request`
+
+  /**
+   * ⭐ **The re-read the notice used to order is not free.** Measured 2026-08-26 on a 100-image run:
+   * a sample at 1.30x redundancy cost **41,270 uncached prompt tokens per request against 2,066**
+   * — 20x the prefill work — because each re-read inserts a fresh payload mid-context and
+   * invalidates every cached token after it.
+   *
+   * 🔴 **But the wording that shipped in 2026-08-19 CAUSED confabulation** by telling the model to
+   * rely on a description that did not exist (five of six files named wrongly). The difference here,
+   * and the reason both tests can pass at once: this fires ONLY when there is text, and it QUOTES
+   * that text rather than asserting a description exists. Silence still gets the honest notice.
+   */
+  test("hands back the model's OWN WORDS instead of ordering a re-read — when there are words", () => {
+    const history = [readOf("a.png"), described("A golden broken heart."), readOf("b.png"), readOf("c.png")]
+    const lowered = JSON.stringify(toLLMMessages(history, model, VISION, 1))
+    expect(lowered).toContain("what you said straight after opening it was")
+    expect(lowered).toContain("A golden broken heart.")
+    // A/B: delete the `saidAfter` branch in `budgetedImageNotice` and BOTH of these go red, while
+    // the silent-image test below stays green — the two directions the feature has to get right.
+    // The whole point: it must NOT send the model back for pixels it does not need.
+    expect(lowered).toContain("You do not need to open it again")
+  })
+
+  test("🔴 a SILENT image still gets the honest notice, never a claimed description", () => {
+    // The 2026-08-19 regression in one line: no text between the image and the next, so nothing may
+    // be handed back. This is the case that produced five wrong filenames.
+    const history = [readOf("a.png"), readOf("b.png"), readOf("c.png")]
+    const lowered = JSON.stringify(toLLMMessages(history, model, VISION, 1))
+    expect(lowered).not.toContain("what you said straight after opening it was")
+    expect(lowered).not.toContain("You do not need to open it again")
+    expect(lowered).toContain("Do not describe it or name it from memory")
+  })
+
   test("evicts a DESCRIBED image before an OLDER silent one", () => {
     // a.png silent (oldest) · b.png described · c.png silent. Budget 2 must drop b.png, not a.png:
     // b's content survives in the sentence, a's exists nowhere else.
@@ -579,10 +627,10 @@ describe("per-request image budget", () => {
     const lowered = JSON.stringify(toLLMMessages(history, model, VISION, 2))
     expect(lowered.split('"type":"file"').length - 1).toBe(2)
     expect(lowered).toContain("That is a golden broken heart.")
-    expect(lowered).toContain(budgetedImageNotice("b.png", "b.png"))
+    expect(lowered).toContain(noticeFor("b.png"))
     // The silent ones survive as PIXELS — including the OLDEST, which oldest-first would have taken.
-    expect(lowered).not.toContain(budgetedImageNotice("a.png", "a.png"))
-    expect(lowered).not.toContain(budgetedImageNotice("c.png", "c.png"))
+    expect(lowered).not.toContain(noticeFor("a.png"))
+    expect(lowered).not.toContain(noticeFor("c.png"))
   })
 
   // ⚠️ When NOTHING has been described the preference cannot help: the cap is hard and something has
@@ -591,9 +639,9 @@ describe("per-request image budget", () => {
     const history = [readOf("a.png"), readOf("b.png"), readOf("c.png"), readOf("d.png")]
     const lowered = JSON.stringify(toLLMMessages(history, model, VISION, 2))
     expect(lowered.split('"type":"file"').length - 1).toBe(2)
-    expect(lowered).toContain(budgetedImageNotice("a.png", "a.png"))
-    expect(lowered).toContain(budgetedImageNotice("b.png", "b.png"))
-    expect(lowered).not.toContain(budgetedImageNotice("d.png", "d.png"))
+    expect(lowered).toContain(noticeFor("a.png"))
+    expect(lowered).toContain(noticeFor("b.png"))
+    expect(lowered).not.toContain(noticeFor("d.png"))
   })
 
   test("takes silent images too, once every described one is already gone", () => {
@@ -602,9 +650,9 @@ describe("per-request image budget", () => {
     const history = [readOf("a.png"), described("A broken heart."), readOf("b.png"), readOf("c.png")]
     const lowered = JSON.stringify(toLLMMessages(history, model, VISION, 1))
     expect(lowered.split('"type":"file"').length - 1).toBe(1)
-    expect(lowered).toContain(budgetedImageNotice("a.png", "a.png"))
-    expect(lowered).toContain(budgetedImageNotice("b.png", "b.png"))
-    expect(lowered).not.toContain(budgetedImageNotice("c.png", "c.png"))
+    expect(lowered).toContain(noticeFor("a.png"))
+    expect(lowered).toContain(noticeFor("b.png"))
+    expect(lowered).not.toContain(noticeFor("c.png"))
   })
 })
 

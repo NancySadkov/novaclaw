@@ -680,7 +680,26 @@ export const toLLMMessages = (
  * (*the model never instruments voluntarily; the harness must force it*), and is why a sub-session
  * that looks at ≤N images and returns TEXT is the shape that actually survives a large folder.
  */
-export const budgetedImageNotice = (name: string | undefined, sourcePath?: string): string => {
+export const budgetedImageNotice = (name: string | undefined, sourcePath?: string, saidAfter?: string): string => {
+  /**
+   * ⭐ **When the model already spoke after opening this image, give it ITS OWN WORDS BACK instead of
+   * telling it to look again.** The re-read is not free: measured 2026-08-26 on a 100-image run, a
+   * sample at 1.30x redundancy cost **41,270 uncached prompt tokens per request against 2,066** — a
+   * 20x difference in prefill work — because each re-read inserts a fresh payload mid-context and
+   * invalidates every cached token after it. The budget elides, the notice says re-read, the re-read
+   * adds an image, the budget elides again.
+   *
+   * ⚠️ **ATTRIBUTED, never asserted as a caption.** `describedImageIndices` can prove only that the
+   * model spoke between this image and the next one — not that the sentence is ABOUT it. So the text
+   * is quoted as *what you said after opening it*, which is true by construction, and the model is
+   * left to judge. Claiming it as the description would put a wrong caption on a file permanently,
+   * and nothing downstream could detect that.
+   */
+  if (saidAfter && saidAfter.trim().length > 0) {
+    const readable = sourcePath?.startsWith("file:///") ? decodeURIComponent(sourcePath.slice(8)) : sourcePath
+    const clipped = saidAfter.trim().length > 600 ? saidAfter.trim().slice(0, 600) + "\u2026" : saidAfter.trim()
+    return `[An image${name ? ` (${name})` : ""} you opened earlier is NOT in this request: this model accepts only a limited number of images at once. You do not need to open it again — what you said straight after opening it was: "${clipped}" If that already answers what you needed, carry it forward and move on. Do NOT invent anything further about the picture from memory.${readable ? ` If you genuinely still need to see it, it is at: ${readable}` : ""}]`
+  }
   // ⭐ The path, when we have one, is what turns "read it again" from advice into a step. See
   // `media()` for the measurement: the model DOES re-read an image it can name, and cannot re-read
   // one it cannot. A `file://` URI is de-scheme'd because that is the spelling `read` takes.
@@ -763,7 +782,11 @@ export const budgetImages = (messages: readonly Message[], max: number | undefin
     if (victims.size >= needed) break
   }
   let imageIndex = -1
-  return evictImages(messages, () => victims.has(++imageIndex))
+  return evictImages(messages, () => {
+    const at = ++imageIndex
+    const saidAfter = describedBefore.get(at)
+    return { evict: victims.has(at), ...(saidAfter === undefined ? {} : { saidAfter }) }
+  })
 }
 
 /**
@@ -786,10 +809,10 @@ export const budgetImages = (messages: readonly Message[], max: number | undefin
  * opened and has not yet spoken after is undescribed, which is the correct reading: the turn that
  * would describe it has not happened.
  */
-const describedImageIndices = (messages: readonly Message[]): ReadonlySet<number> => {
+const describedImageIndices = (messages: readonly Message[]): ReadonlyMap<number, string> => {
   // One forward pass emitting a flat event stream: each image position, and each point where the
   // assistant produced non-empty text. An image is described when text appears before the next image.
-  const events: Array<{ readonly kind: "image" | "text"; readonly index: number }> = []
+  const events: Array<{ readonly kind: "image" | "text"; readonly index: number; readonly text?: string }> = []
   let imageIndex = 0
   for (const message of messages) {
     const parts: readonly ContentPart[] = Array.isArray(message.content)
@@ -804,7 +827,8 @@ const describedImageIndices = (messages: readonly Message[]): ReadonlySet<number
             .filter((part) => part.type === "text")
             .map((part) => (part as { readonly text?: string }).text ?? "")
             .join("")
-    if (message.role === "assistant" && text.trim().length > 0) events.push({ kind: "text", index: -1 })
+    if (message.role === "assistant" && text.trim().length > 0)
+      events.push({ kind: "text", index: -1, text: text.trim() })
     for (const part of parts) {
       if (isImagePart(part)) events.push({ kind: "image", index: imageIndex++ })
       else if (part.type === "tool-result") {
@@ -814,25 +838,32 @@ const describedImageIndices = (messages: readonly Message[]): ReadonlySet<number
       }
     }
   }
-  const described = new Set<number>()
+  const described = new Map<number, string>()
   for (let at = 0; at < events.length; at++) {
     if (events[at]!.kind !== "image") continue
     for (let ahead = at + 1; ahead < events.length; ahead++) {
       if (events[ahead]!.kind === "image") break
-      described.add(events[at]!.index)
+      described.set(events[at]!.index, events[ahead]!.text ?? "")
       break
     }
   }
   return described
 }
 
-/** One eviction walk: `take` decides, per image in forward order, whether this one goes. */
-const evictImages = (messages: readonly Message[], take: () => boolean): readonly Message[] =>
+/**
+ * One eviction walk: `take` decides, per image in forward order, whether this one goes, and returns
+ * the text the model said after it (empty when it said nothing) so the notice can hand it back.
+ */
+const evictImages = (
+  messages: readonly Message[],
+  take: () => { readonly evict: boolean; readonly saidAfter?: string },
+): readonly Message[] =>
   messages.map((message) => {
     if (!Array.isArray(message.content)) return message
     const content = (message.content as readonly ContentPart[]).flatMap((part): ContentPart[] => {
-      if (isImagePart(part))
-        return take()
+      if (isImagePart(part)) {
+        const verdict = take()
+        return verdict.evict
           ? [
               {
                 type: "text",
@@ -841,20 +872,24 @@ const evictImages = (messages: readonly Message[], take: () => boolean): readonl
                 text: budgetedImageNotice(
                   part.filename,
                   (part.metadata as { readonly sourceUri?: string } | undefined)?.sourceUri,
+                  verdict.saidAfter,
                 ),
               },
             ]
           : [part]
+      }
       if (part.type !== "tool-result") return [part]
       const value = contentEntries((part as ToolResultPart).result)
       if (value === undefined || !value.some(isImageContent)) return [part]
-      const gated = value.flatMap((item): ToolContent[] =>
-        isImageContent(item) && take()
+      const gated = value.flatMap((item): ToolContent[] => {
+        if (!isImageContent(item)) return [item]
+        const verdict = take()
+        return verdict.evict
           ? // The TOOL door: `read` sets the file's own path as the content's name, so the notice
             // can point straight back at what produced it and no second field is needed.
-            [{ type: "text", text: budgetedImageNotice(item.name, item.name) }]
-          : [item],
-      )
+            [{ type: "text", text: budgetedImageNotice(item.name, item.name, verdict.saidAfter) }]
+          : [item]
+      })
       return [{ ...(part as ToolResultPart), result: { type: "content", value: gated } } as ContentPart]
     })
     return { ...message, content } as Message
