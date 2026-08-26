@@ -2192,7 +2192,7 @@ class ApiFile extends NovaClawApiClient {
   /**
    * Write file
    *
-   * Write text content to a file under the routed directory (parents created).
+   * Write text content to a file whose real location is under the routed directory (parents created). A path that resolves outside it — including through a symlink or junction inside the folder — is refused.
    */
   public write<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -2237,7 +2237,7 @@ class ApiFile extends NovaClawApiClient {
   /**
    * Create directory
    *
-   * Create a directory (recursive) under the routed directory.
+   * Create a directory (recursive) whose real location is under the routed directory. A path that resolves outside it — including through a symlink or junction inside the folder — is refused.
    */
   public mkdir<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -2262,7 +2262,7 @@ class ApiFile extends NovaClawApiClient {
   /**
    * Rename file or directory
    *
-   * Rename one entry under the routed directory without replacing an existing destination.
+   * Rename one entry under the routed directory without replacing an existing destination. Source and destination must both resolve inside it, symlinks and junctions followed.
    */
   public rename<ThrowOnError extends boolean = false>(
     parameters?: {

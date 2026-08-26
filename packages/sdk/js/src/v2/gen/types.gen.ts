@@ -11307,9 +11307,9 @@ export type FileWriteData = {
 
 export type FileWriteErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestError | InvalidRequestError
 }
 
 export type FileWriteError = FileWriteErrors[keyof FileWriteErrors]

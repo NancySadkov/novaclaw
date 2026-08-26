@@ -1,5 +1,5 @@
 import { NodeFileSystem } from "@effect/platform-node"
-import { dirname, isAbsolute, join, relative, resolve as pathResolve, sep } from "path"
+import { basename, dirname, isAbsolute, join, relative, resolve as pathResolve, sep } from "path"
 import { realpathSync } from "fs"
 import * as NFS from "fs/promises"
 import { lookup } from "mime-types"
@@ -244,6 +244,65 @@ export namespace FSUtil {
       .replace(/^\/([a-zA-Z])(?:\/|$)/, (_, drive) => `${drive.toUpperCase()}:/`)
       .replace(/^\/cygdrive\/([a-zA-Z])(?:\/|$)/, (_, drive) => `${drive.toUpperCase()}:/`)
       .replace(/^\/mnt\/([a-zA-Z])(?:\/|$)/, (_, drive) => `${drive.toUpperCase()}:/`)
+  }
+
+  /**
+   * The canonical on-disk path for `p`: `realpath` where it exists, and where it does not, the
+   * `realpath` of its **nearest existing ancestor** with the remaining segments appended.
+   *
+   * 🔴 **This is the difference between a containment check and a spelling check.** `contains()` one
+   * line below is LEXICAL — it compares two strings — so `path.resolve(root, "escape/settings.json")`
+   * looks internal whether or not `escape` is a directory symlink or a Windows junction pointing
+   * somewhere else entirely. A repository someone cloned can ship that link, and then an apparently
+   * project-confined write lands outside the browsed root (Codex review NC-SEC-018). Screening the
+   * CANONICAL path screens the file; screening the lexical one screens a spelling of it.
+   *
+   * ⚠️ **`resolve()` above is not a substitute, and the difference is exactly the interesting case.**
+   * It calls `realpathSync` on the whole path and, on `ENOENT`, falls back to the *lexical* string —
+   * so for a target that does not exist yet, which is what `write` and `mkdir` are for, it hands back
+   * the very path the attack is spelled in. Walking up to the nearest ancestor that DOES exist is
+   * what makes a prospective target answerable.
+   *
+   * ⚠️ `realpathSync.native` rather than the JS implementation: on Windows the JS one keeps a mapped
+   * or `subst` drive as `Y:\key.txt` while the native one collapses it to the real volume path.
+   * Both measured — `location-mutation.ts` carries the same note, from the same live bypass.
+   *
+   * ⚠️ **It cannot close a TOCTOU window** and does not claim to. An ancestor swapped between this
+   * call and the mutation still wins; only handle-relative operations would fix that. What this
+   * removes is the case needing no race at all — a link that is simply *there* when the request
+   * arrives.
+   */
+  export function canonical(p: string): string {
+    const absolute = pathResolve(windowsPath(p))
+    let anchor = absolute
+    const trailing: string[] = []
+    for (;;) {
+      try {
+        const root = realpathSync.native(anchor)
+        return trailing.length === 0 ? root : join(root, ...trailing.reverse())
+      } catch (e: any) {
+        // ENOTDIR as well as ENOENT: an ancestor that is a FILE reports the former, and it is just
+        // as much a "keep walking up" answer as a missing one.
+        if (e?.code !== "ENOENT" && e?.code !== "ENOTDIR") throw e
+      }
+      const parent = dirname(anchor)
+      // Reached the volume root without finding anything real — nothing to canonicalize against.
+      if (parent === anchor) return absolute
+      trailing.push(basename(anchor))
+      anchor = parent
+    }
+  }
+
+  /**
+   * Does `child` resolve to a real location inside `parent`? The canonical form of BOTH sides,
+   * compared with `contains`.
+   *
+   * ⚠️ Both sides, not just the child. A root reached through a symlink (a `/tmp` that is really
+   * `/private/tmp`, a junctioned project folder) canonicalizes too, and comparing a canonical child
+   * against a lexical parent would reject every legitimate path under it.
+   */
+  export function containsCanonical(parent: string, child: string) {
+    return contains(canonical(parent), canonical(child))
   }
 
   export function overlaps(a: string, b: string) {

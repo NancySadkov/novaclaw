@@ -39,6 +39,20 @@ function mutate(route: string, directory: string, body: unknown) {
   )
 }
 
+function put(route: string, directory: string, body: unknown) {
+  return HttpApiApp.webHandler().handler(
+    new Request(`http://localhost${route}`, {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        "x-novaclaw-directory": directory,
+      },
+      body: JSON.stringify(body),
+    }),
+    context,
+  )
+}
+
 afterEach(async () => {
   await disposeAllInstances()
   await resetDatabase()
@@ -117,5 +131,84 @@ describe("file HttpApi", () => {
     })
     expect(renamedFolder.status).toBe(200)
     expect((await fs.stat(path.join(tmp.path, "folder-after"))).isDirectory()).toBe(true)
+  })
+  /**
+   * 🔴 **Codex review NC-SEC-018 — the browsed-root boundary was a string comparison.**
+   *
+   * The API says its mutation paths are relative to the routed directory and that nothing escapes
+   * the browsed root; the guard was `path.resolve` plus lexical `FSUtil.contains`. A directory
+   * symlink — on Windows a junction, which needs no privilege — committed inside a project makes
+   * `escape/x` resolve lexically under the root while every mutation lands wherever it points. The
+   * client supplies no `..`, no absolute path, and does not choose a different root: a cloned
+   * repository is enough.
+   *
+   * ⚠️ Windows makes the link a JUNCTION. `fs.symlink(..., "dir")` needs Developer Mode there, so
+   * using it would make this case SKIP on the platform it matters most on. POSIX ignores the type.
+   */
+  test("🔴 mutations do not follow a project symlink out of the browsed root", async () => {
+    const DIR_LINK = process.platform === "win32" ? "junction" : "dir"
+    await using tmp = await tmpdir({ git: true })
+    await using outside = await tmpdir()
+
+    await fs.writeFile(path.join(outside.path, "valuable.txt"), "sentinel", "utf8")
+    await fs.symlink(outside.path, path.join(tmp.path, "escape"), DIR_LINK)
+
+    const before = await fs.readdir(outside.path)
+
+    const written = await put(FilePaths.write, tmp.path, { path: "escape/planted.txt", content: "owned" })
+    expect(written.status).toBe(400)
+
+    const clobbered = await put(FilePaths.write, tmp.path, { path: "escape/valuable.txt", content: "owned" })
+    expect(clobbered.status).toBe(400)
+
+    const made = await mutate(FilePaths.mkdir, tmp.path, { path: "escape/planted-folder" })
+    expect(made.status).toBe(400)
+
+    const renamed = await mutate(FilePaths.rename, tmp.path, { path: "escape/valuable.txt", name: "taken.txt" })
+    expect(renamed.status).toBe(400)
+
+    const trashed = await mutate(FilePaths.trash, tmp.path, { path: "escape/valuable.txt" })
+    expect(trashed.status).toBe(400)
+
+    // Nothing outside changed: same entries, same bytes.
+    expect((await fs.readdir(outside.path)).sort()).toEqual(before.sort())
+    expect(await Bun.file(path.join(outside.path, "valuable.txt")).text()).toBe("sentinel")
+  })
+
+  /**
+   * ⚠️ **The negative half.** A guard that refused every path would pass every assertion above. A
+   * link that canonicalizes back INSIDE the root is an ordinary project layout and must keep
+   * working, and so must ordinary paths and a not-yet-created file.
+   */
+  test("an internal symlink and ordinary paths still mutate normally", async () => {
+    const DIR_LINK = process.platform === "win32" ? "junction" : "dir"
+    await using tmp = await tmpdir({ git: true })
+    await fs.mkdir(path.join(tmp.path, "src"), { recursive: true })
+    await fs.symlink(path.join(tmp.path, "src"), path.join(tmp.path, "alias"), DIR_LINK)
+
+    const throughLink = await put(FilePaths.write, tmp.path, { path: "alias/inside.txt", content: "fine" })
+    expect(throughLink.status).toBe(200)
+    expect(await Bun.file(path.join(tmp.path, "src", "inside.txt")).text()).toBe("fine")
+
+    const plain = await put(FilePaths.write, tmp.path, { path: "deep/new/tree/file.txt", content: "ok" })
+    expect(plain.status).toBe(200)
+    expect(await Bun.file(path.join(tmp.path, "deep", "new", "tree", "file.txt")).text()).toBe("ok")
+
+    const folder = await mutate(FilePaths.mkdir, tmp.path, { path: "alias/sub" })
+    expect(folder.status).toBe(200)
+    expect((await fs.stat(path.join(tmp.path, "src", "sub"))).isDirectory()).toBe(true)
+  })
+
+  test("a `..` escape is still refused, with a typed 400 rather than a defect", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await using outside = await tmpdir()
+    await fs.writeFile(path.join(outside.path, "sibling.txt"), "sentinel", "utf8")
+
+    const escaped = await put(FilePaths.write, tmp.path, {
+      path: path.relative(tmp.path, path.join(outside.path, "sibling.txt")),
+      content: "owned",
+    })
+    expect(escaped.status).toBe(400)
+    expect(await Bun.file(path.join(outside.path, "sibling.txt")).text()).toBe("sentinel")
   })
 })

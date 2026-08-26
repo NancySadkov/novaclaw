@@ -7439,17 +7439,24 @@
             }
           },
           "400": {
-            "description": "Bad request",
+            "description": "InvalidRequestError",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
                 }
               }
             }
           }
         },
-        "description": "Write text content to a file under the routed directory (parents created).",
+        "description": "Write text content to a file whose real location is under the routed directory (parents created). A path that resolves outside it — including through a symlink or junction inside the folder — is refused.",
         "summary": "Write file",
         "requestBody": {
           "content": {
@@ -7596,7 +7603,7 @@
             }
           }
         },
-        "description": "Create a directory (recursive) under the routed directory.",
+        "description": "Create a directory (recursive) whose real location is under the routed directory. A path that resolves outside it — including through a symlink or junction inside the folder — is refused.",
         "summary": "Create directory",
         "requestBody": {
           "content": {
@@ -7684,7 +7691,7 @@
             }
           }
         },
-        "description": "Rename one entry under the routed directory without replacing an existing destination.",
+        "description": "Rename one entry under the routed directory without replacing an existing destination. Source and destination must both resolve inside it, symlinks and junctions followed.",
         "summary": "Rename file or directory",
         "requestBody": {
           "content": {
