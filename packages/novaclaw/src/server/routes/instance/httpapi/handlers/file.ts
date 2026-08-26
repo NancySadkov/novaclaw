@@ -133,13 +133,43 @@ export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handl
       return []
     })
 
+    const mutationError = (action: string, error: unknown) =>
+      new InvalidRequestError({
+        message: `Could not ${action}: ${error instanceof Error ? error.message : String(error)}`,
+      })
+
     // The write half (FS-1b/M4). Every mutating endpoint resolves against the routed directory and
-    // re-asserts FSUtil.contains — the ONLY thing preventing `path: "../../.."` writes outside the
-    // browsed root; keep the guard on any endpoint added here.
+    // re-asserts containment — the ONLY thing keeping a mutation inside the browsed root; keep the
+    // guard on any endpoint added here.
+    //
+    // 🔴 **`FSUtil.contains` alone was not that guard, and the gap needed no `..` at all** (Codex
+    // review NC-SEC-018). It compares two STRINGS, so `escape/settings.json` resolves lexically under
+    // the root whether or not `escape` is a directory symlink — or, on Windows, a junction, which any
+    // user can create — pointing somewhere else entirely. A cloned repository ships the link; an
+    // ordinary Files write, mkdir, rename or Trash then mutates unrelated user data, and Trash even
+    // records the external absolute path in the global store. `containsCanonical` resolves the target
+    // (or its nearest existing ancestor, which is what makes a not-yet-created file answerable) and
+    // compares the real locations.
+    //
+    // ⚠️ The LEXICAL check stays as the first arm rather than being replaced. It needs no syscall, it
+    // is what rejects `../../..` before anything touches the disk, and keeping both means the
+    // canonical arm is a narrowing — a path has to pass both, so no legitimate path that worked
+    // before can be newly admitted by this change.
+    //
+    // ⚠️ The path RETURNED is still the lexical one. A link that canonicalizes back inside the root
+    // is legitimate, and writing through it is what the user asked for; canonicalizing the returned
+    // path would silently redirect those writes and change what `rename` reports to the client.
+    // Only the decision is canonical.
+    //
+    // ⚠️ A TOCTOU window remains: an ancestor swapped between this check and the mutation still wins.
+    // Closing it needs handle-relative operations Node does not offer here. Stated rather than
+    // papered over — what is closed is the case that needs no race, which is the one a repository
+    // can arrange in advance.
     const resolveContained = Effect.fnUntraced(function* (relative: string) {
       const directory = (yield* InstanceState.context).directory
       const file = path.resolve(directory, relative)
-      if (!FSUtil.contains(directory, file)) return yield* Effect.die(new Error("Path escapes the location"))
+      if (!FSUtil.contains(directory, file) || !FSUtil.containsCanonical(directory, file))
+        return yield* new InvalidRequestError({ message: "That path is outside this folder" })
       return file
     })
 
@@ -148,14 +178,9 @@ export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handl
       yield* Effect.tryPromise(async () => {
         await fs.mkdir(path.dirname(file), { recursive: true })
         await fs.writeFile(file, ctx.payload.content, "utf8")
-      }).pipe(Effect.orDie)
+      }).pipe(Effect.mapError((error) => mutationError("write that file", error)))
       return { ok: true as const }
     })
-
-    const mutationError = (action: string, error: unknown) =>
-      new InvalidRequestError({
-        message: `Could not ${action}: ${error instanceof Error ? error.message : String(error)}`,
-      })
 
     const mkdir = Effect.fn("FileHttpApi.mkdir")(function* (ctx: { payload: { path: string; exclusive?: boolean } }) {
       const dir = yield* resolveContained(ctx.payload.path)

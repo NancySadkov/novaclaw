@@ -622,9 +622,18 @@ export const DialogNewModel: Component<{
                   had the priority backwards: NovaClaw's own story is "point it at your own model" — a local
                   vLLM / llama.cpp / LM Studio / Ollama endpoint — and that is also the path a user with no
                   models at all is most likely arriving on, since the picker now sends them straight here.
-                  The branded presets are the convenience; they follow.
                   ⚠️ S0 sits ABOVE this, not in place of it: a found runtime is the same story with the
-                  typing already done, and when nothing is found this is still the first card. */}
+                  typing already done, and when nothing is found this is still the first card.
+
+                  🔴 The `<For>` below used to render five BRANDED PUBLIC-CLOUD cards — DeepSeek, OpenAI,
+                  Anthropic, Moonshot, Z.ai — described here as "the convenience". They shipped as builtins
+                  and are deleted (Codex review NC-SEC-014): a first-party card that collects a vendor key
+                  and then streams the session's prompts, project grounding, recalled memory and attachments
+                  to a commercial endpoint is the paid-API/data-egress mode the product contract forbids
+                  outright (AGENTS.md, design principle 4). The loop STAYS, because `provider_presets` is a
+                  runtime store and a user's own entry — a Spark on the LAN, a box at 10.0.0.5 — belongs
+                  here exactly as before. On a clean install it renders nothing, which is why the two cards
+                  above it are the whole first screen and must remain self-sufficient. */}
               <button
                 type="button"
                 data-action="new-model-custom"

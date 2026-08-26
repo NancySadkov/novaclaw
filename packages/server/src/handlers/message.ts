@@ -1,6 +1,7 @@
 import { SessionMessage } from "@novaclaw/core/session/message"
 import { SessionV2 } from "@novaclaw/core/session"
 import { NamedError } from "@novaclaw/core/util/error"
+import { FSUtil } from "@novaclaw/core/fs-util"
 import { Effect, Schema } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { MessageApi, handlerLayer } from "../handler-api"
@@ -89,15 +90,66 @@ export const MessageHandler = handlerLayer(
             })
             const requested = ctx.payload.filename?.trim()
             const chosen = requested ? nodePath.basename(requested) || suggested : suggested
-            const target = nodePath.join(ctx.payload.directory, chosen.endsWith(".md") ? chosen : `${chosen}.md`)
-            yield* Effect.tryPromise({
+
+            /**
+             * 🔴 **The destination is resolved inside the SESSION'S OWN project folder** (Codex
+             * review NC-SEC-017). This handler used to take the payload's absolute `directory`
+             * verbatim: it obtained the session, then `mkdir -p`'d and wrote to an unrelated path
+             * with no comparison to the session location, instance home or temp. Basename
+             * normalisation above stopped filename traversal and did nothing at all about the
+             * directory that owns the write, so an authenticated client had a general "create
+             * directories and replace one chosen `.md`" primitive over every path the NovaClaw
+             * account can write — a sibling checkout, Documents, a drive root — on a machine that,
+             * for a headless or remote runtime, is not even the caller's.
+             *
+             * ⚠️ The canonical check as well as the lexical one, for the reason
+             * `FSUtil.containsCanonical` states: a symlink or junction inside the project makes an
+             * escaping path look internal to a string comparison.
+             */
+            const root = info.location?.directory
+            if (root === undefined)
+              return yield* new InvalidRequestError({
+                message: "This session has no project folder, so there is nowhere inside it to export to",
+              })
+            const into = ctx.payload.directory?.trim()
+            if (into !== undefined && into !== "" && nodePath.isAbsolute(into))
+              return yield* new InvalidRequestError({
+                message: "The export folder is relative to this session's project folder, not an absolute path",
+              })
+            const folder = nodePath.resolve(root, into === undefined || into === "" ? "." : into)
+            if (!FSUtil.contains(root, folder) || !FSUtil.containsCanonical(root, folder))
+              return yield* new InvalidRequestError({
+                message: "That export folder is outside this session's project folder",
+              })
+
+            const name = chosen.endsWith(".md") ? chosen : `${chosen}.md`
+            const target = yield* Effect.tryPromise({
               try: async () => {
-                await nodeFs.mkdir(ctx.payload.directory, { recursive: true })
-                await nodeFs.writeFile(target, rendered.markdown, "utf8")
+                await nodeFs.mkdir(folder, { recursive: true })
+                /**
+                 * 🔴 **`wx`, so an export never REPLACES.** The old call was a plain `writeFile`,
+                 * which truncates by default: exporting over an existing `.md` destroyed it with no
+                 * warning, no backup, no permission decision and no Trash entry. A collision now
+                 * lands beside the file instead, and the response's `path` — which the caller
+                 * already reads — says where the bytes actually went, so nothing is guessed and
+                 * nothing is lost.
+                 */
+                const base = name.slice(0, -".md".length)
+                for (let attempt = 0; ; attempt++) {
+                  const candidate = nodePath.join(folder, attempt === 0 ? name : `${base} (${attempt + 1}).md`)
+                  try {
+                    await nodeFs.writeFile(candidate, rendered.markdown, { encoding: "utf8", flag: "wx" })
+                    return candidate
+                  } catch (error) {
+                    // Give up rather than spin: 200 same-named exports in one folder is a caller
+                    // problem, and a silent infinite loop would be a worse answer than a message.
+                    if ((error as { code?: string })?.code !== "EEXIST" || attempt >= 200) throw error
+                  }
+                }
               },
               catch: (error) =>
                 new InvalidRequestError({
-                  message: `Could not write the export to ${ctx.payload.directory}: ${
+                  message: `Could not write the export to ${folder}: ${
                     error instanceof Error ? error.message : String(error)
                   }`,
                 }),

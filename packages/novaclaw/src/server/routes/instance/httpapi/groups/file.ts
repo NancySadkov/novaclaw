@@ -91,8 +91,13 @@ export const LegacyStatus = Schema.Struct({
 }).annotate({ identifier: "File" })
 
 // FS-1b write half (M4): write/mkdir + the safe-delete trash trio. Payload paths are RELATIVE to
-// the routed directory (same contract as `path` on list/content); the handler enforces
-// FSUtil.contains so nothing escapes the browsed root.
+// the routed directory (same contract as `path` on list/content); the handler resolves each one
+// against that directory and refuses anything whose REAL location is outside it.
+//
+// ⚠️ "Real location", not "path string". Until 2026-08-26 the guard was `FSUtil.contains` alone — a
+// comparison of two strings — so a directory symlink or Windows junction committed inside the
+// project made `escape/settings.json` look internal while the write landed wherever the link
+// pointed (Codex review NC-SEC-018). The handler now also canonicalizes; see `handlers/file.ts`.
 export const WritePayload = Schema.Struct({
   path: Schema.String,
   content: Schema.String,
@@ -201,11 +206,16 @@ export const FileApi = HttpApi.make("file")
           query: WorkspaceRoutingQuery,
           payload: WritePayload,
           success: described(OkResult, "File written"),
+          // Declared so a refused path is a legible 400 rather than a defect. It used to `die`,
+          // which is a 500 for what is simply a path the caller may not write (NC-SEC-018).
+          error: InvalidRequestError,
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "file.write",
             summary: "Write file",
-            description: "Write text content to a file under the routed directory (parents created).",
+            description:
+              "Write text content to a file whose real location is under the routed directory (parents created)." +
+              " A path that resolves outside it — including through a symlink or junction inside the folder — is refused.",
           }),
         ),
         HttpApiEndpoint.post("mkdir", FilePaths.mkdir, {
@@ -217,7 +227,9 @@ export const FileApi = HttpApi.make("file")
           OpenApi.annotations({
             identifier: "file.mkdir",
             summary: "Create directory",
-            description: "Create a directory (recursive) under the routed directory.",
+            description:
+              "Create a directory (recursive) whose real location is under the routed directory. A path that" +
+              " resolves outside it — including through a symlink or junction inside the folder — is refused.",
           }),
         ),
         HttpApiEndpoint.post("rename", FilePaths.rename, {
@@ -229,7 +241,9 @@ export const FileApi = HttpApi.make("file")
           OpenApi.annotations({
             identifier: "file.rename",
             summary: "Rename file or directory",
-            description: "Rename one entry under the routed directory without replacing an existing destination.",
+            description:
+              "Rename one entry under the routed directory without replacing an existing destination. Source and" +
+              " destination must both resolve inside it, symlinks and junctions followed.",
           }),
         ),
         HttpApiEndpoint.post("trash", FilePaths.trash, {

@@ -11307,9 +11307,9 @@ export type FileWriteData = {
 
 export type FileWriteErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestError | InvalidRequestError
 }
 
 export type FileWriteError = FileWriteErrors[keyof FileWriteErrors]
@@ -14101,7 +14101,6 @@ export type V2SessionCreateData = {
     responder?: "nova" | "operator"
     location?: LocationRef
     title?: string
-    permission?: PermissionRuleset
     strict?: SessionStrictOverride
     introspection?: boolean
     quality?: boolean
@@ -15641,9 +15640,12 @@ export type V2SessionMessageResponse = V2SessionMessageResponses[keyof V2Session
 export type V2SessionExportMarkdownData = {
   body: {
     /**
-     * Absolute folder to write the .md into.
+     * Folder to write the .md into, relative to the session's own project folder. Omitted = that folder itself. An absolute path, or one that resolves outside the project, is refused.
      */
-    directory: string
+    directory?: string
+    /**
+     * File name to write. Omitted = derived from the session title. Basename only.
+     */
     filename?: string
   }
   path: {

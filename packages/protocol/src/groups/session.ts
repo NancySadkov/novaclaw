@@ -23,7 +23,6 @@ import { Revert } from "@novaclaw/schema/revert"
 import { SessionEvent } from "@novaclaw/schema/session-event"
 import { SessionFeature } from "@novaclaw/schema/session-feature"
 import { SessionStrict } from "@novaclaw/schema/session-strict"
-import { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
 import { SessionTodo } from "@novaclaw/schema/session-todo"
 import { SessionPresence } from "@novaclaw/schema/session-presence"
 import { SessionExecution } from "@novaclaw/schema/session-execution"
@@ -120,9 +119,15 @@ const SessionActive = Schema.Struct({
 //
 // ⚠️ **WHAT THIS VIEW DELIBERATELY DOES NOT COVER**, stated rather than discovered later (ruling 2 —
 // a limit described falsely is worse than one described):
-//   · `Session.Info.permission` (the saved ruleset). It is on the wire and in the SDK, but it has no
-//     session COLUMN and is not a `SessionConfig` field (ruling 16), so it does not resolve through
-//     this walk at all. Generating from the descriptor excludes it BY CONSTRUCTION.
+//   · A saved per-session permission RULESET. There is no longer one, in either direction: ruling 16
+//     removed it from `Session.Info` and from the create payload, because it was written by the edge
+//     and read by nobody — `permission.ts` resolves the AGENT's ruleset. One authority for
+//     permissions is the decision; a second on the session row is the widening path the org chart
+//     calls a coup. ⚠️ An optional field the handler drops is not a smaller version of that: a
+//     caller sending a DENY got 2xx and no restriction, and the field is gone from the payload, the
+//     OpenAPI spec and the generated SDK so nothing advertises it any more. ⚠️ It is DROPPED, not
+//     REFUSED — see the note on `device` below. Old clients that still send it are ignored, which is
+//     the residue recorded with the removal rather than a claim that the edge rejects it.
 //   · The COMPOSED system prompt. `systemPromptOverride` is a config field and is reported; the text
 //     the model actually receives is assembled per turn by `session/runner/system-compose.ts` from
 //     the agent definition, project files, memory recall and the tool list. Computing it here would
@@ -297,10 +302,21 @@ export const makeSessionGroups = <
             agent: Agent.ID.pipe(Schema.optional),
             model: Model.Ref.pipe(Schema.optional),
             // Device affinity (v0.2.0 B2) — the `DeviceRegistry` id whose admission gate and fairness
-            // ledger this session's turns queue on. The payload is `additionalProperties: false`, so
-            // without this line the field is REJECTED at the edge rather than passed through: a
-            // `session.device` column with no wire writer would be settable by nothing outside the
-            // kernel, which is the inert shape B2's first step deleted three fields for.
+            // ledger this session's turns queue on. Without this line the field is DROPPED at the
+            // edge rather than passed through: a `session.device` column with no wire writer would be
+            // settable by nothing outside the kernel, which is the inert shape B2's first step
+            // deleted three fields for.
+            //
+            // 🔴 **DROPPED, not REJECTED — this comment and its twin below said "REJECTED" until
+            // 2026-08-26, and the OpenAPI projection they cited is not the enforcement.** The spec
+            // does emit `additionalProperties: false`, but effect 4.0.0-beta.83 decodes objects with
+            // `onExcessProperty: "ignore"` by DEFAULT and `effect/unstable/httpapi` never overrides
+            // it (the option name appears nowhere in that directory). Measured through the real
+            // declared endpoint: a body carrying an unlisted key decodes to the listed keys only and
+            // the request SUCCEEDS. So an unlisted field cannot reach the handler — which is all the
+            // argument above needs — but a client is never TOLD it was ignored. That distinction is
+            // the whole of NC-SEC-012, and the spec promising a rejection the runtime does not
+            // perform is its own honesty defect (ruling 2), not something to re-derive from here.
             device: Schema.String.pipe(Schema.optional),
             controlBinding: Schema.NonEmptyString.pipe(Schema.optional),
             systemPromptOverride: Schema.String.pipe(Schema.optional),
@@ -312,14 +328,12 @@ export const makeSessionGroups = <
             responder: Schema.Literals(["nova", "operator"]).pipe(Schema.optional),
             location: Location.Ref.pipe(Schema.optional),
             title: Schema.String.pipe(Schema.optional),
-            // The caller's explicit saved permission ruleset (the headless runner's allow-all).
-            permission: PermissionRuleset.Ruleset.pipe(Schema.optional),
             // Per-session overrides staged from the composer (V1-nuke slice C: these rode $body_
             // extras over the V1 create before).
             //
-            // ⚠️ EVERY member of `SessionFeature.Name` belongs here, and the payload is
-            // `additionalProperties: false`, so a missing field is not "passed through unread" — it is
-            // REJECTED at the edge. From the landing of `safeMode` (2026-07-31) until 2026-07-31 only
+            // ⚠️ EVERY member of `SessionFeature.Name` belongs here: a missing field is not "passed
+            // through unread", it is DROPPED at the edge and never reaches the handler (see the
+            // `device` note above for why that is dropped rather than rejected). From the landing of `safeMode` (2026-07-31) until 2026-07-31 only
             // the first three were listed, so a draft that ticked *Safe mode*, *Ask before changes* or
             // *Surgical edits* in the composer's Tuning panel created a session without them: three
             // RESTRICTIONS the UI accepted and the wire discarded, which is ruling 2 (*a failed

@@ -34,6 +34,31 @@ describe("the ingress governor", () => {
     expect(at(state, "1.2.3.4", 1_000 + 60_000)).toBeUndefined()
   })
 
+  test("🔴 a source's REFUSED requests do not spend the instance's global allowance", () => {
+    /**
+     * 🔴 Codex review, NC-SEC-004. The governor charged the global bucket BEFORE it consulted the
+     * source bucket, so every request one address made past its own limit still burned a global
+     * slot. One address sending `GLOBAL_PER_MINUTE` requests was admitted `PER_SOURCE_PER_MINUTE`
+     * times and left the instance-wide counter full — a remote off switch for every other peer,
+     * from one socket, with no botnet and no proof of work.
+     *
+     * ⚠️ The neighbouring "one source cannot spend the instance's whole minute" test sent exactly
+     * ONE request past the source allowance, so it never reached the global ceiling and passed
+     * against the defect. The bound is only exercised by overspending it.
+     */
+    const state = CommunityAdmission.make()
+    let admitted = 0
+    for (let i = 0; i < CommunityAdmission.GLOBAL_PER_MINUTE; i++)
+      if (at(state, "1.2.3.4", 1_000) === undefined) admitted++
+    expect(admitted).toBe(CommunityAdmission.PER_SOURCE_PER_MINUTE)
+
+    // The whole point: a well-behaved peer arriving after the flood is still served.
+    expect(at(state, "5.6.7.8", 1_000)).toBeUndefined()
+
+    // And the global counter holds only what was actually ADMITTED, not what was attempted.
+    expect(state.global.count).toBe(CommunityAdmission.PER_SOURCE_PER_MINUTE + 1)
+  })
+
   test("🔴 many sources cannot walk past the per-source limit — the global ceiling", () => {
     /**
      * Per-source alone is not a bound: an attacker arrives from many addresses, and peer exchange

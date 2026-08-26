@@ -94,7 +94,6 @@ const createFullyConfigured = (session: SessionV2.Interface, parentID?: SessionS
       introspection: true,
       quality: true,
       affective: true,
-      permission: [{ permission: "bash", pattern: "*", action: "deny" }],
     })
     yield* session.switchResponder({ sessionID: created.id, responder: "operator" })
     yield* session.switchFeature({ sessionID: created.id, feature: "thinkingBudget", enabled: true })

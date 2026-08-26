@@ -964,30 +964,7 @@ export const apply = (patch: Config.Info) =>
           "config.offline.hosts": [...policy.allowedHosts],
         })
     }
-    // ⚠️ Community consent follows the SAME post-commit path as the airgap, and must: accepting the
-    // warning has to take effect on the next call, not the next boot. It is passed the live offline
-    // policy rather than importing it, so the two conditions stay independent.
-    if (consumed.has("community") || consumed.has("offline")) {
-      // The value as just committed, not a re-read: see `CommunityConsent.applied`.
-      const stored = (yield* (yield* SettingsConfigStore.Service).all())["community"]
-      const gate = yield* Effect.sync(() => CommunityConsent.applied(stored, Offline.currentPolicy()))
-      /**
-       * 🔴 And the DHT sidecar is brought into line HERE, on the same post-commit path, because
-       * "the community is off" was a fact only the settings knew: the Kademlia node kept running and
-       * kept republishing this instance's provider record every 12 hours. Switching the feature off,
-       * engaging the airgap and clearing the published address are three ways to say the same thing
-       * to the commons, and none of them reached the process that was talking to it.
-       *
-       * ⚠️ `offline` is in the condition as well as `community` — the airgap forces the gate shut
-       * without any `community` key being written, which is exactly the path that left a node
-       * advertising from a machine its owner believed was sealed.
-       */
-      yield* CommunityDht.reconcile({
-        participates: CommunityConsent.participates(gate),
-        ...announceOf(stored),
-        ...bootstrapOf(stored),
-      })
-    }
+    yield* reconcileCommunity(consumed)
     if (consumed.has("watcher")) yield* Watcher.reload()
     // AFTER the commit and after the domain reloads: the colleague is told once its new folder is
     // both durable and live, so a turn woken by the notice reads the folder the notice describes.
@@ -1037,6 +1014,46 @@ const announceOf = (stored: unknown): { announce?: string } => {
   const announce = (stored as { announce?: unknown } | undefined)?.announce
   return typeof announce === "string" && announce.trim() !== "" ? { announce } : {}
 }
+
+/**
+ * Settle Community with what was just committed — the process-local consent gate AND the live DHT
+ * sidecar — on the post-commit path shared by {@link apply} and {@link remove}.
+ *
+ * ⚠️ It follows the SAME post-commit path as the airgap, and must: accepting the warning has to take
+ * effect on the next call, not the next boot. It is passed the live offline policy rather than
+ * importing it, so the two conditions stay independent.
+ *
+ * 🔴 **The DHT sidecar is brought into line here because "the community is off" was a fact only the
+ * settings knew.** The Kademlia node keeps running and keeps republishing this instance's provider
+ * record every 12 hours; switching the feature off, engaging the airgap and clearing the published
+ * address are three ways to say the same thing to the commons, and none of them reached the process
+ * that was talking to it.
+ *
+ * ⚠️ `offline` is in the condition as well as `community` — the airgap forces the gate shut without
+ * any `community` key being written, which is exactly the path that left a node advertising from a
+ * machine its owner believed was sealed.
+ *
+ * 🔴 **And this exists as ONE function because the two callers had DRIFTED** (Codex review
+ * NC-SEC-011). `apply` did all of the above; `remove` — the verb whose entire purpose is *"take this
+ * back"* — updated only the consent gate and never reconciled the sidecar, and its condition was
+ * missing `offline` as well. So `POST /api/config/remove ["community"]` or `["community","announce"]`
+ * committed, answered 2xx, and left the node serving and republishing the very address the user had
+ * just deleted, until the process was restarted or some later `apply` happened to settle it. The
+ * removal was durable, live in the UI, and false to the network. Two copies of a post-commit
+ * settlement is how that happens; the fix is not a third copy.
+ */
+const reconcileCommunity = (consumed: ReadonlySet<string>) =>
+  Effect.gen(function* () {
+    if (!consumed.has("community") && !consumed.has("offline")) return
+    // The value as just committed, not a re-read: see `CommunityConsent.applied`.
+    const stored = (yield* (yield* SettingsConfigStore.Service).all())["community"]
+    const gate = yield* Effect.sync(() => CommunityConsent.applied(stored, Offline.currentPolicy()))
+    yield* CommunityDht.reconcile({
+      participates: CommunityConsent.participates(gate),
+      ...announceOf(stored),
+      ...bootstrapOf(stored),
+    })
+  })
 
 const policyKey = (policy: Offline.Policy) => `${policy.enabled}:${[...policy.allowedHosts].sort().join(",")}`
 
@@ -1361,14 +1378,7 @@ export const remove = (
           "config.offline.hosts": [...policy.allowedHosts],
         })
     }
-    // ⚠️ Community consent follows the SAME post-commit path as the airgap, and must: accepting the
-    // warning has to take effect on the next call, not the next boot. It is passed the live offline
-    // policy rather than importing it, so the two conditions stay independent.
-    if (consumed.has("community")) {
-      // The value as just committed, not a re-read: see `CommunityConsent.applied`.
-      const stored = (yield* (yield* SettingsConfigStore.Service).all())["community"]
-      yield* Effect.sync(() => CommunityConsent.applied(stored, Offline.currentPolicy()))
-    }
+    yield* reconcileCommunity(consumed)
     if (consumed.has("watcher")) yield* Watcher.reload()
     const stuck = restartRequired(consumed)
     if (stuck.length > 0)

@@ -2192,7 +2192,7 @@ class ApiFile extends NovaClawApiClient {
   /**
    * Write file
    *
-   * Write text content to a file under the routed directory (parents created).
+   * Write text content to a file whose real location is under the routed directory (parents created). A path that resolves outside it — including through a symlink or junction inside the folder — is refused.
    */
   public write<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -2237,7 +2237,7 @@ class ApiFile extends NovaClawApiClient {
   /**
    * Create directory
    *
-   * Create a directory (recursive) under the routed directory.
+   * Create a directory (recursive) whose real location is under the routed directory. A path that resolves outside it — including through a symlink or junction inside the folder — is refused.
    */
   public mkdir<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -2262,7 +2262,7 @@ class ApiFile extends NovaClawApiClient {
   /**
    * Rename file or directory
    *
-   * Rename one entry under the routed directory without replacing an existing destination.
+   * Rename one entry under the routed directory without replacing an existing destination. Source and destination must both resolve inside it, symlinks and junctions followed.
    */
   public rename<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -4282,7 +4282,6 @@ class ApiV2Session extends NovaClawApiClient {
       responder?: "nova" | "operator"
       location?: T.LocationRef
       title?: string
-      permission?: T.PermissionRuleset
       strict?: T.SessionStrictOverride
       introspection?: boolean
       quality?: boolean
@@ -4311,7 +4310,6 @@ class ApiV2Session extends NovaClawApiClient {
       responder: parameters?.["responder"],
       location: parameters?.["location"],
       title: parameters?.["title"],
-      permission: parameters?.["permission"],
       strict: parameters?.["strict"],
       introspection: parameters?.["introspection"],
       quality: parameters?.["quality"],
@@ -5040,12 +5038,12 @@ class ApiV2Session extends NovaClawApiClient {
   /**
    * Export a session as Markdown
    *
-   * Render the whole session to a Markdown file in the given folder. A session that is still running exports what exists so far and is marked as captured mid-turn.
+   * Render the whole session to a Markdown file inside the session's own project folder. The destination is relative to that folder and never replaces an existing file — a name collision is written alongside it, and the response says where the bytes actually landed. A session that is still running exports what exists so far and is marked as captured mid-turn.
    */
   public exportMarkdown<ThrowOnError extends boolean = false>(
     parameters: {
       sessionID: string
-      directory: string
+      directory?: string
       filename?: string
     },
     options?: Options<never, ThrowOnError>,

@@ -47,47 +47,36 @@ export class Info extends Schema.Class<Info>("ConfigV2.ProviderPreset")({
   }),
 }) {}
 
-/** Built-in defaults. URLs verified live 2026-07-21 (each answers GET {baseURL}/models; z.ai
- *  added + verified 2026-07-24 — its /models is auth-gated, like anthropic's, so it lists once a
- *  key is supplied). */
-export const BUILTINS: Record<string, Info> = {
-  deepseek: Info.make({
-    name: "DeepSeek",
-    description: "DeepSeek chat and reasoning models",
-    baseURL: "https://api.deepseek.com/v1",
-    keyURL: "https://platform.deepseek.com/api_keys",
-    api: "@ai-sdk/openai-compatible",
-  }),
-  openai: Info.make({
-    name: "OpenAI",
-    description: "GPT models from OpenAI",
-    baseURL: "https://api.openai.com/v1",
-    keyURL: "https://platform.openai.com/api-keys",
-    api: "@ai-sdk/openai",
-  }),
-  anthropic: Info.make({
-    name: "Anthropic",
-    description: "Claude models from Anthropic",
-    baseURL: "https://api.anthropic.com/v1",
-    keyURL: "https://console.anthropic.com/settings/keys",
-    api: "@ai-sdk/anthropic",
-    authStyle: "anthropic",
-  }),
-  moonshot: Info.make({
-    name: "Kimi (Moonshot AI)",
-    description: "Kimi models from Moonshot AI",
-    baseURL: "https://api.moonshot.ai/v1",
-    keyURL: "https://platform.moonshot.ai/console/api-keys",
-    api: "@ai-sdk/openai-compatible",
-  }),
-  zai: Info.make({
-    name: "Z.ai (GLM)",
-    description: "GLM chat, reasoning, and coding models from Z.ai",
-    baseURL: "https://api.z.ai/api/paas/v4",
-    keyURL: "https://z.ai/manage-apikey/apikey-list",
-    api: "@ai-sdk/openai-compatible",
-  }),
-}
+/**
+ * Built-in defaults — **deliberately EMPTY, and this is a product rule rather than an oversight.**
+ *
+ * 🔴 NovaClaw's north star says the deliverable *"runs entirely against local models: no paid APIs,
+ * and your data never egresses"*, and design principle 4 repeats it: the data plane never leaves the
+ * machine. Until 2026-08-26 this record shipped five branded public-cloud cards — DeepSeek, OpenAI,
+ * Anthropic, Moonshot, Z.ai — each with a vendor endpoint and a *"get an API key"* purchase link,
+ * and the New Model dialog rendered them on a clean install. Choosing one filled its public
+ * `baseURL`, collected a credential, and from the next turn every composed system prompt, provider
+ * history, project grounding, recalled memory, tool definition and attachment went to a commercial
+ * endpoint. That is not an advanced misconfiguration a user wandered into; it was the first-party
+ * happy path implementing precisely the mode the contract forbids, under a UI line that reassured
+ * the user about where their KEY was stored and said nothing about where their CHATS were going.
+ * (Codex review NC-SEC-014. Ruling 10's own adversary pass reaches the same place from the other
+ * side: the paid tier "is excluded by design-principle #4".)
+ *
+ * ⚠️ **What was NOT deleted, and why the distinction matters.** The three `ApiChannel` protocol
+ * implementations stay. They are transport, and the endpoints a user actually points them at —
+ * vLLM, llama.cpp, LM Studio, Ollama, a Spark on the LAN — speak them. Deleting a wire format
+ * because a cloud vendor also speaks it would remove local capability to make a point.
+ *
+ * ⚠️ **And this is not by itself an egress boundary.** `effective()` below still merges runtime
+ * `provider_presets` overrides, and the config surface still accepts an arbitrary custom endpoint,
+ * because self-healing requires both. Refusing a public destination at the probe, config-admission
+ * and turn-dispatch seams is a separate locality policy that does not exist yet (NC-SEC-014's second
+ * half). What this record now guarantees is narrower and worth stating exactly: **NovaClaw ships no
+ * public-cloud destination and no commercial key link of its own.** A user who deliberately adds one
+ * is choosing it; a user who opened the dialog on a clean install is no longer being offered it.
+ */
+export const BUILTINS: Record<string, Info> = {}
 
 /** Drop undefined fields so a sparse override never clobbers a builtin value with undefined. */
 const defined = (value: Info): Partial<Info> =>

@@ -92,10 +92,17 @@ export type Refusal = "rate" | "busy"
  *
  * ⚠️ `now` is a parameter rather than a `Date.now()` call inside, so the windows can be exercised
  * without sleeping — a rate limiter tested by waiting is a rate limiter nobody runs.
+ *
+ * 🔴 **The SOURCE bucket is charged first, and a request it refuses never touches the global one.**
+ * The reverse order — the one this function shipped with — turns the instance-wide ceiling into a
+ * remote off switch: one address sends `GLOBAL_PER_MINUTE` requests, its own bucket refuses all but
+ * the first `PER_SOURCE_PER_MINUTE`, and every one of those refusals has *already* spent a global
+ * slot. The next well-behaved peer then meets a full global bucket and is refused before its own
+ * bucket is even consulted. A ceiling that an over-limit request can spend is not a ceiling; the
+ * per-source limit exists precisely so that one caller's excess is charged to that caller.
  */
 export const admit = (state: State, source: string, now: number): Refusal | undefined => {
   if (state.inFlight >= MAX_CONCURRENT) return "busy"
-  if (!tick(state.global, now, GLOBAL_PER_MINUTE)) return "rate"
   let bucket = state.sources.get(source)
   if (bucket === undefined) {
     if (state.sources.size >= MAX_SOURCES) {
@@ -107,6 +114,7 @@ export const admit = (state: State, source: string, now: number): Refusal | unde
     state.sources.set(source, bucket)
   }
   if (!tick(bucket, now, PER_SOURCE_PER_MINUTE)) return "rate"
+  if (!tick(state.global, now, GLOBAL_PER_MINUTE)) return "rate"
   state.inFlight += 1
   return undefined
 }
