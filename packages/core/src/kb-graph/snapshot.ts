@@ -41,6 +41,12 @@ export namespace GraphSnapshot {
   /** How many quarantined generations are retained — the newest damage, so this stays bounded. */
   const KEEP_QUARANTINE = 1
   const CURRENT = "CURRENT"
+  /**
+   * The newest generation that was READ BACK successfully after being written — not merely the newest
+   * one published. `CURRENT` says what to try first; this says what is known to work, and `prune`
+   * refuses to delete it. They are usually the same name and diverge exactly when it matters.
+   */
+  const LASTGOOD = "LASTGOOD"
   const MANIFEST = "MANIFEST"
   const GEN_PREFIX = "g-"
   const STAGE_PREFIX = ".staging-"
@@ -151,8 +157,39 @@ export namespace GraphSnapshot {
     renameSync(tmp, pointer)
     syncDir(root)
 
+    /**
+     * 🔴 **VERIFY WHAT WE JUST WROTE, BEFORE ANYTHING OLDER IS ELIGIBLE FOR DELETION.**
+     *
+     * A publish that cannot be read back is not a publish, and until 2026-08-26 nothing checked: two
+     * such generations in a row filled the retention window and pruned the user's whole store behind
+     * them. Recording the winner here is what gives `prune` something it is allowed to keep.
+     *
+     * ⚠️ `CURRENT` is still advanced either way. A generation that fails this check is exactly what
+     * `candidates()`/`restore` already handle by falling back, and rolling the pointer back would add
+     * a second recovery path competing with the one that is tested.
+     */
+    if (read({ name, dir, index: next, legacy: false }) !== undefined) {
+      const good = join(root, LASTGOOD)
+      const goodTmp = `${good}.tmp`
+      writeDurable(goodTmp, Buffer.from(name))
+      renameSync(goodTmp, good)
+      syncDir(root)
+    } else {
+      console.warn(`kb-memory: ${name} did not read back after publish — pinning the last verified generation instead`)
+    }
+
     prune(root)
     return name
+  }
+
+  /** The pinned generation, if one has ever verified and still exists. */
+  function lastGood(root: string): string | undefined {
+    try {
+      const name = readFileSync(join(root, LASTGOOD), "utf8").trim()
+      return name && isDir(join(root, name)) ? name : undefined
+    } catch {
+      return undefined
+    }
   }
 
   /**
@@ -279,11 +316,36 @@ export namespace GraphSnapshot {
     const gens = readdirSync(root)
       .filter((n) => genIndex(n) >= 0 && isDir(join(root, n)))
       .sort((a, b) => genIndex(b) - genIndex(a))
-    for (const stale of gens.slice(keep)) rmSync(join(root, stale), { recursive: true, force: true })
+
+    /**
+     * 🔴 **THE LAST VERIFIED GENERATION IS PINNED AND NEVER PRUNED.**
+     *
+     * Retention counted by INDEX alone, so two unreadable generations filled both `KEEP = 2` slots
+     * and the only good store the user had was deleted behind them. Measured 2026-08-26 on two
+     * separate stores after a WASM abort during checkpoint:
+     * `fell back to an EMPTY store; unusable: g-000111, g-000110 (both checksum failed)` →
+     * `stats.total = 0`. **1516 nodes and 200 absorbed passages gone**, quarantine copies only. On a
+     * real instance that is the user's entire memory, and nothing warned them.
+     *
+     * ⚠️ **"Spare the newest generation that still reads" does NOT fix this, which is why it is not
+     * what this does.** Prune runs on every publish, so the steady state IS `keep` generations — by
+     * the time both are known bad there is nothing older left to spare. The protection has to be
+     * established while a generation is still known GOOD, so `publish` verifies its own output and
+     * records the winner in `LASTGOOD`; this only refuses to delete it.
+     */
+    const pinned = lastGood(root)
+    for (const old of gens.slice(keep))
+      if (old !== pinned) rmSync(join(root, old), { recursive: true, force: true })
     for (const name of readdirSync(root)) {
       const p = join(root, name)
       if (name.startsWith(STAGE_PREFIX)) rmSync(p, { recursive: true, force: true })
-      else if (name !== CURRENT && !name.startsWith(QUARANTINE_PREFIX) && genIndex(name) < 0 && !isDir(p))
+      else if (
+        name !== CURRENT &&
+        name !== LASTGOOD && // the pin is a POINTER, not a superseded legacy file — sweeping it would un-pin the store
+        !name.startsWith(QUARANTINE_PREFIX) &&
+        genIndex(name) < 0 &&
+        !isDir(p)
+      )
         rmSync(p, { force: true })
     }
   }

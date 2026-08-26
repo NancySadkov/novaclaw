@@ -226,3 +226,69 @@ function sha(text: string): string {
   const { createHash } = require("node:crypto") as typeof import("node:crypto")
   return createHash("sha256").update(Buffer.from(text)).digest("hex")
 }
+
+describe("🔴 the last VERIFIED generation is pinned, so two bad checkpoints cannot empty the store", () => {
+  /**
+   * The incident, 2026-08-26. Two checkpoints published generations that did not read back. `KEEP = 2`
+   * counted them by INDEX, so they filled both retained slots and the store the user actually had was
+   * pruned behind them: `fell back to an EMPTY store`, `stats.total = 0` — 1516 nodes and 200 absorbed
+   * passages gone, on two separate stores.
+   *
+   * ⚠️ The obvious fix — "when pruning, spare the newest generation that still reads" — does NOT work,
+   * and proving that is why this file says so. Prune runs on every publish, so the steady state IS two
+   * generations; by the time both are known bad there is nothing older left to spare. The pin has to be
+   * taken while a generation is still known good.
+   */
+  const pin = (dir: string) => readFileSync(join(dir, "LASTGOOD"), "utf8").trim()
+
+  test("publish pins the generation it just read back", () => {
+    const dir = fresh()
+    GraphSnapshot.publish(dir, set(["graph", "A"]))
+    const second = GraphSnapshot.publish(dir, set(["graph", "B"]))
+    expect(pin(dir)).toBe(second)
+  })
+
+  /**
+   * A generation that does NOT read back, injected through the public API only: a payload named
+   * `MANIFEST` is written, digested, and then overwritten by the real manifest — so the manifest
+   * describes bytes the file no longer holds, which is precisely "Checksum verification failed".
+   * No private hook and no monkey-patching, so this cannot pass because the injection missed.
+   */
+  const unverifiable = (dir: string, value: string) =>
+    GraphSnapshot.publish(dir, set(["graph", value], ["MANIFEST", "clobbered"]))
+
+  test("a generation that cannot be read back does NOT take the pin", () => {
+    const dir = fresh()
+    const good = GraphSnapshot.publish(dir, set(["graph", "A"]))
+    unverifiable(dir, "B")
+    expect(pin(dir)).toBe(good) // the pin stayed put, which is the whole mechanism
+  })
+
+  test("🔴 two unverifiable publishes in a row do NOT erase the store", () => {
+    const dir = fresh()
+    const good = GraphSnapshot.publish(dir, set(["graph", "A"]))
+    unverifiable(dir, "B")
+    unverifiable(dir, "C") // this publish's prune is what deleted `good` before the fix
+
+    expect(existsSync(join(dir, good))).toBe(true)
+    expect(restored(dir)?.files).toEqual({ graph: "A" }) // before the fix: undefined — total memory loss
+  })
+
+  // ⚠️ CONTROL. "Never delete anything" would pass every test above, so the ordinary path must still prune.
+  test("the ordinary path still prunes — the pin is one generation, not a hoard", () => {
+    const dir = fresh()
+    const oldest = GraphSnapshot.publish(dir, set(["graph", "A"]))
+    GraphSnapshot.publish(dir, set(["graph", "B"]))
+    GraphSnapshot.publish(dir, set(["graph", "C"]))
+    expect(existsSync(join(dir, oldest))).toBe(false)
+    expect(readdirSync(dir).filter((n) => n.startsWith("g-")).length).toBe(2)
+  })
+
+  test("the pin FILE survives pruning — sweeping it would silently un-pin the store", () => {
+    const dir = fresh()
+    GraphSnapshot.publish(dir, set(["graph", "A"]))
+    GraphSnapshot.publish(dir, set(["graph", "B"]))
+    GraphSnapshot.prune(dir)
+    expect(existsSync(join(dir, "LASTGOOD"))).toBe(true)
+  })
+})
