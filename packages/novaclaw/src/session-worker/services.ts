@@ -9,11 +9,14 @@ import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { SessionSpawner } from "@novaclaw/core/session/spawner"
 import { ColleagueHandoff } from "@novaclaw/core/session/colleague-handoff"
 import { SessionJoin } from "@novaclaw/core/session/join"
+import { Memory } from "@novaclaw/core/kb-graph/memory"
+import { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
+import { SessionWorkerProtocol } from "@novaclaw/core/session/execution/worker-protocol"
 import { EventManifest } from "@novaclaw/schema/event-manifest"
 import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
 import type { SessionWorkerCapabilities } from "./capabilities"
 import { makeGlobalNode, makeLocationNode } from "@novaclaw/core/effect/app-node"
-import type { LayerNode } from "@novaclaw/core/effect/layer-node"
+import { LayerNode } from "@novaclaw/core/effect/layer-node"
 
 const unavailable = (operation: string) => new Error(`${operation} is host-only in a session worker`)
 const hostEvents = new Set<string>([
@@ -31,6 +34,7 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
   readonly spawner: SessionSpawner.Interface
   readonly join: SessionJoin.Interface
   readonly colleague: ColleagueHandoff.Interface
+  readonly memory: MemoryClient.Interface
 } {
   const events: EventV2.Interface = {
     publish: (definition, data, options) => {
@@ -279,7 +283,74 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
       ),
   }
 
-  return { events, permission, question, scheduler, spawner, join, colleague }
+  /**
+   * 🔴 **THE MEMORY GRAPH HAS ONE WRITER, AND FROM HERE IT IS THE HOST'S.**
+   *
+   * Every other service in this file crosses because its EFFECT must be visible to the host. Memory
+   * crosses because its STORE must be the host's — which is the same rule one level down. Measured:
+   * `replacements()` swapped seven services and not `Memory.node`, so a worker built a real second
+   * WASM engine on `<instance data>/memory/graph` while the host's lazy engine opened the moment
+   * anything host-side read memory during a live turn. `memory.ts`'s header claimed single-writer
+   * throughout; generation snapshots then made two writers destructive rather than merely redundant,
+   * because `publish()` picks `max(existing) + 1` and each writer prunes to KEEP=2 without knowing
+   * about the other's generations.
+   *
+   * ⚠️ **It also fixes observation, which nothing was watching.** The host's layer provides the
+   * OBSERVED client — `memory.*` events on the host bus, access-ledger rows in the host database. A
+   * worker-local engine published to the worker's own bus, so a claim written mid-turn was invisible
+   * to the Memory app by construction, and the ledger rows the pruning policy reads were split across
+   * two processes.
+   *
+   * ⚠️ **The cost is an RPC per memory op**, and auto-recall makes one `search` per turn. That is a
+   * request/response over the same stdio line protocol every permission assertion already uses, on a
+   * path that was already going to open a WASM engine.
+   */
+  const memoryOp = <A>(
+    op: SessionWorkerProtocol.MemoryOp,
+    args: ReadonlyArray<unknown>,
+  ): Effect.Effect<A, MemoryClient.MemoryError> =>
+    Effect.tryPromise({
+      try: () => capabilities.memory(op, args),
+      catch: (cause) => new MemoryClient.MemoryError({ reason: String(cause).slice(0, 300) }),
+    }).pipe(
+      Effect.flatMap((reply) =>
+        reply.outcome === "ok"
+          ? Effect.succeed(reply.value as A)
+          : // A host-side REJECTION reaches the model as an ordinary memory failure, because that is
+            // what a caller can act on — every consumer of this interface already degrades when the
+            // store says no. The distinction survives in `reason`, which is where a person debugging
+            // it will look.
+            Effect.fail(new MemoryClient.MemoryError({ reason: reply.reason ?? `memory ${op} ${reply.outcome}` })),
+      ),
+    )
+
+  const memory: MemoryClient.Interface = {
+    // `health` never fails by contract, so an unreachable host reads as "memory is not available"
+    // rather than taking a turn down — the same stance the lazy client takes when the engine is off.
+    health: () => memoryOp<boolean>("health", []).pipe(Effect.orElseSucceed(() => false)),
+    addMemory: (input) => memoryOp<void>("addMemory", [input]),
+    addEdge: (input, access) => memoryOp<MemoryClient.EdgeResult>("addEdge", [input, access]),
+    search: (input) => memoryOp<ReadonlyArray<MemoryClient.SearchHit>>("search", [input]),
+    neighbors: (id, access, opts) => memoryOp<ReadonlyArray<MemoryClient.Neighbor>>("neighbors", [id, access, opts]),
+    path: (from, to, access, maxHops) => memoryOp<MemoryClient.PathResult | null>("path", [from, to, access, maxHops]),
+    invalidate: (id, access, at) => memoryOp<void>("invalidate", [id, access, at]),
+    purge: (id, access) => memoryOp<void>("purge", [id, access]),
+    addClaim: (input, access) => memoryOp<MemoryClient.ClaimResult>("addClaim", [input, access]),
+    claimHistory: (id, access) => memoryOp<MemoryClient.ClaimHistory | null>("claimHistory", [id, access]),
+    reviewEvidence: (locator, access) => memoryOp<number>("reviewEvidence", [locator, access]),
+    setClaimStatus: (id, status, access) => memoryOp<boolean>("setClaimStatus", [id, status, access]),
+    moveScope: (from, to) => memoryOp<void>("moveScope", [from, to]),
+    clearScope: (scope) => memoryOp<void>("clearScope", [scope]),
+    eraseAll: () => memoryOp<number>("eraseAll", []),
+    discardLegacyGlobalExtracts: () => memoryOp<number>("discardLegacyGlobalExtracts", []),
+    stats: () => memoryOp<MemoryClient.Stats>("stats", []),
+    list: (input) => memoryOp<ReadonlyArray<MemoryClient.MemoryRow>>("list", [input]),
+    candidates: (input) => memoryOp<ReadonlyArray<MemoryClient.CandidateRow>>("candidates", [input]),
+    byIds: (ids) => memoryOp<ReadonlyArray<MemoryClient.MemoryRow>>("byIds", [ids]),
+    graph: (input) => memoryOp<MemoryClient.MemoryGraph>("graph", [input]),
+  }
+
+  return { events, permission, question, scheduler, spawner, join, colleague, memory }
 }
 
 export function replacements(capabilities: SessionWorkerCapabilities.Capabilities): LayerNode.Replacements {
@@ -328,6 +399,36 @@ export function replacements(capabilities: SessionWorkerCapabilities.Capabilitie
         layer: Layer.succeed(SessionSpawner.Service, services.spawner),
         deps: [],
       }),
+    ],
+    /**
+     * 🔴 **`Memory.node`, replaced the same way the other seven are — this is the single-writer fix.**
+     *
+     * It is rebuilt rather than pointed at, because `Memory.node` is a CAPABILITY node: consumers
+     * hold `Capability<MemoryClient.Interface>` and resolve it per call, and a replacement has to
+     * have the same shape or the deferral disappears along with the engine. So the proxying client
+     * goes into a service node and that node is wrapped in the same `LayerNode.capability` with the
+     * same name — which is also what keeps `capabilities()` reporting one `memory` capability rather
+     * than two.
+     *
+     * ⚠️ `repair` is deliberately the SAME hint as the real node's. A worker whose memory is
+     * unavailable is a worker whose HOST memory is unavailable, and pointing a reader at a different
+     * knob depending on which process noticed would be a lie about where the problem is.
+     */
+    [
+      Memory.node,
+      LayerNode.capability(
+        makeGlobalNode({
+          service: MemoryClient.Service,
+          layer: Layer.succeed(MemoryClient.Service, services.memory),
+          deps: [],
+        }),
+        {
+          name: "memory",
+          service: MemoryClient.Service,
+          timeout: "30 seconds",
+          repair: ["runtime_flags.NOVACLAW_KB_MEMORY"],
+        },
+      ),
     ],
     [
       SessionScheduler.node,

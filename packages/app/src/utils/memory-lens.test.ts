@@ -65,6 +65,15 @@ describe("applyLens", () => {
     expect(result.unmeasured).toContain("not recording")
   })
 
+  test("🔴 every lens whose source is not `list` names a DISTINCT route, and none is left unreachable", () => {
+    // The three ledger lenses each read their own endpoint, and each of those endpoints spent a
+    // while answering correctly with nobody calling it. A lens whose `source` collided with
+    // another's would put one of them back in that state while the tab strip still showed it.
+    const ledgerLenses = LENSES.filter((lens) => lens.source !== "list")
+    expect(ledgerLenses.map((lens) => lens.source).toSorted()).toEqual(["corrections", "never-used", "useful"])
+    for (const lens of ledgerLenses) expect(lens.statuses).toBeUndefined()
+  })
+
   test("⚠️ Never used reads its OWN route — it is a fact about the ledger, not about the claim", () => {
     // A status set can never express "nothing has ever recalled this", so the lens names the
     // endpoint instead of leaving the list to infer it from the id.
@@ -74,7 +83,14 @@ describe("applyLens", () => {
   })
 
   test("every lens in the row of tabs is reachable and carries a one-line hint", () => {
-    expect(LENSES.map((lens) => lens.id)).toEqual(["current", "needs-review", "never-used", "history"])
+    expect(LENSES.map((lens) => lens.id)).toEqual([
+      "current",
+      "needs-review",
+      "never-used",
+      "useful",
+      "corrections",
+      "history",
+    ])
     for (const lens of LENSES) {
       expect(lens.hint.length).toBeGreaterThan(0)
       expect(lens.hint.length).toBeLessThan(90)
@@ -88,7 +104,11 @@ describe("forgottenIDs / includeInvalid", () => {
     // `active`. Verified on a live instance 2026-08-25: the row vanished from `statuses=` reads AND
     // from an unfiltered one, and came back only with `includeInvalid=1`.
     expect(lensByID("history").includeInvalid).toBe(true)
-    for (const id of ["current", "needs-review", "never-used"]) expect(lensByID(id).includeInvalid).toBe(false)
+    for (const id of ["current", "needs-review", "never-used", "useful"]) expect(lensByID(id).includeInvalid).toBe(false)
+    // ⚠️ `corrections` is the exception, and deliberately: its groups are built from claim
+    // IDENTITIES and a superseded claim is exactly what they are about, so filtering retired rows
+    // out from under them would empty the lens of the thing it exists to show.
+    expect(lensByID("corrections").includeInvalid).toBe(true)
   })
 
   test("the forgotten rows are the DIFFERENCE between the two reads", () => {

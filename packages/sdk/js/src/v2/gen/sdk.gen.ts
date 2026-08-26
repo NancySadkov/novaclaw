@@ -3042,153 +3042,6 @@ class ApiMemory extends NovaClawApiClient {
   }
 
   /**
-   * Never recalled
-   *
-   * Memories no recall has ever returned, oldest first. `scanned`/`partial` say how far the scan reached — a short answer is not proof there are no more.
-   */
-  public neverUsed<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-      scopes?: string
-      limit?: string
-      scan?: string
-      minCorrected?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = {
-      directory: parameters?.["directory"],
-      workspace: parameters?.["workspace"],
-      scopes: parameters?.["scopes"],
-      limit: parameters?.["limit"],
-      scan: parameters?.["scan"],
-      minCorrected: parameters?.["minCorrected"],
-    }
-    return (options?.client ?? this.client).get<T.MemoryNeverUsedResponses, T.MemoryNeverUsedErrors, ThrowOnError>({
-      url: "/memory/usage/never-used",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Vouched for
-   *
-   * Memories a person marked useful. These are protected from the forgetting pass outright, not merely weighted.
-   */
-  public usefulMemories<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-      scopes?: string
-      limit?: string
-      scan?: string
-      minCorrected?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = {
-      directory: parameters?.["directory"],
-      workspace: parameters?.["workspace"],
-      scopes: parameters?.["scopes"],
-      limit: parameters?.["limit"],
-      scan: parameters?.["scan"],
-      minCorrected: parameters?.["minCorrected"],
-    }
-    return (options?.client ?? this.client).get<
-      T.MemoryUsefulMemoriesResponses,
-      T.MemoryUsefulMemoriesErrors,
-      ThrowOnError
-    >({
-      url: "/memory/usage/useful",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Keeps being corrected
-   *
-   * Grouped by claim IDENTITY, not by claim: a single claim is superseded at most once, so 'repeatedly' can only be a property of the question.
-   */
-  public correctionProne<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-      scopes?: string
-      limit?: string
-      scan?: string
-      minCorrected?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = {
-      directory: parameters?.["directory"],
-      workspace: parameters?.["workspace"],
-      scopes: parameters?.["scopes"],
-      limit: parameters?.["limit"],
-      scan: parameters?.["scan"],
-      minCorrected: parameters?.["minCorrected"],
-    }
-    return (options?.client ?? this.client).get<
-      T.MemoryCorrectionProneResponses,
-      T.MemoryCorrectionProneErrors,
-      ThrowOnError
-    >({
-      url: "/memory/usage/corrections",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Why is this here
-   *
-   * Every recall that returned one memory: when, from which surface, at what rank, and whether it was used, vouched for or later corrected. The query is a fingerprint and never the words.
-   */
-  public usageDetail<ThrowOnError extends boolean = false>(
-    parameters: {
-      directory?: string
-      workspace?: string
-      id: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"], id: parameters?.["id"] }
-    return (options?.client ?? this.client).get<T.MemoryUsageDetailResponses, T.MemoryUsageDetailErrors, ThrowOnError>({
-      url: "/memory/usage/detail",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Mark useful
-   *
-   * Vouch for a memory recall handed you, or retract the vouch. A vouched memory is never pruned.
-   */
-  public feedback<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-      id?: string
-      useful?: boolean
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
-    const body = { id: parameters?.["id"], useful: parameters?.["useful"] }
-    return (options?.client ?? this.client).post<T.MemoryFeedbackResponses, T.MemoryFeedbackErrors, ThrowOnError>({
-      url: "/memory/feedback",
-      ...options,
-      query,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
    * Clear a scope
    *
    * Delete every memory in a scope (e.g. one chat, or all global).
@@ -3711,6 +3564,202 @@ class ApiV2Health extends NovaClawApiClient {
   }
 }
 
+class ApiV2MemoryClaim extends NovaClawApiClient {
+  /**
+   * Archive, restore or flag a claim
+   *
+   * Move one claim between the statuses a person controls: `archived` (kept, never recalled), `active` (restored), `needs_review` (flagged). `superseded` is the lifecycle's own and cannot be set here. Answers whether the status actually changed.
+   */
+  public status<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+      status: "active" | "archived" | "needs_review"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { id: parameters?.["id"], status: parameters?.["status"] }
+    return (options?.client ?? this.client).post<
+      T.V2MemoryClaimStatusResponses,
+      T.V2MemoryClaimStatusErrors,
+      ThrowOnError
+    >({
+      url: "/api/memory/claim/status",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Record a claim
+   *
+   * Write a governed claim: file it against its subject and its evidence, and retire the claim it corrects. Supersession is keyed on scope + subject + predicate, so a claim that names both replaces the current answer to that question and the reply lists what it retired.
+   */
+  public add<ThrowOnError extends boolean = false>(
+    parameters: {
+      statement: string
+      scope?: string
+      subject?: string
+      predicate?:
+        | "about"
+        | "birthday"
+        | "dislikes"
+        | "email"
+        | "employer"
+        | "knows"
+        | "language"
+        | "likes"
+        | "location"
+        | "name"
+        | "owner"
+        | "path"
+        | "phone"
+        | "preference"
+        | "role"
+        | "status"
+        | "timezone"
+        | "uses"
+        | "version"
+        | "works_on"
+      confidence?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      source?: string
+      agent?: string
+      validFrom?: string
+      evidence?: Array<{
+        kind: "chat" | "message" | "passage" | "file" | "url" | "test" | "command" | "commit"
+        locator: string
+        label?: string
+      }>
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = {
+      statement: parameters?.["statement"],
+      scope: parameters?.["scope"],
+      subject: parameters?.["subject"],
+      predicate: parameters?.["predicate"],
+      confidence: parameters?.["confidence"],
+      source: parameters?.["source"],
+      agent: parameters?.["agent"],
+      validFrom: parameters?.["validFrom"],
+      evidence: parameters?.["evidence"],
+    }
+    return (options?.client ?? this.client).post<T.V2MemoryClaimAddResponses, T.V2MemoryClaimAddErrors, ThrowOnError>({
+      url: "/api/memory/claim",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+}
+
+class ApiV2MemoryUsage extends NovaClawApiClient {
+  /**
+   * Never recalled
+   *
+   * Memories no recall has ever returned, oldest first. `scanned`/`partial` say how far the scan reached — a short answer is not proof there are no more.
+   */
+  public neverUsed<ThrowOnError extends boolean = false>(
+    parameters?: {
+      scopes?: Array<string>
+      limit?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      scan?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { scopes: parameters?.["scopes"], limit: parameters?.["limit"], scan: parameters?.["scan"] }
+    return (options?.client ?? this.client).post<
+      T.V2MemoryUsageNeverUsedResponses,
+      T.V2MemoryUsageNeverUsedErrors,
+      ThrowOnError
+    >({
+      url: "/api/memory/usage/never-used",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Vouched for
+   *
+   * Memories a person marked useful. These are protected from the forgetting pass outright, not merely weighted.
+   */
+  public useful<ThrowOnError extends boolean = false>(
+    parameters?: {
+      scopes?: Array<string>
+      limit?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { scopes: parameters?.["scopes"], limit: parameters?.["limit"] }
+    return (options?.client ?? this.client).post<
+      T.V2MemoryUsageUsefulResponses,
+      T.V2MemoryUsageUsefulErrors,
+      ThrowOnError
+    >({
+      url: "/api/memory/usage/useful",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Keeps being corrected
+   *
+   * Grouped by claim IDENTITY, not by claim: a single claim is superseded at most once, so 'repeatedly' can only be a property of the question.
+   */
+  public corrections<ThrowOnError extends boolean = false>(
+    parameters?: {
+      scopes?: Array<string>
+      limit?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      minCorrected?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = {
+      scopes: parameters?.["scopes"],
+      limit: parameters?.["limit"],
+      minCorrected: parameters?.["minCorrected"],
+    }
+    return (options?.client ?? this.client).post<
+      T.V2MemoryUsageCorrectionsResponses,
+      T.V2MemoryUsageCorrectionsErrors,
+      ThrowOnError
+    >({
+      url: "/api/memory/usage/corrections",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Why is this here
+   *
+   * Every recall that returned one memory: when, from which surface, at what rank, and whether it was used, vouched for or later corrected. The query is a fingerprint and never the words.
+   */
+  public detail<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { id: parameters?.["id"] }
+    return (options?.client ?? this.client).post<
+      T.V2MemoryUsageDetailResponses,
+      T.V2MemoryUsageDetailErrors,
+      ThrowOnError
+    >({
+      url: "/api/memory/usage/detail",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+}
+
 class ApiV2Memory extends NovaClawApiClient {
   /**
    * Erase all memory
@@ -3722,6 +3771,37 @@ class ApiV2Memory extends NovaClawApiClient {
       url: "/api/memory/erase",
       ...options,
     })
+  }
+
+  /**
+   * Mark useful
+   *
+   * Vouch for a memory recall handed you, or retract the vouch. A vouched memory is never pruned.
+   */
+  public feedback<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+      useful: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { id: parameters?.["id"], useful: parameters?.["useful"] }
+    return (options?.client ?? this.client).post<T.V2MemoryFeedbackResponses, T.V2MemoryFeedbackErrors, ThrowOnError>({
+      url: "/api/memory/feedback",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  private _claim?: ApiV2MemoryClaim
+  get claim(): ApiV2MemoryClaim {
+    return (this._claim ??= new ApiV2MemoryClaim({ client: this.client }))
+  }
+
+  private _usage?: ApiV2MemoryUsage
+  get usage(): ApiV2MemoryUsage {
+    return (this._usage ??= new ApiV2MemoryUsage({ client: this.client }))
   }
 }
 

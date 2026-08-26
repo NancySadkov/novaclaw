@@ -5,8 +5,17 @@ import { SettingsMemoryV2 } from "@/components/settings-v2/memory"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { useGlobal } from "@/context/global"
 import { useServer, ServerConnection } from "@/context/server"
-import { memoryGraph, type MemoryGraph, type MemoryRow } from "@/utils/memory-api"
+import {
+  memoryClaimStatus,
+  memoryGraph,
+  memoryUsageDetail,
+  type MemoryGraph,
+  type MemoryRow,
+  type UsageAccess,
+  type UsageCounts,
+} from "@/utils/memory-api"
 import { instanceDiagnosis } from "@/utils/resource-api"
+import { showToast } from "@/utils/toast"
 import { memoryFaultDetail, memoryUnavailable } from "@/utils/memory-health"
 import {
   defaultFilter,
@@ -71,15 +80,15 @@ const scopeColor = (scope: string) =>
 const FLARE_COLOUR = { new: "#e0a33e", edit: "#22d3ee", retire: "#94a3b8" } as const
 
 /**
- * WHY ARCHIVE/RESTORE IS DISABLED — a named blocker, not a shrug.
+ * WHAT ARCHIVING MEANS, said where the button is.
  *
- * 🔴 Everything except the route exists: `wasm-engine.setClaimStatus`, `MemoryClient.setClaimStatus`,
- * and a `memory.claim.status` event the store publishes the moment it moves. There is no HTTP
- * endpoint for it, so this client has nothing to call. The control is shown DISABLED rather than
- * hidden because hiding it teaches that archiving is impossible, and enabled-but-inert is the exact
- * failure this slice deleted from the header — a control that cannot work is worse than none.
+ * ⚠️ Not "delete". An archived claim is still in the cabinet and still reachable from this map; what
+ * changes is that recall stops handing it to the model. Saying "archive" alone would leave a user
+ * guessing which of the two it was, and the two have very different consequences for a fact they
+ * might want back.
  */
-const ARCHIVE_BLOCKED = "Not reachable yet: this instance has no endpoint for changing a claim's status."
+const ARCHIVE_MEANS = "Kept, but never recalled. You can restore it."
+const RESTORE_MEANS = "Recalled again, from now on."
 
 /** ⚠️ Says WHO CAN READ IT, never the raw key. `agent:talent-scout` is a store key; "Talent Scout's
  *  own" is the fact the user needs, and the difference is whether the badge can be acted on. */
@@ -106,10 +115,23 @@ const nodeLabel = (node: { kind?: string; name?: string | null; text?: string | 
   return truncate(node.text ?? "", 24)
 }
 
-/** ⚠️ A shape encoding nobody can decode is a different mystery, not a fix. */
+/**
+ * ⚠️ A shape encoding nobody can decode is a different mystery, not a fix.
+ *
+ * 🔴 `claim` was missing from this list, and the list IS the only way to turn a kind on. The canvas
+ * asks `filter.kinds.has(kind)` for every kind the store has, so a kind with no chip and no place in
+ * the default set can never be drawn — every claim was folded into a hub, and the inspector's claim
+ * half (identity, timeline, Archive/Restore) was reachable only by pressing "Show every claim" on
+ * that hub. It draws as the square, which is what the canvas already gave it as a fallback.
+ *
+ * ⚠️ `source` — a citation node — deliberately still has no chip, and it draws as a square too. It is
+ * scaffolding rather than something a person browses, and giving it a chip beside `claim` would put
+ * two different kinds behind one shape, which is the mystery this comment starts by refusing.
+ */
 const KIND_LEGEND = [
   { kind: "entity", label: "Entity — a thing NovaClaw knows about" },
   { kind: "episode", label: "Episode — something that happened" },
+  { kind: "claim", label: "Claim — a fact with an identity, so a later one can correct it" },
   { kind: "passage", label: "Passage — source text it came from" },
 ] as const
 
@@ -190,6 +212,68 @@ export function MemoryGraphPage() {
     return path?.home || path?.directory || ""
   }
   const [tick, setTick] = createSignal(0)
+  /**
+   * ARCHIVE / RESTORE, and the one id currently in flight.
+   *
+   * ⚠️ **`false` is rendered as a REFUSAL, not as success.** The endpoint answers whether the status
+   * actually moved, and a claim that is gone or already in that state answers `false`. Drawing the
+   * change anyway is the shape of defect this app has already been bitten by: a message that says the
+   * thing happened while the store disagrees.
+   *
+   * ⚠️ The re-read is a `tick`, not a local edit of the row. The store is the authority on a claim's
+   * status — the same reconcile-then-animate rule the activity overlay follows — and patching the
+   * row here would make the canvas and the cabinet disagree the first time a write is refused.
+   */
+  /**
+   * 🔴 "WHY IS THIS HERE" — the access ledger's own answer, on demand.
+   *
+   * `/memory/usage/detail` answered correctly and had no caller, so the one question a person asks
+   * about a memory they did not expect to see — *where did this come from, and has it ever been any
+   * use?* — had no surface at all. It is behind a disclosure rather than always on, per principle
+   * 12(d): the row states what is in force in one line, and everything longer is asked for.
+   *
+   * ⚠️ Fetched per open, never cached across selections. The ledger changes on every recall, and a
+   * stale answer here is a claim about a measurement rather than the measurement.
+   */
+  const [whyOpen, setWhyOpen] = createSignal<string | undefined>()
+  const [why] = createResource(
+    () => {
+      const cn = conn()
+      const id = whyOpen()
+      return cn && id ? { cn, dir: directory(), id } : undefined
+    },
+    ({ cn, dir, id }) =>
+      memoryUsageDetail(cn.http, { directory: dir, id })
+        .then((answer) => ({ ok: true, ...answer }) as const)
+        .catch(() => ({ ok: false, usage: null as UsageCounts | null, accesses: [] as readonly UsageAccess[] }) as const),
+  )
+
+  const [lifecycleBusy, setLifecycleBusy] = createSignal<string | undefined>()
+  const setLifecycle = async (id: string) => {
+    const cn = conn()
+    const row = rowOf(id)
+    if (!cn || !row) return
+    const next = row.status === "archived" ? "active" : "archived"
+    setLifecycleBusy(id)
+    try {
+      const moved = await memoryClaimStatus(cn.http, { directory: directory(), id, status: next })
+      if (!moved)
+        showToast({
+          variant: "error",
+          title: "Nothing changed",
+          description: "That claim is already in that state, or it is no longer in the cabinet.",
+        })
+      setTick((value) => value + 1)
+    } catch (error) {
+      showToast({
+        variant: "error",
+        title: next === "archived" ? "Could not archive" : "Could not restore",
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setLifecycleBusy(undefined)
+    }
+  }
 
   // WHO works here — the server context's ONE shared roster, so the two surfaces can never disagree
   // about who exists.
@@ -1589,25 +1673,102 @@ export function MemoryGraphPage() {
                           </ul>
                         </div>
                       </Show>
-                      {/* ARCHIVE / RESTORE — offered, DISABLED, and honest about why.
-                          🔴 The engine has `setClaimStatus` and the store already publishes
-                          `memory.claim.status` when it moves; what is missing is an HTTP endpoint
-                          to reach it. Showing an enabled button that silently does nothing is the
-                          inert-control failure this slice just deleted elsewhere, and hiding the
-                          control entirely would teach that memory is one-way when it is not. So it
-                          says what is missing — which is also how the person who can fix it finds
-                          out. */}
-                      <div class="mb-3 flex items-center gap-2" data-slot="memory-inspector-lifecycle">
+                      {/* ARCHIVE / RESTORE — live now that `/api/memory/claim/status` exists.
+                          ⚠️ A SUPERSEDED claim is not restorable from here and the control says so
+                          rather than offering a button that would answer `false`. Restoring it would
+                          put two current answers to one question in the cabinet, which is the state
+                          the lifecycle exists to prevent; the way back is to make a new claim. */}
+                      {/* WHY IS THIS HERE — the ledger's answer, asked for rather than always shown. */}
+                      <div class="mb-3" data-slot="memory-inspector-why">
                         <button
                           type="button"
-                          data-slot="memory-inspector-archive"
-                          disabled
-                          title={ARCHIVE_BLOCKED}
-                          class="cursor-not-allowed rounded bg-v2-background-bg-layer-03 px-2 py-1 text-xs opacity-40"
+                          data-slot="memory-inspector-why-toggle"
+                          class="text-xs underline opacity-60 hover:opacity-100"
+                          onClick={() => setWhyOpen((current) => (current === sel().id ? undefined : sel().id))}
                         >
-                          {isRetired(rowOf(sel().id)) ? "Restore" : "Archive"}
+                          {whyOpen() === sel().id ? "Hide why this is here" : "Why is this here?"}
                         </button>
-                        <span class="text-[11px] opacity-40">{ARCHIVE_BLOCKED}</span>
+                        <Show when={whyOpen() === sel().id}>
+                          <Show
+                            when={why()}
+                            fallback={<p class="mt-1 text-[11px] opacity-50">Asking the ledger…</p>}
+                          >
+                            {(answer) => (
+                              <div class="mt-1 text-[11px] opacity-70">
+                                <Show
+                                  when={answer().ok}
+                                  fallback={
+                                    <p class="opacity-60">
+                                      This instance could not answer — it may not be recording which memories get
+                                      recalled.
+                                    </p>
+                                  }
+                                >
+                                  <Show
+                                    when={answer().usage}
+                                    fallback={
+                                      /* ⚠️ Not "never useful". No recall has ever RETURNED it, which is a
+                                         different and much weaker statement, and the one the ledger can
+                                         actually make. */
+                                      <p class="opacity-60">No recall has ever returned this one.</p>
+                                    }
+                                  >
+                                    {(usage) => (
+                                      <p>
+                                        Returned {usage().accesses}×, reached the model {usage().uses}×
+                                        {usage().useful > 0 ? ", vouched for" : ""}
+                                        {usage().corrections > 0
+                                          ? `, and cost ${usage().corrections} wrong answer${usage().corrections === 1 ? "" : "s"} before it was corrected`
+                                          : ""}
+                                        .
+                                      </p>
+                                    )}
+                                  </Show>
+                                  {/* ⚠️ The QUESTION is a fingerprint and never the words — a recall query
+                                      is built from the user's own prompt, and putting it on this panel
+                                      would make an open Memory app a copy of the prompt stream. */}
+                                  <Show when={answer().accesses.length > 0}>
+                                    <ul class="mt-1 flex flex-col gap-0.5">
+                                      <For each={answer().accesses.slice(0, 6)}>
+                                        {(access) => (
+                                          <li class="opacity-60">
+                                            {new Date(access.accessedAt).toLocaleString()} · {access.surface} · rank{" "}
+                                            {access.rank}
+                                            {access.usedAt === null ? " · not shown to the model" : ""}
+                                          </li>
+                                        )}
+                                      </For>
+                                    </ul>
+                                  </Show>
+                                </Show>
+                              </div>
+                            )}
+                          </Show>
+                        </Show>
+                      </div>
+                      <div class="mb-3 flex items-center gap-2" data-slot="memory-inspector-lifecycle">
+                        <Show
+                          when={rowOf(sel().id)?.status !== "superseded"}
+                          fallback={
+                            <span class="text-[11px] opacity-50" data-slot="memory-inspector-superseded">
+                              Replaced by a newer answer — record a new claim to change it back.
+                            </span>
+                          }
+                        >
+                          <button
+                            type="button"
+                            data-slot="memory-inspector-archive"
+                            disabled={lifecycleBusy() === sel().id}
+                            title={rowOf(sel().id)?.status === "archived" ? RESTORE_MEANS : ARCHIVE_MEANS}
+                            class="rounded bg-v2-background-bg-layer-03 px-2 py-1 text-xs opacity-80 hover:opacity-100 disabled:opacity-40"
+                            onClick={() => void setLifecycle(sel().id)}
+                          >
+                            {rowOf(sel().id)?.status === "archived" ? "Restore" : "Archive"}
+                          </button>
+                          <span class="text-[11px] opacity-50">
+                            {rowOf(sel().id)?.status === "archived" ? RESTORE_MEANS : ARCHIVE_MEANS}
+                          </span>
+                        </Show>
                       </div>
                     </>
                   }

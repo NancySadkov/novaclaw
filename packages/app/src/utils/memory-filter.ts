@@ -47,19 +47,43 @@ export interface MemoryFilter {
  */
 export const ALL_KINDS: readonly string[] = ["entity", "episode", "passage"]
 
-/** The default a surface opens with: everything the store considers current, passages folded away. */
+/**
+ * The default a surface opens with: everything the store considers current, passages folded away.
+ *
+ * 🔴 **`claim` is here, and its absence was a real hole.** The Map asks `kinds.has(kind)` for EVERY
+ * memory kind, while `ALL_KINDS` — the chips — names only three. So `claim` was never in the set and
+ * never had a chip to put it there: every claim on the canvas was collapsed into a hub, and the claim
+ * inspector (its identity, its timeline, and Archive/Restore) was reachable only by finding the hub
+ * and pressing "Show every claim". Measured in the running app on 2026-08-26, on a store holding two
+ * claims and nothing else: `4 memories · 4 links`, `3 hidden`, and selecting a claim from the
+ * Remembered list switched to the Map with no inspector at all, because the id was not among the
+ * projected nodes.
+ *
+ * A claim is the thing this app is ABOUT — "what NovaClaw treats as true right now" is a list of
+ * them — so it is visible by default, unlike `passage` (bulk source text) and `source` (citation
+ * scaffolding), both of which stay folded and stay revealable through their hub.
+ */
 export const defaultFilter = (): MemoryFilter => ({
   query: "",
-  kinds: new Set(["entity", "episode"]),
+  kinds: new Set(DEFAULT_KINDS),
   lens: defaultLens(),
 })
 
-/** Is the filter doing anything at all? Drives whether a surface bothers to report counts. */
+/** The kinds a surface opens with. Named so `isNarrowed` can compare against it rather than a count. */
+export const DEFAULT_KINDS: readonly string[] = ["entity", "episode", "claim"]
+
+/**
+ * Is the filter doing anything at all? Drives whether a surface bothers to report counts.
+ *
+ * ⚠️ Compared against `DEFAULT_KINDS` rather than against a literal size. The old form asserted
+ * `kinds.size !== 2`, so adding one kind to the default made every surface report itself as narrowed
+ * forever — a magic number about a set is a claim that goes stale the first time the set changes.
+ */
 export const isNarrowed = (filter: MemoryFilter): boolean =>
   filter.query.trim().length > 0 ||
   filter.lens !== defaultLens() ||
-  filter.kinds.size !== 2 ||
-  !filter.kinds.has("entity")
+  filter.kinds.size !== DEFAULT_KINDS.length ||
+  DEFAULT_KINDS.some((kind) => !filter.kinds.has(kind))
 
 /**
  * Does one memory match the text?

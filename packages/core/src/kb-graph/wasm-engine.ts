@@ -1250,6 +1250,19 @@ export class WasmMemory {
    * `superseded_by` pointer and a `supersedes` edge, and a status set without them is a claim that
    * claims it was replaced by nothing. Corrections go through `addClaim`; this is the Archive/Restore
    * pair and nothing else.
+   *
+   * 🔴 **…AND A SUPERSEDED CLAIM CANNOT BE MOVED OUT OF IT EITHER — the other direction of the same
+   * rule, which was missing.** Refusing to SET `superseded` while allowing a superseded row to be set
+   * back to `active` is one rule with one door: the retired claim's `superseded_by` pointer and its
+   * `supersedes` edge both survive, so the store ends up with TWO active answers to one question, one
+   * of them still saying it was replaced. Measured 2026-08-26 against this engine the moment
+   * `POST /api/memory/claim/status` first made the operation reachable from outside a model turn:
+   * `setClaimStatus(<a superseded claim>, "active")` answered `true` and recall then returned both
+   * the retired answer and the one that replaced it.
+   *
+   * The way back from a correction is to record a NEW claim, which retires the current one under the
+   * same lock. That keeps "which claim answers this question now" a property of the lifecycle rather
+   * than something two surfaces can disagree about.
    */
   setClaimStatus(
     id: string,
@@ -1259,7 +1272,7 @@ export class WasmMemory {
     return this.serialize(async () => {
       const scopeFilter = opts.scopes ? `AND m.scope IN $scopes` : ``
       const rows = await this.rows(
-        `MATCH (m:Memory {id: $id}) WHERE m.kind = 'claim' ${scopeFilter}
+        `MATCH (m:Memory {id: $id}) WHERE m.kind = 'claim' AND m.status <> 'superseded' ${scopeFilter}
          SET m.status = $status RETURN m.id AS id`,
         { id, status, ...(opts.scopes ? { scopes: opts.scopes } : {}) },
       )

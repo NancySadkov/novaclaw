@@ -10,8 +10,11 @@ import {
   memoryClearScope,
   memoryInvalidate,
   memoryList,
+  memoryCorrectionProne,
+  memoryFeedback,
   memoryNeverUsed,
   memoryStats,
+  memoryUseful,
   type MemoryRow,
 } from "@/utils/memory-api"
 import { instanceDiagnosis } from "@/utils/resource-api"
@@ -164,6 +167,31 @@ export const MemoryRemembered: Component<{
           ...(answer.partial ? { partialScan: answer.scanned } : {}),
         }
       }
+      /**
+       * 🔴 `Vouched for` and `Keeps being corrected` are the OTHER two ledger questions, and until
+       * this branch existed their routes answered correctly and nothing called them. A vouched
+       * memory is excluded from the forgetting pass outright, so "which ones are protected" had no
+       * surface at all — the protection was reachable and unused, which from a user's side is the
+       * same as absent.
+       */
+      if (source === "useful") {
+        const answer = await memoryUseful(cn.http, {
+          directory: dir,
+          ...(scopes === undefined ? {} : { scopes }),
+          limit: 500,
+        }).catch(() => undefined)
+        if (!answer) return { rows: [] as MemoryRow[], forgotten: EMPTY_IDS, unanswered: true }
+        return { rows: answer.items as readonly MemoryRow[], forgotten: EMPTY_IDS }
+      }
+      if (source === "corrections") {
+        const answer = await memoryCorrectionProne(cn.http, { directory: dir, limit: 200 }).catch(() => undefined)
+        if (!answer) return { rows: [] as MemoryRow[], forgotten: EMPTY_IDS, unanswered: true }
+        // ⚠️ FLATTENED, and the grouping survives as the caption on each row rather than as nesting.
+        // The row component is the one place a memory is rendered; a second, nested renderer for one
+        // lens would be a second answer to "how does a memory look", free to drift from the first.
+        const rows = answer.groups.flatMap((group) => group.items) as readonly MemoryRow[]
+        return { rows, forgotten: EMPTY_IDS }
+      }
       const rows = await memoryList(cn.http, { ...query, includeInvalid }).catch(() => [] as MemoryRow[])
       // 🔴 THE SECOND READ EXISTS BECAUSE THE WIRE CARRIES NO VALIDITY FIELD. Measured on a live
       // instance: a forgotten row comes back from `includeInvalid` still reading `status: "active"`,
@@ -310,6 +338,38 @@ export const MemoryRemembered: Component<{
     )
     setLocalTick((value) => value + 1)
     void refetch()
+  }
+
+  /**
+   * WHICH MEMORIES THIS SESSION HAS VOUCHED FOR.
+   *
+   * ⚠️ Local, and deliberately not a re-read of `usage/useful` per row. The vouch is a write whose
+   * only visible consequence lives in another lens; keeping the button's own state here is what lets
+   * it answer immediately, and the authority is still the server — switching to `Vouched for` asks
+   * it, and this set never contradicts that list because it only ever holds what this session sent.
+   */
+  const [vouched, setVouched] = createSignal<ReadonlySet<string>>(EMPTY_IDS)
+  const vouch = async (row: MemoryRow) => {
+    const cn = conn()
+    if (!cn) return
+    const next = !vouched().has(row.id)
+    try {
+      await memoryFeedback(cn.http, { directory: directory(), id: row.id, useful: next })
+      setVouched((current) => {
+        const set = new Set(current)
+        if (next) set.add(row.id)
+        else set.delete(row.id)
+        return set
+      })
+      // The `Vouched for` lens reads the ledger, so it has to be re-asked rather than patched.
+      setLocalTick((value) => value + 1)
+    } catch (error) {
+      showToast({
+        variant: "error",
+        title: "Could not save that",
+        description: error instanceof Error ? error.message : String(error),
+      })
+    }
   }
 
   const forget = async (row: MemoryRow) => {
@@ -511,6 +571,28 @@ export const MemoryRemembered: Component<{
                         Show on the map
                       </button>
                     </Show>
+                    {/* 🔴 THE VOUCH — the only door to the pruning protection.
+                        `POST /api/memory/feedback` shipped with no caller, so a memory could be
+                        protected from the forgetting pass and nobody had any way to protect one. It
+                        sits beside Forget deliberately: the two are the same question asked in
+                        opposite directions, and a person deciding "is this worth keeping" wants both
+                        answers in one place.
+                        ⚠️ The label says what it DOES, not what it is. "Useful" is a judgement; "Keep
+                        this" is the consequence, which is the thing a user is actually choosing. */}
+                    <button
+                      type="button"
+                      data-slot="memory-row-vouch"
+                      data-vouched={vouched().has(row.id) ? "" : undefined}
+                      class="underline opacity-70 hover:opacity-100"
+                      title={
+                        vouched().has(row.id)
+                          ? "Stop protecting this from the forgetting pass."
+                          : "Never forget this one, however rarely it comes up."
+                      }
+                      onClick={() => void vouch(row)}
+                    >
+                      {vouched().has(row.id) ? "Kept ✓" : "Keep this"}
+                    </button>
                   </span>
                 </div>
                 {/* 🔴 **Forgetting was ADVANCED, and that is why the owner reported the Memory app

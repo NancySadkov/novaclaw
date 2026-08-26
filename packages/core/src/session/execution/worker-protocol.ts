@@ -165,6 +165,28 @@ export const SpawnResultMessage = Schema.Struct({
   limit: Schema.Finite.pipe(Schema.optional),
 }).annotate({ identifier: "SessionWorker.SpawnResult" })
 
+/**
+ * The host's answer to a `memory-request`.
+ *
+ * `ok` carries the op's own return value; `failed` is the store's own `MemoryClient.MemoryError`
+ * rebuilt on the worker side, so a caller degrades exactly as it would in-process; `rejected` means
+ * the request never reached the store — a stale lease, a malformed access, or a result too large for
+ * the transport.
+ *
+ * ⚠️ **`rejected` is NOT flattened into `failed`.** A store that answered "I could not do that" and a
+ * boundary that refused to ask are different facts, and the second one is a defect in us.
+ */
+export const MemoryResult = Schema.Struct({
+  ...Identity,
+  type: Schema.Literal("memory-result"),
+  requestID: Schema.String,
+  outcome: Schema.Literals(["ok", "failed", "rejected"]),
+  /** The op's return value, already JSON. Absent for `void` returns and for every non-ok outcome. */
+  value: Schema.Unknown.pipe(Schema.optional),
+  /** Why it failed or was refused. Becomes `MemoryError.reason` on the worker side. */
+  reason: Schema.String.pipe(Schema.optional),
+}).annotate({ identifier: "SessionWorker.MemoryResult" })
+
 export const QuestionResult = Schema.Struct({
   ...Identity,
   type: Schema.Literal("question-result"),
@@ -200,6 +222,7 @@ export const HostMessage = Schema.Union([
   DeviceRejected,
   PermissionResult,
   QuestionResult,
+  MemoryResult,
   SpawnResultMessage,
   ColleagueResultMessage,
   AwaitChildResult,
@@ -381,6 +404,68 @@ export const SpawnChild = Schema.Struct({
   }),
 }).annotate({ identifier: "SessionWorker.SpawnChild" })
 
+/**
+ * 🔴 **THE GRAPH HAS ONE WRITER, AND THIS IS HOW A WORKER REACHES IT.**
+ *
+ * `kb-graph/memory.ts`'s header has always claimed *one engine per instance = the single writer*.
+ * It was not true: `session-worker/services.ts` swapped seven host-owned services for proxying stubs
+ * and not this one, so a worker built a SECOND WASM engine on the same graph directory. The host's
+ * engine is lazy, so the two only coexisted when something host-side touched memory during a live
+ * turn — which is exactly what the Memory app does. Generation snapshots made that worse rather than
+ * merely redundant: `publish()` picks `max(existing) + 1`, so two writers can compute the same index
+ * and clobber each other, and each prunes to KEEP=2 knowing nothing about the other's generations.
+ *
+ * So memory joins `permission-assert`, `spawn-child`, `colleague-request` and `await-child` as a
+ * worker→host OPERATION. One writer by construction, not by a rule somebody has to remember.
+ *
+ * ⚠️ **The op vocabulary is CLOSED and mirrors `MemoryClient.Interface` exactly.** A missing arm is a
+ * compile error on the host bridge's exhaustive switch, which is the only thing that stops this
+ * message from quietly growing a hole the day the interface grows a method.
+ *
+ * ⚠️ **`args` rides as `Unknown`, like `publish-event`'s `data`** — the payloads are the store's own
+ * plain shapes and re-declaring twenty-two of them as schemas would be a second, drifting copy of
+ * `memory-client.ts`. The one argument the bridge DOES decode is `MemoryAccess`, because there
+ * `undefined` means *every scope* and a field lost in transit would silently widen the caller's
+ * reach — the exact mechanism NC-SEC-016 was.
+ *
+ * ⚠️ **This does not make the worker less privileged than it was.** It ran the real engine with no
+ * restriction at all; proxying is strictly not-worse, and the boundary is about WHO WRITES, not about
+ * confining what the worker may ask for. Saying otherwise would promise a gate this is not.
+ */
+export const MEMORY_OPS = [
+  "health",
+  "addMemory",
+  "addEdge",
+  "search",
+  "neighbors",
+  "path",
+  "invalidate",
+  "purge",
+  "addClaim",
+  "claimHistory",
+  "reviewEvidence",
+  "setClaimStatus",
+  "moveScope",
+  "clearScope",
+  "eraseAll",
+  "discardLegacyGlobalExtracts",
+  "stats",
+  "list",
+  "candidates",
+  "byIds",
+  "graph",
+] as const
+export type MemoryOp = (typeof MEMORY_OPS)[number]
+
+export const MemoryRequest = Schema.Struct({
+  ...Identity,
+  type: Schema.Literal("memory-request"),
+  requestID: Schema.String,
+  op: Schema.Literals(MEMORY_OPS),
+  /** The op's arguments, positionally, exactly as `MemoryClient.Interface` declares them. */
+  args: Schema.Array(Schema.Unknown),
+}).annotate({ identifier: "SessionWorker.MemoryRequest" })
+
 export const PermissionAssert = Schema.Struct({
   ...Identity,
   type: Schema.Literal("permission-assert"),
@@ -487,6 +572,7 @@ export const WorkerMessage = Schema.Union([
   DeviceRelease,
   DeviceReport,
   PermissionAssert,
+  MemoryRequest,
   SpawnChild,
   ColleagueRequest,
   AwaitChild,

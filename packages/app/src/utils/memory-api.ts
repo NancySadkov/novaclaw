@@ -183,15 +183,105 @@ export interface NeverUsedResult {
   readonly partial: boolean
 }
 
+/**
+ * ─── THE NOISE VIEWS, ON THE ONE CONTRACT ────────────────────────────────────────────────────────
+ *
+ * ⚠️ **POST for a read.** `scopes` carries `session:<id>`, which is `correlate`-class data that may
+ * not egress, and a query string lands in access logs, proxy logs and referrers. Same shape and same
+ * reason as `POST /api/log/read`; no `/api/*` group declares `urlParams`.
+ */
+
 /** Memories no recall has ever returned, oldest first — the `Never used` lens's data source. */
 export function memoryNeverUsed(
   server: ServerConnection.HttpBase,
   input: { directory: string; scopes?: readonly string[]; limit?: number; scan?: number },
 ) {
-  return call<NeverUsedResult>(server, "GET", "memory/usage/never-used", input.directory, undefined, {
-    scopes: csv(input.scopes),
-    limit: input.limit === undefined ? undefined : String(input.limit),
-    scan: input.scan === undefined ? undefined : String(input.scan),
+  return call<NeverUsedResult>(server, "POST", "api/memory/usage/never-used", input.directory, {
+    ...(input.scopes === undefined ? {} : { scopes: input.scopes }),
+    ...(input.limit === undefined ? {} : { limit: input.limit }),
+    ...(input.scan === undefined ? {} : { scan: input.scan }),
+  })
+}
+
+/** Memories somebody vouched for — the `Vouched for` lens. These are never pruned. */
+export function memoryUseful(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; scopes?: readonly string[]; limit?: number },
+) {
+  return call<{ items: readonly UsageItem[] }>(server, "POST", "api/memory/usage/useful", input.directory, {
+    ...(input.scopes === undefined ? {} : { scopes: input.scopes }),
+    ...(input.limit === undefined ? {} : { limit: input.limit }),
+  })
+}
+
+/**
+ * One question whose recalled answers keep being corrected.
+ *
+ * ⚠️ Grouped by claim IDENTITY, not by claim — a single claim is superseded at most once, so
+ * "repeatedly" can only ever be a property of the question.
+ */
+export interface CorrectionGroup {
+  readonly conflictKey: string
+  readonly scope: string
+  readonly corrected: number
+  readonly corrections: number
+  readonly lastAccessedAt: number
+  readonly items: readonly UsageItem[]
+}
+
+export function memoryCorrectionProne(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; minCorrected?: number; limit?: number },
+) {
+  return call<{ groups: readonly CorrectionGroup[] }>(
+    server,
+    "POST",
+    "api/memory/usage/corrections",
+    input.directory,
+    {
+      ...(input.minCorrected === undefined ? {} : { minCorrected: input.minCorrected }),
+      ...(input.limit === undefined ? {} : { limit: input.limit }),
+    },
+  )
+}
+
+/** One recall that returned a memory. The query is a FINGERPRINT and never the words. */
+export interface UsageAccess {
+  readonly fingerprint: string
+  readonly surface: string
+  readonly rank: number
+  readonly score: number
+  readonly accessedAt: number
+  readonly usedAt: number | null
+  readonly usefulAt: number | null
+  readonly correctedAt: number | null
+}
+
+/** "Why is this here" — every recall that returned one memory, and what became of each. */
+export function memoryUsageDetail(server: ServerConnection.HttpBase, input: { directory: string; id: string }) {
+  return call<{ usage: UsageCounts | null; accesses: readonly UsageAccess[] }>(
+    server,
+    "POST",
+    "api/memory/usage/detail",
+    input.directory,
+    { id: input.id },
+  )
+}
+
+/**
+ * Vouch for a memory, or retract the vouch.
+ *
+ * ⚠️ `false` RETRACTS rather than counting a negative. The flag exists to PROTECT — a vouched memory
+ * is excluded from the forgetting pass outright — so the only two states that matter are "somebody
+ * vouched" and "nobody did".
+ */
+export function memoryFeedback(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; id: string; useful: boolean },
+) {
+  return call<boolean>(server, "POST", "api/memory/feedback", input.directory, {
+    id: input.id,
+    useful: input.useful,
   })
 }
 
@@ -274,4 +364,69 @@ export function memoryIngest(
 
 export function memoryClearScope(server: ServerConnection.HttpBase, input: { directory: string; scope: string }) {
   return call<boolean>(server, "POST", "memory/clearScope", input.directory, { scope: input.scope })
+}
+
+// --- the claim lifecycle, on the ONE contract (`/api/*`) ---
+
+/** The statuses a PERSON controls. `superseded` is the lifecycle's own and is not settable. */
+export type PersonClaimStatus = "active" | "archived" | "needs_review"
+
+/**
+ * Archive, restore or flag one claim.
+ *
+ * ⚠️ Answers whether the status actually MOVED. `false` is a real answer — the claim is gone, or it
+ * was already in that state — and a caller that drew a lifecycle change on `false` would be showing
+ * the user something that did not happen.
+ */
+export function memoryClaimStatus(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; id: string; status: PersonClaimStatus },
+) {
+  return call<boolean>(server, "POST", "api/memory/claim/status", input.directory, {
+    id: input.id,
+    status: input.status,
+  })
+}
+
+export interface ClaimEvidence {
+  readonly kind: "chat" | "message" | "passage" | "file" | "url" | "test" | "command" | "commit"
+  readonly locator: string
+  readonly label?: string
+}
+
+export interface ClaimWriteResult {
+  readonly ok: boolean
+  readonly id?: string
+  readonly status?: string
+  /** Did the store accept a conflict identity? `false` = this claim corrects nothing, by design. */
+  readonly identified?: boolean
+  readonly deduped?: boolean
+  /** What this claim RETIRED. Empty is the common case; non-empty is a correction. */
+  readonly superseded: readonly string[]
+  readonly reason?: string
+}
+
+/**
+ * Record a governed claim — the only write on the HTTP surface that can CORRECT anything.
+ *
+ * `memory/remember` writes a plain node with no subject or predicate, so nothing it creates can ever
+ * be superseded. Naming a subject and a predicate is what makes this claim the answer to a question,
+ * and what lets the next one replace it.
+ */
+export function memoryAddClaim(
+  server: ServerConnection.HttpBase,
+  input: {
+    directory: string
+    statement: string
+    scope?: string
+    subject?: string
+    predicate?: string
+    confidence?: number
+    source?: string
+    validFrom?: string
+    evidence?: readonly ClaimEvidence[]
+  },
+) {
+  const { directory, ...body } = input
+  return call<ClaimWriteResult>(server, "POST", "api/memory/claim", directory, body)
 }

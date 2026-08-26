@@ -16,6 +16,7 @@ export type Request = Extract<
       | "spawn-child"
       | "await-child"
       | "colleague-request"
+      | "memory-request"
       | "execution-advance"
       | "execution-tool-dispatched"
       | "execution-tool-settled"
@@ -43,6 +44,7 @@ export type Reply = Extract<
       | "spawn-result"
       | "await-child-result"
       | "colleague-result"
+      | "memory-result"
       | "execution-result"
   }
 >
@@ -57,6 +59,7 @@ const replyTypes: Record<Request["type"], ReadonlySet<Reply["type"]>> = {
   "spawn-child": new Set(["spawn-result"]),
   "await-child": new Set(["await-child-result"]),
   "colleague-request": new Set(["colleague-result"]),
+  "memory-request": new Set(["memory-result"]),
   "execution-advance": new Set(["execution-result"]),
   "execution-tool-dispatched": new Set(["execution-result"]),
   "execution-tool-settled": new Set(["execution-result"]),

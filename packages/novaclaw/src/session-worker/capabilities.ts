@@ -50,6 +50,20 @@ export interface Capabilities {
     input: SessionWorkerProtocol.ColleagueRequestInput,
     signal?: AbortSignal,
   ) => Promise<Extract<Reply, { readonly type: "colleague-result" }>>
+  /**
+   * One memory operation, performed by the HOST's single engine.
+   *
+   * ⚠️ No scope field to forge here either, but for a different reason than `spawnChild` and
+   * `colleague`: the access set IS an argument, because the `kb` tool builds it from the session it
+   * runs in and the host cannot re-derive that. What the host does instead is REFUSE a malformed one
+   * — see `memory-bridge.ts`, where `scopes: undefined` means every scope and a field lost in
+   * transit would silently widen the caller's reach.
+   */
+  readonly memory: (
+    op: SessionWorkerProtocol.MemoryOp,
+    args: ReadonlyArray<unknown>,
+    signal?: AbortSignal,
+  ) => Promise<Extract<Reply, { readonly type: "memory-result" }>>
   /** Join a child session. BLOCKS host-side until completion or `timeoutMs` — see `AwaitChild`. */
   readonly awaitChild: (
     input: { readonly childID: string; readonly timeoutMs: number },
@@ -168,6 +182,14 @@ export function make(input: { readonly lease: SessionExecutionAttempt.Lease; rea
         signal,
       )
       if (reply.type !== "spawn-result") throw new Error(`unexpected ${reply.type} reply to spawn`)
+      return reply
+    },
+    memory: async (op, args, signal) => {
+      const reply = await input.client.request(
+        { ...identity, type: "memory-request", requestID: requestID(), op, args },
+        signal,
+      )
+      if (reply.type !== "memory-result") throw new Error(`unexpected ${reply.type} reply to memory-request`)
       return reply
     },
     colleague: async (request, signal) => {

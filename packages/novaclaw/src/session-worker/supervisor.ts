@@ -71,6 +71,10 @@ export interface Input {
       }
     >
   >
+  readonly onMemoryRequest?: (
+    message: Extract<SessionWorkerProtocol.WorkerMessage, { readonly type: "memory-request" }>,
+    signal: AbortSignal,
+  ) => Promise<Extract<SessionWorkerProtocol.HostMessage, { readonly type: "memory-result" }>>
   readonly onExecutionRequest?: (
     message: SessionWorkerProtocol.ExecutionRequest,
     signal: AbortSignal,
@@ -181,6 +185,34 @@ export function spawn(input: Input): Handle {
       .then(async () => {
         if (done) return
         const reply = await run()
+        if (!("requestID" in reply) || reply.requestID !== requestID) {
+          finish({ type: "protocol-error", detail: "RPC reply request id does not match" })
+          return
+        }
+        send(reply)
+      })
+      .catch(() => finish({ type: "protocol-error", detail: "worker RPC failed" }))
+  }
+
+  /**
+   * 🔴 **The one RPC class that does NOT join `rpcTail`, and the reason is a deadline nobody owns.**
+   *
+   * `queueRPC` runs every worker request through one serial chain. Two of them block for as long as a
+   * human takes: `permission-assert` waits on the user's answer, and `await-child` waits out its whole
+   * timeout. A memory op behind either would stall for minutes — so the `kb` tool of a PARALLEL tool
+   * call would hang while an unrelated permission dialog sat open, and auto-extraction at end of turn
+   * would queue behind whatever was still pending.
+   *
+   * Nothing about correctness needs the ordering: the worker correlates replies by `requestID`
+   * (`client.ts`), not by arrival order, and each fiber awaits its own op before issuing the next, so
+   * per-caller ordering is preserved by the caller. What the serial chain buys the other RPCs is that
+   * they mutate host state the worker also observes; a memory op is a call into a store that
+   * serializes itself.
+   */
+  const dispatchRPC = (requestID: string, run: () => Promise<SessionWorkerProtocol.HostMessage>) => {
+    void run()
+      .then((reply) => {
+        if (done) return
         if (!("requestID" in reply) || reply.requestID !== requestID) {
           finish({ type: "protocol-error", detail: "RPC reply request id does not match" })
           return
@@ -346,6 +378,30 @@ export function spawn(input: Input): Handle {
           return
         }
         queueRPC(message.requestID, () => request(message, lifetime.signal))
+        return
+      }
+      case "memory-request": {
+        if (!ready) {
+          finish({ type: "protocol-error", detail: "memory request arrived before ready" })
+          return
+        }
+        const request = input.onMemoryRequest
+        if (!request) {
+          // A host with no memory bridge answers "rejected", which the worker turns into an ordinary
+          // `MemoryError` — the same degradation a disabled engine produces. It must never be silence.
+          send({
+            version: SessionWorkerProtocol.VERSION,
+            type: "memory-result",
+            sessionID: input.lease.sessionID,
+            attemptID: input.lease.attemptID,
+            generation: input.lease.generation,
+            requestID: message.requestID,
+            outcome: "rejected",
+            reason: "memory is host-only and this host exposes no memory bridge",
+          })
+          return
+        }
+        dispatchRPC(message.requestID, () => request(message, lifetime.signal))
         return
       }
       case "execution-advance":
