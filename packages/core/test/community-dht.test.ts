@@ -5,6 +5,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { Effect, Fiber, Layer } from "effect"
 import { CommunityDht } from "@novaclaw/core/community/dht"
+import { absent, peers, scripted } from "./fixture/dht-sidecar"
 
 /**
  * Community — the DHT seam (`notes/spec/community-p2p.md`).
@@ -23,50 +24,9 @@ import { CommunityDht } from "@novaclaw/core/community/dht"
  * stops running.
  */
 
-/** A sidecar that never was — the ordinary machine. */
-const absent = () => undefined
-
-/**
- * A scripted sidecar. `replies` are handed out in order, one per request; `undefined` means "say
- * nothing", which is how a wedged child is spelled.
- */
-const scripted = (replies: ReadonlyArray<string | undefined>) => {
-  const state = {
-    starts: 0,
-    written: [] as Array<string>,
-    stopped: 0,
-    kill: undefined as undefined | (() => void),
-  }
-  const start = () => {
-    state.starts += 1
-    let onLine: ((line: string) => void) | undefined
-    let onExit: (() => void) | undefined
-    state.kill = () => onExit?.()
-    const node: CommunityDht.Node = {
-      write: (line) => {
-        state.written.push(line.trim())
-        const reply = replies[state.written.length - 1]
-        if (reply !== undefined) queueMicrotask(() => onLine?.(reply))
-      },
-      onLine: (handler) => {
-        onLine = handler
-      },
-      onExit: (handler) => {
-        onExit = handler
-      },
-      stop: () => {
-        state.stopped += 1
-      },
-    }
-    return node
-  }
-  return { state, start }
-}
-
 const run = <A>(effect: Effect.Effect<A, never, CommunityDht.Service>, options: CommunityDht.Options) =>
   Effect.runPromise(Effect.provide(effect, CommunityDht.layerWith(options)) as Effect.Effect<A>)
 
-const peers = (addresses: ReadonlyArray<string>) => JSON.stringify({ peers: addresses })
 
 describe("CommunityDht.parse", () => {
   test("🔴 addresses that could not be dialled are dropped, not passed on", () => {

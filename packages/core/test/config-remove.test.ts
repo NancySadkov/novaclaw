@@ -3,6 +3,8 @@ import { Effect, Schema } from "effect"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
 import { CatalogStore } from "@novaclaw/core/catalog-store"
 import { CommandConfigStore } from "@novaclaw/core/command-config-store"
+import { CommunityDht } from "@novaclaw/core/community/dht"
+import { peers, scripted } from "./fixture/dht-sidecar"
 import { Config } from "@novaclaw/core/config"
 import { ConfigAgent } from "@novaclaw/core/config/agent"
 import { ConfigProvider } from "@novaclaw/core/config/provider"
@@ -404,6 +406,75 @@ describe("ConfigStoreWrite.remove — a removal is not a reboot (ruling 3)", () 
       yield* ConfigStoreWrite.remove([["providers", "spark-holo", "models", "m"]])
       expect(catalogReloads).toBe(1)
       expect(commandReloads).toBe(0)
+    }).pipe(Effect.scoped),
+  )
+  /**
+   * 🔴 **Codex review NC-SEC-011 — a REMOVAL that revokes nothing on the network.**
+   *
+   * `apply` settles the live DHT sidecar after a `community` (or `offline`) write, and its own
+   * comment says why: the Kademlia node keeps running and republishes this instance's provider
+   * record every 12 hours, so "the community is off" was a fact only the settings knew. `remove` —
+   * the verb whose entire purpose is *"take this back"* — was the structural twin of `apply` in every
+   * other respect and simply omitted that call, and its condition was missing `offline` too. So
+   * deleting Community consent, or the published address, committed, answered 2xx, updated the UI,
+   * and left the node serving and republishing the address the user had just deleted.
+   *
+   * Both paths now go through one `reconcileCommunity`, which is the point: two copies of a
+   * post-commit settlement is how they drifted, so the fix is not a third copy.
+   */
+  it.live("🔴 removing Community WITHDRAWS the live DHT node, it does not just forget it", () =>
+    Effect.gen(function* () {
+      // One reply per request, in order: the announce, the lookup that follows it, and the withdraw.
+      // ⚠️ A missing reply is not neutral — the layer reads an unanswered request as a WEDGED child
+      // and kills it, which would stop the node for a reason that has nothing to do with the removal
+      // and make this test pass while proving nothing.
+      const sidecar = scripted([JSON.stringify({ announced: true }), peers([]), JSON.stringify({ announced: false })])
+      yield* Effect.gen(function* () {
+        yield* ConfigStoreWrite.apply(
+          decodeInfo({ community: { consented: true, enabled: true, announce: "1.2.3.4:4096" } }),
+        )
+        // Publish for real, so there IS a live child to revoke — a settlement against a node that was
+        // never started is a no-op and would prove nothing.
+        const dht = yield* CommunityDht.Service
+        yield* dht.find({ announce: "1.2.3.4:4096" })
+        expect(sidecar.state.starts, "the fixture never started a node — the rest asserts nothing").toBe(1)
+        expect(sidecar.state.stopped).toBe(0)
+
+        yield* ConfigStoreWrite.remove([["community"]])
+
+        // ⚠️ WITHDRAWN, not merely killed. There is no unpublish in Kademlia: killing the child
+        // without withdrawing leaves the replicated copies to be found for the rest of their TTL
+        // while we are not even running.
+        expect(
+          sidecar.state.written.at(-1),
+          "the removal committed and answered success while the node kept advertising",
+        ).toBe(JSON.stringify({ op: "withdraw" }))
+        expect(sidecar.state.stopped, "the node nobody authorises any more must stop").toBe(1)
+      }).pipe(Effect.provide(CommunityDht.layerWith({ start: sidecar.start, timeoutMs: 200 })))
+    }).pipe(Effect.scoped),
+  )
+
+  /**
+   * ⚠️ **The negative control, and it is the half that decides whether this is a settlement or a
+   * blanket teardown.** Reconciling on every removal would pass the test above and would also stop a
+   * healthy node whenever anyone deleted an unrelated key.
+   */
+  it.live("an unrelated removal touches the DHT node not at all", () =>
+    Effect.gen(function* () {
+      // Announce + the lookup after it. Nothing else should ever be written — see below.
+      const sidecar = scripted([JSON.stringify({ announced: true }), peers([])])
+      yield* Effect.gen(function* () {
+        yield* ConfigStoreWrite.apply(
+          decodeInfo({ community: { consented: true, enabled: true, announce: "1.2.3.4:4096" }, mcp: MCP_TWO }),
+        )
+        const dht = yield* CommunityDht.Service
+        yield* dht.find({ announce: "1.2.3.4:4096" })
+        expect(sidecar.state.starts).toBe(1)
+
+        yield* ConfigStoreWrite.remove([["mcp", "servers", "weather"]])
+        expect(sidecar.state.stopped, "an unrelated key removal stopped a healthy community node").toBe(0)
+        expect(sidecar.state.written.some((line) => line.includes("withdraw"))).toBe(false)
+      }).pipe(Effect.provide(CommunityDht.layerWith({ start: sidecar.start, timeoutMs: 200 })))
     }).pipe(Effect.scoped),
   )
 })
