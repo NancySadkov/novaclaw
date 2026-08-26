@@ -1382,7 +1382,13 @@ export class WasmMemory {
     return this.serialize(async () => {
       const scopeFilter = opts.scopes ? `AND n.scope IN $scopes AND m.scope IN $scopes` : ``
       const rows = await this.rows(
-        `MATCH (m:Memory {id: $id})-[r:Rel]->(n:Memory)
+        // 🔴 UNDIRECTED. This matched `->` only, and the claim lifecycle points `subject` edges
+        // claim→entity — so an entity, the thing a question is ABOUT and therefore the thing a
+        // traversal starts from, was a pure SINK and this returned nothing on any real store.
+        // Measured on the board-game corpus: the graph is worth 45% vs 10% for passages alone, and
+        // the outgoing-only walk reached the gold answer 0/40. The whole benefit was unreachable
+        // through this accessor. Direction is a storage detail; `r.type` still carries the relation.
+        `MATCH (m:Memory {id: $id})-[r:Rel]-(n:Memory)
          WHERE r.t_invalid IS NULL AND n.t_invalid IS NULL ${scopeFilter}
          RETURN n.id AS id, r.type AS type LIMIT ${opts.k ?? 25}`,
         { id, ...(opts.scopes ? { scopes: opts.scopes } : {}) },

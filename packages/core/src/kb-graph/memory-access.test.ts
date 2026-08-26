@@ -108,8 +108,16 @@ describe("a stranger cannot MUTATE across the boundary", () => {
 
 describe("…and the owner of a memory is not locked out of it", () => {
   test("Alice still reaches and forgets her own", async () => {
-    // Alice reaches her own node's GLOBAL neighbour (`S -> G2`) and not Lysander's (`S -> O`).
-    expect((await mem.neighbors("S", { scopes: ALICE })).map((n) => n.id)).toEqual(["G2"])
+    // Alice reaches her own node's GLOBAL neighbours and not Lysander's (`S -> O`).
+    //
+    // ⚠️ `G` joined this list when `neighbors` became UNDIRECTED (the outgoing-only traversal made
+    // every sink unreachable — see `neighbors-direction.test.ts`). It is not a leak and the expected
+    // value is what changed, not the boundary: `G` is `global`, it is the node that points AT Alice's
+    // memory, and both ends still have to clear the scope filter. The security claim is the NEGATIVE
+    // one below, so it is asserted separately rather than left implicit in a list literal.
+    const alice = (await mem.neighbors("S", { scopes: ALICE })).map((n) => n.id)
+    expect([...alice].sort()).toEqual(["G", "G2"])
+    expect(alice).not.toContain("O") // Lysander's cabinet stays invisible in BOTH directions
     const before = await mem.stats()
     await mem.invalidate("S_own", undefined, { scopes: ALICE })
     const after = await mem.stats()
