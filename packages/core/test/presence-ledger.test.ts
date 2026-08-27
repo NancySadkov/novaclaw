@@ -104,11 +104,11 @@ const LEDGER: readonly Entry[] = [
     kind: "fallback",
     why: "includes the active segment in a list when it is there; an omission is a shorter list, not a verdict.",
   },
-  {
-    file: "core/src/scratch.ts",
-    kind: "fallback",
-    why: "writes a README when it is not already there — idempotent, and no sentence is built from the answer.",
-  },
+  // `core/src/scratch.ts` was here, for the README it wrote when one was not already there. Both
+  // scratch READMEs were deleted 2026-08-27 — an agent's working directory is handed to the model as
+  // a grounding listing, so a seeded file cost every colleague a read on every fresh context — and the
+  // file stopped calling `existsSync` with them. The ledger fails in both directions, so this line had
+  // to go with the call rather than linger as a claim about code that no longer exists.
   {
     file: "core/src/session/runner/strict.ts",
     kind: "presence",
@@ -124,7 +124,7 @@ const LEDGER: readonly Entry[] = [
   {
     file: "core/src/virtual-fs.ts",
     kind: "fallback",
-    why: "writes a README when it is not already there — same shape as `scratch.ts`.",
+    why: "writes a README when it is not already there — idempotent, and no sentence is built from the answer.",
   },
   // ── desktop ───────────────────────────────────────────────────────────────────────────────────
   {
