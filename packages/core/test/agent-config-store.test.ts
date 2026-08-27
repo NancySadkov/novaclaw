@@ -153,3 +153,42 @@ describe("AgentConfigStore", () => {
     }),
   )
 })
+
+describe("the roster a CLEAN install opens with", () => {
+  // 🔴 The behavioural half of `the-roster-ships-with-colleagues.test.ts`, which reads the SOURCE for
+  // `id: "xenia"` and therefore passed happily while the seeding never ran. Measured 2026-08-27: the
+  // owner's instance opened with Nova and one self-hired colleague, because the officers were seeded
+  // BELOW an early return taken whenever the config dir held no `novaclaw.jsonc` — which is exactly
+  // what a clean install has. A source scan cannot see a statement that is never reached.
+  it.effect("seeds the shipped colleagues with NO config file present", () =>
+    Effect.gen(function* () {
+      const store = yield* AgentConfigStore.Service
+      const dir = yield* Effect.promise(() => tmpdir())
+      yield* Effect.addFinalizer(() => Effect.promise(() => dir[Symbol.asyncDispose]()))
+      // An EMPTY config dir — no config.json, no novaclaw.jsonc. The clean-install case.
+      const globalDir = path.join(dir.path, "global")
+      yield* Effect.promise(() => fs.mkdir(globalDir, { recursive: true }))
+
+      yield* AgentConfigSeed.seedFromDirectory(globalDir)
+      const agents = yield* store.agents()
+      for (const id of ["xenia", "daedalus", "myron"]) expect(Object.keys(agents), id).toContain(id)
+    }),
+  )
+
+  it.effect("a retired shipped colleague STAYS retired across a re-seed", () =>
+    Effect.gen(function* () {
+      const store = yield* AgentConfigStore.Service
+      const dir = yield* Effect.promise(() => tmpdir())
+      yield* Effect.addFinalizer(() => Effect.promise(() => dir[Symbol.asyncDispose]()))
+      const globalDir = path.join(dir.path, "global")
+      yield* Effect.promise(() => fs.mkdir(globalDir, { recursive: true }))
+
+      yield* AgentConfigSeed.seedFromDirectory(globalDir)
+      yield* store.removeAgent("xenia")
+      // The idempotence gate is what makes these the user's to keep or lose — a colleague that
+      // resurrects on the next boot is not retired, it is redecorated.
+      yield* AgentConfigSeed.seedFromDirectory(globalDir)
+      expect(Object.keys(yield* store.agents())).not.toContain("xenia")
+    }),
+  )
+})

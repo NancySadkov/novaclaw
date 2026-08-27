@@ -99,6 +99,39 @@ export const seedFromDirectory = (globalConfigDir: string) =>
       }
     const inline = decodeText(Flag.NOVACLAW_CONFIG_CONTENT)
     if (inline) infos.push(inline)
+
+    /**
+     * 🔴 **The shipped colleagues do NOT depend on a config file existing** (owner, 2026-08-27:
+     * *"the normal Chat, Programmer, Researcher etc… agents we ship by default are missing. Just Nova
+     * and the one I created"*).
+     *
+     * They used to be seeded below the `infos.length === 0` return, so a fresh instance with no
+     * `novaclaw.jsonc` in its config dir left the function before reaching them and opened with an
+     * empty roster. Nothing about Xenia, Daedalus and Myron comes from a config file — they are
+     * hard-coded above — so gating them on one gated them on something unrelated, and the case it
+     * failed in is the one that matters most: **a clean install**, which has no config dir at all.
+     * Measured on the owner's instance after its config dir was removed: `agent_config` held only the
+     * colleague they had hired themselves.
+     *
+     * ⚠️ It rides the same `agentsSeeded` gate, so a user who retires one keeps it retired — that is
+     * the whole reason these are CONFIG rows rather than plugin agents (see the note below), and the
+     * gate is read once above, before this writes anything, so seeding here cannot suppress the jsonc
+     * import that follows.
+     */
+    if (!agentsSeeded)
+      for (const officer of SEEDED_OFFICERS)
+        yield* store.setLayers(officer.id, [
+          Schema.decodeUnknownSync(ConfigAgent.Info)({
+            name: officer.name,
+            title: officer.title,
+            avatar: officer.avatar,
+            system: officer.brief,
+            description: `${officer.name}, ${officer.title}.`,
+            memory: "own",
+            mode: "primary",
+          }),
+        ])
+
     if (infos.length === 0) return
 
     // Agent layers import only ONCE (idempotence gate) — a user's later store edits must win.
@@ -121,18 +154,8 @@ export const seedFromDirectory = (globalConfigDir: string) =>
       //
       // ⚠️ Names are drawn from the officer pool (`agent/officer-name.ts`) so a seeded roster and a
       // hired one are the same kind of thing, and `planHire`'s taken-set excludes them automatically.
-      for (const officer of SEEDED_OFFICERS)
-        yield* store.setLayers(officer.id, [
-          Schema.decodeUnknownSync(ConfigAgent.Info)({
-            name: officer.name,
-            title: officer.title,
-            avatar: officer.avatar,
-            system: officer.brief,
-            description: `${officer.name}, ${officer.title}.`,
-            memory: "own",
-            mode: "primary",
-          }),
-        ])
+      // The seeding itself moved ABOVE the `infos` gate — see the note there for what it was gated on
+      // by accident, and which install it failed for.
       const layers: Record<string, ConfigAgent.Info[]> = {}
       for (const info of infos)
         for (const [name, item] of Object.entries(info.agents ?? {})) (layers[name] ??= []).push(item)
