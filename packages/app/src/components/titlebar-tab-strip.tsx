@@ -50,6 +50,22 @@ function SessionTabSlot(props: {
     ({ id, ctx }) => ctx.sync.session.resolve(id).catch(() => undefined),
   )
   const session = createMemo(() => cachedSession() ?? loadedSession())
+
+  /**
+   * Tell the store whose chat this tab is showing.
+   *
+   * 🔴 This is where the one-tab-per-colleague invariant reaches tabs the app did not just open. The
+   * strip is restored from disk, so a store written before the rule existed loads already breaking
+   * it — four tabs all reading "Nova" were sitting in the strip when the owner reported this. The
+   * tab itself does not know its colleague; this component is the one place that resolves the
+   * session behind every tab, so it is the one place that CAN say. The store collapses from there.
+   */
+  createEffect(() => {
+    const value = session()
+    if (!value) return
+    tabs.noteSessionAgent(props.tab.server, props.tab.sessionId, value.agent)
+  })
+
   let prefetched = false
 
   createEffect(() => {

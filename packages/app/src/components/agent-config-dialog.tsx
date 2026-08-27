@@ -22,6 +22,8 @@ import { useLocation, useNavigate } from "@solidjs/router"
 import { AgentPortrait } from "@/components/agent-portrait"
 import { AgentHelpDialog } from "@/components/agent-help-dialog"
 import { useDialog } from "@novaclaw/ui/context/dialog"
+import { useTabs } from "@/context/tabs"
+import { ServerConnection } from "@/context/server"
 
 // ONE agent configuration dialog, opened from two places (AGENTS.md → *the structural metaphor*;
 // `notes/named-agents.md`).
@@ -55,6 +57,12 @@ export function AgentConfigDialog(props: {
 }) {
   const language = useLanguage()
   const dialogStack = useDialog()
+  const tabs = useTabs()
+  /** The tab strip is keyed by SERVER + session, so closing one needs the connection's key. */
+  const serverKey = () => {
+    const current = conn()
+    return current ? ServerConnection.key(current) : undefined
+  }
   const confirm = useConfirm()
   const navigate = useNavigate()
   const location = useLocation()
@@ -307,7 +315,20 @@ export function AgentConfigDialog(props: {
       showToast({ variant: "success", title: language.t("agentConfig.clearedTitle") })
       props.onChanged?.()
       props.onDismiss()
-      if (viewingCleared) navigate("/")
+      /**
+       * ⚠️ **Close the TAB too, not just leave the route** (owner, 2026-08-28). Navigating away hid
+       * the cleared conversation; its tab stayed in the strip and put every message straight back on
+       * screen when clicked. A chat the user has cleared must not still be one click away — that is
+       * the same "the durable change with the stale view" defect the roster refresh above exists for,
+       * one surface further out.
+       *
+       * Closing first: `removeTab` navigates to the neighbouring tab, or home when none is left, so
+       * doing it in this order means the route decision is made once, by the tab strip, instead of
+       * twice with the second overruling the first.
+       */
+      const key = serverKey()
+      if (key) tabs.closeSessionTab(key, chat.id)
+      else if (viewingCleared) navigate("/")
     } catch (error) {
       showToast({ variant: "error", title: language.t("agentConfig.clearFailed"), description: String(error) })
     } finally {
@@ -367,6 +388,11 @@ export function AgentConfigDialog(props: {
           if (response.error) throw response.error
         })
       showToast({ variant: "success", title: language.t("agentConfig.retiredTitle", { name: name() }) })
+      // Retiring ARCHIVES the colleague's chat, so it leaves exactly the same orphaned tab clearing
+      // did — a conversation belonging to somebody no longer on the roster.
+      const retiredChat = chatFor(await listSessions(client), id)
+      const retiredKey = serverKey()
+      if (retiredChat && retiredKey) tabs.closeSessionTab(retiredKey, retiredChat.id)
       props.onChanged?.()
       props.onDismiss()
     } catch (error) {

@@ -8,6 +8,7 @@ import { GlobalContext } from "@/context/global"
 import { ServerContext } from "@/context/server"
 import { ServerSyncContext } from "@/context/server-sync"
 import { ModelsContext } from "@/context/models"
+import { TabsContext } from "@/context/tabs"
 import { LanguageContext } from "@/context/language"
 
 /**
@@ -104,6 +105,13 @@ function mount(options: { agents?: unknown[]; models?: () => unknown[] }) {
   // The translator returns the KEY, so an assertion names the key rather than English prose that a
   // copy edit would break.
   const languageStub = { t: (key: string) => key, locale: () => "en", setLocale: () => {} }
+  /**
+   * ⚠️ Added when Clear and Retire started CLOSING the cleared chat's tab (2026-08-28). The dialog
+   * had reached no further than its own server before that, so a context it now depends on was
+   * missing here and every render in this file died on `Tabs context must be used within a context
+   * provider` — the mount test caught it, which is the whole reason it exists.
+   */
+  const tabsStub = { closeSessionTab: () => {}, store: [] as never[] }
 
   dispose = render(
     () => (
@@ -116,9 +124,11 @@ function mount(options: { agents?: unknown[]; models?: () => unknown[] }) {
                 <ServerContext.Provider value={{ current: connection } as never}>
                   <ServerSyncContext.Provider value={syncStub as never}>
                     <ModelsContext.Provider value={modelsStub as never}>
-                      <DialogProvider>
-                        <Opener />
-                      </DialogProvider>
+                      <TabsContext.Provider value={tabsStub as never}>
+                        <DialogProvider>
+                          <Opener />
+                        </DialogProvider>
+                      </TabsContext.Provider>
                     </ModelsContext.Provider>
                   </ServerSyncContext.Provider>
                 </ServerContext.Provider>

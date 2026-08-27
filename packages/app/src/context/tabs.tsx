@@ -1,4 +1,3 @@
-import type { SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 import { createSimpleContext } from "@novaclaw/ui/context"
 import { createStore, produce } from "solid-js/store"
 import { Persist, persisted, removePersisted, draftPersistedKeys } from "@/utils/persist"
@@ -10,11 +9,19 @@ import { uuid } from "@/utils/uuid"
 import { SessionTabsRemovedDetail } from "@/components/titlebar-session-events"
 import { sessionHref } from "@/utils/session-route"
 import { createTabMemory } from "./tab-memory"
+import { findAgentTab } from "./tab-agent"
 
 export type SessionTab = {
   type: "session"
   server: ServerConnection.Key
   sessionId: string
+  /**
+   * Which colleague this chat belongs to — the key the ONE-TAB-PER-COLLEAGUE invariant is enforced
+   * on. Optional because a tab persisted before this field existed, or a chat with no colleague at
+   * all, still has to work: `undefined` simply opts that tab out of the invariant rather than
+   * colliding every anonymous chat into one tab.
+   */
+  agent?: string
 }
 
 export type DraftTab = {
@@ -46,11 +53,11 @@ export const tabHref = (tab: Tab) =>
 
 export const tabKey = (tab: Tab) => (tab.type === "draft" ? `draft:${tab.draftID}` : `${tab.server}\n${tabHref(tab)}`)
 
-export function sessionHasOpenTab(tabs: Tab[], server: ServerConnection.Key, session: Session) {
-  return tabs.some((tab) => tab.type === "session" && tab.server === server && tab.sessionId === session.id)
-}
-
-export const { use: useTabs, provider: TabsProvider } = createSimpleContext({
+export const {
+  use: useTabs,
+  provider: TabsProvider,
+  context: TabsContext,
+} = createSimpleContext({
   name: "Tabs",
   gate: false,
   init: () => {
@@ -85,7 +92,9 @@ export const { use: useTabs, provider: TabsProvider } = createSimpleContext({
 
     /** Most-recent-first, with `key` promoted and duplicates dropped. Pure so the order is testable. */
     const promote = (keys: readonly string[] | undefined, key: string | undefined) =>
-      key === undefined ? [...(keys ?? [])] : [key, ...(keys ?? []).filter((item) => item !== key)].slice(0, RECENT_LIMIT)
+      key === undefined
+        ? [...(keys ?? [])]
+        : [key, ...(keys ?? []).filter((item) => item !== key)].slice(0, RECENT_LIMIT)
 
     const setRecentKey = (key: string | undefined) => {
       const write = ++recentWrite
@@ -151,20 +160,85 @@ export const { use: useTabs, provider: TabsProvider } = createSimpleContext({
       if (draftID) removeDraftPersisted(draftID)
     }
 
+    const agentTab = (server: ServerConnection.Key, agent: string | undefined, exceptSession?: string) =>
+      findAgentTab(store, server, agent, exceptSession)
+
+    /** Record the colleague on a tab that did not know it yet — never a rename, only a fill-in. */
+    const learnAgent = (sessionId: string, server: ServerConnection.Key, agent: string) => {
+      setStore(
+        produce((tabs) => {
+          const tab = tabs.find(
+            (item) => item.type === "session" && item.server === server && item.sessionId === sessionId,
+          )
+          if (tab?.type === "session" && tab.agent === undefined) tab.agent = agent
+        }),
+      )
+    }
+
     const actions = {
+      /**
+       * Open a chat's tab — or hand back the one already standing in for its colleague.
+       *
+       * The RETURN VALUE is load-bearing: callers navigate to what this gives them, so returning an
+       * existing tab is how "switch to it" happens rather than "open another". A caller that ignored
+       * the result and navigated to its own session id would put the route and the strip on two
+       * different chats, which is the defect this exists to prevent.
+       */
       addSessionTab: (tab: Omit<SessionTab, "type">) => {
         const next = { type: "session" as const, ...tab }
         const existing = store.find((item) => tabKey(item) === tabKey(next))
-        if (existing) return existing
+        if (existing) {
+          // Same chat, and we may now know something about it that we did not before.
+          if (next.agent !== undefined) learnAgent(next.sessionId, next.server, next.agent)
+          return existing
+        }
+        const open = agentTab(next.server, next.agent)
+        if (open >= 0) return store[open]!
         void startTransition(() => {
           setStore(
             produce((tabs) => {
               if (tabs.some((item) => tabKey(item) === tabKey(next))) return
+              // Re-checked INSIDE the transition: two opens of the same colleague can land in one
+              // batch, and the guard above read a store that the first of them had not yet updated.
+              if (
+                next.agent !== undefined &&
+                tabs.some((item) => item.type === "session" && item.server === next.server && item.agent === next.agent)
+              )
+                return
               tabs.push(next)
             }),
           )
         })
         return next
+      },
+      /**
+       * A tab's session resolved and named its colleague — fill it in, and collapse the tab if that
+       * colleague already has one.
+       *
+       * ⚠️ This is the half of the invariant that handles tabs the app did NOT just open: the strip
+       * is restored from disk, so a store persisted while the rule did not exist (or written by an
+       * older build) loads already violating it. Enforcing only on the way in would leave those
+       * duplicates on screen forever, which is precisely the state the owner reported.
+       */
+      noteSessionAgent: (server: ServerConnection.Key, sessionId: string, agent: string | undefined) => {
+        if (agent === undefined) return
+        const index = store.findIndex(
+          (tab) => tab.type === "session" && tab.server === server && tab.sessionId === sessionId,
+        )
+        const tab = store[index]
+        if (!tab || tab.type !== "session") return
+        const keeperIndex = agentTab(server, agent, sessionId)
+        if (keeperIndex >= 0) {
+          const keeper = store[keeperIndex]!
+          // Was the user LOOKING at the tab about to disappear? Then send them to the survivor
+          // rather than to whichever tab happens to sit next to it.
+          const watching = recentKey() === tabKey(tab) || location.pathname === tabHref(tab)
+          removeTab(index)
+          if (watching) navigateTab(keeper)
+          return
+        }
+        if (tab.agent === agent) return
+        learnAgent(sessionId, server, agent)
       },
       reorder(keys: string[]) {
         setStore(
@@ -205,6 +279,32 @@ export const { use: useTabs, provider: TabsProvider } = createSimpleContext({
         // after its backing draft tab has been removed from the store.
         const active = location.pathname === "/new-session" && location.query.draftId === draftID
         const next = { type: "session" as const, ...session }
+        /**
+         * 🔴 The same invariant, at the OTHER door (swept 2026-08-28). Promotion replaced the draft
+         * tab with a session tab and never asked whether that chat was already open — and it usually
+         * is: the server returns a colleague's existing chat rather than making a second one, so
+         * sending the first message from a draft produced a duplicate tab of a chat already in the
+         * strip. Fold the draft away and go to the tab that was already there.
+         */
+        const sameChat = store.findIndex(
+          (item) => item.type === "session" && item.server === next.server && item.sessionId === next.sessionId,
+        )
+        const index = sameChat >= 0 ? sameChat : findAgentTab(store, next.server, next.agent)
+        const duplicate = store[index]
+        if (duplicate) {
+          void startTransition(() => {
+            setStore(
+              produce((tabs) => {
+                const index = tabs.findIndex((tab) => tab.type === "draft" && tab.draftID === draftID)
+                if (index !== -1) tabs.splice(index, 1)
+              }),
+            )
+            if (active || recent.key === `draft:${draftID}`) navigateTab(duplicate)
+          })
+          memory.remove(`draft:${draftID}`)
+          removeDraftPersisted(draftID)
+          return
+        }
         void startTransition(() => {
           setStore(
             produce((tabs) => {
@@ -219,6 +319,26 @@ export const { use: useTabs, provider: TabsProvider } = createSimpleContext({
         removeDraftPersisted(draftID)
       },
       removeTab,
+      /**
+       * The chat is GONE — close whatever tab still shows it.
+       *
+       * 🔴 **The tab strip is a second answer to "which chats exist", and nothing was reconciling it**
+       * (owner, 2026-08-28: *"clearing chat doesn't clear the currently opened chat in the app — the
+       * messages are still rendered in the UI, until the user closes that chat"*). Clearing archives
+       * the session, and the roster updates immediately; the tab kept rendering the conversation that
+       * had just been put away, so the app disagreed with itself about a chat the user had explicitly
+       * cleared. Navigating away was not enough — the tab is still there to click.
+       *
+       * ⚠️ By SESSION, not by index. Every caller knows which chat it just retired or cleared and none
+       * of them knows where it sits in the strip; making them find it would put the same search in
+       * three places and make the fourth caller the one that forgets.
+       */
+      closeSessionTab: (server: ServerConnection.Key, sessionId: string) => {
+        const index = store.findIndex(
+          (tab) => tab.type === "session" && tab.server === server && tab.sessionId === sessionId,
+        )
+        if (index >= 0) removeTab(index)
+      },
       removeSessionTab(input: Omit<SessionTab, "type">) {
         const index = store.findIndex(
           (tab) => tab.type === "session" && tab.server === input.server && tab.sessionId === input.sessionId,

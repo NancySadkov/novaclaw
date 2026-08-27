@@ -216,8 +216,24 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
             const s = session()
             if (!s) return
             const sessionId = s.parentID ?? s.id
-            const next = { server: route.server ?? server.key, sessionId }
-            tabsStoreActions.addSessionTab(next)
+            /**
+             * ⚠️ The colleague only when this session IS the tab. A child session maps onto its
+             * PARENT's tab, and the child's own agent is not necessarily the parent's — stamping it
+             * here would file the parent's tab under the wrong colleague and collapse it into a tab
+             * that has nothing to do with it. The strip fills the parent in from its own session.
+             */
+            const agent = s.parentID ? undefined : s.agent
+            const next = { server: route.server ?? server.key, sessionId, agent }
+            /**
+             * 🔴 **Follow what the store hands back** (owner, 2026-08-28). This effect is the choke
+             * point every door funnels through — Contacts, the launcher, a deep link, a restored
+             * window all arrive as a navigation — so enforcing one-tab-per-colleague here covers
+             * them all. But by the time it runs the route has ALREADY moved: if the invariant hands
+             * back the colleague's existing tab, we have to travel to it, or the strip highlights
+             * one chat while the page renders another.
+             */
+            const tab = tabsStoreActions.addSessionTab(next)
+            if (tab.type === "session" && tab.sessionId !== sessionId) tabsStoreActions.select(tab)
           }
         })
 
@@ -240,7 +256,8 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
          * menu that stalls. An unresolved task shows its folder, never a blank row.
          */
         const tabTitle = (tab: Tab) => {
-          if (tab.type === "draft") return tab.directory.split(/[\/]/).filter(Boolean).at(-1) ?? language.t("command.session.new")
+          if (tab.type === "draft")
+            return tab.directory.split(/[\/]/).filter(Boolean).at(-1) ?? language.t("command.session.new")
           const conn = global.servers.list().find((item) => ServerConnection.key(item) === tab.server)
           const cached = conn ? global.ensureServerCtx(conn).sync.session.peek(tab.sessionId) : undefined
           return cached?.title?.trim() || language.t("nav.tasks.untitled")

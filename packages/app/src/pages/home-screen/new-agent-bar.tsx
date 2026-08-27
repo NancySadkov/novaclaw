@@ -94,7 +94,7 @@ export function useNewAgentSpawn() {
           .catch(() => false)
         if (empty) {
           startTransition(() => {
-            const tab = tabs.addSessionTab({ server: ServerConnection.key(c), sessionId: reusable.id })
+            const tab = tabs.addSessionTab({ server: ServerConnection.key(c), sessionId: reusable.id, agent: agentID })
             tabs.select(tab)
           })
           return
@@ -116,7 +116,9 @@ export function useNewAgentSpawn() {
       cx.projects.open(directory)
       cx.projects.touch(directory)
       startTransition(() => {
-        const tab = tabs.addSessionTab({ server: ServerConnection.key(c), sessionId: sessionID })
+        // `agent` so the store can switch to this colleague's open tab instead of adding a second
+        // one — the launcher is one of the two doors the owner watched duplicate a chat.
+        const tab = tabs.addSessionTab({ server: ServerConnection.key(c), sessionId: sessionID, agent: agentID })
         tabs.select(tab)
       })
     } catch (error) {
