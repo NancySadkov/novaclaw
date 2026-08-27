@@ -13,5 +13,5 @@ export const BESPOKE_AGENT_PORTRAITS = new Set(["nova", "xenia", "daedalus", "my
 export const agentPortraitSource = (id: string): string | undefined => {
   const name = id.trim().toLowerCase().replace(NUMBERED_OFFICER, "")
   if (!BUILTIN_NAMES.has(name)) return undefined
-  return `/assets/agents/portraits/${name}.${BESPOKE_AGENT_PORTRAITS.has(name) ? "png" : "svg"}`
+  return `/assets/agents/portraits/${name}.${BESPOKE_AGENT_PORTRAITS.has(name) ? "webp" : "svg"}`
 }
