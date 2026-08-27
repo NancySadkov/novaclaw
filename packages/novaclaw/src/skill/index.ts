@@ -292,9 +292,9 @@ export const layer = Layer.effect(
           s.skills[builtin.name] = {
             name: builtin.name,
             description: builtin.description,
-            // ⚠️ Not a path. This reaches the model in the verbose skill listing, and a plausible-looking
-            // file path would invite it to read a file that does not exist in a compiled build.
-            location: "(bundled with NovaClaw — no file on disk)",
+            // Not a path, and shared rather than spelled here — see SkillBuiltin.LOCATION for why
+            // the readers that compare against it cannot be trusted to a literal.
+            location: SkillBuiltin.LOCATION,
             content: builtin.content,
           }
         yield* loadSkills(s, yield* InstanceState.get(discovered), events)

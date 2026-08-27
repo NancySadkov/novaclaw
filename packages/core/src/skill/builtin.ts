@@ -29,6 +29,23 @@ export interface Builtin {
 }
 
 /**
+ * The `location` every bundled skill is seeded with — the ONE spelling, because three sites compare
+ * against it and a string literal cannot keep them agreeing.
+ *
+ * ⚠️ **Not a path, deliberately.** It reaches the model in the verbose skill listing, and a
+ * plausible-looking file path would invite it to read a file that does not exist in a compiled build.
+ *
+ * 🔴 **This constant exists because the drift already happened.** The seeder wrote this string while
+ * `command/skill-command.ts` and `packages/novaclaw/test/skill/skill.test.ts` both tested for
+ * `"<built-in>"` — a sentinel present in no writer anywhere. The reader's branch was dead, and the
+ * test's filter, meant to exclude bundled skills from twelve discovery assertions, excluded nothing:
+ * the whole file went red the moment the first bundled skill shipped (2026-08-25, `research`), and
+ * stayed red because a `fullOnly` unit is only reached by a milestone gate. A sentinel compared in
+ * more places than it is written is a constant that has not been declared yet.
+ */
+export const LOCATION = "(bundled with NovaClaw — no file on disk)"
+
+/**
  * Split `---\n…\n---\n` frontmatter off a bundled SKILL.md.
  *
  * ⚠️ The frontmatter is KEPT IN THE FILE deliberately, so `builtin/research/SKILL.txt` is a valid
