@@ -24,6 +24,37 @@
 import { pathToFileURL } from "node:url"
 import path from "node:path"
 
+/**
+ * 🔴 **A DEADLINE, because this step hung three release builds in one evening.**
+ *
+ * `build-node.ts` runs this through `Bun.spawnSync`, which blocks until the child exits. So a boot
+ * that never finishes does not fail the build — it STOPS it, with the log ending mid-line and no
+ * error anywhere. Measured 2026-08-27/28: three separate builds wedged here, each confirmed by 0 s of
+ * CPU across a 20 s window with commit charge frozen to the byte, one of them sitting for 24 minutes
+ * before anyone looked. The boot takes ~2 s when it works, and passes standalone every time.
+ *
+ * ⚠️ The cause is still unknown and this does not claim to fix it. What it fixes is the FAILURE MODE:
+ * an unbounded hang becomes a named, bounded failure a caller can see, report and retry. That is the
+ * rule the repo already applies to `bun test` — "bare `bun test <directory>` has no wall-clock kill" —
+ * which the release path simply never got.
+ *
+ * Exit 3 is reserved for this, so the caller can tell "wedged" from "the bundle does not serve" and
+ * retry only the former. 90 s is generous on purpose: long enough that a cold, loaded machine is
+ * never blamed, short enough that a wedge costs a minute rather than an evening.
+ */
+const DEADLINE_MS = Number(process.env.NOVACLAW_SMOKE_TIMEOUT_MS ?? 90_000)
+const deadline = setTimeout(() => {
+  console.error(
+    `node-sidecar-smoke: TIMED OUT after ${DEADLINE_MS} ms — the bundle never finished serving. This ` +
+      "does not prove the artifact is bad; the step wedged. Retry, and if it repeats, run " +
+      "`node script/node-sidecar-smoke.mjs ./dist/node/node.js` directly to see where it stops.",
+  )
+  process.exit(3)
+}, DEADLINE_MS)
+// Never hold the process open on our own account: if the smoke finishes first, this must not be the
+// thing keeping Node alive.
+deadline.unref?.()
+
 const bundle = process.argv[2]
 if (!bundle) {
   console.error("node-sidecar-smoke: pass the bundle path")

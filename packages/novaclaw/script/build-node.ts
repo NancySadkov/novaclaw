@@ -90,21 +90,61 @@ if (!nodeExe) {
 } else {
   // Its own XDG roots and its own database: the smoke boots a real server, and a server pointed at
   // the developer's actual data would write to it.
-  const home = await mkdtemp(path.join(tmpdir(), "novaclaw-sidecar-smoke-"))
-  const smoke = Bun.spawnSync([nodeExe, "--experimental-sqlite", "./script/node-sidecar-smoke.mjs", "./dist/node/node.js"], {
-    stdout: "inherit",
-    stderr: "inherit",
-    env: {
-      ...process.env,
-      NOVACLAW_DB: ":memory:",
-      XDG_DATA_HOME: path.join(home, "data"),
-      XDG_CONFIG_HOME: path.join(home, "config"),
-      XDG_CACHE_HOME: path.join(home, "cache"),
-      XDG_STATE_HOME: path.join(home, "state"),
-    },
-  })
-  await rm(home, { recursive: true, force: true })
-  if (smoke.exitCode !== 0) throw new Error("Node sidecar smoke failed — the built bundle does not serve")
+  /**
+   * 🔴 **RETRY A WEDGE, FAIL A DEFECT — and never block forever on either.**
+   *
+   * `Bun.spawnSync` blocks until the child exits, so before the smoke grew its own deadline a boot
+   * that never finished did not fail this build, it STOPPED it: the log ended mid-line, no error was
+   * written, and the only symptom was a process at 0 % CPU. It cost three builds and about
+   * forty-five minutes in one evening (2026-08-27/28), each time clearing on a plain re-run.
+   *
+   * So the two outcomes are now separated, because they deserve opposite treatment:
+   *   · **exit 3 — the smoke timed out.** It wedged; it did not learn anything about the bundle.
+   *     Every observed instance passed on the next attempt, so retry once rather than making a person
+   *     do it. A second timeout is reported as itself, not disguised as a bundle defect.
+   *   · **any other non-zero — the bundle does not serve.** That is the defect this check exists to
+   *     catch, and it fails the build immediately. A retry here would be a loop that hides a real
+   *     fault, which is the opposite of the point.
+   *
+   * ⚠️ A FRESH home per attempt. The smoke boots a real server against real XDG roots, and handing a
+   * retry the directories a wedged attempt left behind would make the retry the least trustworthy run
+   * of the two.
+   */
+  const runSmoke = async () => {
+    const home = await mkdtemp(path.join(tmpdir(), "novaclaw-sidecar-smoke-"))
+    try {
+      return Bun.spawnSync(
+        [nodeExe, "--experimental-sqlite", "./script/node-sidecar-smoke.mjs", "./dist/node/node.js"],
+        {
+          stdout: "inherit",
+          stderr: "inherit",
+          env: {
+            ...process.env,
+            NOVACLAW_DB: ":memory:",
+            XDG_DATA_HOME: path.join(home, "data"),
+            XDG_CONFIG_HOME: path.join(home, "config"),
+            XDG_CACHE_HOME: path.join(home, "cache"),
+            XDG_STATE_HOME: path.join(home, "state"),
+          },
+        },
+      ).exitCode
+    } finally {
+      await rm(home, { recursive: true, force: true })
+    }
+  }
+
+  const SMOKE_WEDGED = 3
+  let code = await runSmoke()
+  if (code === SMOKE_WEDGED) {
+    console.warn("Node sidecar smoke WEDGED (timed out) — retrying once on a fresh home.")
+    code = await runSmoke()
+  }
+  if (code === SMOKE_WEDGED)
+    throw new Error(
+      "Node sidecar smoke timed out twice — the step is wedging, not the bundle failing. " +
+        "Run `node script/node-sidecar-smoke.mjs ./dist/node/node.js` directly to see where it stops.",
+    )
+  if (code !== 0) throw new Error("Node sidecar smoke failed — the built bundle does not serve")
 }
 
 console.log("Build complete")
