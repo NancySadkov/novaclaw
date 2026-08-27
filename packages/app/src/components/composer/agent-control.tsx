@@ -28,22 +28,40 @@ export function ComposerAgentControl(props: { state: ComposerAgentControlState }
         gutter={4}
         value={language.t(props.state.working ? "prompt.agent.tooltip.working" : "prompt.agent.tooltip")}
       >
-        <label class="flex h-7 items-center gap-1.5 rounded-md px-2 text-[13px] font-[440] leading-5 text-v2-text-text-faint hover:bg-v2-background-bg-layer-02">
+        <label
+          data-action={props.state.onOpenConfig ? "prompt-agent-config" : undefined}
+          data-mode={props.state.unattended?.() ? "unattended" : undefined}
+          // The whole chip is the target, portrait and name alike — the owner asked for "clicking any
+          // of them". A `<label>` is still correct on HOME, where it labels the real `<select>`; the
+          // click handler only exists on the read-only in-chat branch, where there is no control to
+          // label and the chip IS the button.
+          onClick={props.state.readOnly ? props.state.onOpenConfig : undefined}
+          role={props.state.readOnly && props.state.onOpenConfig ? "button" : undefined}
+          tabindex={props.state.readOnly && props.state.onOpenConfig ? 0 : undefined}
+          onKeyDown={(event) => {
+            if (!props.state.readOnly || !props.state.onOpenConfig) return
+            if (event.key !== "Enter" && event.key !== " ") return
+            event.preventDefault()
+            props.state.onOpenConfig()
+          }}
+          class="flex h-7 items-center gap-1.5 rounded-md px-2 text-[13px] font-[440] leading-5 text-v2-text-text-faint hover:bg-v2-background-bg-layer-02"
+          classList={{ "cursor-pointer": !!(props.state.readOnly && props.state.onOpenConfig) }}>
           <Show when={current()} fallback={<Icon name="user" class="size-3.5 shrink-0" />}>
             {(agent) => (
               <AgentPortrait id={agent().id} name={agent().name} avatar={agent().avatar} class="size-4 text-[9px]" />
             )}
           </Show>
-          {/* 🔴 In a chat the NAME IS NOT REPEATED here (owner, 2026-08-23: *"the prompt area
-              doesn't really need to have the agent's name, since it is already in the tab title"*).
-              The tab strip above now says who you are talking to, and saying it twice on one screen
-              spends the composer's scarcest width on a fact already in view. The avatar stays —
-              it is the glance-level identity — and the tooltip still names them for anyone who
-              needs the word rather than the mark. On HOME this branch never runs: there the chip is
-              a real selector, and a selector with no label is a puzzle. */}
+          {/* 🔴 **The name is BACK, and it supersedes the 2026-08-23 ruling that removed it.** That
+              call — *"the prompt area doesn't really need to have the agent's name, since it is
+              already in the tab title"* — was made when this chip was inert. Now it is the door to
+              the colleague's configuration (owner, 2026-08-27), and a door needs a handle you can
+              read: an unlabelled avatar that opens a settings dialog is a puzzle, which is the same
+              objection that kept the label on HOME's selector all along. The tab title still names
+              the colleague; this names what the CONTROL acts on, which is a different job. */}
           <Show when={props.state.readOnly}>
-            <span data-slot="prompt-agent-name" class="sr-only">
+            <span data-slot="prompt-agent-name" class="truncate">
               {current()?.name}
+              {props.state.modeSuffix?.() ?? ""}
             </span>
           </Show>
           <Show when={!props.state.readOnly}>

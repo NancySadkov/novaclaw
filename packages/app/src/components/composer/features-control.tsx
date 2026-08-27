@@ -694,7 +694,26 @@ function MakeDefaultSection(props: {
  * shows the EFFECTIVE stance (this chat's override, else the global Settings default) and a flip
  * writes the per-chat override; the helpers' internals stay in Settings.
  */
-export function ComposerFeaturesControl(props: { state: ComposerFeaturesControlState }) {
+/**
+ * OPEN the colleague's configuration for this chat — the panel formerly behind a "Tune" button.
+ *
+ * 🔴 **The button is gone; the chip that names the colleague opens this instead** (owner,
+ * 2026-08-27: *"the 'which colleague this is for' icon … does nothing. Instead it should have the
+ * agent name near it, and clicking any of them should open the Tune dialogue. The `Tune` button
+ * itself is no longer needed."*). Two controls sat side by side in the composer — one showed WHO the
+ * chat belongs to and did nothing, the other was a verb with no subject. Merging them costs a chip's
+ * width and removes the question *"tune what?"*.
+ *
+ * ⚠️ Exported as an opener rather than a component because the trigger now lives in a different
+ * control. Everything below it — `showScoped`, the roster refresh, `onClose` — is unchanged and each
+ * line is load-bearing for a reason recorded at its own site.
+ */
+export function useTunePanelOpener(state: () => ComposerFeaturesControlState) {
+  const props = { get state() { return state() } }
+  return composerTunePanel(props)
+}
+
+function composerTunePanel(props: { state: ComposerFeaturesControlState }) {
   // The ONE shared roster, refreshed after a Tune save — see the dialog mount below for why. Resolved
   // here rather than threaded in as a prop: it is a singleton per connection, so every surface that
   // needs it reaches for the same one, and a prop would make each caller responsible for remembering.
@@ -761,30 +780,14 @@ export function ComposerFeaturesControl(props: { state: ComposerFeaturesControlS
       ),
       () => props.state.onClose(),
     )
-  return (
-    <>
-      <TooltipV2 placement="top" gutter={4} value={language.t("prompt.features.tooltip")}>
-        <button
-          type="button"
-          onClick={openPanel}
-          data-action="prompt-features"
-          data-enabled-count={enabledCount() || undefined}
-          data-mode={unattended() ? props.state.mode : undefined}
-          class="flex h-7 items-center gap-1.5 rounded-md px-2 text-[13px] font-[440] leading-5 hover:bg-v2-background-bg-layer-02"
-          classList={{
-            "text-v2-text-text-faint": enabledCount() === 0 && !unattended(),
-            "text-v2-text-text-base": enabledCount() > 0 || unattended(),
-          }}
-          style={props.state.style}
-        >
-          <span>
-            {language.t("prompt.features.label")}
-            {triggerSuffix()}
-          </span>
-        </button>
-      </TooltipV2>
-    </>
-  )
+  /**
+   * ⚠️ **The unattended-mode marker travels WITH the trigger.** It rode the old button's label and
+   * would have died with it, and the note that put it there is explicit about why it earns its width
+   * while the enabled-count does not: this one *"changes what the agent may do without you"*. It is a
+   * safety signal, so it moves to whatever the user now presses rather than being quietly dropped
+   * with the control that used to carry it.
+   */
+  return { open: openPanel, modeSuffix: triggerSuffix, unattended, enabledCount }
 }
 
 /**

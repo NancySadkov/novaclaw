@@ -5,7 +5,9 @@ export { ComposerPermissionModeControl, type ComposerPermissionModeControlState 
 export { ComposerPostureControl, type ComposerPosture, type ComposerPostureControlState } from "./posture-control"
 export { ComposerStrictControl, type ComposerStrictControlState } from "./strict-control"
 export {
-  ComposerFeaturesControl,
+  // The "Tune" button was retired 2026-08-27 — the colleague chip opens its panel now, so what
+  // this module exports is the OPENER rather than a control of its own.
+  useTunePanelOpener,
   type ComposerFeature,
   type ComposerFeatureOrigin,
   type ComposerFeaturesControlState,

@@ -3,7 +3,7 @@
 // became the agent identity chip. Each control is a dumb view over a plain state object the
 // composer builds — no controller context reaches in here.
 import { Show } from "solid-js"
-import { ComposerFeaturesControl, type ComposerFeaturesControlState } from "./features-control"
+import { useTunePanelOpener, type ComposerFeaturesControlState } from "./features-control"
 import { ComposerAgentControl } from "./agent-control"
 import type { ComposerAgentControlState } from "./agent-option"
 
@@ -17,6 +17,7 @@ export type ComposerControlsRowState = {
 }
 
 export function ComposerControlsRow(props: { state: ComposerControlsRowState }) {
+  const tune = useTunePanelOpener(() => props.state.features)
   return (
     <>
       {/* 🔴 The model chip LEFT this row on 2026-08-21 (owner: *"move model picker into the agents
@@ -30,16 +31,33 @@ export function ComposerControlsRow(props: { state: ComposerControlsRowState }) 
           part of the agent too"). They are standing choices about how a colleague works, so they live
           in its configuration — re-choosing them per chat asked the user again for a decision that
           never changes. What stays here is per-CHAT: the model this turn uses, and Tune. */}
+      {/* 🔴 **The "Tune" button is GONE and the colleague chip opens its panel instead** (owner,
+          2026-08-27). Two controls stood side by side: one named WHO the chat was for and did
+          nothing when pressed, the other was a verb with no visible subject. One chip answers both —
+          it says whose desk this is, and pressing it opens that colleague's configuration, with this
+          chat's own controls as the section inside it they already were.
+          ⚠️ The tuning panel itself is unchanged; only its trigger moved. T1's ruling still holds
+          (owner 2026-07-14: per-chat helpers stay discoverable rather than behind an expertise
+          level) — the door is now labelled with a name instead of a verb, which is more
+          discoverable, not less. */}
+      {/* ⚠️ Gated on `sessionControls` ALONE, not on `agentVisible`. The two differ on the
+          NEW-SESSION composer — `agentVisible` is `!!sessionID()` while `sessionControls` is
+          "new-session OR active session" — so requiring both would have removed the tuning panel from
+          the composer where a chat is about to START, which is exactly where its per-chat switches are
+          worth setting in advance. Retiring the Tune button made that gap possible, and it is the kind
+          a diff does not show: the control simply stops being rendered. The chip carries its own
+          `options.length > 0` guard, so it still shows nothing when no colleague has resolved. */}
       <Show when={props.state.sessionControls}>
-        {/* T1: the Tuning toggles — ungated like the Strict switch (owner call
-            2026-07-14: per-chat helpers must be discoverable, not hidden behind an
-            expertise level; the helpers' INTERNALS stay in Settings). */}
-        <ComposerFeaturesControl state={props.state.features} />
         {/* WHOSE chat this is — the folder chip's replacement. A chat's folder is its colleague's
             folder now, so the question the composer can still usefully answer is who owns this work. */}
-        <Show when={props.state.agentVisible}>
-          <ComposerAgentControl state={props.state.agent} />
-        </Show>
+        <ComposerAgentControl
+          state={{
+            ...props.state.agent,
+            onOpenConfig: tune.open,
+            modeSuffix: tune.modeSuffix,
+            unattended: tune.unattended,
+          }}
+        />
       </Show>
     </>
   )

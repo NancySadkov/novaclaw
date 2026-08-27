@@ -30,6 +30,18 @@ export type ComposerAgentControlState = {
    */
   readonly readOnly?: boolean | undefined
   readonly onSelect: (id: string) => void
+  /**
+   * Open this colleague's configuration — what the retired "Tune" button used to do.
+   *
+   * Absent on HOME, where the chip is a real selector and a click must open the picker rather than a
+   * settings dialog. Present in a chat, where the chip was inert and the owner asked for it to become
+   * the door (2026-08-27).
+   */
+  readonly onOpenConfig?: (() => void) | undefined
+  /** The unattended-mode suffix, inherited from the trigger this chip replaced — it says what the
+   *  agent may do without you, so it follows the control the user actually presses. */
+  readonly modeSuffix?: (() => string) | undefined
+  readonly unattended?: (() => boolean) | undefined
 }
 
 /** The colleague currently selected, or undefined while the roster is still loading. */
