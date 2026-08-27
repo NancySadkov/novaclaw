@@ -19,6 +19,7 @@ import { GOVERNING_ID, displayName, memoryDisclosure, type AgentLike } from "@/a
 import { MEMORY_COUNT_CAP, memoryCountLabel, ownerRoute } from "@/apps/memory-owner"
 import { memoryList } from "@/utils/memory-api"
 import { useNavigate } from "@solidjs/router"
+import { AgentPortrait } from "@/components/agent-portrait"
 
 // ONE agent configuration dialog, opened from two places (AGENTS.md → *the structural metaphor*;
 // `notes/named-agents.md`).
@@ -420,9 +421,12 @@ export function AgentConfigDialog(props: {
           >
             <Icon name="chevron-left" size="normal" />
           </button>
-          <span class="flex size-9 items-center justify-center rounded-full bg-v2-background-bg-layer-02 text-base">
-            {agent()?.avatar ?? name().charAt(0)}
-          </span>
+          <AgentPortrait
+            id={props.agentID ?? ""}
+            name={name()}
+            avatar={agent()?.avatar}
+            class="size-9 border border-v2-border-border-strong text-base"
+          />
           <span class="min-w-0 flex-1">
             <span class="block truncate text-sm font-semibold">{name()}</span>
             <span class="block truncate text-xs text-v2-text-text-muted">

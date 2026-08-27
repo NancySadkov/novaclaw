@@ -9,13 +9,7 @@ import { useServer } from "@/context/server"
 import { useLanguage } from "@/context/language"
 import { AppPage } from "@/components/app-page"
 import { agentColor } from "@/utils/agent"
-import {
-  hiddenRoster,
-  memoryDisclosure,
-  roster,
-  searchRoster,
-  type ContactView,
-} from "@/apps/contacts"
+import { hiddenRoster, memoryDisclosure, roster, searchRoster, type ContactView } from "@/apps/contacts"
 import { SHARED_ROUTE } from "@/apps/memory-owner"
 import { listSessions, listUsage, startChat } from "@/apps/agent-list"
 import { planHire } from "@/apps/agent-hire"
@@ -33,6 +27,7 @@ import { compactTokens } from "@/pages/home-session-meta"
 import { ServerConnection } from "@/context/server"
 import { sessionHref } from "@/utils/session-route"
 import { AgentConfigDialog } from "@/components/agent-config-dialog"
+import { AgentPortrait } from "@/components/agent-portrait"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 
 // The Contacts app — the roster of colleagues this instance employs (AGENTS.md → *the structural
@@ -409,12 +404,13 @@ function ContactRow(props: {
   })
   return (
     <div class="flex w-full items-center gap-3 border-b border-v2-border-border-base px-4 py-3 transition-colors hover:bg-v2-background-bg-layer-02">
-      <span
-        class="flex size-9 shrink-0 items-center justify-center rounded-full text-base"
-        style={{ "background-color": agentColor(props.view.id, props.view.color) }}
-      >
-        {props.view.avatar ?? props.view.name.charAt(0)}
-      </span>
+      <AgentPortrait
+        id={props.view.id}
+        name={props.view.name}
+        avatar={props.view.avatar}
+        background={agentColor(props.view.id, props.view.color)}
+        class="size-9 border border-v2-border-border-strong text-base"
+      />
       <Dynamic
         component={chatHref() ? A : "button"}
         {...(chatHref()

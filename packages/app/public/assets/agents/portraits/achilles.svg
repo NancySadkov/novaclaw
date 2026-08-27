@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img">
+<title>Achilles: war motif interpreted as a NovaClaw synthetic colleague</title><defs>
+<radialGradient id="bg" cx="50%" cy="34%"><stop stop-color="#e98279" stop-opacity=".42"/><stop offset=".48" stop-color="hsl(268 55% 20%)"/><stop offset="1" stop-color="#09050f"/></radialGradient>
+<linearGradient id="gold" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#fff1af"/><stop offset=".28" stop-color="#e9bd61"/><stop offset=".68" stop-color="#9c6120"/><stop offset="1" stop-color="#f1cf78"/></linearGradient>
+<radialGradient id="iris"><stop stop-color="#fff7cf"/><stop offset=".18" stop-color="#f5d778"/><stop offset=".62" stop-color="#b66f1e"/><stop offset="1" stop-color="#2b1207"/></radialGradient>
+<filter id="glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+</defs><rect width="256" height="256" fill="url(#bg)"/>
+<g fill="none" stroke="#e98279" stroke-width="3" opacity=".32"><path d="m128 24 57 22v38c0 32-22 48-57 61-35-13-57-29-57-61V46Z"/><path d="m103 82 17 17 35-39"/></g>
+<g fill="none" stroke="#f4d985" opacity=".18"><circle cx="128" cy="100" r="66" stroke-dasharray="4 8"/><circle cx="128" cy="100" r="73" stroke-dasharray="4 9"/><circle cx="128" cy="100" r="80" stroke-dasharray="4 10"/></g>
+<path d="M31 256c8-57 43-83 82-91h30c39 8 74 34 82 91Z" fill="#13091d" stroke="#8f5a22" stroke-width="3"/>
+<path d="M52 256c9-45 37-65 76-76 39 11 67 31 76 76Z" fill="hsl(268 48% 15%)" stroke="url(#gold)" stroke-width="3"/>
+<path d="M72 73Q128 22 184 73l-9 91-40 39H89L81 164Z" fill="#100817" stroke="url(#gold)" stroke-width="5"/>
+<path d="M77 72 90 36l21 37 17-49 17 49 21-37 141 72-22 16H99Z" fill="url(#gold)" opacity=".92"/>
+<path d="M110 119q36 31 146 0l-7 54-29 28-29-28Z" fill="hsl(268 58% 18%)" stroke="#d7a94b" stroke-width="3"/>
+<path d="M117 127q29 23 139 0" fill="none" stroke="#e98279" stroke-width="3" opacity=".8"/>
+<g transform="translate(128 105) scale(1)">
+<path d="M-57 0Q0-50 57 0 0 50-57 0Z" fill="#e7c878" stroke="url(#gold)" stroke-width="5"/>
+<ellipse rx="26" ry="28" fill="url(#iris)" filter="url(#glow)"/><circle r="11" fill="#17080a"/><circle cx="-7" cy="-11" r="5" fill="#fff7d2"/>
+</g><circle cx="128" cy="205" r="27" fill="#13091d" stroke="url(#gold)" stroke-width="3"/><g transform="translate(97.28 185.8) scale(0.24)" fill="none" stroke="#e98279" stroke-width="8.333333333333334" filter="url(#glow)"><path d="m128 24 57 22v38c0 32-22 48-57 61-35-13-57-29-57-61V46Z"/><path d="m103 82 17 17 35-39"/></g>
+</svg>

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img">
+<title>Choronzon: oracle motif interpreted as a NovaClaw synthetic colleague</title><defs>
+<radialGradient id="bg" cx="50%" cy="34%"><stop stop-color="#c1a4ed" stop-opacity=".42"/><stop offset=".48" stop-color="hsl(271 55% 20%)"/><stop offset="1" stop-color="#09050f"/></radialGradient>
+<linearGradient id="gold" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#fff1af"/><stop offset=".28" stop-color="#e9bd61"/><stop offset=".68" stop-color="#9c6120"/><stop offset="1" stop-color="#f1cf78"/></linearGradient>
+<radialGradient id="iris"><stop stop-color="#fff7cf"/><stop offset=".18" stop-color="#f5d778"/><stop offset=".62" stop-color="#b66f1e"/><stop offset="1" stop-color="#2b1207"/></radialGradient>
+<filter id="glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+</defs><rect width="256" height="256" fill="url(#bg)"/>
+<g fill="none" stroke="#c1a4ed" stroke-width="3" opacity=".32"><circle cx="128" cy="80" r="50"/><path d="M77 80c27-34 75-34 102 0-27 34-75 34-102 0Z"/><circle cx="128" cy="80" r="17"/></g>
+<g fill="none" stroke="#f4d985" opacity=".18"><circle cx="128" cy="100" r="66" stroke-dasharray="3 8"/><circle cx="128" cy="100" r="73" stroke-dasharray="3 9"/><circle cx="128" cy="100" r="80" stroke-dasharray="3 10"/><circle cx="128" cy="100" r="87" stroke-dasharray="3 11"/><circle cx="128" cy="100" r="94" stroke-dasharray="3 12"/><circle cx="128" cy="100" r="101" stroke-dasharray="3 13"/><circle cx="128" cy="100" r="108" stroke-dasharray="3 14"/><circle cx="128" cy="100" r="115" stroke-dasharray="3 15"/></g>
+<g opacity=".9"><g transform="translate(35.84 47.400000000000006) scale(0.72)" fill="none" stroke="#c1a4ed" stroke-width="5" filter="url(#glow)"><circle cx="128" cy="80" r="50"/><path d="M77 80c27-34 75-34 102 0-27 34-75 34-102 0Z"/><circle cx="128" cy="80" r="17"/></g></g>
+<path d="m128 17 21 49 52-20-23 49 49 23-51 18 17 53-48-26-25 50-14-54-55 12 35-45-42-36 56-2Z" fill="hsl(271 62% 14%)" stroke="url(#gold)" stroke-width="5" opacity=".94"/>
+<path d="M36 64 67 48l10 34-33 9ZM220 64l-31-16-10 34 33 9ZM56 196l32-18 13 32-36 12ZM200 196l-32-18-13 32 36 12Z" fill="#c1a4ed" stroke="#f1cf78" stroke-width="3" opacity=".68"/>
+<g transform="translate(128 118) scale(0.88)">
+<path d="M-57 0Q0-50 57 0 0 50-57 0Z" fill="#e7c878" stroke="url(#gold)" stroke-width="5"/>
+<ellipse rx="26" ry="28" fill="url(#iris)" filter="url(#glow)"/><circle r="11" fill="#17080a"/><circle cx="7" cy="-11" r="5" fill="#fff7d2"/>
+</g>
+<circle cx="128" cy="118" r="72" fill="none" stroke="#c1a4ed" stroke-width="3" stroke-dasharray="2 10"/>
+</svg>

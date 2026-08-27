@@ -3,6 +3,7 @@ import { Icon } from "@novaclaw/ui/v2/icon"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { useLanguage } from "@/context/language"
 import { selectedOption, type ComposerAgentControlState } from "./agent-option"
+import { AgentPortrait } from "@/components/agent-portrait"
 
 // WHO the prompt is for (owner, 2026-08-21: *"the prompt area, both in chat and at the bottom of
 // home screen, needs an agent selector, instead of a folder selector"*).
@@ -28,8 +29,10 @@ export function ComposerAgentControl(props: { state: ComposerAgentControlState }
         value={language.t(props.state.working ? "prompt.agent.tooltip.working" : "prompt.agent.tooltip")}
       >
         <label class="flex h-7 items-center gap-1.5 rounded-md px-2 text-[13px] font-[440] leading-5 text-v2-text-text-faint hover:bg-v2-background-bg-layer-02">
-          <Show when={current()?.avatar} fallback={<Icon name="user" class="size-3.5 shrink-0" />}>
-            {(avatar) => <span class="shrink-0">{avatar()}</span>}
+          <Show when={current()} fallback={<Icon name="user" class="size-3.5 shrink-0" />}>
+            {(agent) => (
+              <AgentPortrait id={agent().id} name={agent().name} avatar={agent().avatar} class="size-4 text-[9px]" />
+            )}
           </Show>
           {/* 🔴 In a chat the NAME IS NOT REPEATED here (owner, 2026-08-23: *"the prompt area
               doesn't really need to have the agent's name, since it is already in the tab title"*).

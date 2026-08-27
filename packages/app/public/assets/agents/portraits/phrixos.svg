@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img">
+<title>Phrixos: oracle motif interpreted as a NovaClaw synthetic colleague</title><defs>
+<radialGradient id="bg" cx="50%" cy="34%"><stop stop-color="#c1a4ed" stop-opacity=".42"/><stop offset=".48" stop-color="hsl(272 55% 20%)"/><stop offset="1" stop-color="#09050f"/></radialGradient>
+<linearGradient id="gold" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#fff1af"/><stop offset=".28" stop-color="#e9bd61"/><stop offset=".68" stop-color="#9c6120"/><stop offset="1" stop-color="#f1cf78"/></linearGradient>
+<radialGradient id="iris"><stop stop-color="#fff7cf"/><stop offset=".18" stop-color="#f5d778"/><stop offset=".62" stop-color="#b66f1e"/><stop offset="1" stop-color="#2b1207"/></radialGradient>
+<filter id="glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+</defs><rect width="256" height="256" fill="url(#bg)"/>
+<g fill="none" stroke="#c1a4ed" stroke-width="3" opacity=".32"><circle cx="128" cy="80" r="50"/><path d="M77 80c27-34 75-34 102 0-27 34-75 34-102 0Z"/><circle cx="128" cy="80" r="17"/></g>
+<g fill="none" stroke="#f4d985" opacity=".18"><circle cx="128" cy="100" r="66" stroke-dasharray="4 8"/><circle cx="128" cy="100" r="73" stroke-dasharray="4 9"/><circle cx="128" cy="100" r="80" stroke-dasharray="4 10"/><circle cx="128" cy="100" r="87" stroke-dasharray="4 11"/><circle cx="128" cy="100" r="94" stroke-dasharray="4 12"/><circle cx="128" cy="100" r="101" stroke-dasharray="4 13"/><circle cx="128" cy="100" r="108" stroke-dasharray="4 14"/></g>
+<path d="M111 74C78 34 41 32 18 45c35 13 54 36 64 68-28-12-50-9-67 3 32 14 54 39 70 78 10-30 18-53 43-77Z" fill="hsl(272 48% 17%)" stroke="url(#gold)" stroke-width="5"/>
+<path d="M145 74c33-40 70-42 93-29-35 13-54 36-64 68 28-12 50-9 67 3-32 14-54 39-70 78-10-30-18-53-43-77Z" fill="hsl(272 48% 17%)" stroke="url(#gold)" stroke-width="5"/>
+<path d="M31 55c33 22 51 48 61 83M225 55c-33 22-51 48-61 83" fill="none" stroke="#c1a4ed" stroke-width="5" opacity=".9"/>
+<circle cx="128" cy="118" r="62" fill="#100817" stroke="#d8ab4b" stroke-width="6"/>
+<g transform="translate(128 118) scale(0.78)">
+<path d="M-57 0Q0-50 57 0 0 50-57 0Z" fill="#e7c878" stroke="url(#gold)" stroke-width="5"/>
+<ellipse rx="26" ry="28" fill="url(#iris)" filter="url(#glow)"/><circle r="11" fill="#17080a"/><circle cx="12" cy="-11" r="5" fill="#fff7d2"/>
+</g><g transform="translate(92.16 181.6) scale(0.28)" fill="none" stroke="#c1a4ed" stroke-width="7.142857142857142" filter="url(#glow)"><circle cx="128" cy="80" r="50"/><path d="M77 80c27-34 75-34 102 0-27 34-75 34-102 0Z"/><circle cx="128" cy="80" r="17"/></g>
+</svg>
