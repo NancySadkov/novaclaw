@@ -2665,6 +2665,13 @@ export const dict = {
   "agentConfig.clearedTitle": "Chat cleared — the next one starts fresh",
   "agentConfig.clearNothing": "There is no chat to clear yet",
   "agentConfig.clearFailed": "Could not clear this chat",
+  // Confirm-gated like Retire, and for the same reason: the conversation is archived rather than
+  // deleted, but no surface the user has can bring it back. What SURVIVES is said out loud, because
+  // "clear" next to a colleague reads like it might take the colleague with it.
+  "agentConfig.clear.confirm.title": "Clear your chat with {{name}}?",
+  "agentConfig.clear.confirm.description":
+    "This conversation is put away and the next one starts empty. {{name}} stays on your roster and keeps its brief and its memories — only the messages go.",
+  "agentConfig.clear.confirm.action": "Clear chat",
   "agentConfig.clone": "Clone",
   "agentConfig.cloning": "Cloning…",
   "agentConfig.clonedTitle": "Hired {{name}} — same brief, its own memory",

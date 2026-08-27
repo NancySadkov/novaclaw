@@ -18,7 +18,7 @@ import { chatFor } from "@/apps/roster-live"
 import { GOVERNING_ID, displayName, memoryDisclosure, type AgentLike } from "@/apps/contacts"
 import { MEMORY_COUNT_CAP, memoryCountLabel, ownerRoute } from "@/apps/memory-owner"
 import { memoryList } from "@/utils/memory-api"
-import { useNavigate } from "@solidjs/router"
+import { useLocation, useNavigate } from "@solidjs/router"
 import { AgentPortrait } from "@/components/agent-portrait"
 
 // ONE agent configuration dialog, opened from two places (AGENTS.md → *the structural metaphor*;
@@ -54,6 +54,7 @@ export function AgentConfigDialog(props: {
   const language = useLanguage()
   const confirm = useConfirm()
   const navigate = useNavigate()
+  const location = useLocation()
   const pickDirectory = useDirectoryPicker()
   const global = useGlobal()
   const server = useServer()
@@ -244,12 +245,41 @@ export function AgentConfigDialog(props: {
     }
   }
 
-  /** Clear this colleague's chat: the conversation is archived and the NEXT one starts empty. The
-   *  colleague, its brief and its memory all survive — this is a new session, not a retirement. */
+  /**
+   * Clear this colleague's chat: the conversation is archived and the NEXT one starts empty. The
+   * colleague, its brief and its memory all survive — this is a new session, not a retirement.
+   *
+   * 🔴 **It used to announce a clearing the user could still see had not happened** (owner,
+   * 2026-08-27: *"it say chat cleared, but all the messages are still in chat window"*). The archive
+   * itself worked; what was missing is that this dialog is opened FROM the composer as well as from
+   * the roster, so the common path is Tune → Clear inside the very chat being cleared. The dialog
+   * closed, the toast said *"Chat cleared"*, and the transcript underneath was untouched — the route
+   * still names that session, so the view keeps rendering it. Ruling 2 cuts here: a fault is never
+   * described falsely, and neither is a success. The archived conversation must LEAVE the screen, or
+   * the sentence is a lie about the thing the user is looking at.
+   *
+   * ⚠️ Navigating only when the route actually names the cleared session, rather than always: from
+   * Contacts the user is not in that chat, and yanking them home from a roster they were working
+   * through would be its own small betrayal.
+   *
+   * 🔴 **CONFIRMED.** Not because bytes are destroyed — the row survives with a `time_archived` — but
+   * because no surface a user has can bring the conversation back, which is the test `retire` already
+   * applies one control over. `setPaused` deliberately does NOT confirm, and that asymmetry is the
+   * point: confirming reversible acts is what teaches people to click through the ones that matter.
+   */
   const clearChat = async () => {
     const id = props.agentID
     const client = sdk()
     if (id === undefined || client === undefined) return
+    if (
+      !(await confirm({
+        title: language.t("agentConfig.clear.confirm.title", { name: name() }),
+        description: language.t("agentConfig.clear.confirm.description", { name: name() }),
+        confirmLabel: language.t("agentConfig.clear.confirm.action"),
+        destructive: true,
+      }))
+    )
+      return
     setBusy("clear")
     try {
       const sessions = await listSessions(client)
@@ -262,9 +292,11 @@ export function AgentConfigDialog(props: {
         sessionID: chat.id,
         archived: Date.now(),
       })
+      const viewingCleared = location.pathname.includes(chat.id)
       showToast({ variant: "success", title: language.t("agentConfig.clearedTitle") })
       props.onChanged?.()
       props.onDismiss()
+      if (viewingCleared) navigate("/")
     } catch (error) {
       showToast({ variant: "error", title: language.t("agentConfig.clearFailed"), description: String(error) })
     } finally {
