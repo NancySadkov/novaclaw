@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { chatFor, formatRate, formatTokensPerSecond, liveFor, ratePerMinute, rosterTask, threadOf, type SessionLike } from "./roster-live"
+import { chatFor, formatRate, formatTokensPerSecond, liveFor, ratePerMinute, rosterState, rosterTask, threadOf, type SessionLike } from "./roster-live"
 
 const session = (over: Partial<SessionLike> & { id: string }): SessionLike => ({
   time: { created: 1 },
@@ -165,5 +165,22 @@ describe("formatTokensPerSecond", () => {
     expect(formatTokensPerSecond(600)).toBe("10")
     expect(formatTokensPerSecond(90)).toBe("1.5")
     expect(formatTokensPerSecond(3)).toBe("<0.1")
+  })
+})
+
+describe("rosterState — the scheduler's answer, not a phase inspector", () => {
+  test("running means Working", () => {
+    expect(rosterState({ status: { type: "busy" }, working: true })).toBe("working")
+  })
+
+  test("not running means Idle", () => {
+    expect(rosterState({ status: { type: "idle" }, working: false })).toBe("idle")
+    expect(rosterState({ status: undefined, working: false })).toBe("idle")
+  })
+
+  test("a retrying provider is an ERROR, not an idle colleague", () => {
+    // The reachability case: nothing can run, so "Idle" would read as a healthy pause.
+    expect(rosterState({ status: { type: "retry" }, working: false })).toBe("error")
+    expect(rosterState({ status: { type: "retry" }, working: true })).toBe("error")
   })
 })

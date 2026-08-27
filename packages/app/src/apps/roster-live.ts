@@ -186,3 +186,29 @@ export const formatTokensPerSecond = (perMinute: number | undefined): string | u
   if (perSecond >= 0.1) return perSecond.toFixed(1).replace(/\.0$/, "")
   return "<0.1"
 }
+
+/**
+ * WHAT A COLLEAGUE IS DOING — three words, from the scheduler's own answer.
+ *
+ * 🔴 Deliberately coarse (owner, 2026-08-27: *"the status is meant for our thread scheduler … no
+ * need to over engineer"*). The question is whether the model is running, not which internal phase
+ * it is in: `session_working` is already the ONE answer to "is it working" — `server-session.ts`
+ * says so where it refuses to let presence carry a second busy flag — and a roster that disagreed
+ * with the Home hero about the same session would be the defect that note prevents.
+ *
+ * `retry` is the reachability case. A provider the instance cannot reach is retrying, and the row
+ * says **Error** rather than leaving a colleague looking idle while nothing can run.
+ *
+ * ⚠️ A first draft read `busy.timing.phases` to separate "waiting on a tool" from "thinking". It was
+ * deleted: richer telemetry belongs to a world where model servers are a reliable standard, and
+ * until then a status with more resolution than the source has is decoration.
+ */
+export type RosterState = "idle" | "working" | "error"
+
+export const rosterState = (input: {
+  readonly status: { readonly type: string } | undefined
+  readonly working: boolean
+}): RosterState => {
+  if (input.status?.type === "retry") return "error"
+  return input.working ? "working" : "idle"
+}

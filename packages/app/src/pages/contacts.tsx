@@ -16,9 +16,9 @@ import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
 import {
   formatRate,
-  formatTokensPerSecond,
   liveFor,
   ratePerMinute,
+  rosterState,
   rosterTask,
   type RosterLive,
   type SessionLike,
@@ -389,13 +389,51 @@ function ContactRow(props: {
   onOpen: () => void
 }) {
   const language = useLanguage()
+  const rowSync = useServerSync()
   const live = createMemo<RosterLive>(() => liveFor(props.sessions, props.view.id))
   // ⚠️ `now` is a SIGNAL, not a literal read (review D5). `Date.now()` inside the memo is untracked,
   // so the badge froze on the ten-minute window that ended when the page painted and went on
   // presenting it as a live rate. The ticker below is the only thing that makes "per minute" true.
   const rate = createMemo(() => ratePerMinute(props.usage, { now: nowTick(), window: RATE_WINDOW_MINUTES }))
-  const perSecond = createMemo(() => formatTokensPerSecond(rate()))
   const task = createMemo(() => rosterTask({ title: live().title, colleagueName: props.view.name }))
+  /**
+   * The scheduler's own answer about this colleague's chat.
+   *
+   * 🔴 `serverSync().session.data`, which is where per-session liveness lives — NOT `serverSync().data`,
+   * where I first looked and concluded, wrongly, that this page had no status source at all. The same
+   * two accessors already drive the Home hero's RUNNING / T/S (`system-load.ts`), so the roster and
+   * the hero cannot disagree about one session.
+   */
+  const sessionData = createMemo(() => rowSync().session.data)
+  const state = createMemo(() => {
+    const sessionID = live().sessionID
+    if (sessionID === undefined) return "idle" as const
+    return rosterState({
+      status: sessionData().session_status[sessionID],
+      working: sessionData().session_working(sessionID),
+    })
+  })
+  /**
+   * The APPROXIMATE live rate, from the same snapshot the retired chat list showed.
+   *
+   * 🔴 **Approximate on purpose, and it must stay that way** (owner, 2026-08-27). A true token rate
+   * needs the model's own tokenisation, which differs per model and is not knowledge this client has
+   * or should acquire — so this is an estimate that comes out about right across models rather than
+   * exact for any one. The `~` is part of the label for that reason: it is the difference between a
+   * figure a reader can trust the meaning of and one that quietly claims a precision we do not have.
+   *
+   * ⚠️ **What it is FOR is liveness, not benchmarking.** A number moving here says the model and the
+   * agent are both healthy and working; nobody should compare two colleagues by it, and nothing should
+   * be tuned against it. Sharpening it is a job for a world where model servers are a reliable
+   * standard — until then, more decimal places would only make the wrong reading easier to reach.
+   *
+   * `undefined` unless something is streaming, which is why an idle row carries no number, not a zero.
+   */
+  const perSecond = createMemo(() => {
+    const sessionID = live().sessionID
+    const tps = sessionID ? sessionData().session_live(sessionID)?.tps : undefined
+    return tps && tps > 0 ? String(Math.round(tps)) : undefined
+  })
   // The transcript's own formatter, so a timestamp reads the same in both places. Ticked by `nowTick`
   // so "today" stops being today at midnight without a reload.
   const lastTouched = createMemo(() => {
@@ -406,7 +444,9 @@ function ContactRow(props: {
   /** The facts that FOLLOW the task, each present only when it has something to say. Built as a list
    *  so the separators can be joined between them rather than written beside each one. */
   const meta = createMemo<{ text: string; at?: number; title?: string }[]>(() => {
-    const parts: { text: string; at?: number; title?: string }[] = []
+    const parts: { text: string; at?: number; title?: string }[] = [
+      { text: language.t(`contacts.state.${state()}`) },
+    ]
     const speed = perSecond()
     if (speed) parts.push({ text: language.t("contacts.perSecond", { tokens: speed }) })
     const stamp = lastTouched()

@@ -2772,7 +2772,15 @@ export const dict = {
   // The row's live line. Each is a WORD, not a sentence: four facts share one line, so anything
   // longer than a label pushes the others off the row it exists to inform.
   "contacts.noTask": "No task",
-  "contacts.perSecond": "{{tokens}} tok/s",
+  // The tilde is load-bearing: a true rate needs each model'''s own tokenisation, so this is an
+  // estimate that is about right across models rather than exact for one. It says the model and the
+  // agent are alive and working — it is not a benchmark, and must not read like one.
+  "contacts.perSecond": "~{{tokens}} tok/s",
+  // Three words, matching what the scheduler actually knows. "Error" is the reachability case — a
+  // provider being retried — because a colleague that cannot run must not read as a healthy pause.
+  "contacts.state.idle": "Idle",
+  "contacts.state.working": "Working",
+  "contacts.state.error": "Error",
   "contacts.rateTitle": "Tokens produced per minute, averaged over the last {{window}} minutes",
   "contacts.configure": "Configure this colleague",
   "contacts.close": "Close",
