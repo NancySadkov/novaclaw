@@ -2710,7 +2710,7 @@ export const dict = {
   "agentConfig.personalityHint": "Stays with the colleague, not the chat.",
   "agentConfig.personalityHint.more": "This stays with the colleague, not with a chat — it survives every conversation and never gets summarised away.",
   "agentConfig.memory": "What it remembers",
-  "agentConfig.mind": "What it thinks with",
+  "agentConfig.mind": "Model it thinks with",
   "agentConfig.modelInherit": "Whatever this NovaClaw uses by default",
   "agentConfig.needsTier": "This job needs at least",
   "agentConfig.needsTierNone": "No requirement — any model is fine",

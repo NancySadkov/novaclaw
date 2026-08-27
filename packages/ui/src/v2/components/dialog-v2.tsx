@@ -5,7 +5,7 @@ import { useI18n } from "../../context/i18n"
 export interface DialogProps extends ParentProps {
   /** "content" hugs the children in BOTH axes and centers them (tour/placeholder-style cards);
    *  the other sizes are fixed boxes. `fit` only relaxes height and keeps the fixed width. */
-  size?: "normal" | "large" | "x-large" | "content"
+  size?: "normal" | "large" | "x-large" | "content" | "full"
   variant?: "default" | "settings"
   class?: ComponentProps<"div">["class"]
   classList?: ComponentProps<"div">["classList"]

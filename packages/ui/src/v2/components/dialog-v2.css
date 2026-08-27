@@ -186,6 +186,26 @@
     }
   }
 
+  /* A genuinely FULL-SCREEN dialog. The container itself fills the viewport, because sizing only the
+     inner content cannot: every other size caps the container (`content` at 640px wide) and clips
+     with `overflow: hidden`, so a child asking for `100vw` loses whatever sticks out on the right —
+     which is where a settings surface keeps Close and Save. Measured 2026-08-28: the wider the
+     window, the more of those buttons disappeared. */
+  &[data-size="full"] [data-slot="dialog-container"] {
+    width: 100vw;
+    height: 100dvh;
+    max-width: 100vw;
+    max-height: 100dvh;
+    border-radius: 0;
+    align-items: stretch;
+
+    [data-slot="dialog-content"] {
+      width: 100%;
+      min-height: 0;
+      flex: 1;
+    }
+  }
+
   &[data-size="x-large"] [data-slot="dialog-container"] {
     width: min(calc(100vw - 32px), 980px);
     height: min(calc(100vh - 92px), 600px);
