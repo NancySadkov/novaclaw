@@ -94,13 +94,26 @@ describe("HttpApi compression", () => {
     })
 
     test("when the response body is below the 1024-byte threshold", async () => {
-      // A bare config produces a tiny response (~few hundred bytes).
+      /**
+       * ⚠️ **`/config` is no longer a small response, and the fixture had to move because of it.**
+       * This used to say "a bare config produces a tiny response (~few hundred bytes)" and hit
+       * `/config`. That stopped being true on 2026-08-27, when the shipped colleagues began seeding
+       * on instances with no config file: Xenia, Daedalus and Myron carry ~1,800 characters of
+       * briefs, so even a "bare" instance now answers well over the threshold and gets gzipped.
+       *
+       * The test's SUBJECT is the skip branch, not `/config`, so it moved to an endpoint that is
+       * genuinely small rather than being relaxed into agreement. A threshold test whose body drifts
+       * above the threshold stops testing the branch it names — it would have passed forever by
+       * asserting compression on a compressed response.
+       */
       await using tmp = await tmpdir({ config: { formatter: false } })
-      const response = await app().request("/config", {
+      const response = await app().request("/path", {
         headers: { "x-novaclaw-directory": tmp.path, "accept-encoding": "gzip" },
       })
       expect(response.status).toBe(200)
       const body = new Uint8Array(await response.arrayBuffer())
+      // The guard that keeps this honest: if THIS body ever crosses 1024 the fixture must move
+      // again, and the failure says so rather than quietly measuring the wrong branch.
       expect(body.byteLength).toBeLessThan(1024)
       expect(response.headers.get("content-encoding")).toBeNull()
     })
