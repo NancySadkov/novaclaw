@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { chatFor, formatRate, liveFor, ratePerMinute, threadOf, type SessionLike } from "./roster-live"
+import { chatFor, formatRate, formatTokensPerSecond, liveFor, ratePerMinute, rosterTask, threadOf, type SessionLike } from "./roster-live"
 
 const session = (over: Partial<SessionLike> & { id: string }): SessionLike => ({
   time: { created: 1 },
@@ -136,5 +136,34 @@ describe("printing the rate", () => {
     expect(formatRate(1)).toBe("1")
     expect(formatRate(2.5)).toBe("2.5")
     expect(formatRate(42.4)).toBe("42")
+  })
+})
+
+describe("rosterTask", () => {
+  test("a chat titled after the colleague is NOT a task", () => {
+    expect(rosterTask({ title: "Nova", colleagueName: "Nova" })).toBeUndefined()
+    expect(rosterTask({ title: "  umbris ", colleagueName: "Umbris" })).toBeUndefined()
+  })
+
+  test("a real task survives", () => {
+    expect(rosterTask({ title: "Port the DHT to TCP", colleagueName: "Umbris" })).toBe("Port the DHT to TCP")
+  })
+
+  test("no title and an empty title both mean no task", () => {
+    expect(rosterTask({ title: undefined, colleagueName: "Nova" })).toBeUndefined()
+    expect(rosterTask({ title: "   ", colleagueName: "Nova" })).toBeUndefined()
+  })
+})
+
+describe("formatTokensPerSecond", () => {
+  test("a silent window renders nothing, never a zero", () => {
+    expect(formatTokensPerSecond(undefined)).toBeUndefined()
+    expect(formatTokensPerSecond(0)).toBeUndefined()
+  })
+
+  test("converts the per-minute series rather than measuring twice", () => {
+    expect(formatTokensPerSecond(600)).toBe("10")
+    expect(formatTokensPerSecond(90)).toBe("1.5")
+    expect(formatTokensPerSecond(3)).toBe("<0.1")
   })
 })

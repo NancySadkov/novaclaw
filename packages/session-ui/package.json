@@ -17,6 +17,7 @@
     "./v2/message-fold": "./src/v2/message-fold.ts",
     "./v2/reasoning-fold": "./src/v2/reasoning-fold.ts",
     "./v2/*.css": "./src/v2/components/*.css",
+    "./v2/message-time": "./src/v2/message-time.ts",
     "./v2/*": "./src/v2/components/*.tsx"
   },
   "scripts": {

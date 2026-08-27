@@ -2769,6 +2769,10 @@ export const dict = {
   "contacts.untitled": "Working…",
   "contacts.spend": "Tokens this colleague and its helpers have produced",
   "contacts.rate": "{{tokens}}/min",
+  // The row's live line. Each is a WORD, not a sentence: four facts share one line, so anything
+  // longer than a label pushes the others off the row it exists to inform.
+  "contacts.noTask": "No task",
+  "contacts.perSecond": "{{tokens}} tok/s",
   "contacts.rateTitle": "Tokens produced per minute, averaged over the last {{window}} minutes",
   "contacts.configure": "Configure this colleague",
   "contacts.close": "Close",

@@ -3,13 +3,12 @@ import { Dynamic } from "solid-js/web"
 import { createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
-import { GoldGlyph } from "@/components/gold-glyph"
 import { useGlobal } from "@/context/global"
 import { useServer } from "@/context/server"
 import { useLanguage } from "@/context/language"
 import { AppPage } from "@/components/app-page"
 import { agentColor } from "@/utils/agent"
-import { hiddenRoster, memoryDisclosure, roster, searchRoster, type ContactView } from "@/apps/contacts"
+import { hiddenRoster, roster, searchRoster, type ContactView } from "@/apps/contacts"
 import { SHARED_ROUTE } from "@/apps/memory-owner"
 import { listSessions, listUsage, startChat } from "@/apps/agent-list"
 import { planHire } from "@/apps/agent-hire"
@@ -17,12 +16,15 @@ import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
 import {
   formatRate,
+  formatTokensPerSecond,
   liveFor,
   ratePerMinute,
+  rosterTask,
   type RosterLive,
   type SessionLike,
   type UsageMinute,
 } from "@/apps/roster-live"
+import { messageTime } from "@novaclaw/session-ui/v2/message-time"
 import { compactTokens } from "@/pages/home-session-meta"
 import { ServerConnection } from "@/context/server"
 import { sessionHref } from "@/utils/session-route"
@@ -245,12 +247,12 @@ export function ContactsPage() {
 
   return (
     <AppPage class="flex flex-col overflow-hidden">
-      <div class="flex items-center gap-3 border-b border-v2-border-border-base px-4 py-2.5">
-        <GoldGlyph name="user" class="size-6" />
-        <span class="text-[15px] font-semibold">{language.t("contacts.title")}</span>
-        <span class="min-w-0 flex-1 truncate text-xs text-v2-text-text-faint">{language.t("contacts.hint")}</span>
-      </div>
-
+      {/* 🔴 **The header is GONE** (owner, 2026-08-27: a *"missing (and unneeded) icon, superfluous
+          'Contacts' title and useless and verbose 'Your colleagues…' description"*). Every part of it
+          restated something the reader already knew: they opened this app from a tile that names it,
+          so the title is an echo, and the sentence under it explained a roster that explains itself
+          the moment you look at the rows. The glyph rendered as a blank besides. What the app is for
+          belongs on the tile and in Help, not spent on the top of every visit. */}
       <div class="flex items-center gap-2 border-b border-v2-border-border-base px-4 py-2">
         {/* The user's own half of the CEO's power (owner: "user can create new agents on demand").
             Nova can hire through her tool; this is the same act performed by the person, sharing the
@@ -388,11 +390,30 @@ function ContactRow(props: {
 }) {
   const language = useLanguage()
   const live = createMemo<RosterLive>(() => liveFor(props.sessions, props.view.id))
-  const disclosure = createMemo(() => memoryDisclosure(props.view.memory))
   // ⚠️ `now` is a SIGNAL, not a literal read (review D5). `Date.now()` inside the memo is untracked,
   // so the badge froze on the ten-minute window that ended when the page painted and went on
   // presenting it as a live rate. The ticker below is the only thing that makes "per minute" true.
   const rate = createMemo(() => ratePerMinute(props.usage, { now: nowTick(), window: RATE_WINDOW_MINUTES }))
+  const perSecond = createMemo(() => formatTokensPerSecond(rate()))
+  const task = createMemo(() => rosterTask({ title: live().title, colleagueName: props.view.name }))
+  // The transcript's own formatter, so a timestamp reads the same in both places. Ticked by `nowTick`
+  // so "today" stops being today at midnight without a reload.
+  const lastTouched = createMemo(() => {
+    const updated = live().updatedAt
+    nowTick()
+    return updated === undefined ? undefined : messageTime({ created: updated, locale: language.locale() })
+  })
+  /** The facts that FOLLOW the task, each present only when it has something to say. Built as a list
+   *  so the separators can be joined between them rather than written beside each one. */
+  const meta = createMemo<{ text: string; at?: number; title?: string }[]>(() => {
+    const parts: { text: string; at?: number; title?: string }[] = []
+    const speed = perSecond()
+    if (speed) parts.push({ text: language.t("contacts.perSecond", { tokens: speed }) })
+    const stamp = lastTouched()
+    const updated = live().updatedAt
+    if (stamp && updated !== undefined) parts.push({ text: stamp.label, at: updated, title: stamp.full })
+    return parts
+  })
   // The row IS the way into the colleague's one chat — that is what replacing the chat list means.
   // Its config is the gear beside it, so "talk to them" and "change them" are different gestures.
   // ⚠️ Through `sessionHref`, never hand-built. The route segment is BASE64 of the server key, and
@@ -444,28 +465,39 @@ function ContactRow(props: {
             {props.view.title ?? language.t("contacts.noTitle")}
           </span>
         </span>
-        {/* WHAT IT IS ON — the chat list's own auto-generated title, reused rather than a second
-            title algorithm growing beside the first. A colleague with no chat yet says so plainly
-            instead of showing an empty line that reads like a missing value. */}
+        {/* WHAT IT IS ON, and HOW IT IS DOING — one line, four facts, each absent when it has
+            nothing to say (owner, 2026-08-27).
+            🔴 The task is the chat's auto-title, but only when it is actually a task: `rosterTask`
+            drops it when it merely echoes the colleague's name, which is what a fresh chat's title
+            is. "No chat yet" is gone with it — the reader is being told about a TASK, and not having
+            one is the same answer whether or not a conversation exists. */}
         <span class="block truncate text-xs">
           <Show
-            when={live().title}
-            fallback={
-              <span class="text-v2-text-text-faint">
-                {live().sessionID
-                  ? language.t("contacts.untitled")
-                  : props.starting
-                    ? language.t("contacts.starting")
-                    : language.t("contacts.noChat")}
-              </span>
-            }
+            when={task()}
+            fallback={<span class="text-v2-text-text-faint">{language.t("contacts.noTask")}</span>}
           >
-            {(title) => <span class="text-v2-text-text-base">{title()}</span>}
+            {(value) => <span class="text-v2-text-text-base">{value()}</span>}
           </Show>
-        </span>
-        {/* Both halves of the memory disclosure, on the row itself — not behind the detail view. */}
-        <span class="block truncate text-[11px] text-v2-text-text-faint">
-          {language.t(disclosure().privateKey)} · {language.t(disclosure().sharedKey)}
+          {/* ⚠️ Separators are JOINED between the parts that exist, never written beside each one.
+              Written inline, an absent rate left `No task · · 07:51 PM` on screen — a punctuation
+              mark for a fact that is deliberately not rendered. Caught by looking at the row, not by
+              the diff: every `Show` was individually correct.
+              · The RATE is per second, absent rather than "0/s" — a zero reads as a measurement of
+                the colleague's speed rather than of our decision to render it.
+              · The TIME uses the transcript's own `messageTime`, so the clock-today / date-after
+                rule cannot drift between the two surfaces. */}
+          <For each={meta()}>
+            {(part, index) => (
+              <span class="text-v2-text-text-faint">
+                {index() === 0 ? " · " : " · "}
+                <Show when={part.at !== undefined} fallback={part.text}>
+                  <time dateTime={new Date(part.at!).toISOString()} title={part.title}>
+                    {part.text}
+                  </time>
+                </Show>
+              </span>
+            )}
+          </For>
         </span>
       </Dynamic>
       {/* Spend, rolled up over this colleague's chat AND the nameless staff it spawned — they spend
