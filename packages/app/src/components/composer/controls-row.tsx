@@ -5,6 +5,11 @@
 import { Show } from "solid-js"
 import { useTunePanelOpener, type ComposerFeaturesControlState } from "./features-control"
 import { ComposerAgentControl } from "./agent-control"
+import { useDirectoryPicker } from "@/components/directory-picker"
+import { useLanguage } from "@/context/language"
+import { useServer } from "@/context/server"
+import { useServerSync } from "@/context/server-sync"
+import { showToast } from "@/utils/toast"
 import type { ComposerAgentControlState } from "./agent-option"
 
 export type ComposerControlsRowState = {
@@ -18,6 +23,39 @@ export type ComposerControlsRowState = {
 
 export function ComposerControlsRow(props: { state: ComposerControlsRowState }) {
   const tune = useTunePanelOpener(() => props.state.features)
+  const language = useLanguage()
+  const pickDirectory = useDirectoryPicker()
+  const server = useServer()
+  const sync = useServerSync()
+
+  /**
+   * Assign this colleague a project, from the composer.
+   *
+   * ⚠️ It WRITES immediately, unlike Tune's copy of this control which stages a draft until Save.
+   * The difference is deliberate: a chip has no Save button, so a picker that only staged would
+   * silently discard the choice the moment the user carried on typing — a control that reports
+   * success and changes nothing, which is the defect this session has already fixed twice elsewhere.
+   */
+  const pickProject = () => {
+    const conn = server.current
+    const agentID = props.state.features.agent
+    if (!conn || !agentID) return
+    pickDirectory({
+      server: conn,
+      title: language.t("prompt.agent.project.pick"),
+      onSelect: (result) => {
+        const picked = Array.isArray(result) ? result[0] : result
+        if (!picked) return
+        void sync()
+          .updateConfig({ agents: { [agentID]: { directory: picked } } } as never)
+          .catch((error: unknown) => {
+            // Said, never swallowed: a project that silently fails to change leaves the colleague
+            // working somewhere the chip now claims it is not.
+            showToast({ variant: "error", title: language.t("agentConfig.saveFailed"), description: String(error) })
+          })
+      },
+    })
+  }
   return (
     <>
       {/* 🔴 The model chip LEFT this row on 2026-08-21 (owner: *"move model picker into the agents
@@ -54,6 +92,7 @@ export function ComposerControlsRow(props: { state: ComposerControlsRowState }) 
           state={{
             ...props.state.agent,
             onOpenConfig: tune.open,
+            onPickProject: pickProject,
             modeSuffix: tune.modeSuffix,
             unattended: tune.unattended,
           }}

@@ -38,6 +38,19 @@ export type ComposerAgentControlState = {
    * the door (2026-08-27).
    */
   readonly onOpenConfig?: (() => void) | undefined
+  /**
+   * Assign the colleague a PROJECT, from the composer (owner, 2026-08-28: *"the project picker should
+   * really be moved to the chat, and placed after the agent's name, so user always sees what project
+   * this agent is working on"*).
+   *
+   * 🔴 It lived only inside Tune, three sections down a scrolling dialog, so the answer to "what is
+   * this colleague working on right now" cost a dialog open and a scroll — while the composer, which
+   * is on screen the whole conversation, had the answer already resolved and did not show it.
+   *
+   * ⚠️ Absent on HOME, where the chip is a selector: a click there must open the picker of WHO, and a
+   * second meaning on the same control is how a chip stops being predictable.
+   */
+  readonly onPickProject?: (() => void) | undefined
   /** The unattended-mode suffix, inherited from the trigger this chip replaced — it says what the
    *  agent may do without you, so it follows the control the user actually presses. */
   readonly modeSuffix?: (() => string) | undefined

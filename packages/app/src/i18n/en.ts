@@ -2711,6 +2711,33 @@ export const dict = {
   "agentConfig.personalityHint.more": "This stays with the colleague, not with a chat — it survives every conversation and never gets summarised away.",
   "agentConfig.memory": "What it remembers",
   "agentConfig.mind": "Model it thinks with",
+  // ── How colleagues work ─────────────────────────────────────────────────────────────────────────
+  // The prose that used to sit under the controls, rehomed behind one Help button. Written about the
+  // MODEL rather than this dialog's fields: a help page that narrates the form goes stale the day a
+  // control moves, one that explains the ideas is still true afterwards.
+  // The composer's project button. "No project" is a STATE, not an empty value: a colleague without
+  // one works in its own workspace, which is a real place and not a missing setting.
+  "prompt.agent.project.none": "No project",
+  "prompt.agent.project.own": "Works in its own workspace",
+  "prompt.agent.project.pick": "Choose this colleague's project folder",
+  "agentHelp.title": "How colleagues work",
+  "agentHelp.back": "Back",
+  "agentHelp.close": "Close",
+  "agentHelp.colleague.title": "A colleague",
+  "agentHelp.colleague.body":
+    "Each colleague is someone you keep, not a chat you start. It has a name, a job, and a brief you write — and it stays itself between conversations. Renaming one changes nothing else about it: everything it remembers stays with it. Nova is the exception, and cannot be renamed or retired, because it is the one that hires and briefs the others.",
+  "agentHelp.memory.title": "What it remembers",
+  "agentHelp.memory.body":
+    "A colleague set to remember keeps its own private notes, which survive every conversation and are never summarised away. What it learns is its own — the household facts everyone can see are separate, and shared with every colleague on purpose. Set a colleague to remember nothing and it becomes a throwaway: useful when you want no trace kept.",
+  "agentHelp.project.title": "What it works on",
+  "agentHelp.project.body":
+    "Give a colleague a project folder and that is where it works. Leave it without one and it uses its own workspace — a private folder it can always write to, which is where its notes, drafts and scratch files go. Change the project and the colleague is told, so it does not carry on thinking it works on the old one.",
+  "agentHelp.model.title": "What it thinks with",
+  "agentHelp.model.body":
+    "A colleague has one mind. Pick a model for it and every conversation uses that one; leave it inheriting and it follows the model set in Settings. Choosing per chat instead would make the same colleague clever in one conversation and poor in the next, for reasons you could not see.",
+  "agentHelp.chat.title": "Its chat",
+  "agentHelp.chat.body":
+    "A colleague has exactly one conversation, so there is no list to lose things in. Clearing it puts the conversation away and starts fresh — the colleague, its brief and its memories all stay. When a chat gets long it is summarised to keep going, and by default the older part is kept in the colleague's memory so it can still look things up.",
   "agentConfig.modelInherit": "Whatever this NovaClaw uses by default",
   "agentConfig.needsTier": "This job needs at least",
   "agentConfig.needsTierNone": "No requirement — any model is fine",

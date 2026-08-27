@@ -1,8 +1,10 @@
 import { For, Show } from "solid-js"
+import { Dynamic } from "solid-js/web"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { useLanguage } from "@/context/language"
 import { selectedOption, type ComposerAgentControlState } from "./agent-option"
+import { displayName as folderName } from "@/pages/layout/helpers"
 import { AgentPortrait } from "@/components/agent-portrait"
 
 // WHO the prompt is for (owner, 2026-08-21: *"the prompt area, both in chat and at the bottom of
@@ -28,7 +30,13 @@ export function ComposerAgentControl(props: { state: ComposerAgentControlState }
         gutter={4}
         value={language.t(props.state.working ? "prompt.agent.tooltip.working" : "prompt.agent.tooltip")}
       >
-        <label
+        {/* 🔴 A `<label>` only where there is something to LABEL. On HOME it wraps the real `<select>`
+            and is correct; in a chat it wrapped a nested `<button>` — and a label FORWARDS activation
+            to the control inside it, so pressing the chip fired the project picker instead of opening
+            the colleague's configuration. Measured 2026-08-28, the moment the project button landed
+            inside it: the chip stopped doing its own job. */}
+        <Dynamic
+          component={props.state.readOnly ? "div" : "label"}
           data-action={props.state.onOpenConfig ? "prompt-agent-config" : undefined}
           data-mode={props.state.unattended?.() ? "unattended" : undefined}
           // The whole chip is the target, portrait and name alike — the owner asked for "clicking any
@@ -38,7 +46,7 @@ export function ComposerAgentControl(props: { state: ComposerAgentControlState }
           onClick={props.state.readOnly ? props.state.onOpenConfig : undefined}
           role={props.state.readOnly && props.state.onOpenConfig ? "button" : undefined}
           tabindex={props.state.readOnly && props.state.onOpenConfig ? 0 : undefined}
-          onKeyDown={(event) => {
+          onKeyDown={(event: KeyboardEvent) => {
             if (!props.state.readOnly || !props.state.onOpenConfig) return
             if (event.key !== "Enter" && event.key !== " ") return
             event.preventDefault()
@@ -63,6 +71,32 @@ export function ComposerAgentControl(props: { state: ComposerAgentControlState }
               {current()?.name}
               {props.state.modeSuffix?.() ?? ""}
             </span>
+            {/* 🔴 **THE PROJECT, on screen the whole conversation** (owner, 2026-08-28). It used to live
+                only inside Tune, three sections down, so "what is this colleague working on right now"
+                cost a dialog open and a scroll — while this chip had the answer already resolved and
+                showed nothing. A colleague's folder is part of its job, and the composer is the one
+                surface that is never not visible.
+                ⚠️ Its own button, not part of the name's target: pressing the name opens WHO this is,
+                pressing the folder changes WHAT they work on. One control with two meanings is how a
+                chip stops being predictable. */}
+            <Show when={current() && props.state.onPickProject}>
+              <span aria-hidden="true" class="text-v2-text-text-faint">
+                ·
+              </span>
+              <button
+                type="button"
+                data-action="prompt-agent-project"
+                class="max-w-[14rem] truncate rounded px-1 text-v2-text-text-faint hover:bg-v2-background-bg-layer-03 hover:text-v2-text-text-base"
+                title={current()!.ownScratch ? language.t("prompt.agent.project.own") : current()!.folder}
+                onClick={(event) => {
+                  // The chip around this opens Tune; the project button must not do both.
+                  event.stopPropagation()
+                  props.state.onPickProject?.()
+                }}
+              >
+                {current()!.ownScratch ? language.t("prompt.agent.project.none") : folderName({ worktree: current()!.folder })}
+              </button>
+            </Show>
           </Show>
           <Show when={!props.state.readOnly}>
             <select
@@ -85,7 +119,7 @@ export function ComposerAgentControl(props: { state: ComposerAgentControlState }
               </For>
             </select>
           </Show>
-        </label>
+        </Dynamic>
       </TooltipV2>
     </Show>
   )

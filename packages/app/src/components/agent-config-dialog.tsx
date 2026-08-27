@@ -20,6 +20,8 @@ import { MEMORY_COUNT_CAP, memoryCountLabel, ownerRoute } from "@/apps/memory-ow
 import { memoryList } from "@/utils/memory-api"
 import { useLocation, useNavigate } from "@solidjs/router"
 import { AgentPortrait } from "@/components/agent-portrait"
+import { AgentHelpDialog } from "@/components/agent-help-dialog"
+import { useDialog } from "@novaclaw/ui/context/dialog"
 
 // ONE agent configuration dialog, opened from two places (AGENTS.md → *the structural metaphor*;
 // `notes/named-agents.md`).
@@ -52,6 +54,7 @@ export function AgentConfigDialog(props: {
   tuning?: () => JSX.Element
 }) {
   const language = useLanguage()
+  const dialogStack = useDialog()
   const confirm = useConfirm()
   const navigate = useNavigate()
   const location = useLocation()
@@ -115,6 +118,14 @@ export function AgentConfigDialog(props: {
   const [strict, setStrict] = createSignal<boolean | undefined>()
   const models = useModels()
   const [saving, setSaving] = createSignal(false)
+  /**
+   * ⚠️ Through the dialog STACK, not as a nested `<Dialog>`. The first attempt rendered
+   * `<AgentHelpDialog>` inside this component's tree and nothing appeared: the shell's content is a
+   * Kobalte `Dialog.Content`, which needs the root the stack provides, so a second one mounted inline
+   * has no context to attach to. `showScoped` also binds its life to this component, so closing Tune
+   * cannot leave Help orphaned above an empty screen.
+   */
+  const openHelp = () => void dialogStack.showScoped(() => <AgentHelpDialog onDismiss={() => dialogStack.close()} />)
 
   const nameValue = () => renamed() ?? agent()?.name ?? (props.agentID ? displayName(props.agentID) : "")
   const titleValue = () => title() ?? agent()?.title ?? ""
@@ -473,6 +484,17 @@ export function AgentConfigDialog(props: {
               {agent()?.title ?? language.t("agentConfig.noTitle")}
             </span>
           </span>
+          {/* HELP, beside Close: the one door to everything this screen used to explain inline. It sits
+              in the header rather than by a control because it explains the MODEL, not this field. */}
+          <button
+            type="button"
+            class="shrink-0 rounded-md p-1.5 text-v2-text-text-faint hover:bg-v2-background-bg-layer-03 hover:text-v2-text-text-base"
+            aria-label={language.t("agentHelp.title")}
+            title={language.t("agentHelp.title")}
+            onClick={() => openHelp()}
+          >
+            <Icon name="help" class="size-4" />
+          </button>
           <button type="button" class="text-xs text-v2-text-text-muted hover:underline" onClick={props.onDismiss}>
             {language.t("agentConfig.close")}
           </button>
@@ -747,9 +769,26 @@ export function AgentConfigDialog(props: {
                 case would hide exactly the files the user has no other route to. */}
             <Show when={workspacePath()}>
               {(path) => (
+                /**
+                 * 🔴 **It CLOSES this dialog on the way out, deliberately** (owner, 2026-08-28: the
+                 * browse link "also closes the Tune for some reason").
+                 *
+                 * It was never a modal — it is a link to `/files`, and Files is a ROUTE. So the
+                 * navigation unmounted Tune as a side effect and the dialog appeared to vanish on the
+                 * way back. The vision settles which half to fix: Files is THE file surface, an app in
+                 * the shell (principle 7 — "prefer an app in the shell over a developer surface"), so
+                 * a second file browser living inside this dialog would be the wrong answer to a
+                 * question the launcher already answers.
+                 *
+                 * What was wrong is that leaving happened SILENTLY. Dismissing first makes it a step
+                 * the user takes — Tune, then Files — instead of a dialog that evaporates behind
+                 * them, which is the same rule the Back button in this header exists for: the gesture
+                 * out of a panel is "return", and an unannounced one is a dead end wearing a link.
+                 */
                 <a
                   data-action="browse-workspace"
                   href={`/files?path=${encodeURIComponent(path())}`}
+                  onClick={() => props.onDismiss()}
                   class="mt-2 inline-flex items-center gap-1.5 text-[11px] text-v2-text-text-faint underline hover:text-v2-text-text-base"
                 >
                   <Icon name="folder" class="size-3 shrink-0" />
