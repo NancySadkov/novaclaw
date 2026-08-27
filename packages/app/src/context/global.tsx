@@ -141,6 +141,32 @@ function createServerCtx(
         },
       ),
   )
+  /**
+   * 🔴 The roster JOINS the reconnect recovery engine, because a `createResource` was invisible to it.
+   *
+   * `server-sync.tsx` invalidates every TanStack query under this server's scope whenever the SSE
+   * stream (re)connects — that is the whole data plane's cold-start and outage recovery. This roster
+   * is a solid `createResource`, not a query, so it was NOT covered: it fetched exactly once during
+   * boot and never ran again. A boot read that landed before the instance had materialised its agent
+   * config was therefore permanent, and it did not look like a failure — an empty array resolves
+   * SUCCESSFULLY, so `loading` was false, `error` was undefined, and Contacts rendered its
+   * "No colleagues yet" empty state over an instance that had a full roster. Nova is seeded in code
+   * and can never actually be absent, so that sentence was always a lie; the only cure was a reload,
+   * which minted a fresh resource.
+   *
+   * ⚠️ It refetches on the TRANSITION into "connected", not on every status read. `streamStatus` also
+   * carries "connecting"/"reconnecting", and refetching on each would put a request on the wire for
+   * every retry tick of an instance that is down — the opposite of what a recovery path is for.
+   */
+  let lastStreamStatus: string | undefined
+  createEffect(() => {
+    const status = sdk.streamStatus()
+    const previous = lastStreamStatus
+    lastStreamStatus = status
+    if (status !== "connected" || previous === "connected" || previous === undefined) return
+    void agentRosterActions.refetch()
+  })
+
   const agents = {
     list: (): readonly AgentLike[] => agentRoster.latest ?? [],
     loading: () => agentRoster.loading,
