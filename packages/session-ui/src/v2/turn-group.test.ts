@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { answerStart, groupTurns, stableGroups, type AnswerPart } from "./turn-group"
+import { answerStart, groupTurns, stableGroups, type AnswerPart, foldClosing } from "./turn-group"
 
 interface Msg {
   readonly type: string
@@ -143,3 +143,41 @@ describe("stableGroups — why the chat jumped to the top after a tool result", 
   })
 })
 
+
+// 🔴 The shape that crashed shipped 0.1.67 and took the WHOLE app down: a SETTLED turn whose last
+// row is not an assistant message, so there is no closing message for the fold to render — while
+// every other clause of the gate is satisfied. `native-transcript.tsx` used to paper over it with
+// `closing()!`, and `AssistantMessage` then read `props.message.time` on `undefined`.
+describe("foldClosing — a fold never renders without the message it is made of", () => {
+  const settledTurnEndingInATool = {
+    closing: undefined,
+    running: false,
+    hasWork: true,
+    // No closing message means no answer, so `outcome` supplies its stand-in — which is exactly
+    // what satisfied the old gate's third clause and let the branch be entered.
+    hasAnswer: false,
+    outcome: "Ran 3 steps",
+  }
+
+  test("refuses to fold when the turn has no closing assistant message", () => {
+    expect(foldClosing(settledTurnEndingInATool)).toBeUndefined()
+  })
+
+  test("the missing message OUTRANKS every other clause", () => {
+    expect(foldClosing({ ...settledTurnEndingInATool, hasAnswer: true })).toBeUndefined()
+    expect(foldClosing({ ...settledTurnEndingInATool, hasWork: true, outcome: "x" })).toBeUndefined()
+  })
+
+  test("still folds a settled turn that HAS a closing message", () => {
+    const closing = { id: "msg_a" }
+    expect(foldClosing({ ...settledTurnEndingInATool, closing })).toBe(closing)
+  })
+
+  test("a running turn never folds, message or not", () => {
+    expect(foldClosing({ ...settledTurnEndingInATool, closing: { id: "msg_a" }, running: true })).toBeUndefined()
+  })
+
+  test("a turn with nothing behind the answer never folds", () => {
+    expect(foldClosing({ ...settledTurnEndingInATool, closing: { id: "msg_a" }, hasWork: false })).toBeUndefined()
+  })
+})

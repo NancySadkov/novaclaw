@@ -116,3 +116,38 @@ export function stableGroups<T>(
   // Hand back the SAME array when nothing moved, so a `createMemo` wrapping this can bail out too.
   return changed ? out : previous
 }
+
+/**
+ * Should the turn render FOLDED, and if so which closing assistant message does the fold render?
+ *
+ * 🔴 **Returns the message rather than a boolean, and that is the whole point.** The folded branch is
+ * built around the turn's closing assistant message — it renders it twice, as the `work` half inside
+ * Done and the `answer` half outside. A boolean gate let the branch be entered without one, and the
+ * JSX papered over it with `closing()!`.
+ *
+ * That crashed a shipped 0.1.67 renderer mid-conversation and took the ENTIRE app down with it
+ * (`TypeError: Cannot read properties of undefined (reading 'time')`, out of a `<Show>`'s `when`,
+ * through the app's single root ErrorBoundary). The state is ordinary, not exotic: a settled turn
+ * whose last row is a tool call rather than prose. `hasAnswer` is then false, so `outcome` supplies
+ * its stand-in and satisfies that clause; `hasWork` needs only a second row; and `running` goes false
+ * the instant the turn settles. Measured live in `ses_fbc4201ceffe…` at `session.finish`.
+ *
+ * ⚠️ **The RETURN TYPE is the fix, not a guard clause inside it.** Nothing here could be written as
+ * an assertion that fails loudly: a boolean gate and this one agree on every input — they differ only
+ * in what the caller can do afterwards. Returning `T | undefined` forces the fold behind a bound
+ * `<Show>`, so the branch cannot be entered without its message; a boolean left the caller free to
+ * reach for `closing()!` and it did. No unit test can catch the regression either, because the
+ * defect lives in the JSX, not in this function — reintroducing `!` would still compile.
+ */
+export function foldClosing<T>(input: {
+  readonly closing: T | undefined
+  readonly running: boolean
+  readonly hasWork: boolean
+  readonly hasAnswer: boolean
+  readonly outcome: unknown
+}): T | undefined {
+  if (input.closing === undefined) return undefined
+  if (input.running || !input.hasWork) return undefined
+  if (!input.hasAnswer && input.outcome === undefined) return undefined
+  return input.closing
+}

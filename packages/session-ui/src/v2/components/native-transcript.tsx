@@ -28,7 +28,7 @@ import type {
 import { isSteerText, stripSteerProvenance } from "@novaclaw/core/session/steer-provenance"
 import { SessionOrigin } from "@novaclaw/core/session/origin"
 import { isOptimistic, unqueuedPending } from "../message-fold"
-import { answerStart, groupTurns, stableGroups, type TurnGroup } from "../turn-group"
+import { answerStart, foldClosing, groupTurns, stableGroups, type TurnGroup } from "../turn-group"
 import { reasoningTokenLabel } from "./reasoning-count"
 import { colleagueRow } from "./colleague-row"
 import { Markdown } from "../../components/markdown"
@@ -286,7 +286,34 @@ function Turn(props: {
    */
   const outcome = () =>
     running() || hasAnswer() ? undefined : turnOutcome({ toolCount: toolCount(), lastToolName: lastToolName() })
-  const folds = () => !running() && hasWork() && (hasAnswer() || outcome() !== undefined)
+  /**
+   * 🔴 **The fold is BUILT AROUND the closing assistant message, so it may not render without one.**
+   *
+   * This crashed a shipped 0.1.67 renderer mid-conversation, and the whole app went with it:
+   * `TypeError: Cannot read properties of undefined (reading 'time')`. The folded branch renders
+   * `<AssistantMessage message={closing()!} …>` twice, and `closing()` is `undefined` whenever the
+   * turn's last row is not an assistant one — a tool, a shell row, a notice. The `!` told the
+   * compiler that could not happen; at runtime `AssistantMessage` read `props.message.time` on
+   * `undefined` and threw out of a `<Show>`'s `when`.
+   *
+   * ⚠️ **Every clause of the old gate passes in exactly that state**, which is why it was reachable
+   * rather than theoretical: `hasAnswer()` is false with no closing message, so `outcome()` returns
+   * its stand-in and satisfies the third clause; `hasWork()` needs only `body().length > 1`; and
+   * `running()` goes false the moment the turn settles. So a settled multi-row turn ending on a
+   * tool call rendered the fold and dereferenced nothing — measured live in session
+   * `ses_fbc4201ceffe…`, at `session.finish`.
+   *
+   * Returning the MESSAGE rather than a boolean is what removes the two `!`s: the `<Show>` below
+   * binds it, so the branch that uses it cannot be entered without it.
+   */
+  const foldsClosing = () =>
+    foldClosing({
+      closing: closing(),
+      running: running(),
+      hasWork: hasWork(),
+      hasAnswer: hasAnswer(),
+      outcome: outcome(),
+    })
   /** The closing message's last tool — an `exit` ends the drain deliberately, so it is not a stop-short. */
   const lastToolName = () => {
     const parts = closing()?.content.filter((part) => part.type === "tool")
@@ -304,13 +331,16 @@ function Turn(props: {
         {(lead) => <NativeMessage message={lead()} developer={props.developer} liveTiming={props.liveTiming} />}
       </Show>
       <Show
-        when={folds()}
+        when={foldsClosing()}
+        keyed
         fallback={
           <For each={body()}>
             {(message) => <NativeMessage message={message} developer={props.developer} liveTiming={props.liveTiming} />}
           </For>
         }
       >
+        {(closingMessage) => (
+        <>
         <details data-slot="native-turn-work">
           <summary>
             {/* The flex lives HERE, not on <summary> — see the css note; flexing the summary drops
@@ -331,7 +361,7 @@ function Turn(props: {
               )}
             </For>
             <AssistantMessage
-              message={closing()!}
+              message={closingMessage}
               developer={props.developer}
               liveTiming={props.liveTiming}
               half="work"
@@ -342,7 +372,7 @@ function Turn(props: {
           when={outcome()}
           fallback={
             <AssistantMessage
-              message={closing()!}
+              message={closingMessage}
               developer={props.developer}
               liveTiming={props.liveTiming}
               half="answer"
@@ -351,6 +381,8 @@ function Turn(props: {
         >
           {(line) => <p data-slot="native-turn-outcome">{line()}</p>}
         </Show>
+        </>
+        )}
       </Show>
     </div>
   )
