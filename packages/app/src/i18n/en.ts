@@ -408,27 +408,29 @@ export const dict = {
   "prompt.project.none": "It sets none of these.",
 
   "composer.tune.makeDefault.title": "Make Default for this Folder",
-  "composer.tune.makeDefault.description":
-    "Save the switches you changed in this chat into this folder's novaclaw.json, so every new chat here starts the same way. Anything you did not change keeps following your Settings.",
-  "composer.tune.makeDefault.inForce.none": "This folder has no project file yet. Saving creates one here.",
-  "composer.tune.makeDefault.inForce.pending": "Checking whether this folder already has a project file…",
-  "composer.tune.makeDefault.inForce.hereUnknown":
-    "This folder already has {{file}}. Saving replaces only its Tune section and leaves the rest as it is. Open a chat here to see what it currently sets.",
+  // 🔴 SHORT on sight, long on demand (uix.md §1.4). This block was ~1,400 characters of prose
+  // under one control — the owner quoted it back as "verbose and useless". Each visible line now says
+  // what is in force in a few words; the reasoning moved to the `.more` popover beside the title.
+  "composer.tune.makeDefault.description": "Save these switches as this folder's default.",
+  "composer.tune.makeDefault.description.more":
+    "The switches you changed in this chat are written into this folder's novaclaw.json, so every new chat here starts the same way. Anything you did not change keeps following your Settings.",
+  "composer.tune.makeDefault.inForce.none": "No project file here yet — saving creates one.",
+  "composer.tune.makeDefault.inForce.pending": "Checking…",
+  "composer.tune.makeDefault.inForce.hereUnknown": "{{file}} is here; what it sets is not known yet.",
   "composer.tune.makeDefault.inForce.brokenUnreadable":
-    "This folder has {{file}}, and it could not be read — so nothing in it is in force. Saving is refused until the file is valid: fix it, or move it aside.",
+    "{{file}} could not be read — saving is refused until it is valid.",
   "composer.tune.makeDefault.inForce.brokenFuture":
-    "This folder has {{file}}, and it was written by a newer NovaClaw — so nothing in it is in force here. Update NovaClaw to use it; the file itself is probably fine.",
-  "composer.tune.makeDefault.inForce.here":
-    "This folder already has {{file}}. Saving replaces only its Tune section — its permissions and everything else stay exactly as they are.",
-  "composer.tune.makeDefault.inForce.ancestor":
-    "Right now this folder follows {{file}} in a folder above it. Saving gives this folder its own project file, which then takes over here.",
-  "composer.tune.makeDefault.nothing":
-    "You haven't changed any switch in this chat yet, so there is nothing to save. Flip one above and it will show up here.",
+    "{{file}} needs a newer NovaClaw — nothing in it applies here.",
+  "composer.tune.makeDefault.inForce.here": "{{file}} is here. Saving replaces its Tune section only.",
+  "composer.tune.makeDefault.inForce.ancestor": "Following {{file}} above. Saving gives this folder its own.",
+  "composer.tune.makeDefault.nothing": "Nothing changed in this chat yet.",
   "composer.tune.makeDefault.preview": "Will save: {{list}}",
-  "composer.tune.makeDefault.omitted":
-    "Will not save: {{list}}. A folder's file can turn a safety control on, never off — leaving it out keeps your own setting in charge.",
-  "composer.tune.makeDefault.modeStays":
-    "This chat's mode stays with the chat. A folder may only start ordinary interactive chats, never ones that prompt themselves.",
+  "composer.tune.makeDefault.omitted": "Not saved: {{list}}.",
+  "composer.tune.makeDefault.omitted.more":
+    "A folder's file can turn a safety control on, never off — leaving these out keeps your own setting in charge.",
+  "composer.tune.makeDefault.modeStays": "This chat's mode stays with the chat.",
+  "composer.tune.makeDefault.modeStays.more":
+    "A folder may only start ordinary interactive chats, never ones that prompt themselves.",
   "composer.tune.makeDefault.action": "Save as folder default",
   "composer.tune.makeDefault.saving": "Saving...",
   "composer.tune.makeDefault.receipt.created": "Created {{file}}",
@@ -2699,14 +2701,14 @@ export const dict = {
   "agentConfig.noTitle": "No job title yet",
   "agentConfig.who": "Who this colleague is",
   "agentConfig.name": "Name",
-  "agentConfig.nameHint":
-    "Rename freely — everything this colleague remembers stays with it. Nova is the one name that cannot change.",
+  "agentConfig.nameHint": "Nova's name cannot change.",
+  "agentConfig.nameHint.more": "Rename freely — everything this colleague remembers stays with it. Nova is the one name that cannot change.",
   "agentConfig.jobTitle": "Job title",
   "agentConfig.jobTitlePlaceholder": "Talent Scout, Expense Manager, Dungeon Master…",
   "agentConfig.personality": "Personality and standing instructions",
   "agentConfig.personalityPlaceholder": "How it should speak, what it should always do, what it must never do.",
-  "agentConfig.personalityHint":
-    "This stays with the colleague, not with a chat — it survives every conversation and never gets summarised away.",
+  "agentConfig.personalityHint": "Stays with the colleague, not the chat.",
+  "agentConfig.personalityHint.more": "This stays with the colleague, not with a chat — it survives every conversation and never gets summarised away.",
   "agentConfig.memory": "What it remembers",
   "agentConfig.mind": "What it thinks with",
   "agentConfig.modelInherit": "Whatever this NovaClaw uses by default",
@@ -2736,16 +2738,17 @@ export const dict = {
   // is Theron's and nobody else's.
   "agentConfig.browseWorkspace": "Browse {{name}}'s workspace",
   "agentConfig.folderPick": "Choose the folder this colleague works on",
-  "agentConfig.folderHint":
-    "Change this and the colleague is told, so it does not carry on thinking it works on the old project.",
+  "agentConfig.folderHint": "The colleague is told when this changes.",
+  "agentConfig.folderHint.more": "Change this and the colleague is told, so it does not carry on thinking it works on the old project.",
   "agentConfig.archive": "When the chat gets long",
-  "agentConfig.archiveKeep":
-    "Keep the older conversation in this colleague's memory, so it can look things up later instead of only having the summary.",
+  "agentConfig.archiveKeep": "Keep the older conversation in memory.",
+  "agentConfig.archiveKeep.more": "Keep the older conversation in this colleague's memory, so it can look things up later instead of only having the summary.",
   "agentConfig.archiveThrowaway": "A throwaway keeps nothing, so there is nothing to archive.",
-  "agentConfig.governingLocked":
-    "Nova runs this NovaClaw. Its name, brief and memory setting are fixed, so nothing you type here could take effect.",
+  "agentConfig.governingLocked": "Nova's profile is fixed.",
+  "agentConfig.governingLocked.more": "Nova runs this NovaClaw. Its name, brief and memory setting are fixed, so nothing you type here could take effect.",
   "agentConfig.thisChat": "How this chat runs",
-  "agentConfig.thisChatHint": "Above is who this colleague is everywhere. Below is just this conversation.",
+  "agentConfig.thisChatHint": "Just this conversation.",
+  "agentConfig.thisChatHint.more": "Above is who this colleague is everywhere. Below is just this conversation.",
   "contacts.title": "Contacts",
   "contacts.hint": "Your colleagues. Nova hires, briefs and retires them; you decide who you need.",
   // The household row at the foot of the roster — everything every colleague can read. Named for WHO

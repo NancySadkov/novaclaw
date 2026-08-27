@@ -20,6 +20,7 @@ import { MEMORY_COUNT_CAP, memoryCountLabel, ownerRoute } from "@/apps/memory-ow
 import { memoryList } from "@/utils/memory-api"
 import { useLocation, useNavigate } from "@solidjs/router"
 import { AgentPortrait } from "@/components/agent-portrait"
+import { SettingsExplainV2 } from "@/components/settings-v2/explain"
 
 // ONE agent configuration dialog, opened from two places (AGENTS.md → *the structural metaphor*;
 // `notes/named-agents.md`).
@@ -437,8 +438,16 @@ export function AgentConfigDialog(props: {
     // And in Contacts, where it was rendered inline in the page flow instead, the same bare div
     // squeezed the roster sideways rather than covering it. The shell fixes both, and brings the
     // focus trap and the labelled surface a modal is supposed to have.
-    <Dialog size="content" class="!overflow-visible">
-      <div class="flex max-h-[80vh] w-[min(560px,92vw)] flex-col overflow-hidden rounded-xl bg-v2-background-bg-base text-v2-text-text-base">
+    <Dialog size="content" class="!overflow-visible !max-h-none !max-w-none">
+      {/* 🔴 FULL SCREEN (owner, 2026-08-27). It was a 560px box with `max-h-[80vh]`, and a colleague's
+          configuration does not fit one: the profile, memory, model, the folder assignment and this
+          chat's own switches are five sections deep, so the controls below the fold were reachable
+          only by scrolling a panel that did not look scrollable. The owner reported the folder picker
+          as MISSING — it was rendered the whole time, three sections down. A surface people conclude
+          is absent is not a layout preference.
+          ⚠️ The Back button in the header is what makes this safe: full screen with only an overlay
+          click to leave would be the dead end §1.4 warns about. It was already there. */}
+      <div class="flex h-dvh w-screen flex-col overflow-hidden bg-v2-background-bg-base text-v2-text-text-base">
         <div class="flex items-center gap-3 border-b border-v2-border-border-base px-4 py-3">
           {/* BACK, not just an X. This panel is opened from a list you were reading a moment ago —
               the roster, or the chat you were tuning — so the gesture out of it is "return", and
@@ -477,7 +486,8 @@ export function AgentConfigDialog(props: {
             </h3>
             <Show
               when={!governing()}
-              fallback={<p class="mt-2 text-xs text-v2-text-text-faint">{language.t("agentConfig.governingLocked")}</p>}
+              fallback={<p class="mt-2 text-xs text-v2-text-text-faint">{language.t("agentConfig.governingLocked")}
+                <SettingsExplainV2 label={language.t("agentConfig.governingLocked")}>{language.t("agentConfig.governingLocked.more")}</SettingsExplainV2></p>}
             >
               <label class="mt-2 block text-xs text-v2-text-text-muted">
                 {language.t("agentConfig.name")}
@@ -488,7 +498,8 @@ export function AgentConfigDialog(props: {
                 />
               </label>
               {/* Why a rename is safe, said once where someone is about to do it. */}
-              <p class="mt-1 text-[11px] text-v2-text-text-faint">{language.t("agentConfig.nameHint")}</p>
+              <p class="mt-1 text-[11px] text-v2-text-text-faint">{language.t("agentConfig.nameHint")}
+                <SettingsExplainV2 label={language.t("agentConfig.nameHint")}>{language.t("agentConfig.nameHint.more")}</SettingsExplainV2></p>
               <label class="mt-3 block text-xs text-v2-text-text-muted">
                 {language.t("agentConfig.jobTitle")}
                 <TextInputV2
@@ -508,7 +519,8 @@ export function AgentConfigDialog(props: {
                 />
               </label>
               {/* Why this is a profile field and not something you type into the chat. */}
-              <p class="mt-1 text-[11px] text-v2-text-text-faint">{language.t("agentConfig.personalityHint")}</p>
+              <p class="mt-1 text-[11px] text-v2-text-text-faint">{language.t("agentConfig.personalityHint")}
+                <SettingsExplainV2 label={language.t("agentConfig.personalityHint")}>{language.t("agentConfig.personalityHint.more")}</SettingsExplainV2></p>
             </Show>
           </section>
 
@@ -730,7 +742,8 @@ export function AgentConfigDialog(props: {
                 </button>
               </Show>
             </div>
-            <p class="mt-1 text-[11px] text-v2-text-text-faint">{language.t("agentConfig.folderHint")}</p>
+            <p class="mt-1 text-[11px] text-v2-text-text-faint">{language.t("agentConfig.folderHint")}
+                <SettingsExplainV2 label={language.t("agentConfig.folderHint")}>{language.t("agentConfig.folderHint.more")}</SettingsExplainV2></p>
             {/* 🔴 BOTH FOLDERS, and this is the half the user could not see (owner, 2026-08-22: *"please
                 ensure user can browse the agent's Scratch folder"*). A colleague keeps its own workspace
                 even when assigned to a project — `AgentPlugin.scratchDirsFor` grants it and
@@ -770,7 +783,8 @@ export function AgentConfigDialog(props: {
                   disabled={governing() || memoryValue() === "none"}
                   onChange={(event) => setArchive(event.currentTarget.checked)}
                 />
-                <span>{language.t("agentConfig.archiveKeep")}</span>
+                <span>{language.t("agentConfig.archiveKeep")}
+                <SettingsExplainV2 label={language.t("agentConfig.archiveKeep")}>{language.t("agentConfig.archiveKeep.more")}</SettingsExplainV2></span>
               </label>
               <Show when={memoryValue() === "none"}>
                 {/* Said rather than silently ignored: a throwaway keeps nothing, so the control above
@@ -788,7 +802,8 @@ export function AgentConfigDialog(props: {
                 </h3>
                 {/* The distinction the two sections exist to teach: above is who this colleague IS
                     everywhere, below is how this one conversation runs. */}
-                <p class="mt-1 text-[11px] text-v2-text-text-faint">{language.t("agentConfig.thisChatHint")}</p>
+                <p class="mt-1 text-[11px] text-v2-text-text-faint">{language.t("agentConfig.thisChatHint")}
+                <SettingsExplainV2 label={language.t("agentConfig.thisChatHint")}>{language.t("agentConfig.thisChatHint.more")}</SettingsExplainV2></p>
                 <div class="mt-2">{tuning()()}</div>
               </section>
             )}

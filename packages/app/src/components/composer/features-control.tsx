@@ -570,7 +570,13 @@ function MakeDefaultSection(props: {
 
   return (
     <div class="flex flex-col gap-1 border-t border-border-base pt-3" data-section="make-default">
-      <span class="text-[13px] font-[560] text-v2-text-text-base">{language.t("composer.tune.makeDefault.title")}</span>
+      <span class="text-[13px] font-[560] text-v2-text-text-base">
+        {language.t("composer.tune.makeDefault.title")}
+        {/* The paragraph this control used to print in full, now on demand — hover, tap or focus. */}
+        <SettingsExplainV2 label={language.t("composer.tune.makeDefault.title")}>
+          {language.t("composer.tune.makeDefault.description.more")}
+        </SettingsExplainV2>
+      </span>
       <span class="text-[12px] leading-4 text-v2-text-text-faint">
         {language.t("composer.tune.makeDefault.description")}
       </span>

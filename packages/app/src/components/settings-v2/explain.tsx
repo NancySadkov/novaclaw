@@ -20,9 +20,18 @@ import type { JSX } from "solid-js"
  * behind this affordance. Both halves of 12(d) survive — the state is still stated before the
  * control — while the teaching stops competing with the control for the same space.
  *
- * ⚠️ Hover is not the only door: Kobalte opens this on focus and on touch, so it is reachable by
- * keyboard and on a phone. An explanation only a mouse can reach would fail the same anti-elitism
- * argument that motivated shortening it.
+ * ⚠️ **Hover and FOCUS open it; TAP DOES NOT — and that is an open defect, not a design.** The claim
+ * that used to stand here, that "Kobalte opens this on focus and on touch", is false: Kobalte's
+ * Tooltip is a hover/focus primitive, and `TooltipV2`'s trigger additionally calls `arm()` on
+ * pointer-down, which SUPPRESSES the tooltip — correct for an icon button, exactly wrong for a
+ * control whose only purpose is to be opened. Measured 2026-08-27: hover opens it with the full text;
+ * a click or tap does nothing at all.
+ *
+ * 🔴 So on a phone this help is unreachable, which fails the same anti-elitism argument that
+ * motivated shortening the copy in the first place. The fix is a POPOVER primitive rather than a
+ * tooltip — press-to-toggle is what a popover is for — not another flag on `TooltipV2`; an attempt to
+ * add one (`openOnPress`, toggling `state.open`) was reverted because Kobalte closes it again on the
+ * same gesture. Until then, every explanation here must also exist somewhere a touch user can reach.
  */
 export function SettingsExplainV2(props: { readonly label: string; readonly children: JSX.Element }) {
   return (
