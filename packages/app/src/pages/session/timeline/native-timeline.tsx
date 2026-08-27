@@ -94,11 +94,25 @@ export function NativeTimeline(props: {
         (a, b) => a.id === b.id && a.text === b.text && a.delivery === b.delivery && a.timeCreated === b.timeCreated,
       ),
     )
+  /**
+   * 🔴 `time?.completed`, not `time.completed` — this line put a shipped renderer on the floor.
+   *
+   * Measured 0.1.67, live: an assistant row reached the store WITHOUT its `time` struct, which the
+   * schema declares required. This memo is read by a `<Show>`'s `when`, so the throw propagated out
+   * of the getter to the app's SINGLE root ErrorBoundary and replaced the entire UI with a fatal
+   * error — `TypeError: Cannot read properties of undefined (reading 'time')`.
+   *
+   * ⚠️ **A row the UI cannot fully read is a normal event, not a fault** (owner, 2026-08-27). The
+   * question this memo answers is "is the agent still working", and a message with no completion
+   * stamp has plainly not completed — so the malformed row gets the honest answer rather than
+   * taking the transcript down with it. `native-timeline.tsx` is also not the place that decides
+   * this: `isInFlightAssistant` in `message-fold.ts` is the same predicate, and both are hardened.
+   */
   const working = createMemo(() => {
     const list = stored()
     for (let i = list.length - 1; i >= 0; i -= 1) {
       const message = list[i]!
-      if (message.type === "assistant") return !message.time.completed
+      if (message.type === "assistant") return !message.time?.completed
     }
     return false
   })

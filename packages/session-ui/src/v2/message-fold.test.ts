@@ -587,3 +587,41 @@ describe("unqueuedPending — the duplicate the owner saw on a packaged build", 
     expect(unqueuedPending([], [{ id: "a" }])).toEqual([])
   })
 })
+
+// 🔴 The renderer-fatal shape, from the shipped 0.1.67 crash: an assistant row WITHOUT its `time`
+// struct. The schema declares `time` required, so nothing here is defending against a legal value —
+// it is defending against a row that reached the store anyway and took the whole UI down with
+// `TypeError: Cannot read properties of undefined (reading 'time')`.
+//
+// ⚠️ Owner, 2026-08-27: *"assistant failing to read something is not a fatal error, but a normal
+// event"*. So the bar is not "does not throw" — it is that the fold gives the HONEST answer and
+// keeps going: a message with no completion stamp has not completed.
+describe("a malformed assistant row is an event, not a crash", () => {
+  const timeless = () => [{ id: "msg_a", type: "assistant", content: [] } as unknown as SessionMessage]
+
+  test("activeAssistant treats a row with no `time` as still in flight", () => {
+    const messages = timeless()
+    expect(() => activeAssistant(messages)).not.toThrow()
+    expect(activeAssistant(messages)?.id).toBe("msg_a")
+  })
+
+  test("a step that ends REPAIRS the missing time struct instead of throwing", () => {
+    const messages = timeless()
+    expect(() =>
+      fold(messages, ev("session.next.step.ended", { assistantMessageID: "msg_a", timestamp: 4242 })),
+    ).not.toThrow()
+    // Repaired, not skipped: a stamp that silently did nothing would leave the transcript showing a
+    // turn that spins forever, which is the same defect wearing a calmer face.
+    const assistant = findAssistant(messages, "msg_a")!
+    expect(assistant.time.completed).toBe(4242)
+    expect(activeAssistant(messages)).toBeUndefined()
+  })
+
+  test("ordering survives a row with no `time`", () => {
+    const messages = [
+      { id: "msg_b", type: "assistant", content: [], time: { created: 2 } },
+      { id: "msg_a", type: "assistant", content: [] },
+    ] as unknown as SessionMessage[]
+    expect(() => mergeNativeMessages(messages, [])).not.toThrow()
+  })
+})

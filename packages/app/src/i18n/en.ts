@@ -985,6 +985,9 @@ export const dict = {
   "session.review.source.incomplete": "Recording incomplete",
   "session.review.loadFailed": "Could not load these changes right now.",
   "session.review.retry": "Try again",
+  // Shown INSTEAD of the transcript when a message cannot be rendered — one calm line, never a stack
+  // trace. The rest of the app keeps working; the fault is contained to this pane.
+  "session.timeline.degraded": "This conversation couldn’t be displayed. Your messages are safe.",
 
   "session.files.selectToOpen": "Select a file to open",
   "session.files.all": "All files",

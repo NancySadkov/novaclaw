@@ -58,6 +58,25 @@ export function isOptimistic(message: SessionMessage | undefined): boolean {
   return (message as { metadata?: Record<string, unknown> } | undefined)?.metadata?.[OPTIMISTIC_METADATA_KEY] === true
 }
 
+/**
+ * Stamp a timestamp onto a message whose `time` struct may be absent.
+ *
+ * 🔴 **A malformed row must be an EVENT, not a fatal error** (owner, 2026-08-27). The schema declares
+ * `time` REQUIRED on an assistant message, and a row still reached the renderer without it — which is
+ * exactly the case a bare `message.time.completed = t` cannot survive. Crashing the transcript because
+ * one row is short of a field puts the whole UI on the floor over something the product is supposed to
+ * absorb; `Cannot read properties of undefined (reading 'time')` took down a shipped 0.1.67 renderer
+ * this way, through the app's single root ErrorBoundary.
+ *
+ * ⚠️ It REPAIRS rather than skips. Dropping the stamp would leave an assistant message that never
+ * completes, and `isInFlightAssistant` reads exactly that field — so the transcript would show a turn
+ * spinning forever instead of a turn that ended.
+ */
+function stamp(message: { time?: { created?: number; ran?: number; completed?: number } }, field: "ran" | "completed", at: number): void {
+  const time = (message.time ??= { created: at })
+  time[field] = at
+}
+
 export function appendMessage(messages: SessionMessage[], item: SessionMessage): void {
   if (messages.some((existing) => existing.id === item.id)) return
   messages.push(item)
@@ -66,7 +85,7 @@ export function appendMessage(messages: SessionMessage[], item: SessionMessage):
 /** The latest assistant message, returned only while it is still streaming (no `time.completed`). */
 export function activeAssistant(messages: SessionMessage[]): SessionMessageAssistant | undefined {
   const item = messages.findLast((message) => message.type === "assistant")
-  return item?.type === "assistant" && !item.time.completed ? item : undefined
+  return item?.type === "assistant" && !item.time?.completed ? item : undefined
 }
 
 /** The assistant message with the given id (latest, if ids somehow repeat), if present. */
@@ -197,14 +216,14 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
       const match = activeShell(messages, event.data.callID)
       if (!match) break
       match.output = event.data.output
-      match.time.completed = event.data.timestamp
+      stamp(match, "completed", event.data.timestamp)
       break
     }
     case "session.next.step.started": {
       // Client idempotency: a replayed step.started must not re-complete the active assistant.
       if (messages.some((message) => message.id === event.data.assistantMessageID)) break
       const current = activeAssistant(messages)
-      if (current) current.time.completed = event.data.timestamp
+      if (current) stamp(current, "completed", event.data.timestamp)
       appendMessage(messages, {
         id: event.data.assistantMessageID,
         type: "assistant",
@@ -219,7 +238,7 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
     case "session.next.step.ended": {
       const assistant = findAssistant(messages, event.data.assistantMessageID)
       if (!assistant) break
-      assistant.time.completed = event.data.timestamp
+      stamp(assistant, "completed", event.data.timestamp)
       assistant.finish = event.data.finish
       assistant.cost = event.data.cost
       assistant.tokens = event.data.tokens
@@ -234,7 +253,7 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
     case "session.next.step.failed": {
       const assistant = findAssistant(messages, event.data.assistantMessageID)
       if (!assistant) break
-      assistant.time.completed = event.data.timestamp
+      stamp(assistant, "completed", event.data.timestamp)
       assistant.finish = "error"
       assistant.error = event.data.error
       break
@@ -290,7 +309,7 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
     case "session.next.tool.called": {
       const match = latestTool(findAssistant(messages, event.data.assistantMessageID), event.data.callID)
       if (!match) break
-      match.time.ran = event.data.timestamp
+      stamp(match, "ran", event.data.timestamp)
       match.provider = event.data.provider
       match.state = { status: "running", input: event.data.input, structured: {}, content: [] }
       break
@@ -318,7 +337,7 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
         metadata: match.provider?.metadata,
         resultMetadata: event.data.provider.metadata,
       }
-      match.time.completed = event.data.timestamp
+      stamp(match, "completed", event.data.timestamp)
       break
     }
     case "session.next.tool.failed": {
@@ -337,7 +356,7 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
         metadata: match.provider?.metadata,
         resultMetadata: event.data.provider.metadata,
       }
-      match.time.completed = event.data.timestamp
+      stamp(match, "completed", event.data.timestamp)
       break
     }
     case "session.next.reasoning.started":
@@ -411,7 +430,7 @@ function messageCreatedAt(message: SessionMessage): number | undefined {
 }
 
 function isInFlightAssistant(message: SessionMessage): boolean {
-  return message.type === "assistant" && !message.time.completed
+  return message.type === "assistant" && !message.time?.completed
 }
 
 /**
@@ -438,7 +457,7 @@ const sequenceOf = (message: SessionMessage): number => message.seq ?? Number.MA
 function compareOldestFirst(a: SessionMessage, b: SessionMessage): number {
   return (
     sequenceOf(a) - sequenceOf(b) ||
-    a.time.created - b.time.created ||
+    (a.time?.created ?? 0) - (b.time?.created ?? 0) ||
     (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
   )
 }
@@ -501,7 +520,7 @@ export function mergeNativeMessages(
     const fetchedCopy = byId.get(message.id)
     if (fetchedCopy) {
       // Keep our streaming copy while the server's is still incomplete, else take the server's.
-      const fetchedCompleted = fetchedCopy.type === "assistant" && !!fetchedCopy.time.completed
+      const fetchedCompleted = fetchedCopy.type === "assistant" && !!fetchedCopy.time?.completed
       if (isInFlightAssistant(message) && !fetchedCompleted) byId.set(message.id, message)
       continue
     }

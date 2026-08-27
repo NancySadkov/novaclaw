@@ -5,6 +5,7 @@ import {
   Show,
   Match,
   Switch,
+  ErrorBoundary,
   createMemo,
   createSignal,
   createEffect,
@@ -1100,7 +1101,45 @@ export default function Page() {
                 <Match when={params.id}>
                   <Show when={messagesReady() ? params.id : undefined} keyed>
                     {(_id) => (
-                      <NativeTimeline
+                      /**
+                       * 🔴 **The transcript gets its OWN boundary, because a row it cannot read is a
+                       * normal event** (owner, 2026-08-27: *"assistant failing to read something is
+                       * not a fatal error, but a normal event"*).
+                       *
+                       * This app had exactly ONE ErrorBoundary, at its root, so ANY throw while
+                       * rendering a message replaced the entire application with the fatal error page
+                       * — chat, sidebar, settings and all. Measured in shipped 0.1.67: one assistant
+                       * row arrived without the `time` struct its schema declares required, and
+                       * `Cannot read properties of undefined (reading 'time')` took the whole UI down
+                       * mid-conversation.
+                       *
+                       * ⚠️ Guarding that one field is not the fix, it is the instance. A transcript
+                       * renders arbitrary model output through dozens of cards, so "some row is
+                       * shaped in a way one card did not expect" is a permanent condition of the
+                       * feature, not a bug that gets fixed once. The containment is what makes it
+                       * survivable: the fault stays inside the transcript, the rest of the app keeps
+                       * working, and `reset` re-renders once the store moves on — *degrade and
+                       * recover*, never a stack trace and a dead end (AGENTS.md, "it never breaks in
+                       * your hands").
+                       */
+                      <ErrorBoundary
+                        fallback={(error, reset) => {
+                          // Boundary-caught faults never reach window.onerror. Log it, so the Debug
+                          // app's error ring shows the real failure rather than only the calm card.
+                          console.error("session timeline boundary", error)
+                          return (
+                            <div class="flex h-full w-full flex-col items-center justify-center gap-3 p-6 text-center">
+                              <p class="max-w-80 text-12-regular text-text-muted">
+                                {language.t("session.timeline.degraded")}
+                              </p>
+                              <ButtonV2 size="small" variant="neutral" onClick={reset}>
+                                {language.t("session.review.retry")}
+                              </ButtonV2>
+                            </div>
+                          )
+                        }}
+                      >
+                        <NativeTimeline
                         sessionID={_id}
                         setController={(controller) => (timelineController = controller)}
                         directory={sdk().directory}
@@ -1114,8 +1153,9 @@ export default function Page() {
                           copyDetails: language.t("ui.toolErrorCard.copyError"),
                           working: language.t("processes.status.working"),
                         }}
-                        revertMessageID={revertMessageID()}
-                      />
+                          revertMessageID={revertMessageID()}
+                        />
+                      </ErrorBoundary>
                     )}
                   </Show>
                 </Match>
