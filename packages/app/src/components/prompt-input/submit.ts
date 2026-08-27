@@ -277,7 +277,29 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
           ...(input.draft.variant ? { variant: input.draft.variant } : {}),
         },
       })
-    if (record?.agent !== input.draft.agent)
+    /**
+     * 🔴 **A chat that already has a colleague is NEVER reassigned from here** (owner, 2026-08-27:
+     * *"any chat with Umbris for some reason switches to a chat with Build"*).
+     *
+     * This line used to switch whenever the record and the draft disagreed, and the draft is a GUESS.
+     * `local.tsx`'s `pickAgent` answers `items.find(name) ?? items[0]`, and `items[0]` is `build` —
+     * the first row of the legacy roster projection — so any moment the session scope had not
+     * resolved, or the colleague was missing from that list, the composer produced `build` and this
+     * line WROTE it onto the session. Measured on the owner's instance: three chats titled "Umbris"
+     * running as `build`, each stamping `agent-switched → build` on its first prompt, and a fourth
+     * that ran two turns as `build` before recovering. The roster then showed no chat for Umbris
+     * while the transcript the user was typing into belonged to a posture with no Contacts row —
+     * the ghost officer `67a071a0d` set out to abolish, re-entering through the composer.
+     *
+     * ⚠️ **The session is the AUTHORITY on whose chat it is**, not the composer. `agent-option.ts`
+     * already states the rule this restores: *"a chat belongs to ONE colleague … a mid-conversation
+     * agent switch would hand somebody else's transcript to a different officer"*. The composer has
+     * no picker in a chat, so it can never carry a deliberate switch — only an accident.
+     *
+     * So the switch survives for exactly the case it was written for: a session that has NO colleague
+     * yet, where the draft is the only answer available. Reassignment proper has its own surface.
+     */
+    if (record?.agent === undefined && input.draft.agent !== undefined)
       await input.client.v2.session.switchAgent({ sessionID: input.draft.sessionID, agent: input.draft.agent })
     await input.client.v2.session.prompt({
       sessionID: input.draft.sessionID,

@@ -133,10 +133,25 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       }
     }
 
+    /**
+     * ⚠️ **A NAMED colleague resolves to that colleague or to nothing — never to a substitute.**
+     *
+     * This used to end `?? items[0]`, and `items[0]` is `build`: the first row of the legacy roster
+     * projection. So asking for a colleague the list did not have — because the roster had not
+     * loaded yet, or because the row was missing — answered with a DIFFERENT one, confidently. The
+     * composer then wrote that answer onto the session (`prompt-input/submit.ts`), which is how
+     * chats belonging to Umbris ended up running as `build`.
+     *
+     * The fallback survives only for the case it was actually for: nobody asked for anyone, so the
+     * default primary agent is the honest answer. `current()` returning `undefined` while the roster
+     * loads is correct and already handled — submit says so and declines rather than sending the
+     * prompt to whoever happened to sort first.
+     */
     const pickAgent = (name: string | undefined) => {
       const items = list()
       if (items.length === 0) return
-      return items.find((item) => item.name === name) ?? items[0]
+      if (name !== undefined) return items.find((item) => item.name === name)
+      return items[0]
     }
 
     createEffect(() => {
