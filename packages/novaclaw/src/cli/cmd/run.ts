@@ -1,3 +1,4 @@
+import { AgentV2 } from "@novaclaw/core/agent"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { sessionErrorLike, sessionErrorLines } from "@novaclaw/core/session/session-error"
 import { incompleteMessage, type IncompleteReason } from "./run/incomplete"
@@ -336,6 +337,12 @@ export const RunCommand = effectCmd({
         .map((arg) => (arg.includes(" ") ? `"${arg.replace(/"/g, '\\"')}"` : arg))
         .join(" ")
 
+      /**
+       * Who a headless run belongs to. `DEFAULT_COLLEAGUE_ID`, not the string "nova": the kernel
+       * already names an owner for an unattributed request — *"exactly the case the CEO exists to
+       * absorb"* — and a literal here would be a second answer to a question that has one.
+       */
+      const RUN_AGENT = AgentV2.DEFAULT_COLLEAGUE_ID
       const root = resolveRunRoot()
       const directory = (() => {
         if (!args.dir) return args.attach ? undefined : root
@@ -540,24 +547,35 @@ export const RunCommand = effectCmd({
          * each run is its own thread under an owner who can be pointed at.
          */
         /**
-         * ⚠️ **This create names NO agent, and that is currently forced rather than chosen.**
+         * 🔴 **The run is Nova's SUB-SESSION, in the directory the user ran it from** (NC-CS-002).
          *
-         * `todo/codesleuth-mcp.md` NC-CS-002 asks for the opposite — *"name it in the create request
-         * so the one-chat-per-colleague seam can atomically reuse the existing live root"* — and with
-         * canonical ids that seam now exists. But naming ANY agent here makes the headless turn never
-         * complete: the CLI prints `Error: Timed out` and exits -1, measured 2026-08-28 against
-         * `test/cli/run/run-process.test.ts` with `nova`, with `build`, and as a child session. With
-         * the field absent the same test passes in ~4 s.
+         * ⚠️ **`location` is not optional decoration — omitting it is what made this "hang".** A
+         * session created with an agent and no location inherits that COLLEAGUE's folder, so this
+         * one landed in `…/scratch/nova` while the CLI listened in the directory it was invoked
+         * from. Session events are routed by location (see `session/execution/local.ts`: *"an
+         * unstamped event loses its directory routing"*), so none of them ever reached the
+         * subscriber. Measured 2026-08-28: the turn RAN — messages 1 → 3, the title changed — while
+         * the CLI sat waiting and was killed at 30 s.
          *
-         * So there is a real defect in how a turn resolves an EXPLICIT agent versus an absent one,
-         * and it is almost certainly the same one NC-CS-002 exists for — which is why that item is
-         * still open rather than a one-line change. The row is not ownerless in practice: the kernel
-         * documents an unattributed chat as carrying `build`.
+         * ⚠️ So the note that stood here was wrong about the cause, and the earlier attempt was
+         * abandoned for the wrong reason. There is no defect in "how a turn resolves an explicit
+         * agent"; there was a missing location on a session that had been given somebody else's
+         * folder. Pinning it is also the correct product behaviour on its own terms — `novaclaw run`
+         * in a project directory works THERE, not in a colleague's scratch.
          *
-         * ⚠️ Do not "fix" this by adding `agent` back without running that suite. It is NOT part of
-         * the gate (13 tests skipped in `novaclaw:server`), so it will go green while the CLI hangs.
+         * ⚠️ A CHILD, not a root. With an agent and no parent the kernel resolves the canonical
+         * `ses_<agent>`, so every one-shot run would pile into the single chat the user has with
+         * Nova. The parent create is idempotent — it hands back the existing live root — so this
+         * costs one round trip and makes each run its own thread under an owner who can be pointed
+         * at.
+         *
+         * ⚠️ `test/cli/run/run-process.test.ts` is NOT in the fast gate (13 tests skipped in
+         * `novaclaw:server`). Run it by name after touching this.
          */
-        const result = await sdk.v2.session.create({ title: name })
+        const where = { directory: (directory ?? root) as never }
+        const parent = await sdk.v2.session.create({ agent: RUN_AGENT, location: where })
+        const parentID = parent.data?.data?.id
+        const result = await sdk.v2.session.create({ title: name, agent: RUN_AGENT, parentID, location: where })
         const id = result.data?.data?.id
         if (!id) {
           return
