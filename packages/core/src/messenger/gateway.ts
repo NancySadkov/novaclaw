@@ -508,6 +508,22 @@ const build = (options: Options) =>
         connectionPace.get(connection),
       )
 
+    /**
+     * 🔴 **NC-REL-036 — a challenge raised by an outbound op reads as a challenge.**
+     *
+     * `Connection.send` used to be typed `SendError` alone, so a driver that met a login veto or a
+     * revoked session mid-send had to demote it. The account never parked, the operator was never
+     * asked to resolve anything, and the gateway kept retrying against a verification prompt — futile,
+     * and the shape that looks like an attack. The CONNECT path has obeyed traffic rules §2.3 all
+     * along; this is the same rule on the other door.
+     */
+    const isChallenge = (error: { readonly _tag: string }): error is MessengerDriverContract.ChallengeError =>
+      error._tag === "MessengerDriver.ChallengeError"
+
+    /** One sentence for either arm — the two errors carry differently-named fields. */
+    const sendFailureText = (error: MessengerDriverContract.SendError | MessengerDriverContract.ChallengeError) =>
+      isChallenge(error) ? `verification required — ${error.message}` : error.reason
+
     const setStatus = (accountID: Messenger.AccountID, entry: Entry, status: Messenger.AccountStatus) =>
       Effect.gen(function* () {
         entry.status = status
@@ -783,7 +799,9 @@ const build = (options: Options) =>
             if (binding.trust !== "operator") continue
             const failure = yield* paceSend(connection, binding.chatID, text).pipe(
               Effect.as(undefined),
-              Effect.catch((error) => Effect.succeed(error.reason)),
+              // No account/entry in this scope, so this one reports rather than parks; the two
+              // tool-surface sites below park, and a challenge always reaches one of them.
+              Effect.catch((error) => Effect.succeed(sendFailureText(error))),
             )
             if (failure === undefined) {
               delivered += 1
@@ -1706,7 +1724,15 @@ const build = (options: Options) =>
           // that never left the machine — the model then acts as if the person has been answered.
           return yield* paceSend(entry.connection, input.chatID, input.text, input.replyTo).pipe(
             Effect.map(() => ({ kind: "sent" }) satisfies SendOutcome),
-            Effect.catch((error) => Effect.succeed({ kind: "refused", reason: error.reason } satisfies SendOutcome)),
+            Effect.catch((error) =>
+              Effect.gen(function* () {
+                // Park BEFORE answering the model: the banner should be up by the time it reads the
+                // refusal, and the refusal should say which kind of problem this is.
+                if (isChallenge(error))
+                  yield* setStatus(input.accountID, entry, { state: "challenge", message: error.message })
+                return { kind: "refused", reason: sendFailureText(error) } satisfies SendOutcome
+              }),
+            ),
           )
         }),
       sendFile: (input) =>
@@ -1739,7 +1765,13 @@ const build = (options: Options) =>
             )
             .pipe(
               Effect.map(() => ({ kind: "sent" }) satisfies SendOutcome),
-              Effect.catch((error) => Effect.succeed({ kind: "refused", reason: error.reason } satisfies SendOutcome)),
+              Effect.catch((error) =>
+                Effect.gen(function* () {
+                  if (isChallenge(error))
+                    yield* setStatus(input.accountID, entry, { state: "challenge", message: error.message })
+                  return { kind: "refused", reason: sendFailureText(error) } satisfies SendOutcome
+                }),
+              ),
             )
         }),
       attachment: (input) =>

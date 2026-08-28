@@ -371,6 +371,12 @@ export const make = (factory: UserClientFactory): Driver => {
         yield* Effect.forkScoped(pump.pipe(Effect.catchCause(() => Queue.shutdown(queue))))
 
         const mapSendError = (error: unknown) => {
+          // 🔴 NC-REL-036: a challenge stays a CHALLENGE. This collapsed every `UserClientError` into
+          // `SendError` and kept only the flood flag, so a login veto or revoked session discovered
+          // mid-send read as an ordinary failure — the account never parked and the operator was
+          // never asked to resolve it. `mapConnectError` above has honoured this arm all along.
+          if (error instanceof UserClientError && error.failure.kind === "challenge")
+            return new ChallengeError({ message: failureText(error.failure) })
           if (error instanceof UserClientError)
             return new SendError({ reason: failureText(error.failure), retryable: error.failure.kind === "flood" })
           return new SendError({ reason: String(error), retryable: true })

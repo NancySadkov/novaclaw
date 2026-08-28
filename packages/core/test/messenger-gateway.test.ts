@@ -213,6 +213,7 @@ const makeFakeDriver = () => {
     challengeNext: false,
     /** While true every outbound send fails — the driver-refuses-the-message case. */
     sendFails: false,
+    sendChallenges: false,
     open: 0,
     liveChats: undefined as readonly MessengerDriver.ChatSnapshot[] | undefined,
     history: {} as Record<string, readonly MessengerDriver.HistoryEntry[]>,
@@ -244,6 +245,9 @@ const makeFakeDriver = () => {
           inbound: Stream.fromQueue(queue),
           send: (chatID, message) =>
             Effect.gen(function* () {
+              // NC-REL-036: a provider challenge raised by an OUTBOUND op, not at connect.
+              if (state.sendChallenges)
+                return yield* Effect.fail(new MessengerDriver.ChallengeError({ message: "CAPTCHA on send" }))
               if (state.sendFails)
                 return yield* Effect.fail(new MessengerDriver.SendError({ reason: SEND_REFUSAL, retryable: false }))
               state.sent.push({
@@ -1290,6 +1294,38 @@ describe("MessengerGateway pipeline", () => {
     }),
   )
 
+  /**
+   * 🔴 NC-REL-036 — a challenge met during an OUTBOUND op was demoted to an ordinary send failure.
+   * `Connection.send` was typed `SendError` alone, so a driver that discovered a login veto or a
+   * revoked session mid-send had no vocabulary for it. The account never parked, the operator was
+   * never asked to resolve anything, and the gateway retried against a verification prompt — futile,
+   * and the shape that looks like an attack. The CONNECT path has obeyed traffic rules §2.3 all
+   * along; this is the same rule on the other door.
+   *
+   * A/B: drop the `isChallenge` branch in the tool-surface catch and the status stays connected while
+   * the model is told only that a send was refused.
+   */
+  it.live("🔴 a challenge raised BY A SEND parks the account, like one raised at connect", () =>
+    Effect.gen(function* () {
+      const { store, gateway, account, queue } = yield* online("send-challenge")
+      // The chat must have messaged us first, or the cold-start guard refuses before the driver is
+      // ever asked — which is what the first draft of this test measured.
+      yield* Queue.offer(queue, message("770", { text: "hello", sender: "friend" }))
+      yield* eventually(store.hasChat(account.id, "770"), (seen) => seen === true, "seen 770")
+      fake.state.sendChallenges = true
+
+      const outcome = yield* gateway.send({ accountID: account.id, chatID: "770", text: "hello" })
+
+      // The model is told which KIND of problem this is, not just that a send failed.
+      expect(outcome.kind).toBe("refused")
+      expect(outcome.kind === "refused" && outcome.reason).toContain("verification required")
+      // ...and the account is parked, so the banner is up and nothing retry-loops against it.
+      const status = yield* gateway.status()
+      const state = status.get(account.id)
+      expect(state?.state === "challenge" && state.message).toContain("CAPTCHA on send")
+    }).pipe(Effect.ensuring(Effect.sync(() => (fake.state.sendChallenges = false)))),
+  )
+
   it.live("gateway.send is cold-start-guarded then paced (traffic rules §2.3)", () =>
     Effect.gen(function* () {
       const { store, gateway, account, queue } = yield* online("send")
@@ -1928,6 +1964,7 @@ const CITED_GATEWAY_SYMBOLS: readonly string[] = [
  */
 const LIVE_LEDGER: readonly string[] = [
   "a CAPTCHA notice that FAILS to send is not swallowed — the parked status says so (#9(c))",
+  "\u{1F534} a challenge raised BY A SEND parks the account, like one raised at connect",
   "a FAILED initiation still spends its daily slot — the cap counts attempts, not deliveries",
   "a daily budget that cannot be spent answers `unavailable` — never an uncounted cold DM",
   "a THREAD routes to its parent's binding, and the reply goes back to the thread",

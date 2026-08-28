@@ -166,7 +166,21 @@ export interface Connection {
   /** Normalized platform events. The stream failing (after the driver's own transport-level
    *  recovery) sends the gateway to backoff + reconnect — drivers surface, never spin silently. */
   readonly inbound: Stream.Stream<InboundEvent, ConnectError>
-  readonly send: (chatID: string, message: OutboundMessage) => Effect.Effect<{ messageID: string }, SendError>
+  /**
+   * 🔴 **NC-REL-036 — a challenge can happen HERE, not only at connect.** This was typed
+   * `SendError` alone, so a driver that discovered a login veto or a revoked session during an
+   * outbound operation had to demote it to an ordinary send failure. The account then never parked,
+   * the operator was never told, and the gateway retried against a verification prompt — which is
+   * both futile and the shape that looks like an attack (traffic rules §2.3, the rule the connect
+   * path already obeys).
+   *
+   * Telegram User's client has a first-class `challenge` arm and a mapper that honours it on connect;
+   * its SEND mapper flattened the same error into `SendError`, keeping only the flood flag.
+   */
+  readonly send: (
+    chatID: string,
+    message: OutboundMessage,
+  ) => Effect.Effect<{ messageID: string }, SendError | ChallengeError>
   /** Only for capability `listChats: "full"` (Discord, forums). "seen" platforms rely on the
    *  gateway's seen-chat cache instead (a Telegram bot cannot enumerate its chats). */
   readonly listChats?: () => Effect.Effect<readonly ChatSnapshot[], ConnectError>
