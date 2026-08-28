@@ -959,6 +959,21 @@ export const EVENTS = {
    * "the sweep never ran" and "the sweep ran and threw" look identical from outside: measured
    * 2026-08-28 against a live instance, where an empty table was the only evidence either way.
    */
+  /**
+   * The calendar could not read the roster or catalog, so a schedule's `agent`/`model` went
+   * UNCHECKED and was saved as written.
+   *
+   * ⚠️ Logged because the check's failure and its "nothing wrong" answer are the same silence. The
+   * first live run of this validation accepted a bogus agent without a word — the lookup had failed
+   * and been swallowed, and from outside that is indistinguishable from a setting that passed.
+   */
+  "instance.calendar.settings.unchecked": {
+    level: "warn",
+    message: "could not verify a schedule's agent/model; saving it unchecked",
+    attributes: { "instance.cause": "fault" },
+    content: "user",
+    file: "packages/server/src/handlers/calendar.ts",
+  },
   "instance.status.sweep.failed": {
     level: "warn",
     message: "the colleague status sweep failed; existing lines are unchanged",
