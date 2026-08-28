@@ -47,6 +47,26 @@ export type SidecarStage =
  * So the call site now uses `catchCause`, and the classification lives here where it can be
  * exercised without Electron.
  */
+/**
+ * Is this defect the database refusing to open, with its classification intact?
+ *
+ * ⚠️ Structural, not `instanceof`. The defect crosses a package boundary and may have been squashed
+ * and re-wrapped on the way; matching the tag and the fields it must carry is what survives that,
+ * and it degrades to "not a database fault" rather than throwing if the shape ever changes.
+ */
+function isDatabaseUnusable(
+  value: unknown,
+): value is { readonly fault: { summary: string; repair: readonly string[]; detail: string } } {
+  if (typeof value !== "object" || value === null) return false
+  const tagged = value as { _tag?: unknown; fault?: { summary?: unknown; repair?: unknown; detail?: unknown } }
+  if (tagged._tag !== "DatabaseUnusable") return false
+  return (
+    typeof tagged.fault?.summary === "string" &&
+    Array.isArray(tagged.fault.repair) &&
+    typeof tagged.fault.detail === "string"
+  )
+}
+
 export function describeSidecarFailure(
   cause: Cause.Cause<unknown>,
   stage: SidecarStage = "startup",
@@ -62,6 +82,36 @@ export function describeSidecarFailure(
     }
 
   const squashed = Cause.squash(cause)
+  /**
+   * 🔴 **NC-REL-024 — the database's own classification was being thrown away here.**
+   *
+   * `database.ts` distinguishes unreadable / corrupt / foreign / migration faults, writes a
+   * non-developer `summary` and a concrete `repair` list, and packages both into the defect
+   * deliberately. Its comment names this function as the intended consumer: the payload carries the
+   * whole `Fault` *"so a caller that catches the cause (the desktop's `describeSidecarFailure`
+   * shape, a future Recovery surface) gets the classification rather than a re-parse of an English
+   * sentence."*
+   *
+   * Nothing ever caught it. So a user whose database came from a newer NovaClaw — a completely
+   * ordinary thing after a downgrade — got a pretty-printed Effect cause in an error box, and the
+   * sentence explaining it sat unused in the payload.
+   *
+   * ⚠️ This does NOT build the Recovery surface both NC-REL-024 and NC-REL-030 ask for; the app still
+   * cannot start. What it changes is that the dialog now says which fault it is and what to do about
+   * it, instead of a stack trace. AGENTS.md is explicit that "our users are not server admins" —
+   * filesystem homework is the thing to remove, and a named cause with steps is the first half of
+   * removing it.
+   */
+  if (isDatabaseUnusable(squashed))
+    return {
+      // `error`, not `timeout`: the sidecar answered — it REFUSED. Reporting a refusal as a timeout
+      // is the "fault described falsely" this function's own comment was written against.
+      kind: "error",
+      code: "sidecar.database.unusable",
+      summary: squashed.fault.summary,
+      // The repair list IS the actionable half — the reason `Fault` carries one at all.
+      detail: [...squashed.fault.repair, "", squashed.fault.detail].join("\n"),
+    }
   if (Cause.isTimeoutError(squashed))
     return {
       kind: "timeout",
