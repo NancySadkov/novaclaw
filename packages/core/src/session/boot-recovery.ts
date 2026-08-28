@@ -1,6 +1,6 @@
 export * as SessionBootRecovery from "./boot-recovery"
 
-import { Duration, Effect, Schedule } from "effect"
+import { Clock, Duration, Effect, Schedule } from "effect"
 import { Log } from "@novaclaw/schema/log"
 import type { Database } from "../database/database"
 import { EFFECTIVE_CONFIG_DEFAULTS, resolveSessionConfig } from "./config-resolve"
@@ -67,8 +67,36 @@ const RESWEEP_PASSES = 7
  * `recoverStale` is itself transactional and fenced on `(session_id, attempt_id, generation)`, so a
  * second host sweeping the same rows cannot double-count a failure.
  */
+/**
+ * ONE sweep, reading the clock when it RUNS.
+ *
+ * ⚠️ Exported so the advance can be asserted. `recoverStaleLeases` wraps this in a 70-second
+ * schedule, so a test of the whole thing would have to wait out the window to see a second cutoff —
+ * and the bug was invisible precisely because nobody did.
+ */
+export const sweepStaleOnce = (attempts: SessionExecutionAttempt.Interface) =>
+  Effect.gen(function* () {
+    const now = yield* Clock.currentTimeMillis
+    return yield* attempts.recoverStale(now - STALE_AFTER_MS)
+  })
+
 export const recoverStaleLeases = (attempts: SessionExecutionAttempt.Interface) =>
-  attempts.recoverStale(Date.now() - STALE_AFTER_MS).pipe(
+  /**
+   * 🔴 **NC-REL-010 — the cutoff has to MOVE, and it did not.** This read
+   * `attempts.recoverStale(Date.now() - STALE_AFTER_MS)`, which evaluates `Date.now()` once, while
+   * the Effect VALUE is being built. `Effect.repeat` below then re-ran that same value — and
+   * therefore the same frozen number — through all seven passes.
+   *
+   * So the re-sweeps could only ever find what the FIRST sweep already could. An execution abandoned
+   * five seconds into the boot window keeps a heartbeat newer than a cutoff that never advances, and
+   * is never recovered — which is the exact case `RESWEEP_PASSES` exists for. The bound is described
+   * in its own comment as "a correctness bound, not a tidy-up", and it was buying nothing.
+   *
+   * ⚠️ `Clock.currentTimeMillis` rather than `Date.now()` inside a `suspend`: it is re-read per pass
+   * either way, but the Clock is what makes the advance assertable under `TestClock` instead of
+   * needing seventy seconds of real time to observe.
+   */
+  sweepStaleOnce(attempts).pipe(
     // Only a sweep that FOUND something is worth a line: an unconditional record would be one line
     // per interval for the whole window, saying nothing.
     Effect.flatMap((recovered) =>
