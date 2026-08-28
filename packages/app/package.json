@@ -51,6 +51,7 @@
     "@dnd-kit/solid": "0.5.0",
     "@kobalte/core": "catalog:",
     "@novaclaw/core": "workspace:*",
+    "@novaclaw/schema": "workspace:*",
     "@novaclaw/sdk": "workspace:*",
     "@novaclaw/session-ui": "workspace:*",
     "@novaclaw/ui": "workspace:*",

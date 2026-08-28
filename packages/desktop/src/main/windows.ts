@@ -7,6 +7,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import type { TitlebarTheme } from "../preload/types"
 import { CSP_HEADER, RENDERER_CSP } from "./csp"
+import { HTML_EMBED_CSP, isHtmlEmbedDocument } from "@novaclaw/schema/html-embed"
 import { exportDebugLogs, write as writeLog } from "./logging"
 import {
   createNavigationGuard,
@@ -398,6 +399,14 @@ function addHtmlDocumentHeaders(response: Response, file: string) {
     return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
   }
   const headers = new Headers(response.headers)
+  // 🔴 NC-SEC-032 — the agent-canvas host is the one document that must NOT get the app policy.
+  // Its whole purpose is to carry a different one: `default-src 'none'` plus the inline execution a
+  // canvas is made of. Giving it `RENDERER_CSP` here would leave a canvas with the app's own
+  // network reach, which is the opposite of what the served document was introduced to achieve.
+  if (isHtmlEmbedDocument(file)) {
+    headers.set(CSP_HEADER, HTML_EMBED_CSP)
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
+  }
   headers.set(documentPolicyHeader, jsCallStacksDocumentPolicy)
   headers.set(CSP_HEADER, RENDERER_CSP)
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
@@ -490,6 +499,13 @@ function addRendererHeaders(value: string, headers: Record<string, any>) {
   // `nc://renderer/*.html` (packaged) and for `*.html` on the dev-server origin (dev), i.e. for
   // exactly the documents this policy is written for — and never for a remote instance's HTML.
   if (!isRendererUrl(value, true)) return
+  // NC-SEC-032, the dev-server half of the same rule. The packaged half is in
+  // `addHtmlDocumentHeaders`; this is the path a dev build takes, and a canvas that behaved
+  // differently in dev would be a canvas whose containment was never exercised where it is written.
+  if (isHtmlEmbedDocument(new URL(value).pathname)) {
+    upsertKeyValue(headers, CSP_HEADER, [HTML_EMBED_CSP])
+    return
+  }
   upsertKeyValue(headers, documentPolicyHeader, [jsCallStacksDocumentPolicy])
   upsertKeyValue(headers, CSP_HEADER, [RENDERER_CSP])
 }

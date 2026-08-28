@@ -1,3 +1,5 @@
+import { HTML_EMBED_PATH } from "@novaclaw/schema/html-embed"
+import { EMBED_WRITE, isEmbedReady } from "@novaclaw/schema/html-embed-bootstrap"
 import { useMarked } from "@novaclaw/ui/context/marked"
 import { useI18n } from "@novaclaw/ui/context/i18n"
 import morphdom from "morphdom"
@@ -178,7 +180,7 @@ function setEmbedToggleLabel(button: HTMLButtonElement, labels: EmbedLabels) {
   button.setAttribute("data-tooltip", label)
 }
 
-function createHtmlEmbed(srcdoc: string, hash: string, labels: EmbedLabels) {
+function createHtmlEmbed(html: string, hash: string, labels: EmbedLabels) {
   const container = document.createElement("div")
   container.setAttribute("data-component", "markdown-html-embed")
   container.dataset.embedHash = hash
@@ -186,14 +188,36 @@ function createHtmlEmbed(srcdoc: string, hash: string, labels: EmbedLabels) {
   // sandbox WITHOUT allow-same-origin: scripts execute in an opaque origin with no cookies,
   // storage, or parent access. ⚠️ That is HALF the boundary, not all of it — it governs what the
   // embedded document can READ locally and says nothing about what it can SEND. The other half is
-  // the CSP `htmlEmbedForBlock` puts at the top of every srcdoc (NC-SEC-003). Together they are
-  // what lets the raw, never-sanitized fence text run.
+  // the policy the embed document is served with, plus the copy `htmlEmbedForBlock` leads the body
+  // with (NC-SEC-003/031). Together they are what lets the raw, never-sanitized fence text run.
   frame.setAttribute("sandbox", HTML_EMBED_SANDBOX)
   frame.setAttribute("loading", "lazy")
   frame.setAttribute("referrerpolicy", "no-referrer")
   frame.setAttribute("title", "Interactive content")
-  // property assignment only: the raw text must never be parsed into the parent document
-  frame.srcdoc = srcdoc
+  /**
+   * 🔴 NC-SEC-032 — the body is POSTED to a served document, not assigned as `srcdoc`.
+   *
+   * An `about:srcdoc` document inherits the embedder's policy container, so a canvas ran under
+   * whichever app policy was hosting it: fine on the desktop, and completely dead on the served web
+   * UI, whose policy has no `script-src 'unsafe-inline'`. A network-delivered document carries its
+   * own policy instead.
+   *
+   * ⚠️ Root-relative, not `"embed.html"`. A bare relative URL resolves against the CURRENT path, so
+   * on a route like `/session/abc` it would ask for `/session/embed.html`. Root-relative resolves
+   * to the app's own origin on both surfaces — `nc://renderer/embed.html` packaged, `<instance
+   * origin>/embed.html` on the web — which is why no dynamic origin has to be named anywhere.
+   *
+   * ⚠️ Two messages, because the frame navigates asynchronously and there is no document to receive
+   * a body until it does. The bootstrap announces itself; only then is the body sent. The listener
+   * removes itself either way, so a torn-down embed leaves nothing behind.
+   */
+  const deliver = (event: MessageEvent) => {
+    if (!isEmbedReady(event.data, event.source, frame.contentWindow)) return
+    window.removeEventListener("message", deliver)
+    frame.contentWindow?.postMessage({ type: EMBED_WRITE, html }, "*")
+  }
+  window.addEventListener("message", deliver)
+  frame.src = `/${HTML_EMBED_PATH}`
   container.appendChild(frame)
   container.appendChild(createEmbedToggle("code", labels.viewCode))
   return container
@@ -201,7 +225,7 @@ function createHtmlEmbed(srcdoc: string, hash: string, labels: EmbedLabels) {
 
 // Reconciles the live html preview for a code block. Runs on every effect pass, so the
 // number one rule is: if the code did not change, do NOT touch the iframe — a re-mount
-// (or srcdoc rewrite) wipes the embedded document's state (timers, canvas, scroll). The
+// (or re-navigation) wipes the embedded document's state (timers, canvas, scroll). The
 // embed node is keyed by the block key (on `next`) plus a hash of the fence body.
 function syncHtmlEmbed(next: HTMLElement, block: Extract<RenderedBlock, { mode: "code" }>, labels: EmbedLabels) {
   const embed = htmlEmbedForBlock(block)
@@ -220,9 +244,9 @@ function syncHtmlEmbed(next: HTMLElement, block: Extract<RenderedBlock, { mode: 
   // this node in place and we never overwrite an existing view choice
   if (!next.dataset.htmlEmbedView) next.dataset.htmlEmbedView = "preview"
   if (wrapper && !toggle) wrapper.appendChild(createEmbedToggle("preview", labels.viewPreview))
-  const hash = checksum(embed.srcdoc) ?? String(embed.srcdoc.length)
+  const hash = checksum(embed.html) ?? String(embed.html.length)
   if (existing instanceof HTMLElement && existing.dataset.embedHash === hash) return
-  const container = createHtmlEmbed(embed.srcdoc, hash, labels)
+  const container = createHtmlEmbed(embed.html, hash, labels)
   if (existing) existing.replaceWith(container)
   else next.prepend(container)
 }

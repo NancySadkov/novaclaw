@@ -31,21 +31,32 @@ export function htmlEmbedLanguage(language: string | undefined) {
 // keep the plain highlighted-code rendering (no iframe churn per token, no half-parsed
 // documents) and swap to the live preview exactly once when `complete` flips true.
 // Static/historical renders mark every well-formed fence complete, so they embed
-// immediately. The returned srcdoc is the RAW fence body — it intentionally bypasses
-// DOMPurify because the sandbox plus the CSP above are the security boundary — the sandbox stops it
-// reading anything local, the CSP stops it SENDING anything out. Callers must only
-// ever assign it to `iframe.srcdoc` (property/attribute assignment), never parse it
-// into the parent document.
+// immediately. The returned `html` is the RAW fence body — it intentionally bypasses DOMPurify,
+// because the sandbox plus the policy are the security boundary: the sandbox stops it reading
+// anything local, the policy stops it SENDING anything out. Callers must only ever hand it to the
+// embed document, which writes it into itself, and never parse it into the parent document.
+//
+// 🔴 NC-SEC-032 — `html`, no longer `srcdoc`. An `about:srcdoc` document INHERITS the embedder's
+// policy container, so a canvas was governed by whichever app policy happened to be hosting it.
+// That is how this feature came to work on the desktop and be completely dead on the served web
+// UI, whose policy carries no `script-src 'unsafe-inline'`. It is delivered to a real served
+// document now, which carries its own policy — measured in Chromium, both directions.
 export function htmlEmbedForBlock(block: {
   mode: string
   language?: string
   complete?: boolean
   src: string
-}): { srcdoc: string } | undefined {
+}): { html: string } | undefined {
   if (block.mode !== "code") return undefined
   if (!htmlEmbedLanguage(block.language)) return undefined
   if (!block.complete) return undefined
-  // ⚠️ The policy leads the document. A CSP meta only governs what is parsed AFTER it, so prepending
-  // is not a style choice — appending it would leave every resource above it ungoverned.
-  return { srcdoc: `${htmlEmbedCspMeta()}\n${block.src}` }
+  // ⚠️ The policy still LEADS the body, even though the embed document is served with that same
+  // policy as a header. Two reasons it is not redundant: policies COMBINE restrictively, so a
+  // second copy can only ever narrow; and if a header seam silently stops applying, the canvas
+  // stays contained rather than quietly gaining the network. Containment that survives one broken
+  // seam is worth more than a failure that announces itself, because what it would announce is
+  // exfiltration that already happened.
+  //
+  // ⚠️ Leading, not trailing: a CSP meta governs only what is parsed AFTER it.
+  return { html: `${htmlEmbedCspMeta()}\n${block.src}` }
 }

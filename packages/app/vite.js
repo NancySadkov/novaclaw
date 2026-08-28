@@ -1,4 +1,6 @@
 import { readFileSync } from "node:fs"
+import { HTML_EMBED_CSP, HTML_EMBED_PATH } from "@novaclaw/schema/html-embed"
+import { htmlEmbedBootstrap } from "@novaclaw/schema/html-embed-bootstrap"
 import solidPlugin from "vite-plugin-solid"
 import tailwindcss from "@tailwindcss/vite"
 import { fileURLToPath } from "url"
@@ -41,6 +43,38 @@ export default [
         '<script id="oc-theme-preload-script" src="/oc-theme-preload.js"></script>',
         `<script id="oc-theme-preload-script">${readFileSync(theme, "utf8")}</script>`,
       )
+    },
+  },
+  {
+    /**
+     * The agent-canvas bootstrap, emitted into BOTH renderer builds.
+     *
+     * This plugin is the one seam the web app and the desktop renderer share (`packages/app` and
+     * `packages/desktop/src/renderer` are separate roots with separate `index.html` files), so a
+     * canvas document placed here cannot exist on one surface and not the other — which is exactly
+     * the failure NC-SEC-032 was.
+     *
+     * ⚠️ Emitted rather than checked in as two `embed.html` files, for the same reason the policy
+     * has one home: two copies of a security-relevant document is how the surfaces drifted apart.
+     *
+     * ⚠️ It is NOT a rollup INPUT. An input would be treated as an app entry — hashed, injected
+     * with the module preload and the theme script, and transformed by `transformIndexHtml` above.
+     * The canvas host must stay exactly the bytes this function returns.
+     */
+    name: "novaclaw:canvas-embed",
+    configureServer(server) {
+      // Dev only. In dev nothing else sets a policy on this document, so the plugin sends it —
+      // otherwise a canvas would run unrestricted in dev and restricted in production, and the dev
+      // loop would be the one place the containment was never exercised.
+      server.middlewares.use((req, res, next) => {
+        if (!req.url || req.url.replace(/^\/+/, "").split("?")[0] !== HTML_EMBED_PATH) return next()
+        res.setHeader("content-type", "text/html; charset=utf-8")
+        res.setHeader("content-security-policy", HTML_EMBED_CSP)
+        res.end(htmlEmbedBootstrap())
+      })
+    },
+    generateBundle() {
+      this.emitFile({ type: "asset", fileName: HTML_EMBED_PATH, source: htmlEmbedBootstrap() })
     },
   },
   tailwindcss(),

@@ -12,13 +12,38 @@ import { RENDERER_CSP, RENDERER_CSP_DIRECTIVES, parseCsp } from "./csp"
 //   • the policy DISAPPEARS or ROTS OPEN — a seam stops setting the header, a directive is
 //     widened to `*`, or `'unsafe-eval'`/a remote script origin is added to script-src.
 //   • the policy is TIGHTENED past what the product measurably needs — dropping
-//     `'unsafe-inline'` silently kills every agent-drawn HTML canvas (an `about:srcdoc`
-//     document inherits this policy), and dropping `'wasm-unsafe-eval'` silently kills the
-//     terminal. Both look like hardening and neither fails anything else.
+//     `'unsafe-inline'` silently kills the inlined theme-preload script, and dropping
+//     `'wasm-unsafe-eval'` silently kills the terminal. Both look like hardening and neither
+//     fails anything else. (Until NC-SEC-032 the canvases were the reason for the first one;
+//     they are served with their own policy now and no longer depend on this file.)
 // See the header comment in `csp.ts` for the measurements behind each grant.
 
 const dir = import.meta.dir
 const source = (name: string) => readFileSync(join(dir, name), "utf8")
+
+/**
+ * Source with comment-only lines dropped, for the ledger checks that grep it.
+ *
+ * ⚠️ LINE-BASED, and that is the whole design. The obvious version — strip `/*…*​/` with a regex,
+ * then `//…` — is worse than the bug it fixes: this very file's neighbour contains
+ * `` `nc://renderer/*.html` `` inside a LINE comment, whose `/*` opened a block that ran to the
+ * next `*​/` twenty lines below and deleted real code from the guard's view. A guard that quietly
+ * stops looking at a region is a worse failure than one that occasionally matches prose, because
+ * nothing announces it.
+ *
+ * A line-based filter cannot do that: it carries no state across lines, so the worst it can do is
+ * keep one line it should have dropped. Trailing comments after code are kept for the same reason —
+ * dropping them needs exactly the string-versus-comment parsing this is avoiding.
+ */
+function withoutComments(code: string) {
+  return code
+    .split("\n")
+    .filter((line) => {
+      const trimmed = line.trimStart()
+      return !trimmed.startsWith("//") && !trimmed.startsWith("*") && !trimmed.startsWith("/*")
+    })
+    .join("\n")
+}
 
 /** The body of a top-level `function name(...)` declaration, up to the next top-level one. */
 function functionBody(code: string, name: string): string {
@@ -70,9 +95,12 @@ describe("renderer Content-Security-Policy", () => {
 
   test("script-src keeps the two grants the product measurably needs", () => {
     const script = parsed["script-src"]!
-    // Removing either is a silent product break — see csp.ts. If the srcdoc embed in
-    // packages/session-ui ever moves to its own origin, THAT is what retires 'unsafe-inline'.
-    expect(script, "dropping 'unsafe-inline' kills every agent-drawn HTML canvas (srcdoc inherits this policy)") //
+    // ⚠️ The REASON for 'unsafe-inline' changed under this assertion, so the assertion says the new
+    // one. It used to be the agent canvases: they were `srcdoc`, which inherits this policy.
+    // NC-SEC-032 moved them to a served document with a policy of its own, so canvases no longer
+    // depend on this at all. What still does is `index.html`'s inlined theme-preload script, which
+    // the WEB surface already serves under a sha256 hash instead — see NC-SEC-033.
+    expect(script, "dropping 'unsafe-inline' kills the inlined theme-preload script in index.html") //
       .toContain("'unsafe-inline'")
     expect(script, "dropping 'wasm-unsafe-eval' kills the wasm terminal and the shiki worker") //
       .toContain("'wasm-unsafe-eval'")
@@ -128,8 +156,29 @@ describe("the policy is actually applied to the renderer document", () => {
 
   test("windows.ts takes the policy from csp.ts rather than restating it", () => {
     expect(windows).toContain('from "./csp"')
-    expect(windows, "a second, hand-written policy string would drift from the tested one") //
+    // ⚠️ Comments stripped FIRST. This matched a backtick-quoted `default-src 'none'` inside a
+    // comment explaining why the canvas host is exempt from the app policy — prose, not a second
+    // policy. A source regex that counts comments reports the fault it was written to catch in a
+    // file that does not have it, and the cost is that someone eventually deletes the guard.
+    expect(withoutComments(windows), "a second, hand-written policy string would drift from the tested one") //
       .not.toMatch(/["'`]default-src /)
+  })
+
+  /**
+   * 🔴 NC-SEC-032 — the canvas host is the ONE document that must not get the app policy.
+   *
+   * Its whole purpose is to carry a different one, so that a canvas can execute its inline script
+   * (which the served web UI's policy forbids, which is why canvases were dead there) while having
+   * no network at all. Handing it `RENDERER_CSP` would give a canvas the app's own reach.
+   *
+   * A/B: delete either `isHtmlEmbedDocument` branch and the matching assertion fails.
+   */
+  test("🔴 both header seams exempt the canvas host from the app policy", () => {
+    for (const name of ["addHtmlDocumentHeaders", "addRendererHeaders"]) {
+      const body = withoutComments(functionBody(windows, name))
+      expect(body, `${name} must recognise the embed document`).toContain("isHtmlEmbedDocument")
+      expect(body, `${name} must give it the embed policy`).toContain("HTML_EMBED_CSP")
+    }
   })
 
   test("the nc:// protocol seam sets it on renderer HTML", () => {

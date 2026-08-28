@@ -21,7 +21,14 @@
  *
  * ## Why each relaxation exists
  *
- * `'unsafe-inline'` in **script-src** — this is the load-bearing one, and it is NOT laziness.
+ * `'unsafe-inline'` in **script-src** — ⚠️ **the reason below is HISTORY, not the current one.**
+ *   NC-SEC-032 moved agent canvases off `srcdoc` and onto a served document with its own policy, so
+ *   they no longer inherit this file at all. What still needs the grant is `index.html`'s inlined
+ *   theme-preload script — which the web surface already serves under a sha256 hash, so this is now
+ *   removable here too (NC-SEC-033). The paragraph is kept because the measurement in it is what
+ *   established that srcdoc inherits, which is the whole basis of the fix that replaced it.
+ *
+ *   Formerly:
  *   Agent-drawn HTML canvases (AGENTS.md → "the agent-drawn HTML canvases in chat") render as
  *   `<iframe sandbox="allow-scripts" srcdoc="…">` carrying the model's raw, deliberately
  *   unsanitized markup — see `packages/session-ui/src/components/markdown-html-embed.ts`. An

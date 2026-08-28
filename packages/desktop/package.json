@@ -4,7 +4,7 @@
   "version": "0.1.67",
   "type": "module",
   "license": "SEE LICENSE IN LICENSE",
-  "description": "NovaClaw — a local-first AI agent OS",
+  "description": "NovaClaw \u2014 a local-first AI agent OS",
   "homepage": "https://novaclaw.app",
   "author": {
     "name": "Nancy Sadkov",
@@ -27,6 +27,7 @@
   "dependencies": {
     "@ladybugdb/wasm-core": "0.18.2",
     "@lydell/node-pty": "catalog:",
+    "@novaclaw/schema": "workspace:*",
     "@zip.js/zip.js": "2.7.62",
     "effect": "catalog:",
     "electron-context-menu": "4.1.2",
