@@ -6,7 +6,8 @@ import { app, BrowserWindow, dialog, net, nativeImage, nativeTheme, protocol, sh
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import type { TitlebarTheme } from "../preload/types"
-import { CSP_HEADER, RENDERER_CSP } from "./csp"
+import { CSP_HEADER, rendererCsp } from "./csp"
+import { THEME_PRELOAD_SHA256 } from "./constants"
 import { HTML_EMBED_CSP, isHtmlEmbedDocument } from "@novaclaw/schema/html-embed"
 import { exportDebugLogs, write as writeLog } from "./logging"
 import {
@@ -32,6 +33,16 @@ const novaBackground = {
   light: resolveThemeVariant(novaTheme.light, false)["background-base"],
   dark: resolveThemeVariant(novaTheme.dark, true)["background-base"],
 }
+/**
+ * The renderer policy, serialized once (NC-SEC-033).
+ *
+ * ⚠️ Lazily, not at module load. `windows.ts` is imported for many reasons, and `rendererCsp` throws
+ * on an empty theme-preload hash — a throw during module evaluation would surface as an unrelated
+ * startup failure rather than as the header decision it actually is.
+ */
+let rendererCspCache: string | undefined
+const RENDERER_CSP = () => (rendererCspCache ??= rendererCsp(THEME_PRELOAD_SHA256))
+
 const documentPolicyHeader = "Document-Policy"
 const jsCallStacksDocumentPolicy = "include-js-call-stacks-in-crash-reports"
 
@@ -408,7 +419,7 @@ function addHtmlDocumentHeaders(response: Response, file: string) {
     return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
   }
   headers.set(documentPolicyHeader, jsCallStacksDocumentPolicy)
-  headers.set(CSP_HEADER, RENDERER_CSP)
+  headers.set(CSP_HEADER, RENDERER_CSP())
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
 }
 
@@ -507,7 +518,7 @@ function addRendererHeaders(value: string, headers: Record<string, any>) {
     return
   }
   upsertKeyValue(headers, documentPolicyHeader, [jsCallStacksDocumentPolicy])
-  upsertKeyValue(headers, CSP_HEADER, [RENDERER_CSP])
+  upsertKeyValue(headers, CSP_HEADER, [RENDERER_CSP()])
 }
 
 /**

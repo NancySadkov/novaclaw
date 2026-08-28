@@ -1,4 +1,6 @@
 import { defineConfig } from "electron-vite"
+import { createHash } from "node:crypto"
+import { readFileSync } from "node:fs"
 import appPlugin from "@novaclaw/app/vite"
 import { copyFile, mkdir, readdir } from "node:fs/promises"
 
@@ -13,10 +15,29 @@ const channel = resolveChannel()
 
 const nodePtyPkg = `@lydell/node-pty-${process.platform}-${process.arch}`
 
+/**
+ * 🔴 NC-SEC-033 — the renderer policy admits the theme preload BY HASH, so `script-src` no longer
+ * carries `'unsafe-inline'`.
+ *
+ * ⚠️ Computed from the very file `@novaclaw/app/vite`'s theme-preload plugin inlines, and inlined
+ * VERBATIM there — so these bytes are exactly what the browser hashes. Reading the same file is the
+ * point: a hash copied into a constant is a second source of truth that goes stale the first time
+ * the preload is edited, and the failure is silent (the page renders, the script is blocked, and
+ * only the CSP violation log says so).
+ *
+ * ⚠️ It has to arrive as a build DEFINE. `addRendererHeaders` sets a header in dev and has no
+ * document body to hash, so there is nothing to compute at runtime — and in the packaged app the
+ * app-package source is not present to read.
+ */
+const themePreloadSha256 = createHash("sha256")
+  .update(readFileSync(new URL("../app/public/oc-theme-preload.js", import.meta.url)))
+  .digest("base64")
+
 export default defineConfig({
   main: {
     define: {
       "import.meta.env.NOVACLAW_CHANNEL": JSON.stringify(channel),
+      "import.meta.env.NOVACLAW_THEME_PRELOAD_SHA256": JSON.stringify(themePreloadSha256),
     },
     build: {
       rollupOptions: {

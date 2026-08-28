@@ -21,12 +21,26 @@
  *
  * ## Why each relaxation exists
  *
- * `'unsafe-inline'` in **script-src** — ⚠️ **the reason below is HISTORY, not the current one.**
- *   NC-SEC-032 moved agent canvases off `srcdoc` and onto a served document with its own policy, so
- *   they no longer inherit this file at all. What still needs the grant is `index.html`'s inlined
- *   theme-preload script — which the web surface already serves under a sha256 hash, so this is now
- *   removable here too (NC-SEC-033). The paragraph is kept because the measurement in it is what
- *   established that srcdoc inherits, which is the whole basis of the fix that replaced it.
+ * **A sha256 HASH, not `'unsafe-inline'`, in script-src** (NC-SEC-033) — ⚠️ the paragraph below is
+ *   HISTORY, kept because its measurement is the basis of the fix that replaced it.
+ *   NC-SEC-032 moved agent canvases off `srcdoc` onto a served document with its own policy, so they
+ *   no longer inherit this file at all. The only remaining inline script was `index.html`'s theme
+ *   preload, and it is now admitted by its hash. What this closes is the grant that let ANY injected
+ *   inline script run in a renderer holding the `window.api` bridge — not a cleanup.
+ *
+ *   ⚠️ **The two load modes differ, measured 2026-08-28, and only one of them inlines anything.**
+ *   `packages/app/vite.js` replaces `src="/oc-theme-preload.js"` — an absolute path. The desktop's
+ *   `index.html` writes `./oc-theme-preload.js`, and in a BUILD that never matches: the packaged
+ *   `out/renderer/index.html` still carries the `src=` attribute, so the packaged renderer loads the
+ *   preload as an ordinary file under `'self'`. In DEV vite normalises the URL before
+ *   `transformIndexHtml` runs, the replace matches, and the script IS inline. So the hash is what
+ *   makes the DEV surface work under one shared policy — and a `./`-vs-`/` detail decides it, which
+ *   is why this is written down rather than reasoned about again.
+ *
+ *   ⚠️ The plugin inlines the file VERBATIM (`readFileSync`, no transform), so the hash is exactly
+ *   sha256 of `packages/app/public/oc-theme-preload.js` — asserted in `csp.test.ts` against the real
+ *   file, not against a copied constant. The same equality is what makes the web surface's
+ *   `cspForHtml` work, and it was confirmed byte-for-byte on both surfaces.
  *
  *   Formerly:
  *   Agent-drawn HTML canvases (AGENTS.md → "the agent-drawn HTML canvases in chat") render as
@@ -92,9 +106,16 @@
  * no way to see it. `nc:` is our own protocol handler with path-traversal containment, so naming
  * it costs nothing and removes an unobservable failure.
  */
-export const RENDERER_CSP_DIRECTIVES: Readonly<Record<string, readonly string[]>> = {
+export const rendererCspDirectives = (themePreloadSha256: string): Readonly<Record<string, readonly string[]>> => ({
   "default-src": ["'self'", "nc:", "data:", "blob:", "http:", "https:", "ws:", "wss:"],
-  "script-src": ["'self'", "nc:", "'unsafe-inline'", "'wasm-unsafe-eval'"],
+  /**
+   * ⚠️ The hash is a PARAMETER, not a constant computed here. This module must stay importable
+   * under `bun test` (it is electron-free on purpose), and a build define read at module scope
+   * would be `undefined` there — which fails OPEN or fails silent, and this is the directive where
+   * neither is acceptable. Passing it in means the test supplies the real file's hash and asserts
+   * the policy that results.
+   */
+  "script-src": ["'self'", "nc:", `'sha256-${themePreloadSha256}'`, "'wasm-unsafe-eval'"],
   "style-src": ["'self'", "nc:", "data:", "blob:", "'unsafe-inline'"],
   "worker-src": ["'self'", "nc:", "blob:"],
   /**
@@ -128,14 +149,26 @@ export const RENDERER_CSP_DIRECTIVES: Readonly<Record<string, readonly string[]>
   "base-uri": ["'none'"],
   "form-action": ["'none'"],
   "frame-ancestors": ["'none'"],
-}
+})
 
 export const CSP_HEADER = "Content-Security-Policy"
 
-/** The serialized header value applied to the renderer document in both load modes. */
-export const RENDERER_CSP = Object.entries(RENDERER_CSP_DIRECTIVES)
-  .map(([name, sources]) => `${name} ${sources.join(" ")}`)
-  .join("; ")
+/**
+ * The serialized header value applied to the renderer document in both load modes.
+ *
+ * ⚠️ An EMPTY hash is refused rather than serialized. `'sha256-'` is not a valid source expression,
+ * so a missing build define would produce a policy Chromium drops the whole directive from — and the
+ * observable symptom is the one this file keeps warning about: the page renders, the theme script is
+ * blocked, and nothing outside the CSP violation log says so. Failing loudly at window creation is
+ * the only version of this that cannot ship unnoticed.
+ */
+export function rendererCsp(themePreloadSha256: string): string {
+  if (!themePreloadSha256)
+    throw new Error("renderer CSP: the theme-preload sha256 is empty — the build define did not reach the main process")
+  return Object.entries(rendererCspDirectives(themePreloadSha256))
+    .map(([name, sources]) => `${name} ${sources.join(" ")}`)
+    .join("; ")
+}
 
 /** Parse a serialized policy back into directives — used by the test to assert on real output. */
 export function parseCsp(policy: string): Record<string, string[]> {

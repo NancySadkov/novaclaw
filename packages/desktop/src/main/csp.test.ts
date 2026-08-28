@@ -1,7 +1,23 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
-import { RENDERER_CSP, RENDERER_CSP_DIRECTIVES, parseCsp } from "./csp"
+import { createHash } from "node:crypto"
+import { parseCsp, rendererCsp, rendererCspDirectives } from "./csp"
+
+/**
+ * 🔴 The hash the SHIPPED policy must carry, computed here from the real file (NC-SEC-033).
+ *
+ * ⚠️ Read, never copied. `packages/app/vite.js` inlines this exact file verbatim into `index.html`,
+ * so these bytes are what the browser hashes — and a base64 constant pasted into a test is a second
+ * source of truth that goes stale the first time the preload is edited, silently, since a wrong
+ * hash only shows up in a CSP violation log.
+ */
+const themePreloadSha256 = createHash("sha256")
+  .update(readFileSync(join(import.meta.dirname, "../../../app/public/oc-theme-preload.js")))
+  .digest("base64")
+
+const RENDERER_CSP = rendererCsp(themePreloadSha256)
+const RENDERER_CSP_DIRECTIVES = rendererCspDirectives(themePreloadSha256)
 
 // Ruling 1: an invariant whose violation compiles green ships with a mechanical check. Every
 // failure this file guards for is invisible to `tsgo` AND to a running app on a dev box — the
@@ -12,7 +28,7 @@ import { RENDERER_CSP, RENDERER_CSP_DIRECTIVES, parseCsp } from "./csp"
 //   • the policy DISAPPEARS or ROTS OPEN — a seam stops setting the header, a directive is
 //     widened to `*`, or `'unsafe-eval'`/a remote script origin is added to script-src.
 //   • the policy is TIGHTENED past what the product measurably needs — dropping
-//     `'unsafe-inline'` silently kills the inlined theme-preload script, and dropping
+//     the theme-preload HASH silently kills that script (NC-SEC-033), and dropping
 //     `'wasm-unsafe-eval'` silently kills the terminal. Both look like hardening and neither
 //     fails anything else. (Until NC-SEC-032 the canvases were the reason for the first one;
 //     they are served with their own policy now and no longer depend on this file.)
@@ -97,17 +113,46 @@ describe("renderer Content-Security-Policy", () => {
     ).toBe(false)
   })
 
-  test("script-src keeps the two grants the product measurably needs", () => {
+  test("🔴 script-src grants NO inline execution — the theme preload is admitted by hash", () => {
+    /**
+     * NC-SEC-033. `'unsafe-inline'` was the grant that let any injected inline script run in a
+     * renderer holding the `window.api` IPC bridge. Its last user was `index.html`'s theme-preload
+     * script, which is now named by its sha256 instead.
+     *
+     * A/B: put `'unsafe-inline'` back and the first assertion fails; drop the hash and the second
+     * does. Both directions matter — the second is the one that kills the theme silently.
+     */
     const script = parsed["script-src"]!
-    // ⚠️ The REASON for 'unsafe-inline' changed under this assertion, so the assertion says the new
-    // one. It used to be the agent canvases: they were `srcdoc`, which inherits this policy.
-    // NC-SEC-032 moved them to a served document with a policy of its own, so canvases no longer
-    // depend on this at all. What still does is `index.html`'s inlined theme-preload script, which
-    // the WEB surface already serves under a sha256 hash instead — see NC-SEC-033.
-    expect(script, "dropping 'unsafe-inline' kills the inlined theme-preload script in index.html") //
-      .toContain("'unsafe-inline'")
+    expect(script, "'unsafe-inline' lets ANY injected inline script run in the bridge-holding renderer") //
+      .not.toContain("'unsafe-inline'")
+    expect(script, "the theme preload must be admitted by the hash of the file vite inlines") //
+      .toContain(`'sha256-${themePreloadSha256}'`)
     expect(script, "dropping 'wasm-unsafe-eval' kills the wasm terminal and the shiki worker") //
       .toContain("'wasm-unsafe-eval'")
+  })
+
+  test("🔴 an empty hash is REFUSED, not serialized", () => {
+    /**
+     * The build define is the only source of the hash, and a missing one would yield `'sha256-'` —
+     * an invalid source expression Chromium drops, taking the whole directive's meaning with it.
+     * The observable symptom would be the one this file exists to prevent: the page renders, the
+     * theme script is blocked, and nothing outside the violation log says so.
+     */
+    expect(() => rendererCsp("")).toThrow(/theme-preload sha256 is empty/)
+  })
+
+  test("🔴 the build define that supplies the hash is actually configured", () => {
+    /**
+     * The two halves live in different files and neither fails without the other: `csp.ts` would
+     * happily serialize a hash nothing computes. This asserts the producer exists and reads the
+     * same file this test does.
+     *
+     * A/B: delete the `define` line in `electron.vite.config.ts` and this fails.
+     */
+    const config = readFileSync(join(import.meta.dirname, "../../electron.vite.config.ts"), "utf8")
+    expect(config).toContain("import.meta.env.NOVACLAW_THEME_PRELOAD_SHA256")
+    expect(config).toContain("app/public/oc-theme-preload.js")
+    expect(config).toContain('createHash("sha256")')
   })
 
   test("style-src keeps 'unsafe-inline'", () => {
