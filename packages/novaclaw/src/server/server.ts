@@ -1,4 +1,5 @@
 import "./init-projectors"
+import { armBodyIdle } from "./body-idle"
 
 import { NodeHttpServer } from "@effect/platform-node"
 import { ConfigProvider, Context, Effect, Exit, Layer, Scope } from "effect"
@@ -169,7 +170,10 @@ function listenerLayer(opts: ListenOptions, port: number) {
 }
 
 class PortUnavailableError extends Error {
-  constructor(readonly port: number, cause: unknown) {
+  constructor(
+    readonly port: number,
+    cause: unknown,
+  ) {
     // ⚠️ Deliberately NOT "pass --port 0". This message reaches the DESKTOP too, where the port was
     // auto-probed and the user never chose it, never typed a command, and cannot act on CLI advice.
     // It names the fact and the general remedy; the CLI adds its own flag hint at its own layer.
@@ -289,6 +293,13 @@ function serverLayer(opts: { port: number; hostname: string }) {
   // the vector that matters on a local-first server.
   server.requestTimeout = 0
   server.keepAliveTimeout = 65_000
+  /**
+   * 🔴 NC-SEC-005: the byte half is guarded and the header phase is guarded; the BODY read had no
+   * clock at all, so a client could send headers and dribble bytes forever. `armBodyIdle` carries the
+   * reasoning and the boundaries — idle rather than total, so SSE is untouched.
+   */
+  const bodyIdleMs = Number(process.env.NOVACLAW_BODY_IDLE_MS ?? 30_000)
+  server.on("request", (req, res) => void armBodyIdle(req, res, bodyIdleMs))
   const serverRef = { closeStarted: false, forceStop: false }
   const close = server.close.bind(server)
   // Keep shutdown owned by NodeHttpServer, but honor listener.stop(true) by
