@@ -391,7 +391,52 @@ export async function superviseLocalServer(
     }
   }
 
-  current = await spawnOnce() // first boot failures throw to the caller, exactly as before
+  /**
+   * 🔴 **NC-REL-012 — the FIRST spawn had no supervision at all.** Every later failure goes through
+   * `respawn`'s guarded path and the `superviseDecision` ladder; this call sat outside it, and the
+   * comment that used to be here said so plainly: *"first boot failures throw to the caller, exactly
+   * as before"*. So an error, a pre-ready exit, or the 60-second readiness stall killed the child and
+   * rejected — and nothing restarted it. The one call the user actually waits on was the one with no
+   * self-healing, in a product whose whole premise is that *"our users are not server admins"*.
+   *
+   * ⚠️ The caller's retry does not cover this. `index.ts` wraps it in
+   * `Effect.retry({ while: isPortRace, … })` — a port race heals, everything else propagates.
+   *
+   * ⚠️ **Only FAST failures are retried, and that bound is the point.** A pre-ready exit in the first
+   * couple of seconds is the racy, transient shape worth another go. The 60-second stall is not: it
+   * means something is genuinely wrong, and retrying it on the crash ladder would turn a prompt,
+   * named boot error into minutes of a blank window — the opposite of the dependability this is for.
+   * A stall still throws immediately, exactly as before.
+   *
+   * ⚠️ It still THROWS when it gives up, so the caller's contract is unchanged: boot either returns a
+   * live server or reports a named error. What changed is that a transient first failure no longer
+   * ends the app's startup.
+   */
+  const FIRST_BOOT_FAST_MS = 10_000
+  const firstSpawn = async () => {
+    for (;;) {
+      const attemptedAt = Date.now()
+      try {
+        return await spawnOnce()
+      } catch (error) {
+        const aliveMs = Date.now() - attemptedAt
+        if (stopping || aliveMs >= FIRST_BOOT_FAST_MS) throw error
+        reason = "start-failed"
+        const decision = superviseDecision(state, { code: 1, aliveMs })
+        if (decision.action !== "restart") {
+          report({ phase: "gave-up", reason, attempts })
+          throw error
+        }
+        attempts++
+        note(`sidecar failed before ready — retrying in ${decision.delayMs / 1000}s`)
+        report({ phase: "restarting", reason, attempt: attempts, nextAttemptInMs: decision.delayMs })
+        state = decision.next
+        await new Promise((resolve) => setTimeout(resolve, decision.delayMs))
+        if (stopping) throw error
+      }
+    }
+  }
+  current = await firstSpawn()
   startMonitor(current)
   report({ phase: "running" })
   return {

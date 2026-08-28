@@ -49,18 +49,27 @@ void mock.module("./store", () => ({ getStore: () => ({ get: () => null, set: ()
 const { superviseLocalServer } = await import("./server")
 
 /** What the sidecar does when the parent says `start`. One knob, set per scenario. */
-type Behaviour = "ready" | "ready-then-die"
+type Behaviour = "ready" | "ready-then-die" | "die-before-ready-once"
 
 class FakeChild extends EventEmitter {
   readonly stdout = null
   readonly stderr = null
   killed = false
+  static firstBootFailed = false
   constructor(private readonly behaviour: Behaviour) {
     super()
   }
   postMessage(message: { type: string }) {
     if (message.type === "start")
       queueMicrotask(() => {
+        // A child that dies WITHOUT ever announcing readiness — the pre-ready failure that used to
+        // escape supervision entirely (NC-REL-012). `once` so the retry can succeed and the test
+        // proves healing rather than an infinite loop.
+        if (this.behaviour === "die-before-ready-once" && !FakeChild.firstBootFailed) {
+          FakeChild.firstBootFailed = true
+          this.emit("exit", 1)
+          return
+        }
         this.emit("message", { type: "ready" })
         // A child that dies moments after announcing readiness is the "fast crash" the giveup
         // ladder is counted in — the real shape of a sidecar that boots into a broken dependency.
@@ -123,6 +132,24 @@ afterEach(() => {
 })
 
 describe("sidecar supervisor fault classification", () => {
+  /**
+   * 🔴 NC-REL-012 — the FIRST spawn had no supervision. Every later failure goes through the guarded
+   * `respawn` path and the decision ladder; the first `await spawnOnce()` sat outside it, and its own
+   * comment said so: *"first boot failures throw to the caller, exactly as before"*. A pre-ready exit
+   * killed the child, rejected, and nothing restarted it — in the one call the user actually waits on.
+   *
+   * A/B: move `firstSpawn` back to a bare `await spawnOnce()` and this rejects instead of resolving.
+   */
+  test("🔴 a fast PRE-READY failure heals instead of ending startup", async () => {
+    FakeChild.firstBootFailed = false
+    const h = harness("die-before-ready-once")
+    // Resolves — the first child died before ready, the ladder retried, the second came up.
+    const supervised = await h.start()
+    expect(h.forks.length).toBeGreaterThanOrEqual(2)
+    expect(h.states.some((state) => state.phase === "restarting")).toBe(true)
+    await supervised.listener.stop().catch(() => undefined)
+  })
+
   test("an abrupt post-ready exit is a CRASH: it restarts, on a bounded delay it reports", async () => {
     const h = harness("ready")
     const supervised = await h.start()
