@@ -227,6 +227,32 @@ describe("duplicate / remove / materialize", () => {
     await fs.rm(into, { recursive: true, force: true })
   })
 
+  /**
+   * 🔴 NC-REL-031 — the no-clobber rule below covered exactly ONE file. The Recipes UI offers
+   * "Run in…" against an existing directory on purpose (its own note calls it cooking "straight into
+   * a permanent folder"), so a recipe carrying `README.md`, `main.py` or `src/` silently replaced the
+   * user's file of that name, with no prompt and no record. Their `recipe.md` was safe; their work
+   * was not.
+   *
+   * A/B: drop the `clash` check and the user's data.csv becomes the recipe's.
+   */
+  test("🔴 materialize never clobbers an ASSET already in the work dir either", async () => {
+    await Recipe.save({ name: "Clobber", prompt: "use data.csv" }, opts())
+    await fs.writeFile(path.join(root, "clobber", "data.csv"), "recipe,version\n", "utf8")
+    const into = path.join(root, "..", path.basename(root) + "-mine")
+    await fs.mkdir(into, { recursive: true })
+    await fs.writeFile(path.join(into, "data.csv"), "the user's own numbers\n", "utf8")
+
+    const copied = await Recipe.materialize("clobber", into, opts())
+
+    expect(await fs.readFile(path.join(into, "data.csv"), "utf8")).toBe("the user's own numbers\n")
+    // Not reported as copied — it is not there because of us.
+    expect(copied).not.toContain("data.csv")
+    // ...and the cook still happened: the manifest landed beside their file.
+    expect(copied).toContain("recipe.md")
+    await fs.rm(into, { recursive: true, force: true })
+  })
+
   test("materialize never clobbers a recipe.md already in the work dir", async () => {
     await Recipe.save({ name: "Cook", prompt: "fresh" }, opts())
     const into = path.join(root, "..", path.basename(root) + "-occupied")

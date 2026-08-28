@@ -1100,9 +1100,35 @@ export async function materialize(slug: string, into: string, options?: Options)
   // so it is reported partially rather than thrown; the caller sees exactly what exists.
   const copied: string[] = []
   const failed: string[] = []
+  const skipped: string[] = []
   for (const asset of recipe.assets) {
+    const target = path.join(into, asset)
+    /**
+     * 🔴 **NC-REL-031 — the no-clobber rule existed and covered exactly one file.** Ten lines below,
+     * the manifest is protected with the sentence *"cooking into a folder the user already works in
+     * must not overwrite their own recipe.md"*. The ASSETS had no such check, and the Recipes UI
+     * offers "Run in…" against an existing directory on purpose — the page's own note calls it
+     * cooking "straight into a permanent folder". So a recipe carrying `README.md`, `main.py` or
+     * `src/` silently replaced the user's file of that name, with no prompt and no record.
+     *
+     * ⚠️ SKIPPED, never merged. For a directory asset this treats the whole tree as a collision
+     * rather than descending: merging a recipe's `src/` into the user's `src/` is the same overwrite
+     * one level down, and choosing which files inside may land is a decision the user has not been
+     * asked to make.
+     *
+     * ⚠️ Reported separately from `failed`. A skip is not an error — the cook succeeded, and the
+     * user's file won — but it is not a copy either, and the caller must be able to tell those apart.
+     */
+    const clash = await fs
+      .access(target)
+      .then(() => true)
+      .catch(() => false)
+    if (clash) {
+      skipped.push(asset)
+      continue
+    }
     const ok = await fs
-      .cp(path.join(root, slug, asset), path.join(into, asset), { recursive: true })
+      .cp(path.join(root, slug, asset), target, { recursive: true })
       .then(() => true)
       .catch(() => false)
     if (ok) copied.push(asset)
@@ -1110,6 +1136,10 @@ export async function materialize(slug: string, into: string, options?: Options)
   }
   if (failed.length > 0)
     console.warn(`recipe "${slug}": ${failed.length} asset(s) could not be copied: ${failed.join(", ")}`)
+  if (skipped.length > 0)
+    console.warn(
+      `recipe "${slug}": ${skipped.length} asset(s) already existed and were left alone: ${skipped.join(", ")}`,
+    )
   // Never clobber: cooking into a folder the user already works in must not overwrite their own recipe.md.
   const manifest = path.join(into, RECIPE_FILE)
   const exists = await fs
