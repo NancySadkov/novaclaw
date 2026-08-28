@@ -22,6 +22,7 @@ import { ConfigExperimental } from "./config/experimental"
 import { ConfigFormatter } from "./config/formatter"
 import { ConfigAdhocTools } from "./config/adhoc-tools"
 import { ConfigAffective } from "./config/affective"
+import { ConfigHarnessDrives } from "./config/harness-drives"
 import { ConfigIntrospection } from "./config/introspection"
 import { ConfigLocalModelCatalog } from "./config/local-model-catalog"
 import { ConfigLog } from "./config/log"
@@ -155,6 +156,11 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     }),
   introspection: ConfigIntrospection.Info.pipe(Schema.optional).annotate({
     description: "Introspection mode — a judge model periodically checks whether the session is stuck (P2)",
+  }),
+  harness_drives: ConfigHarnessDrives.Info.pipe(Schema.optional).annotate({
+    description:
+      "The automatic continuations applied to a turn that thinks it is finished (re-grounding, set completion, " +
+      "fan-out supervision). All default ON; switching one off exists so the model can be measured unaided",
   }),
   adhoc_tools: ConfigAdhocTools.Info.pipe(Schema.optional).annotate({
     description: "Ad-hoc tool recipes: name + description listed in the system prompt, manual pulled on demand (P4)",

@@ -326,6 +326,15 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
      * accidentally make the whole suite exercise a different engine.
      */
     strictEnabled: false,
+    /**
+     * The harness DRIVE switches (`config/harness-drives.ts`), read on every `Config.entries()` call.
+     *
+     * ⚠️ `undefined` means the key is ABSENT from config, which is the shipped default and must leave
+     * every drive ON — a claim about the switch has to be able to assert both directions, and the
+     * absent case is the one that would silently disable the product if `resolve` ever got its sign
+     * wrong.
+     */
+    harnessDrives: undefined as { reground?: boolean; set?: boolean; children?: boolean } | undefined,
   }
   /**
    * Live tool-execution accounting. `maxActive` is the interesting one: it is the only way to assert
@@ -624,6 +633,7 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
                 keep: new ConfigCompaction.Keep({ tokens: controls.compactionKeepTokens }),
               }),
               ...(controls.strictEnabled ? { strict: { enabled: true } } : {}),
+              ...(controls.harnessDrives === undefined ? {} : { harness_drives: controls.harnessDrives }),
             }),
           }),
         ]),

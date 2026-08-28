@@ -30,6 +30,7 @@ export * as HarnessConfig from "./harness-config"
 // not a fix. The runner therefore threads one `Derived` through the whole turn.
 
 import { Config } from "../../config"
+import { ConfigHarnessDrives } from "../../config/harness-drives"
 import { ConfigProviderConnection } from "../../config/provider-connection"
 import { Persona } from "../../persona"
 import { Introspection } from "./introspection"
@@ -85,6 +86,8 @@ export interface Derived {
   readonly strict: Config.Info["strict"]
   readonly affective: Config.Info["affective"]
   readonly introspection: Introspection.Resolved
+  /** The automatic continuations applied to a finished-looking turn. All default ON. */
+  readonly drives: ConfigHarnessDrives.Resolved
   readonly context: Config.Info["context"]
   readonly toolRouting: Config.Info["tool_routing"]
   readonly providerStallTimeoutMs: number
@@ -118,6 +121,7 @@ export const derive = (entries: readonly Config.Entry[], options: Options = {}):
     strict: Config.latest(entries, "strict"),
     affective: Config.latest(entries, "affective"),
     introspection: Introspection.resolve(Config.latest(entries, "introspection")),
+    drives: ConfigHarnessDrives.resolve(Config.latest(entries, "harness_drives")),
     context: Config.latest(entries, "context"),
     toolRouting: Config.latest(entries, "tool_routing"),
     providerStallTimeoutMs: ConfigProviderConnection.stallTimeoutMs(Config.latest(entries, "provider_connection")),

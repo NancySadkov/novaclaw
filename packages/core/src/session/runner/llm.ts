@@ -2952,7 +2952,11 @@ export const layer = Layer.effect(
             // opened nothing never even reached `shouldContinue` — measured twice on 2026-08-20,
             // `set.branch` fired and `set.considered` never did. The zero case is the one that most
             // needs steering; `MAX_BARREN_ROUNDS` bounds it.
-            if (askedForSet) {
+            // ⚠️ `harness.drives.set` gates the whole block, not just the steer: the enumeration
+            // below reads the folder from disk, and doing that work to then discard it would make
+            // "off" cost the same as "on" while the operator believed it was measuring an unaided
+            // model. Off means the drive does not run.
+            if (askedForSet && harness.drives.set) {
               // ⚠️ NOT the prompt's 40-name cap — that bound exists so a grounding MESSAGE stays
               // small, and this check pays no prompt cost per name. It asks for exactly as many
               // as the drive could ever complete, so the set it reasons about is the set it can
@@ -3057,7 +3061,11 @@ export const layer = Layer.effect(
              * `unfinished-set.ts` paid 835,145 tokens to learn. A session with no children costs one
              * empty query and skips everything below.
              */
-            const kids = yield* store.children(input.sessionID).pipe(Effect.orElseSucceed(() => []))
+            // ⚠️ Gated BEFORE the query for the same reason: `off` must not pay for an indexed read
+            // it will throw away.
+            const kids = harness.drives.children
+              ? yield* store.children(input.sessionID).pipe(Effect.orElseSucceed(() => []))
+              : []
             if (kids.length > 0) {
               // ⚠️ Accumulated into the SESSION's set, never read fresh from the window — see
               // `childrenJoined`. `wait` carries the child id in its own input, so the parent's joins
@@ -3126,7 +3134,11 @@ export const layer = Layer.effect(
                 needsContinuation = true
               }
             }
-            if (!regrounded && shouldReground(finalText, toolCallsSinceLastUser(context).length)) {
+            // 🔴 THE DRIVE THAT MADE "UNAIDED" UNMEASURABLE. `session.finish.reground` fires in
+            // every session in BOTH of the rig's arms — the cue gates the set drive and never this
+            // one — so every number `todo/batch-file-planning.md` has produced was taken with at
+            // least one mitigation live. This switch is what lets that baseline finally be taken.
+            if (harness.drives.reground && !regrounded && shouldReground(finalText, toolCallsSinceLastUser(context).length)) {
               regrounded = true
               yield* Log.event("session.finish.reground", { "session.id": input.sessionID })
               yield* SessionInput.steer(db, events, input.sessionID, REGROUND_NUDGE)

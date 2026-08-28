@@ -30,8 +30,13 @@ import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixtu
 /** The 1N provenance prefix every harness steer carries. */
 const STEER_PREFIX = "[Automated NovaClaw check"
 
-const runWithChildren = async (children: { exited: boolean }[], label: string) => {
+const runWithChildren = async (
+  children: { exited: boolean }[],
+  label: string,
+  drives?: { children?: boolean },
+) => {
   const harness = makeRunnerHarness({ turns: [completeTurn("text-1", "All done — every slice is covered.")] })
+  if (drives !== undefined) harness.controls.harnessDrives = drives
   let transcript: { type: string; text?: string }[] = []
 
   await drive(
@@ -125,6 +130,30 @@ describe("the runner asks the fan-out supervisor", () => {
    * reach its finish — an assistant message was written — which is the same point in the code where
    * the branch sits. Together: the drain got there, and declined.
    */
+  /**
+   * 🔴 THE SWITCH, PROVEN AT ITS CALL SITE — not merely resolved.
+   *
+   * `config/harness-drives.test.ts` pins what `resolve` returns; NOTHING there proves the runner
+   * reads it. A config value nothing consumes is the same *built, tested, never called* shape this
+   * whole file exists to rule out, one layer up — and it would be worse here, because the operator
+   * would believe they had measured an unaided model while the drive kept firing.
+   *
+   * ⚠️ The pair is what makes it a measurement: the SAME fan-out that steers three times with the
+   * drive on must steer ZERO times with it off. Asserting only the zero would pass against a broken
+   * fixture that never created the children.
+   */
+  test("harness_drives.children = false silences the drive that otherwise fires", async () => {
+    const on = await runWithChildren([{ exited: false }], "drive on")
+    expect(on.steers.length, "control: with the drive ON this fan-out steers").toBeGreaterThan(0)
+
+    const off = await runWithChildren([{ exited: false }], "drive off", { children: false })
+    expect(off.steers, "with the drive OFF the identical fan-out must say nothing").toHaveLength(0)
+    expect(
+      off.transcript.some((message) => message.type === "assistant"),
+      "the drain must still reach finish — silence from a crashed drain proves nothing",
+    ).toBe(true)
+  })
+
   test("a session with no children reaches finish and says nothing", async () => {
     const { transcript, steers } = await runWithChildren([], "no children")
     expect(steers).toHaveLength(0)

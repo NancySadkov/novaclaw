@@ -65,6 +65,9 @@ export const SETTINGS_KEYS = [
   "persona",
   "user_profile",
   "introspection",
+  // The harness-drive switches. Routed like every other operational key — an UNDECLARED key
+  // crash-loops the instance at boot, and this one is written by an operator A/B'ing a drive off.
+  "harness_drives",
   "adhoc_tools",
   "affective",
   "strict",
