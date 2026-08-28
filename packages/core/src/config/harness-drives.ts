@@ -61,6 +61,18 @@ export const Info = Schema.Struct({
       "Steer a turn back to child sessions it spawned but never read the results of (default: true). " +
       "Turning this off restores the silent failure where a merge of nine slices of ten looks complete.",
   }),
+  /**
+   * The image-shortcut refusal (`session/runner/image-shortcut.ts`), enforced in the `bash` tool.
+   *
+   * ⚠️ The odd one out: the other three STEER a finished turn, this one REFUSES a call before it
+   * runs. It sits here anyway because it is the same kind of thing — an automatic harness
+   * intervention an operator must be able to switch off to measure whether it converts.
+   */
+  imageShortcut: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Refuse a shell command that reads an image's BYTES (xxd/base64/cat on a PNG), which cannot " +
+      "describe the picture, and name the read tool instead (default: true).",
+  }),
 })
 export type Info = typeof Info.Type
 
@@ -69,6 +81,7 @@ export interface Resolved {
   readonly reground: boolean
   readonly set: boolean
   readonly children: boolean
+  readonly imageShortcut: boolean
 }
 
 /**
@@ -81,4 +94,5 @@ export const resolve = (info: Info | undefined): Resolved => ({
   reground: info?.reground ?? true,
   set: info?.set ?? true,
   children: info?.children ?? true,
+  imageShortcut: info?.imageShortcut ?? true,
 })

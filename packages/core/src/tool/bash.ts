@@ -7,6 +7,8 @@ import { Duration, Effect, Layer, Schema } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { HostExec } from "../host-exec"
 import { Config } from "../config"
+import { ConfigHarnessDrives } from "../config/harness-drives"
+import { ImageShortcut } from "../session/runner/image-shortcut"
 import { SettingsConfigStore } from "../settings-config-store"
 import { makeLocationNode } from "../effect/app-node"
 import { FSUtil } from "../fs-util"
@@ -169,6 +171,7 @@ export const layer = Layer.effectDiscard(
     const bashJobs = yield* BashJobs.Service
     const sessions = yield* SessionStore.Service
     const effective = yield* SessionEffectiveConfig.Service
+
     const messengerStore = yield* MessengerStore.Service
     // OFF-C: the offline policy is a machine-level snapshot (flag-aware config dir);
     // consume the shared service so the guard sees the SAME policy as the HttpClient.
@@ -228,6 +231,36 @@ export const layer = Layer.effectDiscard(
                   new ToolFailure({ message: "Provide `command` to run something, or `job` to check a running job." }),
                 )
               const commandText = input.command
+
+              /**
+               * 🔴 **THE IMAGE SHORTCUT, REFUSED MECHANICALLY** (`todo/batch-file-planning.md`'s
+               * first-ranked lever). Asked for 400 image descriptions, a measured run *"spent its
+               * budget hunting for a way to produce 400 descriptions WITHOUT opening them — PNG bytes
+               * through `xxd`, a generator script, a search for pre-made `.txt` files"*, and covered
+               * 223 of 400. `xxd` on a PNG cannot describe it; the harness knows that and the model
+               * keeps discovering it the expensive way.
+               *
+               * ⚠️ **Refused BEFORE the permission asserts and before execution**, which is what makes
+               * this a mechanical lever rather than a fifth informational one. The ledger records four
+               * informational levers failing in a row and mechanical ones converting every time — so
+               * the shortcut is made UNAVAILABLE, the shape `llm.ts` already uses to withhold `spawn`.
+               *
+               * ⚠️ Returned as OUTPUT, not `Effect.fail`. A tool failure reads as a fault the model
+               * should route around; this is a correct answer to a wrong question, and it names the
+               * tool that does work.
+               */
+              if (ImageShortcut.isImageShortcut(commandText)) {
+                /**
+                 * Read THROUGH to the settings store at the point of use (ruling 3: *a settings
+                 * change is not a reboot*), and only once the command already looks like a shortcut
+                 * — the common case pays nothing for a switch almost nobody sets.
+                 */
+                const drives = ConfigHarnessDrives.resolve(Config.latest(yield* config.entries(), "harness_drives"))
+                if (drives.imageShortcut)
+                  // `truncated: false` — nothing was run, so nothing was cut off. `exit` is left
+                  // absent rather than 0: no process existed to succeed.
+                  return { output: ImageShortcut.refusal(commandText), truncated: false }
+              }
 
               const source = {
                 type: "tool" as const,

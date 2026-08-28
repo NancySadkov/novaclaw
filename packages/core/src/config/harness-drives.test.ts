@@ -6,18 +6,18 @@ import { ConfigHarnessDrives } from "./harness-drives"
 //
 // 🔴 The defect this file guards against is a SIGN ERROR, and it is the expensive one. `Config.latest`
 // answers `undefined` for a key nobody set, so reading absence as "off" would silently disable all
-// three drives on every instance in the world — a change that makes the product quietly worse and
+// four drives on every instance in the world — a change that makes the product quietly worse and
 // that no gate would notice, because every test asserting a drive FIRES would simply stop running it.
 
 describe("resolve", () => {
   // ⭐ THE CRITICAL DIRECTION. An unset block must behave exactly as the harness did before this key
   // existed, or shipping the switch is itself the regression.
   test("an absent block leaves every drive ON", () => {
-    expect(ConfigHarnessDrives.resolve(undefined)).toEqual({ reground: true, set: true, children: true })
+    expect(ConfigHarnessDrives.resolve(undefined)).toEqual({ reground: true, set: true, children: true, imageShortcut: true })
   })
 
   test("an empty block leaves every drive ON", () => {
-    expect(ConfigHarnessDrives.resolve({})).toEqual({ reground: true, set: true, children: true })
+    expect(ConfigHarnessDrives.resolve({})).toEqual({ reground: true, set: true, children: true, imageShortcut: true })
   })
 
   test("an explicit false survives — it is not read as absent", () => {
@@ -25,6 +25,7 @@ describe("resolve", () => {
       reground: false,
       set: true,
       children: true,
+      imageShortcut: true,
     })
   })
 
@@ -33,6 +34,7 @@ describe("resolve", () => {
       reground: true,
       set: true,
       children: true,
+      imageShortcut: true,
     })
   })
 
@@ -43,14 +45,18 @@ describe("resolve", () => {
       reground: false,
       set: true,
       children: false,
+      imageShortcut: true,
     })
   })
 
-  test("all three can be off at once — the fully unaided configuration", () => {
-    expect(ConfigHarnessDrives.resolve({ reground: false, set: false, children: false })).toEqual({
+  test("all four can be off at once — the fully unaided configuration", () => {
+    expect(
+      ConfigHarnessDrives.resolve({ reground: false, set: false, children: false, imageShortcut: false }),
+    ).toEqual({
       reground: false,
       set: false,
       children: false,
+      imageShortcut: false,
     })
   })
 })
