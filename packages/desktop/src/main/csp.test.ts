@@ -90,6 +90,30 @@ describe("renderer Content-Security-Policy", () => {
     }
   })
 
+  /**
+   * 🔴 NC-SEC-031 — a canvas navigating ITSELF was the last egress channel. The srcdoc's own
+   * `default-src 'none'` (NC-SEC-003) does not cover it: a frame's navigation is checked against
+   * its PARENT's `frame-src`, which without this directive fell back to `default-src` and its
+   * `http:`/`https:` sources.
+   *
+   * A/B: delete `frame-src` from the directives and this fails on the fallback.
+   */
+  test("🔴 frame-src exists and does NOT reach the web", () => {
+    expect(parsed["frame-src"], "without this directive frame-src falls back to default-src").toBeDefined()
+    for (const remote of ["http:", "https:", "*", "ws:", "wss:"]) {
+      expect(parsed["frame-src"], `a canvas could exfiltrate via ${remote}`).not.toContain(remote)
+    }
+  })
+
+  test("🔴 frame-src still admits everything a canvas legitimately is", () => {
+    // The other direction, and the one that would ship silently broken: measured in Chrome 148,
+    // `about:srcdoc` is not matched against this list, so the canvases load under it. `data:` and
+    // `blob:` stay because a canvas may frame something it generated itself.
+    for (const local of ["'self'", "nc:", "data:", "blob:"]) {
+      expect(parsed["frame-src"], `${local} is what the canvases and the app actually frame`).toContain(local)
+    }
+  })
+
   test("the custom renderer scheme is admitted alongside 'self'", () => {
     // The packaged window is `nc://renderer/index.html`; if `'self'` did not match a custom
     // standard scheme the whole renderer would fail to load, and that is not observable here.
