@@ -4,12 +4,30 @@ import { createSimpleContext } from "@novaclaw/ui/context"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
+import { useServerSDK } from "@/context/server-sdk"
 import { useSettings } from "@/context/settings"
 import { noticeErrorLog } from "@/utils/error-log"
+import { instanceHeaders, instanceUrl } from "@/utils/instance-fetch"
 import { persisted } from "@/utils/persist"
 import { DialogReleaseNotes, type Highlight } from "@/components/dialog-release-notes"
 
+/**
+ * 🔴 NC-SEC-015 — this is now a DISPLAY constant, not a fetch target.
+ *
+ * The renderer used to fetch it directly, and it cannot consult airgap policy: the policy belongs to
+ * the instance and the renderer never reaches the wire. So an airgapped instance announced, once per
+ * version change, that its user had opened the app. The fetch goes to the instance's maintenance
+ * broker now (`GET /api/maintenance/changelog`), which asks upstream under the instance's own policy
+ * and refuses under airgap.
+ *
+ * ⚠️ The wording below still names THIS url, because it is the host that actually failed. Naming the
+ * broker instead would tell a user their own instance is broken when the truth is that novaclaw.app
+ * is unreachable.
+ */
 const CHANGELOG_URL = "https://novaclaw.app/changelog.json"
+
+/** Where the instance brokers it. Relative to whatever server this UI is pointed at. */
+export const CHANGELOG_ENDPOINT = "/api/maintenance/changelog"
 
 // ── The What's-new subsystem's failure model ──────────────────────────────────────────────────────
 //
@@ -51,6 +69,12 @@ export type ChangelogFailure =
   | "network"
   /** Answered 2xx, but the body is not the JSON we asked for. */
   | "malformed"
+  /**
+   * The INSTANCE declined to ask upstream — it is in airgap mode. Not a fault: the user chose this,
+   * so it is never written to the error log, and it retries on the next launch because the policy
+   * can be turned off between now and then.
+   */
+  | "refused"
 
 export type ChangelogOutcome =
   | { kind: "highlights"; highlights: Highlight[] }
@@ -209,15 +233,19 @@ function describeError(error: unknown): string {
  */
 export async function readChangelog(input: {
   fetcher: typeof fetch
+  /** The instance's broker, absolute. The upstream URL is never fetched from here. */
+  endpoint: string
+  /** The instance's auth header set — the broker is behind auth like every other route. */
+  headers?: Record<string, string>
   signal: AbortSignal
   current?: string
   previous?: string
 }): Promise<ChangelogOutcome> {
   let response: Response
   try {
-    response = await input.fetcher(CHANGELOG_URL, {
+    response = await input.fetcher(input.endpoint, {
       signal: input.signal,
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...input.headers },
     })
   } catch (error) {
     // An abort is the app tearing down, not a fault — do not report it as one.
@@ -226,6 +254,11 @@ export async function readChangelog(input: {
   }
 
   if (!response.ok) {
+    // ⚠️ 403 from the BROKER is our own instance declining, not upstream answering. Reporting it as
+    // an HTTP fault would put "release notes unavailable" in the error log for a policy the user set
+    // deliberately — a fault described falsely, and an accusation about their own configuration.
+    if (response.status === 403 && (await isAirgapRefusal(response)))
+      return { kind: "unavailable", failure: "refused", detail: "this instance is in airgap mode" }
     return {
       kind: "unavailable",
       failure: "http",
@@ -250,6 +283,8 @@ export async function readChangelog(input: {
 /** A failure we will ask about again on the next launch, rather than treating as settled. */
 export function willRetry(outcome: ChangelogOutcome): boolean {
   if (outcome.kind !== "unavailable") return false
+  // A refusal is the least settled of all: the user can turn airgap off between launches, and the
+  // version must not be marked seen for notes nobody was ever shown.
   if (outcome.failure !== "http") return true
   return outcome.httpStatus !== 404 && outcome.httpStatus !== 410
 }
@@ -289,6 +324,8 @@ function describeFault(fault: Fault): string {
         return `could not reach ${CHANGELOG_URL} (${fault.detail})`
       case "malformed":
         return `${CHANGELOG_URL} did not return valid JSON (${fault.detail})`
+      case "refused":
+        return `this instance did not ask ${CHANGELOG_URL} because it is in airgap mode`
     }
   })()
   const next = fault.retrying
@@ -304,7 +341,27 @@ function describeFault(fault: Fault): string {
  */
 export function describeUnavailable(outcome: ChangelogOutcome): string | undefined {
   if (outcome.kind !== "unavailable") return
+  // ⚠️ A refusal is deliberately NOT reported here. The error log is for faults; airgap is a setting
+  // the user turned on, and logging it as an error every launch would train them to ignore the panel.
+  // The Settings row still says what happened — see `describeStatus`.
+  if (outcome.failure === "refused") return
   return describeFault({ ...outcome, retrying: willRetry(outcome) })
+}
+
+/** Is this 403 our own instance's airgap refusal, rather than some other forbidden? */
+async function isAirgapRefusal(response: Response): Promise<boolean> {
+  try {
+    // ⚠️ Read directly, not through `clone()`. Nothing reads this body again — the non-ok branch
+    // returns immediately either way — and `clone` is the one Response member the test doubles in
+    // this file do not implement, so using it made every refusal fall through to "http" while
+    // looking correct.
+    const body = (await response.json()) as { error?: unknown }
+    return body?.error === "airgapped"
+  } catch {
+    // ⚠️ A 403 we cannot parse is NOT assumed to be ours. Treating every forbidden as an airgap
+    // refusal would hide a real authentication failure behind a reassuring sentence.
+    return false
+  }
 }
 
 /**
@@ -436,6 +493,10 @@ export const { use: useHighlights, provider: HighlightsProvider } = createSimple
   gate: false,
   init: () => {
     const platform = usePlatform()
+    // NC-SEC-015: the changelog is fetched from THIS instance's broker, not from the upstream host,
+    // so the instance's own airgap policy decides whether the request leaves the machine at all.
+    const sdk = useServerSDK()
+    const http = () => sdk()?.server?.http
     const dialog = useDialog()
     const settings = useSettings()
     const [store, setStore, _, ready] = persisted("highlights.v1", createStore<Store>({ version: undefined }))
@@ -470,8 +531,19 @@ export const { use: useHighlights, provider: HighlightsProvider } = createSimple
 
       setStatus({ state: "checking" })
 
+      /**
+       * ⚠️ Through `instanceUrl`/`instanceHeaders`, not a hand-built URL and header pair. The broker
+       * sits behind the instance's auth like every other route, and `instance-fetch.ts` is the ONE
+       * place this app derives that header — a second derivation here would be exactly the ninth
+       * copy that module was written to collapse, and it would not fail loudly: it would 401 this
+       * one screen.
+       */
+      const base = http()
+      if (!base) return
       void readChangelog({
         fetcher,
+        endpoint: instanceUrl(base, CHANGELOG_ENDPOINT).toString(),
+        headers: instanceHeaders(base),
         signal: controller.signal,
         current: platform.version,
         previous,

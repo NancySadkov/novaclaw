@@ -76,6 +76,7 @@ import { MessengerPace } from "@novaclaw/core/messenger/pace"
 import { MessengerStore } from "@novaclaw/core/messenger/store"
 import { CommunityConsent } from "@novaclaw/core/community/consent"
 import { Offline } from "@novaclaw/core/offline"
+import { fetchChangelog } from "../../../maintenance/changelog"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { CapabilityRegistry } from "@novaclaw/core/effect/capability-registry"
@@ -229,6 +230,39 @@ const docResponse = lazy(() => HttpServerResponse.jsonUnsafe(OpenApi.fromApi(Pub
 const docRoute = HttpRouter.use((router) => router.add("GET", "/doc", () => Effect.succeed(docResponse()))).pipe(
   Layer.provide(authOnlyRouterLayer),
 )
+
+/**
+ * 🔴 NC-SEC-015 — the first-party maintenance broker.
+ *
+ * The renderer used to fetch `novaclaw.app/changelog.json` itself, and it CANNOT consult airgap
+ * policy: the policy lives on the instance, and the renderer never reaches the wire. An instance the
+ * user had airgapped therefore announced, once per version change, that its user had opened the app.
+ *
+ * ⚠️ A plain route rather than a typed protocol method, deliberately. This is a maintenance
+ * side-channel for the first-party UI, not part of the API a third party builds against — putting it
+ * in `PublicApi` would publish it in `/doc` as though it were.
+ *
+ * ⚠️ The upstream STATUS is passed through, because the caller's failure model turns on it: a 404 is
+ * an answer and marks the version seen, a network silence is not and retries next launch.
+ */
+const maintenanceRoute = HttpRouter.use((router) =>
+  router.add("GET", "/api/maintenance/changelog", () =>
+    Effect.gen(function* () {
+      const offline = yield* Offline.Service
+      const result = yield* fetchChangelog(offline.policy)
+      if (result.kind === "refused")
+        // 403 with a named reason: the caller must be able to tell "your instance declined" from
+        // "the host is down", because only one of them is something the user chose.
+        return HttpServerResponse.jsonUnsafe({ error: "airgapped", detail: result.message }, { status: 403 })
+      if (result.kind === "unreachable")
+        return HttpServerResponse.jsonUnsafe({ error: "upstream-unreachable", detail: result.detail }, { status: 502 })
+      return HttpServerResponse.text(result.body, {
+        status: result.status,
+        headers: { "content-type": "application/json" },
+      })
+    }),
+  ),
+).pipe(Layer.provide(authOnlyRouterLayer))
 
 export function createUIRoute(embeddedWebUI?: Record<string, string>) {
   return HttpRouter.use((router) =>
@@ -471,6 +505,7 @@ export function createRoutes(
     instanceRoutes,
     serverRoutes,
     docRoute,
+    maintenanceRoute,
     uiRoute,
     // Not a route: it registers the "release this directory's location graph on instance disposal"
     // disposer. Merged as a ROOT rather than provided to a group, because it used to live inside the

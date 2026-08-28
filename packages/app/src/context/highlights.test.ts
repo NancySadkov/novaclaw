@@ -31,6 +31,11 @@ beforeAll(async () => {
   mock.module("@/context/language", () => ({ useLanguage: () => undefined }))
   mock.module("@/context/platform", () => ({ usePlatform: () => undefined }))
   mock.module("@/context/settings", () => ({ useSettings: () => undefined }))
+  // NC-SEC-015: the provider reads the instance's base URL to reach the changelog BROKER rather than
+  // fetching the upstream host itself. ⚠️ Mocked like every other context here for a specific reason:
+  // the real module reaches `@/context/server`, which imports `Persist` from `@/utils/persist` — and
+  // the partial persist mock below does not provide it, so the whole file fails to load.
+  mock.module("@/context/server-sdk", () => ({ useServerSDK: () => () => undefined }))
   mock.module("@/utils/persist", () => ({ persisted: () => [] }))
   mock.module("@/components/dialog-release-notes", () => ({ DialogReleaseNotes: () => undefined }))
   mod = await import("./highlights")
@@ -72,6 +77,9 @@ function read(result: Response | Error, opts?: { aborted?: boolean; current?: st
   if (opts?.aborted) controller.abort()
   return mod.readChangelog({
     fetcher: fetcher(result),
+    // The instance's broker, not the upstream host — NC-SEC-015. A literal here rather than the
+    // real join, so a change to the join cannot quietly make these tests exercise a different URL.
+    endpoint: "http://instance.test:4096/api/maintenance/changelog",
     signal: controller.signal,
     current: opts?.current ?? "9.9.9",
     // ⚠️ Synthetic versions on purpose. These are arbitrary fixture data — the fetch only
@@ -138,6 +146,60 @@ describe("the changelog fetch reports which fact it found", () => {
     for (const result of [NOT_FOUND, SERVER_ERROR, OFFLINE, NOT_JSON, EMPTY, HAS_NEWS]) {
       await expect(read(result)).resolves.toBeDefined()
     }
+  })
+})
+
+describe("🔴 NC-SEC-015 — the instance declining is not a fault", () => {
+  /**
+   * The changelog is fetched from the instance's broker now, and an airgapped instance answers 403
+   * with `{"error":"airgapped"}`. Reporting that as an HTTP failure would put "release notes
+   * unavailable" in the error log every launch for a policy the user set deliberately — a fault
+   * described falsely, and an accusation about their own configuration.
+   *
+   * A/B: delete the 403 branch in `readChangelog` and the failure comes back as "http".
+   */
+  test("an airgap refusal is named as such, and never reaches the error log", async () => {
+    const outcome = await read(
+      response({ status: 403, statusText: "Forbidden", json: async () => ({ error: "airgapped" }) }),
+    )
+    expect(outcome).toEqual({ kind: "unavailable", failure: "refused", detail: "this instance is in airgap mode" })
+    expect(mod.describeUnavailable(outcome)).toBeUndefined()
+    // Retried, because the user can turn airgap off between launches — and the version must not be
+    // marked seen for notes nobody was ever shown.
+    expect(mod.willRetry(outcome)).toBe(true)
+    expect(mod.advancesSeenVersion(outcome)).toBe(false)
+  })
+
+  test("a 403 that is NOT ours stays an http fault", async () => {
+    // ⚠️ The failure direction that matters. Treating every forbidden as an airgap refusal would
+    // hide a real authentication failure behind a reassuring sentence about a setting nobody set.
+    const outcome = await read(response({ status: 403, statusText: "Forbidden", json: async () => ({}) }))
+    expect(outcome).toMatchObject({ kind: "unavailable", failure: "http", httpStatus: 403 })
+    expect(mod.describeUnavailable(outcome)).toContain("403")
+  })
+
+  test("a 403 with an unparseable body is not assumed to be ours either", async () => {
+    const outcome = await read(
+      response({
+        status: 403,
+        statusText: "Forbidden",
+        json: async () => {
+          throw new Error("not json")
+        },
+      }),
+    )
+    expect(outcome).toMatchObject({ kind: "unavailable", failure: "http", httpStatus: 403 })
+  })
+
+  test("it still says something in Settings, even though the log stays quiet", async () => {
+    // Quiet in the error log is not silent to the user: the Settings row is where a deliberate
+    // policy gets explained, and an unexplained blank is what ruling 2 forbids.
+    const outcome = await read(
+      response({ status: 403, statusText: "Forbidden", json: async () => ({ error: "airgapped" }) }),
+    )
+    const status = mod.statusOf(outcome)
+    expect(status.state).toBe("unavailable")
+    expect(mod.describeStatus(status)).toContain("airgap mode")
   })
 })
 
