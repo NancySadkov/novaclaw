@@ -29,7 +29,7 @@ test("🔴 the first sweep always looks", () => {
    */
   const state = makeState()
   const d = deps()
-  expect(Effect.runSync(sweep(state, d.value, now))).toEqual({ refreshed: 1, skipped: 0, failed: 0 })
+  expect(Effect.runSync(sweep(state, d.value, now))).toEqual({ refreshed: 1, noText: 0, unusable: 0, failed: 0 })
   expect(d.asked).toHaveLength(1)
 })
 

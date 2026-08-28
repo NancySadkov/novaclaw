@@ -951,6 +951,34 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/event.ts",
   },
+  /**
+   * 🔴 A status sweep FAILED, and this event exists because its absence made the subsystem invisible.
+   *
+   * The call site swallows failures on purpose — a colleague's status line is a nicety and a model
+   * that will not answer must never stop a schedule from firing. Swallowed AND unlogged, though,
+   * "the sweep never ran" and "the sweep ran and threw" look identical from outside: measured
+   * 2026-08-28 against a live instance, where an empty table was the only evidence either way.
+   */
+  "instance.status.sweep.failed": {
+    level: "warn",
+    message: "the colleague status sweep failed; existing lines are unchanged",
+    attributes: { "instance.cause": "fault" },
+    content: "user",
+    file: "packages/core/src/schedule/scheduler.ts",
+  },
+  /** A status sweep finished. `refreshed`/`skipped`/`failed` say what it did; absent = it did not look. */
+  "instance.status.sweep.done": {
+    level: "debug",
+    message: "colleague status sweep finished",
+    attributes: {
+      "instance.refreshed": "count",
+      "instance.skipped": "count",
+      "instance.unusable": "count",
+      "instance.failed": "count",
+    },
+    content: "none",
+    file: "packages/core/src/schedule/scheduler.ts",
+  },
   /** One scheduler tick failed. The loop keeps its cadence; a tick is retried by the next interval. */
   "instance.scheduler.tick.failed": {
     level: "error",

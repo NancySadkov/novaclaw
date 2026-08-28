@@ -22,8 +22,16 @@ export type PassDeps = {
 export type PassResult = {
   /** Colleagues whose line was rewritten. */
   readonly refreshed: number
-  /** Due colleagues that produced nothing usable, so their previous line stands. */
-  readonly skipped: number
+  /**
+   * Due colleagues whose conversation carried no TEXT — tool-only work, or bookkeeping entries only.
+   *
+   * ⚠️ Counted apart from `unusable` below, because they call for different responses and were one
+   * number until a live sweep reported `skipped: 1` and could not say which half it meant. "Nothing
+   * to summarise" is the system working; "the model gave nothing back" is the model not cooperating.
+   */
+  readonly noText: number
+  /** Due colleagues whose model returned nothing usable, so their previous line stands. */
+  readonly unusable: number
   /** Colleagues whose derivation FAILED. The pass continued; the line is unchanged. */
   readonly failed: number
 }
@@ -33,7 +41,8 @@ export const runPass = (deps: PassDeps): Effect.Effect<PassResult> =>
     const now = deps.now()
     const candidates = due(yield* deps.candidates(), now)
     let refreshed = 0
-    let skipped = 0
+    let noText = 0
+    let unusable = 0
     let failed = 0
 
     for (const candidate of candidates) {
@@ -47,11 +56,11 @@ export const runPass = (deps: PassDeps): Effect.Effect<PassResult> =>
         const text = yield* deps.recent(candidate.agent)
         // Nothing to summarise. Not a failure and not a refresh: the colleague's activity is real
         // (that is why it is due) but carries no text — tool-only work, for instance.
-        if (!text) return "skipped" as const
+        if (!text) return "noText" as const
         const task = yield* deps.label(candidate.agent, text)
         // ⚠️ A model that returns nothing usable leaves the PREVIOUS line standing. Writing an empty
         // or placeholder line here is how a colleague ends up described by a failure.
-        if (!task) return "skipped" as const
+        if (!task) return "unusable" as const
         // `observed` is the activity this label covers — `candidate.latest`, not `now`. Keyed on the
         // clock, a colleague that stopped working would look freshly summarised forever.
         yield* deps.write({ agent: candidate.agent, task, observed: candidate.latest! })
@@ -59,9 +68,10 @@ export const runPass = (deps: PassDeps): Effect.Effect<PassResult> =>
       }).pipe(Effect.catchCause(() => Effect.succeed("failed" as const)))
 
       if (outcome === "refreshed") refreshed++
-      else if (outcome === "skipped") skipped++
+      else if (outcome === "noText") noText++
+      else if (outcome === "unusable") unusable++
       else failed++
     }
 
-    return { refreshed, skipped, failed }
+    return { refreshed, noText, unusable, failed }
   })

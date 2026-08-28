@@ -13,13 +13,35 @@ export const RECENT_MESSAGES = 12
 /** Hard ceiling on what is sent, so one enormous tool dump cannot become the whole prompt. */
 export const MAX_CHARS = 4_000
 
-const textOf = (message: SessionMessage.Message): string => {
-  const parts = (message as unknown as { parts?: { type?: string; text?: string }[] }).parts ?? []
-  return parts
-    .filter((part) => part.type === "text" && typeof part.text === "string")
-    .map((part) => part.text!.trim())
-    .filter((text) => text.length > 0)
-    .join("\n")
+/**
+ * The readable text of one transcript entry, or `undefined`.
+ *
+ * 🔴 **These shapes are the real ones, and the first version INVENTED them.** It read
+ * `message.role` and `message.parts[]`; the transcript has `message.type`, with `text` on the
+ * user-ish members and a typed `content[]` on assistant turns. The unit tests used the same
+ * invention, so they passed while proving nothing — the live sweep found no text in a three-message
+ * conversation and reported `skipped: 1`. A fixture written from the same assumption as the code
+ * under test agrees with it by construction.
+ *
+ * ⚠️ TEXT only. An assistant turn's `content[]` also carries `reasoning` and `tool` entries:
+ * reasoning is the model talking to itself, and tool payloads are where a transcript's bulk lives —
+ * the label prompt forbids naming tools, so feeding either in asks the model to ignore most of what
+ * it was given.
+ */
+const textOf = (message: SessionMessage.Message): { role: string; text: string } | undefined => {
+  if (message.type === "assistant") {
+    const text = message.content
+      .filter((part) => part.type === "text")
+      .map((part) => (part as { text: string }).text.trim())
+      .filter((part) => part.length > 0)
+      .join("\n")
+    return text ? { role: "assistant", text } : undefined
+  }
+  // `user`, `synthetic`, `system` and `shell` all carry a flat `text`. The members that do NOT —
+  // agent/model/permission switches — are bookkeeping, not conversation.
+  const flat = (message as { text?: unknown }).text
+  if (typeof flat !== "string" || flat.trim() === "") return undefined
+  return { role: message.type, text: flat.trim() }
 }
 
 /**
@@ -40,10 +62,8 @@ const textOf = (message: SessionMessage.Message): string => {
 export function recentText(messages: readonly SessionMessage.Message[]): string | undefined {
   const lines: string[] = []
   for (const message of messages.slice(-RECENT_MESSAGES)) {
-    const text = textOf(message)
-    if (!text) continue
-    const role = (message as unknown as { role?: string }).role ?? "assistant"
-    lines.push(`${role}: ${text}`)
+    const entry = textOf(message)
+    if (entry) lines.push(`${entry.role}: ${entry.text}`)
   }
   if (lines.length === 0) return undefined
   const joined = lines.join("\n")

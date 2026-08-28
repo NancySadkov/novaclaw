@@ -286,7 +286,22 @@ export const layer = Layer.effect(
        * ⚠️ Failures are swallowed for the same reason the stall sweep's are: a colleague's status is
        * a nicety, and a model that will not answer must never stop a SCHEDULE from firing.
        */
-      yield* AgentStatusSweep.sweep(statusState, statusDeps, now).pipe(Effect.ignore)
+      yield* AgentStatusSweep.sweep(statusState, statusDeps, now).pipe(
+        Effect.flatMap((result) =>
+          result === undefined
+            ? Effect.void
+            : Log.event("instance.status.sweep.done", {
+                "instance.refreshed": result.refreshed,
+                "instance.skipped": result.noText,
+                "instance.unusable": result.unusable,
+                "instance.failed": result.failed,
+              }),
+        ),
+        // ⚠️ Still swallowed — a model that will not answer must not stop a schedule — but no longer
+        // SILENT. Unlogged, "the sweep never ran" and "the sweep ran and threw" are the same
+        // observation from outside, which is how this subsystem hid its first live failure.
+        Effect.catchCause((cause) => Log.event("instance.status.sweep.failed", { "instance.cause": Log.fault(cause) })),
+      )
     }).pipe(
       Effect.catchCause((cause) => Log.event("instance.scheduler.tick.failed", { "instance.cause": Log.fault(cause) })),
       Effect.repeat(Schedule.spaced(Duration.seconds(TICK_INTERVAL_SECONDS))),

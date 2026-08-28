@@ -3,6 +3,7 @@ export * as AgentStatusDerive from "./derive"
 import { Effect, Stream } from "effect"
 import { LLM, LLMClient, LLMEvent, Message, SystemPart } from "@novaclaw/llm"
 import { LocationServiceMap } from "../location-service-map"
+import { ReasoningBudget } from "../session/runner/reasoning-budget"
 import { SessionRunnerModel } from "../session/runner/model"
 import { SessionStore } from "../session/store"
 import { SYSTEM, clean } from "./label"
@@ -22,8 +23,21 @@ import { recentText } from "./recent"
  * most once every few hours and only for colleagues with genuinely new work.
  */
 
-/** Reasoning ceiling for a one-line status. Same shape of guard the titler uses, smaller job. */
-export const LABEL_MAX_TOKENS = 256
+/**
+ * 🔴 **A reasoning model spends the whole budget THINKING and returns an empty answer.**
+ *
+ * Measured 2026-08-28 against `qwen3.8-27b`: with `max_tokens: 256` and no guard, the completion came
+ * back `content: ""` with 256 tokens of `reasoning_content` — so `clean()` had nothing to clean and
+ * every colleague was reported `unusable`. The unit tests could not see this; they feed `clean()` a
+ * string, and the string is exactly what never arrived.
+ *
+ * `ReasoningBudget` is the existing answer and the titler already uses it: it counts reasoning
+ * tokens live, nudges at 70% and 100%, and its mechanical hard stop re-issues the turn with thinking
+ * structurally DISABLED. Without it, this call is a coin toss on how talkative the model feels.
+ */
+export const LABEL_MAX_TOKENS = 512
+/** Same ceiling the titler uses for the same reason: a one-line answer needs no deliberation. */
+export const LABEL_REASONING_BUDGET = 128
 
 export const makeLabeller = Effect.fn("AgentStatus.makeLabeller")(function* () {
   const locations = yield* LocationServiceMap.Service
@@ -57,22 +71,22 @@ export const makeLabeller = Effect.fn("AgentStatus.makeLabeller")(function* () {
         const models = yield* SessionRunnerModel.Service
         const model = yield* models.resolve(session)
         const chunks: string[] = []
-        yield* llm
-          .stream(
-            LLM.request({
-              model,
-              system: [SystemPart.make(SYSTEM)],
-              messages: [Message.user(text)],
-              tools: [],
-              generation: { maxTokens: LABEL_MAX_TOKENS },
-            }),
-          )
-          .pipe(
-            Stream.runForEach((event) => {
-              if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
-              return Effect.void
-            }),
-          )
+        yield* ReasoningBudget.stream({
+          request: LLM.request({
+            model,
+            system: [SystemPart.make(SYSTEM)],
+            messages: [Message.user(text)],
+            tools: [],
+            generation: { maxTokens: LABEL_MAX_TOKENS },
+          }),
+          stream: (next) => llm.stream(next),
+          budget: LABEL_REASONING_BUDGET,
+        }).pipe(
+          Stream.runForEach((event) => {
+            if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
+            return Effect.void
+          }),
+        )
         // ⚠️ `clean` decides whether anything usable came back; the sweep treats `undefined` as
         // "leave the previous line alone". An empty completion is a broken call, not a colleague
         // with nothing to say.
