@@ -57,8 +57,24 @@ export const layer = Layer.effect(
     const isRecord = (value: unknown): value is Record<string, unknown> =>
       typeof value === "object" && value !== null && !Array.isArray(value)
     const secretAad = (path: string) => `novaclaw:runtime-setting:${path}`
-    const protectSecret = (value: unknown, path: string): unknown =>
-      typeof value === "string" ? CredentialCipher.encryptJson(cipher, value, secretAad(path)) : value
+    /**
+     * 🔴 The unwind of app-managed encryption, step 2 (see `todo/code-review.md`, NC-REL-030).
+     *
+     * Storing a secret is storing it. Decision §5 of `decisions-v0.2.0.md` — recorded 2026-08-07,
+     * six days AFTER the cipher landed with a one-line commit and no rationale — says secrets stay
+     * plaintext under OS account protection with no app-managed encryption, because no keyring
+     * exists in every run mode NovaClaw ships and a partial one strands `novaclaw serve`, the CLI
+     * and backup/restore.
+     *
+     * ⚠️ What shipped was not a keyring but a key FILE beside the database, which is the worst of
+     * both: anything running as this user reads the key and the rows it protects, so the security
+     * was never there — while the stranding was, and NC-REL-030 is it, observed.
+     *
+     * ⚠️ Reading still decrypts, deliberately. Existing envelopes must keep opening while the key
+     * is present, and `all()` writes the opened value back as plaintext, so the ciphertext drains
+     * away instead of becoming unreadable the moment this stopped encrypting.
+     */
+    const protectSecret = (value: unknown, _path: string): unknown => value
     /**
      * 🔴 NC-REL-030 — a secret that will not decrypt must not take the INSTANCE down with it.
      *
@@ -79,7 +95,9 @@ export const layer = Layer.effect(
      * read, and someone's real secret could equal it.
      */
     const revealSecret = Effect.fn("SettingsConfigStore.revealSecret")(function* (value: unknown, path: string) {
-      if (typeof value === "string") return { value, legacy: true, damaged: false }
+      // A plaintext string is already where this is going; rewriting it is a no-op that keeps the
+      // one write path honest.
+      if (typeof value === "string") return { value, migrated: true, damaged: false }
       const opened = yield* CredentialCipher.decryptJson(cipher, value, secretAad(path)).pipe(
         // `catchCause`, not `catchAll`: Effect 4 has no `catchAll`, and the cause is what the log
         // entry wants anyway — a DecryptError alone does not say whether the key was missing,
@@ -91,8 +109,10 @@ export const layer = Layer.effect(
           }).pipe(Effect.as(undefined)),
         ),
       )
-      if (opened === undefined) return { value: unreadableSecret(), legacy: false, damaged: true }
-      return { value: opened.value, legacy: false, damaged: false }
+      if (opened === undefined) return { value: unreadableSecret(), migrated: false, damaged: true }
+      // `encrypted` distinguishes "this was an envelope and it opened" from "this was never
+      // encrypted at all", and only the former needs draining back to plaintext.
+      return { value: opened.value, migrated: opened.encrypted === true, damaged: false }
     })
 
     const protect = (key: string, value: unknown): unknown => {
@@ -113,23 +133,23 @@ export const layer = Layer.effect(
     const reveal = Effect.fn("SettingsConfigStore.reveal")(function* (key: string, value: unknown) {
       if (key === "server" && isRecord(value) && value.password !== undefined) {
         const password = yield* revealSecret(value.password, "server.password")
-        return { value: { ...value, password: password.value }, legacy: password.legacy, damaged: password.damaged }
+        return { value: { ...value, password: password.value }, migrated: password.migrated, damaged: password.damaged }
       }
       if (key === "instances" && Array.isArray(value)) {
-        let legacy = false
+        let migrated = false
         let damaged = false
         const entries = yield* Effect.forEach(value, (entry, index) =>
           Effect.gen(function* () {
             if (!isRecord(entry) || entry.token === undefined) return entry
             const token = yield* revealSecret(entry.token, `instances.${String(entry.name ?? index)}.token`)
-            legacy ||= token.legacy
+            migrated ||= token.migrated
             damaged ||= token.damaged
             return { ...entry, token: token.value }
           }),
         )
-        return { value: entries, legacy, damaged }
+        return { value: entries, migrated, damaged }
       }
-      return { value, legacy: false, damaged: false }
+      return { value, migrated: false, damaged: false }
     })
 
     const service = Service.of({
@@ -139,12 +159,17 @@ export const layer = Layer.effect(
         for (const [key, value] of Object.entries(stored)) {
           const opened = yield* reveal(key, value)
           result[key] = opened.value
-          // ⚠️ NEVER write back a damaged value. `legacy` is already false on that path, but the
-          // consequence is worth naming where the write is: `protect` would encrypt the random
-          // stand-in under the CURRENT key and store it over the ciphertext, destroying the only
-          // copy of the real secret — the one thing that makes this recoverable when the original
-          // key is restored. Repair must stay possible after a boot in the damaged state.
-          if (opened.legacy && !opened.damaged) yield* settings.set(key, protect(key, opened.value))
+          // ⚠️ NEVER write back a damaged value. The write would store the random stand-in over the
+          // ciphertext and destroy the only copy of the real secret — the one thing that makes this
+          // recoverable when the original key is restored. Repair must stay possible after a boot
+          // in the damaged state.
+          //
+          // ⚠️ `opened.migrated` now covers BOTH directions, and that is the unwind's whole safety
+          // property: it is true for a legacy plaintext value (which used to be re-encrypted, and
+          // is now simply rewritten unchanged) and true for an envelope this read successfully
+          // OPENED. The second is what drains the ciphertext while the key is still present. A
+          // value that could not be opened sets `damaged` instead and is never touched.
+          if (opened.migrated && !opened.damaged) yield* settings.set(key, protect(key, opened.value))
         }
         LogSettings.apply(result.log)
         return result

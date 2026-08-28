@@ -5,6 +5,7 @@ import { Effect, Layer } from "effect"
 import { Config } from "@novaclaw/core/config"
 import { SettingsConfigSeed } from "@novaclaw/core/settings-config-seed"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
+import { CredentialCipher } from "@novaclaw/core/credential-cipher"
 import { Database } from "@novaclaw/core/database/database"
 import { RuntimeSettingTable } from "@novaclaw/core/settings-config/sql"
 import { eq } from "drizzle-orm"
@@ -22,7 +23,13 @@ import { testEffect } from "./lib/effect"
 // Config→SQLite step 6 gates: settings round-trip, the latest()-wins jsonc seed, and the
 // synthetic-document overlay that makes every Config.latest() reader store-backed.
 
-const it = testEffect(AppNodeBuilder.build(LayerNode.group([Database.node, SettingsConfigStore.node, FSUtil.node])))
+/** The envelope field the cipher writes, and a value shaped like one that opens under no key. */
+const ENVELOPE_FIELD = "$novaclawEncrypted"
+const UNOPENABLE = "nc1:AAAAAAAAAAAAAAAA:BBBBBBBBBBBBBBBBBBBBBB:CCCCCCCCCCCCCCCCCCCCCCCCCC"
+
+const it = testEffect(
+  AppNodeBuilder.build(LayerNode.group([Database.node, SettingsConfigStore.node, FSUtil.node, CredentialCipher.node])),
+)
 
 describe("SettingsConfigStore", () => {
   it.effect("round-trips values, replaces on set, removes, and reports emptiness", () =>
@@ -50,36 +57,47 @@ describe("SettingsConfigStore", () => {
     }),
   )
 
-  it.effect("encrypts secret fields and migrates legacy plaintext settings on read", () =>
+  /**
+   * 🔴 The unwind of app-managed encryption (`todo/code-review.md`, NC-REL-030).
+   *
+   * This test asserted the opposite until 2026-08-28: that secrets were stored encrypted. Decision
+   * §5 of `decisions-v0.2.0.md` — recorded six days AFTER the cipher landed with a one-line commit
+   * and no rationale — says secrets stay plaintext under OS account protection, because no keyring
+   * exists in every run mode NovaClaw ships and a partial one strands headless, CLI and
+   * backup/restore paths. What shipped was a key FILE beside the database: none of the security, all
+   * of the stranding.
+   */
+  it.effect("stores secrets as plaintext, and DRAINS existing ciphertext on read", () =>
     Effect.gen(function* () {
       const store = yield* SettingsConfigStore.Service
       const { db } = yield* Database.Service
       yield* store.set("server", { port: 4096, password: "incoming-secret" })
-      yield* store.set("instances", [
-        { name: "spark", url: "http://spark:4096", token: "peer-secret" },
-        { name: "open", url: "http://open:4096" },
-      ])
 
-      expect(yield* store.all()).toMatchObject({
-        server: { port: 4096, password: "incoming-secret" },
-        instances: [{ name: "spark", token: "peer-secret" }, { name: "open" }],
-      })
       const raw = JSON.stringify(yield* db.select().from(RuntimeSettingTable).all())
-      expect(raw).toContain("$novaclawEncrypted")
-      expect(raw).not.toContain("incoming-secret")
-      expect(raw).not.toContain("peer-secret")
+      expect(raw).not.toContain("$novaclawEncrypted")
+      expect(raw).toContain("incoming-secret")
+      expect(yield* store.all()).toMatchObject({ server: { port: 4096, password: "incoming-secret" } })
 
+      // ⚠️ The drain, which is the half that makes stopping safe. An instance that has been running
+      // has envelopes on disk; if the read had simply stopped decrypting they would be unreadable
+      // forever. A successful open is written back as plaintext while the key is still present.
+      const envelope = CredentialCipher.encryptJson(
+        yield* CredentialCipher.Service,
+        "older-encrypted-secret",
+        "novaclaw:runtime-setting:server.password",
+      )
       yield* db
         .update(RuntimeSettingTable)
-        .set({ value: { port: 4097, password: "legacy-server-secret" } })
+        .set({ value: { port: 4097, password: envelope } })
         .where(eq(RuntimeSettingTable.key, "server"))
         .run()
-      expect((yield* store.all()).server).toEqual({ port: 4097, password: "legacy-server-secret" })
-      const migrated = JSON.stringify(
+
+      expect((yield* store.all()).server).toEqual({ port: 4097, password: "older-encrypted-secret" })
+      const drained = JSON.stringify(
         yield* db.select().from(RuntimeSettingTable).where(eq(RuntimeSettingTable.key, "server")).get(),
       )
-      expect(migrated).toContain("$novaclawEncrypted")
-      expect(migrated).not.toContain("legacy-server-secret")
+      expect(drained).not.toContain("$novaclawEncrypted")
+      expect(drained).toContain("older-encrypted-secret")
     }),
   )
 
@@ -102,15 +120,12 @@ describe("SettingsConfigStore", () => {
     Effect.gen(function* () {
       const store = yield* SettingsConfigStore.Service
       const { db } = yield* Database.Service
-      yield* store.set("server", { port: 4096, password: "the-real-password" })
-
-      // Corrupt the ciphertext in place: same envelope shape, contents that will not authenticate.
-      const stored = yield* db.select().from(RuntimeSettingTable).where(eq(RuntimeSettingTable.key, "server")).get()
-      const envelope = (stored?.value as { password: Record<string, string> }).password
-      const field = Object.keys(envelope)[0]!
+      // ⚠️ Written straight to the row, because `set` no longer encrypts. The state under test is an
+      // instance that HAS been running: envelopes on disk, and a key that no longer opens them.
+      yield* store.set("server", { port: 4096, password: "placeholder" })
       yield* db
         .update(RuntimeSettingTable)
-        .set({ value: { port: 4096, password: { [field]: `${envelope[field]!.slice(0, 8)}tampered` } } })
+        .set({ value: { port: 4096, password: { [ENVELOPE_FIELD]: UNOPENABLE } } })
         .where(eq(RuntimeSettingTable.key, "server"))
         .run()
 
@@ -124,7 +139,7 @@ describe("SettingsConfigStore", () => {
       // a string so every consumer keeps its type, and equal to neither the real password nor the
       // ciphertext it replaced.
       expect(typeof server.password).toBe("string")
-      expect(server.password).not.toBe("the-real-password")
+      expect(server.password).not.toBe("placeholder")
       expect(server.password).not.toBe("")
       expect(server.password).not.toBe(undefined)
       expect(String(server.password).length).toBeGreaterThanOrEqual(32)
@@ -144,14 +159,10 @@ describe("SettingsConfigStore", () => {
     Effect.gen(function* () {
       const store = yield* SettingsConfigStore.Service
       const { db } = yield* Database.Service
-      yield* store.set("server", { port: 4096, password: "the-real-password" })
-      const before = yield* db.select().from(RuntimeSettingTable).where(eq(RuntimeSettingTable.key, "server")).get()
-      const envelope = (before?.value as { password: Record<string, string> }).password
-      const field = Object.keys(envelope)[0]!
-      const tampered = `${envelope[field]!.slice(0, 8)}tampered`
+      yield* store.set("server", { port: 4096, password: "placeholder" })
       yield* db
         .update(RuntimeSettingTable)
-        .set({ value: { port: 4096, password: { [field]: tampered } } })
+        .set({ value: { port: 4096, password: { [ENVELOPE_FIELD]: UNOPENABLE } } })
         .where(eq(RuntimeSettingTable.key, "server"))
         .run()
 
@@ -160,10 +171,10 @@ describe("SettingsConfigStore", () => {
 
       const after = yield* db.select().from(RuntimeSettingTable).where(eq(RuntimeSettingTable.key, "server")).get()
       const kept = (after?.value as { password: Record<string, string> }).password
-      expect(kept[field]).toBe(tampered)
+      expect(kept[ENVELOPE_FIELD]).toBe(UNOPENABLE)
       // The stand-in is regenerated per read, so if it were ever persisted the two reads above
       // would already disagree with what is on disk. It is not there at all.
-      expect(JSON.stringify(after?.value)).not.toContain("the-real-password")
+      expect(JSON.stringify(after?.value)).not.toContain("placeholder")
     }),
   )
 
