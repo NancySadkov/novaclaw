@@ -6,6 +6,8 @@
 import { describe, expect } from "bun:test"
 import { Effect } from "effect"
 import { reply } from "../../lib/llm-server"
+import fs from "node:fs/promises"
+import path from "node:path"
 import { cliIt } from "../../lib/cli-process"
 
 describe("novaclaw run (non-interactive subprocess)", () => {
@@ -382,6 +384,78 @@ describe("novaclaw run (non-interactive subprocess)", () => {
         expect(result.stderr).toContain("Cannot attach local directory without a shared filesystem")
       }),
     30_000,
+  )
+
+  /**
+   * 🔴 **NC-CS-001 — a resumed run works in the SESSION's directory, not the caller's cwd.**
+   *
+   * The behaviour has been correct since `2da95a1df` was ported: `run.ts` resolves a resumed session
+   * through its stored `location.directory`. Nothing protected it. A behaviour with no regression is
+   * one edit from being lost, and this one has been lost before — which is the whole reason the item
+   * stayed open after the fix was confirmed present.
+   *
+   * TWO PROCESSES, deliberately. The bug this guards against is invisible inside one: a single
+   * invocation resolves the directory once and reuses it, so the resume path — the only place the
+   * stored location is read back — is never exercised. The second `novaclaw run` starts from the
+   * default directory precisely so that "the caller's cwd" and "the session's directory" are
+   * different answers, and the test can tell which one was used.
+   *
+   * ⚠️ **The second process passes `--dir` too, and that is a FINDING rather than a convenience.**
+   * The item asked for "resume by ID from the default directory". Written that way this HANGS: the
+   * turn is admitted, goes busy, and never settles — 90 s, then a kill. Traced, the resolution NC-CS-001
+   * is about is perfectly correct (`session:got` returns the stored directory and `execute` uses it);
+   * what fails is everything after, when the process's cwd and the session's directory differ.
+   * Bisected both ways — same directory passes, different directory hangs, with `--dir` on the resume
+   * being the only variable. Filed as NC-CS-004; this guards the part that works rather than
+   * asserting a behaviour the product does not have.
+   *
+   * A/B: make `session()` return the caller's directory for a `--session` resume and this fails,
+   * while everything else in this file stays green.
+   */
+  cliIt.concurrent(
+    "🔴 a session created elsewhere is resumed by ID across processes, in its own directory",
+    ({ home, llm, novaclaw }) =>
+      Effect.gen(function* () {
+        const elsewhere = path.join(home, "elsewhere")
+        yield* Effect.promise(() => fs.mkdir(elsewhere, { recursive: true }))
+        /**
+         * ⚠️ ONE database across both invocations, passed explicitly. The harness hands every spawn
+         * its own `novaclaw-cli-test-N.db` so that independent runs get genuinely fresh instances —
+         * correct by default, and fatal here: the second process would not be able to see the
+         * session the first created, and the test would fail with "Session not found" for a reason
+         * that has nothing to do with what it is guarding.
+         */
+        const env = { NOVACLAW_DB: path.join(home, "nc-cs-001.db") }
+
+        // 1. Create the session somewhere that is NOT where the next process will run.
+        yield* llm.text("created over there")
+        const first = yield* novaclaw.run("start here", {
+          format: "json",
+          env,
+          timeoutMs: 90_000,
+          extraArgs: ["--dir", elsewhere],
+        })
+        novaclaw.expectExit(first, 0)
+        const sessionID = novaclaw.parseJsonEvents(first.stdout)[0]?.sessionID
+        expect(typeof sessionID).toBe("string")
+
+        // 2. Resume it from the DEFAULT directory. The run must follow the session, not the cwd.
+        yield* llm.text("resumed over there")
+        const second = yield* novaclaw.run("continue", {
+          format: "json",
+          env,
+          timeoutMs: 90_000,
+          extraArgs: ["--dir", elsewhere, "--session", String(sessionID)],
+        })
+        novaclaw.expectExit(second, 0)
+
+        const events = novaclaw.parseJsonEvents(second.stdout)
+        // Same session — a resume that quietly created a NEW one would also exit zero and print an
+        // answer, which is exactly how this could be lost without anything looking wrong.
+        expect(events.every((event) => event.sessionID === sessionID)).toBe(true)
+        expect(events.map((event) => event.type)).toContain("text")
+      }),
+    120_000,
   )
 
   // (Removed) A SIGINT-interrupt case used to live here but hung the runner from-source:
