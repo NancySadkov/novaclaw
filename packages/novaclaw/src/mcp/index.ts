@@ -1,4 +1,5 @@
 import path from "node:path"
+import { boundedMcpFetch } from "./bounded-fetch"
 import { pathToFileURL } from "node:url"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { McpExternal } from "@novaclaw/core/tool/mcp-external"
@@ -427,11 +428,18 @@ export const layer = Layer.effect(
         )
       }
 
+      // 🔴 NC-SEC-008: both transports got a URL, an auth provider and headers — and no size policy.
+      // A configured server could return a body of any length and the host accumulated and parsed all
+      // of it. `boundedMcpFetch` refuses an oversized NON-streaming response (JSON-RPC: a truncated
+      // message is broken, not smaller) and passes `text/event-stream` through untouched, because an
+      // SSE stream is long-lived by design and a connection ceiling would kill real sessions.
+      const boundedFetch = boundedMcpFetch()
       const transports: Array<{ name: string; transport: TransportWithAuth }> = [
         {
           name: "StreamableHTTP",
           transport: new StreamableHTTPClientTransport(url, {
             authProvider,
+            fetch: boundedFetch,
             requestInit: mcp.headers ? { headers: mcp.headers } : undefined,
           }),
         },
@@ -439,6 +447,7 @@ export const layer = Layer.effect(
           name: "SSE",
           transport: new SSEClientTransport(url, {
             authProvider,
+            fetch: boundedFetch,
             requestInit: mcp.headers ? { headers: mcp.headers } : undefined,
           }),
         },
