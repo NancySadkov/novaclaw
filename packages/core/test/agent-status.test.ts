@@ -122,6 +122,43 @@ describe("AgentStatus", () => {
     }),
   )
 
+  it.effect("🔴 the newest session is the one a line is derived from, sub-sessions included", () =>
+    Effect.gen(function* () {
+      const status = yield* AgentStatus.Service
+      const { db } = yield* Database.Service
+      yield* seed(db, { id: "ses_ada", agent: "ada", at: 1_000 })
+      yield* seed(db, { id: "ses_ada_child", agent: "ada", at: 6_000, parent: "ses_ada" })
+
+      /**
+       * Not the root chat. A delegating officer's newest work is in a sub-session, and reading the
+       * root would describe them by whatever they were last asked DIRECTLY rather than by what they
+       * are actually doing — the difference between "waiting for instructions" and "reviewing the
+       * handshake" for the same colleague at the same moment.
+       *
+       * A/B: order ascending, or scope to the root, and this returns `ses_ada`.
+       */
+      expect(yield* status.newestSession("ada")).toBe("ses_ada_child")
+    }),
+  )
+
+  it.effect("a colleague with no messages at all has no session to read", () =>
+    Effect.gen(function* () {
+      const status = yield* AgentStatus.Service
+      expect(yield* status.newestSession("ghost")).toBeUndefined()
+    }),
+  )
+
+  it.effect("🔴 an archived transcript is never the one read", () =>
+    Effect.gen(function* () {
+      const status = yield* AgentStatus.Service
+      const { db } = yield* Database.Service
+      yield* seed(db, { id: "ses_iris", agent: "iris", at: 2_000 })
+      yield* seed(db, { id: "ses_iris_old", agent: "iris", at: 9_000, archived: 9_500, parent: "ses_iris" })
+      // The newest MESSAGE is in the archived thread; the newest readable one is not.
+      expect(yield* status.newestSession("iris")).toBe("ses_iris")
+    }),
+  )
+
   it.effect("🔴 a POSTURE is not a colleague and gets no status line", () =>
     Effect.gen(function* () {
       const status = yield* AgentStatus.Service

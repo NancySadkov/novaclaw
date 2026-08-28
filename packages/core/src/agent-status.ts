@@ -36,6 +36,14 @@ export interface Interface {
    * put half the rule in a SQL string where `refresh.ts` cannot be tested against it.
    */
   readonly candidates: () => Effect.Effect<readonly Candidate[]>
+  /**
+   * The session carrying this colleague's NEWEST message — the one a status line is derived from.
+   *
+   * ⚠️ Not the colleague's root chat. A delegating officer's newest work is in a sub-session, and
+   * reading the root would describe them by whatever they were last asked directly rather than by
+   * what they are doing. Same reason `candidates()` counts the whole thread tree.
+   */
+  readonly newestSession: (agent: string) => Effect.Effect<string | undefined>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/AgentStatus") {}
@@ -123,6 +131,26 @@ export const layer = Layer.effect(
             latest: entry.latest ?? undefined,
             current: byAgent.get(entry.agent),
           }))
+      }),
+      newestSession: Effect.fn("AgentStatus.newestSession")(function* (agent: string) {
+        const found = yield* db
+          .select({ id: SessionTable.id, at: SessionMessageTable.time_created })
+          .from(SessionMessageTable)
+          .innerJoin(SessionTable, eq(SessionMessageTable.session_id, SessionTable.id))
+          .where(
+            and(
+              eq(SessionTable.agent, agent),
+              // The same two exclusions `candidates()` makes, for the same reasons — a status must
+              // not be derived from a transcript the user archived, and a posture has no line.
+              sql`${SessionTable.time_archived} IS NULL`,
+              sql`${SessionTable.agent} NOT IN ('build', 'plan')`,
+            ),
+          )
+          .orderBy(desc(SessionMessageTable.time_created))
+          .limit(1)
+          .get()
+          .pipe(Effect.orDie)
+        return found?.id
       }),
     })
   }),
