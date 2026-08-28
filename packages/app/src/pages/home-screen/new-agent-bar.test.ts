@@ -34,6 +34,30 @@ describe("what the launcher opens", () => {
     expect(source).not.toContain("chosenAgent() ?? agentOptions()[0]?.id")
   })
 
+  /**
+   * 🔴 **NO OWNERLESS CHAT, EVER** (owner, 2026-08-28: *"Clicking `Start new chat` at home creates a
+   * ghost session `New session in scratch` — that shouldn't be possible at all, since can't have
+   * sessions without any agents"*).
+   *
+   * The clause this replaces was deliberate — *"a roster that has SETTLED with nobody in it still
+   * falls through, so a degraded instance keeps its escape hatch"* — and it was the one input that
+   * could mint a chat belonging to no one: no colleague, so no roster row, so no door back to it. It
+   * fired exactly when the instance was already broken.
+   *
+   * ⚠️ Asserted on the SOURCE because this branch is a click handler inside a component that needs a
+   * server, a roster and a sync store to mount. That is a weaker test than exercising it, and it is
+   * recorded as such: it catches the guard being deleted, not the guard being wrong.
+   */
+  test("🔴 a click with no colleague resolved REFUSES instead of spawning", () => {
+    // The refusal exists...
+    expect(source).toContain("if (id === undefined)")
+    expect(source).toContain("home.newAgent.noColleagues")
+    // ...and it comes BEFORE the spawn, or it is decoration.
+    expect(source.indexOf("if (id === undefined)")).toBeLessThan(source.indexOf("void agent.spawn(id,"))
+    // The shape that produced the ghost: spawning with nothing chosen.
+    expect(source).not.toContain("agent.spawn(undefined")
+  })
+
   test("🔴 the picker offers officers only — no posture, no sub-agent, no machinery", () => {
     const offered = roster(AGENTS).map((view) => view.id)
     expect(offered).toContain("nova")
