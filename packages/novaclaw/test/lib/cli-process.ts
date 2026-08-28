@@ -81,6 +81,11 @@ export type RunResult = {
   readonly exitCode: number
   readonly stdout: string
   readonly stderr: string
+  /**
+   * The process was KILLED (timeout or spawn failure) and its output was DISCARDED — so `stdout`
+   * and `stderr` above are unavailable, not empty. Never read them as a fact about the child.
+   */
+  readonly outputDiscarded?: boolean
   readonly durationMs: number
 }
 
@@ -281,22 +286,39 @@ export function withCliFixture<A, E>(
       // Catch AppProcessError (timeout OR spawn failure) and synthesize a
       // non-zero result so the test sees it via the usual `expectExit`
       // path rather than as an unhandled Effect failure.
+      let killed = false
       const result = yield* appProc.run(command, { timeout: Duration.millis(timeoutMs) }).pipe(
-        Effect.catchTag("AppProcessError", (err) =>
-          Effect.succeed({
+        Effect.catchTag("AppProcessError", (err) => {
+          /**
+           * 🔴 **The child's output is GONE here, and this arm used to present the erasure as data.**
+           *
+           * `AppProcess.run` buffers stdout and stderr internally and returns them only on a
+           * successful settle; `AppProcessError` has no `stdout` field at all, and on a TIMEOUT it
+           * is built with just `{command, cause}` — so `err.stderr` is undefined and the synthesized
+           * stderr below is the single word "Timed out" over an empty stdout.
+           *
+           * ⚠️ That reads as a fact about the CHILD, and it is not one. Debugging NC-CS-002 cost a
+           * day to "the CLI produced no output and received no events"; it had produced plenty of
+           * both, and this line had thrown it away. `outputDiscarded` below is what stops the next
+           * reader making the same inference — see `expectExit`.
+           */
+          killed = err.exitCode === undefined
+          return Effect.succeed({
             command: err.command,
             exitCode: err.exitCode ?? -1,
             stdout: Buffer.alloc(0),
             stderr: Buffer.from((err.stderr ?? String(err.cause ?? err.message)) + "\n"),
             stdoutTruncated: false,
             stderrTruncated: false,
-          } satisfies AppProcess.RunResult),
-        ),
+          } satisfies AppProcess.RunResult)
+        }),
       )
       return {
         exitCode: result.exitCode,
         stdout: normalizeLines(result.stdout.toString()),
         stderr: normalizeLines(result.stderr.toString()),
+        /** True when the process was KILLED and its output is therefore unavailable, not empty. */
+        outputDiscarded: killed,
         durationMs: Date.now() - start,
       }
     })
@@ -506,6 +528,22 @@ function expectExit(result: RunResult, expected: number, label = "novaclaw") {
   const tail = (s: string, n: number) => (s.length > n ? "..." + s.slice(-n) : s)
   // eslint-disable-next-line no-console
   console.error(`[${label}] expected exit ${expected}, got ${result.exitCode} after ${result.durationMs}ms`)
+  if (result.outputDiscarded) {
+    /**
+     * 🔴 The single most expensive line this file can print is a truthful-looking empty one.
+     *
+     * `AppProcess.run` buffers the child's output and hands it back only on a successful settle, so
+     * a killed process arrives here with nothing — and "stderr (last 2000): Timed out" over an empty
+     * stdout reads exactly like a child that said nothing and did nothing. NC-CS-002 was diagnosed
+     * wrongly for a day on that reading; the child had been talking the whole time.
+     */
+    // eslint-disable-next-line no-console
+    console.error(
+      `[${label}] ⚠️ the child was KILLED, so its stdout/stderr were DISCARDED by AppProcess.run — ` +
+        `what follows is the harness's own message, NOT the child's output. To see what the child ` +
+        `actually did, have it append to a file: a kill cannot empty one.`,
+    )
+  }
   // eslint-disable-next-line no-console
   console.error(`[${label}] stderr (last 2000):\n${tail(result.stderr, 2000)}`)
   // eslint-disable-next-line no-console
