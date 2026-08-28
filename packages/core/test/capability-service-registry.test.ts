@@ -31,6 +31,7 @@ const settingsOf = (value: () => Declarations | undefined) =>
       all: () => Effect.sync(() => ({ capability_services: value() })),
       set: () => Effect.void,
       remove: () => Effect.void,
+      unreadable: () => Effect.succeed([]),
       isEmpty: () => Effect.succeed(false),
     }),
   )

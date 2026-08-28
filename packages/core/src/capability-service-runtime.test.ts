@@ -52,6 +52,7 @@ const graph = (input: {
         }),
       set: () => Effect.void,
       remove: () => Effect.void,
+      unreadable: () => Effect.succeed([]),
       isEmpty: () => Effect.succeed(false),
     }),
   )

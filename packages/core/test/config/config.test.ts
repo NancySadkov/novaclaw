@@ -36,6 +36,7 @@ const memorySettings = (values: Record<string, unknown>) =>
         Effect.sync(() => {
           delete values[key]
         }),
+      unreadable: () => Effect.succeed([]),
       isEmpty: () => Effect.succeed(Object.keys(values).length === 0),
     }),
   )

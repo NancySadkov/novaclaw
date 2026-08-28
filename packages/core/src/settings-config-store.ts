@@ -23,6 +23,19 @@ import { Log } from "@novaclaw/schema/log"
 // is the TYPESCRIPT collapse only: the three tables are still three tables, because merging them
 // physically is a schema change and needs a migration.
 export interface Interface {
+  /**
+   * 🔴 NC-REL-030(b) — every protected setting whose envelope will not open.
+   *
+   * ⚠️ It lives on this store rather than in the scanner, because the store owns the per-path AADs
+   * (`server.password`, `instances.<name>.token`) and the shape they are nested in. A scanner that
+   * re-derived those would be a second copy that goes stale silently — and its only symptom would
+   * be every setting reported unreadable, which reads as catastrophic damage rather than a wrong
+   * constant.
+   *
+   * ⚠️ Reads through the same `reveal` the ordinary path uses, so it cannot disagree with what the
+   * instance actually managed to load.
+   */
+  readonly unreadable: () => Effect.Effect<ReadonlyArray<{ readonly path: string }>>
   /** Every stored setting, keyed by the top-level config key. */
   readonly all: () => Effect.Effect<Record<string, unknown>>
   /** Insert or replace one setting's whole value (latest() semantics — no layers). */
@@ -97,7 +110,7 @@ export const layer = Layer.effect(
     const revealSecret = Effect.fn("SettingsConfigStore.revealSecret")(function* (value: unknown, path: string) {
       // A plaintext string is already where this is going; rewriting it is a no-op that keeps the
       // one write path honest.
-      if (typeof value === "string") return { value, migrated: true, damaged: false }
+      if (typeof value === "string") return { value, migrated: true, damaged: [] as string[] }
       const opened = yield* CredentialCipher.decryptJson(cipher, value, secretAad(path)).pipe(
         // `catchCause`, not `catchAll`: Effect 4 has no `catchAll`, and the cause is what the log
         // entry wants anyway — a DecryptError alone does not say whether the key was missing,
@@ -109,10 +122,10 @@ export const layer = Layer.effect(
           }).pipe(Effect.as(undefined)),
         ),
       )
-      if (opened === undefined) return { value: unreadableSecret(), migrated: false, damaged: true }
+      if (opened === undefined) return { value: unreadableSecret(), migrated: false, damaged: [path] }
       // `encrypted` distinguishes "this was an envelope and it opened" from "this was never
       // encrypted at all", and only the former needs draining back to plaintext.
-      return { value: opened.value, migrated: opened.encrypted === true, damaged: false }
+      return { value: opened.value, migrated: opened.encrypted === true, damaged: [] as string[] }
     })
 
     const protect = (key: string, value: unknown): unknown => {
@@ -137,19 +150,19 @@ export const layer = Layer.effect(
       }
       if (key === "instances" && Array.isArray(value)) {
         let migrated = false
-        let damaged = false
+        const damaged: string[] = []
         const entries = yield* Effect.forEach(value, (entry, index) =>
           Effect.gen(function* () {
             if (!isRecord(entry) || entry.token === undefined) return entry
             const token = yield* revealSecret(entry.token, `instances.${String(entry.name ?? index)}.token`)
             migrated ||= token.migrated
-            damaged ||= token.damaged
+            damaged.push(...token.damaged)
             return { ...entry, token: token.value }
           }),
         )
         return { value: entries, migrated, damaged }
       }
-      return { value, migrated: false, damaged: false }
+      return { value, migrated: false, damaged: [] as string[] }
     })
 
     const service = Service.of({
@@ -169,10 +182,22 @@ export const layer = Layer.effect(
           // is now simply rewritten unchanged) and true for an envelope this read successfully
           // OPENED. The second is what drains the ciphertext while the key is still present. A
           // value that could not be opened sets `damaged` instead and is never touched.
-          if (opened.migrated && !opened.damaged) yield* settings.set(key, protect(key, opened.value))
+          // ⚠️ `.length === 0`, not `!opened.damaged` — `damaged` is now the LIST of unreadable
+          // paths (NC-REL-030(b)), and an empty array is truthy. The negation would have been false
+          // forever, silently stopping the drain that removes ciphertext while the key still exists.
+          if (opened.migrated && opened.damaged.length === 0) yield* settings.set(key, protect(key, opened.value))
         }
         LogSettings.apply(result.log)
         return result
+      }),
+      unreadable: Effect.fn("SettingsConfigStore.unreadable")(function* () {
+        const stored = yield* settings.all()
+        const found: { path: string }[] = []
+        for (const [key, value] of Object.entries(stored)) {
+          const opened = yield* reveal(key, value)
+          for (const path of opened.damaged) found.push({ path })
+        }
+        return found
       }),
       set: Effect.fn("SettingsConfigStore.set")(function* (key, value) {
         yield* settings.set(key, protect(key, value))

@@ -26,8 +26,15 @@ import { Effect } from "effect"
 export type Unreadable = { readonly path: string }
 
 export type ScanSource = {
-  /** Every stored value that might be sealed, with the id to report it under. */
-  readonly rows: () => Effect.Effect<ReadonlyArray<{ readonly path: string; readonly value: unknown }>>
+  /**
+   * Every stored value that might be sealed, with the id to report it under.
+   *
+   * ⚠️ The error channel is `unknown` on purpose. A store whose table cannot be read is precisely
+   * the damage this scan exists to describe, so listing is allowed to fail — `scanSource` absorbs
+   * it. Declaring `never` would push the burden onto every source to pre-swallow its own faults,
+   * which is how one ends up reporting "nothing wrong" for a table that is gone.
+   */
+  readonly rows: () => Effect.Effect<ReadonlyArray<{ readonly path: string; readonly value: unknown }>, unknown>
   /** Whether a stored value is an envelope at all — a plaintext row is not a fault. */
   readonly sealed: (value: unknown) => boolean
   /** Attempt to open it. The error channel is the answer; the plaintext is deliberately discarded. */
@@ -61,20 +68,26 @@ export const scanSource = (source: ScanSource): Effect.Effect<ReadonlyArray<Unre
     Effect.catchCause(() => Effect.succeed(NONE)),
   )
 
+/**
+ * ⚠️ Deduped by path. The same secret can be reachable through more than one store while the cipher
+ * unwind moves rows between them, and counting it twice overstates the damage in the one message a
+ * user reads to decide whether to restore a backup.
+ *
+ * Exported because not every store is a `ScanSource`: `SettingsConfigStore` already computes its own
+ * damaged paths as a side effect of reading, and re-deriving them through this module would mean a
+ * second copy of its per-path AADs. It contributes a list; this is where the lists become one.
+ */
+export const dedupe = (items: ReadonlyArray<Unreadable>): ReadonlyArray<Unreadable> => {
+  const seen = new Set<string>()
+  return items.filter((item) => {
+    if (seen.has(item.path)) return false
+    seen.add(item.path)
+    return true
+  })
+}
+
 export const scan = (sources: ReadonlyArray<ScanSource>): Effect.Effect<ReadonlyArray<Unreadable>> =>
-  Effect.forEach(sources, scanSource, { concurrency: 1 }).pipe(
-    Effect.map((all) => {
-      // ⚠️ Deduped by path. The same secret can be reachable through more than one store while the
-      // cipher unwind moves rows between them, and counting it twice overstates the damage in the
-      // one message a user reads to decide whether to restore a backup.
-      const seen = new Set<string>()
-      return all.flat().filter((item) => {
-        if (seen.has(item.path)) return false
-        seen.add(item.path)
-        return true
-      })
-    }),
-  )
+  Effect.forEach(sources, scanSource, { concurrency: 1 }).pipe(Effect.map((all) => dedupe(all.flat())))
 
 /** The file whose loss causes every one of these, named so the notice can say what to restore. */
 export const KEY_FILE = "credential.key"
@@ -89,10 +102,12 @@ export const KEY_FILE = "credential.key"
  */
 export function notice(unreadable: ReadonlyArray<Unreadable>, directory: string): string | undefined {
   if (unreadable.length === 0) return undefined
-  const count = unreadable.length === 1 ? "1 stored secret" : `${unreadable.length} stored secrets`
+  const one = unreadable.length === 1
+  const count = one ? "1 stored secret" : `${unreadable.length} stored secrets`
   return (
-    `${count} cannot be read, so anything using them will fail to authenticate. ` +
-    `They were encrypted with "${KEY_FILE}", which is missing or unreadable in ${directory}. ` +
-    `Restoring that file from a backup repairs them; there is no way to recover them without it.`
+    `${count} cannot be read, so anything using ${one ? "it" : "them"} will fail to authenticate. ` +
+    `${one ? "It was" : "They were"} encrypted with "${KEY_FILE}", which is missing or unreadable in ` +
+    `${directory}. Restoring that file from a backup repairs ${one ? "it" : "them"}; there is no way ` +
+    `to recover ${one ? "it" : "them"} without it.`
   )
 }

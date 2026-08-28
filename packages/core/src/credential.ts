@@ -1,13 +1,14 @@
 export * as Credential from "./credential"
 
 import { Log } from "@novaclaw/schema/log"
-import { asc, eq } from "drizzle-orm"
+import { asc, eq, isNotNull } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
 import { Credential } from "@novaclaw/schema/credential"
 import { Integration } from "@novaclaw/schema/integration"
 import { Database } from "./database/database"
 import { makeGlobalNode } from "./effect/app-node"
 import { CredentialTable } from "./credential/sql"
+import { CredentialRepair } from "./credential/repair"
 import { CredentialCipher } from "./credential-cipher"
 
 export const ID = Credential.ID
@@ -50,13 +51,45 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/Credential") {}
 
+/**
+ * The additional authenticated data a stored credential is sealed under.
+ *
+ * ⚠️ Module scope, because a SECOND consumer now needs it: `repairSource` below reports which rows
+ * cannot be opened, and a copy of this expression there would be a second source of truth that goes
+ * stale silently — the only symptom being every row reported unreadable, which reads as catastrophic
+ * damage rather than as a wrong constant.
+ */
+const aad = (id: ID) => `novaclaw:credential:${id}`
+
+/**
+ * 🔴 NC-REL-030(b) — which stored credentials cannot be opened.
+ *
+ * ⚠️ It lives HERE, not in the handler that calls it: this module owns the table, the envelope
+ * predicate and the AAD, and a scanner assembled elsewhere would have to duplicate all three.
+ */
+export const repairSource = (
+  db: Database.Interface["db"],
+  cipher: CredentialCipher.Interface,
+): CredentialRepair.ScanSource => ({
+  rows: () =>
+    db
+      .select()
+      .from(CredentialTable)
+      // ⚠️ The same `integration_id` filter `stored()` applies. A row without one is ignored by every
+      // read path, so it cannot cause the authentication failure this notice warns about — reporting
+      // it would be a false alarm telling the user to restore a backup for a secret nothing uses.
+      .where(isNotNull(CredentialTable.integration_id))
+      .pipe(Effect.map((rows) => rows.map((row) => ({ path: `credential:${row.id}`, value: row.value })))),
+  sealed: (value) => cipher.encrypted(value as string),
+  open: (path, value) => cipher.decrypt(value as string, aad(ID.make(path.slice("credential:".length)))),
+})
+
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const { db } = yield* Database.Service
     const cipher = yield* CredentialCipher.Service
     const decode = Schema.decodeUnknownSync(Value)
-    const aad = (id: ID) => `novaclaw:credential:${id}`
     /**
      * 🔴 The unwind of app-managed encryption, continued (`todo/code-review.md`, NC-REL-030).
      *

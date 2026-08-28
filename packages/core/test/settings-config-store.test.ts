@@ -278,6 +278,7 @@ describe("Config layer settings overlay (8c: jsonc is not a runtime source)", ()
           Effect.sync(() => {
             delete values[key]
           }),
+        unreadable: () => Effect.succeed([]),
         isEmpty: () => Effect.succeed(Object.keys(values).length === 0),
       }),
     )
