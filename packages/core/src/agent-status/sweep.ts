@@ -1,3 +1,5 @@
+export * as AgentStatusSweep from "./sweep"
+
 import { Effect } from "effect"
 import { AgentStatus } from "../agent-status"
 import { REFRESH_INTERVAL_MS } from "./refresh"

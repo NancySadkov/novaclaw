@@ -15,6 +15,13 @@ import { AgentWorkspace } from "../agent/workspace"
 import { ColleagueStall } from "../session/colleague-stall"
 import { Database } from "../database/database"
 import { makeGlobalNode, tags } from "../effect/app-node"
+import { AgentStatus } from "../agent-status"
+import { SessionStore } from "../session/store"
+import { LocationServiceMap } from "../location-service-map"
+import { llmClient } from "../effect/app-node-platform"
+import { LLMClient } from "@novaclaw/llm"
+import { AgentStatusDerive } from "../agent-status/derive"
+import { AgentStatusSweep } from "../agent-status/sweep"
 import { LayerNode } from "../effect/layer-node"
 import { EventV2 } from "../event"
 import { Global } from "../global"
@@ -185,8 +192,7 @@ export const makeLaunch =
           : {}),
         metadata: { calendarScheduleID: schedule.id, occurrenceMillis: input.occurrenceMillis },
       })
-      if (!spawned.started)
-        yield* Log.event("instance.scheduler.launch.unstarted", { "session.id": spawned.id })
+      if (!spawned.started) yield* Log.event("instance.scheduler.launch.unstarted", { "session.id": spawned.id })
       return spawned.id
     })
 
@@ -243,6 +249,26 @@ export const layer = Layer.effect(
         return declared?.disabled !== true
       }),
     )
+    /**
+     * The status sweep's dependencies, resolved ONCE at layer construction rather than per tick: the
+     * labeller enters each colleague's own location internally, so nothing here is per-location.
+     */
+    const labeller = yield* AgentStatusDerive.makeLabeller()
+    const status = yield* AgentStatus.Service
+    const statusState = AgentStatusSweep.makeState()
+    const statusDeps = {
+      candidates: () => status.candidates(),
+      write: (info: { agent: string; task: string; observed: number }) => status.set(info),
+      recent: (agent: string) =>
+        status
+          .newestSession(agent)
+          .pipe(Effect.flatMap((id) => (id ? labeller.recent(id) : Effect.succeed(undefined)))),
+      label: (agent: string, text: string) =>
+        status
+          .newestSession(agent)
+          .pipe(Effect.flatMap((id) => (id ? labeller.label(id, text) : Effect.succeed(undefined)))),
+    }
+
     yield* Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis
       yield* tick(db, launch, now)
@@ -250,6 +276,17 @@ export const layer = Layer.effect(
       // notice is a subsystem, and two schedulers drift. `sweep` never throws into here, so a stall
       // sweep cannot stop a schedule from firing (`notes/named-agents.md`).
       yield* ColleagueStall.sweep(db, events, now)
+      /**
+       * The third rider, on the same argument: what each colleague is WORKING ON, for Contacts.
+       *
+       * ⚠️ Its own interval lives inside it — this tick is every 30 s and a status line is rewritten
+       * at most every few hours, so `AgentStatusSweep.sweep` decides whether to look at all. Putting
+       * that decision here would give the sweep two owners of "how often".
+       *
+       * ⚠️ Failures are swallowed for the same reason the stall sweep's are: a colleague's status is
+       * a nicety, and a model that will not answer must never stop a SCHEDULE from firing.
+       */
+      yield* AgentStatusSweep.sweep(statusState, statusDeps, now).pipe(Effect.ignore)
     }).pipe(
       Effect.catchCause((cause) => Log.event("instance.scheduler.tick.failed", { "instance.cause": Log.fault(cause) })),
       Effect.repeat(Schedule.spaced(Duration.seconds(TICK_INTERVAL_SECONDS))),
@@ -263,7 +300,20 @@ export const layer = Layer.effect(
 export const node = makeGlobalNode({
   service: Service,
   layer,
-  deps: [Database.node, SessionV2.node, Global.node, AgentConfigStore.node, EventV2.node],
+  deps: [
+    Database.node,
+    SessionV2.node,
+    Global.node,
+    AgentConfigStore.node,
+    EventV2.node,
+    // The status sweep's three: the component itself, the session store it reads transcripts from,
+    // and the client it asks for a line. `SessionRunnerModel` is NOT here — it is a location node,
+    // entered per colleague inside `derive.ts`.
+    AgentStatus.node,
+    SessionStore.node,
+    LocationServiceMap.node,
+    llmClient,
+  ],
 })
 
 export const sharedServiceNode = makeGlobalNode({
@@ -275,6 +325,12 @@ export const sharedServiceNode = makeGlobalNode({
     LayerNode.external(Global.Service, tags.values.global),
     LayerNode.external(AgentConfigStore.Service, tags.values.global),
     LayerNode.external(EventV2.Service, tags.values.global),
+    // The status sweep's four, mirroring the node above. `external` because this variant is for a
+    // graph that already provides them — the same reason its five siblings are external.
+    LayerNode.external(AgentStatus.Service, tags.values.global),
+    LayerNode.external(SessionStore.Service, tags.values.global),
+    LayerNode.external(LocationServiceMap.Service, tags.values.global),
+    LayerNode.external(LLMClient.Service, tags.values.global),
   ],
 })
 
