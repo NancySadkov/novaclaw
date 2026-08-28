@@ -145,19 +145,38 @@ export const EVIDENCE_KINDS = ["chat", "message", "passage", "file", "url", "tes
  */
 export const PERSON_CLAIM_STATUSES = ["active", "archived", "needs_review"] as const
 
-export const MemoryGroup = HttpApiGroup.make("server.memory").add(
-  HttpApiEndpoint.post("memory.erase", "/api/memory/erase", {
-    // A COUNT, not a boolean. "It worked" is not auditable, and a store that was already empty must
-    // answer 0 rather than imply something happened.
-    success: Schema.Number,
-  }).annotateMerge(
-    OpenApi.annotations({
-      identifier: "v2.memory.erase",
-      summary: "Erase all memory",
-      description:
-        "Delete every memory in every scope, for every agent including Nova. Used to run from a clean slate without resetting the install. The confirmation is the caller's responsibility.",
-    }),
-  ),
+export const MemoryGroup = HttpApiGroup.make("server.memory")
+  .add(
+    HttpApiEndpoint.post("memory.erase", "/api/memory/erase", {
+      // A COUNT, not a boolean. "It worked" is not auditable, and a store that was already empty must
+      // answer 0 rather than imply something happened.
+      success: Schema.Number,
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.memory.erase",
+        summary: "Erase all memory",
+        description:
+          "Delete every memory in every scope, for every agent including Nova. Used to run from a clean slate without resetting the install. The confirmation is the caller's responsibility.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("memory.export", "/api/memory/export", {
+      payload: Schema.Struct({ includeInvalid: Schema.optional(Schema.Boolean) }),
+      // The server exhausts the store's bounded pages before answering. An empty array therefore
+      // means the store is authoritatively empty; an unavailable store travels through the error
+      // arm instead of becoming an indistinguishable empty backup.
+      success: Schema.Array(MemoryRow),
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.memory.export",
+        summary: "Export every memory",
+        description:
+          "Return a complete backup view of current memory, optionally including invalidated history. The server exhausts its bounded store pages and fails the request if any page cannot be read.",
+      }),
+    ),
   )
   .add(
     /**
@@ -353,8 +372,7 @@ export const MemoryGroup = HttpApiGroup.make("server.memory").add(
       OpenApi.annotations({
         identifier: "v2.memory.feedback",
         summary: "Mark useful",
-        description:
-          "Vouch for a memory recall handed you, or retract the vouch. A vouched memory is never pruned.",
+        description: "Vouch for a memory recall handed you, or retract the vouch. A vouched memory is never pruned.",
       }),
     ),
   )

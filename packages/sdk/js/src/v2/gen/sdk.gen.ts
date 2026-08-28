@@ -3774,6 +3774,26 @@ class ApiV2Memory extends NovaClawApiClient {
   }
 
   /**
+   * Export every memory
+   *
+   * Return a complete backup view of current memory, optionally including invalidated history. The server exhausts its bounded store pages and fails the request if any page cannot be read.
+   */
+  public export<ThrowOnError extends boolean = false>(
+    parameters?: {
+      includeInvalid?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = { includeInvalid: parameters?.["includeInvalid"] }
+    return (options?.client ?? this.client).post<T.V2MemoryExportResponses, T.V2MemoryExportErrors, ThrowOnError>({
+      url: "/api/memory/export",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
    * Mark useful
    *
    * Vouch for a memory recall handed you, or retract the vouch. A vouched memory is never pruned.

@@ -5,7 +5,7 @@ import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { useConfirm } from "@/components/dialog-confirm"
 import { RequiresLevel } from "@/context/expertise"
-import { parseJSONC } from "./config-io"
+import { isJSONObject, JSONCParseError, parseJSONC } from "@/utils/jsonc"
 
 // T12 (small-tails): the curated MODEL-BUNDLE Export/Import — a portable "model setup" users hand
 // between instances (provider access points + model parameters), distinct from the Developer-gated
@@ -40,19 +40,29 @@ export const ModelBundleIO: Component = () => {
     const config = serverSync().data.config as { providers?: Record<string, unknown> }
     const providers = sanitizeModelBundle(config.providers ?? {})
     const bundle = JSON.stringify({ providers }, null, 2) + "\n"
-    const api = (window as unknown as { api?: Record<string, (...args: never[]) => Promise<unknown>> }).api
-    if (!api?.saveFilePicker || !api?.writeFile) return
-    const path = (await api.saveFilePicker({
+    const api = (
+      window as unknown as {
+        api?: {
+          saveFilePicker?: (opts: { title: string; defaultPath: string }) => Promise<{
+            token: string
+            path: string
+          } | null>
+          writePickedFile?: (token: string, content: string) => Promise<void>
+        }
+      }
+    ).api
+    if (!api?.saveFilePicker || !api?.writePickedFile) return
+    const selection = await api.saveFilePicker({
       title: language.t("settings.providers.export.dialogTitle"),
       defaultPath: "novaclaw-models.json",
-    } as never)) as string | undefined
-    if (!path) return
-    await api.writeFile(path as never, bundle as never)
+    })
+    if (!selection) return
+    await api.writePickedFile(selection.token, bundle)
     showToast({
       variant: "success",
       icon: "circle-check",
       title: language.t("settings.providers.export.toast"),
-      description: path,
+      description: selection.path,
     })
   }
 
@@ -65,8 +75,19 @@ export const ModelBundleIO: Component = () => {
     } as never)) as { token: string; files: { path: string }[] } | undefined
     if (!result?.files?.length) return
     const buf = (await api.readPickedFile(result.token as never, result.files[0].path as never)) as ArrayBuffer
-    const parsed = parseJSONC(new TextDecoder().decode(buf))
-    const providers = parsed?.providers
+    let parsed: unknown
+    try {
+      parsed = parseJSONC(new TextDecoder().decode(buf))
+    } catch (error) {
+      if (!(error instanceof JSONCParseError)) throw error
+      showToast({
+        variant: "error",
+        title: language.t("settings.providers.import.invalid.title"),
+        description: `${language.t("settings.providers.import.invalid.description")} ${error.message}`,
+      })
+      return
+    }
+    const providers = isJSONObject(parsed) ? parsed.providers : undefined
     if (!providers || typeof providers !== "object" || Array.isArray(providers)) {
       showToast({
         variant: "error",

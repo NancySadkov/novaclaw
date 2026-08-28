@@ -222,6 +222,12 @@ export interface Interface {
     id?: string
     value: unknown
   }) => Effect.Effect<Schema.Json, ComponentError>
+  /** Validate an ordinary removal without mutating, so a hard authority refusal precedes permission policy. */
+  readonly validateRemoval: (input: {
+    readonly sessionID: SessionSchema.ID
+    readonly kind: string
+    readonly id?: string
+  }) => Effect.Effect<void, ComponentError>
   readonly get: (input: ReadInput) => Effect.Effect<Entry | undefined, ComponentError>
   readonly list: (input: Omit<ReadInput, "id">) => Effect.Effect<ReadonlyArray<Entry>, ComponentError>
   readonly put: (input: PutInput) => Effect.Effect<Entry, ComponentError>
@@ -470,6 +476,21 @@ export const make = (kernelDefinitions: ReadonlyArray<AnyDefinition> = []) =>
           .validate(input.sessionID, decoded)
           .pipe(Effect.mapError((cause) => projectionFailure(definition, "Validating", cause)))
       return yield* encodeInput(definition, decoded)
+    })
+
+    const validateRemoval = Effect.fn("SessionComponent.validateRemoval")(function* (input: {
+      readonly sessionID: SessionSchema.ID
+      readonly kind: string
+      readonly id?: string
+    }) {
+      const definition = yield* definitionOf(input.kind)
+      yield* storedID(definition, input.id)
+      if (definition.removable === false)
+        return yield* new RegistryError({ message: `${definition.kind} cannot be removed` })
+      if (definition.validateRemove)
+        yield* definition
+          .validateRemove({ ...(input.id === undefined ? {} : { id: input.id }), system: false })
+          .pipe(Effect.mapError((cause) => projectionFailure(definition, "Validating removal of", cause)))
     })
 
     const projectedEntry = Effect.fn("SessionComponent.projectedEntry")(function* (
@@ -724,6 +745,7 @@ export const make = (kernelDefinitions: ReadonlyArray<AnyDefinition> = []) =>
       },
       definitions: () => Array.from(definitions.values(), infoOf).sort((a, b) => a.kind.localeCompare(b.kind)),
       validate,
+      validateRemoval,
       get,
       list,
       put,
@@ -758,6 +780,7 @@ const compiledDefinitions = Effect.gen(function* () {
         priority: SessionTable.priority,
         controlBinding: SessionTable.control_binding,
         directory: SessionTable.directory,
+        parentID: SessionTable.parent_id,
         model: SessionTable.model,
         agent: SessionTable.agent,
         sessionType: SessionTable.type,
@@ -1095,12 +1118,35 @@ const compiledDefinitions = Effect.gen(function* () {
     kernelDefinition({
       kind: "agent",
       description:
-        "The agent persona driving this session — its base prompt, tools and permissions. Descendants inherit it unless they override.",
+        "The agent identity driving this session — its base prompt, tools and permissions. READ-ONLY to an agent: only the host may change identity, and a root chat must always keep an owner. Descendants inherit it unless they override.",
       cardinality: "singleton",
       lifetime: "entity",
       version: 1,
       codec: Schema.NonEmptyString,
-      // Clearable for the same reason as `model`: `AgentSwitched.agent` is nullable.
+      // 🔴 Identity is authority, not a session preference. Permission rules are operator dials and
+      // may be widened, so the hard organization-chart boundary must run BEFORE the permission tier:
+      // an officer may inspect who it is, but cannot become Nova or impersonate another officer by
+      // granting itself `session`/`session_privileged`. Kernel callers use explicit system authority;
+      // the model-facing session tool has no such field in its wire schema.
+      validateWrite: ({ system }) =>
+        system
+          ? Effect.void
+          : Effect.fail(
+              new Error(
+                "A session's agent identity is assigned by the host, not by the agent: changing it could widen organization authority or expose another colleague's private context.",
+              ),
+            ),
+      // Clearing reaches the same escalation through inheritance, so the second door carries the
+      // same hard gate. Root removal has an additional invariant in the projection below: even a
+      // kernel caller cannot make a root ownerless through this low-level component operation.
+      validateRemove: ({ system }) =>
+        system
+          ? Effect.void
+          : Effect.fail(
+              new Error(
+                "A session's agent identity is assigned by the host, not by the agent: clearing it could erase the chat's owner or inherit a different identity.",
+              ),
+            ),
       removable: true,
       projection: {
         get: (sessionID) => current(sessionID).pipe(Effect.map((row) => row?.agent ?? undefined)),
@@ -1115,6 +1161,8 @@ const compiledDefinitions = Effect.gen(function* () {
           Effect.gen(function* () {
             const row = yield* current(sessionID)
             if (row === undefined) return yield* Effect.fail(new Error(`Session not found: ${sessionID}`))
+            if (row.parentID === null || row.parentID === undefined)
+              return yield* Effect.fail(new Error("A root session must keep its agent owner"))
             if (row.agent === null || row.agent === undefined) return false
             yield* publishAgent(sessionID, null)
             return true

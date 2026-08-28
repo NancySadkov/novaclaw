@@ -186,6 +186,104 @@ test("a heartbeat failure aborts an in-flight host RPC", async () => {
   expect(aborted).toBe(true)
 })
 
+test("interrupt aborts a queued host Effect without admitting or starting provider work", async () => {
+  const scheduler = SessionScheduler.make()
+  await Effect.runPromise(
+    scheduler.admit({ sessionID: "ses_device_blocker", deviceKey: "provider/model", sessionClass: "interactive" }),
+  )
+  const messages: string[] = []
+  const worker = spawn({
+    command: [process.execPath, fixture, "device-batch"],
+    lease,
+    directory: process.cwd(),
+    force: false,
+    startupTimeoutMs: 8_000,
+    heartbeatTimeoutMs: 2_000,
+    interruptGraceMs: 100,
+    onMessage: (message) => messages.push(message.type),
+    onDeviceRequest: (message, signal) =>
+      Effect.runPromise(SessionWorkerDeviceBridge.handle({ scheduler, lease, message }), { signal }),
+    onExit: () => Effect.runPromise(SessionWorkerDeviceBridge.reclaim(scheduler, lease)),
+  })
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if ((await Effect.runPromise(scheduler.snapshot()))[0]?.waiting.includes(lease.sessionID)) break
+    await Bun.sleep(10)
+  }
+  expect((await Effect.runPromise(scheduler.snapshot()))[0]?.waiting).toContain(lease.sessionID)
+
+  expect(await worker.interrupt()).toEqual({ type: "interrupted" })
+
+  expect(messages).toContain("device-admit")
+  // The fixture reports provider work only after a `device-admitted` reply. Neither can happen.
+  expect(messages).not.toContain("device-report")
+  expect((await Effect.runPromise(scheduler.snapshot()))[0]?.waiting).toEqual([])
+})
+
+test("interrupt cancels an in-flight host publication Effect before worker cleanup completes", async () => {
+  let started!: () => void
+  const publicationStarted = new Promise<void>((resolve) => {
+    started = resolve
+  })
+  let interrupted = false
+  let published = false
+  const worker = spawn({
+    command: [process.execPath, fixture, "publish"],
+    lease,
+    directory: process.cwd(),
+    force: false,
+    startupTimeoutMs: 8_000,
+    heartbeatTimeoutMs: 2_000,
+    interruptGraceMs: 100,
+    onPublishEvent: (message, signal) =>
+      Effect.runPromise(
+        Effect.sync(started).pipe(
+          Effect.andThen(Effect.never),
+          Effect.andThen(
+            Effect.sync(() => {
+              published = true
+              return {
+                version: 1 as const,
+                type: "event-published" as const,
+                sessionID: message.sessionID,
+                attemptID: message.attemptID,
+                generation: message.generation,
+                requestID: message.requestID,
+                eventID: EventV2.ID.create(),
+              }
+            }),
+          ),
+          Effect.onInterrupt(() =>
+            Effect.sync(() => {
+              interrupted = true
+            }),
+          ),
+        ),
+        { signal },
+      ),
+  })
+  await publicationStarted
+
+  expect(await worker.interrupt()).toEqual({ type: "interrupted" })
+
+  expect(interrupted).toBe(true)
+  expect(published).toBe(false)
+})
+
+test("production worker handlers thread the supervisor lifetime signal into every host Effect", async () => {
+  const source = await fs.readFile(new URL("./execution.ts", import.meta.url), "utf8")
+  for (const handler of [
+    "onHeartbeat",
+    "onPublishEvent",
+    "onDeviceRequest",
+    "onInteractionRequest",
+    "onMemoryRequest",
+    "onExecutionRequest",
+  ]) {
+    expect(source).toContain(`${handler}: (message, signal) =>`)
+  }
+  expect(source.match(/\{ signal \}/g)?.length).toBeGreaterThanOrEqual(6)
+})
+
 test("permission and question waits execute in host-owned services", async () => {
   const handled: string[] = []
   const permission = {

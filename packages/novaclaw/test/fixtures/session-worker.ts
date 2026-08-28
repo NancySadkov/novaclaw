@@ -87,13 +87,13 @@ input.on("line", (line) => {
         })
       return
     }
-    if (mode === "device") {
+    if (mode === "device" || mode === "device-batch") {
       emit({
         ...identity,
         type: "device-admit",
         requestID: "rpc_admit",
         deviceKey: "provider/model",
-        sessionClass: "interactive",
+        sessionClass: mode === "device" ? "interactive" : "auto-prompting",
       })
       return
     }

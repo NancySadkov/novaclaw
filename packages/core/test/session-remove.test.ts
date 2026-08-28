@@ -1,6 +1,7 @@
 import { AgentV2 } from "@novaclaw/core/agent"
 import { describe, expect } from "bun:test"
-import { Effect, Layer } from "effect"
+import { Deferred, Effect, Fiber, Layer } from "effect"
+import { eq } from "drizzle-orm"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
@@ -15,6 +16,7 @@ import { SessionV2 } from "@novaclaw/core/session"
 import { SessionExecution } from "@novaclaw/core/session/execution"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
+import { SessionTable } from "@novaclaw/core/session/sql"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { testEffect } from "./lib/effect"
 
@@ -162,6 +164,54 @@ describe("removeSessionRecord — scheduler eviction", () => {
       // whole tree is covered, so a child's turn cannot keep holding a device slot after the
       // parent is deleted.
       expect(evicted).toEqual([parent.id, child.id])
+    }),
+  )
+
+  it.effect("interrupts before eviction and deletion so a pending host publication cannot escape", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const { db } = yield* Database.Service
+      const events = yield* EventV2.Service
+      const created = yield* session.create({ location, agent: rootAgent })
+      const publishGate = yield* Deferred.make<void>()
+      let publications = 0
+      const publisher = yield* Deferred.await(publishGate).pipe(
+        Effect.andThen(
+          Effect.sync(() => {
+            publications++
+          }),
+        ),
+        Effect.forkChild({ startImmediately: true }),
+      )
+      const order: string[] = []
+
+      yield* SessionV2.removeSessionRecord(
+        {
+          db,
+          events,
+          interrupt: (id) =>
+            Fiber.interrupt(publisher).pipe(
+              Effect.tap(() => Effect.sync(() => order.push(`interrupt:${id}`))),
+              Effect.asVoid,
+            ),
+          evict: (id) =>
+            Effect.gen(function* () {
+              // The durable record is still present while authority is being revoked.
+              expect(
+                yield* db.select().from(SessionTable).where(eq(SessionTable.id, id)).get().pipe(Effect.orDie),
+              ).toBeDefined()
+              expect(publications).toBe(0)
+              order.push(`evict:${id}`)
+            }),
+        },
+        created.id,
+      )
+
+      Deferred.doneUnsafe(publishGate, Effect.void)
+      yield* Fiber.await(publisher)
+      expect(publications).toBe(0)
+      expect(order).toEqual([`interrupt:${created.id}`, `evict:${created.id}`])
+      expect(yield* db.select().from(SessionTable).where(eq(SessionTable.id, created.id)).get()).toBeUndefined()
     }),
   )
 })

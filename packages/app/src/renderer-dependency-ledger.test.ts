@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { join, relative, resolve } from "node:path"
+import { parseJSONC } from "./utils/jsonc"
 
 /**
  * Shrink-only dependency ledger for the three RENDERER packages (`app`, `ui`, `session-ui`).
@@ -146,16 +147,6 @@ function walk(dir: string, out: string[] = []): string[] {
   return out
 }
 
-/** `//` also matches `://` inside a URL — the negative lookbehind is load-bearing. */
-function parseJsonc(text: string): any {
-  return JSON.parse(
-    text
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/(?<!:)\/\/[^\n]*/g, "")
-      .replace(/,(\s*[}\]])/g, "$1"),
-  )
-}
-
 type Scan = {
   imported: Set<string>
   /** raw `node:`/bare-builtin usage, for `@types/node` */
@@ -196,7 +187,10 @@ function scan(pkg: string): Scan {
   // tsconfig `extends` and `types` keep packages alive with zero imports (audit traps #2 and #3).
   for (const entry of readdirSync(root)) {
     if (!/^tsconfig.*\.json$/.test(entry)) continue
-    const config = parseJsonc(readFileSync(join(root, entry), "utf8"))
+    const config = parseJSONC(readFileSync(join(root, entry), "utf8")) as {
+      extends?: string | string[]
+      compilerOptions?: { types?: string[] }
+    }
     const extendsField: string[] = ([] as string[]).concat(config.extends ?? [])
     for (const value of extendsField) {
       const name = packageNameOf(value)

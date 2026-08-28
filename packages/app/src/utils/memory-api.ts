@@ -122,6 +122,30 @@ export function memoryErase(server: ServerConnection.HttpBase, input: { director
   return call<number>(server, "POST", "api/memory/erase", input.directory)
 }
 
+/**
+ * Fetch the complete backup view. Pagination is exhausted by the server so this result is atomic at
+ * the HTTP boundary: a page fault rejects instead of handing the caller a plausible partial array.
+ */
+export function memoryExport(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; includeInvalid?: boolean },
+) {
+  return call<MemoryRow[]>(server, "POST", "api/memory/export", input.directory, {
+    ...(input.includeInvalid === undefined ? {} : { includeInvalid: input.includeInvalid }),
+  })
+}
+
+/**
+ * Erase and then prove the authoritative store is empty. A successful count with rows left behind
+ * is not a successful clear, and a failed verification must not become a success toast.
+ */
+export async function memoryEraseVerified(server: ServerConnection.HttpBase, input: { directory: string }) {
+  const erased = await memoryErase(server, input)
+  const remaining = await memoryExport(server, { ...input, includeInvalid: true })
+  if (remaining.length > 0) throw new Error(`Memory erase left ${remaining.length} rows in the store`)
+  return erased
+}
+
 export function memoryList(
   server: ServerConnection.HttpBase,
   input: {
@@ -233,16 +257,10 @@ export function memoryCorrectionProne(
   server: ServerConnection.HttpBase,
   input: { directory: string; minCorrected?: number; limit?: number },
 ) {
-  return call<{ groups: readonly CorrectionGroup[] }>(
-    server,
-    "POST",
-    "api/memory/usage/corrections",
-    input.directory,
-    {
-      ...(input.minCorrected === undefined ? {} : { minCorrected: input.minCorrected }),
-      ...(input.limit === undefined ? {} : { limit: input.limit }),
-    },
-  )
+  return call<{ groups: readonly CorrectionGroup[] }>(server, "POST", "api/memory/usage/corrections", input.directory, {
+    ...(input.minCorrected === undefined ? {} : { minCorrected: input.minCorrected }),
+    ...(input.limit === undefined ? {} : { limit: input.limit }),
+  })
 }
 
 /** One recall that returned a memory. The query is a FINGERPRINT and never the words. */
@@ -364,6 +382,15 @@ export function memoryIngest(
 
 export function memoryClearScope(server: ServerConnection.HttpBase, input: { directory: string; scope: string }) {
   return call<boolean>(server, "POST", "memory/clearScope", input.directory, { scope: input.scope })
+}
+
+/** A scoped clear answers true only after the store commits it; false is therefore a failed clear. */
+export async function memoryClearScopeVerified(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; scope: string },
+) {
+  const cleared = await memoryClearScope(server, input)
+  if (!cleared) throw new Error(`Memory scope ${input.scope} was not cleared`)
 }
 
 // --- the claim lifecycle, on the ONE contract (`/api/*`) ---

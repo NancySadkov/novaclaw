@@ -1,6 +1,5 @@
 import { execFile } from "node:child_process"
 import { stat } from "node:fs/promises"
-import { readFileSync, writeFileSync } from "node:fs"
 import { basename } from "node:path"
 import { app, BrowserWindow, Notification, clipboard, dialog, ipcMain, shell } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
@@ -8,6 +7,7 @@ import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 import type { SuperviseStatus } from "@novaclaw/script/supervise"
 import type { FatalRendererError, ServerReadyData, TitlebarTheme } from "../preload/types"
 import { assertAttachmentBudget, createPickedFileAuthorizations } from "./attachment-picker"
+import { createSaveFileAuthorizations, parseSavePickerOptions } from "./save-picker"
 import { getStore } from "./store"
 import { getPinchZoomEnabled, setPinchZoomEnabled, setTitlebar, updateTitlebar } from "./windows"
 import type { UpdaterController } from "./updater-controller"
@@ -19,6 +19,8 @@ const pickerFilters = (ext?: string[]) => {
 }
 
 const pickedFiles = createPickedFileAuthorizations()
+const pickedSaves = createSaveFileAuthorizations()
+const saveCleanupSenders = new WeakSet<object>()
 
 type Deps = {
   killSidecar: () => Promise<void> | void
@@ -186,17 +188,27 @@ export function registerIpcHandlers(deps: Deps) {
     pickedFiles.release(event.sender.id, token)
   })
 
-  ipcMain.handle(
-    "save-file-picker",
-    async (_event: IpcMainInvokeEvent, opts?: { title?: string; defaultPath?: string }) => {
-      const result = await dialog.showSaveDialog({
-        title: opts?.title ?? "Save file",
-        defaultPath: opts?.defaultPath,
-      })
-      if (result.canceled) return null
-      return result.filePath ?? null
-    },
-  )
+  ipcMain.handle("save-file-picker", async (event: IpcMainInvokeEvent, input?: unknown) => {
+    const opts = parseSavePickerOptions(input)
+    const result = await dialog.showSaveDialog({
+      title: opts?.title ?? "Save file",
+      defaultPath: opts?.defaultPath,
+    })
+    if (result.canceled) return null
+    const filePath = result.filePath
+    if (!filePath) return null
+    const sender = event.sender
+    if (!saveCleanupSenders.has(sender)) {
+      saveCleanupSenders.add(sender)
+      const senderID = sender.id
+      sender.once("destroyed", () => pickedSaves.releaseSender(senderID))
+    }
+    return { token: pickedSaves.add(sender.id, filePath), path: filePath }
+  })
+
+  ipcMain.handle("write-picked-file", (event: IpcMainInvokeEvent, token: unknown, content: unknown) => {
+    return pickedSaves.write(event.sender.id, token, content)
+  })
 
   ipcMain.on("open-link", (_event: IpcMainEvent, url: string) => {
     void shell.openExternal(url)
@@ -265,13 +277,6 @@ export function registerIpcHandlers(deps: Deps) {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) return
     setTitlebar(win, theme)
-  })
-  ipcMain.handle("write-file", (_event: IpcMainInvokeEvent, filePath: string, content: string) => {
-    writeFileSync(filePath, content, "utf-8")
-  })
-
-  ipcMain.handle("read-file", (_event: IpcMainInvokeEvent, filePath: string) => {
-    return readFileSync(filePath, "utf-8")
   })
 }
 

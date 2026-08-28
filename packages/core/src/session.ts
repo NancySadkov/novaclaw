@@ -712,9 +712,8 @@ export const createSessionRecord = (
 /**
  * Remove a session RECORD tree from CYCLE-FREE primitives (the `createSessionRecord` seam
  * pattern): run the injected `interrupt` first (the SessionV2 layer passes the execution
- * coordinator; the workspace control-plane's session sweep has none — matching the V1 remove
- * it replaces there), then the injected `evict`, depth-first over children, publish the
- * full-info legacy `session.deleted` (its projector row-delete cascades
+ * coordinator, as does workspace removal), then the injected `evict`, depth-first over children,
+ * publish the full-info legacy `session.deleted` (its projector row-delete cascades
  * messages/parts/todos/tags via FK), then purge the aggregate's event log.
  *
  * `evict` follows `interrupt` exactly: an OPTIONAL injected primitive, because the seam must

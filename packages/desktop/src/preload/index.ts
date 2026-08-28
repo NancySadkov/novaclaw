@@ -104,6 +104,7 @@ const api: ElectronAPI = {
   releasePickedFiles: (token) => ipcRenderer.invoke("release-picked-files", token),
   getPathForFile: (file) => webUtils.getPathForFile(file),
   saveFilePicker: (opts) => ipcRenderer.invoke("save-file-picker", opts),
+  writePickedFile: (token, content) => ipcRenderer.invoke("write-picked-file", token, content),
   openLink: (url) => ipcRenderer.send("open-link", url),
   openPath: (path, app) => ipcRenderer.invoke("open-path", path, app),
   readClipboardImage: () => ipcRenderer.invoke("read-clipboard-image"),
@@ -134,8 +135,6 @@ const api: ElectronAPI = {
   recordFatalRendererError: (error) => ipcRenderer.invoke("record-fatal-renderer-error", error),
   // `send`, not `invoke`: nothing in the renderer should ever await its own instrumentation.
   markBootPhase: (phase) => ipcRenderer.send("mark-boot-phase", phase),
-  writeFile: (filePath, content) => ipcRenderer.invoke("write-file", filePath, content),
-  readFile: (filePath) => ipcRenderer.invoke("read-file", filePath),
 }
 
 contextBridge.exposeInMainWorld("api", api)

@@ -124,7 +124,7 @@ describe("the five fields that were not components", () => {
     expect(written.value).toEqual({ providerID: "local", id: "tiny-1" })
   })
 
-  test("every switchable component clears back to inherit", async () => {
+  test("ordinary switchable config clears back to inherit", async () => {
     // The asymmetry this used to pin is GONE (2026-08-14): four of the five events carried non-null
     // values, so the kernel had no way to say "go back to inheriting" and a sparse-override column
     // could never return to sparse. Widening them was the ECS lens applied to its own kernel.
@@ -134,18 +134,39 @@ describe("the five fields that were not components", () => {
         yield* catalog.setLayers(ProviderV2.ID.make("local"), [{ id: "local", models: { "tiny-1": {} } } as never])
         yield* registry.put({ sessionID, kind: "strict", value: { enabled: true } })
         yield* registry.put({ sessionID, kind: "model", value: { providerID: "local", id: "tiny-1" } })
-        yield* registry.put({ sessionID, kind: "agent", value: "build" })
         return {
           strict: yield* registry.remove({ sessionID, kind: "strict" }),
           model: yield* registry.remove({ sessionID, kind: "model" }),
-          agent: yield* registry.remove({ sessionID, kind: "agent" }),
-          // Clearing what was never set is `false` — nothing changed — rather than a failure. The
-          // session already inherits, which is the state the caller asked for.
-          again: yield* registry.remove({ sessionID, kind: "agent" }),
         }
       }),
     )
-    expect(cleared).toEqual({ strict: true, model: true, agent: true, again: false })
+    expect(cleared).toEqual({ strict: true, model: true })
+  })
+
+  test("🔴 agent identity is host-owned and a root owner cannot be removed", async () => {
+    const result = await withRegistry(({ registry, sessionID }) =>
+      Effect.gen(function* () {
+        // The sanctioned host side can assign identity. The model-facing component tool cannot set
+        // `system`, so both ordinary doors below exercise the authority an agent actually has.
+        yield* registry.put({ sessionID, kind: "agent", value: "officer", system: true })
+        const write = yield* registry.put({ sessionID, kind: "agent", value: "nova" }).pipe(Effect.flip)
+        const remove = yield* registry.remove({ sessionID, kind: "agent" }).pipe(Effect.flip)
+        // Root ownership is a data invariant as well as an agent boundary: even kernel authority
+        // must use the typed host transition rather than erasing the owner through this projection.
+        const systemRemove = yield* registry.remove({ sessionID, kind: "agent", system: true }).pipe(Effect.flip)
+        return {
+          write,
+          remove,
+          systemRemove,
+          current: yield* registry.get({ sessionID, kind: "agent" }),
+        }
+      }),
+    )
+
+    expect(String((result.write as { message?: string }).message)).toMatch(/assigned by the host/)
+    expect(String((result.remove as { message?: string }).message)).toMatch(/assigned by the host/)
+    expect(String((result.systemRemove as { message?: string }).message)).toMatch(/root session must keep/i)
+    expect(result.current?.value).toBe("officer")
   })
 
   test("🔴 the system-only and one-way rulings hold on the REMOVAL door too", async () => {

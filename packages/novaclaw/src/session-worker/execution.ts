@@ -5,6 +5,7 @@ import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
 import { Database } from "@novaclaw/core/database/database"
+import { makeGlobalNode } from "@novaclaw/core/effect/app-node"
 import { EventV2 } from "@novaclaw/core/event"
 import { Log } from "@novaclaw/schema/log"
 import { SessionPatch } from "@novaclaw/core/session/patch"
@@ -180,8 +181,8 @@ export const layer = Layer.effect(
           events.publish(SessionStatusEvent.Status, { sessionID, status }, { location }).pipe(Effect.ignore)
         yield* publishStatus({ type: "busy" })
 
-        const runLocated = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-          Effect.runPromise(effect.pipe(Effect.provide(located)) as Effect.Effect<A, E>)
+        const runLocated = <A, E, R>(effect: Effect.Effect<A, E, R>, signal: AbortSignal) =>
+          Effect.runPromise(effect.pipe(Effect.provide(located)) as Effect.Effect<A, E>, { signal })
         // The transcript's half of an interruption. The ledger records the interrupt either way;
         // a ledger row is not a message, so without this a turn stopped before it replied left the
         // prompt with nothing after it. Shared with the in-process executor because THIS is the
@@ -202,13 +203,16 @@ export const layer = Layer.effect(
             workspaceID: session.location.workspaceID,
             force,
             memoryLimitBytes: workerMemoryLimitBytes(command.workerPath),
-            onHeartbeat: (message) =>
-              Effect.runPromise(SessionWorkerExecutionBridge.heartbeat({ attempts, lease, message })),
-            onPublishEvent: (message) =>
-              Effect.runPromise(SessionWorkerEventBridge.publish({ events, lease, location, message })),
-            onDeviceRequest: (message) =>
-              Effect.runPromise(SessionWorkerDeviceBridge.handle({ scheduler, lease, message })),
-            onInteractionRequest: (message) =>
+            // Every host Effect is tied to this worker's lifetime. Once supervision stops the
+            // child, an outstanding admission or publication must unwind before deletion can
+            // continue; it may never finish later against state the worker no longer owns.
+            onHeartbeat: (message, signal) =>
+              Effect.runPromise(SessionWorkerExecutionBridge.heartbeat({ attempts, lease, message }), { signal }),
+            onPublishEvent: (message, signal) =>
+              Effect.runPromise(SessionWorkerEventBridge.publish({ events, lease, location, message }), { signal }),
+            onDeviceRequest: (message, signal) =>
+              Effect.runPromise(SessionWorkerDeviceBridge.handle({ scheduler, lease, message }), { signal }),
+            onInteractionRequest: (message, signal) =>
               runLocated(
                 Effect.gen(function* () {
                   // ⚠️ Resolved HERE, like `spawner` below and unlike `join`: `AgentV2` IS a
@@ -257,6 +261,7 @@ export const layer = Layer.effect(
                     message,
                   })
                 }),
+                signal,
               ),
             /**
              * 🔴 The host's engine is THE engine. `memory` above is the client this layer resolved
@@ -267,9 +272,9 @@ export const layer = Layer.effect(
              * node, and resolving it per request would be the trap `SessionJoin` names above. It is
              * also why this needs no location: the graph is one per instance, never one per folder.
              */
-            onMemoryRequest: (message) =>
-              Effect.runPromise(SessionWorkerMemoryBridge.handle({ memory, lease, message })),
-            onExecutionRequest: (message) =>
+            onMemoryRequest: (message, signal) =>
+              Effect.runPromise(SessionWorkerMemoryBridge.handle({ memory, lease, message }), { signal }),
+            onExecutionRequest: (message, signal) =>
               Effect.runPromise(
                 SessionWorkerExecutionBridge.handle({
                   attempts,
@@ -283,6 +288,7 @@ export const layer = Layer.effect(
                       update.snapshot,
                     ),
                 }),
+                { signal },
               ),
             onExit: () => Effect.runPromise(SessionWorkerDeviceBridge.reclaim(scheduler, lease)),
           }
@@ -394,3 +400,19 @@ export const defaultLayer = layer.pipe(
   Layer.provide(SessionStore.defaultLayer),
   Layer.provide(SessionExecutionAttempt.defaultLayer),
 )
+
+/** The server graph's concrete binding for core's deliberately-unbound execution service. */
+export const node = makeGlobalNode({
+  service: SessionExecution.Service,
+  layer,
+  deps: [
+    SessionStore.node,
+    LocationServiceMap.node,
+    EventV2.node,
+    SessionExecutionAttempt.node,
+    SessionScheduler.node,
+    Database.node,
+    AgentConfigStore.node,
+    Memory.node,
+  ],
+})

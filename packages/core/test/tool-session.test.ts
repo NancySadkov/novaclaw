@@ -7,6 +7,7 @@ import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { Database } from "@novaclaw/core/database/database"
 import { EventV2 } from "@novaclaw/core/event"
+import { EventTable } from "@novaclaw/core/event/sql"
 import { PermissionV2 } from "@novaclaw/core/permission"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import { SessionComponentRegistry } from "@novaclaw/core/session/component-registry"
@@ -376,6 +377,61 @@ describe("session tool", () => {
           expect(unknown.type).toBe("error")
           expect(textOf(unknown)).toContain("Unknown session component kind: mystery")
           expect(asserted).toEqual([])
+        }),
+      ),
+    )
+  })
+
+  test("🔴 no permission policy lets an agent rewrite or erase its identity", () => {
+    const asserted: Asserted[] = []
+    return Effect.runPromise(
+      withTool(asserted, ({ registry, db, sessionID }) =>
+        Effect.gen(function* () {
+          yield* db
+            .update(SessionTable)
+            .set({ agent: "officer" })
+            .where(eq(SessionTable.id, sessionID))
+            .run()
+            .pipe(Effect.orDie)
+
+          const schema = yield* call(registry, sessionID, { op: "schema", kind: "agent" })
+          expect(textOf(schema)).toContain("READ-ONLY to an agent")
+          expect(textOf(schema)).toContain("write:privileged")
+
+          // `recording` is the broadest possible policy: it approves every assertion. Both calls
+          // still fail before permission evaluation, so ask/allow/saved/yolo-style policy choices
+          // cannot turn this component gate into an organization-chart escalation.
+          const becomeNova = yield* call(registry, sessionID, { op: "set", kind: "agent", value: "nova" })
+          const impersonate = yield* call(registry, sessionID, {
+            op: "set",
+            kind: "agent",
+            value: "another-officer",
+          })
+          const eraseOwner = yield* call(registry, sessionID, { op: "remove", kind: "agent" })
+          expect(becomeNova.type).toBe("error")
+          expect(impersonate.type).toBe("error")
+          expect(eraseOwner.type).toBe("error")
+          expect(textOf(becomeNova)).toMatch(/assigned by the host/)
+          expect(textOf(impersonate)).toMatch(/assigned by the host/)
+          expect(textOf(eraseOwner)).toMatch(/assigned by the host/)
+          expect(asserted).toEqual([])
+
+          expect(
+            yield* db
+              .select({ agent: SessionTable.agent })
+              .from(SessionTable)
+              .where(eq(SessionTable.id, sessionID))
+              .get()
+              .pipe(Effect.orDie),
+          ).toEqual({ agent: "officer" })
+          expect(
+            yield* db
+              .select()
+              .from(EventTable)
+              .where(eq(EventTable.aggregate_id, sessionID))
+              .all()
+              .pipe(Effect.orDie),
+          ).toEqual([])
         }),
       ),
     )

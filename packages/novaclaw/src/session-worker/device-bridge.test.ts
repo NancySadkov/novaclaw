@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { Effect } from "effect"
+import { Effect, Exit, Fiber } from "effect"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { SessionWorkerDeviceBridge } from "./device-bridge"
@@ -77,4 +77,34 @@ test("release/report are host-owned and invalid or stale requests fail closed", 
       )
     ).type,
   ).toBe("device-rejected")
+})
+
+test("evicting a queued worker admission produces no admitted reply", async () => {
+  const scheduler = SessionScheduler.make()
+  await Effect.runPromise(
+    scheduler.admit({ sessionID: "ses_blocker", deviceKey: "provider/model", sessionClass: "interactive" }),
+  )
+  let reply: SessionWorkerDeviceBridge.Reply | undefined
+  const pending = Effect.runFork(
+    SessionWorkerDeviceBridge.handle({
+      scheduler,
+      lease,
+      message: request("device-admit", { sessionClass: "auto-prompting" }),
+    }).pipe(
+      Effect.tap((value) =>
+        Effect.sync(() => {
+          reply = value
+        }),
+      ),
+    ),
+  )
+  await Bun.sleep(20)
+
+  await Effect.runPromise(scheduler.evict(lease.sessionID))
+
+  const exit = await Effect.runPromise(Fiber.await(pending))
+  expect(Exit.isFailure(exit)).toBe(true)
+  expect(Exit.hasInterrupts(exit)).toBe(true)
+  expect(reply).toBeUndefined()
+  expect((await Effect.runPromise(scheduler.snapshot()))[0]?.waiting).toEqual([])
 })

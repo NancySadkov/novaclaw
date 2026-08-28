@@ -251,6 +251,12 @@ export const layer = Layer.effectDiscard(
                         ? diffSummary("", null)
                         : `Nothing changed: this session declared no ${input.kind}${input.id ? `/${input.id}` : ""}.`,
                   }
+                if (input.op === "remove")
+                  yield* components.validateRemoval({
+                    sessionID: context.sessionID,
+                    kind: input.kind,
+                    ...(input.id === undefined ? {} : { id: input.id }),
+                  })
                 if (input.op === "set" && previous && isDeepStrictEqual(previous.value, validated))
                   return {
                     op: input.op,

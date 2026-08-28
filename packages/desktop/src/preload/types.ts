@@ -93,7 +93,8 @@ export type ElectronAPI = {
   readPickedFile: (token: string, path: string) => Promise<ArrayBuffer>
   releasePickedFiles: (token: string) => Promise<void>
   getPathForFile: (file: File) => string
-  saveFilePicker: (opts?: { title?: string; defaultPath?: string }) => Promise<string | null>
+  saveFilePicker: (opts?: { title?: string; defaultPath?: string }) => Promise<{ token: string; path: string } | null>
+  writePickedFile: (token: string, content: string) => Promise<void>
   openLink: (url: string) => void
   openPath: (path: string, app?: string) => Promise<void>
   readClipboardImage: () => Promise<{ buffer: ArrayBuffer; width: number; height: number } | null>
@@ -116,6 +117,4 @@ export type ElectronAPI = {
   recordFatalRendererError: (error: FatalRendererError) => Promise<void>
   /** Report a boot phase the main process cannot observe. Fire-and-forget; never awaited. */
   markBootPhase: (phase: "renderer-interactive" | "first-chat-token") => void
-  writeFile: (filePath: string, content: string) => Promise<void>
-  readFile: (filePath: string) => Promise<string>
 }

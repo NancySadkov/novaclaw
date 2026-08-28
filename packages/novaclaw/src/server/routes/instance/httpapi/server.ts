@@ -63,6 +63,7 @@ import { CredentialCipher } from "@novaclaw/core/credential-cipher"
 import { Database } from "@novaclaw/core/database/database"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
+import { SessionExecution } from "@novaclaw/core/session/execution"
 import { SessionReceipt } from "@novaclaw/core/session/receipt"
 import { CalendarScheduler } from "@novaclaw/core/schedule/scheduler"
 import { RecipeBuiltin } from "@novaclaw/core/recipe-builtin"
@@ -559,8 +560,9 @@ export function createRoutes(
     Layer.provideMerge(calendarSchedulerStartup),
     Layer.provide(
       SessionV2.defaultLayer.pipe(
-        // Every admitted server drain crosses a disposable worker process. The local executor is
-        // retained in core for non-server embeddings/tests, but is deliberately unreachable here.
+        // Close SessionV2's execution requirement at its own provider boundary. This is the same
+        // module-level worker layer whose inner implementation the graph binding below uses, so the
+        // shared MemoMap still builds one coordinator.
         Layer.provide(SessionExecutionWorker.defaultLayer),
         // V2 runner's location services, with MCP tools injected: replace core's empty
         // ExternalToolSource node with the novaclaw MCP-backed one so searxng et al. appear.
@@ -576,7 +578,10 @@ export function createRoutes(
 
     Layer.provideMerge(catalogSeedStartup),
     Layer.provideMerge(recipeSeedStartup),
-    Layer.provide(AppNodeBuilder.build(app)),
+    // Every admitted server drain crosses a disposable worker process. Workspace and recovery
+    // controls receive this SAME graph-owned executor; core's local executor remains available only
+    // to non-server embeddings/tests. Its dependencies resolve here instead of escaping the graph.
+    Layer.provide(AppNodeBuilder.build(app, [[SessionExecution.node, SessionExecutionWorker.node]])),
   )
 }
 

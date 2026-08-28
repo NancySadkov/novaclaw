@@ -260,7 +260,9 @@ export const make = (options?: Options): Interface => {
         const waiter = device.waiters.get(sessionID)
         if (waiter) {
           device.waiters.delete(sessionID)
-          Deferred.doneUnsafe(waiter.deferred, Effect.void)
+          // Eviction revokes the queued turn's right to run. Only `drain` may complete an
+          // admission successfully; otherwise deletion can wake its own worker into dispatch.
+          Deferred.doneUnsafe(waiter.deferred, Effect.interrupt)
         }
         drain(device)
       }

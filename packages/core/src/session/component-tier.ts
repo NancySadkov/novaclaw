@@ -20,13 +20,14 @@ export const KERNEL_KIND_TIERS: Record<SessionComponentRegistry.KernelKind, Tier
   system_prompt_override: "privileged",
   device: "operational",
   priority: "operational",
-  // Which model answers, and which persona it wears. Both change the CHARACTER of every later turn
-  // — a cheaper model, or an agent with a different tool set and permission baseline — so neither is
-  // a routine knob. Neither is privileged either: the composer offers both to the user directly, and
-  // a repair the self-healing law promises ("ask any still-working model to fix it") has to be able
-  // to reach the model entry.
+  // Which model answers changes the CHARACTER of every later turn, so it is not a routine knob. A
+  // repair the self-healing law promises ("ask any still-working model to fix it") has to be able to
+  // reach the model entry.
   model: "consequential",
-  agent: "consequential",
+  // Identity is host-owned authority, not another mutable session preference. `agent` is exposed to
+  // the model for reading, while the component registry hard-refuses ordinary writes and removals;
+  // privileged is the fail-closed classification if a new caller ever reaches the tier first.
+  agent: "privileged",
   // Read-only to an agent (`validateWrite` refuses a non-system write), so the write tier is what a
   // SYSTEM write costs. Kept at the same tier as `permission_mode` because it decides the same
   // thing: whether this chain counts as attended.

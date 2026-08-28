@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import fs from "fs"
 import path from "path"
-import { Duration, Effect, Fiber } from "effect"
+import { Duration, Effect, Exit, Fiber } from "effect"
 import { MAX_BATCH, make } from "./scheduler"
 
 const run = <A>(effect: Effect.Effect<A>) => Effect.runPromise(effect)
@@ -169,16 +169,27 @@ describe("session scheduler admission gate", () => {
     expect(device!.waiting).toEqual([])
   })
 
-  test("evict wakes a waiting session and drops its ledger entry", async () => {
+  test("evict interrupts a waiting admission; ordinary release still admits the next waiter", async () => {
     const gate = make()
     await run(gate.admit({ sessionID: "ui", deviceKey: "d", sessionClass: "interactive" }))
-    const fiber = Effect.runFork(gate.admit({ sessionID: "bg", deviceKey: "d", sessionClass: "cron" }))
+    const evicted = Effect.runFork(gate.admit({ sessionID: "evicted", deviceKey: "d", sessionClass: "cron" }))
+    const survivor = Effect.runFork(gate.admit({ sessionID: "survivor", deviceKey: "d", sessionClass: "cron" }))
     await new Promise((resolve) => setTimeout(resolve, 20))
-    await run(gate.evict("bg"))
-    await run(Fiber.await(fiber))
+    await run(gate.evict("evicted"))
+
+    const evictedExit = await run(Fiber.await(evicted))
+    expect(Exit.isFailure(evictedExit)).toBe(true)
+    expect(Exit.hasInterrupts(evictedExit)).toBe(true)
     const [device] = await run(gate.snapshot())
-    expect(device!.waiting).toEqual([])
-    expect(device!.ledger.some((entry) => entry.id === "bg")).toBe(false)
+    expect(device!.waiting).toEqual(["survivor"])
+    expect(device!.ledger.some((entry) => entry.id === "evicted")).toBe(false)
+
+    // Negative control: capacity becoming available normally is still a successful admission.
+    await run(gate.release({ sessionID: "ui", deviceKey: "d" }))
+    const survivorExit = await run(Fiber.await(survivor))
+    expect(Exit.isSuccess(survivorExit)).toBe(true)
+    const [afterRelease] = await run(gate.snapshot())
+    expect(afterRelease!.inFlightBatch).toEqual(["survivor"])
   })
 
   test("kill switch: NOVACLAW_DISABLE_SCHEDULER admits everything immediately", async () => {

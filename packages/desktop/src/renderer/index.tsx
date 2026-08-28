@@ -132,13 +132,6 @@ const createPlatform = (): Platform => {
       return attachmentPaths.get(file) ?? window.api.getPathForFile(file)
     },
 
-    async saveFilePickerDialog(opts) {
-      return window.api.saveFilePicker({
-        title: opts?.title ?? t("desktop.dialog.saveFile"),
-        defaultPath: opts?.defaultPath,
-      })
-    },
-
     openLink(url: string) {
       window.api.openLink(url)
     },

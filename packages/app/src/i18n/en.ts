@@ -2326,7 +2326,7 @@ export const dict = {
   "settings.memory.io.hint":
     "Export a backup to keep or move to another instance, restore one here, or clear everything for a fresh start.",
   "settings.memory.export.action": "Export",
-  "settings.memory.export.toast": "Memory backup downloaded",
+  "settings.memory.export.toast": "Memory backup download started",
   "settings.memory.export.empty": "Nothing to back up yet",
   "settings.memory.import.action": "Import",
   "settings.memory.ingest.action": "Add document",
@@ -2345,9 +2345,11 @@ export const dict = {
   "settings.memory.clearAll.action": "Clear all",
   "settings.memory.clearAll.confirm.title": "Clear all memory?",
   "settings.memory.clearAll.confirm.description":
-    "NovaClaw will forget everything it has learned, across every chat. A backup is downloaded first so you can restore it. This can’t be undone.",
+    "NovaClaw will forget everything it has learned, across every chat. A complete backup download starts first so you can restore it. This can’t be undone.",
   "settings.memory.clearAll.confirm.action": "Clear everything",
-  "settings.memory.clearAll.toast": "Memory cleared — a backup was downloaded first",
+  "settings.memory.clearAll.empty": "There was nothing to clear",
+  "settings.memory.clearAll.toast": "Cleared {{count}} memories",
+  "settings.memory.clearAll.toastBackup": "Cleared {{count}} memories. Backup download started",
   "settings.memory.clearChat.action": "Clear this chat",
   "settings.memory.clearChat.confirm.title": "Clear this chat’s memory?",
   "settings.memory.clearChat.confirm.description":

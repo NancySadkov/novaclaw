@@ -155,7 +155,7 @@ function withoutPipes(text: string): string {
 }
 
 /** `Auth.defaultLayer` / `FetchHttpClient.layer` / `Worktree.appLayer` → the module identifier. */
-const LAYER_TOKEN = /\b([A-Z][\w$]*)\.(?:defaultLayer|layer|appLayer)\b/g
+const LAYER_TOKEN = /\b([A-Z][\w$]*)\.(?:defaultLayer|noopLayer|layer|appLayer)\b/g
 
 /** Which modules a hand-maintained provide list actually provides, in source order. */
 function providersIn(slice: string): string[] {
@@ -202,6 +202,11 @@ const REQUIREMENTS: ReadonlyArray<{
   { tag: "Vcs.Service", provider: "Vcs", node: "Vcs.node" },
   { tag: "RuntimeFlags.Service", provider: "RuntimeFlags", node: "RuntimeFlags.node" },
   { tag: "FSUtil.Service", provider: "FSUtil", node: "FSUtil.node" },
+  {
+    tag: "SessionExecution.Service",
+    provider: "SessionExecution",
+    node: "LayerNode.external(SessionExecution.Service)",
+  },
   // Added in Wave 1 — the requirement that broke both test mirrors and motivated this file.
   { tag: "SessionScheduler.Service", provider: "SessionScheduler", node: "SessionScheduler.node" },
   { tag: "Database.Service", provider: "Database", node: "Database.node" },
@@ -341,6 +346,16 @@ describe("the compile-time guard on Workspace.node", () => {
       .map((entry) => entry.trim())
       .filter((entry) => entry.length > 0)
     expect(listed.sort()).toEqual(REQUIREMENTS.map((entry) => entry.node).sort())
+  })
+})
+
+describe("workspace session removal authority", () => {
+  test("passes execution interruption and scheduler eviction into the core removal primitive", () => {
+    const removal = declarationBody(workspaceSource, 'const remove = Effect.fn("Workspace.remove")')
+    expect(removal.length).toBeGreaterThan(1_000)
+    expect(removal).toContain("interrupt: (id) => Effect.uninterruptible(execution.interrupt(id))")
+    expect(removal).toContain("evict: (id) => scheduler.evict(id)")
+    expect(removal.indexOf("interrupt:")).toBeLessThan(removal.indexOf("evict:"))
   })
 })
 

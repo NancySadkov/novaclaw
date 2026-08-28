@@ -13620,7 +13620,7 @@ export type V2MemoryEraseErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError
+  400: InvalidRequestError | InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -13637,6 +13637,53 @@ export type V2MemoryEraseResponses = {
 }
 
 export type V2MemoryEraseResponse = V2MemoryEraseResponses[keyof V2MemoryEraseResponses]
+
+export type V2MemoryExportData = {
+  body: {
+    includeInvalid?: boolean
+  }
+  path?: never
+  query?: never
+  url: "/api/memory/export"
+}
+
+export type V2MemoryExportErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError | InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2MemoryExportError = V2MemoryExportErrors[keyof V2MemoryExportErrors]
+
+export type V2MemoryExportResponses = {
+  /**
+   * Success
+   */
+  200: Array<{
+    id: string
+    kind: string
+    text: string
+    name: string | null
+    scope: string
+    source: string | null
+    confidence: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
+    relation: string
+    status: string
+    subject: string | null
+    predicate: string | null
+    conflictKey: string | null
+    supersededBy: string | null
+    evidence: string | null
+    evidenceKind: string | null
+  }>
+}
+
+export type V2MemoryExportResponse = V2MemoryExportResponses[keyof V2MemoryExportResponses]
 
 export type V2MemoryClaimStatusData = {
   body: {

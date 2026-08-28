@@ -6,6 +6,7 @@ import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { useConfirm } from "@/components/dialog-confirm"
 import { RequiresLevel } from "@/context/expertise"
+import { isJSONObject, JSONCParseError, parseJSONC } from "@/utils/jsonc"
 
 // Raw whole-config Export/Import — a Developer affordance (uix.md §6.4). Lifted out of the (removed)
 // Providers tab into the merged Models tab so config portability survives the merge. Desktop-only:
@@ -17,22 +18,13 @@ import { RequiresLevel } from "@/context/expertise"
 // instance re-seeds from. Only derived/transport noise is dropped.
 const EXPORT_DROP_KEYS = new Set(["$schema"])
 
-function generateConfigTemplate(current: Record<string, unknown>): string {
+export function generateConfigTemplate(current: Record<string, unknown>): string {
   const out: Record<string, unknown> = { $schema: "https://novaclaw.app/config.json" }
   for (const [key, value] of Object.entries(current)) {
     if (value === undefined || EXPORT_DROP_KEYS.has(key)) continue
     out[key] = value
   }
   return JSON.stringify(out, null, 2) + "\n"
-}
-
-export function parseJSONC(content: string): Record<string, unknown> | null {
-  try {
-    const stripped = content.replace(/(?<!:)\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "")
-    return JSON.parse(stripped)
-  } catch {
-    return null
-  }
 }
 
 export const ConfigExportImport: Component = () => {
@@ -42,19 +34,29 @@ export const ConfigExportImport: Component = () => {
 
   const exportConfig = async () => {
     const jsonc = generateConfigTemplate(serverSync().data.config as Record<string, unknown>)
-    const api = (window as unknown as { api?: Record<string, (...args: never[]) => Promise<unknown>> }).api
-    if (!api?.saveFilePicker || !api?.writeFile) return
-    const path = (await api.saveFilePicker({
+    const api = (
+      window as unknown as {
+        api?: {
+          saveFilePicker?: (opts: { title: string; defaultPath: string }) => Promise<{
+            token: string
+            path: string
+          } | null>
+          writePickedFile?: (token: string, content: string) => Promise<void>
+        }
+      }
+    ).api
+    if (!api?.saveFilePicker || !api?.writePickedFile) return
+    const selection = await api.saveFilePicker({
       title: language.t("settings.providers.export.dialogTitle"),
       defaultPath: "novaclaw.jsonc",
-    } as never)) as string | undefined
-    if (!path) return
-    await api.writeFile(path as never, jsonc as never)
+    })
+    if (!selection) return
+    await api.writePickedFile(selection.token, jsonc)
     showToast({
       variant: "success",
       icon: "circle-check",
       title: language.t("settings.providers.export.toast"),
-      description: path,
+      description: selection.path,
     })
   }
 
@@ -67,8 +69,19 @@ export const ConfigExportImport: Component = () => {
     } as never)) as { token: string; files: { path: string }[] } | undefined
     if (!result?.files?.length) return
     const buf = (await api.readPickedFile(result.token as never, result.files[0].path as never)) as ArrayBuffer
-    const parsed = parseJSONC(new TextDecoder().decode(buf))
-    if (!parsed) {
+    let parsed: unknown
+    try {
+      parsed = parseJSONC(new TextDecoder().decode(buf))
+    } catch (error) {
+      if (!(error instanceof JSONCParseError)) throw error
+      showToast({
+        variant: "error",
+        title: language.t("settings.providers.import.invalid.title"),
+        description: `${language.t("settings.providers.import.invalid.description")} ${error.message}`,
+      })
+      return
+    }
+    if (!isJSONObject(parsed)) {
       showToast({
         variant: "error",
         title: language.t("settings.providers.import.invalid.title"),

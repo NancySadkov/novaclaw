@@ -14,13 +14,14 @@ import { RequiresLevel } from "@/context/expertise"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import {
-  memoryClearScope,
+  memoryClearScopeVerified,
+  memoryEraseVerified,
+  memoryExport,
   memoryIngest,
-  memoryList,
   memoryRemember,
-  type MemoryRow,
 } from "@/utils/memory-api"
 import { buildMemoryBundle, importScope, parseMemoryBundle } from "./memory-bundle"
+import { runBackedUpMemoryErase } from "./memory-clear"
 import { MemoryRemembered } from "@/components/memory-remembered"
 import { SettingsProfileSection } from "./profile"
 import { SettingsExplainV2 } from "./explain"
@@ -154,7 +155,6 @@ export const SettingsMemoryV2: Component<{ sessionID?: string; embedded?: boolea
 
   const sessionScope = () => (props.sessionID ? `session:${props.sessionID}` : undefined)
 
-
   const failed = (error: unknown) =>
     showToast({
       variant: "error",
@@ -165,20 +165,27 @@ export const SettingsMemoryV2: Component<{ sessionID?: string; embedded?: boolea
   /** Fetch every memory (valid only) as the backup bundle text; empty string when there's nothing. */
   const collectBundle = async (): Promise<string> => {
     const cn = conn()
-    if (!cn) return ""
-    const rows = await memoryList(cn.http, { directory: directory(), limit: 100000 }).catch(() => [] as MemoryRow[])
+    if (!cn) throw new Error("The instance is unavailable")
+    const rows = await memoryExport(cn.http, { directory: directory() })
     if (!rows.length) return ""
     return buildMemoryBundle(rows, new Date().toISOString())
   }
 
   const exportMemory = async () => {
-    const bundle = await collectBundle()
-    if (!bundle) {
-      showToast({ variant: "default", title: language.t("settings.memory.export.empty") })
-      return
+    setBusy(true)
+    try {
+      const bundle = await collectBundle()
+      if (!bundle) {
+        showToast({ variant: "default", title: language.t("settings.memory.export.empty") })
+        return
+      }
+      downloadText(BACKUP_FILENAME, bundle)
+      showToast({ variant: "success", icon: "circle-check", title: language.t("settings.memory.export.toast") })
+    } catch (error) {
+      failed(error)
+    } finally {
+      setBusy(false)
     }
-    downloadText(BACKUP_FILENAME, bundle)
-    showToast({ variant: "success", icon: "circle-check", title: language.t("settings.memory.export.toast") })
   }
 
   let fileInput: HTMLInputElement | undefined
@@ -270,17 +277,6 @@ export const SettingsMemoryV2: Component<{ sessionID?: string; embedded?: boolea
     })
   }
 
-  const clearScopes = async (scopes: readonly string[]) => {
-    const cn = conn()
-    if (!cn) return
-    setBusy(true)
-    for (const scope of scopes) {
-      await memoryClearScope(cn.http, { directory: directory(), scope }).catch(() => {})
-    }
-    setBusy(false)
-    refresh()
-  }
-
   const clearAll = async () => {
     const cn = conn()
     if (!cn) return
@@ -291,16 +287,29 @@ export const SettingsMemoryV2: Component<{ sessionID?: string; embedded?: boolea
       destructive: true,
     })
     if (!proceed) return
-    // Auto-export-first safety net (§5): the just-confirmed wipe always leaves the user a backup.
-    const bundle = await collectBundle()
-    if (bundle) downloadText(BACKUP_FILENAME, bundle)
-    // Enumerate EVERY scope (include invalidated rows) so "clear all" truly empties the graph.
-    const all = await memoryList(cn.http, { directory: directory(), includeInvalid: true, limit: 100000 }).catch(
-      () => [] as MemoryRow[],
-    )
-    const scopes = [...new Set(all.map((row) => row.scope))]
-    await clearScopes(scopes)
-    showToast({ variant: "success", icon: "circle-check", title: language.t("settings.memory.clearAll.toast") })
+    setBusy(true)
+    try {
+      const result = await runBackedUpMemoryErase({
+        collect: collectBundle,
+        beginBackup: (bundle) => downloadText(BACKUP_FILENAME, bundle),
+        erase: () => memoryEraseVerified(cn.http, { directory: directory() }),
+      })
+      refresh()
+      showToast({
+        variant: "success",
+        icon: "circle-check",
+        title:
+          result.erased === 0
+            ? language.t("settings.memory.clearAll.empty")
+            : result.backupStarted
+              ? language.t("settings.memory.clearAll.toastBackup", { count: result.erased })
+              : language.t("settings.memory.clearAll.toast", { count: result.erased }),
+      })
+    } catch (error) {
+      failed(error)
+    } finally {
+      setBusy(false)
+    }
   }
 
   const clearThisChat = async () => {
@@ -313,8 +322,18 @@ export const SettingsMemoryV2: Component<{ sessionID?: string; embedded?: boolea
       destructive: true,
     })
     if (!proceed) return
-    await clearScopes([scope])
-    showToast({ variant: "success", icon: "circle-check", title: language.t("settings.memory.clearChat.toast") })
+    const cn = conn()
+    if (!cn) return
+    setBusy(true)
+    try {
+      await memoryClearScopeVerified(cn.http, { directory: directory(), scope })
+      refresh()
+      showToast({ variant: "success", icon: "circle-check", title: language.t("settings.memory.clearChat.toast") })
+    } catch (error) {
+      failed(error)
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -501,11 +520,11 @@ export const SettingsMemoryV2: Component<{ sessionID?: string; embedded?: boolea
             (drop the expertise gate, confirm before deleting) landed on the shared component and
             this copy kept the gate AND kept deleting on a single click with no confirmation. Two
             surfaces disagreeing about who may erase a memory is worse than either answer. */}
-        <MemoryRemembered
-          class="settings-v2-section"
-          {...(props.sessionID === undefined ? {} : { sessionID: props.sessionID })}
-          revision={tick()}
-        />
+          <MemoryRemembered
+            class="settings-v2-section"
+            {...(props.sessionID === undefined ? {} : { sessionID: props.sessionID })}
+            revision={tick()}
+          />
         </div>
       </div>
     </>

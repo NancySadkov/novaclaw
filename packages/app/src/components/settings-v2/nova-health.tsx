@@ -2,7 +2,7 @@ import { For, Show, createMemo, createResource, createSignal, type Component } f
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
 import { useConfirm } from "@/components/dialog-confirm"
-import { memoryErase } from "@/utils/memory-api"
+import { memoryEraseVerified } from "@/utils/memory-api"
 import { showToast } from "@/utils/toast"
 import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
@@ -109,7 +109,7 @@ export const NovaHealthBoard: Component = () => {
       return
     setErasing(true)
     try {
-      const erased = await memoryErase(conn.http, { directory: confinementDir() })
+      const erased = await memoryEraseVerified(conn.http, { directory: confinementDir() })
       showToast({
         variant: "success",
         title:
@@ -196,11 +196,7 @@ export const NovaHealthBoard: Component = () => {
       </SettingsListV2>
 
       <div class="flex gap-3">
-        <button
-          type="button"
-          class="settings-v2-tab-description underline"
-          onClick={() => void actions.refetch()}
-        >
+        <button type="button" class="settings-v2-tab-description underline" onClick={() => void actions.refetch()}>
           {language.t("settings.health.recheck")}
         </button>
         {/* Separate from "Check again" ON PURPOSE, and worded so the cost is visible before the

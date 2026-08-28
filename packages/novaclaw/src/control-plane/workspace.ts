@@ -21,6 +21,7 @@ import { getAdapter, registeredAdapters } from "./adapters"
 import { type Target, type WorkspaceInfo, WorkspaceInfo as WorkspaceInfoSchema } from "./types"
 import { WorkspaceV2 } from "@novaclaw/core/workspace"
 import { SessionV2 } from "@novaclaw/core/session"
+import { SessionExecution } from "@novaclaw/core/session/execution"
 import { SessionPatch } from "@novaclaw/core/session/patch"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
@@ -166,6 +167,7 @@ export const layer = Layer.effect(
     const vcs = yield* Vcs.Service
     const flags = yield* RuntimeFlags.Service
     const fs = yield* FSUtil.Service
+    const execution = yield* SessionExecution.Service
     const scheduler = yield* SessionScheduler.Service
     const { db } = yield* Database.Service
     // F1c: session-warp writes the workspace pointer through the core patch seam (full-info
@@ -802,17 +804,21 @@ export const layer = Layer.effect(
         .all()
         .pipe(Effect.orDie)
       const sessionIDs = new Set(sessions.map((sessionInfo) => sessionInfo.id))
-      // F1c: the session sweep runs on the core engine's record removal (same Deleted event +
-      // log purge; no interrupt hook here, matching the V1 remove this replaces — the dying
-      // workspace's instance is being torn down with it). `evict` IS injected: the EEVDF ledger
-      // is a per-INSTANCE singleton that outlives the workspace, so a swept session that never
-      // leaves it stays there for the life of the server process.
+      // Stop every affected turn before revoking admission or deleting its durable record. The
+      // worker interruption also aborts host-side RPC Effects, so a publication or provider
+      // dispatch cannot finish later against a workspace that has already disappeared.
       yield* Effect.forEach(
         sessions.filter((sessionInfo) => !sessionInfo.parentID || !sessionIDs.has(sessionInfo.parentID)),
         (sessionInfo) =>
-          SessionV2.removeSessionRecord({ db, events, evict: (id) => scheduler.evict(id) }, sessionInfo.id).pipe(
-            Effect.catchTag("Session.NotFoundError", () => Effect.void),
-          ),
+          SessionV2.removeSessionRecord(
+            {
+              db,
+              events,
+              interrupt: (id) => Effect.uninterruptible(execution.interrupt(id)),
+              evict: (id) => scheduler.evict(id),
+            },
+            sessionInfo.id,
+          ).pipe(Effect.catchTag("Session.NotFoundError", () => Effect.void)),
         { discard: true },
       )
 
@@ -919,6 +925,9 @@ export const defaultLayer = layer.pipe(
   Layer.provide(EventV2Bridge.defaultLayer),
   Layer.provide(FetchHttpClient.layer),
   Layer.provide(RuntimeFlags.defaultLayer),
+  // The CLI does not own a runner, so its standalone assembly supplies the no-op. `Workspace.node`
+  // leaves this requirement open for server composition to supply the worker executor instead.
+  Layer.provide(SessionExecution.noopLayer),
   // This assembly is the CLI's (app-runtime.ts), which holds no runner and therefore no shared
   // ledger — a private scheduler here is inert. The SERVER reaches this service through the node
   // below, which resolves the instance-global singleton the runner admits against.
@@ -995,8 +1004,13 @@ export const node = LayerNode.make({
     Vcs.node,
     RuntimeFlags.node,
     FSUtil.node,
-    Database.node,
+    // The server composition provides the worker executor around the compiled graph. This must be
+    // an EXTERNAL requirement rather than SessionExecution.node: that node is deliberately unbound,
+    // so pulling it into this independently compiled graph makes generation and every other direct
+    // Workspace.node consumer fail before the outer worker layer can satisfy it.
+    LayerNode.external(SessionExecution.Service),
     SessionScheduler.node,
+    Database.node,
   ],
 })
 

@@ -2,6 +2,7 @@ import { FetchHttpClient } from "effect/unstable/http"
 import { Layer } from "effect"
 import { Database } from "@novaclaw/core/database/database"
 import { FSUtil } from "@novaclaw/core/fs-util"
+import { SessionExecution } from "@novaclaw/core/session/execution"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { Auth } from "../../src/auth"
 import { Workspace } from "../../src/control-plane/workspace"
@@ -43,6 +44,7 @@ export const workspaceLayerWithRuntimeFlags = (overrides: Partial<RuntimeFlags.I
     Layer.provide(Vcs.defaultLayer),
     Layer.provide(RuntimeFlags.layer(overrides)),
     Layer.provide(FSUtil.defaultLayer),
+    Layer.provide(SessionExecution.noopLayer),
     // A private ledger: these suites exercise HTTP middleware and plugin adapter installation, not
     // session eviction. The shared per-instance scheduler is wired through `Workspace.node`'s deps in
     // the real composition root.
