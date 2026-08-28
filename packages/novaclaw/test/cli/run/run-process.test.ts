@@ -400,17 +400,15 @@ describe("novaclaw run (non-interactive subprocess)", () => {
    * default directory precisely so that "the caller's cwd" and "the session's directory" are
    * different answers, and the test can tell which one was used.
    *
-   * ⚠️ **The second process passes `--dir` too, and that is a FINDING rather than a convenience.**
-   * The item asked for "resume by ID from the default directory". Written that way this HANGS: the
-   * turn is admitted, goes busy, and never settles — 90 s, then a kill. Traced, the resolution NC-CS-001
-   * is about is perfectly correct (`session:got` returns the stored directory and `execute` uses it);
-   * what fails is everything after, when the process's cwd and the session's directory differ.
-   * Bisected both ways — same directory passes, different directory hangs, with `--dir` on the resume
-   * being the only variable. Filed as NC-CS-004; this guards the part that works rather than
-   * asserting a behaviour the product does not have.
+   * ⚠️ **The second process passes NO `--dir`, and that is the whole point.** Writing it this way is
+   * what found NC-CS-004: the run hung, 90 s and a kill, because the client stayed bound to the
+   * PROCESS's directory while the turn ran in the session's. The CLI saw exactly one event —
+   * `server.connected` — and waited. The resolution was never the problem; the client not following
+   * it was.
    *
-   * A/B: make `session()` return the caller's directory for a `--session` resume and this fails,
-   * while everything else in this file stays green.
+   * A/B: bind the client to the process directory instead of the session's (`const cwd = directory ??
+   * root`) and this hangs while everything else in this file stays green — which is precisely how the
+   * gap survived, since attach mode already rebound and was the path anybody exercised.
    */
   cliIt.concurrent(
     "🔴 a session created elsewhere is resumed by ID across processes, in its own directory",
@@ -445,7 +443,7 @@ describe("novaclaw run (non-interactive subprocess)", () => {
           format: "json",
           env,
           timeoutMs: 90_000,
-          extraArgs: ["--dir", elsewhere, "--session", String(sessionID)],
+          extraArgs: ["--session", String(sessionID)],
         })
         novaclaw.expectExit(second, 0)
 

@@ -692,7 +692,20 @@ export const RunCommand = effectCmd({
       let agentChoice: Promise<string | undefined> | undefined
       const chosenAgent = (sdk: NovaclawClient) => (agentChoice ??= pickAgent(sdk))
 
-      async function execute(sdk: NovaclawClient) {
+      /**
+       * 🔴 **NC-CS-004 — the client must follow the SESSION, not the process.**
+       *
+       * A resumed run works in the session's stored directory, and `session()` has resolved that
+       * correctly since `2da95a1df`. What did not follow it was the CLIENT: the local path used the
+       * sdk bound to the process's own directory, so its subscription was scoped there while the
+       * turn ran in the session's location. The turn executed perfectly and the CLI saw exactly one
+       * event — `server.connected` — then waited to be killed. Measured 2026-08-28.
+       *
+       * ⚠️ ATTACH mode already did this (`directory ?? sess.directory ?? current(sdk)`), which is why
+       * the asymmetry survived: the case that was exercised was the one that worked. Both paths take
+       * the same rebind now, so a future reader cannot fix one and leave the other.
+       */
+      async function execute(sdk: NovaclawClient, rebind: (dir: string) => NovaclawClient) {
         const sess = await session(sdk)
         if (!sess?.id) {
           UI.error("Session not found")
@@ -938,8 +951,19 @@ export const RunCommand = effectCmd({
           }
           return error
         }
-        const cwd = args.attach ? (directory ?? sess.directory ?? (await current(sdk))) : (directory ?? root)
-        const client = args.attach ? attachSDK(cwd) : sdk
+        // ⚠️ `sess.directory` BEFORE the fallback in both modes. `directory` is set only when the
+        // caller passed `--dir`; when they resumed by id instead, the session's own location is the
+        // answer, and preferring the process's root is what put the subscription in the wrong scope.
+        // ⚠️ `args.dir`, not `directory`. On the local path `directory` FALLS BACK to the run root
+        // when no `--dir` was given, so a `directory ?? sess.directory` chain never reaches the
+        // session — it is never undefined. The question is whether the caller NAMED a directory, and
+        // only `args.dir` answers that. An explicit `--dir` still wins: the user said where.
+        const cwd = args.dir
+          ? (directory ?? root)
+          : args.attach
+            ? (sess.directory ?? (await current(sdk)))
+            : (sess.directory ?? directory ?? root)
+        const client = rebind(cwd)
 
         // Validate agent if specified
         const agent = await chosenAgent(client)
@@ -1053,7 +1077,7 @@ export const RunCommand = effectCmd({
 
       if (args.attach) {
         const sdk = attachSDK(directory)
-        await execute(sdk)
+        await execute(sdk, attachSDK)
       } else {
         if (!local) throw new Error("Local run started without its in-process HTTP handler")
         const fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -1063,12 +1087,13 @@ export const RunCommand = effectCmd({
           if (auth) headers.set("Authorization", auth)
           return local.handler(new Request(request, { headers }))
         }) as typeof globalThis.fetch
-        const sdk = createNovaclawClient({
-          baseUrl: "http://novaclaw.internal",
-          fetch: fetchFn,
-          directory,
-        })
-        await execute(sdk)
+        // One builder, two uses: the client the run starts with, and the one it rebinds to once the
+        // session's own directory is known. Sharing `fetchFn` keeps both on the SAME in-process
+        // instance — the rebind changes which LOCATION the requests declare, not which server
+        // answers them.
+        const localClient = (dir?: string) =>
+          createNovaclawClient({ baseUrl: "http://novaclaw.internal", fetch: fetchFn, directory: dir })
+        await execute(localClient(directory), localClient)
       }
 
       // One-shot headless command (the header's contract: "…and exits"). The in-process
