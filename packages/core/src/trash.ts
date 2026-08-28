@@ -50,6 +50,13 @@ export interface Options {
   /** Only the retention sweep's date-dir removal. Lets a test prove the sweep is best-effort on
    *  the write paths without depending on an un-removable directory, which no OS gives portably. */
   readonly purgeRmFn?: (target: string) => Promise<void>
+  /**
+   * Only `entry.json`. Same reason as `purgeRmFn`: the failure that MATTERS for NC-REL-039 is a
+   * metadata write that fails while the move SUCCEEDS — a full disk, an antivirus lock — and no OS
+   * offers that portably. Without this seam the obvious test (make the move fail) passes under both
+   * orderings and proves nothing, which is exactly what the first draft did.
+   */
+  readonly writeEntryFn?: (target: string, contents: string) => Promise<void>
 }
 
 const trashRoot = (options?: Options) => options?.root ?? path.join(Global.Path.data, "trash")
@@ -112,8 +119,30 @@ export async function trashPath(originalAbs: string, options?: Options): Promise
   }
 
   await fs.mkdir(dir, { recursive: true })
-  await move(originalAbs, path.join(dir, "payload"), options)
-  await fs.writeFile(path.join(dir, "entry.json"), JSON.stringify(entry, null, 2), "utf8")
+  /**
+   * 🔴 **NC-REL-039 — the metadata is written BEFORE the only copy moves.** This ran
+   * `move()` first and `entry.json` second, so any failure of the metadata write — a full disk, a
+   * permission change, an antivirus lock — left the payload already moved out of the user's folder
+   * with nothing recording where it came from. The file was not deleted; it was HIDDEN, in a
+   * directory the trash cannot list and `restore` cannot name. On `EXDEV` the move is a copy followed
+   * by a recursive remove of the source, so the original is genuinely gone by then.
+   *
+   * Writing the record first inverts which failure is survivable: if this write fails, nothing has
+   * moved and the user still has their file.
+   *
+   * ⚠️ And if the MOVE then fails, the entry directory is removed rather than left behind. A record
+   * pointing at a payload that never arrived is a phantom in the trash list and a `restore` that
+   * cannot work — trading a hidden file for a lying one.
+   */
+  const writeEntry =
+    options?.writeEntryFn ?? ((target: string, contents: string) => fs.writeFile(target, contents, "utf8"))
+  await writeEntry(path.join(dir, "entry.json"), JSON.stringify(entry, null, 2))
+  try {
+    await move(originalAbs, path.join(dir, "payload"), options)
+  } catch (error) {
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined)
+    throw error
+  }
   return entry
 }
 

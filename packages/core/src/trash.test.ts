@@ -75,6 +75,53 @@ describe("trash store", () => {
     expect(await fs.readFile(payload, "utf8")).toBe("moved across devices")
   })
 
+  /**
+   * 🔴 NC-REL-039 — the trash moved the only copy BEFORE writing the record that says where it came
+   * from. `move()` ran first and `entry.json` second, so any failure of the metadata write — a full
+   * disk, a permission change, an antivirus lock — left the payload already out of the user's folder
+   * with nothing naming it. The file was not deleted, it was HIDDEN: `listTrash` cannot see it and
+   * `restore` cannot name it. On EXDEV the move is a copy plus a recursive remove, so the original is
+   * genuinely gone by then.
+   *
+   * A/B: swap the two writes back and "the original survives" fails — the file is gone and unlisted.
+   */
+  test("🔴 a failed METADATA write leaves the user's file where it was", async () => {
+    const root = await tmpdir("trash-root-")
+    const work = await tmpdir("trash-work-")
+    const file = path.join(work, "only-copy.txt")
+    await fs.writeFile(file, "the only copy", "utf8")
+
+    // The failure that matters: the move would have SUCCEEDED, and the record fails. Under the old
+    // ordering the payload is already out of the user's folder when this throws, with nothing naming
+    // where it came from — the file is not deleted, it is hidden.
+    const writeEntryFn = async () => {
+      throw Object.assign(new Error("no space left on device"), { code: "ENOSPC" })
+    }
+    await expect(trashPath(file, { root, writeEntryFn })).rejects.toThrow()
+
+    expect(await fs.readFile(file, "utf8")).toBe("the only copy")
+    expect(await listTrash({ root })).toEqual([])
+  })
+
+  test("a failed move leaves no phantom entry behind", async () => {
+    const root = await tmpdir("trash-root-")
+    const work = await tmpdir("trash-work-")
+    const file = path.join(work, "precious.txt")
+    await fs.writeFile(file, "the only copy", "utf8")
+
+    // A non-EXDEV failure: `move` rethrows rather than falling back to copy+delete.
+    const renameFn = async () => {
+      throw Object.assign(new Error("permission denied"), { code: "EACCES" })
+    }
+    await expect(trashPath(file, { root, renameFn })).rejects.toThrow()
+
+    // The file the user asked to trash is still theirs.
+    expect(await fs.readFile(file, "utf8")).toBe("the only copy")
+    // ...and the trash does not list an entry whose payload never arrived: a record pointing at
+    // nothing is a `restore` that cannot work, which trades a hidden file for a lying one.
+    expect(await listTrash({ root })).toEqual([])
+  })
+
   test("restore collision lands beside the original, not over it", async () => {
     const root = await tmpdir("trash-root-")
     const work = await tmpdir("trash-work-")
