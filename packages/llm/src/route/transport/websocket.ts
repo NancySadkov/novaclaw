@@ -143,10 +143,36 @@ export const fromWebSocket = (
     yield* waitOpen(ws, input)
     const messages = yield* Queue.bounded<string | Uint8Array, LLMError | Cause.Done<void>>(128)
 
+    /**
+     * 🔴 **NC-REL-004 — a dropped frame must not read as a complete answer.** `Queue.offerUnsafe`
+     * returns `false` when the bounded queue is full and DISCARDS the item; both call sites ignored
+     * that. Probed against the installed Effect on 2026-08-28: a queue of 2 answers
+     * `[true, true, false]`. So a reader that fell 128 frames behind lost model deltas silently, and
+     * the stream it produced — missing text, missing tool-call fragments — was handed on as a
+     * finished response. Silent corruption of an answer is the worst outcome this codebase has a name
+     * for; a loud, retryable transport failure is strictly better than a plausible wrong reply.
+     *
+     * ⚠️ Backpressure is not available here. This is a browser `message` listener: it is synchronous
+     * and cannot await a slot. Failing the queue is the only honest option at this seam — the fix for
+     * the underlying slowness belongs to whoever is draining it.
+     */
+    const offer = (payload: string | Uint8Array) => {
+      if (Queue.offerUnsafe(messages, payload)) return
+      Queue.failCauseUnsafe(
+        messages,
+        Cause.fail(
+          transportError("message", "WebSocket receive queue overflowed — a model frame would have been dropped", {
+            url: input.url,
+            kind: "message",
+          }),
+        ),
+      )
+    }
+
     const onMessage = (event: MessageEvent) => {
-      if (typeof event.data === "string") return Queue.offerUnsafe(messages, event.data)
+      if (typeof event.data === "string") return offer(event.data)
       const binary = binaryMessage(event.data)
-      if (binary) return Queue.offerUnsafe(messages, binary)
+      if (binary) return offer(binary)
       Queue.failCauseUnsafe(
         messages,
         Cause.fail(
