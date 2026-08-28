@@ -1,4 +1,5 @@
 import { createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js"
+import { fireStatusLabel } from "./calendar-status"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { GoldGlyph } from "@/components/gold-glyph"
@@ -473,7 +474,7 @@ export function CalendarPage() {
                     <span
                       class={`text-xs ${f.status === "error" ? "text-v2-state-fg-danger" : "text-v2-text-text-muted"}`}
                     >
-                      {f.status === "spawned" ? "ran" : f.status}
+                      {fireStatusLabel(f.status)}
                     </span>
                   </div>
                 )}
