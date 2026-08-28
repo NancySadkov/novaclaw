@@ -6,8 +6,21 @@ import { checkHealth } from "../server"
 import { type WslCommandLine, resolveWslNovaclaw, shellEscape, wslArgs } from "./runtime"
 import { pollWslHealth } from "./startup"
 
+/** How long a distro's server gets to exit on its own before the harder signal. */
+const STOP_GRACE_MS = 3_000
+
 export type WslSidecar = {
-  listener: { stop: () => void; onExit: (cb: (code: number | null, signal: NodeJS.Signals | null) => void) => void }
+  listener: {
+    /**
+     * 🔴 **NC-REL-001 — `stop` used to return before the child had gone.** It was
+     * `() => child.kill()`: a signal, then immediate return. Quit is advertised and implemented as a
+     * bounded wait over `stopSidecars()`, but there was nothing to wait ON for a WSL instance, so the
+     * app could exit while a distro's server was still mid-write. Returning a promise is what lets the
+     * quit chain mean what it says.
+     */
+    stop: () => void | Promise<void>
+    onExit: (cb: (code: number | null, signal: NodeJS.Signals | null) => void) => void
+  }
   url: string
   username: string | null
   password: string
@@ -80,7 +93,23 @@ export async function spawnWslSidecar(
     })
   return {
     listener: {
-      stop: () => child.kill(),
+      stop: async () => {
+        if (child.exitCode !== null || child.signalCode !== null) return
+        const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()))
+        child.kill()
+        /**
+         * ⚠️ Bounded, and then FORCED. An unbounded await here would spend the whole quit budget on
+         * one wedged distro — the outer wait would expire and the app would exit anyway, with the
+         * child in exactly the state this was meant to avoid. A second, harder signal is the only
+         * thing left to try, and it is still better than walking away silently.
+         */
+        const forced = setTimeout(() => child.kill("SIGKILL"), STOP_GRACE_MS)
+        try {
+          await exited
+        } finally {
+          clearTimeout(forced)
+        }
+      },
       onExit: (cb) => child.once("exit", cb),
     },
     url,

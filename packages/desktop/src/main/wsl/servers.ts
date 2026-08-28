@@ -30,7 +30,11 @@ import {
 } from "./runtime"
 
 type RunningSidecar = {
-  listener: { stop: () => void; onExit: (cb: (code: number | null, signal: NodeJS.Signals | null) => void) => void }
+  listener: {
+    /** May return a promise — see `wsl/sidecar.ts` (NC-REL-001). `stopAll` awaits it. */
+    stop: () => void | Promise<void>
+    onExit: (cb: (code: number | null, signal: NodeJS.Signals | null) => void) => void
+  }
   url: string
   username: string | null
   password: string
@@ -388,16 +392,25 @@ export function createWslServersController(
 
     startServer,
 
-    stopAll() {
+    /**
+     * 🔴 NC-REL-001: this was synchronous, so quit never waited for a configured WSL instance. The
+     * app could exit while a distro's server was mid-write.
+     *
+     * ⚠️ All of them CONCURRENTLY, not one after another: three distros stopping in series would
+     * spend three grace periods against a quit budget sized for one. `allSettled` because a stop that
+     * throws must not stop its siblings from being asked — losing one is not a reason to leak two.
+     */
+    async stopAll() {
       for (const item of state.servers) invalidateStartAttempt(item.config.id)
-      for (const existing of sidecars.values()) {
+      const stopping = [...sidecars.values()].map(async (existing) => {
         try {
-          existing.listener.stop()
+          await existing.listener.stop()
         } catch {
-          // ignore
+          // ignore — a distro that refuses to stop must not block the others or the quit
         }
-      }
+      })
       sidecars.clear()
+      await Promise.allSettled(stopping)
     },
   }
 }

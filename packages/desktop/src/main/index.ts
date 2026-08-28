@@ -280,8 +280,10 @@ const main = Effect.gen(function* () {
     },
   )
   const stopSidecars = async () => {
+    // NC-REL-001: `stopAll` is awaited now. It used to be fire-and-forget, so the "bounded wait over
+    // stopSidecars()" that quit advertises covered the local sidecar and nothing else.
     await killSidecar()
-    wslServers.stopAll()
+    await wslServers.stopAll()
   }
   const relaunch = () => {
     void stopSidecars().finally(() => {

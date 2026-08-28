@@ -111,6 +111,56 @@ test("derives a required Windows restart from the post-install runtime probe", (
   expect(pendingRestartAfterWslInstall({ available: true, version: "WSL version: 2.6.1", error: null })).toBe(false)
 })
 
+/**
+ * 🔴 NC-REL-001 — quit is advertised and implemented as a bounded wait over `stopSidecars()`, but
+ * `stopAll` was synchronous and its listener contract was `stop: () => void`. So the wait covered the
+ * local sidecar and nothing else: the app could exit while a configured distro's server was still
+ * mid-write.
+ *
+ * A/B: drop the `await Promise.allSettled(stopping)` and this resolves with `stopped` still false.
+ */
+test("🔴 stopAll AWAITS every distro's stop, so quit can actually wait for them", async () => {
+  persistedServers = []
+  releaseNovaclawResolve = undefined
+  let stopped = false
+  let release: () => void = () => {}
+  const controller = createWslServersController(
+    "1.16.2",
+    async () => ({
+      listener: {
+        stop: () =>
+          new Promise<void>((resolve) => {
+            release = () => {
+              stopped = true
+              resolve()
+            }
+          }),
+        onExit: () => undefined,
+      },
+      url: "http://127.0.0.1:4096",
+      username: "novaclaw",
+      password: "secret",
+    }),
+    testControllerOptions(),
+  )
+
+  await controller.addServer("Debian")
+  await waitFor(() => !!releaseNovaclawResolve)
+  releaseNovaclawResolve?.()
+  await waitFor(() => controller.list().some((item) => item.status === "running"), 4000).catch(() => undefined)
+
+  let settled = false
+  const stopping = controller.stopAll().then(() => (settled = true))
+  // The stop has been asked for and has NOT finished: `stopAll` must still be pending.
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(settled).toBe(false)
+
+  release()
+  await stopping
+  expect(settled).toBe(true)
+  expect(stopped).toBe(true)
+})
+
 test("ignores stale background NovaClaw checks after removing a WSL server", async () => {
   persistedServers = []
   releaseNovaclawResolve = undefined
