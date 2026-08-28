@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import { PermissionMode } from "@novaclaw/schema/session-message"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
 import { InvalidRequestError } from "../errors"
 
@@ -51,7 +52,16 @@ const CreateInput = Schema.Struct({
   agent: Schema.optional(Schema.String),
   model: Schema.optional(Schema.String),
   location: Schema.optional(Schema.String),
-  permissionMode: Schema.optional(Schema.String),
+  /**
+   * 🔴 **NC-REL-027 — the closed vocabulary, not free text.** This was `Schema.String`, so a schedule
+   * could be created with `permissionMode: "banana"`: it persisted, and the runner then fell back to
+   * its default. The user's stated RESTRICTION silently did not apply — a failed restriction
+   * reporting success, which is the one thing the permission surface may never do.
+   *
+   * `PermissionMode` is the kernel's own literal set (`schema/session-message.ts`), so this cannot
+   * drift from what the runner accepts the way a hand-copied union would.
+   */
+  permissionMode: Schema.optional(PermissionMode),
   enabled: Schema.optional(Schema.Boolean),
 }).annotate({ identifier: "Calendar.CreateInput" })
 
@@ -65,7 +75,8 @@ const UpdateInput = Schema.Struct({
   agent: Schema.optional(Schema.NullOr(Schema.String)),
   model: Schema.optional(Schema.NullOr(Schema.String)),
   location: Schema.optional(Schema.NullOr(Schema.String)),
-  permissionMode: Schema.optional(Schema.NullOr(Schema.String)),
+  // Same closed vocabulary as create; `null` clears the override.
+  permissionMode: Schema.optional(Schema.NullOr(PermissionMode)),
   enabled: Schema.optional(Schema.Boolean),
 }).annotate({ identifier: "Calendar.UpdateInput" })
 
