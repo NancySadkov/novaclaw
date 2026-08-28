@@ -20,7 +20,11 @@ export interface SessionLike {
   readonly tokens?:
     | { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
     | undefined
-  readonly time: { readonly created: number; readonly updated?: number | undefined; readonly archived?: number | undefined }
+  readonly time: {
+    readonly created: number
+    readonly updated?: number | undefined
+    readonly archived?: number | undefined
+  }
 }
 
 /** What one colleague's row knows about its work. */
@@ -150,22 +154,36 @@ export const formatRate = (perMinute: number): string => {
   return "<1"
 }
 
-
 /**
  * The colleague's CURRENT TASK, or nothing.
  *
- * 🔴 **A chat titled after the colleague is not a task** (owner, 2026-08-27: *"Nova has its name
+ * 🔴 **Read from the colleague's STATUS component, not from a chat title** (owner, 2026-08-28:
+ * *"we no longer have 1st class sessions and have no session titles. Instead each agent has a single
+ * session as its component, and every few hours if agent did some work we update the current task
+ * name + status"*). The instance derives that line from the colleague's newest work and rewrites it
+ * as the work moves on; a title was written once, from the first thing said, and never revisited.
+ *
+ * ⚠️ The title fallback is KEPT, deliberately and temporarily. A status line appears only after the
+ * first sweep, so an instance that has been running for five minutes has none — and a roster that
+ * showed nothing until then would look broken on exactly the day this shipped. The fallback carries
+ * its own guard below.
+ *
+ * ⚠️ **A chat titled after the colleague is not a task** (owner, 2026-08-27: *"Nova has its name
  * duplicated as current task name"*). `startChat` seeds a new chat's title with the colleague's own
  * name, so until the first reply renames it the row printed the name twice — once as the name and
- * once as what it was supposedly working on. That is not a task, it is an echo.
- *
- * ⚠️ Compared case-insensitively and trimmed, because the echo comes from a display name that may be
- * capitalised differently from the row's own rendering of it.
+ * once as what it was supposedly working on. That is not a task, it is an echo. Compared
+ * case-insensitively and trimmed, because the display name may be capitalised differently from the
+ * row's own rendering of it.
  */
 export const rosterTask = (input: {
+  readonly status: { readonly task: string } | undefined
   readonly title: string | undefined
   readonly colleagueName: string
 }): string | undefined => {
+  // The component wins whenever it has anything to say. It is never an echo of the name — it is
+  // derived from what the colleague DID, not from what the chat was called.
+  const task = input.status?.task?.trim()
+  if (task) return task
   const title = input.title?.trim()
   if (!title) return undefined
   return title.toLowerCase() === input.colleagueName.trim().toLowerCase() ? undefined : title

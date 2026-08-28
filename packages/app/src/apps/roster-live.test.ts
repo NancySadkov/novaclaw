@@ -1,5 +1,15 @@
 import { describe, expect, test } from "bun:test"
-import { chatFor, formatRate, formatTokensPerSecond, liveFor, ratePerMinute, rosterState, rosterTask, threadOf, type SessionLike } from "./roster-live"
+import {
+  chatFor,
+  formatRate,
+  formatTokensPerSecond,
+  liveFor,
+  ratePerMinute,
+  rosterState,
+  rosterTask,
+  threadOf,
+  type SessionLike,
+} from "./roster-live"
 
 const session = (over: Partial<SessionLike> & { id: string }): SessionLike => ({
   time: { created: 1 },
@@ -140,18 +150,51 @@ describe("printing the rate", () => {
 })
 
 describe("rosterTask", () => {
+  test("🔴 the colleague's STATUS component is what the row shows", () => {
+    /**
+     * Owner, 2026-08-28: sessions are components and there are no session titles; the instance
+     * derives a task line from the colleague's newest work every few hours. That line is what a
+     * contacts row is for — a title was written once, from the first thing said, and never revisited.
+     *
+     * A/B: read `title` first and this returns the stale chat name instead.
+     */
+    expect(
+      rosterTask({
+        status: { task: "reviewing the P2P handshake" },
+        title: "an old chat name",
+        colleagueName: "Umbris",
+      }),
+    ).toBe("reviewing the P2P handshake")
+  })
+
+  test("🔴 the component wins even when it looks like the colleague's name", () => {
+    // The echo guard applies to TITLES, which are seeded with the colleague's own name by
+    // `startChat`. A status line is derived from what the colleague DID, so if it happens to read
+    // like a name that is what the work is called — suppressing it would hide a real answer.
+    expect(rosterTask({ status: { task: "Umbris" }, title: undefined, colleagueName: "Umbris" })).toBe("Umbris")
+  })
+
+  test("an empty or blank status falls through to the title", () => {
+    // A status line appears only after the first sweep, so an instance running five minutes has
+    // none — a roster that showed nothing until then would look broken on the day this shipped.
+    expect(rosterTask({ status: { task: "   " }, title: "Port the DHT", colleagueName: "Umbris" })).toBe("Port the DHT")
+    expect(rosterTask({ status: undefined, title: "Port the DHT", colleagueName: "Umbris" })).toBe("Port the DHT")
+  })
+
   test("a chat titled after the colleague is NOT a task", () => {
-    expect(rosterTask({ title: "Nova", colleagueName: "Nova" })).toBeUndefined()
-    expect(rosterTask({ title: "  umbris ", colleagueName: "Umbris" })).toBeUndefined()
+    expect(rosterTask({ status: undefined, title: "Nova", colleagueName: "Nova" })).toBeUndefined()
+    expect(rosterTask({ status: undefined, title: "  umbris ", colleagueName: "Umbris" })).toBeUndefined()
   })
 
   test("a real task survives", () => {
-    expect(rosterTask({ title: "Port the DHT to TCP", colleagueName: "Umbris" })).toBe("Port the DHT to TCP")
+    expect(rosterTask({ status: undefined, title: "Port the DHT to TCP", colleagueName: "Umbris" })).toBe(
+      "Port the DHT to TCP",
+    )
   })
 
   test("no title and an empty title both mean no task", () => {
-    expect(rosterTask({ title: undefined, colleagueName: "Nova" })).toBeUndefined()
-    expect(rosterTask({ title: "   ", colleagueName: "Nova" })).toBeUndefined()
+    expect(rosterTask({ status: undefined, title: undefined, colleagueName: "Nova" })).toBeUndefined()
+    expect(rosterTask({ status: undefined, title: "   ", colleagueName: "Nova" })).toBeUndefined()
   })
 })
 

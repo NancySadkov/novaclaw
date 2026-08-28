@@ -67,6 +67,13 @@ export interface ContactView {
   readonly name: string
   /** The job line under the name — the role, not a summary of its prompt. */
   readonly title: string | undefined
+  /**
+   * What this colleague is currently working on, derived by the instance every few hours.
+   *
+   * ⚠️ Distinct from `title` above, which is the ROLE ("Writer") and does not change. This is the
+   * TASK, and changing is the whole point of it.
+   */
+  readonly status: { readonly task: string; readonly observed: number } | undefined
   readonly avatar: string | undefined
   readonly color: string | undefined
   /** `governing` is Nova: shown first, and refused by every delete door. */
@@ -147,6 +154,9 @@ const view = (agent: AgentLike): ContactView => {
     id: agent.id,
     name: agent.name?.trim() || displayName(agent.id),
     title: agent.title?.trim() || undefined,
+    // Carried through verbatim: absent stays absent, so a colleague with no line yet renders without
+    // one rather than with a blank where a sentence belongs.
+    status: agent.status,
     avatar: agent.avatar?.trim() || undefined,
     color: agent.color,
     kind: governing ? "governing" : "officer",

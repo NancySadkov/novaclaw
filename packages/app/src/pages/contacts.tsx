@@ -410,7 +410,9 @@ function ContactRow(props: {
   // so the badge froze on the ten-minute window that ended when the page painted and went on
   // presenting it as a live rate. The ticker below is the only thing that makes "per minute" true.
   const rate = createMemo(() => ratePerMinute(props.usage, { now: nowTick(), window: RATE_WINDOW_MINUTES }))
-  const task = createMemo(() => rosterTask({ title: live().title, colleagueName: props.view.name }))
+  const task = createMemo(() =>
+    rosterTask({ status: props.view.status, title: live().title, colleagueName: props.view.name }),
+  )
   /**
    * The scheduler's own answer about this colleague's chat.
    *
