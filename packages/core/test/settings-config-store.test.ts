@@ -83,6 +83,90 @@ describe("SettingsConfigStore", () => {
     }),
   )
 
+  /**
+   * 🔴 NC-REL-030 — an unreadable secret must not take the instance with it.
+   *
+   * `reveal` failed and `all()` turned that into a defect with `Effect.orDie`, while the layer
+   * graph was still being BUILT (`all()` is called eagerly at the end of the layer). So a secret
+   * encrypted under a key that is no longer there meant the HTTP server, the HTML UI, the
+   * config-removal route and the Recovery surface could not come into existence — with SQLite
+   * perfectly healthy. Losing one file bricked the instance and removed the means to repair it.
+   *
+   * The ciphertext here is well-formed but authenticates under no key this instance holds, which is
+   * exactly the state a restored `credential.key` (or a missing one, replaced by a fresh random)
+   * leaves behind.
+   *
+   * A/B: put `Effect.orDie` back on `reveal` in `all()` and this dies instead of returning.
+   */
+  it.effect("🔴 survives a secret that cannot be decrypted, and refuses it rather than dropping it", () =>
+    Effect.gen(function* () {
+      const store = yield* SettingsConfigStore.Service
+      const { db } = yield* Database.Service
+      yield* store.set("server", { port: 4096, password: "the-real-password" })
+
+      // Corrupt the ciphertext in place: same envelope shape, contents that will not authenticate.
+      const stored = yield* db.select().from(RuntimeSettingTable).where(eq(RuntimeSettingTable.key, "server")).get()
+      const envelope = (stored?.value as { password: Record<string, string> }).password
+      const field = Object.keys(envelope)[0]!
+      yield* db
+        .update(RuntimeSettingTable)
+        .set({ value: { port: 4096, password: { [field]: `${envelope[field]!.slice(0, 8)}tampered` } } })
+        .where(eq(RuntimeSettingTable.key, "server"))
+        .run()
+
+      const all = yield* store.all()
+      const server = all.server as { port: number; password: unknown }
+      // It came back at all — that is the fix. Before this, the read was a defect.
+      expect(server.port).toBe(4096)
+
+      // ⚠️ And it FAILS CLOSED. The obvious "degrade gracefully" move is to omit the value, and it
+      // is a security hole: an instance that HAD a password would boot without one. It is present,
+      // a string so every consumer keeps its type, and equal to neither the real password nor the
+      // ciphertext it replaced.
+      expect(typeof server.password).toBe("string")
+      expect(server.password).not.toBe("the-real-password")
+      expect(server.password).not.toBe("")
+      expect(server.password).not.toBe(undefined)
+      expect(String(server.password).length).toBeGreaterThanOrEqual(32)
+    }),
+  )
+
+  /**
+   * 🔴 The repair must still be POSSIBLE after booting in the damaged state.
+   *
+   * `all()` writes back when it opens a legacy plaintext value, and that same write with a damaged
+   * value would encrypt the random stand-in under the current key and store it OVER the ciphertext
+   * — destroying the only copy of the real secret, which is the thing restoring `credential.key`
+   * would otherwise recover. The destructive step must not happen before the record that makes it
+   * recoverable exists.
+   */
+  it.effect("🔴 never writes the stand-in back over the ciphertext", () =>
+    Effect.gen(function* () {
+      const store = yield* SettingsConfigStore.Service
+      const { db } = yield* Database.Service
+      yield* store.set("server", { port: 4096, password: "the-real-password" })
+      const before = yield* db.select().from(RuntimeSettingTable).where(eq(RuntimeSettingTable.key, "server")).get()
+      const envelope = (before?.value as { password: Record<string, string> }).password
+      const field = Object.keys(envelope)[0]!
+      const tampered = `${envelope[field]!.slice(0, 8)}tampered`
+      yield* db
+        .update(RuntimeSettingTable)
+        .set({ value: { port: 4096, password: { [field]: tampered } } })
+        .where(eq(RuntimeSettingTable.key, "server"))
+        .run()
+
+      yield* store.all()
+      yield* store.all()
+
+      const after = yield* db.select().from(RuntimeSettingTable).where(eq(RuntimeSettingTable.key, "server")).get()
+      const kept = (after?.value as { password: Record<string, string> }).password
+      expect(kept[field]).toBe(tampered)
+      // The stand-in is regenerated per read, so if it were ever persisted the two reads above
+      // would already disagree with what is on disk. It is not there at all.
+      expect(JSON.stringify(after?.value)).not.toContain("the-real-password")
+    }),
+  )
+
   it.effect("jsonc seed reads the CONFIG DIR only — a cwd config is ignored — and is idempotent", () =>
     Effect.gen(function* () {
       const store = yield* SettingsConfigStore.Service

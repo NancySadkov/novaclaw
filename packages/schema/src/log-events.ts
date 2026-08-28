@@ -677,6 +677,34 @@ export const EVENTS = {
     file: "packages/core/src/credential-cipher.ts",
   },
 
+  /**
+   * 🔴 NC-REL-030 — a stored secret would not decrypt, and the instance kept BOOTING anyway.
+   *
+   * `error`, not `warn`: nothing about the instance is degraded in a way the user can shrug at.
+   * Whatever that secret protected now refuses every credential, because the value was replaced
+   * with random bytes so it fails CLOSED rather than vanishing (an absent password would let
+   * everyone in). The usual cause is the separate `credential.key` going missing — a partial
+   * restore, an antivirus quarantine, a copy that skipped the state directory — and the original
+   * ciphertext is still on disk, so restoring that one file repairs it.
+   *
+   * ⚠️ It names the PATH and never the value — the whole point of the entry is a secret, and a log
+   * that quoted even its ciphertext would move it somewhere with different handling than the
+   * database it came from.
+   *
+   * ⚠️ `content: "user"` all the same, which is not what I first declared. The path is not the
+   * secret, but it is user-derived TEXT: `instances.<name>.token` embeds the name the user gave
+   * that peer. The ledger derives the class from the attribute types and caught the mistake — the
+   * reasoning "no secret here, so no content" answers a different question than the one the class
+   * asks.
+   */
+  "credential.setting.undecryptable": {
+    level: "error",
+    message: "a stored secret could not be decrypted; it now refuses every credential",
+    attributes: { "credential.path": "text", "credential.cause": "fault" },
+    content: "user",
+    file: "packages/core/src/settings-config-store.ts",
+  },
+
   // ── filesystem ────────────────────────────────────────────────────────────────────────────────
   /** The native fast-file-finder could not initialize; search degrades to empty results. */
   "filesystem.search.init.failed": {

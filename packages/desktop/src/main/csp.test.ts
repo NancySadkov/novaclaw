@@ -24,16 +24,20 @@ const source = (name: string) => readFileSync(join(dir, name), "utf8")
 /**
  * Source with comment-only lines dropped, for the ledger checks that grep it.
  *
- * ⚠️ LINE-BASED, and that is the whole design. The obvious version — strip `/*…*​/` with a regex,
- * then `//…` — is worse than the bug it fixes: this very file's neighbour contains
- * `` `nc://renderer/*.html` `` inside a LINE comment, whose `/*` opened a block that ran to the
- * next `*​/` twenty lines below and deleted real code from the guard's view. A guard that quietly
- * stops looking at a region is a worse failure than one that occasionally matches prose, because
- * nothing announces it.
+ * ⚠️ LINE-BASED, and that is the whole design. The obvious version — strip block comments with a
+ * regex, then line comments — is worse than the bug it fixes: the neighbouring `windows.ts` carries
+ * a Windows-style renderer path inside a LINE comment whose slash-star opened a block that ran to
+ * the next block-comment terminator twenty lines below, deleting real code from the guard's view. A
+ * guard that quietly stops looking at a region is a worse failure than one that occasionally
+ * matches prose, because nothing announces it.
  *
  * A line-based filter cannot do that: it carries no state across lines, so the worst it can do is
  * keep one line it should have dropped. Trailing comments after code are kept for the same reason —
  * dropping them needs exactly the string-versus-comment parsing this is avoiding.
+ *
+ * ⚠️ This comment describes those delimiters in WORDS. Writing them literally needs either a real
+ * terminator (which ends this comment) or an invisible character to break it up — and the repo has
+ * a ledger that refuses invisible characters in source, for good reasons that apply here too.
  */
 function withoutComments(code: string) {
   return code
