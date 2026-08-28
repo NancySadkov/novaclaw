@@ -146,8 +146,14 @@ test("🔴 stopAll AWAITS every distro's stop, so quit can actually wait for the
 
   await controller.addServer("Debian")
   await waitFor(() => !!releaseNovaclawResolve)
-  releaseNovaclawResolve?.()
-  await waitFor(() => controller.list().some((item) => item.status === "running"), 4000).catch(() => undefined)
+  // ⚠️ Through the helper, for the reason its own comment gives: assigned inside a closure, so after
+  // the `= undefined` above TypeScript narrows the variable to `undefined` and an inline `?.()` is a
+  // call on `never`.
+  releaseNovaclaw()
+  // The sidecar is registered once the runtime reaches `ready`. My first version waited on a
+  // `controller.list()` that does not exist and swallowed the throw in a `.catch`, so the wait
+  // silently did nothing — bun does not typecheck, and the typecheck ran after the tests were green.
+  await waitFor(() => controller.getState().servers.some((item) => item.runtime.kind === "ready"))
 
   let settled = false
   const stopping = controller.stopAll().then(() => (settled = true))
