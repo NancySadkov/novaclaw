@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto"
+import { updaterIsAirgapped } from "./updater-airgap"
 import { mkdirSync, rmSync } from "node:fs"
 import * as http from "node:http"
 import { createServer } from "node:net"
@@ -444,10 +445,14 @@ const main = Effect.gen(function* () {
   // (NOVACLAW_OFFLINE, or the sidecar's offline status once it is up — the N/9 source of truth).
   // Manual menu checks stay real attempts. The skip is logged so the gate is provable.
   const pollUpdater = async (kind: "start" | "poll") => {
-    const env = process.env.NOVACLAW_OFFLINE
-    const airgapped = env === "true" || env === "1" || (sidecarOfflineProbe ? await sidecarOfflineProbe() : false)
+    // ⚠️ NC-SEC-001: `updaterIsAirgapped` treats an UNAVAILABLE probe as airgapped. The startup poll
+    // fires before the sidecar assigns it, and the old inline check read that as "not airgapped" —
+    // so every launch made one unguarded check-and-download before policy could be consulted.
+    const airgapped = await updaterIsAirgapped({ env: process.env.NOVACLAW_OFFLINE, probe: sidecarOfflineProbe })
     if (airgapped) {
-      logger.log("updater check skipped — offline/airgap mode is on", { kind })
+      // Says WHICH it was, because "skipped" for an unknown policy and "skipped" for a configured
+      // airgap look identical in a log and mean different things to whoever is debugging.
+      logger.log("updater check skipped — offline/airgap mode is on (or not yet knowable)", { kind })
       return
     }
     await (kind === "start" ? updater.start() : updater.check())
