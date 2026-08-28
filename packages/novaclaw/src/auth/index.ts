@@ -57,10 +57,19 @@ export const layer = Layer.effect(
     const cipher = yield* CredentialCipher.Service
     const decode = Schema.decodeUnknownOption(Info)
 
+    /**
+     * 🔴 The unwind of app-managed encryption, continued (`todo/code-review.md`, NC-REL-030).
+     *
+     * Decision §5 of `decisions-v0.2.0.md` — recorded after the cipher landed unexplained — says
+     * secrets stay plaintext under OS account protection, because no keyring exists in every run
+     * mode NovaClaw ships. What shipped was a key FILE beside this one, which buys none of the
+     * security a keyring would and strands `novaclaw serve`, the CLI and backup/restore exactly as
+     * the decision said it would.
+     *
+     * ⚠️ The 0o600 mode is the protection, and it is the one that was always doing the work.
+     */
     const write = (data: unknown) =>
-      fsys
-        .writeJson(file, CredentialCipher.encryptJson(cipher, data, fileAad), 0o600)
-        .pipe(Effect.mapError(fail("Failed to write auth data")))
+      fsys.writeJson(file, data, 0o600).pipe(Effect.mapError(fail("Failed to write auth data")))
 
     const all = Effect.fn("Auth.all")(function* () {
       if (process.env.NOVACLAW_AUTH_CONTENT) {
@@ -74,7 +83,11 @@ export const layer = Layer.effect(
       const opened = yield* CredentialCipher.decryptJson(cipher, raw, fileAad).pipe(
         Effect.mapError(fail("Failed to decrypt auth data")),
       )
-      if (!opened.encrypted && typeof raw === "object" && raw !== null) yield* write(raw)
+      // ⚠️ The DRAIN, and the condition is now the opposite one. This used to encrypt a plaintext
+      // file on first read; it writes an OPENED file back as plaintext, so existing ciphertext
+      // leaves while the key is still present. Stopping the writes without this would strand every
+      // instance that has already logged in to a provider.
+      if (opened.encrypted) yield* write(opened.value)
       const data = opened.value as Record<string, unknown>
       return Record.filterMap(data, (value) => Result.fromOption(decode(value), () => undefined))
     })

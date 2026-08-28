@@ -1,3 +1,4 @@
+import { Log } from "@novaclaw/schema/log"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import path from "path"
 import { serviceUse } from "@novaclaw/core/effect/service-use"
@@ -65,23 +66,42 @@ export const layer = Layer.effect(
     const flock = yield* EffectFlock.Service
     const cipher = yield* CredentialCipher.Service
 
-    const write = (data: AuthData) =>
-      fs.writeJson(filepath, CredentialCipher.encryptJson(cipher, data, fileAad), 0o600).pipe(Effect.orDie)
+    // 🔴 Plaintext at 0o600 — the unwind of app-managed encryption; see `auth/index.ts` for the
+    // decision and its dates.
+    const write = (data: AuthData) => fs.writeJson(filepath, data, 0o600).pipe(Effect.orDie)
 
     const read = Effect.fn("McpAuth.read")(function* () {
       const raw = yield* fs.readJson(filepath).pipe(Effect.catch(() => Effect.succeed(undefined)))
-      if (raw === undefined) return { data: {} as AuthData, legacy: false }
-      const opened = yield* CredentialCipher.decryptJson(cipher, raw, fileAad)
+      if (raw === undefined) return { data: {} as AuthData, drain: false }
+      /**
+       * ⚠️ An unopenable file no longer takes the caller down. `all()` and `mutate()` wrap this in
+       * `orDie`, so a document encrypted under a key that is gone was a CRASH on every MCP auth
+       * read — the NC-REL-030 fault in a third place. It degrades to "no stored auth" instead,
+       * which is fail-closed and repairs itself: the next OAuth flow writes a fresh document.
+       *
+       * ⚠️ It must NOT write in this state. Returning `drain: false` is what stops `all()` storing
+       * an empty document over ciphertext that restoring the key would still open.
+       */
+      const opened = yield* CredentialCipher.decryptJson(cipher, raw, fileAad).pipe(
+        Effect.catchCause((cause) =>
+          Log.event("credential.setting.undecryptable", {
+            "credential.path": "mcp-auth.json",
+            "credential.cause": Log.fault(cause),
+          }).pipe(Effect.as(undefined)),
+        ),
+      )
+      if (opened === undefined) return { data: {} as AuthData, drain: false }
       return {
         data: Option.getOrElse(decodeAuthData(opened.value), () => ({}) as AuthData) as AuthData,
-        legacy: !opened.encrypted,
+        // The drain: an opened envelope is rewritten as plaintext while the key is still here.
+        drain: opened.encrypted,
       }
     })
 
     const all = Effect.fn("McpAuth.all")(function* () {
       return yield* Effect.gen(function* () {
         const current = yield* read()
-        if (current.legacy) yield* write(current.data)
+        if (current.drain) yield* write(current.data)
         return current.data
       }).pipe(flock.withLock(lockKey), Effect.orDie)
     })
