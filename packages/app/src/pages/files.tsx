@@ -1,4 +1,5 @@
 import { useSearchParams } from "@solidjs/router"
+import { rowsForDirectory } from "./files-rows"
 import { fileDownloadHref } from "@/apps/agent-file-link"
 import { createEffect, createMemo, createResource, createSignal, For, Match, Show, Switch } from "solid-js"
 import { Icon } from "@novaclaw/ui/v2/icon"
@@ -196,9 +197,15 @@ export function FilesPage() {
         .then((r) => r.data as Entry[] | undefined)
         .catch(() => undefined)
       if (!rows) return undefined
-      return [...rows].sort((a, b) =>
-        a.type !== b.type ? (a.type === "directory" ? -1 : 1) : a.name.localeCompare(b.name),
-      )
+      // 🔴 NC-REL-041: the value carries the directory it came from. Without it, `.latest` renders
+      // one folder's rows under another folder's path during navigation — and those rows are LIVE:
+      // open, rename and delete act on what you click. See `files-rows.ts`.
+      return {
+        directory: d,
+        rows: [...rows].sort((a, b) =>
+          a.type !== b.type ? (a.type === "directory" ? -1 : 1) : a.name.localeCompare(b.name),
+        ),
+      }
     },
   )
 
@@ -209,7 +216,9 @@ export function FilesPage() {
       name,
     )
   const visibleEntries = createMemo(() => {
-    const list = entries.latest
+    // Stale-directory rows are dropped rather than shown: `.latest` is worth keeping WITHIN a
+    // directory (no blank flash on refetch) and is never worth it across one.
+    const list = rowsForDirectory(entries.latest, dir())
     if (!list || showHidden()) return list
     return list.filter((e) => !isHiddenName(e.name))
   })
