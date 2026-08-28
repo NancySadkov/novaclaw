@@ -1,4 +1,5 @@
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
+import { Database } from "@novaclaw/core/database/database"
 import { CommunityAnswer } from "@novaclaw/core/community/answer"
 import { CommunityChannels } from "@novaclaw/core/community/channels"
 import { CommunityDirect } from "@novaclaw/core/community/dm"
@@ -47,6 +48,8 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
     const answers = yield* CommunityAnswer.Service
     const sync = yield* CommunitySync.Service
     const identity = yield* InstanceIdentityStore.Service
+    // NC-REL-026: the rotation and its successor statement must commit together — see the handler.
+    const { db } = yield* Database.Service
     const search = yield* CommunitySearch.Service
     const direct = yield* CommunityDirect.Service
     const offers = yield* CommunityOffer.Service
@@ -58,244 +61,272 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
     // Rotation writes its own statement here before announcing it — see `communityRotate`.
     const successions = yield* CommunitySuccession.Store
 
-    return handlers
-      .handle(
-        "contactList",
-        Effect.fn("CommunityHttpApi.contactList")(function* () {
-          return yield* contacts.list()
-        }),
-      )
-      .handle(
-        "contactAdd",
-        Effect.fn("CommunityHttpApi.contactAdd")(function* (ctx) {
-          // The store owns the "is this actually a public key" rule; the handler only translates
-          // its refusal into an HTTP one rather than re-deciding it here.
-          return yield* contacts
-            .add({
-              networkID: ctx.payload.networkID,
-              ...(ctx.payload.petname === undefined ? {} : { petname: ctx.payload.petname }),
-              ...(ctx.payload.routes === undefined ? {} : { routes: ctx.payload.routes }),
-              /**
-               * ⚠️ Forwarded, and it was NOT. Declaring `trust` on the payload schema made it
-               * arrive and made it typecheck; this line is what makes it do anything. The POST
-               * answered 200 with the old rating intact — a success that changed nothing, which is
-               * the mirror of a field dropped on the way OUT and just as quiet.
-               */
-              ...(ctx.payload.trust === undefined ? {} : { trust: ctx.payload.trust }),
+    return (
+      handlers
+        .handle(
+          "contactList",
+          Effect.fn("CommunityHttpApi.contactList")(function* () {
+            return yield* contacts.list()
+          }),
+        )
+        .handle(
+          "contactAdd",
+          Effect.fn("CommunityHttpApi.contactAdd")(function* (ctx) {
+            // The store owns the "is this actually a public key" rule; the handler only translates
+            // its refusal into an HTTP one rather than re-deciding it here.
+            return yield* contacts
+              .add({
+                networkID: ctx.payload.networkID,
+                ...(ctx.payload.petname === undefined ? {} : { petname: ctx.payload.petname }),
+                ...(ctx.payload.routes === undefined ? {} : { routes: ctx.payload.routes }),
+                /**
+                 * ⚠️ Forwarded, and it was NOT. Declaring `trust` on the payload schema made it
+                 * arrive and made it typecheck; this line is what makes it do anything. The POST
+                 * answered 200 with the old rating intact — a success that changed nothing, which is
+                 * the mirror of a field dropped on the way OUT and just as quiet.
+                 */
+                ...(ctx.payload.trust === undefined ? {} : { trust: ctx.payload.trust }),
+              })
+              .pipe(
+                Effect.catchTag("CommunityContacts.ContactError", (error) =>
+                  Effect.fail(new InvalidRequestError({ message: error.message })),
+                ),
+              )
+          }),
+        )
+        .handle(
+          "contactForget",
+          Effect.fn("CommunityHttpApi.contactForget")(function* (ctx) {
+            return yield* contacts.forget(ctx.params.networkID)
+          }),
+        )
+        .handle(
+          "contactBlock",
+          Effect.fn("CommunityHttpApi.contactBlock")(function* (ctx) {
+            return yield* contacts.setBlocked(ctx.params.networkID, ctx.payload.blocked)
+          }),
+        )
+        .handle(
+          "transportState",
+          Effect.fn("CommunityHttpApi.transportState")(function* () {
+            return yield* transport.state()
+          }),
+        )
+        .handle(
+          "channelList",
+          Effect.fn("CommunityHttpApi.channelList")(function* () {
+            return yield* channels.channels()
+          }),
+        )
+        .handle(
+          "channelJoin",
+          Effect.fn("CommunityHttpApi.channelJoin")(function* (ctx) {
+            /**
+             * 🔴 A room name is an identifier and cannot carry control characters. The name reaching
+             * here came from a stranger — advertised, shown in discovery, joined with one click — and
+             * only its LENGTH was ever checked, so a peer could advertise a room whose name is three
+             * lines of text that read as a conversation turn.
+             *
+             * ⚠️ Refused rather than cleaned: stripping characters changes the name, the name is
+             * hashed to the topic, and the user would silently join a DIFFERENT room from the one they
+             * clicked on. Told, so they know why.
+             */
+            if (!CommunityChannels.isPlainChannelName(ctx.payload.name))
+              return yield* Effect.fail(
+                new InvalidRequestError({
+                  message: "A channel name cannot contain line breaks or control characters.",
+                }),
+              )
+            yield* channels.join(ctx.payload.name)
+            return yield* channels.channels()
+          }),
+        )
+        .handle(
+          "communityRotate",
+          Effect.fn("CommunityHttpApi.communityRotate")(function* () {
+            /**
+             * 🔴 Exposed only now that a transport exists. The ledger held rotation back precisely
+             * because "a successor statement no peer can receive would strand the user" — until P2
+             * there was nobody to receive it, so issuing one would have quietly orphaned the user from
+             * everyone who knew them.
+             */
+            /**
+             * 🔴 KEPT before it is announced (review 2026-08-17) — and now kept ATOMICALLY with the
+             * rotation itself (NC-REL-026).
+             *
+             * The statement used to exist only for the length of the announce round: peers that were
+             * offline could ask us for successions afterwards and get everyone's but OURS, so the one
+             * rotation this instance is the authority on was the one it could not answer for. A
+             * statement's whole purpose is that somebody who was away can still find their way to the
+             * current key — and ours is the only one we can never re-learn from anybody else.
+             *
+             * ⚠️ The two writes were SEQUENTIAL and in separate stores: `rotate()` replaced the sole
+             * identity row with the new keypair, and only then did `remember` persist the bridge. A
+             * failure in between left the instance holding a key nobody can connect to the one its
+             * peers trust — unrecoverable, because the predecessor secret is gone and it is the only
+             * thing that could sign a replacement statement.
+             *
+             * ⚠️ Reordering would not fix it, which is why this is a transaction. A statement written
+             * before a swap that then failed points peers at a key this instance does not hold — the
+             * same stranding from the other side. Only "both or neither" is safe.
+             *
+             * ⚠️ The stores need no `tx` handle: they close over the same drizzle handle on a single
+             * guarded connection, and `db.transaction` installs the transaction in the FIBER context
+             * for the duration of its body (`config-store-write.ts` documents this). Two constraints
+             * follow — no forked fibers inside, and the network announce stays OUTSIDE, below.
+             */
+            const rotated = yield* db
+              .transaction(
+                () =>
+                  Effect.gen(function* () {
+                    const result = yield* identity.rotate()
+                    yield* successions.remember(result.statement)
+                    return result
+                  }),
+                // ⚠️ `orDie` on the TRANSACTION, not on the statements inside it — the convention
+                // `config-store-write.ts` states: a defect from a store's own `orDie` still rolls back,
+                // and a rotation that cannot commit is a fault, not a request error.
+              )
+              .pipe(Effect.orDie)
+            // Announce AND collect in one pass: the peers worth telling are the ones worth asking.
+            const spread = yield* sync.successions(rotated.statement)
+            return { networkID: rotated.identity.networkID, told: spread.told }
+          }),
+        )
+        .handle(
+          "communityDoorman",
+          Effect.fn("CommunityHttpApi.communityDoorman")(function* (ctx) {
+            /**
+             * 🔴 The USER is making this relationship, which is why a contact may be created here.
+             *
+             * (ff): autonomy may deepen a relationship the user made and may never make one —
+             * `observe` and `follow` both refuse to mint a contact from anything the network says.
+             * This is the opposite case: a person typed an address and stated how far they trust who
+             * is behind it. Refusing to record that would be enforcing a rule against the only party
+             * it exists to protect.
+             */
+            const who = yield* sync.identify(ctx.payload.address)
+            if (who === undefined) return { found: false }
+
+            // The route first, so the contact has somewhere to be reached even before any gossip.
+            yield* peersStore.learn(who.networkID, [who.route], "manual")
+            /**
+             * 🔴 A malformed identity is NOT FOUND, not a crash and not an error page.
+             *
+             * The key came from the far end, not from the user — so a peer serving nonsense there is
+             * an ordinary hostile case, and dying on it would let anyone with an address take this
+             * endpoint down. `add` refuses an id that cannot parse as a public key, which is exactly
+             * the check we want; what changes here is only that its refusal reads as "nobody usable
+             * lives there".
+             */
+            const added = yield* contacts
+              .add({
+                networkID: who.networkID,
+                routes: [who.route],
+                trust: ctx.payload.trust,
+                ...(ctx.payload.petname === undefined ? {} : { petname: ctx.payload.petname }),
+              })
+              .pipe(Effect.catchTag("CommunityContacts.ContactError", () => Effect.succeed(undefined)))
+            if (added === undefined) return { found: false }
+            return { found: true, networkID: who.networkID }
+          }),
+        )
+        .handle(
+          "communityDiscover",
+          Effect.fn("CommunityHttpApi.communityDiscover")(function* (ctx) {
+            /**
+             * 🔴 **THE GATE, before any source opens a socket** (Codex review P2).
+             *
+             * `MDNS.browse()` opens an mDNS browser and the seed lookup calls the system TXT
+             * resolver, and both ran unconditionally — only the DHT branch below asked. So a direct
+             * call to this endpoint emitted LAN multicast and a DNS query after the user had switched
+             * Community off or sealed the machine in airgap. The panel hides the button in those
+             * states, which lowers the incidence and is not enforcement; principle 4's "nothing goes
+             * in or out" is not a statement about which buttons are visible.
+             *
+             * ⚠️ Named, not silent. Zeroes would read as "the network is empty", and that is fixed by
+             * pasting an address while this is fixed by turning the feature on — sending someone to
+             * the wrong repair is the failure mode `refusals` returning an ARRAY exists to prevent.
+             *
+             * ⚠️ Resolved ONCE here rather than per source: three sources each asking the live gate is
+             * three chances for the next source to be added without asking, which is exactly how the
+             * DHT ended up the only guarded one.
+             */
+            const refusals = CommunityConsent.refusals(CommunityConsent.currentGate())
+            if (refusals.length > 0)
+              return {
+                learned: 0,
+                asked: 0,
+                peers: (yield* peersStore.list()).length,
+                seedsAsked: false,
+                seedsFound: 0,
+                refused: refusals,
+              }
+
+            /**
+             * 🔴 Every source at once, because plurality IS the anti-shutdown property. The spec: if
+             * everyone ships the same three seeds and they die, new users cannot join a network that is
+             * perfectly alive. LAN costs nothing and needs no seed at all.
+             */
+            const found = yield* Effect.promise(() => MDNS.browse())
+            const lan = found.map((entry) => entry.url)
+            const supplied = ctx.payload.addresses ?? []
+            // ⚠️ Sightings first, PX second, and in that order deliberately: a peer learned from the
+            // LAN this second is someone we can immediately ask for more.
+            /**
+             * 🔴 The DEFAULT door, for a user who knows nobody and is not on a LAN with anyone.
+             *
+             * Without this, "clicking Community joins the network" was true only beside another
+             * instance or for somebody who had been handed an address — an invitation-only club,
+             * which is the opposite of the point.
+             *
+             * ⚠️ Best-effort and silent: no seeds, no error, join anyway. A lookup that could fail
+             * a join would make the seeds a DEPENDENCY, and the whole argument for allowing a
+             * centralised seed at all is that it is a convenience the network survives losing.
+             */
+            const stored = CommunityConsent.storedConfig() as
+              | { community?: { seeds?: { enabled?: boolean; host?: string }; announce?: string } }
+              | undefined
+            const seedHost = stored?.community?.seeds?.host ?? CommunitySeeds.DEFAULT_SEED_HOST
+            const seeds = yield* CommunitySeeds.resolve({
+              ...(stored?.community?.seeds === undefined ? {} : { settings: stored.community.seeds }),
             })
-            .pipe(
-              Effect.catchTag("CommunityContacts.ContactError", (error) =>
-                Effect.fail(new InvalidRequestError({ message: error.message })),
-              ),
-            )
-        }),
-      )
-      .handle(
-        "contactForget",
-        Effect.fn("CommunityHttpApi.contactForget")(function* (ctx) {
-          return yield* contacts.forget(ctx.params.networkID)
-        }),
-      )
-      .handle(
-        "contactBlock",
-        Effect.fn("CommunityHttpApi.contactBlock")(function* (ctx) {
-          return yield* contacts.setBlocked(ctx.params.networkID, ctx.payload.blocked)
-        }),
-      )
-      .handle(
-        "transportState",
-        Effect.fn("CommunityHttpApi.transportState")(function* () {
-          return yield* transport.state()
-        }),
-      )
-      .handle(
-        "channelList",
-        Effect.fn("CommunityHttpApi.channelList")(function* () {
-          return yield* channels.channels()
-        }),
-      )
-      .handle(
-        "channelJoin",
-        Effect.fn("CommunityHttpApi.channelJoin")(function* (ctx) {
-          /**
-           * 🔴 A room name is an identifier and cannot carry control characters. The name reaching
-           * here came from a stranger — advertised, shown in discovery, joined with one click — and
-           * only its LENGTH was ever checked, so a peer could advertise a room whose name is three
-           * lines of text that read as a conversation turn.
-           *
-           * ⚠️ Refused rather than cleaned: stripping characters changes the name, the name is
-           * hashed to the topic, and the user would silently join a DIFFERENT room from the one they
-           * clicked on. Told, so they know why.
-           */
-          if (!CommunityChannels.isPlainChannelName(ctx.payload.name))
-            return yield* Effect.fail(
-              new InvalidRequestError({
-                message: "A channel name cannot contain line breaks or control characters.",
-              }),
-            )
-          yield* channels.join(ctx.payload.name)
-          return yield* channels.channels()
-        }),
-      )
-      .handle(
-        "communityRotate",
-        Effect.fn("CommunityHttpApi.communityRotate")(function* () {
-          /**
-           * 🔴 Exposed only now that a transport exists. The ledger held rotation back precisely
-           * because "a successor statement no peer can receive would strand the user" — until P2
-           * there was nobody to receive it, so issuing one would have quietly orphaned the user from
-           * everyone who knew them.
-           */
-          const rotated = yield* identity.rotate()
-          /**
-           * 🔴 KEPT before it is announced (review 2026-08-17).
-           *
-           * The statement used to exist only for the length of the announce round: peers that were
-           * offline could ask us for successions afterwards and get everyone's but OURS, so the one
-           * rotation this instance is the authority on was the one it could not answer for. A
-           * statement's whole purpose is that somebody who was away can still find their way to the
-           * current key — and ours is the only one we can never re-learn from anybody else.
-           */
-          yield* successions.remember(rotated.statement)
-          // Announce AND collect in one pass: the peers worth telling are the ones worth asking.
-          const spread = yield* sync.successions(rotated.statement)
-          return { networkID: rotated.identity.networkID, told: spread.told }
-        }),
-      )
-      .handle(
-        "communityDoorman",
-        Effect.fn("CommunityHttpApi.communityDoorman")(function* (ctx) {
-          /**
-           * 🔴 The USER is making this relationship, which is why a contact may be created here.
-           *
-           * (ff): autonomy may deepen a relationship the user made and may never make one —
-           * `observe` and `follow` both refuse to mint a contact from anything the network says.
-           * This is the opposite case: a person typed an address and stated how far they trust who
-           * is behind it. Refusing to record that would be enforcing a rule against the only party
-           * it exists to protect.
-           */
-          const who = yield* sync.identify(ctx.payload.address)
-          if (who === undefined) return { found: false }
 
-          // The route first, so the contact has somewhere to be reached even before any gossip.
-          yield* peersStore.learn(who.networkID, [who.route], "manual")
-          /**
-           * 🔴 A malformed identity is NOT FOUND, not a crash and not an error page.
-           *
-           * The key came from the far end, not from the user — so a peer serving nonsense there is
-           * an ordinary hostile case, and dying on it would let anyone with an address take this
-           * endpoint down. `add` refuses an id that cannot parse as a public key, which is exactly
-           * the check we want; what changes here is only that its refusal reads as "nobody usable
-           * lives there".
-           */
-          const added = yield* contacts
-            .add({
-              networkID: who.networkID,
-              routes: [who.route],
-              trust: ctx.payload.trust,
-              ...(ctx.payload.petname === undefined ? {} : { petname: ctx.payload.petname }),
-            })
-            .pipe(Effect.catchTag("CommunityContacts.ContactError", () => Effect.succeed(undefined)))
-          if (added === undefined) return { found: false }
-          return { found: true, networkID: who.networkID }
-        }),
-      )
-      .handle(
-        "communityDiscover",
-        Effect.fn("CommunityHttpApi.communityDiscover")(function* (ctx) {
-          /**
-           * 🔴 **THE GATE, before any source opens a socket** (Codex review P2).
-           *
-           * `MDNS.browse()` opens an mDNS browser and the seed lookup calls the system TXT
-           * resolver, and both ran unconditionally — only the DHT branch below asked. So a direct
-           * call to this endpoint emitted LAN multicast and a DNS query after the user had switched
-           * Community off or sealed the machine in airgap. The panel hides the button in those
-           * states, which lowers the incidence and is not enforcement; principle 4's "nothing goes
-           * in or out" is not a statement about which buttons are visible.
-           *
-           * ⚠️ Named, not silent. Zeroes would read as "the network is empty", and that is fixed by
-           * pasting an address while this is fixed by turning the feature on — sending someone to
-           * the wrong repair is the failure mode `refusals` returning an ARRAY exists to prevent.
-           *
-           * ⚠️ Resolved ONCE here rather than per source: three sources each asking the live gate is
-           * three chances for the next source to be added without asking, which is exactly how the
-           * DHT ended up the only guarded one.
-           */
-          const refusals = CommunityConsent.refusals(CommunityConsent.currentGate())
-          if (refusals.length > 0)
-            return {
-              learned: 0,
-              asked: 0,
-              peers: (yield* peersStore.list()).length,
-              seedsAsked: false,
-              seedsFound: 0,
-              refused: refusals,
-            }
-
-          /**
-           * 🔴 Every source at once, because plurality IS the anti-shutdown property. The spec: if
-           * everyone ships the same three seeds and they die, new users cannot join a network that is
-           * perfectly alive. LAN costs nothing and needs no seed at all.
-           */
-          const found = yield* Effect.promise(() => MDNS.browse())
-          const lan = found.map((entry) => entry.url)
-          const supplied = ctx.payload.addresses ?? []
-          // ⚠️ Sightings first, PX second, and in that order deliberately: a peer learned from the
-          // LAN this second is someone we can immediately ask for more.
-          /**
-           * 🔴 The DEFAULT door, for a user who knows nobody and is not on a LAN with anyone.
-           *
-           * Without this, "clicking Community joins the network" was true only beside another
-           * instance or for somebody who had been handed an address — an invitation-only club,
-           * which is the opposite of the point.
-           *
-           * ⚠️ Best-effort and silent: no seeds, no error, join anyway. A lookup that could fail
-           * a join would make the seeds a DEPENDENCY, and the whole argument for allowing a
-           * centralised seed at all is that it is a convenience the network survives losing.
-           */
-          const stored = CommunityConsent.storedConfig() as
-            | { community?: { seeds?: { enabled?: boolean; host?: string }; announce?: string } }
-            | undefined
-          const seedHost = stored?.community?.seeds?.host ?? CommunitySeeds.DEFAULT_SEED_HOST
-          const seeds = yield* CommunitySeeds.resolve({
-            ...(stored?.community?.seeds === undefined ? {} : { settings: stored.community.seeds }),
-          })
-
-          /**
-           * 🔴 The public DHT — the automatic door for somebody who knows nobody and is not on a
-           * LAN with anyone.
-           *
-           * ⚠️ Silent and lazy: the sidecar is a Rust binary the app builds without, so a machine
-           * that never compiled it simply finds no peers here. That must cost nothing, which is why
-           * every failure in `find` answers `[]` rather than raising.
-           *
-           * 🔴 And we announce ONLY what the user typed. Publishing an address to a public
-           * directory is a decision above joining and above answering: it is read by people who
-           * never talk to us, and an instance cannot know its own external address — it sees
-           * interfaces, and a NAT'd machine sees private ones. Absent is the ordinary state and
-           * costs nothing, because an unreachable instance dials OUT and never needed to be found.
-           */
-          const announce = stored?.community?.announce
-          /**
-           * 🔴 DETACHED, because a DHT lookup costs about TEN SECONDS and this is a button.
-           *
-           * Measured 2026-08-17: with the sidecar present, `discover` took longer than five seconds
-           * and a server test timed out on it. A cold Kademlia node has to fill a routing table
-           * (~2 s) before a query can walk anywhere (~8 s), and no budget fixes that — a shorter one
-           * just guarantees it finds nobody. `AGENTS.md` is explicit that *the DHT is a convenience,
-           * and a convenience that slows the guarantees down is not one*: the LAN, peer exchange and
-           * a typed address are the guarantees, and they must not queue behind it.
-           *
-           * ⚠️ So the lookup runs in the background and its peers land in the table for the NEXT
-           * discovery. Nothing is lost: the node is long-lived now, so the second lookup is warm, and
-           * `learnFrom` is idempotent — it asks each address who lives there before recording anything.
-           *
-           * ⚠️ `bridge.fork` rather than `Effect.fork`: a child of the REQUEST's scope is
-           * interrupted the moment the response is written, which for a ten-second lookup means it
-           * never finishes once.
-           */
-          // ⚠️ No gate check here any more: the ONE resolved above already refused every path.
-          bridge.fork(
+            /**
+             * 🔴 The public DHT — the automatic door for somebody who knows nobody and is not on a
+             * LAN with anyone.
+             *
+             * ⚠️ Silent and lazy: the sidecar is a Rust binary the app builds without, so a machine
+             * that never compiled it simply finds no peers here. That must cost nothing, which is why
+             * every failure in `find` answers `[]` rather than raising.
+             *
+             * 🔴 And we announce ONLY what the user typed. Publishing an address to a public
+             * directory is a decision above joining and above answering: it is read by people who
+             * never talk to us, and an instance cannot know its own external address — it sees
+             * interfaces, and a NAT'd machine sees private ones. Absent is the ordinary state and
+             * costs nothing, because an unreachable instance dials OUT and never needed to be found.
+             */
+            const announce = stored?.community?.announce
+            /**
+             * 🔴 DETACHED, because a DHT lookup costs about TEN SECONDS and this is a button.
+             *
+             * Measured 2026-08-17: with the sidecar present, `discover` took longer than five seconds
+             * and a server test timed out on it. A cold Kademlia node has to fill a routing table
+             * (~2 s) before a query can walk anywhere (~8 s), and no budget fixes that — a shorter one
+             * just guarantees it finds nobody. `AGENTS.md` is explicit that *the DHT is a convenience,
+             * and a convenience that slows the guarantees down is not one*: the LAN, peer exchange and
+             * a typed address are the guarantees, and they must not queue behind it.
+             *
+             * ⚠️ So the lookup runs in the background and its peers land in the table for the NEXT
+             * discovery. Nothing is lost: the node is long-lived now, so the second lookup is warm, and
+             * `learnFrom` is idempotent — it asks each address who lives there before recording anything.
+             *
+             * ⚠️ `bridge.fork` rather than `Effect.fork`: a child of the REQUEST's scope is
+             * interrupted the moment the response is written, which for a ten-second lookup means it
+             * never finishes once.
+             */
+            // ⚠️ No gate check here any more: the ONE resolved above already refused every path.
+            bridge.fork(
               Effect.gen(function* () {
                 const viaDht = yield* dht.find(announce === undefined ? {} : { announce })
                 if (viaDht.length > 0) yield* sync.learnFrom(viaDht, "dht")
@@ -315,245 +346,246 @@ export const communityHandlers = HttpApiBuilder.group(InstanceHttpApi, "communit
               ),
             )
 
-          yield* sync.learnFrom(lan, "lan")
-          yield* sync.learnFrom(seeds, "dns")
-          yield* sync.learnFrom(supplied, "manual")
-          const exchange = yield* sync.discover()
+            yield* sync.learnFrom(lan, "lan")
+            yield* sync.learnFrom(seeds, "dns")
+            yield* sync.learnFrom(supplied, "manual")
+            const exchange = yield* sync.discover()
 
-          /**
-           * 🔴 **PULL successions too, because the push is not enough** (found by re-running the
-           * two-instance journey after this session's changes, 2026-08-18).
-           *
-           * A rotation propagates by `sync.successions(statement)` at the moment it happens, to
-           * whoever is reachable right then — so anyone offline at that instant, met afterwards, or
-           * BLOCKED by the rotating instance never learns, and goes on attributing that peer's
-           * history to a key they abandoned. The journey caught it once blocking and rotation were
-           * exercised in the same run: B blocked A, rotated, and correctly told nobody; A had no way
-           * to find out.
-           *
-           * ⚠️ Withholding the PUSH from a blocked peer is right and stays — publishing to somebody
-           * whose messages you refuse tells them you are online. Pulling is the other side of that:
-           * `GET /succession` is an anonymous door by design, precisely because a statement is
-           * self-verifying and about the sender's OWN key, so refusing to serve it would only leave
-           * the reader misattributing old messages.
-           *
-           * ⚠️ No announce argument: this pulls and never pushes. Discovery must not become a second
-           * place that broadcasts our own rotation.
-           */
-          yield* sync.successions(undefined)
-          return {
-            learned: exchange.learned,
-            asked: exchange.asked,
-            peers: (yield* peersStore.list()).length,
-            // Declared alongside, in the same edit — a field returned but undeclared is dropped.
             /**
-             * 🔴 Whether a zone was ACTUALLY asked, not whether asking is switched on (review 1.16).
+             * 🔴 **PULL successions too, because the push is not enough** (found by re-running the
+             * two-instance journey after this session's changes, 2026-08-18).
              *
-             * This read `enabled !== false`, which is true on a default install — where there is no
-             * host to ask, because `DEFAULT_SEED_HOST` is `undefined` and the project runs no zone.
-             * So the panel said starting addresses were tried when nothing had been, and offered the
-             * user a repair for a door that does not exist.
+             * A rotation propagates by `sync.successions(statement)` at the moment it happens, to
+             * whoever is reachable right then — so anyone offline at that instant, met afterwards, or
+             * BLOCKED by the rotating instance never learns, and goes on attributing that peer's
+             * history to a key they abandoned. The journey caught it once blocking and rotation were
+             * exercised in the same run: B blocked A, rotated, and correctly told nobody; A had no way
+             * to find out.
+             *
+             * ⚠️ Withholding the PUSH from a blocked peer is right and stays — publishing to somebody
+             * whose messages you refuse tells them you are online. Pulling is the other side of that:
+             * `GET /succession` is an anonymous door by design, precisely because a statement is
+             * self-verifying and about the sender's OWN key, so refusing to serve it would only leave
+             * the reader misattributing old messages.
+             *
+             * ⚠️ No announce argument: this pulls and never pushes. Discovery must not become a second
+             * place that broadcasts our own rotation.
              */
-            seedsAsked: stored?.community?.seeds?.enabled !== false && seedHost !== undefined,
-            seedsFound: seeds.length,
-          }
-        }),
-      )
-      .handle(
-        "channelArchived",
-        Effect.fn("CommunityHttpApi.channelArchived")(function* () {
-          return yield* channels.archived()
-        }),
-      )
-      .handle(
-        "channelLeave",
-        Effect.fn("CommunityHttpApi.channelLeave")(function* (ctx) {
-          // ⚠️ The store deliberately keeps the history. Leaving is a subscription change, not a
-          // deletion, and rejoining must not present an empty room the user knows had messages.
-          return yield* channels.leave(ctx.params.name)
-        }),
-      )
-      .handle(
-        "channelMute",
-        Effect.fn("CommunityHttpApi.channelMute")(function* (ctx) {
-          return yield* channels.setMuted(ctx.params.name, ctx.payload.muted)
-        }),
-      )
-      .handle(
-        "channelListed",
-        Effect.fn("CommunityHttpApi.channelListed")(function* (ctx) {
-          return yield* channels.setListed(ctx.params.name, ctx.payload.listed)
-        }),
-      )
-      .handle(
-        "filterList",
-        Effect.fn("CommunityHttpApi.filterList")(function* () {
-          return yield* channels.filters()
-        }),
-      )
-      .handle(
-        "filterAdd",
-        Effect.fn("CommunityHttpApi.filterAdd")(function* (ctx) {
-          return yield* channels.filter(ctx.payload.pattern)
-        }),
-      )
-      .handle(
-        "filterRemove",
-        Effect.fn("CommunityHttpApi.filterRemove")(function* (ctx) {
-          return yield* channels.unfilter(ctx.payload.pattern)
-        }),
-      )
-      .handle(
-        "channelsNearby",
-        Effect.fn("CommunityHttpApi.channelsNearby")(function* () {
-          return yield* sync.channelsNearby()
-        }),
-      )
-      .handle(
-        "communityParticipation",
-        Effect.fn("CommunityHttpApi.communityParticipation")(function* () {
-          const gate = CommunityConsent.currentGate()
-          const answering = yield* answers.state()
-          /**
-           * ⚠️ Read from the STORED config, which is where the user's answer lives. Declaring the
-           * field without this line is the failure that has happened twice here already: a 200 that
-           * shows nothing, indistinguishable from never having set it.
-           */
-          const published = (
-            CommunityConsent.storedConfig() as { community?: { announce?: string } } | undefined
-          )?.community?.announce
-          // ⚠️ Compared against the address the DHT was actually given: a user who edited the setting
-          // since the last attempt must not see the OLD address's verdict attached to the new one.
-          const announcedState = yield* dht.announced()
-          return {
-            participating: CommunityConsent.participates(gate),
-            consented: gate.consented,
-            enabled: gate.enabled,
-            refusals: CommunityConsent.refusals(gate),
-            answers: {
-              enabled: answering.gate.enabled,
-              perDay: answering.gate.perDay,
-              today: answering.today,
-            },
-            ...(published === undefined || published === "" ? {} : { announce: published }),
+            yield* sync.successions(undefined)
+            return {
+              learned: exchange.learned,
+              asked: exchange.asked,
+              peers: (yield* peersStore.list()).length,
+              // Declared alongside, in the same edit — a field returned but undeclared is dropped.
+              /**
+               * 🔴 Whether a zone was ACTUALLY asked, not whether asking is switched on (review 1.16).
+               *
+               * This read `enabled !== false`, which is true on a default install — where there is no
+               * host to ask, because `DEFAULT_SEED_HOST` is `undefined` and the project runs no zone.
+               * So the panel said starting addresses were tried when nothing had been, and offered the
+               * user a repair for a door that does not exist.
+               */
+              seedsAsked: stored?.community?.seeds?.enabled !== false && seedHost !== undefined,
+              seedsFound: seeds.length,
+            }
+          }),
+        )
+        .handle(
+          "channelArchived",
+          Effect.fn("CommunityHttpApi.channelArchived")(function* () {
+            return yield* channels.archived()
+          }),
+        )
+        .handle(
+          "channelLeave",
+          Effect.fn("CommunityHttpApi.channelLeave")(function* (ctx) {
+            // ⚠️ The store deliberately keeps the history. Leaving is a subscription change, not a
+            // deletion, and rejoining must not present an empty room the user knows had messages.
+            return yield* channels.leave(ctx.params.name)
+          }),
+        )
+        .handle(
+          "channelMute",
+          Effect.fn("CommunityHttpApi.channelMute")(function* (ctx) {
+            return yield* channels.setMuted(ctx.params.name, ctx.payload.muted)
+          }),
+        )
+        .handle(
+          "channelListed",
+          Effect.fn("CommunityHttpApi.channelListed")(function* (ctx) {
+            return yield* channels.setListed(ctx.params.name, ctx.payload.listed)
+          }),
+        )
+        .handle(
+          "filterList",
+          Effect.fn("CommunityHttpApi.filterList")(function* () {
+            return yield* channels.filters()
+          }),
+        )
+        .handle(
+          "filterAdd",
+          Effect.fn("CommunityHttpApi.filterAdd")(function* (ctx) {
+            return yield* channels.filter(ctx.payload.pattern)
+          }),
+        )
+        .handle(
+          "filterRemove",
+          Effect.fn("CommunityHttpApi.filterRemove")(function* (ctx) {
+            return yield* channels.unfilter(ctx.payload.pattern)
+          }),
+        )
+        .handle(
+          "channelsNearby",
+          Effect.fn("CommunityHttpApi.channelsNearby")(function* () {
+            return yield* sync.channelsNearby()
+          }),
+        )
+        .handle(
+          "communityParticipation",
+          Effect.fn("CommunityHttpApi.communityParticipation")(function* () {
+            const gate = CommunityConsent.currentGate()
+            const answering = yield* answers.state()
             /**
-             * ⚠️ Declared AND forwarded in the same edit. This field has been lost in each
-             * direction separately before, and for a claim about whether strangers can find you, a
-             * silently dropped value is worse than an absent one.
+             * ⚠️ Read from the STORED config, which is where the user's answer lives. Declaring the
+             * field without this line is the failure that has happened twice here already: a 200 that
+             * shows nothing, indistinguishable from never having set it.
              */
-            ...(announcedState === undefined || announcedState.address !== published
-              ? {}
-              : {
-                  announceConfirmed: announcedState.published,
-                  ...(announcedState.reason === undefined ? {} : { announceReason: announcedState.reason }),
+            const published = (CommunityConsent.storedConfig() as { community?: { announce?: string } } | undefined)
+              ?.community?.announce
+            // ⚠️ Compared against the address the DHT was actually given: a user who edited the setting
+            // since the last attempt must not see the OLD address's verdict attached to the new one.
+            const announcedState = yield* dht.announced()
+            return {
+              participating: CommunityConsent.participates(gate),
+              consented: gate.consented,
+              enabled: gate.enabled,
+              refusals: CommunityConsent.refusals(gate),
+              answers: {
+                enabled: answering.gate.enabled,
+                perDay: answering.gate.perDay,
+                today: answering.today,
+              },
+              ...(published === undefined || published === "" ? {} : { announce: published }),
+              /**
+               * ⚠️ Declared AND forwarded in the same edit. This field has been lost in each
+               * direction separately before, and for a claim about whether strangers can find you, a
+               * silently dropped value is worse than an absent one.
+               */
+              ...(announcedState === undefined || announcedState.address !== published
+                ? {}
+                : {
+                    announceConfirmed: announcedState.published,
+                    ...(announcedState.reason === undefined ? {} : { announceReason: announcedState.reason }),
+                  }),
+            }
+          }),
+        )
+        .handle(
+          "offerMineRead",
+          Effect.fn("CommunityHttpApi.offerMineRead")(function* () {
+            return yield* offers.mineStored()
+          }),
+        )
+        .handle(
+          "offerPublish",
+          Effect.fn("CommunityHttpApi.offerPublish")(function* (ctx) {
+            /**
+             * 🔴 Told, not silently dropped. `verify` refuses an endpoint that is not an http(s) URL
+             * on every READ — which is right for an offer already on disk, and wrong as the only
+             * feedback a user gets: the POST used to answer 200 with the offer echoed back while
+             * nothing was ever served to anybody.
+             */
+            if (!CommunityOffer.isServableEndpoint(ctx.payload.endpoint))
+              return yield* Effect.fail(
+                new InvalidRequestError({
+                  message:
+                    "An offer's endpoint must be an http:// or https:// URL — that is what peers will connect to.",
                 }),
-          }
-        }),
-      )
-      .handle(
-        "offerMineRead",
-        Effect.fn("CommunityHttpApi.offerMineRead")(function* () {
-          return yield* offers.mineStored()
-        }),
-      )
-      .handle(
-        "offerPublish",
-        Effect.fn("CommunityHttpApi.offerPublish")(function* (ctx) {
-          /**
-           * 🔴 Told, not silently dropped. `verify` refuses an endpoint that is not an http(s) URL
-           * on every READ — which is right for an offer already on disk, and wrong as the only
-           * feedback a user gets: the POST used to answer 200 with the offer echoed back while
-           * nothing was ever served to anybody.
-           */
-          if (!CommunityOffer.isServableEndpoint(ctx.payload.endpoint))
-            return yield* Effect.fail(
-              new InvalidRequestError({
-                message: "An offer's endpoint must be an http:// or https:// URL — that is what peers will connect to.",
-              }),
-            )
-          // ⚠️ Same reasoning one field over, and this one is money: `payTo` lands on somebody's
-          // clipboard verbatim, so a stray space or a look-alike letter is not a cosmetic problem.
-          if (!CommunityOffer.isPayableAddress(ctx.payload.payTo ?? ""))
-            return yield* Effect.fail(
-              new InvalidRequestError({
-                message:
-                  "A payment address must be plain ASCII with no spaces — it goes on the clipboard exactly as written.",
-              }),
-            )
-          return yield* offers.publish({
-            kind: "model-server",
-            ...ctx.payload,
-            payTo: ctx.payload.payTo ?? "",
-          })
-        }),
-      )
-      .handle(
-        "offerWithdraw",
-        Effect.fn("CommunityHttpApi.offerWithdraw")(function* () {
-          yield* offers.withdraw()
-          return true
-        }),
-      )
-      .handle(
-        "offersKnown",
-        Effect.fn("CommunityHttpApi.offersKnown")(function* () {
-          return yield* offers.known()
-        }),
-      )
-      .handle(
-        "directSend",
-        Effect.fn("CommunityHttpApi.directSend")(function* (ctx) {
-          return yield* sync.sendDirect(ctx.params.networkID, ctx.payload.body)
-        }),
-      )
-      .handle(
-        "directHistory",
-        Effect.fn("CommunityHttpApi.directHistory")(function* (ctx) {
-          return yield* direct.history(ctx.params.networkID)
-        }),
-      )
-      .handle(
-        "directList",
-        Effect.fn("CommunityHttpApi.directList")(function* () {
-          return yield* direct.conversations()
-        }),
-      )
-      .handle(
-        "searchChannels",
-        Effect.fn("CommunityHttpApi.searchChannels")(function* (ctx) {
-          return yield* search.search(ctx.payload.terms)
-        }),
-      )
-      .handle(
-        "channelPost",
-        Effect.fn("CommunityHttpApi.channelPost")(function* (ctx) {
-          const result = yield* posts.post(ctx.params.name, ctx.payload.body)
-          return { id: result.message.signature, stored: result.stored, delivered: result.delivered }
-        }),
-      )
-      .handle(
-        "channelHistory",
-        Effect.fn("CommunityHttpApi.channelHistory")(function* (ctx) {
-          return yield* channels.historyFiltered(ctx.params.name)
-        }),
-      )
-      /**
-       * 🔴 The wire that was missing. `reconcile.ts` and `sync.sync` were written, bounded, reviewed
-       * and tested — and then nothing in a running instance ever called them, so a joining instance
-       * held only what arrived live after it got there. Measured on two real instances: A held 601
-       * messages, B joined, and B received the next live post and NONE of the backlog.
-       *
-       * ⚠️ On demand rather than a background timer. Catch-up is `peers × round trips`, and the whole
-       * subsystem is careful about what a peer's answer costs us; a timer would pay that repeatedly
-       * for channels nobody is reading. The app asks when a channel is opened, which is exactly when
-       * the history is about to be looked at.
-       */
-      .handle(
-        "channelSync",
-        Effect.fn("CommunityHttpApi.channelSync")(function* (ctx) {
-          return yield* sync.sync(ctx.params.name)
-        }),
-      )
+              )
+            // ⚠️ Same reasoning one field over, and this one is money: `payTo` lands on somebody's
+            // clipboard verbatim, so a stray space or a look-alike letter is not a cosmetic problem.
+            if (!CommunityOffer.isPayableAddress(ctx.payload.payTo ?? ""))
+              return yield* Effect.fail(
+                new InvalidRequestError({
+                  message:
+                    "A payment address must be plain ASCII with no spaces — it goes on the clipboard exactly as written.",
+                }),
+              )
+            return yield* offers.publish({
+              kind: "model-server",
+              ...ctx.payload,
+              payTo: ctx.payload.payTo ?? "",
+            })
+          }),
+        )
+        .handle(
+          "offerWithdraw",
+          Effect.fn("CommunityHttpApi.offerWithdraw")(function* () {
+            yield* offers.withdraw()
+            return true
+          }),
+        )
+        .handle(
+          "offersKnown",
+          Effect.fn("CommunityHttpApi.offersKnown")(function* () {
+            return yield* offers.known()
+          }),
+        )
+        .handle(
+          "directSend",
+          Effect.fn("CommunityHttpApi.directSend")(function* (ctx) {
+            return yield* sync.sendDirect(ctx.params.networkID, ctx.payload.body)
+          }),
+        )
+        .handle(
+          "directHistory",
+          Effect.fn("CommunityHttpApi.directHistory")(function* (ctx) {
+            return yield* direct.history(ctx.params.networkID)
+          }),
+        )
+        .handle(
+          "directList",
+          Effect.fn("CommunityHttpApi.directList")(function* () {
+            return yield* direct.conversations()
+          }),
+        )
+        .handle(
+          "searchChannels",
+          Effect.fn("CommunityHttpApi.searchChannels")(function* (ctx) {
+            return yield* search.search(ctx.payload.terms)
+          }),
+        )
+        .handle(
+          "channelPost",
+          Effect.fn("CommunityHttpApi.channelPost")(function* (ctx) {
+            const result = yield* posts.post(ctx.params.name, ctx.payload.body)
+            return { id: result.message.signature, stored: result.stored, delivered: result.delivered }
+          }),
+        )
+        .handle(
+          "channelHistory",
+          Effect.fn("CommunityHttpApi.channelHistory")(function* (ctx) {
+            return yield* channels.historyFiltered(ctx.params.name)
+          }),
+        )
+        /**
+         * 🔴 The wire that was missing. `reconcile.ts` and `sync.sync` were written, bounded, reviewed
+         * and tested — and then nothing in a running instance ever called them, so a joining instance
+         * held only what arrived live after it got there. Measured on two real instances: A held 601
+         * messages, B joined, and B received the next live post and NONE of the backlog.
+         *
+         * ⚠️ On demand rather than a background timer. Catch-up is `peers × round trips`, and the whole
+         * subsystem is careful about what a peer's answer costs us; a timer would pay that repeatedly
+         * for channels nobody is reading. The app asks when a channel is opened, which is exactly when
+         * the history is about to be looked at.
+         */
+        .handle(
+          "channelSync",
+          Effect.fn("CommunityHttpApi.channelSync")(function* (ctx) {
+            return yield* sync.sync(ctx.params.name)
+          }),
+        )
+    )
   }),
 )
 
@@ -593,31 +625,31 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
      * same denial with a longer timeout.
      */
     const locations = yield* LocationServiceMap.Service
-/**
- * How long one answering turn may run before it is abandoned.
- *
- * ⚠️ **Not a substitute for the token budget, which already does the harder half.**
- * `ReasoningBudget` counts reasoning live, nudges the model as it runs down, and MECHANICALLY forces
- * an answer when it is gone — the same machinery the title pass uses to generate with almost none.
- * That bounds the MODEL. What it cannot bound is a provider that stalls mid-stream or a socket that
- * never closes, and no token ceiling ever will.
- *
- * 🔴 The same comment that put a 30-second cap on resolving the model — *"a stuck resolve would
- * hold a stranger's connection open indefinitely"* — applies with more force to the stream, and was
- * not applied there.
- *
- * 🔴 Two costs, and the second is the one that matters: a slow turn holds the ONE permit, so every
- * other peer is told `busy` for as long as it runs. A single hung provider takes this instance out of
- * the network for everybody.
- *
- * ⚠️ Set BELOW the asker's own `ANSWER_TIMEOUT_MS` (60 s), so we stop working before they stop
- * waiting. Generating past that point spends the user's tokens on an answer that cannot be delivered
- * — and now that the spend is counted when the model STARTS, it spends their daily budget too.
- */
-const ANSWERING_TURN_MS = 45_000
+    /**
+     * How long one answering turn may run before it is abandoned.
+     *
+     * ⚠️ **Not a substitute for the token budget, which already does the harder half.**
+     * `ReasoningBudget` counts reasoning live, nudges the model as it runs down, and MECHANICALLY forces
+     * an answer when it is gone — the same machinery the title pass uses to generate with almost none.
+     * That bounds the MODEL. What it cannot bound is a provider that stalls mid-stream or a socket that
+     * never closes, and no token ceiling ever will.
+     *
+     * 🔴 The same comment that put a 30-second cap on resolving the model — *"a stuck resolve would
+     * hold a stranger's connection open indefinitely"* — applies with more force to the stream, and was
+     * not applied there.
+     *
+     * 🔴 Two costs, and the second is the one that matters: a slow turn holds the ONE permit, so every
+     * other peer is told `busy` for as long as it runs. A single hung provider takes this instance out of
+     * the network for everybody.
+     *
+     * ⚠️ Set BELOW the asker's own `ANSWER_TIMEOUT_MS` (60 s), so we stop working before they stop
+     * waiting. Generating past that point spends the user's tokens on an answer that cannot be delivered
+     * — and now that the spend is counted when the model STARTS, it spends their daily budget too.
+     */
+    const ANSWERING_TURN_MS = 45_000
 
-/** Distinguishes "the turn ran out of time" from "the model was never reachable", which read the same before. */
-const TURN_TIMED_OUT = { timedOut: true } as const
+    /** Distinguishes "the turn ran out of time" from "the model was never reachable", which read the same before. */
+    const TURN_TIMED_OUT = { timedOut: true } as const
 
     const turn = Semaphore.makeUnsafe(1)
 
@@ -807,167 +839,161 @@ const TURN_TIMED_OUT = { timedOut: true } as const
               })
           const evidence = CommunityAnswer.selectEvidence(ctx.payload.question, claims)
 
-          const answer = yield* turn
-            .withPermitsIfAvailable(1)(
-              Effect.gen(function* () {
-                const models = yield* SessionRunnerModel.Service
-                const llm = yield* LLMClient.Service
-                // ⚠️ BOUNDED, for the reason the memory handler records: resolving does not call the
-                // model, so it is fast or it is stuck, and a stuck resolve here would hold a stranger's
-                // connection open indefinitely.
-                const model = yield* models
-                  .resolveDefault()
-                  .pipe(
-                    Effect.timeoutOrElse({
-                      duration: "30 seconds",
-                      orElse: () => Effect.die("resolveDefault timed out"),
-                    }),
-                  )
-                /**
-                 * 🔴 From here on the model RUNS, and that is what the budget must count.
-                 *
-                 * The spend used to be recorded only once an answer existed, so that a failed turn
-                 * "does not consume the day". The half of that reasoning which was wrong: an EMPTY
-                 * completion is a turn that ran and cost real tokens — and a reasoning model on a
-                 * tight thinking budget returns exactly that, as this program measured (18 of 24 at
-                 * 300 tokens). A stranger able to induce one could spend the user's tokens without
-                 * ever moving a counter, which is a bound enforced on our side of the wire and not on
-                 * theirs.
-                 */
-                yield* answers.spent(ctx.payload.asker)
-                const chunks: string[] = []
-                /**
-                 * 🔴 The THINKING is bounded, not just the total — the mechanism the title pass
-                 * already uses (owner, 2026-08-17).
-                 *
-                 * Raising `maxTokens` alone only bought a reasoning model more room to think itself
-                 * out of answering: it spent the budget and returned an empty completion, and the
-                 * asker was told "no-answer" as though we had nothing to say. `ReasoningBudget`
-                 * counts reasoning tokens live, nudges as they run down, and has a MECHANICAL hard
-                 * stop that re-issues the turn with thinking structurally disabled. That is the
-                 * difference between hoping a model stops thinking and making it.
-                 *
-                 * ⚠️ `maintenance.ts` records the pairing hazard beside its own use: reasoning-
-                 * budget argues its safety from phases inheriting an UNSET max_tokens, and an
-                 * explicit ceiling weakens that argument, so the two numbers must be re-checked
-                 * together if either moves. Here the ceiling is the user's knob, which is exactly the
-                 * thing that can move — so the budget is deliberately a small fraction of it.
-                 */
-                yield* ReasoningBudget.stream({
-                  request: LLM.request({
-                      model,
-                      system: [SystemPart.make(CommunityAnswer.SYSTEM)],
-                      // 🔴 FRAMED. The question is a stranger's words entering a model's context, and
-                      // this one is more dangerous than a channel body because the model is SUPPOSED
-                      // to act on it.
-                      /**
-                       * 🔴 EVIDENCE, then the question (Codex review P2).
-                       *
-                       * The turn used to carry the system prompt and the question alone, so "what
-                       * this instance knows" was the base model's pretrained weights — and the
-                       * motivating flow of the whole feature is one Nova asking another what
-                       * happened TODAY. Without this the instance signs a year-old guess with its
-                       * user's identity and spends their standing on it.
-                       *
-                       * ⚠️ Assembled ABOVE, outside the model call, from messages the peer surface
-                       * already serves to any stranger who asks — so it discloses nothing a peer
-                       * could not fetch directly.
-                       */
-                      messages: [
-                        Message.user(CommunityAnswer.evidencePacket(evidence)),
-                        Message.user(CommunityAnswer.framedQuestion(ctx.payload.question)),
-                      ],
-                      // 🔴 NO TOOLS. An instance that answers strangers with a full agent is a remote
-                      // shell with extra steps; what it may use is what it would say aloud in a room.
-                      tools: [],
-                      // The user's ceiling: too small returns silence from a reasoning model.
-                      generation: { maxTokens: overall.gate.maxTokens },
-                  }),
-                  stream: (next) => llm.stream(next),
-                  // A quarter of the answer's ceiling: enough to think, never enough to think INSTEAD
-                  // of answering, and it scales with the knob rather than drifting away from it.
-                  budget: Math.max(64, Math.floor(overall.gate.maxTokens / 4)),
-                })
-                  .pipe(
-                    Stream.runForEach((event) => {
-                      if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
-                      return Effect.void
-                    }),
-                  )
-                return chunks.join("") as string | undefined | typeof TURN_TIMED_OUT
-              }).pipe(
-                /**
-                 * 🔴 BOTH contexts, and the asymmetry is why the happy path never ran.
-                 *
-                 * `LLMClient` is a GLOBAL node and needs `AppNodeBuilder`; `SessionRunnerModel` is a
-                 * LOCATION service and needs a location. Providing only the first failed with
-                 * "Service not found: SessionRunnerModel" — and since that failure is caught and
-                 * turned into a named refusal, answering reported "unavailable" forever while looking
-                 * like a model problem. The memory handler records the mirror of this trap one file
-                 * over: a location context alone does not satisfy the global client.
-                 *
-                 * ⚠️ The app-managed SCRATCH directory, because answering a stranger belongs to no
-                 * project. The turn reads nothing from the location — it has no tools and no files —
-                 * it is needed only to resolve which model this instance would use.
-                 *
-                 * 🔴 This used to be `process.cwd()`, and that is the user's HOME on a desktop
-                 * launch (review §2, unit 6 F6): resolving a location boots a full location graph
-                 * including a RECURSIVE file watcher, so a stranger's question started a recursive
-                 * watch over everything the user owns. Principle 11 says the filesystem outside our
-                 * three places is read-only to us; a watcher is not a write, but walking a
-                 * stranger's whole home to answer a question they did not ask about it is the same
-                 * disregard for whose disk this is — and it is a cost no budget in this subsystem
-                 * could see.
-                 *
-                 * ⚠️ `Scratch.root()` rather than `ensure()`: resolving a model must not depend on
-                 * creating a directory, and the location graph does not require the path to exist.
-                 * The scratch root is provisioned on the `/path` route every client calls at boot.
-                 */
-                Effect.provide(
-                  locations.get(Location.Ref.make({ directory: AbsolutePath.make(Scratch.root()) })),
-                ),
-                Effect.provide(AppNodeBuilder.build(llmClient)),
-                /**
-                 * 🔴 A model we cannot reach is a REFUSAL, not a 500.
-                 *
-                 * Found by turning answering on where no model is configured: every asker got an
-                 * opaque UnknownError with a diagnostic reference, which tells a stranger nothing,
-                 * tells the owner nothing, and reads as a broken instance rather than one that
-                 * cannot answer right now. §4d says a refusal is a normal answer and must be NAMED.
-                 *
-                 * ⚠️ It also has to be caught here rather than at the edge, because the failure
-                 * is somebody else's request holding OUR permit — dying inside the semaphore is
-                 * how a transient model problem becomes a stuck door.
-                 */
-                /**
-                 * 🔴 The refusal is named to the ASKER; the CAUSE is named to the owner.
-                 *
-                 * Swallowing it entirely was the same mistake as the 500 in the other direction: a
-                 * stranger should not be told why our model is unhappy, and the person running the
-                 * instance has nothing else to look at. "unavailable" with no log is a feature that
-                 * cannot be diagnosed by anybody.
-                 */
-                Effect.catchCause((cause) =>
-                  Log.event("community.answer.failed", { "community.cause": Log.fault(cause) }).pipe(
-                    Effect.as(undefined),
-                  ),
-                ),
-                /**
-                 * 🔴 The whole TURN is bounded, not just the resolve. `ReasoningBudget` counts
-                 * tokens; a model that streams slowly, or a provider that stalls mid-response, is
-                 * bounded by neither — and it holds the ONE permit while it does, so every other peer
-                 * is told `busy` until it finishes. One hung provider takes this instance out of the
-                 * network for everybody.
-                 *
-                 * ⚠️ INSIDE the permit, so the release happens with it. Timing out around the
-                 * semaphore would answer the caller and leave the work running behind the lock.
-                 */
+          const answer = yield* turn.withPermitsIfAvailable(1)(
+            Effect.gen(function* () {
+              const models = yield* SessionRunnerModel.Service
+              const llm = yield* LLMClient.Service
+              // ⚠️ BOUNDED, for the reason the memory handler records: resolving does not call the
+              // model, so it is fast or it is stuck, and a stuck resolve here would hold a stranger's
+              // connection open indefinitely.
+              const model = yield* models.resolveDefault().pipe(
                 Effect.timeoutOrElse({
-                  duration: Duration.millis(ANSWERING_TURN_MS),
-                  orElse: () => Effect.succeed<string | undefined | typeof TURN_TIMED_OUT>(TURN_TIMED_OUT),
+                  duration: "30 seconds",
+                  orElse: () => Effect.die("resolveDefault timed out"),
                 }),
+              )
+              /**
+               * 🔴 From here on the model RUNS, and that is what the budget must count.
+               *
+               * The spend used to be recorded only once an answer existed, so that a failed turn
+               * "does not consume the day". The half of that reasoning which was wrong: an EMPTY
+               * completion is a turn that ran and cost real tokens — and a reasoning model on a
+               * tight thinking budget returns exactly that, as this program measured (18 of 24 at
+               * 300 tokens). A stranger able to induce one could spend the user's tokens without
+               * ever moving a counter, which is a bound enforced on our side of the wire and not on
+               * theirs.
+               */
+              yield* answers.spent(ctx.payload.asker)
+              const chunks: string[] = []
+              /**
+               * 🔴 The THINKING is bounded, not just the total — the mechanism the title pass
+               * already uses (owner, 2026-08-17).
+               *
+               * Raising `maxTokens` alone only bought a reasoning model more room to think itself
+               * out of answering: it spent the budget and returned an empty completion, and the
+               * asker was told "no-answer" as though we had nothing to say. `ReasoningBudget`
+               * counts reasoning tokens live, nudges as they run down, and has a MECHANICAL hard
+               * stop that re-issues the turn with thinking structurally disabled. That is the
+               * difference between hoping a model stops thinking and making it.
+               *
+               * ⚠️ `maintenance.ts` records the pairing hazard beside its own use: reasoning-
+               * budget argues its safety from phases inheriting an UNSET max_tokens, and an
+               * explicit ceiling weakens that argument, so the two numbers must be re-checked
+               * together if either moves. Here the ceiling is the user's knob, which is exactly the
+               * thing that can move — so the budget is deliberately a small fraction of it.
+               */
+              yield* ReasoningBudget.stream({
+                request: LLM.request({
+                  model,
+                  system: [SystemPart.make(CommunityAnswer.SYSTEM)],
+                  // 🔴 FRAMED. The question is a stranger's words entering a model's context, and
+                  // this one is more dangerous than a channel body because the model is SUPPOSED
+                  // to act on it.
+                  /**
+                   * 🔴 EVIDENCE, then the question (Codex review P2).
+                   *
+                   * The turn used to carry the system prompt and the question alone, so "what
+                   * this instance knows" was the base model's pretrained weights — and the
+                   * motivating flow of the whole feature is one Nova asking another what
+                   * happened TODAY. Without this the instance signs a year-old guess with its
+                   * user's identity and spends their standing on it.
+                   *
+                   * ⚠️ Assembled ABOVE, outside the model call, from messages the peer surface
+                   * already serves to any stranger who asks — so it discloses nothing a peer
+                   * could not fetch directly.
+                   */
+                  messages: [
+                    Message.user(CommunityAnswer.evidencePacket(evidence)),
+                    Message.user(CommunityAnswer.framedQuestion(ctx.payload.question)),
+                  ],
+                  // 🔴 NO TOOLS. An instance that answers strangers with a full agent is a remote
+                  // shell with extra steps; what it may use is what it would say aloud in a room.
+                  tools: [],
+                  // The user's ceiling: too small returns silence from a reasoning model.
+                  generation: { maxTokens: overall.gate.maxTokens },
+                }),
+                stream: (next) => llm.stream(next),
+                // A quarter of the answer's ceiling: enough to think, never enough to think INSTEAD
+                // of answering, and it scales with the knob rather than drifting away from it.
+                budget: Math.max(64, Math.floor(overall.gate.maxTokens / 4)),
+              }).pipe(
+                Stream.runForEach((event) => {
+                  if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
+                  return Effect.void
+                }),
+              )
+              return chunks.join("") as string | undefined | typeof TURN_TIMED_OUT
+            }).pipe(
+              /**
+               * 🔴 BOTH contexts, and the asymmetry is why the happy path never ran.
+               *
+               * `LLMClient` is a GLOBAL node and needs `AppNodeBuilder`; `SessionRunnerModel` is a
+               * LOCATION service and needs a location. Providing only the first failed with
+               * "Service not found: SessionRunnerModel" — and since that failure is caught and
+               * turned into a named refusal, answering reported "unavailable" forever while looking
+               * like a model problem. The memory handler records the mirror of this trap one file
+               * over: a location context alone does not satisfy the global client.
+               *
+               * ⚠️ The app-managed SCRATCH directory, because answering a stranger belongs to no
+               * project. The turn reads nothing from the location — it has no tools and no files —
+               * it is needed only to resolve which model this instance would use.
+               *
+               * 🔴 This used to be `process.cwd()`, and that is the user's HOME on a desktop
+               * launch (review §2, unit 6 F6): resolving a location boots a full location graph
+               * including a RECURSIVE file watcher, so a stranger's question started a recursive
+               * watch over everything the user owns. Principle 11 says the filesystem outside our
+               * three places is read-only to us; a watcher is not a write, but walking a
+               * stranger's whole home to answer a question they did not ask about it is the same
+               * disregard for whose disk this is — and it is a cost no budget in this subsystem
+               * could see.
+               *
+               * ⚠️ `Scratch.root()` rather than `ensure()`: resolving a model must not depend on
+               * creating a directory, and the location graph does not require the path to exist.
+               * The scratch root is provisioned on the `/path` route every client calls at boot.
+               */
+              Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(Scratch.root()) }))),
+              Effect.provide(AppNodeBuilder.build(llmClient)),
+              /**
+               * 🔴 A model we cannot reach is a REFUSAL, not a 500.
+               *
+               * Found by turning answering on where no model is configured: every asker got an
+               * opaque UnknownError with a diagnostic reference, which tells a stranger nothing,
+               * tells the owner nothing, and reads as a broken instance rather than one that
+               * cannot answer right now. §4d says a refusal is a normal answer and must be NAMED.
+               *
+               * ⚠️ It also has to be caught here rather than at the edge, because the failure
+               * is somebody else's request holding OUR permit — dying inside the semaphore is
+               * how a transient model problem becomes a stuck door.
+               */
+              /**
+               * 🔴 The refusal is named to the ASKER; the CAUSE is named to the owner.
+               *
+               * Swallowing it entirely was the same mistake as the 500 in the other direction: a
+               * stranger should not be told why our model is unhappy, and the person running the
+               * instance has nothing else to look at. "unavailable" with no log is a feature that
+               * cannot be diagnosed by anybody.
+               */
+              Effect.catchCause((cause) =>
+                Log.event("community.answer.failed", { "community.cause": Log.fault(cause) }).pipe(
+                  Effect.as(undefined),
+                ),
               ),
-            )
+              /**
+               * 🔴 The whole TURN is bounded, not just the resolve. `ReasoningBudget` counts
+               * tokens; a model that streams slowly, or a provider that stalls mid-response, is
+               * bounded by neither — and it holds the ONE permit while it does, so every other peer
+               * is told `busy` until it finishes. One hung provider takes this instance out of the
+               * network for everybody.
+               *
+               * ⚠️ INSIDE the permit, so the release happens with it. Timing out around the
+               * semaphore would answer the caller and leave the work running behind the lock.
+               */
+              Effect.timeoutOrElse({
+                duration: Duration.millis(ANSWERING_TURN_MS),
+                orElse: () => Effect.succeed<string | undefined | typeof TURN_TIMED_OUT>(TURN_TIMED_OUT),
+              }),
+            ),
+          )
 
           // Nobody got the permit: somebody else's question is being answered right now.
           if (Option.isNone(answer)) return yield* refuse("busy")
@@ -977,8 +1003,7 @@ const TURN_TIMED_OUT = { timedOut: true } as const
            */
           // ⚠️ Discriminated by TYPE, not by identity: TypeScript does not narrow an object
           // comparison, and an unnarrowed union here would hide the empty-answer check below it.
-          if (answer.value !== undefined && typeof answer.value !== "string")
-            return yield* refuse("unavailable")
+          if (answer.value !== undefined && typeof answer.value !== "string") return yield* refuse("unavailable")
           // ⚠️ Distinct from "no-answer": the model never ran, rather than running and saying nothing.
           if (answer.value === undefined) return yield* refuse("unavailable")
           const text = answer.value.trim()
@@ -1161,12 +1186,12 @@ const TURN_TIMED_OUT = { timedOut: true } as const
       )
       .handle(
         "communityInbound",
-      Effect.fn("CommunityHttpApi.communityInbound")(function* (ctx) {
-        // The verdict is deliberately dropped rather than returned — see `PeerAck`. It is not lost:
-        // a stored message appears in the channel, and a rejected one is the door doing its job.
-        yield* channels.deliver(ctx.payload.topic, ctx.payload.message)
-        return { received: true } as const
-      }),
-    )
+        Effect.fn("CommunityHttpApi.communityInbound")(function* (ctx) {
+          // The verdict is deliberately dropped rather than returned — see `PeerAck`. It is not lost:
+          // a stored message appears in the channel, and a rejected one is the door doing its job.
+          yield* channels.deliver(ctx.payload.topic, ctx.payload.message)
+          return { received: true } as const
+        }),
+      )
   }),
 )
