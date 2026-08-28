@@ -220,3 +220,21 @@ export const HELP_TEXT = [
  *  this). Kept here so its wording is testable and consistent. */
 export const UNPAIRED_HINT =
   "This account isn't set up to chat with you. If you're the operator, pair from Settings → Messengers and send /pair <code>."
+
+/**
+ * WHICH chat a flood is counted against.
+ *
+ * 🔴 **NC-SEC-013 — the cap was keyed on the CHILD and routing keys on the PARENT.** The gateway
+ * advertises a hard ceiling of turn-driving messages per minute, keyed `accountID:chatID`, and
+ * applied it to the incoming thread/post id. But routing deliberately falls a thread back to its
+ * PARENT's binding, and both shipped public-channel drivers let the sender pick the child id. So one
+ * sender rotating thread ids minted a fresh bucket per message and drove the same session past the
+ * ceiling — the cap counted something the attacker chose.
+ *
+ * ⚠️ It buckets by parent even when the thread has a binding of its own. A flooder rotating threads
+ * under one parent is ONE flooder, and the alternative — per-thread budgets — is the bypass restated.
+ * The cost is that busy sibling threads share a budget; the cap counts only turn-driving messages, so
+ * that budget is generous for anything a person is actually typing.
+ */
+export const floodChat = (chat: { readonly chatID: string; readonly parentID?: string | undefined }): string =>
+  chat.parentID ?? chat.chatID

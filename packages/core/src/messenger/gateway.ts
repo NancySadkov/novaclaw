@@ -1171,8 +1171,11 @@ const build = (options: Options) =>
         // Flood cap (§7.6): a chat firing faster than a human gets dropped past the cap, with a
         // single throttled slow-down reply. (Audience already coalesces, but a hard flood would
         // still flush size-batches back-to-back — the cap bounds that too.)
+        // ⚠️ NC-SEC-013: keyed on the chat the message ROUTES to, not the one it arrived on. A
+        // thread falls back to its parent's binding, and the sender picks the thread id — so keying
+        // on the child let one sender mint a fresh bucket per message. `floodChat` carries the why.
         const flood = floodClear(
-          MessengerPipeline.chatKey(account.id, event.chat.chatID),
+          MessengerPipeline.chatKey(account.id, MessengerPipeline.floodChat(event.chat)),
           yield* Clock.currentTimeMillis,
         )
         if (!flood.ok) {

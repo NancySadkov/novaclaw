@@ -69,6 +69,33 @@ describe("MessengerPipeline.renderSessions", () => {
   })
 })
 
+/**
+ * 🔴 NC-SEC-013 — the flood cap counted something the ATTACKER chose.
+ *
+ * The ceiling is keyed `accountID:chatID` and was applied to the incoming thread/post id. Routing
+ * deliberately falls a thread back to its PARENT's binding, and both shipped public-channel drivers
+ * let the sender pick the child id — so one sender rotating thread ids minted a fresh bucket per
+ * message and drove the same session past a cap that never noticed.
+ *
+ * A/B: return `chat.chatID` and "siblings share one bucket" fails, which is the bypass.
+ */
+describe("MessengerPipeline.floodChat", () => {
+  test("🔴 sibling threads under one parent share ONE bucket", () => {
+    const parent = { chatID: "thread-a", parentID: "channel-1" }
+    const sibling = { chatID: "thread-b", parentID: "channel-1" }
+    expect(MessengerPipeline.floodChat(parent)).toBe(MessengerPipeline.floodChat(sibling))
+    // And the bucket is the parent's — the chat the message actually routes to.
+    expect(MessengerPipeline.floodChat(parent)).toBe("channel-1")
+  })
+
+  test("a chat with no parent is its own bucket", () => {
+    // The control: without it, "always return a constant" would satisfy the test above and collapse
+    // every chat on the account into a single 30/min budget.
+    expect(MessengerPipeline.floodChat({ chatID: "dm-7" })).toBe("dm-7")
+    expect(MessengerPipeline.floodChat({ chatID: "dm-7" })).not.toBe(MessengerPipeline.floodChat({ chatID: "dm-8" }))
+  })
+})
+
 describe("MessengerPipeline.chatKey", () => {
   test("is stable and account-scoped", () => {
     expect(MessengerPipeline.chatKey("msa_1" as never, "42")).toBe("msa_1:42")
