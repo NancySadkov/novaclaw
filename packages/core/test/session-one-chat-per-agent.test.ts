@@ -42,13 +42,7 @@ import { testEffect } from "./lib/effect"
  */
 const it = testEffect(
   AppNodeBuilder.build(
-    LayerNode.group([
-      Database.node,
-      EventV2.node,
-      SessionProjector.node,
-      ProjectV2.node,
-      SessionStore.node,
-    ]),
+    LayerNode.group([Database.node, EventV2.node, SessionProjector.node, ProjectV2.node, SessionStore.node]),
   ),
 )
 
@@ -139,6 +133,45 @@ describe("one chat per colleague", () => {
       expect(String(created.id)).not.toBe("ses_old")
       const roots_spectre = yield* rootsFor(d.db, "spectre")
       expect(roots_spectre.length).toBe(1)
+    }),
+  )
+
+  it.effect("a returning name does not open into its predecessor's chat", () =>
+    Effect.gen(function* () {
+      const d = yield* deps
+      /**
+       * 🔴 The hazard the canonical id CREATES, pinned here (2026-08-28). A colleague's chat now
+       * carries the colleague's id, and retiring one archives the chat rather than deleting it — so
+       * the archived row sits on the exact id the next holder of that name would be handed. Without
+       * the yield-the-seat branch, hiring a new colleague on a returned name opens straight into the retired one's
+       * transcript: months of somebody else's conversation, presented as their own, which is the
+       * defect `AgentRetire.everything` exists to prevent.
+       *
+       * ⚠️ Distinct from the test above, which archives a chat under an unrelated id and so never
+       * touches the canonical seat.
+       *
+       * A/B: drop `claimed === undefined` from the id choice in `createSessionRecord` and this fails
+       * with `created.id === "ses_wraith"` — the archived chat handed back as if it were new.
+       */
+      yield* seedChat(d.db, { id: "ses_wraith", agent: "wraith", archived: 5 })
+
+      const created = yield* createSessionRecord(d, { agent: "wraith", location: { directory: here() } } as never)
+
+      expect(String(created.id)).not.toBe("ses_wraith")
+      expect(created.time.archived).toBeUndefined()
+      const roots = yield* rootsFor(d.db, "wraith")
+      expect(roots.length).toBe(1)
+    }),
+  )
+
+  it.effect("a colleague's chat carries the COLLEAGUE's id", () =>
+    Effect.gen(function* () {
+      const d = yield* deps
+      // The ECS lens made concrete: the chat is a component of the colleague, so it is reached
+      // through the colleague rather than holding an identity of its own.
+      const created = yield* createSessionRecord(d, { agent: "vesper", location: { directory: here() } } as never)
+
+      expect(String(created.id)).toBe("ses_vesper")
     }),
   )
 

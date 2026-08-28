@@ -265,7 +265,7 @@ export function AgentConfigDialog(props: {
   }
 
   /**
-   * Clear this colleague's chat: the conversation is archived and the NEXT one starts empty. The
+   * Clear this colleague's chat: the conversation is removed and the NEXT one starts empty. The
    * colleague, its brief and its memory all survive — this is a new session, not a retirement.
    *
    * 🔴 **It used to announce a clearing the user could still see had not happened** (owner,
@@ -274,7 +274,7 @@ export function AgentConfigDialog(props: {
    * the roster, so the common path is Tune → Clear inside the very chat being cleared. The dialog
    * closed, the toast said *"Chat cleared"*, and the transcript underneath was untouched — the route
    * still names that session, so the view keeps rendering it. Ruling 2 cuts here: a fault is never
-   * described falsely, and neither is a success. The archived conversation must LEAVE the screen, or
+   * described falsely, and neither is a success. The cleared conversation must LEAVE the screen, or
    * the sentence is a lie about the thing the user is looking at.
    *
    * ⚠️ Navigating only when the route actually names the cleared session, rather than always: from
@@ -307,10 +307,22 @@ export function AgentConfigDialog(props: {
         showToast({ variant: "default", title: language.t("agentConfig.clearNothing") })
         return
       }
-      await (client as never as { session: { update: (input: unknown) => Promise<unknown> } }).session.update({
-        sessionID: chat.id,
-        archived: Date.now(),
-      })
+      /**
+       * 🔴 **Clearing DELETES the chat; it used to archive it** (2026-08-28). Two reasons, and they
+       * are the same reason:
+       *
+       * · An archived chat is still in the chats picker, dimmed — so a conversation the user cleared,
+       *   behind a destructive confirmation, was one click away from being read again. That is the
+       *   same complaint as the tab that kept rendering it, one surface further out.
+       * · A colleague's chat now carries the colleague's ID (`createSessionRecord`). An archived row
+       *   holding that id would push the replacement onto a generated one, so the very act of asking
+       *   for a fresh chat would cost the colleague the id that says the chat is theirs.
+       *
+       * `session.remove` is not a bare row delete: it takes the children, the session-scoped
+       * memories and the Strict artifacts with it. That is what "Clear chat" promises.
+       */
+      const removed = await client.session.remove({ sessionID: chat.id })
+      if (removed.error) throw removed.error
       const viewingCleared = location.pathname.includes(chat.id)
       showToast({ variant: "success", title: language.t("agentConfig.clearedTitle") })
       props.onChanged?.()

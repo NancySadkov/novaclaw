@@ -499,7 +499,59 @@ export const createSessionRecord = (
 ) =>
   Effect.gen(function* () {
     const { db, events, projects, store } = deps
-    const sessionID = input.id ?? SessionSchema.ID.create()
+    /**
+     * 🔴 **A COLLEAGUE'S CHAT CARRIES THE COLLEAGUE'S ID** (owner, 2026-08-28: *"session should share
+     * the id with agent. Single entity - no confusion. I.e. session is a component on an agent,
+     * according to the ECS part of our vision"* — and, on why: *"we have deficient architecture,
+     * which breeds bugs like rabbits. Fix the architecture, and the bugs will have no feeding
+     * ground."*).
+     *
+     * The vision's ECS line — *"a session is an entity"* — was written when sessions were anonymous.
+     * Named colleagues moved the entity up a level: the AGENT is the entity, and its chat is a
+     * component hanging off it, like its memory, its folder and its model. A component does not get
+     * an identity of its own; it is reached through the entity that owns it.
+     *
+     * ⚠️ This is what makes one-chat-per-colleague a fact of the DATA rather than a rule some code
+     * has to remember to apply. `store.get` below now answers "does this colleague already have a
+     * chat" without asking, and a whole class of defect stops being expressible: two sessions for one
+     * colleague, a chat filed under a name that does not own it, a roster lookup that finds the wrong
+     * one of two. Every one of those was a real bug in the last week.
+     *
+     * ⚠️ The `ses_` prefix stays because `SessionID` requires it — it is a TYPE tag, not an identity.
+     * The mapping is total and reversible, so the id still names exactly one colleague.
+     *
+     * ⚠️ Safe as a path/URL segment because the agent id ALREADY has to be: `scratch.ensureForAgent`
+     * makes a directory named by it. This adds no constraint that was not already load-bearing.
+     *
+     * ⚠️ TWO predicates below, deliberately, because they answer two questions. `colleagueRoot` asks
+     * *is this a colleague's own chat* — that is what the one-chat guard turns on, and it holds
+     * whether or not the caller supplied an id. The canonical id additionally needs
+     * `input.id === undefined`, since a caller naming an id has already decided. Folding them into
+     * one predicate silently took the guard away from every explicit-id caller, which is a second
+     * live chat waiting to happen.
+     */
+    const colleagueRoot =
+      input.parentID === undefined && input.agent !== undefined && !AgentV2.POSTURE_IDS.has(input.agent)
+    const canonical = colleagueRoot && input.id === undefined ? SessionSchema.ID.make(`ses_${input.agent}`) : undefined
+    const claimed = canonical === undefined ? undefined : yield* store.get(canonical)
+    // A LIVE chat at the canonical id IS this colleague's chat: the idempotent answer, reached
+    // without a scan, because the id already said whose it is.
+    if (claimed !== undefined && claimed.time.archived === undefined) return claimed
+    /**
+     * ⚠️ **An ARCHIVED predecessor keeps the name but yields the seat.** Retiring a colleague and
+     * reassigning one both archive the chat ON PURPOSE — retirement sets the private cabinet aside
+     * rather than deleting it, and keeping the transcript is the same promise about the same history
+     * (*"a retirement is not a purge of the record"*, `agent/retire.ts`). Handing the canonical id
+     * back would resurrect it: hire someone on a returned name and they would open into months of
+     * another colleague's conversation, which is the exact defect `AgentRetire.everything` exists to
+     * prevent.
+     *
+     * So a successor takes a generated id and the guard below keeps it to one chat. The id is the
+     * rule made VISIBLE, not a second rule — both answer the same question, and the guard answers it
+     * in every case, including this one.
+     */
+    const sessionID =
+      input.id ?? (canonical !== undefined && claimed === undefined ? canonical : SessionSchema.ID.create())
     const recorded = yield* store.get(sessionID)
     if (recorded) return recorded
     // 🔴 ONE CHAT PER COLLEAGUE, enforced HERE because this is the one seam every creator reaches
@@ -536,7 +588,16 @@ export const createSessionRecord = (
     // therefore still be treated as a colleague here. Sub-agents are already excluded by the
     // `parentID` clause, so the residual gap is hidden-agent roots — narrow, and filed rather than
     // papered over.
-    if (input.parentID === undefined && input.agent !== undefined && !AgentV2.POSTURE_IDS.has(input.agent)) {
+    /**
+     * ⚠️ Still here, and NOT redundant with the canonical id above: it is what covers rows that do
+     * not carry one. Chats created before this change have generated ids, and — because the UI is a
+     * thin client that reaches ANY instance by URL — so do chats on an instance running an older
+     * build. Without this scan a colleague with a legacy chat would silently get a second one.
+     *
+     * It is a lookup, not a second rule: both answer the same question, and the id answers it for
+     * everything written from here on.
+     */
+    if (colleagueRoot && input.agent !== undefined) {
       const live = yield* liveRootFor(db, input.agent)
       if (live) {
         const existing = yield* store.get(SessionSchema.ID.make(live.id))
