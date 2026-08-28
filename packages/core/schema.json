@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "3ecd1aa2-1d5c-4b97-b1d2-bf8a92525fa8",
+  "id": "3babd21e-56a6-419d-a0e8-0a6a6ba1d885",
   "prevIds": [
-    "8eb6ecd5-cfc0-448e-a77f-94738e22e8a3"
+    "3ecd1aa2-1d5c-4b97-b1d2-bf8a92525fa8"
   ],
   "ddl": [
     {
@@ -92,6 +92,10 @@
     },
     {
       "name": "agent_setting",
+      "entityType": "tables"
+    },
+    {
+      "name": "agent_status",
       "entityType": "tables"
     },
     {
@@ -1673,6 +1677,56 @@
       "name": "time_updated",
       "entityType": "columns",
       "table": "agent_setting"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "agent",
+      "entityType": "columns",
+      "table": "agent_status"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "task",
+      "entityType": "columns",
+      "table": "agent_status"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "observed",
+      "entityType": "columns",
+      "table": "agent_status"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_created",
+      "entityType": "columns",
+      "table": "agent_status"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_updated",
+      "entityType": "columns",
+      "table": "agent_status"
     },
     {
       "type": "text",
@@ -5209,6 +5263,15 @@
       "nameExplicit": false,
       "name": "agent_setting_pk",
       "table": "agent_setting",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "agent"
+      ],
+      "nameExplicit": false,
+      "name": "agent_status_pk",
+      "table": "agent_status",
       "entityType": "pks"
     },
     {

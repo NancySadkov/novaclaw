@@ -238,6 +238,15 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`agent_status\` (
+          \`agent\` text PRIMARY KEY,
+          \`task\` text NOT NULL,
+          \`observed\` integer NOT NULL,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`catalog_provider\` (
           \`id\` text PRIMARY KEY,
           \`layers\` text NOT NULL,
