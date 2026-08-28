@@ -564,6 +564,26 @@ const build = (options: Options) =>
             notes.push(`[attachment "${name}" failed to download: ${outcome.reason ?? "unknown error"}]`)
             continue
           }
+          /**
+           * 🔴 **NC-SEC-009 — the cap is enforced on the BYTES, not on what the sender claimed.**
+           *
+           * The check above fires only `if (ref.size !== undefined)`, so a remote that simply omits
+           * the field skipped the 50 MB fetch ceiling entirely — and nothing downstream re-checked:
+           * `byteLength` was compared against the INLINE cap to choose memory-vs-disk, never against
+           * the fetch cap. A poisoned attachment with no `size` was downloaded whole and written to
+           * disk at any size, which is exactly the disk-fill the ceiling exists to prevent.
+           *
+           * ⚠️ This closes the DISK half. The memory half is still open: `downloadFile` hands back a
+           * materialised `Uint8Array`, so an oversized body is in RAM before this line can object.
+           * Bounding that needs a reader that stops mid-stream, in each driver — the same primitive
+           * NC-SEC-005/006/008 want. Recorded rather than half-done here.
+           */
+          if (outcome.data.byteLength > FETCH_FILE_CAP_BYTES) {
+            notes.push(
+              `[attachment "${name}" skipped — ${Math.round(outcome.data.byteLength / 1_000_000)} MB is over the ${FETCH_FILE_CAP_BYTES / 1_000_000} MB fetch cap]`,
+            )
+            continue
+          }
           const mime = ref.mime ?? "application/octet-stream"
           if (outcome.data.byteLength <= INLINE_FILE_CAP_BYTES) {
             files.push({ uri: `data:${mime};base64,${Buffer.from(outcome.data).toString("base64")}`, mime, name })
