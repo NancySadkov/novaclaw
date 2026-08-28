@@ -31,6 +31,7 @@ const graph = (fixture: string) => {
       all: () => Effect.succeed({ capability_services: { parser: info } }),
       set: () => Effect.void,
       remove: () => Effect.void,
+      unreadable: () => Effect.succeed([]),
       isEmpty: () => Effect.succeed(false),
     }),
   )

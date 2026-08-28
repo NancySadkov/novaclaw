@@ -108,6 +108,6 @@ export function notice(unreadable: ReadonlyArray<Unreadable>, directory: string)
     `${count} cannot be read, so anything using ${one ? "it" : "them"} will fail to authenticate. ` +
     `${one ? "It was" : "They were"} encrypted with "${KEY_FILE}", which is missing or unreadable in ` +
     `${directory}. Restoring that file from a backup repairs ${one ? "it" : "them"}; there is no way ` +
-    `to recover ${one ? "it" : "them"} without it.`
+    `to recover ${one ? "it" : "them"} without that file.`
   )
 }

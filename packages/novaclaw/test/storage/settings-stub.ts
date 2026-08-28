@@ -27,6 +27,7 @@ export const settingsStub = (state: SettingsState = { current: {} }) =>
           delete next[key]
           state.current = next
         }),
+      unreadable: () => Effect.succeed([]),
       isEmpty: () => Effect.sync(() => Object.keys(state.current).length === 0),
     }),
   )

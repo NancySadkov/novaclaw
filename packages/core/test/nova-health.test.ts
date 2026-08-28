@@ -248,3 +248,26 @@ describe("NovaHealth.fromCapability — the generic edge row", () => {
     expect(NovaHealth.worst(board)).toBe("problem")
   })
 })
+
+test("🔴 unreadable stored secrets are a PROBLEM with a named repair", () => {
+  /**
+   * NC-REL-030(b). Nothing degrades gracefully when a credential will not open — the affected
+   * integrations do not work at all — and the only repair is restoring a file the user has to be
+   * told the name of. A warning would suggest waiting it out.
+   *
+   * A/B: return `status: "warning"` and this fails.
+   */
+  const signal = NovaHealth.fromCredentials({ unreadable: 2, notice: "2 stored secrets cannot be read." })
+  expect(signal.status).toBe("problem")
+  expect(signal.detail).toContain("2 stored secrets")
+  expect(signal.action).toContain("credential.key")
+})
+
+test("a healthy instance reports the row as ok, with nothing to do", () => {
+  // The board shows every signal, so this row exists on a healthy instance too. It must not carry an
+  // action there — an offer to repair something that is not broken teaches users to ignore actions.
+  const signal = NovaHealth.fromCredentials({ unreadable: 0 })
+  expect(signal.status).toBe("ok")
+  expect(signal.action).toBeUndefined()
+  expect(signal.detail).toBeUndefined()
+})

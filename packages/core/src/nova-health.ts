@@ -99,6 +99,33 @@ export const fromDatabase = (input: { readonly status: "ok" | "damaged" | "unkno
 })
 
 /**
+ * 🔴 NC-REL-030(b) — stored secrets that cannot be decrypted.
+ *
+ * The final piece of NC-REL-030, and it belongs HERE rather than on a Recovery screen. Boot survival
+ * (a) made a lost `credential.key` non-fatal: the instance starts, and every unreadable secret fails
+ * closed. That converted a loud failure into a silent one — providers simply stop authenticating —
+ * so what was missing is a FINDING, which is exactly what this report is for. A recovery MODE would
+ * be the wrong answer to an instance that boots perfectly well.
+ *
+ * ⚠️ A `problem`, not a warning. Nothing degrades gracefully here: the affected integrations do not
+ * work at all, and the only repair is restoring a file the user must be told the name of. A warning
+ * would suggest waiting it out.
+ *
+ * ⚠️ `notice` arrives already composed, because naming the key file and the data directory is what
+ * makes the row actionable and neither is knowable from a count.
+ */
+export const fromCredentials = (input: { readonly unreadable: number; readonly notice?: string }): Signal => {
+  if (input.unreadable === 0) return { id: "credentials", label: "Stored secrets", status: "ok" }
+  return {
+    id: "credentials",
+    label: "Stored secrets",
+    status: "problem",
+    ...(input.notice === undefined ? {} : { detail: input.notice }),
+    action: "Restore credential.key from a backup into the instance data directory, then restart.",
+  }
+}
+
+/**
  * `ProviderReach.Verdict` → a row.
  *
  * ⚠️ `blocked` is a WARNING with no repair, not a problem: the user turned the airgap on, and
