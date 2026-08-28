@@ -31,16 +31,49 @@ function eventData(data: unknown): Sse.Event {
   }
 }
 
+/**
+ * How far a client may fall behind before it is disconnected to resync.
+ *
+ * ⚠️ Generous on purpose: a normal client drains continuously, so reaching this means it has stopped
+ * reading, not that it is merely slow. Small enough that one stalled tab cannot own the heap.
+ */
+const EVENT_STREAM_BUFFER = 1024
+
 function eventResponse() {
   return Effect.gen(function* () {
     yield* Log.event("server.global.event.connected", {})
-    const events = Stream.callback<GlobalBusEvent>((queue) => {
-      const handler = (event: GlobalBusEvent) => Queue.offerUnsafe(queue, event)
-      return Effect.acquireRelease(
-        Effect.sync(() => GlobalBus.on("event", handler)),
-        () => Effect.sync(() => GlobalBus.off("event", handler)),
-      )
-    })
+    /**
+     * 🔴 **NC-REL-008 — this queue was UNBOUNDED.** `Stream.callback` passes an omitted `bufferSize`
+     * straight to `Queue.make`, so every slow client accumulated its own copy of the process-wide
+     * model event stream in server memory, without limit. One stalled browser tab was enough.
+     *
+     * ⚠️ **Bounded, and overflow ENDS the stream — it does not trim it.** The three strategies the API
+     * offers are all wrong here: `suspend` would let one slow client apply backpressure to the bus
+     * every other client shares; `sliding` and `dropping` make that client's view diverge invisibly,
+     * which is the same silent-corruption shape as NC-REL-004 one layer up. Ending is safe precisely
+     * because the app already resyncs on reconnect — the client receives `server.connected` and
+     * invalidates, so a forced reconnect costs a round trip and loses nothing.
+     */
+    const events = Stream.callback<GlobalBusEvent>(
+      (queue) => {
+        let buffered = 0
+        const handler = (event: GlobalBusEvent) => {
+          if (Queue.offerUnsafe(queue, event)) {
+            buffered++
+            return
+          }
+          Effect.runFork(
+            Log.event("server.global.event.overflow", { "server.stream": "global", "server.buffered": buffered }),
+          )
+          Queue.endUnsafe(queue)
+        }
+        return Effect.acquireRelease(
+          Effect.sync(() => GlobalBus.on("event", handler)),
+          () => Effect.sync(() => GlobalBus.off("event", handler)),
+        )
+      },
+      { bufferSize: EVENT_STREAM_BUFFER },
+    )
     const heartbeat = Stream.tick("5 seconds").pipe(
       Stream.drop(1),
       Stream.map(() => ({ payload: { id: EventV2.ID.create(), type: "server.heartbeat", properties: {} } })),

@@ -26,9 +26,9 @@ describe("serve liveness", () => {
   test("🔴 a 401 is PROOF OF LIFE, not a missed health check", async () => {
     const original = globalThis.fetch
     try {
-      globalThis.fetch = (async () => new Response("unauthorized", { status: 401 })) as typeof fetch
+      globalThis.fetch = (async () => new Response("unauthorized", { status: 401 })) as unknown as typeof fetch
       expect(await probe(new URL("http://127.0.0.1:4096/api/health"))).toBe(true)
-      globalThis.fetch = (async () => new Response("forbidden", { status: 403 })) as typeof fetch
+      globalThis.fetch = (async () => new Response("forbidden", { status: 403 })) as unknown as typeof fetch
       expect(await probe(new URL("http://127.0.0.1:4096/api/health"))).toBe(true)
     } finally {
       globalThis.fetch = original
@@ -40,7 +40,7 @@ describe("serve liveness", () => {
     // never replace a genuinely broken child.
     const original = globalThis.fetch
     try {
-      globalThis.fetch = (async () => new Response("boom", { status: 500 })) as typeof fetch
+      globalThis.fetch = (async () => new Response("boom", { status: 500 })) as unknown as typeof fetch
       expect(await probe(new URL("http://127.0.0.1:4096/api/health"))).toBe(false)
     } finally {
       globalThis.fetch = original

@@ -1820,6 +1820,18 @@ export const EVENTS = {
     file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/global.ts",
   },
   /** The instance-global SSE event stream closed. */
+  /**
+   * A client fell far enough behind that its event buffer filled. The stream is ENDED rather than
+   * trimmed: the client reconnects and resyncs, which is correct, where a silently dropped event
+   * leaves its view diverged with nothing to notice.
+   */
+  "server.global.event.overflow": {
+    level: "warn",
+    message: "an event stream client fell behind and was disconnected to force a resync",
+    attributes: { "server.stream": "id", "server.buffered": "count" },
+    content: "user",
+    file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/global.ts",
+  },
   "server.global.event.disconnected": {
     level: "info",
     message: "global event stream disconnected",
