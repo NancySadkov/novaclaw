@@ -3,7 +3,7 @@ export * as AgentStatusDerive from "./derive"
 import { Effect, Stream } from "effect"
 import { LLM, LLMClient, LLMEvent, Message, SystemPart } from "@novaclaw/llm"
 import { LocationServiceMap } from "../location-service-map"
-import { ReasoningBudget } from "../session/runner/reasoning-budget"
+import { ShortAnswer } from "../session/runner/short-answer"
 import { SessionRunnerModel } from "../session/runner/model"
 import { SessionStore } from "../session/store"
 import { SYSTEM, clean } from "./label"
@@ -70,27 +70,21 @@ export const makeLabeller = Effect.fn("AgentStatus.makeLabeller")(function* () {
       return yield* Effect.gen(function* () {
         const models = yield* SessionRunnerModel.Service
         const model = yield* models.resolve(session)
-        const chunks: string[] = []
-        yield* ReasoningBudget.stream({
-          request: LLM.request({
-            model,
-            system: [SystemPart.make(SYSTEM)],
-            messages: [Message.user(text)],
-            tools: [],
-            generation: { maxTokens: LABEL_MAX_TOKENS },
-          }),
-          stream: (next) => llm.stream(next),
-          budget: LABEL_REASONING_BUDGET,
-        }).pipe(
-          Stream.runForEach((event) => {
-            if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
-            return Effect.void
-          }),
-        )
+        // ⚠️ The SAME call the chat titler makes — `ShortAnswer` exists because this sweep wrote its
+        // own and got it wrong. A reasoning model with no guard returns an empty completion, which
+        // the titler had already solved.
+        const raw = yield* ShortAnswer.generate({
+          model,
+          llm,
+          system: SYSTEM,
+          text,
+          reasoningBudget: LABEL_REASONING_BUDGET,
+          maxTokens: LABEL_MAX_TOKENS,
+        })
         // ⚠️ `clean` decides whether anything usable came back; the sweep treats `undefined` as
         // "leave the previous line alone". An empty completion is a broken call, not a colleague
         // with nothing to say.
-        return clean(chunks.join(""))
+        return clean(raw)
       }).pipe(Effect.provide(located))
     }).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
 

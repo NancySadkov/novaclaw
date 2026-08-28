@@ -26,6 +26,7 @@ import { LLMClient } from "@novaclaw/llm"
 import { SessionExtract } from "./extract"
 import { SessionRunnerModel } from "./model"
 import { ReasoningBudget } from "./reasoning-budget"
+import { ShortAnswer } from "./short-answer"
 import { UtilityCap } from "./utility-cap"
 import { UtilityPass } from "./utility-pass"
 
@@ -181,25 +182,18 @@ export const layer = Layer.effect(
       // does not hold verbatim — the checkpoints bound REASONING, not the answer. It is covered in
       // practice only because the hard stop lands so far under the cap. If either number moves, this
       // is the pairing to re-check.
-      const chunks: string[] = []
-      const request = LLM.request({
+      // ⚠️ Through `ShortAnswer` rather than an inline request, and the reasoning above moved with
+      // it. This call is where "a short label, thinking bounded" was solved; the colleague status
+      // sweep then re-derived it three files away and got it wrong (empty completions from a
+      // reasoning model). One caller could keep it as a local shape; two cannot.
+      const raw = yield* ShortAnswer.generate({
         model,
-        system: [SystemPart.make(SessionTitle.SYSTEM)],
-        messages: [Message.user(text)],
-        tools: [],
-        generation: { maxTokens: 512 },
+        llm,
+        system: SessionTitle.SYSTEM,
+        text,
+        reasoningBudget: TITLE_REASONING_BUDGET,
+        maxTokens: 512,
       })
-      yield* ReasoningBudget.stream({
-        request,
-        stream: (next) => llm.stream(next),
-        budget: TITLE_REASONING_BUDGET,
-      }).pipe(
-        Stream.runForEach((event) => {
-          if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
-          return Effect.void
-        }),
-      )
-      const raw = chunks.join("")
       // An EMPTY completion is a broken call, not "no title worth writing" — say so. Silence here is
       // exactly how this stayed dead across three shipped phases.
       if (raw.trim() === "") yield* Log.event("session.title.generate.empty", { "session.id": sessionID })
@@ -366,16 +360,17 @@ export const layer = Layer.effect(
       // the association was already in the extraction, and was simply being discarded.
       for (const fact of namedFacts) {
         yield* memory
-          .addEdge({
-            from: SessionExtract.memoryID(scope, fact.text),
-            to: SessionExtract.entityID(scope, fact.name),
-            type: "mentions",
-            scope,
-            source: "auto-extract",
-          },
-          // SYSTEM: extraction's own bookkeeping, no session asking. The engine derives the edge's
-          // scope from its endpoints regardless, so this cannot promote visibility.
-          MemoryAccess.system(),
+          .addEdge(
+            {
+              from: SessionExtract.memoryID(scope, fact.text),
+              to: SessionExtract.entityID(scope, fact.name),
+              type: "mentions",
+              scope,
+              source: "auto-extract",
+            },
+            // SYSTEM: extraction's own bookkeeping, no session asking. The engine derives the edge's
+            // scope from its endpoints regardless, so this cannot promote visibility.
+            MemoryAccess.system(),
           )
           .pipe(Effect.ignore) // duplicate edge = already linked; never fail the drain
       }
@@ -440,16 +435,17 @@ export const layer = Layer.effect(
       // `names` was written as an entity above, so both lookups resolve by construction.
       for (const link of links) {
         yield* memory
-          .addEdge({
-            from: SessionExtract.entityID(scope, link.from),
-            to: SessionExtract.entityID(scope, link.to),
-            type: link.type,
-            scope,
-            source: "auto-extract",
-          },
-          // SYSTEM: extraction's own bookkeeping, no session asking. The engine derives the edge's
-          // scope from its endpoints regardless, so this cannot promote visibility.
-          MemoryAccess.system(),
+          .addEdge(
+            {
+              from: SessionExtract.entityID(scope, link.from),
+              to: SessionExtract.entityID(scope, link.to),
+              type: link.type,
+              scope,
+              source: "auto-extract",
+            },
+            // SYSTEM: extraction's own bookkeeping, no session asking. The engine derives the edge's
+            // scope from its endpoints regardless, so this cannot promote visibility.
+            MemoryAccess.system(),
           )
           .pipe(Effect.ignore) // duplicate edge = already linked; never fail the drain
       }
@@ -519,7 +515,10 @@ export const layer = Layer.effect(
             yield* pass
             passes.push({ stage, ms: Date.now() - at })
           })
-          yield* timed("changes", bestEffort("session.changes.refresh.failed", sessionID, refreshChangesSummary(sessionID)))
+          yield* timed(
+            "changes",
+            bestEffort("session.changes.refresh.failed", sessionID, refreshChangesSummary(sessionID)),
+          )
           yield* timed("title", bestEffort("session.title.generate.failed", sessionID, generateTitleOnce(sessionID)))
           /**
            * DETACHED. This block runs inside the drain, after the idle status is published but
