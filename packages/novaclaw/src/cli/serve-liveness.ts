@@ -36,6 +36,22 @@ export async function probe(url: URL, password?: string): Promise<boolean> {
   if (password) headers.set("authorization", `Basic ${Buffer.from(`novaclaw:${password}`).toString("base64")}`)
   try {
     const response = await fetch(url, { headers, signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) })
+    /**
+     * 🔴 **NC-REL-003 — a REFUSAL is proof of life.** This was `response.ok`, so a 401 counted as a
+     * missed health check: a password set in the SETTINGS STORE (rather than in
+     * `NOVACLAW_SERVER_PASSWORD`, which is all this probe is given) made the default `novaclaw serve`
+     * supervisor kill its own healthy child, restart it, fail to authenticate again, and eventually
+     * give up. The one configuration a user can set through the product was the one that bricked
+     * headless serving.
+     *
+     * ⚠️ The fix is NOT to teach the probe how to resolve the effective password. `server/auth.ts`
+     * already owns that walk (env, then the live store), and a second copy here would be a second
+     * source of truth that drifts — the failure this codebase has paid for repeatedly. A liveness
+     * probe does not need to get IN; it needs to know something is THERE. A server that answers 401
+     * has proved it is running and enforcing its own policy, which is more than a 200 from an
+     * unauthenticated endpoint proves.
+     */
+    if (response.status === 401 || response.status === 403) return true
     return response.ok
   } catch {
     return false

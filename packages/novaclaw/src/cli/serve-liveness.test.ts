@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
-import { monitor, probeURLFromListenLine, requestStop } from "./serve-liveness"
+import { monitor, probe, probeURLFromListenLine, requestStop } from "./serve-liveness"
 
 describe("serve liveness", () => {
   test("parses the real listen line and probes wildcard listeners through loopback", () => {
@@ -12,6 +12,39 @@ describe("serve liveness", () => {
     expect(probeURLFromListenLine("novaclaw server listening on http://0.0.0.0:5000")?.href).toBe(
       "http://127.0.0.1:5000/global/health",
     )
+  })
+
+  /**
+   * 🔴 NC-REL-003 — a password set in the SETTINGS STORE made the default `novaclaw serve` supervisor
+   * kill its own healthy child. The probe is handed only `NOVACLAW_SERVER_PASSWORD`, so a
+   * store-configured password produced a 401, `response.ok` was false, the check counted as a miss,
+   * and the supervisor terminated a server that was working perfectly — then did it again until it
+   * gave up. The one configuration a user can set through the product bricked headless serving.
+   *
+   * A/B: revert to `return response.ok` and this fails.
+   */
+  test("🔴 a 401 is PROOF OF LIFE, not a missed health check", async () => {
+    const original = globalThis.fetch
+    try {
+      globalThis.fetch = (async () => new Response("unauthorized", { status: 401 })) as typeof fetch
+      expect(await probe(new URL("http://127.0.0.1:4096/api/health"))).toBe(true)
+      globalThis.fetch = (async () => new Response("forbidden", { status: 403 })) as typeof fetch
+      expect(await probe(new URL("http://127.0.0.1:4096/api/health"))).toBe(true)
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+
+  test("a 500 is still a miss — the server answered, but not with health", async () => {
+    // The control: without it, "always true" would satisfy the test above and the supervisor would
+    // never replace a genuinely broken child.
+    const original = globalThis.fetch
+    try {
+      globalThis.fetch = (async () => new Response("boom", { status: 500 })) as typeof fetch
+      expect(await probe(new URL("http://127.0.0.1:4096/api/health"))).toBe(false)
+    } finally {
+      globalThis.fetch = original
+    }
   })
 
   test("kills only after consecutive misses", async () => {
