@@ -47,7 +47,7 @@ const coreDir = path.resolve(fileURLToPath(new URL(".", import.meta.url)), "..")
 /**
  * Why the drift check is gated on a CAPABILITY and not on the platform.
  *
- * This test used to sit inside `if (process.platform === "linux")` (inherited from opencode). This
+ * This test used to sit inside `if (process.platform === "linux")` (inherited from the predecessor). This
  * project has no CI and develops on a Windows-only box, so the guard meant the check had effectively
  * never run once — which is exactly how `packages/core/schema.json` drifted six deltas behind the
  * declared schema (v0.2.0 Wave 0, B5). A platform gate that names no leg which runs it unskipped is

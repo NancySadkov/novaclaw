@@ -2,7 +2,7 @@
 // Points this clone's git at the TRACKED hooks in `.githooks/`.
 //
 // WHY. `core.hooksPath` in this repo pointed at `.husky/_` — a directory that does not exist and has
-// not existed since the opencode fork was detached. Git silently runs nothing when hooksPath names a
+// not existed since the predecessor was detached. Git silently runs nothing when hooksPath names a
 // missing directory, so every hook in this repo had never fired. Tracked hooks + this one-line
 // installer replace it: the hooks are reviewable in the tree, and every clone opts in the same way.
 //

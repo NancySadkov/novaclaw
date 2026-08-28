@@ -83,17 +83,6 @@ export const telemetryLogs = define({
   queueLimit: 1_000,
 })
 
-export const telemetryTraces = (timeoutMs = 30_000, queueLimit = 2_048) =>
-  define({
-    mode: "async",
-    timeoutMs: finite(timeoutMs, 30_000, 1),
-    retries: 0,
-    retryDelayMs: 0,
-    failureMode: "fail_open",
-    maxConcurrency: 1,
-    queueLimit: finite(queueLimit, 2_048, 1),
-  })
-
 export const summarizer = define({
   mode: "blocking",
   timeoutMs: 300_000,
@@ -112,6 +101,5 @@ export const AUDIT = {
   websearch: websearch(),
   quality_gate: qualityGate(),
   telemetry_logs: telemetryLogs,
-  telemetry_traces: telemetryTraces(),
   summarizer,
 } satisfies Readonly<Record<string, Policy>>

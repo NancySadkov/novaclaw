@@ -512,7 +512,7 @@ export const McpAddCommand = effectCmd({
       prompts.intro("Add MCP server")
 
       // The "Current project / Global" scope prompt is GONE (2026-07-28). It offered to write a
-      // project-root `novaclaw.json`, which is the opencode-legacy shape `config-seed-startup.ts`
+      // project-root `novaclaw.json`, which is the pre-detachment shape `config-seed-startup.ts`
       // deleted: config is instance-level and lives in the instance's SQLite stores, so a
       // per-project MCP file had no reader and the choice was between one dead file and another.
       const name = await prompts.text({

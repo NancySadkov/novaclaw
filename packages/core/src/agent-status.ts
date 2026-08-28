@@ -1,11 +1,11 @@
 export * as AgentStatus from "./agent-status"
 
-import { and, desc, eq, isNotNull, max, sql } from "drizzle-orm"
+import { and, desc, eq, inArray, isNotNull, max, sql } from "drizzle-orm"
 import { Context, Effect, Layer } from "effect"
 import { AgentStatusTable } from "./agent-status/sql"
 import { Database } from "./database/database"
 import { makeGlobalNode } from "./effect/app-node"
-import { SessionMessageTable, SessionTable } from "./session/sql"
+import { SessionExecutionTable, SessionMessageTable, SessionTable } from "./session/sql"
 import type { Candidate } from "./agent-status/refresh"
 
 /**
@@ -124,8 +124,36 @@ export const layer = Layer.effect(
         const current = yield* db.select().from(AgentStatusTable).all().pipe(Effect.orDie)
         const byAgent = new Map(current.map((r) => [r.agent, { observed: r.observed }]))
 
+        /**
+         * A status label is decode-shaped maintenance. It must never spend the same device while
+         * the colleague is answering a foreground turn, and the durable execution lease is the
+         * authoritative answer to whether any session in that colleague's thread tree is active.
+         *
+         * This is checked after the activity query but before transcript/model work. In particular,
+         * the just-written USER message of an in-flight prompt makes a fresh colleague immediately
+         * due; without this exclusion the first five-second scheduler tick races the real answer and
+         * can reach the model first. Settled/failed/paused attempts are intentionally absent: once
+         * generation has stopped, the idle tier may summarize the work it left behind.
+         */
+        const active = yield* db
+          .selectDistinct({ agent: SessionTable.agent })
+          .from(SessionTable)
+          .innerJoin(SessionExecutionTable, eq(SessionExecutionTable.session_id, SessionTable.id))
+          .where(
+            and(
+              isNotNull(SessionTable.agent),
+              inArray(SessionExecutionTable.state, ["starting", "busy", "recovering"]),
+            ),
+          )
+          .all()
+          .pipe(Effect.orDie)
+        const activeAgents = new Set(active.flatMap((entry) => (entry.agent === null ? [] : [entry.agent])))
+
         return activity
-          .filter((entry): entry is { agent: string; latest: number | null } => entry.agent !== null)
+          .filter(
+            (entry): entry is { agent: string; latest: number | null } =>
+              entry.agent !== null && !activeAgents.has(entry.agent),
+          )
           .map((entry) => ({
             agent: entry.agent,
             latest: entry.latest ?? undefined,

@@ -701,14 +701,6 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(mayEgress("workspace.sync.replay.start")).toBe(false)
   })
 
-  test("remote config URLs are structured but remain on the data plane", () => {
-    const [line] = lines(Log.event("config.remote.fetch", { "config.url": "https://private.example/config" }), "Debug")
-    expect(line).toContain("event=config.remote.fetch")
-    expect(line).toContain('message="fetching remote config"')
-    expect(line).toContain("config.url=https://private.example/config")
-    expect(mayEgress("config.remote.fetch")).toBe(false)
-  })
-
   test("config-write partial outcomes preserve arrays without exposing their content", () => {
     const [reload] = lines(
       Log.event("config.runtime.reload.failed", {

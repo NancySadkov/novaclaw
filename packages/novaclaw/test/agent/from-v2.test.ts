@@ -5,7 +5,7 @@ import { ModelV2 } from "@novaclaw/core/model"
 import { ProviderV2 } from "@novaclaw/core/provider"
 
 // F1 reconciliation: the `/agent` list + CLI now read the authoritative V2 store
-// (AgentV2 — a superset that includes PLUGIN-registered + markdown agents that the
+// (AgentV2 — a superset that includes plugin-registered and store-backed agents that the
 // old novaclaw Agent.Service never saw) and project each onto the V1 wire shape via
 // `Agent.fromV2`. These cover that projection — the new logic that makes a
 // V2-only (e.g. plugin-contributed) agent visible in the legacy list.

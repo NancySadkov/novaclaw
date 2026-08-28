@@ -3,22 +3,20 @@ import { Effect, Layer } from "effect"
 // ────────────────────────────────────────────────────────────────────────────────────────────────
 // The boot profile — a per-phase startup waterfall printed into the ordinary log.
 //
-// WHY IT LIVES HERE (`core/observability/`, next to `logging.ts` and `otlp.ts`): it is telemetry, and
+// WHY IT LIVES HERE (`core/observability/`, next to `logging.ts`): it is local instrumentation, and
 // `@novaclaw/core` is the only package that BOTH entry points reach — the `novaclaw` CLI
 // (`packages/novaclaw/src/index.ts` → `cli/cmd/serve.ts` → `server/server.ts`) and the Electron
 // sidecar (`packages/desktop/src/main/sidecar.ts` → `virtual:novaclaw-server` →
 // `packages/novaclaw/src/node.ts` → the SAME `server/server.ts`). One module, both boots.
 //
-// WHY NOT OTLP. `todo/startup.md` recorded the waterfall as blocked on standing up an OTLP collector
-// to read the 763 existing `Effect.fn` spans. It is not: there is no collector on a user's laptop
-// either, which is precisely where the number we ship lives. This is `todo/adoption.md` A10.1 — the
-// log IS the telemetry channel. No exporter, no endpoint, no offline-policy interaction, and it works
-// identically in the packaged desktop app.
+// WHY NOT A REMOTE COLLECTOR. Boot timings are local diagnostics and must not depend on external
+// infrastructure: there is no collector on a user's laptop, which is precisely where the number we
+// ship lives. The ordinary local log is the measurement channel. No exporter, no endpoint, no
+// offline-policy interaction, and it works identically in the packaged desktop app.
 //
 // ⚠️ THIS MODULE MUST NOT CHANGE CONTROL FLOW. It records timestamps and prints. Every call site is
-// an observation; none of them branch, reorder, or catch. Phase 2 of `todo/startup.md` (lazy edges,
-// degraded capabilities) is the change, and it depends on these numbers rather than shipping with
-// them.
+// an observation; none of them branch, reorder, or catch. Lazy edges and degraded capabilities are
+// separate control-flow changes, and they depend on these numbers rather than shipping with them.
 //
 // COST, and why the split below is where it is:
 //   · `mark()` is ALWAYS-ON. It is one `performance.now()` plus an array push into a capped buffer.

@@ -14,7 +14,7 @@ export const DEFAULT_THEME_ID = "nova"
 
 /**
  * Theme ids that shipped before the rename and may still be sitting in a user's `localStorage`.
- * `oc-1`/`oc-2` are opencode's ids; NovaClaw's attribution lives in `licenses/` + `NOTICE` and nowhere
+ * `oc-1`/`oc-2` are predecessor ids; NovaClaw's attribution lives in legal files and nowhere
  * else. Append-only: an id removed from here strands whoever still has it stored, which is ruling 2 —
  * an unavailable subsystem names itself, it does not silently render an unknown theme.
  */

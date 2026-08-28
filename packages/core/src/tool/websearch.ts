@@ -100,7 +100,7 @@ export const description =
 //     policy, read live, not per-session, and deliberately NOT consentable. Web search already has
 //     its own check for it (`websearch/service.ts` rule 1, "AIRGAP WINS"), which it needs because
 //     its engines call raw `fetch` rather than riding the shared `HttpClient` node, so layer 1 of
-//     OFF-A never sees them. Same shape npm/MCP/OTLP use.
+//     OFF-A never sees them. Same shape npm and raw MCP transports use.
 //   · `PermissionV2` answers *may THIS SESSION do this, and does a human agree* — per-session,
 //     per-agent, consentable, saveable, and the only axis on which a user or an agent rule can
 //     legitimately differ from the instance default.

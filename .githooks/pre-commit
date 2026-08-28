@@ -3,7 +3,7 @@
 # NovaClaw pre-commit — two BUILD-FREE checks, in the order they cost.
 #
 # WHY THIS FILE EXISTS. Until 2026-07-27 this repo's `core.hooksPath` pointed at `.husky/_`, a
-# directory that does not exist — inherited from the opencode fork and deleted since. So no hook had
+# directory that does not exist — inherited from the predecessor and deleted since. So no hook had
 # ever run, and the project's own law (mechanical levers convert, informational ones only engage) was
 # applied to the dev loop and nowhere else. This is the mechanical edge.
 #

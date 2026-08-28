@@ -2,7 +2,7 @@
   var key = "novaclaw-theme-id"
   var themeId = localStorage.getItem(key) || "nova"
 
-  // `oc-1`/`oc-2` are opencode's ids, retired in favour of the brand default. Mirrors
+  // `oc-1`/`oc-2` are pre-detachment ids, retired in favour of the brand default. Mirrors
   // LEGACY_THEME_IDS in @novaclaw/ui/theme/default-theme — kept as a literal here because the
   // first-paint script runs before any module loads and must stay dependency-free.
   if (themeId === "oc-1" || themeId === "oc-2") {

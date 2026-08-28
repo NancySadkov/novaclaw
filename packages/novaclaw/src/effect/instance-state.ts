@@ -163,7 +163,7 @@ const attachRefs = <A, E, R>(effect: Effect.Effect<A, E, R>, refs: BuiltUnder): 
  * this function is worse than the staleness it cures.** `ScopedCache` caches *failed* lookup exits
  * under the same TTL as successful ones (`make`'s `defaultTimeToLive` is `Duration.infinity`), and
  * `refresh` overwrites the map entry with the new exit whether it succeeded or not. So one failing
- * rebuild — a `.well-known` config source that is unreachable while the user saves a preference —
+ * rebuild — a managed config source that becomes unreadable while the user saves a preference —
  * would replace a perfectly good document with a permanently cached failure, and every later read for
  * that instance would die until the instance was disposed. Restoring makes the outcome the one
  * `refreshDomains` already documents for a broken domain: **stale, never torn**. The failure is then

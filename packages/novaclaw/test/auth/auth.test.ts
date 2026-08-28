@@ -11,64 +11,33 @@ import { testEffect } from "../lib/effect"
 const it = testEffect(LayerNode.compile(LayerNode.group([Auth.node, FSUtil.node, CredentialCipher.node])))
 
 describe("Auth", () => {
-  it.instance("set normalizes trailing slashes in keys", () =>
+  it.instance("ignores legacy remote-authority credentials", () =>
     Effect.gen(function* () {
+      const fs = yield* FSUtil.Service
       const auth = yield* Auth.Service
-      yield* auth.set("https://example.com/", {
-        type: "wellknown",
-        key: "TOKEN",
-        token: "abc",
-      })
+      const target = path.join(Global.Path.data, "auth.json")
+      yield* fs.writeJson(
+        target,
+        {
+          "https://example.com": { type: "wellknown", key: "TOKEN", token: "remote-token" },
+          anthropic: { type: "api", key: "local-key" },
+        },
+        0o600,
+      )
+
       const data = yield* auth.all()
-      expect(data["https://example.com"]).toBeDefined()
-      expect(data["https://example.com/"]).toBeUndefined()
-      const raw = JSON.stringify(yield* (yield* FSUtil.Service).readJson(path.join(Global.Path.data, "auth.json")))
+      expect(data["https://example.com"]).toBeUndefined()
+      expect(data.anthropic).toEqual(expect.objectContaining({ type: "api", key: "local-key" }))
+      const raw = JSON.stringify(yield* fs.readJson(target))
       // 🔴 Plaintext at 0o600, deliberately — the unwind of app-managed encryption. This asserted
       // the opposite until 2026-08-28; decision §5 of `decisions-v0.2.0.md`, recorded after the
       // cipher landed unexplained, says secrets stay plaintext under OS account protection.
       expect(raw).not.toContain("$novaclawEncrypted")
-      expect(raw).toContain("abc")
+      expect(raw).toContain("local-key")
     }),
   )
 
-  it.instance("set cleans up pre-existing trailing-slash entry", () =>
-    Effect.gen(function* () {
-      const auth = yield* Auth.Service
-      yield* auth.set("https://example.com/", {
-        type: "wellknown",
-        key: "TOKEN",
-        token: "old",
-      })
-      yield* auth.set("https://example.com", {
-        type: "wellknown",
-        key: "TOKEN",
-        token: "new",
-      })
-      const data = yield* auth.all()
-      const keys = Object.keys(data).filter((key) => key.includes("example.com"))
-      expect(keys).toEqual(["https://example.com"])
-      const entry = data["https://example.com"]!
-      expect(entry.type).toBe("wellknown")
-      if (entry.type === "wellknown") expect(entry.token).toBe("new")
-    }),
-  )
-
-  it.instance("remove deletes both trailing-slash and normalized keys", () =>
-    Effect.gen(function* () {
-      const auth = yield* Auth.Service
-      yield* auth.set("https://example.com", {
-        type: "wellknown",
-        key: "TOKEN",
-        token: "abc",
-      })
-      yield* auth.remove("https://example.com/")
-      const data = yield* auth.all()
-      expect(data["https://example.com"]).toBeUndefined()
-      expect(data["https://example.com/"]).toBeUndefined()
-    }),
-  )
-
-  it.instance("set and remove are no-ops on keys without trailing slashes", () =>
+  it.instance("sets and removes a local provider credential by provider id", () =>
     Effect.gen(function* () {
       const auth = yield* Auth.Service
       yield* auth.set("anthropic", {

@@ -105,7 +105,7 @@ const ModelList: Component<{
       current={model.current()}
       // Models-primary (notes/entities.md / todo "no first-class providers"): a FLAT model list —
       // a provider is just where a model is served from, shown as the row's muted suffix, never a
-      // grouping header. (The popularProviders group ordering was opencode cloud residue.)
+      // grouping header. (The popularProviders group ordering was inherited cloud-service residue.)
       filterKeys={["provider.name", "name", "id"]}
       sortBy={(a, b) => a.name.localeCompare(b.name)}
       itemWrapper={(item, node) => {

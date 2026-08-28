@@ -274,10 +274,25 @@ export const RecipeHandler = handlerLayer(
               ctx.payload.directory?.trim() ||
               path.join(yield* Effect.promise(() => Scratch.ensure()), "recipes", `${recipe.slug}-${now}`)
 
-            const assets = yield* Effect.tryPromise({
+            const materialized = yield* Effect.tryPromise({
               try: () => Recipe.materialize(recipe.slug, directory),
               catch: badRequest,
             })
+            if (materialized.skipped.length > 0 || materialized.failed.length > 0) {
+              const details = [
+                ...(materialized.skipped.length > 0
+                  ? [`Already there and left untouched: ${materialized.skipped.join(", ")}.`]
+                  : []),
+                ...(materialized.failed.length > 0 ? [`Could not copy: ${materialized.failed.join(", ")}.`] : []),
+              ].join(" ")
+              return yield* new InvalidRequestError({
+                message:
+                  `Not cooking “${recipe.name}”: its inputs were not copied completely. ${details} ` +
+                  "I did not start the agent, so it cannot mistake a partial folder for the recipe. " +
+                  "Choose an empty folder or repair the named recipe asset, then try again.",
+              })
+            }
+            const assets = materialized.copied
 
             const model = modelRef(ctx.payload.model)
 

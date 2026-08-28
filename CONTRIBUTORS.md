@@ -33,11 +33,6 @@ pull requests on the published snapshot:
 | [#14](https://github.com/NancySadkov/novaclaw/pull/14) | Provider turns recover instead of failing the session; MCP connection outcomes are reported truthfully; child joins are event-driven; model setup stays responsive. |
 | [#15](https://github.com/NancySadkov/novaclaw/pull/15) | `novaclaw run` keeps its stdout protocol-clean. |
 
-## Upstream
-
-NovaClaw inherited part of its codebase from [opencode](https://github.com/anomalyco/opencode) (MIT).
-That attribution lives in [`NOTICE`](NOTICE), [`licenses/`](licenses), and Settings → About.
-
 ## Sending a patch
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Patches arrive by email; a pull request on the snapshot works

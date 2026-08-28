@@ -27,13 +27,7 @@ export class Api extends Schema.Class<Api>("ApiAuth")({
   metadata: Schema.optional(Schema.Record(Schema.String, Schema.String)),
 }) {}
 
-export class WellKnown extends Schema.Class<WellKnown>("WellKnownAuth")({
-  type: Schema.Literal("wellknown"),
-  key: Schema.String,
-  token: Schema.String,
-}) {}
-
-export const Info = Schema.Union([Oauth, Api, WellKnown]).annotate({ discriminator: "type", identifier: "Auth" })
+export const Info = Schema.Union([Oauth, Api]).annotate({ discriminator: "type", identifier: "Auth" })
 export type Info = Schema.Schema.Type<typeof Info>
 
 export class AuthError extends Schema.TaggedErrorClass<AuthError>()("AuthError", {
@@ -97,18 +91,13 @@ export const layer = Layer.effect(
     })
 
     const set = Effect.fn("Auth.set")(function* (key: string, info: Info) {
-      const norm = key.replace(/\/+$/, "")
       const data = yield* all()
-      if (norm !== key) delete data[key]
-      delete data[norm + "/"]
-      yield* write({ ...data, [norm]: info })
+      yield* write({ ...data, [key]: info })
     })
 
     const remove = Effect.fn("Auth.remove")(function* (key: string) {
-      const norm = key.replace(/\/+$/, "")
       const data = yield* all()
       delete data[key]
-      delete data[norm]
       yield* write(data)
     })
 

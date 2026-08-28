@@ -18,8 +18,9 @@ const decodeInfo = Schema.decodeUnknownOption(Config.Info, DECODE_OPTIONS)
 // directory's novaclaw.jsonc and writes them into the instance-wide `AgentConfigStore`, so agent
 // config no longer depends on reading jsonc per-location at runtime. Runs once at server startup
 // BEFORE any location boots — the shared scratch dir (and every other dir) then resolves the same
-// agents. Idempotent: a no-op once the store holds any agent. Markdown agents are NOT imported —
-// they stay filesystem-walked (locked decision D2). Requires FSUtil + AgentConfigStore in context.
+// agents. Idempotent: a no-op once the store holds any agent. Agent/mode markdown is deliberately
+// not imported: project files are never an identity or authority source. Requires FSUtil +
+// AgentConfigStore in context.
 
 /**
  * The colleagues a fresh instance opens with — see the seeding block below for why they are CONFIG

@@ -276,7 +276,7 @@ async function stop(dir: string) {
 // `config` used to be written as a `novaclaw.json` file into the tmpdir the test runs in, and the
 // first-boot seed read the LAUNCH DIRECTORY, so it was picked up. `5212c03ae` deleted that leg —
 // deliberately: seeding is `isEmpty`-gated and one-time, so whichever process booted first silently
-// defined instance-wide settings forever, and "a config file at a project root" is an opencode-legacy
+// defined instance-wide settings forever, and "a config file at a project root" is a pre-detachment
 // pattern (config is instance-level; see AGENTS.md §Config). The file write survived the commit and
 // became a no-op — the option looked like it worked while every value it carried was discarded.
 //

@@ -5638,6 +5638,24 @@ class ApiV2Integration extends NovaClawApiClient {
   }
 }
 
+class ApiV2CredentialRepair extends NovaClawApiClient {
+  /**
+   * Check stored-secret readability
+   *
+   * Report stored secrets that cannot be decrypted, with a message naming the key file to restore.
+   */
+  public status<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      T.V2CredentialRepairStatusResponses,
+      T.V2CredentialRepairStatusErrors,
+      ThrowOnError
+    >({
+      url: "/api/credential/repair",
+      ...options,
+    })
+  }
+}
+
 class ApiV2Credential extends NovaClawApiClient {
   /**
    * Update credential
@@ -5699,6 +5717,11 @@ class ApiV2Credential extends NovaClawApiClient {
       path,
       query,
     })
+  }
+
+  private _repair?: ApiV2CredentialRepair
+  get repair(): ApiV2CredentialRepair {
+    return (this._repair ??= new ApiV2CredentialRepair({ client: this.client }))
   }
 }
 

@@ -5,7 +5,7 @@ export * as CompactionPrune from "./compaction-prune"
 // `prune()` is the NON-LLM context reclaim: walk the transcript backwards, protect the newest 40k
 // tokens of tool output and the last 2 turns, exempt `skill` output, erase older tool RESULTS
 // (never the call or its arguments), and commit only if the reclaim clears 20k. It shipped in the
-// V1 `packages/opencode/src/session/` path and was deleted with the V1 nuke; the constants,
+// V1 session path and was deleted with the V1 nuke; the constants,
 // the walk and the exemption list here are the V1 semantics, re-expressed against the V2 message
 // schema. `packages/schema/src/session-message.ts`'s `AssistantTool.time.pruned` is the field the
 // V1 tier wrote (`state.time.compacted`) and is still declared — this module is its only writer.

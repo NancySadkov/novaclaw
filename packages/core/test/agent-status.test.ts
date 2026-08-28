@@ -1,9 +1,10 @@
 import { describe, expect } from "bun:test"
+import { eq } from "drizzle-orm"
 import { Effect } from "effect"
 import { AgentStatus } from "@novaclaw/core/agent-status"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { Database } from "@novaclaw/core/database/database"
-import { SessionMessageTable, SessionTable } from "@novaclaw/core/session/sql"
+import { SessionExecutionTable, SessionMessageTable, SessionTable } from "@novaclaw/core/session/sql"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { testEffect } from "./lib/effect"
@@ -90,6 +91,41 @@ describe("AgentStatus", () => {
       const theron = candidates.find((c) => c.agent === "theron")
       expect(theron?.latest).toBe(9_000)
       expect(candidates.find((c) => c.agent === "xenia")?.latest).toBe(3_000)
+    }),
+  )
+
+  it.effect("🔴 an active colleague is withheld from decode-shaped status maintenance", () =>
+    Effect.gen(function* () {
+      const status = yield* AgentStatus.Service
+      const { db } = yield* Database.Service
+      yield* seed(db, { id: "ses_nova", agent: "nova", at: 5_000 })
+      yield* db
+        .insert(SessionExecutionTable)
+        .values({
+          session_id: "ses_nova" as never,
+          attempt_id: "exe_nova",
+          generation: 1,
+          owner_id: "test-host",
+          state: "busy",
+          phase: "provider",
+          heartbeat_at: 5_000,
+          started_at: 5_000,
+          time_updated: 5_000,
+        })
+        .run()
+        .pipe(Effect.orDie)
+
+      // A foreground prompt has already written its user message. That makes the colleague due,
+      // but it must not also launch a competing short-label completion on the first scheduler tick.
+      expect((yield* status.candidates()).find((candidate) => candidate.agent === "nova")).toBeUndefined()
+
+      yield* db
+        .update(SessionExecutionTable)
+        .set({ state: "settled" })
+        .where(eq(SessionExecutionTable.session_id, "ses_nova" as never))
+        .run()
+        .pipe(Effect.orDie)
+      expect((yield* status.candidates()).find((candidate) => candidate.agent === "nova")?.latest).toBe(5_000)
     }),
   )
 

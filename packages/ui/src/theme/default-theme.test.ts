@@ -104,7 +104,7 @@ describe("legacy theme id migration", () => {
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The ratchet. `oc-1`/`oc-2` are opencode's theme ids; the attribution belongs in `licenses/` + `NOTICE`
+// The ratchet. `oc-1`/`oc-2` are retired predecessor theme ids; attribution belongs in legal files
 // and nowhere else (AGENTS.md). This scan fails if either id reappears in source, and fails just as
 // loudly when a ledgered file is cleaned without the ledger being updated — so the list can only shrink.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -194,7 +194,7 @@ function filesNamingALegacyId() {
   return scanned
 }
 
-describe("opencode theme ids stay retired", () => {
+describe("pre-detachment theme ids stay retired", () => {
   test("no source file outside the ledger names oc-1 or oc-2", () => {
     const ledgered = new Set(LEDGER.map((e) => e.path))
     const unexpected = filesNamingALegacyId().filter((f) => !ledgered.has(f))

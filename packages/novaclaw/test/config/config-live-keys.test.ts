@@ -102,7 +102,7 @@ describe("B7 tier-3 — the merged instance document is refreshed by a config wr
         const formatter = ConfigStoreWrite.reloadsDispatched("formatter")
         // `username` is a settings key no materialised domain derives from. A registry that fired on
         // "something was written" instead of on a trigger list would re-glob the config directories
-        // (and re-fetch any remote well-known config) on every single save.
+        // on every single save.
         yield* applyPatch({ username: "b7-tier3-probe" })
         expect(ConfigStoreWrite.reloadsDispatched("instance_config")).toBe(before)
         expect(ConfigStoreWrite.reloadsDispatched("formatter")).toBe(formatter)
@@ -117,7 +117,7 @@ describe("B7 tier-3 — a FAILED rebuild leaves the instance stale, never broken
       // ⚠️ The hazard this pins is a property of `ScopedCache`, not of our code, which is why a
       // comment would not have held it: failed lookup exits are cached under the SAME infinite TTL
       // as successful ones, and `refresh` overwrites the entry with whichever exit it got. So a
-      // rebuild that throws — a `.well-known` config source unreachable while the user saves a
+      // rebuild that throws — a managed config source unreadable while the user saves a
       // preference — would replace a good document with a permanently cached failure, and every
       // later read for that instance would die. That is strictly worse than the staleness B7 cures.
       let attempt = 0

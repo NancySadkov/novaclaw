@@ -2397,7 +2397,6 @@ export const dict = {
   "settings.about.credits.title": "Built with open-source software",
   "settings.about.credits.description":
     "NovaClaw stands on these projects, used under their respective licenses. Thank you to their authors.",
-  "settings.about.basedOn": "Part of NovaClaw is based on opencode (MIT) — © 2025 opencode.",
   "settings.about.more":
     "…and many other open-source packages, each under its own license — see the NOTICE file for the full list.",
   "settings.introspection.title": "Introspection",

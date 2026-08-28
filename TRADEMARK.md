@@ -63,8 +63,3 @@ not **competition on the merits**. Fork it, improve it, ship it, beat us — und
 
 Questions, permission requests, or a report of misuse: open an issue, or contact Nancy Sadkov
 through [novaclaw.app](https://novaclaw.app).
-
----
-
-_NovaClaw is not affiliated with or endorsed by the opencode project. See [NOTICE](NOTICE) for
-third-party attribution._

@@ -207,8 +207,8 @@ describe("duplicate / remove / materialize", () => {
     await Recipe.save({ name: "With Assets", prompt: "use data.csv" }, opts())
     await fs.writeFile(path.join(root, "with-assets", "data.csv"), "a,b\n", "utf8")
     const into = path.join(root, "..", path.basename(root) + "-work")
-    const copied = await Recipe.materialize("with-assets", into, opts())
-    expect(copied).toEqual(["data.csv", "recipe.md"])
+    const result = await Recipe.materialize("with-assets", into, opts())
+    expect(result).toEqual({ copied: ["data.csv", "recipe.md"], skipped: [], failed: [] })
     expect(await fs.readFile(path.join(into, "data.csv"), "utf8")).toBe("a,b\n")
     // original still there
     expect((await Recipe.read("with-assets", opts()))!.assets).toEqual(["data.csv"])
@@ -243,13 +243,10 @@ describe("duplicate / remove / materialize", () => {
     await fs.mkdir(into, { recursive: true })
     await fs.writeFile(path.join(into, "data.csv"), "the user's own numbers\n", "utf8")
 
-    const copied = await Recipe.materialize("clobber", into, opts())
+    const result = await Recipe.materialize("clobber", into, opts())
 
     expect(await fs.readFile(path.join(into, "data.csv"), "utf8")).toBe("the user's own numbers\n")
-    // Not reported as copied — it is not there because of us.
-    expect(copied).not.toContain("data.csv")
-    // ...and the cook still happened: the manifest landed beside their file.
-    expect(copied).toContain("recipe.md")
+    expect(result).toEqual({ copied: ["recipe.md"], skipped: ["data.csv"], failed: [] })
     await fs.rm(into, { recursive: true, force: true })
   })
 
@@ -258,10 +255,124 @@ describe("duplicate / remove / materialize", () => {
     const into = path.join(root, "..", path.basename(root) + "-occupied")
     await fs.mkdir(into, { recursive: true })
     await fs.writeFile(path.join(into, "recipe.md"), "the user's own file", "utf8")
-    const copied = await Recipe.materialize("cook", into, opts())
-    expect(copied).not.toContain("recipe.md")
+    const result = await Recipe.materialize("cook", into, opts())
+    expect(result).toEqual({ copied: [], skipped: ["recipe.md"], failed: [] })
     expect(await fs.readFile(path.join(into, "recipe.md"), "utf8")).toBe("the user's own file")
     await fs.rm(into, { recursive: true, force: true })
+  })
+
+  test("a nested directory tree and an empty directory land byte-for-byte as one asset", async () => {
+    await Recipe.save({ name: "Tree", prompt: "use src" }, opts())
+    const source = path.join(root, "tree", "src")
+    await fs.mkdir(path.join(source, "nested", "empty"), { recursive: true })
+    const bytes = Buffer.from([0, 1, 2, 13, 10, 255])
+    await fs.writeFile(path.join(source, "nested", "data.bin"), bytes)
+    const into = path.join(root, "..", path.basename(root) + "-tree")
+
+    expect((await Recipe.read("tree", opts()))!.assets).toEqual(["src"])
+    expect(await Recipe.materialize("tree", into, opts())).toEqual({
+      copied: ["src", "recipe.md"],
+      skipped: [],
+      failed: [],
+    })
+    expect(await fs.readFile(path.join(into, "src", "nested", "data.bin"))).toEqual(bytes)
+    expect((await fs.lstat(path.join(into, "src", "nested", "empty"))).isDirectory()).toBe(true)
+    await fs.rm(into, { recursive: true, force: true })
+  })
+
+  test("a destination directory collision skips the whole tree and preserves the user's subtree", async () => {
+    await Recipe.save({ name: "Tree Clash", prompt: "use src" }, opts())
+    await fs.mkdir(path.join(root, "tree-clash", "src", "nested"), { recursive: true })
+    await fs.writeFile(path.join(root, "tree-clash", "src", "nested", "recipe.txt"), "recipe", "utf8")
+    const into = path.join(root, "..", path.basename(root) + "-tree-clash")
+    await fs.mkdir(path.join(into, "src", "mine"), { recursive: true })
+    await fs.writeFile(path.join(into, "src", "mine", "user.txt"), "keep every byte", "utf8")
+
+    const result = await Recipe.materialize("tree-clash", into, opts())
+
+    expect(result).toEqual({ copied: ["recipe.md"], skipped: ["src"], failed: [] })
+    expect(await fs.readFile(path.join(into, "src", "mine", "user.txt"), "utf8")).toBe("keep every byte")
+    expect(
+      await fs.stat(path.join(into, "src", "nested", "recipe.txt")).then(
+        () => true,
+        () => false,
+      ),
+    ).toBe(false)
+    await fs.rm(into, { recursive: true, force: true })
+  })
+
+  test("file-versus-directory collisions skip in both directions without changing the destination", async () => {
+    await Recipe.save({ name: "File Source", prompt: "use payload" }, opts())
+    await fs.writeFile(path.join(root, "file-source", "payload"), "recipe file", "utf8")
+    const fileInto = path.join(root, "..", path.basename(root) + "-file-to-dir")
+    await fs.mkdir(path.join(fileInto, "payload"), { recursive: true })
+    await fs.writeFile(path.join(fileInto, "payload", "user.txt"), "user directory", "utf8")
+    expect(await Recipe.materialize("file-source", fileInto, opts())).toEqual({
+      copied: ["recipe.md"],
+      skipped: ["payload"],
+      failed: [],
+    })
+    expect(await fs.readFile(path.join(fileInto, "payload", "user.txt"), "utf8")).toBe("user directory")
+
+    await Recipe.save({ name: "Directory Source", prompt: "use payload" }, opts())
+    await fs.mkdir(path.join(root, "directory-source", "payload"), { recursive: true })
+    await fs.writeFile(path.join(root, "directory-source", "payload", "recipe.txt"), "recipe directory", "utf8")
+    const directoryInto = path.join(root, "..", path.basename(root) + "-dir-to-file")
+    await fs.mkdir(directoryInto, { recursive: true })
+    await fs.writeFile(path.join(directoryInto, "payload"), "user file", "utf8")
+    expect(await Recipe.materialize("directory-source", directoryInto, opts())).toEqual({
+      copied: ["recipe.md"],
+      skipped: ["payload"],
+      failed: [],
+    })
+    expect(await fs.readFile(path.join(directoryInto, "payload"), "utf8")).toBe("user file")
+
+    await fs.rm(fileInto, { recursive: true, force: true })
+    await fs.rm(directoryInto, { recursive: true, force: true })
+  })
+
+  test("a directory asset containing a symlink escape fails as a unit and copies no outside bytes", async () => {
+    await Recipe.save({ name: "Linked Tree", prompt: "use assets" }, opts())
+    const outside = path.join(root, "..", path.basename(root) + "-outside")
+    await fs.mkdir(outside, { recursive: true })
+    await fs.writeFile(path.join(outside, "secret.txt"), "outside", "utf8")
+    await fs.mkdir(path.join(root, "linked-tree", "assets"), { recursive: true })
+    await fs.symlink(
+      outside,
+      path.join(root, "linked-tree", "assets", "escape"),
+      process.platform === "win32" ? "junction" : "dir",
+    )
+    const into = path.join(root, "..", path.basename(root) + "-linked")
+
+    expect(await Recipe.materialize("linked-tree", into, opts())).toEqual({
+      copied: ["recipe.md"],
+      skipped: [],
+      failed: ["assets"],
+    })
+    expect(
+      await fs.stat(path.join(into, "assets")).then(
+        () => true,
+        () => false,
+      ),
+    ).toBe(false)
+
+    await fs.rm(into, { recursive: true, force: true })
+    await fs.rm(outside, { recursive: true, force: true })
+  })
+
+  test("materialize refuses a destination inside the recipe tree before it can recurse into itself", async () => {
+    await Recipe.save({ name: "Recursive", prompt: "use assets" }, opts())
+    await fs.mkdir(path.join(root, "recursive", "assets"), { recursive: true })
+    await fs.writeFile(path.join(root, "recursive", "assets", "seed.txt"), "seed", "utf8")
+    const into = path.join(root, "recursive", "assets", "work")
+
+    await expect(Recipe.materialize("recursive", into, opts())).rejects.toThrow(/inside its own source folder/)
+    expect(
+      await fs.stat(into).then(
+        () => true,
+        () => false,
+      ),
+    ).toBe(false)
   })
 
   test("materialize of an unknown recipe fails loudly", async () => {
@@ -327,8 +438,8 @@ describe("lossless writes — the author's frontmatter survives every rewrite", 
     // property of two functions staying in sync.
     await write("cook")
     const into = path.join(root, "..", path.basename(root) + "-cooked")
-    const copied = await Recipe.materialize("cook", into, opts())
-    expect(copied).toContain("recipe.md")
+    const result = await Recipe.materialize("cook", into, opts())
+    expect(result.copied).toContain("recipe.md")
     const cooked = await fs.readFile(path.join(into, "recipe.md"), "utf8")
     expect(cooked).toBe(HAND_WRITTEN)
     for (const line of UNMODELLED) expect(cooked).toContain(line) // negative control: not vacuously equal

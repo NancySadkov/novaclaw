@@ -161,8 +161,8 @@ const canonicalRef = (ref: Location.Ref): Location.Ref =>
 // appear inside a `global` one's subtree because the tag config forbids that edge. The invariant is
 // pinned by `test/location-services-hoist-replacements.test.ts`.
 // ⚠️ BOOT INSTRUMENTATION — observation only, and the DEFAULT path is byte-identical to one with
-// this block deleted. `todo/startup.md` Phase 1 asks for per-node build times for this graph and
-// nobody had ever measured them; `BootProfile` supplies them without an OTLP collector.
+// this block deleted. Per-node build times for this graph had never been measured; `BootProfile`
+// supplies them without a remote collector.
 //
 // The per-node rewrite is FLAG-GATED (`NOVACLAW_BOOT_PROFILE=1`) rather than always-on, because it
 // is the one part of this instrument that changes the layer OBJECT graph — it preserves service

@@ -136,13 +136,7 @@ export type ApiAuth = {
   }
 }
 
-export type WellKnownAuth = {
-  type: "wellknown"
-  key: string
-  token: string
-}
-
-export type Auth = OAuth | ApiAuth | WellKnownAuth
+export type Auth = OAuth | ApiAuth
 
 export type EffectHttpApiErrorBadRequest = {
   _tag: "BadRequest"
@@ -4740,6 +4734,10 @@ export type AgentV2Info = {
   description?: string
   directory?: string
   workspace?: string
+  status?: {
+    task: string
+    observed: number
+  }
   permissionMode?: "plan" | "ask" | "bypass" | "yolo"
   strict?: {
     enabled?: boolean
@@ -6131,7 +6129,7 @@ export type CalendarCreateInput = {
   agent?: string
   model?: string
   location?: string
-  permissionMode?: string
+  permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
   enabled?: boolean
 }
 
@@ -6143,7 +6141,7 @@ export type CalendarUpdateInput = {
   agent?: string | null
   model?: string | null
   location?: string | null
-  permissionMode?: string | null
+  permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo" | null
   enabled?: boolean
 }
 
@@ -14231,7 +14229,7 @@ export type V2SessionCreateErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError
+  400: InvalidRequestError | InvalidRequestError
   /**
    * UnauthorizedError
    */
@@ -16667,6 +16665,41 @@ export type V2CredentialRemoveResponses = {
 }
 
 export type V2CredentialRemoveResponse = V2CredentialRemoveResponses[keyof V2CredentialRemoveResponses]
+
+export type V2CredentialRepairStatusData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/credential/repair"
+}
+
+export type V2CredentialRepairStatusErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2CredentialRepairStatusError = V2CredentialRepairStatusErrors[keyof V2CredentialRepairStatusErrors]
+
+export type V2CredentialRepairStatusResponses = {
+  /**
+   * Success
+   */
+  200: {
+    unreadable: Array<{
+      path: string
+    }>
+    notice?: string
+  }
+}
+
+export type V2CredentialRepairStatusResponse =
+  V2CredentialRepairStatusResponses[keyof V2CredentialRepairStatusResponses]
 
 export type V2MessengerDriverListData = {
   body?: never

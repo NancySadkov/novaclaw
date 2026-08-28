@@ -185,7 +185,7 @@ describe("SettingsConfigStore", () => {
       yield* Effect.addFinalizer(() => Effect.promise(() => dir[Symbol.asyncDispose]()))
       const globalDir = path.join(dir.path, "global")
       // NEGATIVE CONTROL. Seeding used to read the launch directory too, so whichever process
-      // booted first silently defined instance-wide settings forever (opencode legacy, removed
+      // booted first silently defined instance-wide settings forever (pre-detachment legacy, removed
       // 2026-07-27). This file must never be read: if someone re-adds the leg, `username` flips
       // to "cwd-user" and this test fails.
       const cwdDir = path.join(dir.path, "some-random-cwd")
@@ -221,7 +221,7 @@ describe("SettingsConfigStore", () => {
       yield* Effect.promise(async () => {
         await fs.mkdir(globalDir, { recursive: true })
         // One bad key (`mcp` is a string, not an MCP config) among several valid ones — the
-        // OpenCode footgun that used to discard the ENTIRE document.
+        // Pre-detachment footgun that used to discard the ENTIRE document.
         await fs.writeFile(
           path.join(globalDir, "novaclaw.jsonc"),
           JSON.stringify({ username: "seed-user", snapshots: false, shell: "bash", mcp: "not-a-valid-mcp-config" }),

@@ -102,7 +102,7 @@ manage AI providers and credentials
 
 Commands:
   nova-cli providers list               list providers and credentials                 [aliases: ls]
-  nova-cli providers login [url]        log in to a provider
+  nova-cli providers login              log in to a provider
   nova-cli providers logout [provider]  log out from a configured provider
 
 Options:
@@ -430,12 +430,9 @@ Options:
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw providers login --help 1`] = `
-"nova-cli providers login [url]
+"nova-cli providers login
 
 log in to a provider
-
-Positionals:
-  url  novaclaw auth provider                                                               [string]
 
 Options:
   -h, --help        show help                                                              [boolean]

@@ -57,7 +57,7 @@ export function allows(options: Logger.Options<unknown>): boolean {
   return actual >= RANK[configured ?? level()]
 }
 
-/** Wrap any sink, including OTLP, so one live policy governs every destination. */
+/** Wrap every local sink so one live policy governs every destination. */
 export function filter<Output>(logger: Logger.Logger<unknown, Output>): Logger.Logger<unknown, Output | undefined> {
   return Logger.make((options) => (allows(options) ? logger.log(options) : undefined))
 }

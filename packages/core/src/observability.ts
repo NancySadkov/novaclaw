@@ -2,103 +2,42 @@ export * as Observability from "./observability"
 
 import { NodeFileSystem } from "@effect/platform-node"
 import { LayerNode } from "./effect/layer-node"
-import { Cause, Effect, Layer, Logger, References } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientError } from "effect/unstable/http"
-import { OtlpSerialization } from "effect/unstable/observability"
-import { Global } from "./global"
-import { checkUrl, loadPolicy } from "./offline"
+import { Layer, Logger, References } from "effect"
 import { Logging } from "./observability/logging"
-import { Otlp } from "./observability/otlp"
-import { CalloutPolicy } from "./callout-policy"
 
-// OFF-B (layer 4): the OTLP exporters run their own FetchHttpClient, so the
-// OFF-A chokepoint cannot see them. In offline mode, telemetry export is
-// dropped entirely unless the configured collector endpoint passes the host
-// policy (a LAN collector stays allowed via NOVACLAW_OFFLINE_ALLOW/loopback).
-function otlpAllowed(): boolean {
-  const policy = loadPolicy({ configDir: Global.make().config })
-  if (!policy.enabled) return true
-  const endpoint = process.env["OTEL_EXPORTER_OTLP_ENDPOINT"]
-  if (!endpoint) return false
-  return checkUrl(endpoint, policy).allowed
-}
-
-export const layer = Layer.unwrap(
-  Effect.gen(function* () {
-    const otlp = otlpAllowed()
-    const logs = Logger.layer(otlp ? [...Logging.loggers(), ...Otlp.loggers()] : [...Logging.loggers()], {
-      mergeWithExisting: false,
-    }).pipe(
-      Layer.provide(NodeFileSystem.layer),
-      Layer.provide(OtlpSerialization.layerJson),
-      Layer.provide(
-        Layer.effect(
-          HttpClient.HttpClient,
-          HttpClient.HttpClient.pipe(
-            Effect.map((client) =>
-              HttpClient.transform(client, (response, request) =>
-                response.pipe(
-                  Effect.timeoutOrElse({
-                    duration: CalloutPolicy.telemetryLogs.timeoutMs,
-                    orElse: () =>
-                      Effect.fail(
-                        new HttpClientError.HttpClientError({
-                          reason: new HttpClientError.TransportError({
-                            request,
-                            description: "Telemetry export timed out",
-                          }),
-                        }),
-                      ),
-                  }),
-                ),
-              ),
-            ),
-          ),
-        ).pipe(Layer.provide(FetchHttpClient.layer)),
-      ),
-      // ⚠️ NO `Layer.orDie` here, deliberately, and the type is what holds the line: the only
-      // failure this composition could ever carry was `Logger.toFile`'s `PlatformError`, and
-      // re-adding an `orDie` would be re-arming the boot-killer this line used to be
-      // (`notes/reports/startup-classification-2026-08-07.md` §5, finding 2).
-      //
-      // ⭐ **Phase 2 went one better: there is no longer a failure to absorb.** `Logger.toFile` is
-      // gone from the production path — `Logging.fileLoggerOrStderr` builds an
-      // `observability/log-file.ts` writer, whose every syscall is inside a `try` and which
-      // degrades to stderr instead of failing. `OtlpLogger.make`'s error channel is `never` too. So
-      // this layer's error channel is not merely emptied by a guard, it is empty because nothing
-      // under it can fail — an `orDie` here would have nothing to widen.
-      Layer.merge(Layer.succeed(References.MinimumLogLevel, Logging.minimumLogLevel())),
-    )
-    // The tracing layer is a dynamic import of the OpenTelemetry SDK, so a broken or partial install
-    // is a rejected promise — which `Effect.promise` turns into a defect on the boot path. Tracing
-    // is the most optional thing in this file; losing it must cost a warning, never the instance.
-    const tracing = otlp
-      ? yield* Effect.tryPromise(Otlp.tracingLayer).pipe(
-          Effect.catchCause((cause) => {
-            console.error(
-              `[novaclaw] WARNING: OpenTelemetry tracing could not be initialised ` +
-                `(${Cause.pretty(cause)}); this run has logs but no traces.`,
-            )
-            return Effect.succeed(Layer.empty)
-          }),
-        )
-      : Layer.empty
-    // ⭐ **The one line per boot that turns the writer's defaults from a guess into a measurement**
-    // (`todo/logging.md` Phase 2 → Phase 3). It is `Layer.provide(logs)`-ed rather than merged
-    // beside them because an `Effect.log*` run during layer CONSTRUCTION goes to whatever logger was
-    // ambient — i.e. not ours, i.e. not into `novaclaw.log`, which is the one place this line is for.
-    //
-    // ⚠️ **`logs` therefore appears twice, and the thing that must be true is that it BUILDS once.**
-    // Two builds would mean two `LogFile.Writer`s on one path — two descriptors, two exit hooks, two
-    // rotation owners — which is the residual `log-file.ts` names as its worst shared-directory case
-    // and would be a defect introduced *by* the line that measures the file. Effect's memo map makes
-    // a layer VALUE build once per build; `logs` is one `const`, referenced twice. That is an
-    // inference about a library, and `test/log-usage-boot.test.ts` measures it instead: it counts the
-    // writers actually opened across a real build of this layer, and its negative control passes the
-    // same effect a SECOND, structurally identical logger layer and watches the count go to 2.
-    const usage = Layer.effectDiscard(Logging.reportUsage()).pipe(Layer.provide(logs))
-    return Layer.merge(Layer.merge(logs, tracing), usage)
-  }),
+const logs = Logger.layer(Logging.loggers(), {
+  mergeWithExisting: false,
+}).pipe(
+  Layer.provide(NodeFileSystem.layer),
+  // ⚠️ NO `Layer.orDie` here, deliberately, and the type is what holds the line: the only
+  // failure this composition could ever carry was `Logger.toFile`'s `PlatformError`, and
+  // re-adding an `orDie` would be re-arming the boot-killer this line used to be
+  // (`notes/reports/startup-classification-2026-08-07.md` §5, finding 2).
+  //
+  // ⭐ **Phase 2 went one better: there is no longer a failure to absorb.** `Logger.toFile` is
+  // gone from the production path — `Logging.fileLoggerOrStderr` builds an
+  // `observability/log-file.ts` writer, whose every syscall is inside a `try` and which
+  // degrades to stderr instead of failing. So this layer's error channel is not merely emptied
+  // by a guard, it is empty because nothing under it can fail — an `orDie` here would have
+  // nothing to widen.
+  Layer.merge(Layer.succeed(References.MinimumLogLevel, Logging.minimumLogLevel())),
 )
+
+// ⭐ **The one line per boot that turns the writer's defaults from a guess into a measurement.**
+// It is `Layer.provide(logs)`-ed rather than merged beside them because an `Effect.log*` run during
+// layer CONSTRUCTION goes to whatever logger was ambient — i.e. not ours, i.e. not into
+// `novaclaw.log`, which is the one place this line is for.
+//
+// ⚠️ **`logs` therefore appears twice, and the thing that must be true is that it BUILDS once.**
+// Two builds would mean two `LogFile.Writer`s on one path — two descriptors, two exit hooks, two
+// rotation owners — which is the residual `log-file.ts` names as its worst shared-directory case
+// and would be a defect introduced *by* the line that measures the file. Effect's memo map makes
+// a layer VALUE build once per build; `logs` is one `const`, referenced twice. That is an inference
+// about a library, and `test/log-usage-boot.test.ts` measures it instead: it counts the writers
+// actually opened across a real build of this layer, and its negative control passes the same effect
+// a SECOND, structurally identical logger layer and watches the count go to 2.
+const usage = Layer.effectDiscard(Logging.reportUsage()).pipe(Layer.provide(logs))
+
+export const layer = Layer.merge(logs, usage)
 
 export const node = LayerNode.make({ name: "observability", layer, deps: [] })

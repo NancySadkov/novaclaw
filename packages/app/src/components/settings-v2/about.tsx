@@ -69,7 +69,6 @@ export const SettingsAboutV2: Component = () => {
               )}
             </For>
           </ul>
-          <p class="settings-v2-about-note">{language.t("settings.about.basedOn")}</p>
           <p class="settings-v2-about-note settings-v2-about-note--muted">{language.t("settings.about.more")}</p>
         </div>
       </div>

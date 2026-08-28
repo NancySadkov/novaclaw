@@ -1,55 +1,10 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { expect, test } from "bun:test"
 import { NodeFileSystem } from "@effect/platform-node"
 import { Effect, Layer, Logger } from "effect"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { fileLogger } from "../../src/observability/logging"
-import { resource } from "../../src/observability/otlp"
-
-const otelResourceAttributes = process.env.OTEL_RESOURCE_ATTRIBUTES
-const novaclawClient = process.env.NOVACLAW_CLIENT
-
-afterEach(() => {
-  if (otelResourceAttributes === undefined) delete process.env.OTEL_RESOURCE_ATTRIBUTES
-  else process.env.OTEL_RESOURCE_ATTRIBUTES = otelResourceAttributes
-
-  if (novaclawClient === undefined) delete process.env.NOVACLAW_CLIENT
-  else process.env.NOVACLAW_CLIENT = novaclawClient
-})
-
-describe("resource", () => {
-  test("parses and decodes OTEL resource attributes", () => {
-    process.env.OTEL_RESOURCE_ATTRIBUTES =
-      "service.namespace=acme,team=platform%2Cobservability,label=hello%3Dworld,key%2Fname=value%20here"
-
-    expect(resource().attributes).toMatchObject({
-      "service.namespace": "acme",
-      team: "platform,observability",
-      label: "hello=world",
-      "key/name": "value here",
-    })
-  })
-
-  test("drops OTEL resource attributes when any entry is invalid", () => {
-    process.env.OTEL_RESOURCE_ATTRIBUTES = "service.namespace=acme,broken"
-
-    expect(resource().attributes["service.namespace"]).toBeUndefined()
-    expect(resource().attributes["novaclaw.client"]).toBeDefined()
-  })
-
-  test("keeps built-in attributes when env values conflict", () => {
-    process.env.NOVACLAW_CLIENT = "cli"
-    process.env.OTEL_RESOURCE_ATTRIBUTES = "novaclaw.client=web,service.instance.id=override,service.namespace=acme"
-
-    expect(resource().attributes).toMatchObject({
-      "novaclaw.client": "cli",
-      "service.namespace": "acme",
-    })
-    expect(resource().attributes["service.instance.id"]).not.toBe("override")
-    expect(resource().attributes["novaclaw.run"]).toMatch(/^[0-9a-f]{8}$/)
-  })
-})
 
 test("file logger appends concurrent runs with a run on every line", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "novaclaw-log-test-"))

@@ -7,7 +7,7 @@ import { Offline } from "@novaclaw/core/offline"
  * ─── the transports the HttpClient chokepoint cannot see ────────────────────────────────────────
  *
  * AGENTS.md → *Runtime ground truth* §5: there is ONE shared `HttpClient` node, and **every new
- * feature's egress must ride it OR add its own `Offline` policy check**. Most do. Three sites in
+ * feature's egress must ride it OR add its own `Offline` policy check**. Most do. Two sites in
  * `packages/core` cannot ride it — npm runs its own transport, and the embedder is a plain `async`
  * function outside the Effect graph — so the "or" arm is what protects them, and this file is what
  * makes that arm real rather than remembered.
@@ -56,7 +56,7 @@ const RAW_TRANSPORTS: ReadonlyArray<{
     file: "src/kb-graph/embedder.ts",
     why:
       "a plain async function outside the Effect graph, POSTing the user's own KB and chat text to a " +
-      "user-configured embedding URL — the heaviest payload of the three.",
+      "user-configured embedding URL — the heavier payload of the two.",
     live: /Offline\.checkUrl\(\s*settings\.url\s*,\s*Offline\.currentPolicy\(\)\s*\)/,
   },
 ]

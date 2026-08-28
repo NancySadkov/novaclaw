@@ -587,10 +587,10 @@ export const RESTART_REQUIRED_KEYS: ReadonlyMap<string, string> = new Map([])
  * be its own bug (a `references` reload re-fetches every remote git reference; see below).
  *
  * The cost of each, so the next person does not have to re-derive it — all of them are bounded by
- * "a few SQLite reads plus a markdown glob over the config directories", never a layer build:
+ * "a few SQLite reads plus any domain-specific resource scan", never a layer build:
  *  · `agents` — two transforms. The built-in (`plugin/agent.ts`) is pure CPU: it rebuilds ~7 agents'
- *    permission rulesets. The config one re-reads the agent store, `config.entries()` (one settings
- *    SELECT) and re-globs `{agent,agents}/**` + `{mode,modes}/*.md` under each config directory.
+ *    permission rulesets. The config one re-reads the agent store and `config.entries()` (one
+ *    settings SELECT). It never reads project agent/mode markdown.
  *  · `commands` — same shape, one glob (`{command,commands}/**\/*.md`), smaller built-in.
  *  · `references` — one store read and a map rebuild. ⚠️ Its `finalize` also forks a
  *    `RepositoryCache.ensure({refresh:true})` per REMOTE git reference, i.e. a git fetch. Forked, so
@@ -633,10 +633,9 @@ export const RESTART_REQUIRED_KEYS: ReadonlyMap<string, string> = new Map([])
  *    process-global store overlay, so the per-instance document stayed at its first-read value for
  *    the life of the process and the ONLY thing that replaced it was the instance being destroyed.
  *    The reload re-runs that merge. Cost is the honest reason its trigger list is SHORT: the merge
- *    re-reads the stores, re-globs `{agent,agents}`/`{command,commands}`/`{plugin,plugins}` under
- *    each config directory, re-reads the managed-MDM directory, and re-fetches any `.well-known`
- *    remote config the user has authenticated against — bounded, and strictly cheaper than the
- *    location boot the teardown used to pay, but not free enough to fire on every key.
+ *    re-reads the stores, scans `{command,commands}`/`{plugin,plugins}` under each config directory,
+ *    and re-reads the managed-MDM directory — bounded, and strictly cheaper than the location boot
+ *    the teardown used to pay, but not free enough to fire on every key.
  *
  *    ⚠️ **`skills`, `agents`, `permissions` and `references` are deliberately NOT triggers for it,
  *    and that is a scoping decision with a name, not an oversight.** Those keys DO reach the merged
@@ -1126,8 +1125,8 @@ export class ConfigRemoveRefused extends Schema.TaggedErrorClass<ConfigRemoveRef
  * false description of itself.
  *
  * ⚠️ Refused BEFORE anything is written, so the store never holds the row at all. The drop at
- * materialisation stays as defence in depth — a row can still arrive from a markdown agent file —
- * but a defence that runs after a successful-looking write is not the place to tell the user no.
+ * materialisation stays as defence in depth against a corrupt or directly-written store row, but a
+ * defence that runs after a successful-looking write is not the place to tell the user no.
  */
 export class ConfigWriteRefused extends Schema.TaggedErrorClass<ConfigWriteRefused>()(
   "ConfigStoreWrite.ConfigWriteRefused",

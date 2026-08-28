@@ -558,22 +558,6 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/reference.ts",
   },
-  /** One well-known or delegated remote configuration document is being fetched. */
-  "config.remote.fetch": {
-    level: "debug",
-    message: "fetching remote config",
-    attributes: { "config.url": "text" },
-    content: "user",
-    file: "packages/novaclaw/src/config/config.ts",
-  },
-  /** A provider's well-known remote configuration was decoded and merged. */
-  "config.remote.load.ok": {
-    level: "debug",
-    message: "loaded remote config from well-known",
-    attributes: { "config.url": "text" },
-    content: "user",
-    file: "packages/novaclaw/src/config/config.ts",
-  },
   /**
    * A `ConfigStoreWrite.remove` committed. `info` and content-bearing: a deletion is the one config
    * write that cannot be undone by re-reading the previous value, so the paths it took — and any

@@ -782,10 +782,10 @@ export const layer = Layer.effect(
     // Config→SQLite 8c: jsonc is NOT a runtime config source. The one config DOCUMENT is
     // synthetic — projected from the instance-wide settings store on each `entries()` call;
     // the per-subsystem stores feed their own loaders directly. The directory walk-up
-    // SURVIVES for Directory entries only: the D2 filesystem resources (markdown agents/
-    // commands, `skill(s)/` dirs, plugin files) ride them. jsonc files are read exclusively
-    // by the boot-time import seeds (isEmpty-gated, server startup) and the explicit Import
-    // button — import/export wire format, never resolution.
+    // survives for non-authority filesystem resources (markdown commands, `skill(s)/` dirs,
+    // plugin files). Agent identity and permissions never ride project directories. jsonc is read
+    // exclusively by the boot-time import seeds (isEmpty-gated, server startup) and the explicit
+    // Import button — import/export wire format, never resolution.
     const globalDirectory = AbsolutePath.make(global.config)
     const locationIsGlobal = path.resolve(location.directory) === path.resolve(global.config)
     const discovered = locationIsGlobal

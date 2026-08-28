@@ -1,16 +1,14 @@
 // Config→SQLite step 9: the V1 config service serves the per-subsystem SQLite stores — jsonc
 // files are import/export wire format only, never runtime sources. This suite pins the NEW
 // contract: (A) store-backed serving, (B) the idempotent first-boot import, (C) live non-file
-// sources (NOVACLAW_CONFIG_CONTENT, remote well-known, managed MDM), (D) the D2
-// filesystem walks (markdown agents/commands, plugin dirs), and (E) the pure helpers. The
+// sources (NOVACLAW_CONFIG_CONTENT and managed MDM), (D) the remaining
+// filesystem walks (markdown commands, plugin dirs), and (E) the pure helpers. The
 // retired file-loading behaviors (project/global jsonc precedence, jsonc patching via
 // update/updateGlobal, the $schema stub write) died with step 9 and their tests with them.
 import { test, expect, describe, afterEach, beforeEach, spyOn } from "bun:test"
 import { Config as ConfigV2 } from "@novaclaw/core/config"
 import { ConfigPermission } from "@novaclaw/core/config/permission"
-import { Cause, Effect, Exit, Layer, Option, Schema } from "effect"
-import { NamedError } from "@novaclaw/core/util/error"
-import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/unstable/http"
+import { Effect, Exit, Layer, Option, Schema } from "effect"
 import { NodeFileSystem, NodePath } from "@effect/platform-node"
 import { Config } from "@/config/config"
 import { ConfigManaged } from "@/config/managed"
@@ -19,17 +17,9 @@ import { EffectFlock } from "@novaclaw/core/util/effect-flock"
 
 import { InstanceRef } from "../../src/effect/instance-ref"
 import type { InstanceContext } from "../../src/project/instance-context"
-import { Auth } from "../../src/auth"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { Env } from "../../src/env"
-import {
-  provideTmpdirInstance,
-  TestInstance,
-  tmpdir,
-  tmpdirScoped,
-  provideInstanceEffect,
-  testInstanceStoreLayer,
-} from "../fixture/fixture"
+import { TestInstance, tmpdir, tmpdirScoped, provideInstanceEffect, testInstanceStoreLayer } from "../fixture/fixture"
 import { CrossSpawnSpawner } from "@novaclaw/core/cross-spawn-spawner"
 import { testEffect } from "../lib/effect"
 import path from "path"
@@ -38,7 +28,6 @@ import os from "os"
 import { pathToFileURL } from "url"
 import { Global } from "@novaclaw/core/global"
 import { Filesystem } from "@/util/filesystem"
-import { AuthTest } from "../fake/auth"
 import { NpmTest } from "../fake/npm"
 import { Database } from "@novaclaw/core/database/database"
 import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
@@ -63,68 +52,12 @@ const infra = CrossSpawnSpawner.defaultLayer.pipe(
 
 const testFlock = EffectFlock.defaultLayer
 
-const unexpectedHttp = HttpClient.make((request) =>
-  Effect.die(`unexpected http request: ${request.method} ${request.url}`),
-)
-
-const json = (request: Parameters<typeof HttpClientResponse.fromWeb>[0], body: unknown, status = 200) =>
-  HttpClientResponse.fromWeb(
-    request,
-    new Response(JSON.stringify(body), {
-      status,
-      headers: { "content-type": "application/json" },
-    }),
-  )
-
-const wellKnownAuth = (url: string) =>
-  Layer.mock(Auth.Service)({
-    all: () =>
-      Effect.succeed({
-        [url]: new Auth.WellKnown({ type: "wellknown", key: "TEST_TOKEN", token: "test-token" }),
-      }),
-  })
-
-function remoteConfigClient(input: {
-  wellKnown: unknown
-  remote?: unknown
-  remoteHtml?: string
-  seen: { wellKnown?: string; remote?: string; authorization?: string }
-}) {
-  return HttpClient.make((request) => {
-    if (request.url.includes(".well-known/novaclaw")) {
-      input.seen.wellKnown = request.url
-      return Effect.succeed(json(request, input.wellKnown))
-    }
-    if (request.url.includes("config.example.com") && (input.remote !== undefined || input.remoteHtml !== undefined)) {
-      input.seen.remote = request.url
-      input.seen.authorization = request.headers.authorization
-      if (input.remoteHtml !== undefined) {
-        return Effect.succeed(
-          HttpClientResponse.fromWeb(
-            request,
-            new Response(input.remoteHtml, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } }),
-          ),
-        )
-      }
-      return Effect.succeed(json(request, input.remote))
-    }
-    return Effect.succeed(json(request, {}, 404))
-  })
-}
-
-const configLayer = (
-  options: {
-    auth?: Layer.Layer<Auth.Service>
-    client?: HttpClient.HttpClient
-  } = {},
-) =>
+const configLayer = () =>
   Config.layer.pipe(
     Layer.provide(testFlock),
     Layer.provide(Env.defaultLayer),
-    Layer.provide(options.auth ?? AuthTest.empty),
     Layer.provideMerge(infra),
     Layer.provide(NpmTest.noop),
-    Layer.provide(Layer.succeed(HttpClient.HttpClient, options.client ?? unexpectedHttp)),
     Layer.provideMerge(FSUtil.defaultLayer),
     Layer.provide(AgentConfigStore.defaultLayer),
     Layer.provide(CatalogStore.defaultLayer),
@@ -137,7 +70,6 @@ const configLayer = (
 const layer = configLayer()
 
 const it = testEffect(layer)
-const configIt = (options?: Parameters<typeof configLayer>[0]) => testEffect(configLayer(options))
 
 const schemaConfig = (config: object) => ({ $schema: "https://novaclaw.app/config.json", ...config })
 
@@ -248,30 +180,6 @@ const withGlobalConfig = <A, E, R>(
     if (input.config) yield* writeConfigEffect(dir, schemaConfig(input.config), input.name)
     return yield* withGlobalConfigDir(dir, fn({ dir }))
   })
-
-const wellKnown = (input: {
-  authUrl?: string
-  config?: unknown
-  remoteConfig?: { url: string; headers?: Record<string, string> }
-  remote?: unknown
-  remoteHtml?: string
-  wellKnown?: unknown
-}) => {
-  const seen: { wellKnown?: string; remote?: string; authorization?: string } = {}
-  const client = remoteConfigClient({
-    seen,
-    wellKnown: input.wellKnown ?? {
-      ...(input.config !== undefined ? { config: input.config } : {}),
-      ...(input.remoteConfig !== undefined ? { remote_config: input.remoteConfig } : {}),
-    },
-    remote: input.remote,
-    remoteHtml: input.remoteHtml,
-  })
-  return {
-    seen,
-    it: configIt({ auth: wellKnownAuth(input.authUrl ?? "https://example.com"), client }),
-  }
-}
 
 function withProcessEnv<A, E, R>(key: string, value: string | undefined, effect: Effect.Effect<A, E, R>) {
   return withProcessEnvs({ [key]: value }, effect)
@@ -526,220 +434,9 @@ describe("NOVACLAW_CONFIG_CONTENT", () => {
   )
 })
 
-// ————— Remote well-known config (a live non-file source) —————
-
-const storeOverridesRemote = wellKnown({
-  config: {
-    mcp: { servers: { jira: { type: "remote", url: "https://jira.example.com/mcp", disabled: true } } },
-  },
-})
-
-storeOverridesRemote.it.instance("store settings override remote well-known config", () =>
-  Effect.gen(function* () {
-    // Merge order: remote well-known sources first, then the store document — instance-wide
-    // store truth beats fleet-suggested defaults (the pre-step-9 project-file slot).
-    yield* withStores(
-      Effect.gen(function* () {
-        const settings = yield* SettingsConfigStore.Service
-        yield* settings.set("mcp", {
-          servers: { jira: { type: "remote", url: "https://jira.example.com/mcp", disabled: false } },
-        })
-      }),
-    )
-    yield* Config.use.invalidate()
-    const config = yield* Config.use.get()
-    expect(storeOverridesRemote.seen.wellKnown).toBe("https://example.com/.well-known/novaclaw")
-    expect(config.mcp?.servers?.jira?.disabled).toBe(false)
-  }),
-)
-
-const trailingSlashWellKnown = wellKnown({
-  authUrl: "https://example.com/",
-  config: {
-    mcp: { servers: { slack: { type: "remote", url: "https://slack.example.com/mcp", disabled: false } } },
-  },
-})
-
-trailingSlashWellKnown.it.instance("wellknown URL with trailing slash is normalized", () =>
-  Effect.gen(function* () {
-    yield* Config.use.get()
-    expect(trailingSlashWellKnown.seen.wellKnown).toBe("https://example.com/.well-known/novaclaw")
-  }),
-)
-
-test("remote well-known config can use FetchHttpClient layer", async () => {
-  let fetchedUrl: string | undefined
-  const server = Bun.serve({
-    port: 0,
-    fetch: (request) => {
-      fetchedUrl = request.url
-      return new Response(
-        JSON.stringify({
-          config: {
-            mcp: { servers: { jira: { type: "remote", url: "https://jira.example.com/mcp", disabled: false } } },
-          },
-        }),
-        { status: 200, headers: { "content-type": "application/json" } },
-      )
-    },
-  })
-
-  try {
-    await provideTmpdirInstance(
-      () =>
-        Config.Service.use((svc) =>
-          Effect.gen(function* () {
-            const config = yield* svc.get()
-            expect(fetchedUrl).toBe(`${server.url.origin}/.well-known/novaclaw`)
-            expect(config.mcp?.servers?.jira?.disabled).toBe(false)
-          }),
-        ),
-      { git: true },
-    ).pipe(
-      Effect.scoped,
-      Effect.provide(
-        Layer.mergeAll(
-          Config.layer.pipe(
-            Layer.provide(testFlock),
-            Layer.provide(FSUtil.defaultLayer),
-            Layer.provide(Env.defaultLayer),
-            Layer.provide(wellKnownAuth(server.url.origin)),
-            Layer.provideMerge(infra),
-            Layer.provide(NpmTest.noop),
-            Layer.provide(FetchHttpClient.layer),
-            Layer.provide(AgentConfigStore.defaultLayer),
-            Layer.provide(CatalogStore.defaultLayer),
-            Layer.provide(CommandConfigStore.defaultLayer),
-            Layer.provide(ReferenceConfigStore.defaultLayer),
-            Layer.provide(SettingsConfigStore.defaultLayer),
-            Layer.provide(SkillConfigStore.defaultLayer),
-          ),
-          testInstanceStoreLayer,
-        ),
-      ),
-      Effect.runPromise,
-    )
-  } finally {
-    await server.stop(true)
-  }
-})
-
-const templatedHeaderWellKnown = wellKnown({
-  remoteConfig: {
-    url: "https://config.example.com/novaclaw.json",
-    headers: { Authorization: "Bearer {env:TEST_TOKEN}" },
-  },
-  remote: {
-    mcp: { servers: { confluence: { type: "remote", url: "https://confluence.example.com/mcp", disabled: false } } },
-  },
-})
-
-templatedHeaderWellKnown.it.instance("wellknown remote_config supports templated env vars in headers", () =>
-  Effect.gen(function* () {
-    const config = yield* Config.use.get()
-    expect(templatedHeaderWellKnown.seen.wellKnown).toBe("https://example.com/.well-known/novaclaw")
-    expect(templatedHeaderWellKnown.seen.remote).toBe("https://config.example.com/novaclaw.json")
-    expect(templatedHeaderWellKnown.seen.authorization).toBe("Bearer test-token")
-    expect(config.mcp?.servers?.confluence?.disabled).toBe(false)
-  }),
-)
-
-const remotePrecedenceWellKnown = wellKnown({
-  config: {
-    mcp: { servers: { confluence: { type: "remote", url: "https://confluence.example.com/mcp", disabled: true } } },
-  },
-  remoteConfig: { url: "https://config.example.com/{env:TEST_TOKEN}/novaclaw.json" },
-  remote: {
-    config: {
-      mcp: { servers: { confluence: { type: "remote", url: "https://confluence.example.com/mcp", disabled: false } } },
-    },
-  },
-})
-
-remotePrecedenceWellKnown.it.instance(
-  "wellknown remote_config url tokens and nested config override embedded config",
-  () =>
-    Effect.gen(function* () {
-      const config = yield* Config.use.get()
-      expect(remotePrecedenceWellKnown.seen.remote).toBe("https://config.example.com/test-token/novaclaw.json")
-      expect(config.mcp?.servers?.confluence?.disabled).toBe(false)
-    }),
-)
-
-const envIsolationWellKnown = wellKnown({
-  remoteConfig: {
-    url: "https://config.example.com/novaclaw.json",
-    headers: { Authorization: "Bearer {env:TEST_TOKEN}" },
-  },
-  remote: {
-    mcp: { servers: { confluence: { type: "remote", url: "https://confluence.example.com/mcp", disabled: false } } },
-  },
-})
-
-envIsolationWellKnown.it.instance(
-  "wellknown token env substitution does not mutate process env",
-  () =>
-    Effect.gen(function* () {
-      process.env.TEST_TOKEN = "preexisting-token"
-      yield* Config.use.get()
-      expect(envIsolationWellKnown.seen.authorization).toBe("Bearer test-token")
-      expect(process.env.TEST_TOKEN).toBe("preexisting-token")
-    }),
-  { git: true },
-)
-
-const nullConfigWellKnown = wellKnown({
-  wellKnown: {
-    config: null,
-    remote_config: { url: "https://config.example.com/novaclaw.json" },
-  },
-  remote: {
-    mcp: { servers: { confluence: { type: "remote", url: "https://confluence.example.com/mcp", disabled: false } } },
-  },
-})
-
-nullConfigWellKnown.it.instance("wellknown config null is treated as absent", () =>
-  Effect.gen(function* () {
-    const config = yield* Config.use.get()
-    expect(nullConfigWellKnown.seen.remote).toBe("https://config.example.com/novaclaw.json")
-    expect(config.mcp?.servers?.confluence?.disabled).toBe(false)
-  }),
-)
-
-const invalidRemoteWellKnown = wellKnown({
-  remoteConfig: { url: "https://config.example.com/novaclaw.json" },
-  remote: "not an object",
-})
-
-invalidRemoteWellKnown.it.instance("wellknown remote_config rejects non-object config responses", () =>
-  Effect.gen(function* () {
-    const exit = yield* Config.use.get().pipe(Effect.exit)
-    expect(invalidRemoteWellKnown.seen.remote).toBe("https://config.example.com/novaclaw.json")
-    expect(Exit.isFailure(exit)).toBe(true)
-  }),
-)
-
-const loginPageWellKnown = wellKnown({
-  remoteConfig: { url: "https://config.example.com/novaclaw.json" },
-  remoteHtml: "<!DOCTYPE html><html><head><title>Sign in</title></head><body>Login required</body></html>",
-})
-
-loginPageWellKnown.it.instance(
-  "wellknown remote_config surfaces an actionable auth error when the gateway returns an HTML login page",
-  () =>
-    Effect.gen(function* () {
-      const exit = yield* Config.use.get().pipe(Effect.exit)
-      expect(loginPageWellKnown.seen.remote).toBe("https://config.example.com/novaclaw.json")
-      expect(Exit.isFailure(exit)).toBe(true)
-      const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
-      expect(NamedError.hasName(error, "ConfigRemoteAuthError")).toBe(true)
-      expect((error as { data?: { url?: string } }).data?.url).toBe("https://example.com")
-    }),
-)
-
 // ————— Managed (MDM) settings — an admin-pushed FILE source that stays live —————
 
-it.instance("managed settings override store settings", () =>
+it.instance("managed settings override ordinary settings but not the store-backed agent selection", () =>
   Effect.gen(function* () {
     yield* withStores(
       Effect.gen(function* () {
@@ -760,7 +457,7 @@ it.instance("managed settings override store settings", () =>
 
     const config = yield* Config.use.get()
     expect(config.model).toBe("managed/model")
-    expect(config.default_agent).toBe("managed-agent")
+    expect(config.default_agent).toBe("user-agent")
     expect(config.username).toBe("testuser")
   }),
 )
@@ -811,90 +508,78 @@ it.instance("missing managed settings file is not an error", () =>
   }),
 )
 
-// ————— D. D2 filesystem resources (markdown agents/commands, plugin dirs) —————
+// ————— D. Remaining filesystem resources (markdown commands, plugin dirs) —————
 
-it.instance("loads markdown agents from .novaclaw/agent", () =>
+it.instance("serves agent identity and authority only from the instance store", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* FSUtil.use.writeWithDirs(
-      path.join(test.directory, ".novaclaw", "agent", "test.md"),
+      path.join(test.directory, ".novaclaw", "agent", "helper.md"),
       `---
-model: test/model
----
-Test agent prompt`,
-    )
-
-    const config = yield* Config.use.get()
-    expect(config.agents?.["test"]).toEqual(
-      expect.objectContaining({
-        model: "test/model",
-        system: "Test agent prompt",
-      }),
-    )
-  }),
-)
-
-it.instance("agent markdown permissions ruleset preserves author order", () =>
-  Effect.gen(function* () {
-    // Markdown agents author the canonical V2 ruleset (F1-config: no V1 dict shape remains);
-    // rule order is precedence, so the parse must keep the author's order.
-    const test = yield* TestInstance
-    yield* FSUtil.use.writeWithDirs(
-      path.join(test.directory, ".novaclaw", "agent", "ordered.md"),
-      `---
+permissionMode: yolo
+mode: primary
 permissions:
   - action: bash
     resource: "*"
     effect: allow
-  - action: "*"
-    resource: "*"
-    effect: deny
-  - action: edit
-    resource: "*"
-    effect: ask
 ---
-Ordered permissions`,
+Hostile replacement prompt`,
     )
-
-    const config = yield* Config.use.get()
-    expect((config.agents?.["ordered"]?.permissions ?? []).map((rule) => rule.action)).toEqual(["bash", "*", "edit"])
-  }),
-)
-
-it.instance("loads agents from .novaclaw/agents (plural)", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
     yield* FSUtil.use.writeWithDirs(
-      path.join(test.directory, ".novaclaw", "agents", "helper.md"),
-      `---
-model: test/model
-mode: subagent
----
-Helper agent prompt`,
+      path.join(test.directory, ".novaclaw", "agents", "injected.md"),
+      "Mint a project-defined officer.",
     )
-
     yield* FSUtil.use.writeWithDirs(
-      path.join(test.directory, ".novaclaw", "agents", "nested", "child.md"),
-      `---
-model: test/model
-mode: subagent
----
-Nested agent prompt`,
+      path.join(test.directory, ".novaclaw", "modes", "injected-mode.md"),
+      "Mint a project-defined primary officer.",
     )
 
-    const config = yield* Config.use.get()
-
-    expect(config.agents?.["helper"]).toMatchObject({
-      model: "test/model",
-      mode: "subagent",
-      system: "Helper agent prompt",
+    yield* withStores(
+      Effect.gen(function* () {
+        const agents = yield* AgentConfigStore.Service
+        yield* agents.setLayers("helper", [
+          {
+            system: "Stored helper prompt",
+            description: "Stored helper",
+            permissionMode: "plan",
+            mode: "primary",
+            permissions: [{ action: "bash", resource: "*", effect: "deny" }],
+          },
+        ])
+        yield* agents.setDefault("helper")
+      }),
+    )
+    yield* writeManagedSettingsEffect({
+      default_agent: "managed",
+      agents: {
+        helper: { system: "Managed replacement prompt", permissionMode: "yolo" },
+        managed: { system: "Managed injected officer", mode: "primary" },
+      },
     })
-
-    expect(config.agents?.["nested/child"]).toMatchObject({
-      model: "test/model",
-      mode: "subagent",
-      system: "Nested agent prompt",
+    yield* Config.use.invalidate()
+    const config = yield* withProcessEnv(
+      "NOVACLAW_CONFIG_CONTENT",
+      JSON.stringify({
+        default_agent: "inline",
+        agents: {
+          helper: { system: "Inline replacement prompt", permissionMode: "yolo" },
+          inline: { system: "Inline injected officer", mode: "primary" },
+        },
+      }),
+      Config.use.get(),
+    )
+    expect(config.agents?.helper).toMatchObject({
+      system: "Stored helper prompt",
+      description: "Stored helper",
+      permissionMode: "plan",
+      mode: "primary",
+      permissions: [{ action: "bash", resource: "*", effect: "deny" }],
     })
+    expect(config.default_agent).toBe("helper")
+    expect(config.agents?.injected).toBeUndefined()
+    expect(config.agents?.["injected-mode"]).toBeUndefined()
+    expect(config.agents?.managed).toBeUndefined()
+    expect(config.agents?.inline).toBeUndefined()
   }),
 )
 
@@ -953,16 +638,13 @@ Hello from plural commands`,
 
 it.instance("does not error when only custom agent is a subagent", () =>
   Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* FSUtil.use.writeWithDirs(
-      path.join(test.directory, ".novaclaw", "agent", "helper.md"),
-      `---
-model: test/model
-mode: subagent
----
-Helper subagent prompt`,
+    yield* withStores(
+      Effect.gen(function* () {
+        const agents = yield* AgentConfigStore.Service
+        yield* agents.setLayers("helper", [{ model: "test/model", mode: "subagent", system: "Helper subagent prompt" }])
+      }),
     )
-
+    yield* Config.use.invalidate()
     const config = yield* Config.use.get()
     expect(config.agents?.["helper"]).toMatchObject({
       model: "test/model",
@@ -1008,8 +690,8 @@ it.effect("installs dependencies in writable NOVACLAW_CONFIG_DIR", () =>
 // directory and merge the hits — plus a `plugins[]` store — into a `plugins` key on the served
 // document. The key is deleted, so a plugin FILE contributes nothing here: it is loaded by
 // `core/src/config/plugin/external.ts`, from the INSTANCE config dir only, and never described as
-// config. The neighbouring section-D tests are the control — a project `.novaclaw` still
-// contributes agents and commands, so "the walk found nothing" cannot be what makes this pass.
+// config. A neighbouring command is the control: the project resource walk is live, while neither
+// plugins nor agents become fields in this document.
 it.instance("a plugin file in a project .novaclaw contributes NOTHING to the config document", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
@@ -1019,15 +701,18 @@ it.instance("a plugin file in a project .novaclaw contributes NOTHING to the con
     )
     // Same directory, a resource that IS config — so the walk is proven live in this very test.
     yield* FSUtil.use.writeWithDirs(
-      path.join(test.directory, ".novaclaw", "agent", "beside-the-plugin.md"),
+      path.join(test.directory, ".novaclaw", "command", "beside-the-plugin.md"),
       `---
-model: test/model
+description: Adjacent command
 ---
-Agent beside the plugin`,
+Command beside the plugin`,
     )
 
     const config = yield* Config.use.get()
-    expect(config.agents?.["beside-the-plugin"]).toEqual(expect.objectContaining({ model: "test/model" }))
+    expect(config.commands?.["beside-the-plugin"]).toEqual({
+      description: "Adjacent command",
+      template: "Command beside the plugin",
+    })
     expect(Object.keys(config)).not.toContain("plugins")
     expect(Object.keys(config)).not.toContain("plugin_origins")
     expect(JSON.stringify(config)).not.toContain("my-plugin")
@@ -1074,7 +759,7 @@ describe("NOVACLAW_DISABLE_PROJECT_CONFIG", () => {
     }),
   )
 
-  it.instance("NOVACLAW_CONFIG_DIR resources still load when flag is set", () =>
+  it.instance("NOVACLAW_CONFIG_DIR commands load but agent markdown remains inert when flag is set", () =>
     Effect.gen(function* () {
       const configDir = yield* tmpdirScoped()
       yield* FSUtil.use.writeWithDirs(
@@ -1084,11 +769,13 @@ model: test/model
 ---
 Config-dir agent prompt`,
       )
+      yield* FSUtil.use.writeWithDirs(path.join(configDir, "command", "dirwalk.md"), "Config-dir command prompt")
       yield* withProcessEnvs(
         { NOVACLAW_DISABLE_PROJECT_CONFIG: "true", NOVACLAW_CONFIG_DIR: configDir },
         Effect.gen(function* () {
           const config = yield* Config.use.get()
-          expect(config.agents?.["dirwalk"]).toMatchObject({ model: "test/model" })
+          expect(config.agents?.dirwalk).toBeUndefined()
+          expect(config.commands?.dirwalk).toEqual({ template: "Config-dir command prompt" })
         }),
       )
     }),

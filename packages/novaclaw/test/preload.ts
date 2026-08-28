@@ -122,9 +122,6 @@ delete process.env["NOVACLAW_SERVER_PASSWORD"]
 delete process.env["NOVACLAW_SERVER_USERNAME"]
 delete process.env["NOVACLAW_EXPERIMENTAL"]
 delete process.env["NOVACLAW_ENABLE_EXPERIMENTAL_MODELS"]
-delete process.env["OTEL_EXPORTER_OTLP_ENDPOINT"]
-delete process.env["OTEL_EXPORTER_OTLP_HEADERS"]
-delete process.env["OTEL_RESOURCE_ATTRIBUTES"]
 
 // Use in-memory sqlite
 process.env["NOVACLAW_DB"] = ":memory:"

@@ -9,12 +9,10 @@ import { ConfigAgent } from "./config/agent"
 
 const DEFAULT_AGENT_KEY = "default_agent"
 
-// Config→SQLite step 2: the instance-wide, SQLite-backed source of truth for config-file-borne agent
-// definitions — replaces reading `agents.<name>` out of novaclaw.jsonc at runtime. Global (not
-// per-location) so every directory — including the shared scratch dir — resolves the same agents.
-// jsonc becomes import/export only: the config-agent plugin seeds this store from an existing
-// novaclaw.jsonc on first boot (transitional — removed in migration step 8), and the settings UI will
-// write here (step 7). Markdown agents stay filesystem-walked (D2) and never touch this store.
+// The instance-wide, SQLite-backed source of truth for every configurable agent definition. Global
+// (not per-location) so every directory — including the shared scratch dir — resolves the same agents.
+// jsonc is import/export only; project markdown is untrusted content and is never an identity or
+// authority source. The settings UI and HTTP config surface write here.
 //
 // The layered-row discipline (per-row decode, the operator-facing warning, layer order) lives in
 // `config-store-factory.ts` and is shared with the catalog, command and reference stores.

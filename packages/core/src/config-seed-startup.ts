@@ -19,7 +19,7 @@ import { SkillConfigSeed } from "./skill-config-seed"
 // failures; a seed failure must never block startup).
 //
 // ⚠️ It deliberately does NOT read the launch directory (2026-07-27). It used to, and that was an
-// opencode-legacy pattern with a real defect: seeding is isEmpty-gated and one-time, so WHICHEVER
+// Pre-detachment pattern with a real defect: seeding is isEmpty-gated and one-time, so WHICHEVER
 // PROCESS BOOTED FIRST silently defined instance-wide settings forever — a `novaclaw` run in some
 // random folder could permanently define the instance's providers. Config is instance-level, so it
 // comes from the instance's config dir. A per-PROJECT config, if it ever returns, must be a real

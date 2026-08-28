@@ -1,12 +1,10 @@
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
-import { httpClient } from "@novaclaw/core/effect/app-node-platform"
 import { serviceUse } from "@novaclaw/core/effect/service-use"
 import path from "path"
 import os from "os"
 import { mergeDeep } from "remeda"
 import { Global } from "@novaclaw/core/global"
 import { Flag } from "@novaclaw/core/flag/flag"
-import { Auth } from "../auth"
 import { InstallationLocal, InstallationVersion } from "@novaclaw/core/installation/version"
 import { existsSync } from "fs"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
@@ -20,29 +18,20 @@ import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
 import { isRecord } from "@/util/record"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { InstanceState } from "@/effect/instance-state"
-import { Context, Duration, Effect, Exit, Fiber, Layer, Option, Schema } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { Context, Duration, Effect, Exit, Fiber, Layer, Option } from "effect"
 import { EffectFlock } from "@novaclaw/core/util/effect-flock"
 import { containsPath, type InstanceContext } from "../project/instance-context"
 import { Config as ConfigV2 } from "@novaclaw/core/config"
 import { ConfigPermission } from "@novaclaw/core/config/permission"
 import type { DeepMutable } from "@novaclaw/core/schema"
-import { InvalidError, RemoteAuthError } from "@novaclaw/core/config/error"
-import { ConfigAgent } from "./agent"
+import { InvalidError } from "@novaclaw/core/config/error"
 import { ConfigCommand } from "./command"
 import { ConfigManaged } from "./managed"
 import { ConfigParse } from "./parse"
 import { ConfigPaths } from "./paths"
 import { ConfigVariable } from "./variable"
 import { Npm } from "@novaclaw/core/npm"
-import { withTransientReadRetry } from "@/util/effect-http-client"
 import { Log } from "@novaclaw/schema/log"
-
-// The `.well-known/novaclaw` payload shape: an inline `config` and/or a pointer to a `remote_config`.
-const WellKnown = Schema.Struct({
-  config: Schema.optional(Schema.Json),
-  remote_config: Schema.optional(Schema.Json),
-})
 
 // Custom merge function that concatenates array fields instead of replacing them
 // Keep remeda's deep conditional merge type out of hot config-loading paths; TS profiling showed it dominates here.
@@ -109,47 +98,11 @@ function loadAsV2(parsed: unknown, source: string): Info {
   return parsed as Info
 }
 
-async function substituteWellKnownRemoteConfig(input: {
-  value: unknown
-  dir: string
-  source: string
-  env: Record<string, string>
-}) {
-  if (!isRecord(input.value) || typeof input.value.url !== "string") return undefined
-
-  const url = await ConfigVariable.substitute({
-    text: input.value.url,
-    type: "virtual",
-    dir: input.dir,
-    source: input.source,
-    env: input.env,
-  })
-  const headers = isRecord(input.value.headers)
-    ? Object.fromEntries(
-        await Promise.all(
-          Object.entries(input.value.headers)
-            .filter((entry): entry is [string, string] => typeof entry[1] === "string")
-            .map(async ([key, value]) => [
-              key,
-              await ConfigVariable.substitute({
-                text: value,
-                type: "virtual",
-                dir: input.dir,
-                source: input.source,
-                env: input.env,
-              }),
-            ]),
-        ),
-      )
-    : undefined
-
-  return { url, headers }
-}
-
 // The service authors + serves V2 `Config.Info` shapes. Internally it MUTATES a merged accumulator
 // (mergeDeep + field assignments), so the working type is a deep-mutable V2 Info. Every config source —
-// jsonc files AND markdown-agent frontmatter — is authored directly as V2 (the V1 config migrator was
-// retired in F1-config; no on-read migration remains).
+// jsonc imports are authored directly as V2 (the V1 config migrator was retired in F1-config; no
+// on-read migration remains). Agent identity is projected from the instance store only; project
+// markdown is never an agent-config source.
 // ⚠️ This used to carry a `plugin_origins` accumulator beside the V2 shape, plus a `Spec`↔entry
 // conversion pair and a scope classifier, all so a merge could dedupe config-declared plugin
 // specs by identity and remember which document won. Ruling 5 / step 17 deleted the `plugins[]`
@@ -157,13 +110,6 @@ async function substituteWellKnownRemoteConfig(input: {
 // plugins are discovered by `core/src/config/plugin/external.ts`'s filesystem walk at load time —
 // they are never a config value, so they never take part in a merge.
 export type Info = DeepMutable<typeof ConfigV2.Info.Type>
-
-// Dir-discovered agents (`{agent,agents,mode,modes}/**/*.md`) already parse as canonical V2
-// `ConfigAgent.Info`; strip undefined fields (JSON round-trip) so they deep-merge cleanly into the V2
-// `result.agents` record instead of overwriting siblings with `undefined`.
-function dirAgents(record: Awaited<ReturnType<typeof ConfigAgent.load>>): NonNullable<Info["agents"]> {
-  return JSON.parse(JSON.stringify(record))
-}
 
 type State = {
   config: Info
@@ -190,9 +136,7 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const fs = yield* FSUtil.Service
-    const authSvc = yield* Auth.Service
     const npmSvc = yield* Npm.Service
-    const http = yield* HttpClient.HttpClient
 
     // Config→SQLite step 9: the per-subsystem stores ARE the config source. Capture them once
     // so the Interface methods (R = never) can run store-requiring effects (overlay + seeds).
@@ -214,32 +158,6 @@ export const layer = Layer.effect(
       )
 
     const readConfigFile = (filepath: string) => fs.readFileStringSafe(filepath).pipe(Effect.orDie)
-
-    const fetchRemoteJson = Effect.fnUntraced(function* <S extends Schema.Top>(
-      url: string,
-      headers: Record<string, string> | undefined,
-      schema: S,
-      loginOrigin: string,
-    ) {
-      const response = yield* HttpClient.filterStatusOk(withTransientReadRetry(http))
-        .execute(
-          HttpClientRequest.get(url).pipe(HttpClientRequest.acceptJson, HttpClientRequest.setHeaders(headers ?? {})),
-        )
-        .pipe(
-          Effect.catch((error) => Effect.die(new Error(`failed to fetch remote config from ${url}: ${String(error)}`))),
-        )
-      const body = yield* response.text.pipe(
-        Effect.catch((error) => Effect.die(new Error(`failed to read remote config from ${url}: ${String(error)}`))),
-      )
-      // An auth proxy can answer with an HTML login page at HTTP 200 (passes filterStatusOk); treat it as a re-auth error, not a decode failure.
-      const contentType = (response.headers["content-type"] ?? "").toLowerCase()
-      if (contentType.includes("html") || /^\s*<!doctype|^\s*<html/i.test(body)) {
-        return yield* Effect.die(new RemoteAuthError({ url: loginOrigin, remote: url }))
-      }
-      return yield* Schema.decodeEffect(Schema.fromJsonString(schema))(body).pipe(
-        Effect.catch((error) => Effect.die(new Error(`failed to decode remote config from ${url}: ${String(error)}`))),
-      )
-    })
 
     const loadConfig = Effect.fnUntraced(function* (
       text: string,
@@ -319,10 +237,7 @@ export const layer = Layer.effect(
 
     const loadInstanceState = Effect.fn("Config.loadInstanceState")(
       function* (ctx: InstanceContext) {
-        const auth = yield* authSvc.all().pipe(Effect.orDie)
-
         let result: Info = {}
-        const authEnv: Record<string, string> = {}
 
         // Folding one document into the accumulator IS the whole merge now. It used to also thread
         // each document's plugin specs through an origin dedup that remembered the winning source
@@ -332,54 +247,22 @@ export const layer = Layer.effect(
           result = mergeConfigConcatArrays(result, next)
         }
 
-        for (const [key, value] of Object.entries(auth)) {
-          if (value.type === "wellknown") {
-            const url = key.replace(/\/+$/, "")
-            authEnv[value.key] = value.token
-            const wellknownURL = `${url}/.well-known/novaclaw`
-            yield* Log.event("config.remote.fetch", { "config.url": wellknownURL })
-            const wellknown = yield* fetchRemoteJson(wellknownURL, undefined, WellKnown, url)
-            const remote = yield* Effect.promise(() =>
-              substituteWellKnownRemoteConfig({
-                value: wellknown.remote_config,
-                dir: url,
-                source: wellknownURL,
-                env: authEnv,
-              }),
-            )
-            const fetchedConfig = remote
-              ? yield* Effect.gen(function* () {
-                  yield* Log.event("config.remote.fetch", { "config.url": remote.url })
-                  const data = yield* fetchRemoteJson(remote.url, remote.headers, Schema.Json, url)
-                  if (isRecord(data) && isRecord(data.config)) return data.config
-                  if (isRecord(data)) return data
-                  return yield* Effect.die(
-                    new Error(`failed to decode remote config from ${remote.url}: expected object`),
-                  )
-                })
-              : {}
-            const remoteConfig = mergeConfig(isRecord(wellknown.config) ? wellknown.config : {}, fetchedConfig)
-            if (!remoteConfig.$schema) remoteConfig.$schema = "https://novaclaw.app/config.json"
-            const source = wellknownURL
-            const next = yield* loadConfig(
-              JSON.stringify(remoteConfig),
-              {
-                dir: path.dirname(source),
-                source,
-              },
-              authEnv,
-            )
-            merge(next)
-            yield* Log.event("config.remote.load.ok", { "config.url": url })
-          }
+        // Runtime overlays may still carry the broad import/export schema, but agent identity and
+        // authority are not ordinary mergeable settings. They are materialized only from the
+        // instance store above, where the HTTP surface can inspect and repair them. This also keeps
+        // an env or managed document from becoming a second, invisible profile source after boot.
+        const mergeRuntimeOverlay = (next: Info) => {
+          const settings = { ...next }
+          delete settings.agents
+          delete settings.default_agent
+          merge(settings)
         }
 
         // Config→SQLite step 9: the store-backed document replaces every file-borne source —
         // the global candidates AND the project jsonc walk (settings are instance-wide by
-        // design; per-directory divergence lives in the D2 markdown/dir resources below).
-        // `authEnv` still feeds the REMOTE sources' variable substitution above; store values
-        // are served as imported (provider env resolution happens at runtime in the catalog
-        // integration transform, not here).
+        // design; only non-authority resources such as commands may vary by directory below).
+        // Provider environment resolution happens at runtime in the catalog integration
+        // transform, not here.
         const stored = yield* getGlobal()
         merge(stored)
 
@@ -438,12 +321,6 @@ export const layer = Layer.effect(
 
           // ConfigCommand.load returns V1 command shapes that are identical to V2 ConfigCommand.Info.
           result.commands = mergeDeep(result.commands ?? {}, yield* Effect.promise(() => ConfigCommand.load(dir)))
-          result.agents = mergeDeep(result.agents ?? {}, dirAgents(yield* Effect.promise(() => ConfigAgent.load(dir))))
-          // loadMode already tags each agent `mode: "primary"`; migrateAgent preserves it.
-          result.agents = mergeDeep(
-            result.agents ?? {},
-            dirAgents(yield* Effect.promise(() => ConfigAgent.loadMode(dir))),
-          )
           // (No plugin walk here. `{plugin,plugins}/*.{ts,js}` under a config directory is still a
           // supported place to drop your own plugin, but it is LOADED by
           // `core/src/config/plugin/external.ts`, which does its own walk over the same directories.
@@ -457,7 +334,7 @@ export const layer = Layer.effect(
             dir: ctx.directory,
             source,
           })
-          merge(next)
+          mergeRuntimeOverlay(next)
           yield* Log.event("config.content.load", {})
         }
 
@@ -465,15 +342,14 @@ export const layer = Layer.effect(
         if (existsSync(managedDir)) {
           for (const file of ["novaclaw.json", "novaclaw.jsonc"]) {
             const source = path.join(managedDir, file)
-            merge(yield* loadFile(source))
+            mergeRuntimeOverlay(yield* loadFile(source))
           }
         }
 
         // macOS managed preferences (.mobileconfig deployed via MDM) override everything
         const managed = yield* Effect.promise(() => ConfigManaged.readManagedPreferences())
         if (managed) {
-          result = mergeConfigConcatArrays(
-            result,
+          mergeRuntimeOverlay(
             yield* loadConfig(managed.text, {
               dir: path.dirname(managed.source),
               source: managed.source,
@@ -526,8 +402,8 @@ export const layer = Layer.effect(
     // ⚠️ THIS is the cache the four "still needs a restart" keys were actually stuck behind, and it
     // is one level below where the tier-2 note looked for them. Every novaclaw service reads its
     // config through `Config.get()`, which is this per-instance-directory `InstanceState` holding the
-    // fully merged document (stores overlay + dir-discovered markdown + managed MDM + remote
-    // well-known + env). `invalidate()` below clears only the process-global store view; nothing ever
+    // fully merged document (stores overlay + dir-discovered markdown + managed MDM + env).
+    // `invalidate()` below clears only the process-global store view; nothing ever
     // replaced THIS. So `snapshots` — which `snapshot/index.ts:170` already re-reads on every call,
     // i.e. a key that looked read-through — was stale anyway, because the document it reads from was.
     //
@@ -594,9 +470,7 @@ export const layer = Layer.effect(
 export const defaultLayer = layer.pipe(
   Layer.provide(EffectFlock.defaultLayer),
   Layer.provide(FSUtil.defaultLayer),
-  Layer.provide(Auth.defaultLayer),
   Layer.provide(Npm.defaultLayer),
-  Layer.provide(FetchHttpClient.layer),
   Layer.provide(AgentConfigStore.defaultLayer),
   Layer.provide(CatalogStore.defaultLayer),
   Layer.provide(CommandConfigStore.defaultLayer),
@@ -610,9 +484,7 @@ export const node = LayerNode.make({
   layer: layer,
   deps: [
     FSUtil.node,
-    Auth.node,
     Npm.node,
-    httpClient,
     AgentConfigStore.node,
     CatalogStore.node,
     CommandConfigStore.node,

@@ -75,7 +75,7 @@ export type PromptInputSubmission = {
 }
 
 export type PromptInputControls = {
-  // The visible agent picker (plan/build) was opencode residue and is gone — the permission-mode
+  // The visible agent picker (plan/build) was predecessor residue and is gone — the permission-mode
   // droplist is the one mode control. `available` stays: it feeds the @-mention subagent list.
   agents: {
     available: { name: string; hidden?: boolean; mode: string }[]

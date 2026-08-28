@@ -1,7 +1,6 @@
-import type { Argv } from "yargs"
 import { Auth } from "../../auth"
 import { cmd } from "./cmd"
-import { CliError, effectCmd, fail } from "../effect-cmd"
+import { effectCmd, fail } from "../effect-cmd"
 import { UI } from "../ui"
 import * as Prompt from "../effect/prompt"
 import { ModelsDev } from "@novaclaw/core/models-dev"
@@ -11,9 +10,6 @@ import path from "path"
 import os from "os"
 import { Config } from "@/config/config"
 import { Global } from "@novaclaw/core/global"
-import { Process } from "@/util/process"
-import { errorMessage } from "@/util/error"
-import { text } from "node:stream/consumers"
 import { Effect, Option } from "effect"
 import { CommandSpec } from "../command-spec"
 
@@ -21,12 +17,6 @@ const promptValue = <Value>(value: Option.Option<Value>) => {
   if (Option.isNone(value)) return Effect.die(new UI.CancelledError())
   return Effect.succeed(value.value)
 }
-
-const cliTry = <Value>(message: string, fn: () => PromiseLike<Value>) =>
-  Effect.tryPromise({
-    try: fn,
-    catch: (error) => new CliError({ message: message + errorMessage(error) }),
-  })
 
 export const ProvidersCommand = cmd({
   ...CommandSpec.providers,
@@ -87,21 +77,14 @@ export const ProvidersListCommand = effectCmd({
 })
 
 export const ProvidersLoginCommand = effectCmd({
-  command: "login [url]",
+  command: "login",
   describe: "log in to a provider",
-  // URL login skips instance bootstrap, which would load remote config with the stale token and crash before re-auth.
-  instance: (args) => !args.url,
-  builder: (yargs: Argv) =>
-    yargs
-      .positional("url", {
-        describe: "novaclaw auth provider",
-        type: "string",
-      })
-      .option("provider", {
-        alias: ["p"],
-        describe: "provider id or name to log in to (skips provider selection)",
-        type: "string",
-      }),
+  builder: (yargs) =>
+    yargs.option("provider", {
+      alias: ["p"],
+      describe: "provider id or name to log in to (skips provider selection)",
+      type: "string",
+    }),
   // `--method` / `-m` is gone: it selected among the login methods a V1 plugin's `auth` hook
   // declared, and that hook (and the whole V1 plugin arm) is deleted. With nothing to choose
   // between, keeping the flag would have advertised a selection that never happens.
@@ -110,35 +93,6 @@ export const ProvidersLoginCommand = effectCmd({
 
     UI.empty()
     yield* Prompt.intro("Add credential")
-    if (args.url) {
-      const url = args.url.replace(/\/+$/, "")
-      const wellknown = (yield* cliTry(`Failed to load auth provider metadata from ${url}: `, () =>
-        fetch(`${url}/.well-known/novaclaw`).then((x) => x.json()),
-      )) as {
-        auth: { command: string[]; env: string }
-      }
-      yield* Prompt.log.info(`Running \`${wellknown.auth.command.join(" ")}\``)
-      const abort = new AbortController()
-      const proc = Process.spawn(wellknown.auth.command, { stdout: "pipe", stderr: "inherit", abort: abort.signal })
-      if (!proc.stdout) {
-        yield* Prompt.log.error("Failed")
-        yield* Prompt.outro("Done")
-        return
-      }
-      const [exit, token] = yield* cliTry("Failed to run auth provider command: ", () =>
-        Promise.all([proc.exited, text(proc.stdout!)]),
-      ).pipe(Effect.ensuring(Effect.sync(() => abort.abort())))
-      if (exit !== 0) {
-        yield* Prompt.log.error("Failed")
-        yield* Prompt.outro("Done")
-        return
-      }
-      yield* Effect.orDie(authSvc.set(url, { type: "wellknown", key: wellknown.auth.env, token: token.trim() }))
-      yield* Prompt.log.success("Logged into " + url)
-      yield* Prompt.outro("Done")
-      return
-    }
-
     const cfgSvc = yield* Config.Service
     const modelsDev = yield* ModelsDev.Service
     yield* Effect.ignore(modelsDev.refresh(true))

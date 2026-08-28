@@ -349,7 +349,12 @@ export function layerManifest(policy: Policy): {
       active: on,
       detail: "MCP servers ride the chokepoint or their own Offline check",
     },
-    { layer: 4, name: "OTLP telemetry", active: on, detail: "exporter checks OTEL endpoint against the allowlist" },
+    {
+      layer: 4,
+      name: "maintenance telemetry",
+      active: on,
+      detail: "the closed crash sender applies the live airgap gate before every report",
+    },
     { layer: 5, name: "share/sync egress", active: on, detail: "share URLs ride the chokepoint" },
     { layer: 6, name: "auto-update", active: on, detail: "update fetches ride the chokepoint" },
     { layer: 7, name: "LAN services", active: on, detail: "SearXNG/KB allowed as loopback/LAN hosts" },

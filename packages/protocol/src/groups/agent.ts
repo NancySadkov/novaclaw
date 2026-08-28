@@ -50,8 +50,8 @@ export const AgentGroup = HttpApiGroup.make("server.agent")
     // Self-healing (AGENTS.md): a config-borne agent had NO delete path at all — `PATCH /config`
     // routes `agents` through `mergePatch`, which has no null-deletion, so an entry could be added
     // and merged but never removed. Idempotent by design (DELETE on a name with no stored row is a
-    // 204), because the row is the only thing this owns: markdown agents are filesystem-walked
-    // (decision D2) and are not reachable from here.
+    // 204), because the instance store is the sole configurable source of agent identity and
+    // authority; there is no project-file definition left to remove separately.
     HttpApiEndpoint.delete("agent.remove", "/api/agent/:agentID", {
       params: { agentID: Agent.ID },
       query: LocationQuery,

@@ -36,7 +36,7 @@ const CHANNEL = resolveChannel()
 const IS_PREVIEW = CHANNEL !== "prod"
 
 // The version is REPO STATE, not something to discover at build time. This used to ask the npm
-// registry for `novaclaw-ai/latest` and increment it — inherited from the opencode fork and dead on
+// registry for `novaclaw-ai/latest` and increment it — inherited from the predecessor and dead on
 // arrival here, because we deliberately never publish to npm (todo.md → "No npm, ever"), so the
 // fetch could only 404 or, worse, resolve some unrelated package. It also meant a preview build
 // stamped `0.0.0-<channel>-<timestamp>` instead of the version the tree actually says it is.
@@ -50,7 +50,7 @@ if (typeof VERSION !== "string" || VERSION.length === 0)
 const bot = ["actions-user", "novaclaw", "novaclaw-agent[bot]"]
 const teamPath = path.resolve(import.meta.dir, "../../../.github/TEAM_MEMBERS")
 const team = [
-  // `.github/TEAM_MEMBERS` was removed in the opencode detach (it's upstream infra); tolerate its
+  // `.github/TEAM_MEMBERS` was removed during detachment (it's upstream infra); tolerate its
   // absence so importing this build-tooling module never throws (it broke `predev`/build-node.ts).
   ...(await Bun.file(teamPath)
     .text()

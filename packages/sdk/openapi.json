@@ -16541,7 +16541,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/InvalidRequestError"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
                 }
               }
             }
@@ -23221,6 +23228,74 @@
         ]
       }
     },
+    "/api/credential/repair": {
+      "get": {
+        "tags": ["novaclaw HttpApi"],
+        "operationId": "v2.credential.repair.status",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "unreadable": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["path"],
+                        "additionalProperties": false
+                      }
+                    },
+                    "notice": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["unreadable"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Report stored secrets that cannot be decrypted, with a message naming the key file to restore.",
+        "summary": "Check stored-secret readability",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.credential.repair.status({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/messenger/driver": {
       "get": {
         "tags": ["messenger"],
@@ -28765,23 +28840,6 @@
         "required": ["type", "key"],
         "additionalProperties": false
       },
-      "WellKnownAuth": {
-        "type": "object",
-        "properties": {
-          "type": {
-            "type": "string",
-            "enum": ["wellknown"]
-          },
-          "key": {
-            "type": "string"
-          },
-          "token": {
-            "type": "string"
-          }
-        },
-        "required": ["type", "key", "token"],
-        "additionalProperties": false
-      },
       "Auth": {
         "anyOf": [
           {
@@ -28789,9 +28847,6 @@
           },
           {
             "$ref": "#/components/schemas/ApiAuth"
-          },
-          {
-            "$ref": "#/components/schemas/WellKnownAuth"
           }
         ]
       },
@@ -43724,6 +43779,19 @@
           "workspace": {
             "type": "string"
           },
+          "status": {
+            "type": "object",
+            "properties": {
+              "task": {
+                "type": "string"
+              },
+              "observed": {
+                "type": "number"
+              }
+            },
+            "required": ["task", "observed"],
+            "additionalProperties": false
+          },
           "permissionMode": {
             "type": "string",
             "enum": ["plan", "ask", "bypass", "yolo"]
@@ -49028,7 +49096,8 @@
             "type": "string"
           },
           "permissionMode": {
-            "type": "string"
+            "type": "string",
+            "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
           },
           "enabled": {
             "type": "boolean"
@@ -49105,7 +49174,8 @@
           "permissionMode": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
               },
               {
                 "type": "null"

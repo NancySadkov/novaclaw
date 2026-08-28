@@ -1,6 +1,6 @@
 export * as Recipe from "./recipe"
 
-import { statSync } from "node:fs"
+import { constants, statSync } from "node:fs"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { Global } from "./global"
@@ -30,7 +30,7 @@ export interface RecipeRecord {
   readonly description?: string
   /** The prompt body — everything after the frontmatter. This is the actual instruction to the agent. */
   readonly prompt: string
-  /** Files alongside `recipe.md`, copied into the work dir with it. */
+  /** Top-level regular files and directories alongside `recipe.md`, copied into the work dir with it. */
   readonly assets: readonly string[]
   /** Shipped with NovaClaw (seeded on first run). A user may edit or delete it like any other. */
   readonly builtin: boolean
@@ -828,6 +828,127 @@ export const unmetMessage = (recipeName: string, checks: readonly NeedCheck[]): 
 // Filesystem
 // =============================================================================
 
+interface AssetInventory {
+  readonly assets: readonly string[]
+  /** Top-level symlinks and special entries: never copied, but never silently erased from a cook either. */
+  readonly rejected: readonly string[]
+}
+
+const missing = (error: unknown) =>
+  typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT"
+
+/** Resolve one filesystem-provided child name and retain the lexical boundary as a second line of defence. */
+const childPath = (parent: string, name: string): string => {
+  const base = path.resolve(parent)
+  const child = path.resolve(base, name)
+  const relative = path.relative(base, child)
+  if (relative === "" || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative))
+    throw new Error(`Asset entry escapes its folder: ${name}`)
+  return child
+}
+
+const containsCanonical = (root: string, candidate: string): boolean => {
+  const relative = path.relative(root, candidate)
+  return relative === "" || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+}
+
+const assetInventory = async (dir: string): Promise<AssetInventory | undefined> => {
+  const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => undefined)
+  if (entries === undefined) return undefined
+  const assets: string[] = []
+  const rejected: string[] = []
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (entry.name === RECIPE_FILE) continue
+    const stat = await fs.lstat(childPath(dir, entry.name)).catch(() => undefined)
+    if (stat?.isFile() || stat?.isDirectory()) assets.push(entry.name)
+    else rejected.push(entry.name)
+  }
+  return { assets, rejected }
+}
+
+/**
+ * Copy one already-contained regular tree without following links. Every child is re-lstatted and
+ * realpathed at the moment it is copied: a junction or symlink is a failed top-level asset, never an
+ * instruction to read outside the recipe folder.
+ */
+const copyTreeEntry = async (source: string, target: string, sourceBoundary: string): Promise<void> => {
+  const stat = await fs.lstat(source)
+  const canonical = await fs.realpath(source)
+  if (!containsCanonical(sourceBoundary, canonical)) throw new Error(`Asset leaves its recipe folder: ${source}`)
+  if (stat.isFile()) {
+    await fs.copyFile(source, target, constants.COPYFILE_EXCL)
+    return
+  }
+  if (!stat.isDirectory()) throw new Error(`Unsupported recipe asset entry: ${source}`)
+  await fs.mkdir(target)
+  const entries = await fs.readdir(source, { withFileTypes: true })
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name)))
+    await copyTreeEntry(childPath(source, entry.name), childPath(target, entry.name), sourceBoundary)
+}
+
+type CopyOutcome = "copied" | "skipped" | "failed"
+
+/**
+ * The top-level name is the no-clobber unit. A directory target is claimed with one exclusive mkdir;
+ * if any child cannot be copied, the tree we claimed is removed instead of leaving a half-recipe behind.
+ */
+const copyTopLevelAsset = async (
+  recipeDir: string,
+  sourceBoundary: string,
+  into: string,
+  asset: string,
+): Promise<CopyOutcome> => {
+  let source: string
+  let target: string
+  try {
+    source = childPath(recipeDir, asset)
+    target = childPath(into, asset)
+  } catch {
+    return "failed"
+  }
+
+  const targetExists = await fs.lstat(target).then(
+    () => true,
+    (error) => {
+      if (missing(error)) return false
+      throw error
+    },
+  )
+  if (targetExists) return "skipped"
+
+  const sourceStat = await fs.lstat(source).catch(() => undefined)
+  if (sourceStat === undefined || (!sourceStat.isFile() && !sourceStat.isDirectory())) return "failed"
+  const sourceCanonical = await fs.realpath(source).catch(() => undefined)
+  if (sourceCanonical === undefined || !containsCanonical(sourceBoundary, sourceCanonical)) return "failed"
+
+  if (sourceStat.isFile()) {
+    return fs.copyFile(source, target, constants.COPYFILE_EXCL).then(
+      () => "copied" as const,
+      (error) =>
+        missing(error)
+          ? "failed"
+          : error instanceof Error && "code" in error && error.code === "EEXIST"
+            ? "skipped"
+            : "failed",
+    )
+  }
+
+  try {
+    await fs.mkdir(target)
+  } catch (error) {
+    return error instanceof Error && "code" in error && error.code === "EEXIST" ? "skipped" : "failed"
+  }
+  try {
+    const entries = await fs.readdir(source, { withFileTypes: true })
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name)))
+      await copyTreeEntry(childPath(source, entry.name), childPath(target, entry.name), sourceBoundary)
+    return "copied"
+  } catch {
+    await fs.rm(target, { recursive: true, force: true }).catch(() => undefined)
+    return "failed"
+  }
+}
+
 const readOne = async (
   root: string,
   slug: string,
@@ -836,24 +957,24 @@ const readOne = async (
   if (!isValidSlug(slug)) return undefined
   const dir = path.join(root, slug)
   const file = path.join(dir, RECIPE_FILE)
+  const dirStat = await fs.lstat(dir).catch(() => undefined)
+  const stat = await fs.lstat(file).catch(() => undefined)
+  if (!dirStat?.isDirectory() || !stat?.isFile()) return undefined
   const raw = await fs.readFile(file, "utf8").catch(() => undefined)
   if (raw === undefined) return undefined
   const parsed = parse(raw)
   // A recipe with an empty prompt cannot be cooked — skip it rather than offering a dead entry.
   if (parsed.prompt === "") return undefined
-  const stat = await fs.stat(file).catch(() => undefined)
-  const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => [])
+  const inventory = await assetInventory(dir)
+  if (inventory === undefined) return undefined
   return {
     slug,
     name: parsed.name ?? slug,
     ...(parsed.description ? { description: parsed.description } : {}),
     prompt: parsed.prompt,
-    assets: entries
-      .filter((entry) => entry.isFile() && entry.name !== RECIPE_FILE)
-      .map((entry) => entry.name)
-      .sort(),
+    assets: inventory.assets,
     builtin: builtinSlugs.has(slug),
-    updatedAt: stat?.mtimeMs ?? 0,
+    updatedAt: stat.mtimeMs,
   }
 }
 
@@ -1080,29 +1201,47 @@ export async function duplicate(slug: string, options?: Options): Promise<Recipe
 }
 
 /**
- * Copy a recipe's folder into a work directory so cooking never touches the original. Returns the files
- * copied. The caller picks `into` — a scratch dir by default, or anywhere the user wants it to live.
+ * The complete materialization receipt. A caller must inspect all three arms before starting a cook:
+ * missing an input is a different recipe, even when the user's colliding file was correctly preserved.
+ */
+export interface MaterializeResult {
+  readonly copied: readonly string[]
+  readonly skipped: readonly string[]
+  readonly failed: readonly string[]
+}
+
+/**
+ * Copy a recipe's folder into a work directory so cooking never touches the original. Returns what was
+ * copied, skipped and failed distinctly. The caller picks `into` — a scratch dir by default, or anywhere
+ * the user wants it to live.
  *
  * The recipe itself is copied too, not just its assets: a cooked folder must be self-describing, because
  * "run it in a permanent folder" is how a user migrates work out of scratch. Move that folder anywhere
  * and it still carries the thing that produced it — which is the whole point of a recipe outliving its
  * output (AGENTS.md → recipes are source code for the AI era). The agent can also re-read it mid-run.
  */
-export async function materialize(slug: string, into: string, options?: Options): Promise<string[]> {
+export async function materialize(slug: string, into: string, options?: Options): Promise<MaterializeResult> {
   const root = recipesRoot(options)
   const recipe = await readOne(root, slug, new Set())
   if (!recipe) throw new Error(`No recipe named "${slug}"`)
-  await fs.mkdir(into, { recursive: true })
-  // ⚠️ Only assets that actually landed are reported. This used to swallow the error and push the name
-  // anyway, so a cook whose assets failed to copy told the user — and the model — that it had copied
-  // them: ruling 2's *a failed mutation never reports success*, on the path where the agent then goes
-  // looking for a file that is not there. A partial cook is a real outcome (a locked file, a full disk),
-  // so it is reported partially rather than thrown; the caller sees exactly what exists.
+  const recipeDir = path.join(root, slug)
+  const rootCanonical = await fs.realpath(root)
+  const sourceBoundary = await fs.realpath(recipeDir)
+  if (!containsCanonical(rootCanonical, sourceBoundary)) throw new Error(`Recipe "${slug}" leaves the recipe store`)
+  const destination = path.resolve(into)
+  if (containsCanonical(sourceBoundary, destination))
+    throw new Error(`Recipe "${slug}" cannot cook inside its own source folder`)
+  await fs.mkdir(destination, { recursive: true })
+  const inventory = await assetInventory(recipeDir)
+  if (inventory === undefined) throw new Error(`Recipe "${slug}" assets could not be read`)
+
+  // ⚠️ Every top-level regular file OR directory is an asset. Unsupported top-level entries are failures,
+  // not omissions: filtering a symlink out of the list and then claiming all inputs landed is still a
+  // silent partial cook. Nested special entries fail their whole top-level tree in `copyTreeEntry`.
   const copied: string[] = []
-  const failed: string[] = []
+  const failed: string[] = [...inventory.rejected]
   const skipped: string[] = []
-  for (const asset of recipe.assets) {
-    const target = path.join(into, asset)
+  for (const asset of inventory.assets) {
     /**
      * 🔴 **NC-REL-031 — the no-clobber rule existed and covered exactly one file.** Ten lines below,
      * the manifest is protected with the sentence *"cooking into a folder the user already works in
@@ -1116,47 +1255,32 @@ export async function materialize(slug: string, into: string, options?: Options)
      * one level down, and choosing which files inside may land is a decision the user has not been
      * asked to make.
      *
-     * ⚠️ Reported separately from `failed`. A skip is not an error — the cook succeeded, and the
-     * user's file won — but it is not a copy either, and the caller must be able to tell those apart.
+     * ⚠️ Reported separately from `failed`. A collision did no damage — the user's file won — but it
+     * did not produce a complete materialization either, so the caller must not start the cook.
      */
-    const clash = await fs
-      .access(target)
-      .then(() => true)
-      .catch(() => false)
-    if (clash) {
-      skipped.push(asset)
-      continue
-    }
-    const ok = await fs
-      .cp(path.join(root, slug, asset), target, { recursive: true })
-      .then(() => true)
-      .catch(() => false)
-    if (ok) copied.push(asset)
+    const outcome = await copyTopLevelAsset(recipeDir, sourceBoundary, destination, asset).catch(
+      () => "failed" as const,
+    )
+    if (outcome === "copied") copied.push(asset)
+    else if (outcome === "skipped") skipped.push(asset)
     else failed.push(asset)
   }
+
+  // recipe.md is subject to the same receipt as every asset. A pre-existing manifest used to disappear
+  // from `copied` without appearing anywhere else, leaving the caller unable to tell a complete cook from
+  // a collision.
+  const manifestOutcome = await copyTopLevelAsset(recipeDir, sourceBoundary, destination, RECIPE_FILE).catch(
+    () => "failed" as const,
+  )
+  if (manifestOutcome === "copied") copied.push(RECIPE_FILE)
+  else if (manifestOutcome === "skipped") skipped.push(RECIPE_FILE)
+  else failed.push(RECIPE_FILE)
+
   if (failed.length > 0)
     console.warn(`recipe "${slug}": ${failed.length} asset(s) could not be copied: ${failed.join(", ")}`)
   if (skipped.length > 0)
     console.warn(
       `recipe "${slug}": ${skipped.length} asset(s) already existed and were left alone: ${skipped.join(", ")}`,
     )
-  // Never clobber: cooking into a folder the user already works in must not overwrite their own recipe.md.
-  const manifest = path.join(into, RECIPE_FILE)
-  const exists = await fs
-    .access(manifest)
-    .then(() => true)
-    .catch(() => false)
-  if (!exists) {
-    // COPY the bytes, never re-render them. `readOne` deliberately excludes recipe.md from `assets`, so
-    // this is the only line that puts the manifest in the work dir — and re-rendering it made the cooked
-    // copy a two-field reconstruction of the user's file: every other frontmatter line was dropped, and a
-    // recipe with NO frontmatter was given a synthetic `name:` block it never had. A cooked folder that
-    // is byte-identical is lossless BY CONSTRUCTION rather than by keeping parse and render in sync
-    // (AGENTS.md → *source rots, intent doesn't*: the thing we hand forward must be the author's own
-    // text). Nothing downstream reads this file back — it is self-description for the human and the
-    // agent — so normalising it bought nothing and cost the frontmatter.
-    await fs.copyFile(path.join(root, slug, RECIPE_FILE), manifest)
-    copied.push(RECIPE_FILE)
-  }
-  return copied
+  return { copied, skipped, failed }
 }

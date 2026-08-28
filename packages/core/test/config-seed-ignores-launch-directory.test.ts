@@ -14,7 +14,7 @@ import { tmpdir } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
 
 /**
- * NEGATIVE CONTROL for a removed opencode-legacy behaviour (2026-07-27).
+ * NEGATIVE CONTROL for a removed pre-detachment behaviour (2026-07-27).
  *
  * First-boot seeding used to read the LAUNCH DIRECTORY (`process.cwd()`) as well as the config dir.
  * Because seeding is `isEmpty`-gated and one-time, that meant **whichever process booted first

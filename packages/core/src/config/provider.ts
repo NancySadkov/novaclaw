@@ -119,7 +119,7 @@ export class Info extends Schema.Class<Info>("ConfigV2.Provider")({
 
 // The MODELS-PRIMARY model entry (notes/models-primary-plan.md): a top-level `Config.Info.models`
 // map keys these by model id, each carrying its OWN endpoint `url` + params + `tier` — the flat
-// successor to the provider-nested `providers.<id>.models.<id>` shape (opencode residue). Reuses
+// successor to the provider-nested `providers.<id>.models.<id>` shape (pre-detachment residue). Reuses
 // every field of the nested `Model` above and adds `url` (the served-from endpoint, the vision's
 // "a provider is just the URL") + `tier`. Decoded in parallel with `providers` through P6; the
 // nested path is retired only once the seed-equivalence gate (P2) and the app flip (P4) land.

@@ -6,8 +6,7 @@ import type { ConfigAgent } from "../config/agent"
 // agent definitions live here, not in novaclaw.jsonc — one row per agent name; `layers` is the ordered
 // list of `ConfigAgent.Info` fragments (the same shape a jsonc `agents.<name>` block held). Applying
 // the layers in order reproduces the old multi-file merge (later fragments override/extend earlier
-// ones). Markdown agents (`{agent,agents,mode,modes}/**/*.md`) deliberately STAY on the filesystem
-// (locked decision D2 — they are user-editable documents, not settings).
+// ones). Project markdown is not an agent-config source.
 export const AgentConfigTable = sqliteTable("agent_config", {
   name: text().primaryKey(),
   layers: text({ mode: "json" }).$type<ConfigAgent.Info[]>().notNull(),
