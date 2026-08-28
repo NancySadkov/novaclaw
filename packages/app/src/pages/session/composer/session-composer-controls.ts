@@ -571,31 +571,51 @@ export function createPromptInputController(input: {
       set: (feature, enabled) => {
         // The draft signal is the instant UI truth (and the create-time payload); a live session
         // ALSO persists the stance server-side so the runner reads it on the next turn.
-        local.features.set({ ...local.features.current(), [feature]: enabled })
+        const previousFeatures = local.features.current()
         const id = input.sessionID()
         const conn = server.current
         const directory = sessionView.directory()
-        if (id && conn && directory)
-          void switchFeature(conn.http, { directory, sessionID: id, feature, enabled })
-            // Re-ask who supplied each value. Without this the provenance line keeps describing the
-            // resolution from before the flip — the panel explaining a state it no longer shows.
-            .then(() => void resolvedConfigRes.refetch())
-            .catch((error) => console.error("switchFeature failed", error))
+        if (!id || !conn || !directory) {
+          local.features.set({ ...previousFeatures, [feature]: enabled })
+          return
+        }
+        optimistic({
+          set: local.features.set,
+          previous: previousFeatures,
+          next: { ...previousFeatures, [feature]: enabled },
+          // ⚠️ The refetch rides the WRITE, so a refusal reverts and never refetches: re-asking who
+          // supplied each value after a failed flip would describe a resolution that did not happen.
+          // Without it the provenance line keeps describing the state from before a flip that DID.
+          write: switchFeature(conn.http, { directory, sessionID: id, feature, enabled }).then(
+            () => void resolvedConfigRes.refetch(),
+          ),
+          control: feature,
+        })
       },
       inherit: (feature) => {
         // An own property with `undefined` is an intentional local reset marker: it bypasses a
         // briefly stale projected record while the null event folds, yet JSON omits it from a new
         // session create body so the sparse inherit-on-undefined contract remains intact.
-        local.features.set({ ...local.features.current(), [feature]: undefined })
+        const beforeReset = local.features.current()
         const id = input.sessionID()
         const conn = server.current
         const directory = sessionView.directory()
-        if (id && conn && directory)
-          void switchFeature(conn.http, { directory, sessionID: id, feature, enabled: null })
-            // Clearing a stance is exactly when the origin CHANGES — the folder or the instance
-            // takes back over — so this refetch is the one that matters most.
-            .then(() => void resolvedConfigRes.refetch())
-            .catch((error) => console.error("switchFeature reset failed", error))
+        if (!id || !conn || !directory) {
+          local.features.set({ ...beforeReset, [feature]: undefined })
+          return
+        }
+        optimistic({
+          set: local.features.set,
+          previous: beforeReset,
+          next: { ...beforeReset, [feature]: undefined },
+          // Clearing a stance is exactly when the origin CHANGES — the folder or the instance takes
+          // back over — so this refetch is the one that matters most, and equally the one that must
+          // NOT run when the clear was refused.
+          write: switchFeature(conn.http, { directory, sessionID: id, feature, enabled: null }).then(
+            () => void resolvedConfigRes.refetch(),
+          ),
+          control: feature,
+        })
       },
     },
     remote: remoteCurrent(),
