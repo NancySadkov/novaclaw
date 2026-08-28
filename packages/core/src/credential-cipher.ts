@@ -1,5 +1,8 @@
 export * as CredentialCipher from "./credential-cipher"
 
+// `randomBytes` remains for `encrypt`, which no production path calls any more — the drain tests
+// use it to build fixtures in the shape older builds wrote, which is the only way to prove those
+// rows still open.
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto"
 import fs from "node:fs/promises"
 import path from "node:path"
@@ -113,27 +116,29 @@ const unavailable = (message: string): Interface =>
     decrypt: () => Effect.fail(new DecryptError({ message })),
   })
 
-/** Exported for the filesystem persistence test; production calls it only through `layer`. */
-export const loadOrCreate = async (target: string): Promise<Buffer> => {
+/**
+ * 🔴 Read an existing key. It is never CREATED any more — that is the point.
+ *
+ * Nothing in this codebase encrypts. Every consumer was unwound to plaintext under OS account
+ * protection, per decision §5 of `decisions-v0.2.0.md`; this module survives only to keep OPENING
+ * what older builds wrote, and a reader has no business minting keys.
+ *
+ * ⚠️ It used to create one silently when the file was missing, and that is the second half of
+ * NC-REL-030. An instance whose `credential.key` was lost in a partial restore got a valid but
+ * unrelated replacement, so every existing row then failed authentication — while the boot looked
+ * like a perfectly normal first run. The state that needed the loudest possible signal produced
+ * none at all. A missing file now means exactly what it says: no key, so nothing that needs one can
+ * be opened, and every consumer already fails closed on that.
+ *
+ * ⚠️ `undefined` rather than throwing. A brand-new instance has no key file and never will, so its
+ * absence is the ordinary case now, not a fault.
+ */
+export const loadExisting = async (target: string): Promise<Buffer | undefined> => {
   try {
     return decodeKey(await fs.readFile(target, "utf8"))
   } catch (cause) {
     if (!cause || typeof cause !== "object" || !("code" in cause) || cause.code !== "ENOENT") throw cause
-  }
-
-  const key = randomBytes(32)
-  await fs.mkdir(path.dirname(target), { recursive: true })
-  try {
-    const handle = await fs.open(target, "wx", 0o600)
-    try {
-      await handle.writeFile(`${KEY_HEADER}${key.toString("base64url")}\n`, "utf8")
-    } finally {
-      await handle.close()
-    }
-    return key
-  } catch (cause) {
-    if (!cause || typeof cause !== "object" || !("code" in cause) || cause.code !== "EEXIST") throw cause
-    return decodeKey(await fs.readFile(target, "utf8"))
+    return undefined
   }
 }
 
@@ -144,9 +149,12 @@ export const layer = Layer.effect(
     if (process.env.NOVACLAW_DB === ":memory:") return make(TEST_KEY)
     const global = yield* Global.Service
     const key = yield* Effect.tryPromise({
-      try: () => loadOrCreate(path.join(global.state, KEY_FILE)),
+      try: () => loadExisting(path.join(global.state, KEY_FILE)),
       catch: (cause) => new InvalidKeyError({ message: `Credential encryption key is unavailable: ${String(cause)}` }),
     })
+    // No key file is the ORDINARY case for any instance this build created — nothing encrypts. The
+    // resulting cipher opens nothing, which is exactly right: there is nothing of ours to open.
+    if (key === undefined) return unavailable("No credential key: this instance stores secrets in the clear.")
     return make(key)
   }).pipe(
     Effect.catchCause((cause) => {
