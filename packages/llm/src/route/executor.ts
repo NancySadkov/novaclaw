@@ -1,4 +1,5 @@
 import { Cause, Context, Effect, Layer, Random } from "effect"
+import { readBoundedText } from "@novaclaw/schema/bounded-stream"
 import {
   FetchHttpClient,
   Headers,
@@ -196,10 +197,13 @@ const redactBody = (body: string, request: HttpClientRequest.HttpClientRequest) 
     body.replace(REDACT_JSON_FIELD, `$1"${REDACTED}"`).replace(REDACT_QUERY_FIELD, `$1${REDACTED}`),
   )
 
-const responseBody = (body: string | void, request: HttpClientRequest.HttpClientRequest) => {
+const responseBody = (body: string | void, request: HttpClientRequest.HttpClientRequest, readTruncated = false) => {
   if (body === undefined) return {}
   const redacted = redactBody(body, request)
-  if (redacted.length <= BODY_LIMIT) return { body: redacted }
+  // ⚠️ `readTruncated` rides alongside the length check because redaction can make the text LONGER
+  // than what was read (`<redacted>` is wider than a short key), so length alone no longer tells you
+  // whether the provider had more to say.
+  if (redacted.length <= BODY_LIMIT) return readTruncated ? { body: redacted, bodyTruncated: true } : { body: redacted }
   return { body: redacted.slice(0, BODY_LIMIT), bodyTruncated: true }
 }
 
@@ -281,11 +285,21 @@ const statusError =
   (response: HttpClientResponse.HttpClientResponse) =>
     Effect.gen(function* () {
       if (response.status < 400) return response
-      const body = yield* response.text.pipe(Effect.catch(() => Effect.void))
+      /**
+       * 🔴 **NC-SEC-006 — the diagnostic body is BOUNDED AS IT ARRIVES.** This was
+       * `yield* response.text`, which materialises the whole body before `responseBody` slices it to
+       * 16,384 — so the 16 KB "limit" was a display limit, and a configured endpoint could hand back
+       * a body of any size and have the host buffer all of it. A provider URL is configuration, not
+       * trust: an unreachable-host typo and a hostile endpoint reach this line identically.
+       */
+      const read = yield* readBoundedText(response.stream, BODY_LIMIT).pipe(
+        Effect.catch(() => Effect.succeed({ text: undefined as string | undefined, truncated: false })),
+      )
+      const body = read.text
       const headers = normalizedHeaders(response.headers)
       const retryAfter = retryAfterMs(headers)
       const rateLimit = rateLimitDetails(headers, retryAfter)
-      const details = responseBody(body, request)
+      const details = responseBody(body, request, read.truncated)
       return yield* new LLMError({
         module: "RequestExecutor",
         method: "execute",
