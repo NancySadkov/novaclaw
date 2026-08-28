@@ -15,10 +15,49 @@ describe("markdown html embed", () => {
     expect(htmlEmbedLanguage(undefined)).toBe(false)
   })
 
-  test("embeds a completed html code block with the verbatim fence body as srcdoc", () => {
-    expect(
-      htmlEmbedForBlock({ mode: "code", language: "html", complete: true, src: "<h1>hi</h1>\n<script>1</script>" }),
-    ).toEqual({ srcdoc: "<h1>hi</h1>\n<script>1</script>" })
+  test("embeds a completed html code block with the fence body UNALTERED, led by the policy", () => {
+    const embed = htmlEmbedForBlock({
+      mode: "code",
+      language: "html",
+      complete: true,
+      src: "<h1>hi</h1>\n<script>1</script>",
+    })
+    // The body is still verbatim — never sanitized, never rewritten. That is the contract the
+    // sandbox exists to make safe.
+    expect(embed?.srcdoc).toContain("<h1>hi</h1>\n<script>1</script>")
+    // ...and the policy leads it (NC-SEC-003).
+    expect(embed?.srcdoc.startsWith('<meta http-equiv="Content-Security-Policy"')).toBe(true)
+  })
+
+  /**
+   * 🔴 NC-SEC-003 — the sandbox was never the whole boundary, though the code said it was. Omitting
+   * `allow-same-origin` is about what a canvas can READ locally; it says nothing about what it can
+   * SEND. A canvas could `fetch()` any host, or just set `img.src`, and the transcript text the agent
+   * had been given would leave the machine — on an airgapped instance too.
+   *
+   * A/B: drop the prepend in `htmlEmbedForBlock` and both of these fail.
+   */
+  test("🔴 the policy closes the NETWORK while leaving the drawing alone", () => {
+    const embed = htmlEmbedForBlock({ mode: "code", language: "html", complete: true, src: "<p>x</p>" })
+    const srcdoc = embed?.srcdoc ?? ""
+    // No egress: `connect-src` inherits `default-src 'none'`, which is the clause that matters —
+    // fetch, XHR, WebSocket and beacon all fall under it.
+    expect(srcdoc).toContain("default-src 'none'")
+    // The feature still works: a throw-away chart is inline by construction, and a policy that broke
+    // it would simply be turned off.
+    expect(srcdoc).toContain("script-src 'unsafe-inline'")
+    expect(srcdoc).toContain("style-src 'unsafe-inline'")
+    // Self-generated pictures still render; neither scheme can reach a remote host.
+    expect(srcdoc).toContain("img-src data: blob:")
+  })
+
+  test("no remote origin is allowed anywhere in the policy", () => {
+    // The control: the assertions above would all pass on a policy that ALSO allowed `https:`.
+    const embed = htmlEmbedForBlock({ mode: "code", language: "html", complete: true, src: "<p>x</p>" })
+    const policy = (embed?.srcdoc ?? "").split("\n")[0] ?? ""
+    expect(policy).not.toContain("https:")
+    expect(policy).not.toContain("http:")
+    expect(policy).not.toContain("*")
   })
 
   test("never embeds unclosed fences, other languages, or non-code blocks", () => {
@@ -34,11 +73,12 @@ describe("markdown html embed", () => {
     expect(htmlEmbedForBlock(open)).toBeUndefined()
 
     const closed = stream("```html\n<div>done</div>\n```", true).at(-1)!
-    expect(htmlEmbedForBlock(closed)).toEqual({ srcdoc: "<div>done</div>" })
+    // The body arrives unaltered; the policy leads it (NC-SEC-003).
+    expect(htmlEmbedForBlock(closed)?.srcdoc).toContain("<div>done</div>")
   })
 
   test("static html fences embed immediately with the fence body extracted", () => {
     const block = stream('```html\n<canvas id="c"></canvas>\n```', false).at(-1)!
-    expect(htmlEmbedForBlock(block)).toEqual({ srcdoc: '<canvas id="c"></canvas>' })
+    expect(htmlEmbedForBlock(block)?.srcdoc).toContain('<canvas id="c"></canvas>')
   })
 })
