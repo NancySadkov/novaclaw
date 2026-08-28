@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show } from "solid-js"
+import { createAutosave } from "./notes-autosave"
 import { GoldGlyph } from "@/components/gold-glyph"
 import { useGlobal } from "@/context/global"
 import { useServer } from "@/context/server"
@@ -86,14 +87,24 @@ export function NotesPage() {
   // (a last-write-wins race truncates); the debounce timer flushes on unmount/navigation.
   let saveChain: Promise<unknown> = Promise.resolve()
   let saveTimer: ReturnType<typeof setTimeout> | undefined
+  /**
+   * 🔴 NC-REL-038: a write may only clear the dirty flag if the editor has not moved on since it
+   * began. This used to clear unconditionally, so typing WHILE a save was in flight ended with
+   * `dirty === false` over text that had never been written — and navigation, which flushes only when
+   * dirty, discarded it. `notes-autosave.ts` carries the reasoning and the tests.
+   */
+  const autosave = createAutosave()
   function enqueueSave(name: string, content: string) {
     const cn = conn()
     const d = notesDir()
     if (!cn || !d) return
+    autosave.begin()
     saveChain = saveChain
       .then(() => fsWrite(cn.http, { directory: d, path: name, content }))
       .then(() => {
-        setDirty(false)
+        // The write succeeded either way; what it may not do is speak for an editor that has changed
+        // underneath it. Leaving the flag set makes the next debounce carry the newer text.
+        if (autosave.settles()) setDirty(false)
         setSaveFailed(false)
       })
       // Surface the failure instead of leaving the indicator stuck at "Saving…" forever (SP5).
@@ -102,6 +113,7 @@ export function NotesPage() {
   function scheduleSave() {
     const name = current()
     if (!name) return
+    autosave.edited()
     setDirty(true)
     if (saveTimer) clearTimeout(saveTimer)
     saveTimer = setTimeout(() => {
