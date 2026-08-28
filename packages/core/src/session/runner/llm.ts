@@ -61,6 +61,7 @@ import { PermissionV2 } from "../../permission"
 import { PluginV2 } from "../../plugin"
 import { SessionScheduler } from "../scheduler"
 import { SpawnTool } from "../../tool/spawn"
+import { WaitTool } from "../../tool/wait"
 import { type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
 import { SessionMaintenance } from "./maintenance"
@@ -130,6 +131,8 @@ import { TodoReminder } from "./todo-reminder"
 import { CalloutPolicy } from "../../callout-policy"
 import { ProjectGrounding } from "./project-grounding"
 import { UnfinishedSet } from "./unfinished-set"
+import { UnjoinedChildren } from "./unjoined-children"
+import { SessionTitle } from "../title"
 import { lastRealUserText } from "../steer-provenance"
 import { ColleagueHop } from "../colleague-hop"
 import { ColleagueTool } from "../../tool/colleague"
@@ -776,6 +779,27 @@ export const layer = Layer.effect(
      * only ever see one.
      */
     const setBarrenBySession = new Map<string, { barren: number; lastOpened: number }>()
+    /**
+     * Every CHILD this session has joined — the ids it called `wait` on and got an answer for.
+     *
+     * 🔴 Session-scoped for the reason the three maps above it are, and it is not a style choice: a
+     * `wait` call sits in the transcript window, compaction rewrites that window, and a drain-local
+     * set would therefore forget joins the session really made and steer the parent to re-join
+     * children it already read. The measured version of this trap cost the set drive three separate
+     * corrections (`setRequests`, `setOpened`, `setBarrenBySession` all carry the same note).
+     *
+     * ⚠️ Accumulate-only, exactly like `setOpened`: a join is something the session HAS DONE, and no
+     * later read of a shrunken window may take it back.
+     */
+    const childrenJoined = new Map<string, Set<string>>()
+    /**
+     * How many times this session has been steered back to its unaccounted children. Bounded by
+     * `UnjoinedChildren.MAX_RESTART_ROUNDS` — a restart can itself spawn a child that fails, so this
+     * drive needs a ceiling for the same reason the set drive does, and session-scoped for the same
+     * reason: every steer admits a prompt and starts a new drain, so a drain-local counter resets
+     * before it can ever reach its bound.
+     */
+    const childRestartRounds = new Map<string, number>()
     /**
      * ⚠️ **`models.ref` is declared `… | undefined` and really is undefined in practice**, so this
      * takes an optional and answers `undefined` rather than dereferencing.
@@ -3011,6 +3035,95 @@ export const layer = Layer.effect(
                   input.sessionID,
                   UnfinishedSet.continueMessage(remaining, setCoverage.opened.length),
                 )
+              }
+            }
+            /**
+             * 🔴 **THE FAN-OUT SUPERVISOR — a child that was never joined** (`todo/delegation.md`).
+             *
+             * Measured 2026-08-27 on the delegated 100-file run `4623-S2`: `spawn:10` against
+             * `wait:9` and `exit:9`. Ten children started, nine joined, one launched and never
+             * accounted for — and the run completed, reported success, and surfaced nothing. ⭐ The
+             * nine successes are what hide the tenth: a merge of nine slices of ten has no ragged
+             * edge to notice.
+             *
+             * ⚠️ **Placed BEFORE the reground, deliberately.** Reground asks the model to walk its
+             * acceptance criteria; a model missing a whole slice will walk them against the nine it
+             * has and conclude it is done — the reground would be answered honestly and wrongly. Close
+             * the arithmetic gap first, then let reground check what is left.
+             *
+             * ⚠️ Runs on EVERY finished turn rather than behind a delegation cue, because the
+             * evidence that this session delegated is that it has children — one indexed
+             * `WHERE parent_id = ?` — and reading the user's prompt for a cue is the substring hazard
+             * `unfinished-set.ts` paid 835,145 tokens to learn. A session with no children costs one
+             * empty query and skips everything below.
+             */
+            const kids = yield* store.children(input.sessionID).pipe(Effect.orElseSucceed(() => []))
+            if (kids.length > 0) {
+              // ⚠️ Accumulated into the SESSION's set, never read fresh from the window — see
+              // `childrenJoined`. `wait` carries the child id in its own input, so the parent's joins
+              // are readable without a second source of truth.
+              const joined = childrenJoined.get(input.sessionID) ?? new Set<string>()
+              for (const call of toolCallsSinceLastUser(context)) {
+                if (call.name !== WaitTool.name) continue
+                try {
+                  const parsed: unknown = JSON.parse(call.input)
+                  const id =
+                    typeof parsed === "object" && parsed !== null && "sessionID" in parsed
+                      ? String((parsed as { readonly sessionID?: unknown }).sessionID ?? "")
+                      : ""
+                  if (id.length > 0) joined.add(id)
+                } catch {
+                  // A malformed argument is not a join we can attribute to a child.
+                }
+              }
+              childrenJoined.set(input.sessionID, joined)
+              const enumerated: UnjoinedChildren.Child[] = []
+              for (const kid of kids) {
+                const row = yield* store.get(kid).pipe(Effect.orElseSucceed(() => undefined))
+                // ⚠️ The child's TITLE, not the `spawn` prompt. The prompt is only reachable from a
+                // `spawn` call in the transcript window — which compaction takes back, and which
+                // cannot be paired with the child id anyway, since the id arrives in the call's
+                // OUTPUT and the trail carries only inputs. The title is on the durable row and is
+                // derived from that same opening prompt. Omitted while it is still a creation
+                // default, because "New session" names nothing and a slice must never be invented.
+                const title = row?.title
+                const slice = title !== undefined && title !== "" && !SessionTitle.isDefault(title) ? title : undefined
+                enumerated.push({
+                  id: kid,
+                  exited: row?.result !== undefined,
+                  ...(slice === undefined ? {} : { slice }),
+                })
+              }
+              const orphaned = UnjoinedChildren.unaccounted({ children: enumerated, joined })
+              const restartRounds = childRestartRounds.get(input.sessionID) ?? 0
+              // ⚠️ Logged at the DECISION and BEFORE the gate, so a run that never steers can still
+              // tell "the branch never ran" from "it ran and declined" — the trap that cost this
+              // programme two days on the fan-out, and the reason `set.branch` exists beside
+              // `set.considered`.
+              yield* Log.event("session.finish.children.considered", {
+                "session.id": input.sessionID,
+                "session.children.spawned": kids.length,
+                "session.children.joined": joined.size,
+                "session.children.unaccounted": orphaned.length,
+                "session.children.rounds": restartRounds,
+              })
+              if (UnjoinedChildren.shouldRestart({ unaccounted: orphaned, rounds: restartRounds })) {
+                childRestartRounds.set(input.sessionID, restartRounds + 1)
+                yield* Log.event("session.finish.children.restart", {
+                  "session.id": input.sessionID,
+                  "session.children.unaccounted": orphaned.length,
+                })
+                yield* SessionInput.steer(
+                  db,
+                  events,
+                  input.sessionID,
+                  UnjoinedChildren.restartMessage({
+                    spawned: kids.length,
+                    joined: joined.size,
+                    unaccounted: orphaned,
+                  }),
+                )
+                needsContinuation = true
               }
             }
             if (!regrounded && shouldReground(finalText, toolCallsSinceLastUser(context).length)) {

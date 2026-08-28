@@ -2257,6 +2257,26 @@ export const EVENTS = {
     content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  "session.finish.children.considered": {
+    level: "info",
+    message: "fan-out supervisor ran",
+    attributes: {
+      "session.id": "correlate",
+      "session.children.spawned": "count",
+      "session.children.joined": "count",
+      "session.children.unaccounted": "count",
+      "session.children.rounds": "count",
+    },
+    content: "correlated",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
+  "session.finish.children.restart": {
+    level: "info",
+    message: "steered back to unaccounted children",
+    attributes: { "session.id": "correlate", "session.children.unaccounted": "count" },
+    content: "correlated",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   "session.drive.settle": {
     level: "info",
     message: "sub-agent settled without exit",
