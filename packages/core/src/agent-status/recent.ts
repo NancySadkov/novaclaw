@@ -1,4 +1,4 @@
-import type { SessionMessage } from "../session/schema"
+import type { SessionMessage } from "../session/message"
 
 /**
  * What the label is derived FROM: the tail of a colleague's conversation, as plain text.

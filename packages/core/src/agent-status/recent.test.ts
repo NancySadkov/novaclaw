@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { MAX_CHARS, RECENT_MESSAGES, recentText } from "./recent"
-import type { SessionMessage } from "../session/schema"
+import type { SessionMessage } from "../session/message"
 
 const say = (role: string, text: string) =>
   ({ role, parts: [{ type: "text", text }] }) as unknown as SessionMessage.Message
