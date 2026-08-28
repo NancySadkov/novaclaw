@@ -45,7 +45,10 @@ const MATRIX: readonly Point[] = [
     id: "during-execution",
     fault: "the process dies while an adapter is running",
     covered: [
-      ["session-execution-attempt", "classifies live worker loss and opens the circuit breaker without replaying tools"],
+      [
+        "session-execution-attempt",
+        "classifies live worker loss and opens the circuit breaker without replaying tools",
+      ],
       ["session-runner-recovery", "durably fails local tools left running by a prior process before continuing"],
     ],
   },
@@ -69,8 +72,14 @@ const MATRIX: readonly Point[] = [
     id: "worker-crash",
     fault: "the execution worker dies while the host survives",
     covered: [
-      ["session-execution-attempt", "classifies live worker loss and opens the circuit breaker without replaying tools"],
-      ["session-runner-recovery", "durably fails hosted tools left running by a prior process before continuing inline"],
+      [
+        "session-execution-attempt",
+        "classifies live worker loss and opens the circuit breaker without replaying tools",
+      ],
+      [
+        "session-runner-recovery",
+        "durably fails hosted tools left running by a prior process before continuing inline",
+      ],
     ],
   },
   {
@@ -78,7 +87,10 @@ const MATRIX: readonly Point[] = [
     fault: "the whole process dies and a later process finds the leftovers",
     covered: [
       ["session-runner-recovery", "durably fails pending tool input left by a prior process before continuing"],
-      ["session-execution-attempt", "marks an expired heartbeat interrupted and resets the failure budget after success"],
+      [
+        "session-execution-attempt",
+        "marks an expired heartbeat interrupted and resets the failure budget after success",
+      ],
     ],
   },
   {

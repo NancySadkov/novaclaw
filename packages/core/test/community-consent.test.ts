@@ -10,8 +10,7 @@ import { CommunityConsent } from "@novaclaw/core/community/consent"
  * the network is UNMODERATED (nobody can delete what a stranger writes), and a direct connection
  * reveals this machine's IP to the other end, because there is no central server to hide behind.
  */
-const gate = (config: unknown, airgap = false) =>
-  CommunityConsent.resolveGate({ config, policy: { enabled: airgap } })
+const gate = (config: unknown, airgap = false) => CommunityConsent.resolveGate({ config, policy: { enabled: airgap } })
 
 describe("CommunityConsent", () => {
   test("🔴 a fresh install does NOT participate — absence means never asked", () => {
@@ -73,8 +72,7 @@ describe("reading consent off the disk", () => {
    * generously. Every branch here has to fail CLOSED: a row that cannot be parsed is not permission
    * to join a network of strangers, and "we could not tell" must never resolve to "yes".
    */
-  const gateFor = (stored: unknown) =>
-    CommunityConsent.resolveGate({ config: stored, policy: { enabled: false } })
+  const gateFor = (stored: unknown) => CommunityConsent.resolveGate({ config: stored, policy: { enabled: false } })
 
   test("🔴 garbage in the settings row never grants participation", () => {
     for (const stored of [

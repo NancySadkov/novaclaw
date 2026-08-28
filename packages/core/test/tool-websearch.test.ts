@@ -534,7 +534,8 @@ const gated = testEffect(
   AppNodeBuilder.build(LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, WebSearchTool.node]), [
     [PermissionV2.node, permissionMock],
     [WebSearch.node, searchMock],
-    [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig], [ToolPolicyGate.node, bypassedPolicyGate],
+    [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
+    [ToolPolicyGate.node, bypassedPolicyGate],
   ]),
 )
 

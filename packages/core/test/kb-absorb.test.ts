@@ -23,10 +23,7 @@ const llmYielding = (text: string, onRequest?: (req: unknown) => void) =>
   ({
     stream: (request: unknown) => {
       onRequest?.(request)
-      return Stream.fromIterable([
-        LLMEvent.textDelta({ id: "text-0", text }),
-        LLMEvent.finish({ reason: "stop" }),
-      ])
+      return Stream.fromIterable([LLMEvent.textDelta({ id: "text-0", text }), LLMEvent.finish({ reason: "stop" })])
     },
   }) as never
 
@@ -69,9 +66,11 @@ describe("KbAbsorb.extractPassage", () => {
   })
 
   test("page furniture yields nothing, and that is an ANSWER not a failure", async () => {
-    expect(await Effect.runPromise(
-      KbAbsorb.extractPassage({ llm: llmYielding("[]"), model: MODEL, text: "Table of Contents" }),
-    )).toEqual([])
+    expect(
+      await Effect.runPromise(
+        KbAbsorb.extractPassage({ llm: llmYielding("[]"), model: MODEL, text: "Table of Contents" }),
+      ),
+    ).toEqual([])
   })
 
   test("thinking is ALLOWED within a budget, not suppressed outright", () => {
@@ -98,7 +97,6 @@ describe("KbAbsorb.extractPassage", () => {
       expect(JSON.stringify(seen?.system ?? [])).toContain(String(KbAbsorb.ABSORB_REASONING_BUDGET))
     })
   })
-
 })
 
 describe("KbAbsorb.writeAbsorbed", () => {

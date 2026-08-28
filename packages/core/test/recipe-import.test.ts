@@ -91,9 +91,7 @@ describe("importMarkdown — the bytes a stranger sent, stored as they were sent
   })
 
   test("a caller-supplied slug that is not a slug is REFUSED, not sanitised into one", async () => {
-    await expect(Recipe.importMarkdown("prompt", { ...opts(), slug: "../escape" })).rejects.toThrow(
-      /Invalid recipe id/,
-    )
+    await expect(Recipe.importMarkdown("prompt", { ...opts(), slug: "../escape" })).rejects.toThrow(/Invalid recipe id/)
   })
 
   test("a file with no readable name still lands, under a stated fallback", async () => {

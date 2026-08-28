@@ -175,9 +175,9 @@ describe("ToolPolicy.compose — a provider that does not answer", () => {
 
   test("a safety-critical timeout still loses to a halt, and still beats a patch", () => {
     expect(ToolPolicy.compose([{ id: "g", kind: "timed-out", safetyCritical: true }, halt("z")]).type).toBe("halt")
-    expect(
-      ToolPolicy.compose([{ id: "g", kind: "timed-out", safetyCritical: true }, patch("a", { x: 1 })]).type,
-    ).toBe("deny")
+    expect(ToolPolicy.compose([{ id: "g", kind: "timed-out", safetyCritical: true }, patch("a", { x: 1 })]).type).toBe(
+      "deny",
+    )
   })
 
   test("the default classification is safety-critical — an omitted flag fails closed", () => {

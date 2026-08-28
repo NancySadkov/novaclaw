@@ -54,7 +54,9 @@ describe("CommunityTransport", () => {
       const transport = yield* CommunityTransport.Service
       // PROVEN, because `publish` demands it: handing a transport a message without its work would
       // publish something every receiver refuses, and the failure would show only on the far side.
-      const message = CommunityWork.prove(yield* CommunityMessage.sign({ channel: "#NovaClaw", body: "into the void" }))!
+      const message = CommunityWork.prove(
+        yield* CommunityMessage.sign({ channel: "#NovaClaw", body: "into the void" }),
+      )!
       // The caller keeps its own copy either way, so the user's words are never lost — they simply
       // have no audience yet. A failing effect here would surface as a crash on a normal action.
       expect(yield* transport.publish(message)).toBe(false)
@@ -125,7 +127,6 @@ describe("CommunityTransport", () => {
       }
     }),
   )
-
 })
 
 describe("an ANSWER has its own ceiling", () => {

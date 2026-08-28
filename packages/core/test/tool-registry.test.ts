@@ -28,7 +28,12 @@ import { ToolPolicyGate } from "@novaclaw/core/tool-policy-gate"
 const outputStore = Layer.mock(ToolOutputStore.Service, {
   bound: (input) => Effect.succeed({ output: input.output, outputPaths: [] }),
 })
-const it = testEffect(AppNodeBuilder.build(ToolRegistry.node, [[ToolOutputStore.node, outputStore], [ToolPolicyGate.node, bypassedPolicyGate]]))
+const it = testEffect(
+  AppNodeBuilder.build(ToolRegistry.node, [
+    [ToolOutputStore.node, outputStore],
+    [ToolPolicyGate.node, bypassedPolicyGate],
+  ]),
+)
 
 const sessionID = SessionV2.ID.make("ses_unknown_tool")
 const identity = { agent: AgentV2.ID.make("build"), assistantMessageID: SessionMessage.ID.make("msg_unknown_tool") }

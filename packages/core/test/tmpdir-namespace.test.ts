@@ -196,9 +196,7 @@ describe("a PID-named path in the shared temp root is reaped, or it does not exi
   const isSelf = (name: string) => name === SELF || name.endsWith(`/${SELF}`)
 
   const offenders = (files: ReadonlyArray<{ name: string; text: string }>): string[] =>
-    files
-      .filter((f) => !isSelf(f.name) && !REAPERS.includes(f.name) && SHARED_ROOT_PID.test(f.text))
-      .map((f) => f.name)
+    files.filter((f) => !isSelf(f.name) && !REAPERS.includes(f.name) && SHARED_ROOT_PID.test(f.text)).map((f) => f.name)
 
   test("no unreaped file names a PID path at the temp root", () => {
     expect(
@@ -217,7 +215,7 @@ describe("a PID-named path in the shared temp root is reaped, or it does not exi
       offenders([
         {
           name: "test/offender.test.ts",
-          text: 'const f = path.join(os.tmpdir(), `thing-${process.pid}.db`)',
+          text: "const f = path.join(os.tmpdir(), `thing-${process.pid}.db`)",
         },
         // Unique-dir-then-pid: redundant, not dangerous — the directory is already per-process.
         {

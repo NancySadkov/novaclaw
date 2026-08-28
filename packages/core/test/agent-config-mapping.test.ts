@@ -16,14 +16,7 @@ import { ConfigAgent } from "@novaclaw/core/config/agent"
 // derived: the two schemas overlap but are not the same, and several config keys are consumed rather
 // than copied. What can be checked mechanically is that no key is simply forgotten.
 
-const APPLY = path.join(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "src",
-  "config",
-  "plugin",
-  "agent.ts",
-)
+const APPLY = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "config", "plugin", "agent.ts")
 const source = readFileSync(APPLY, "utf8")
 
 /**
@@ -52,7 +45,8 @@ describe("no config field is silently dropped on the way to the agent record", (
   test("each consumed key really is handled, just not by assignment", () => {
     // Guards the other direction: a key parked in CONSUMED with no handling at all would read as
     // deliberate while behaving exactly like the bug.
-    for (const key of Object.keys(CONSUMED)) expect({ key, handled: source.includes(key) }).toEqual({ key, handled: true })
+    for (const key of Object.keys(CONSUMED))
+      expect({ key, handled: source.includes(key) }).toEqual({ key, handled: true })
   })
 
   test("NEGATIVE CONTROL: the detector recognises an unmapped field", () => {

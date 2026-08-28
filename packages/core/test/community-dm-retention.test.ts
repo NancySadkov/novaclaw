@@ -172,5 +172,4 @@ describe("CommunityDirect retention", () => {
       expect((yield* direct.conversations())[0]).toBe(oldest)
     }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
   )
-
 })

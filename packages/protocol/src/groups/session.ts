@@ -362,6 +362,16 @@ export const makeSessionGroups = <
             shortChat: Schema.Boolean.pipe(Schema.optional),
           }),
           success: Schema.Struct({ data: Session.Info }),
+          /**
+           * 🔴 NC-SEC-020 — a ROOT create without an `agent` is REFUSED, not silently attributed.
+           *
+           * `agent` stays optional in the payload because on a CHILD its absence means *inherit from
+           * the parent*, which is legitimate. On a root it meant nothing at all, and the row's owner
+           * was then re-derived per turn from whatever the current default officer happened to be.
+           * A caller error with a correct action attached — say whose chat it is — so it belongs in
+           * the error channel rather than in a crash log.
+           */
+          error: InvalidRequestError,
         })
           // 🔴 Without this the handler cannot resolve `Location.Service` and has nothing to fall back
           // on but `process.cwd()`. The description right below has always said "at the requested

@@ -39,6 +39,13 @@ import { SessionSchema } from "@novaclaw/core/session/schema"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { testEffect } from "./lib/effect"
 
+/**
+ * 🔴 NC-SEC-020 — a ROOT names the agent it runs as; there is no anonymous chat. `build` records the
+ * POSTURE this chat runs in, which is the ordinary production case and keeps these tests' semantics
+ * unchanged: a posture is excluded from the canonical `ses_<agent>` id and from the one-chat guard.
+ */
+const rootAgent = AgentV2.ID.make("build")
+
 const projects = Layer.succeed(
   ProjectV2.Service,
   ProjectV2.Service.of({
@@ -289,7 +296,7 @@ describe("SessionV2.fork — the fork carries the source's resolved config", () 
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
       const parent = yield* createFullyConfigured(session)
-      const child = yield* session.create({ location, parentID: parent.id })
+      const child = yield* session.create({ location, agent: rootAgent, parentID: parent.id })
 
       const forked = yield* session.fork({ sessionID: child.id })
       const stored = yield* session.get(forked.id)
@@ -309,13 +316,14 @@ describe("SessionV2.fork — the fork carries the source's resolved config", () 
       const session = yield* SessionV2.Service
       const parent = yield* session.create({
         location,
+        agent: rootAgent,
         permissionMode: "plan",
         type: "goal-oriented",
       })
       yield* session.switchFeature({ sessionID: parent.id, feature: "askBeforeChanges", enabled: true })
       yield* session.switchFeature({ sessionID: parent.id, feature: "surgicalEdits", enabled: true })
       yield* session.switchFeature({ sessionID: parent.id, feature: "safeMode", enabled: true })
-      const child = yield* session.create({ location, parentID: parent.id, permissionMode: "yolo" })
+      const child = yield* session.create({ location, agent: rootAgent, parentID: parent.id, permissionMode: "yolo" })
       const childRow = yield* session.get(child.id)
       expectField("the child's RAW row asks for", childRow.permissionMode, "yolo")
 
@@ -339,13 +347,25 @@ describe("SessionV2.fork — the fork carries the source's resolved config", () 
   it.effect("does not materialise defaults for a session whose chain declared nothing", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
-      const source = yield* session.create({ location })
+      const source = yield* session.create({ location, agent: rootAgent })
 
       const forked = yield* session.fork({ sessionID: source.id })
       const stored = yield* session.get(forked.id)
 
-      for (const key of SESSION_CONFIG_FORK_FIELDS)
+      for (const key of SESSION_CONFIG_FORK_FIELDS) {
+        /**
+         * ⚠️ `agent` is EXCLUDED since NC-SEC-020, and the exclusion is the point rather than an
+         * exemption: a root must name the agent it runs as, so "a chain that declared nothing" can
+         * no longer include this field. The source above declares `build`, the fork carries it, and
+         * a fork that DROPPED it would be recreating the anonymous root this suite's sibling now
+         * refuses. Every other field still has to stay absent — that is what this test is for.
+         */
+        if (key === "agent") {
+          expectField("a fork carries its source's agent", (stored as Record<string, unknown>)[key], rootAgent)
+          continue
+        }
         expectField(`bare fork leaves ${key} absent`, (stored as Record<string, unknown>)[key], undefined)
+      }
     }),
   )
 })

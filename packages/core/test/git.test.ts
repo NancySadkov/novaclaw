@@ -193,14 +193,7 @@ describe("Git trees", () => {
           end: (phase) => timing.push(`end:${phase}`),
         },
       })
-      expect(timing).toEqual([
-        "start:status",
-        "end:status",
-        "start:persist",
-        "end:persist",
-        "start:hash",
-        "end:hash",
-      ])
+      expect(timing).toEqual(["start:status", "end:status", "start:persist", "end:persist", "start:hash", "end:hash"])
     }),
   )
 })

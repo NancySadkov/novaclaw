@@ -325,9 +325,7 @@ describe("BashTool", () => {
       (tmp) => {
         reset()
         denyResource = "rm -rf /"
-        return withTool(tmp.path, (registry) =>
-          executeTool(registry, call({ command: "ls && rm -rf /" })),
-        ).pipe(
+        return withTool(tmp.path, (registry) => executeTool(registry, call({ command: "ls && rm -rf /" }))).pipe(
           Effect.andThen(
             Effect.sync(() => {
               expect(assertions.map((item) => item.resources)).toEqual([["ls"], ["rm -rf /"]])
@@ -421,9 +419,7 @@ describe("BashTool", () => {
         const target = path.join(outside.path, "result.txt")
         return Effect.promise(() => fs.writeFile(target, "before")).pipe(
           Effect.andThen(
-            withTool(active.path, (registry) =>
-              executeTool(registry, call({ command: `echo after > "${target}"` })),
-            ),
+            withTool(active.path, (registry) => executeTool(registry, call({ command: `echo after > "${target}"` }))),
           ),
           Effect.andThen(
             Effect.sync(() => {
@@ -448,7 +444,9 @@ describe("BashTool", () => {
         reset()
         const target = path.join(tmp.path, "appeared.txt")
         afterPermission = (input) =>
-          input.action === "create" ? Effect.promise(() => fs.writeFile(target, "raced")).pipe(Effect.orDie) : Effect.void
+          input.action === "create"
+            ? Effect.promise(() => fs.writeFile(target, "raced")).pipe(Effect.orDie)
+            : Effect.void
         return withTool(tmp.path, (registry) =>
           executeTool(registry, call({ command: "echo after > appeared.txt" })),
         ).pipe(

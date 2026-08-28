@@ -95,7 +95,11 @@ const stranger = () => {
 
 const ctx = { sessionID: "ses", agent: "build", assistantMessageID: "msg", toolCallID: "c1" } as never
 const invoke = (input: unknown) =>
-  Tool.settle(registered["community"]!, { id: "c1", name: "community", input } as never, ctx) as unknown as Effect.Effect<{
+  Tool.settle(
+    registered["community"]!,
+    { id: "c1", name: "community", input } as never,
+    ctx,
+  ) as unknown as Effect.Effect<{
     readonly structured: { readonly message: string }
   }>
 
@@ -141,7 +145,10 @@ describe("the OTHER speaking op, invoked", () => {
       expect(out.structured.message, "no peer here, so it must not claim delivery").toContain("stored")
 
       const history = yield* channels.history("#recipes", 10)
-      expect(history.some((entry) => entry.body === "sourdough at 220C"), "the post must exist").toBe(true)
+      expect(
+        history.some((entry) => entry.body === "sourdough at 220C"),
+        "the post must exist",
+      ).toBe(true)
     }),
   )
 

@@ -65,7 +65,12 @@ describe("search asks the people the user actually trusts (finding 1.14)", () =>
         },
       })
       try {
-        yield* contacts.add({ networkID: doorman, petname: "the one who let us in", routes: [`http://127.0.0.1:${server.port}`], trust: 5 })
+        yield* contacts.add({
+          networkID: doorman,
+          petname: "the one who let us in",
+          routes: [`http://127.0.0.1:${server.port}`],
+          trust: 5,
+        })
         expect((yield* peers.list()).length, "the peer table must be empty, or this proves nothing").toBe(0)
 
         yield* search.search("gguf 7b")

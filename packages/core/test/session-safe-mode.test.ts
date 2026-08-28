@@ -16,6 +16,7 @@
 // `SessionFeature.Name`, the composer's own array) rather than repeating them, so it is a ratchet:
 // a switch added to the kernel without a surface fails §B by name.
 
+import { AgentV2 } from "@novaclaw/core/agent"
 import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
@@ -44,6 +45,13 @@ import type { SessionTable } from "@novaclaw/core/session/sql"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { SessionFeature } from "@novaclaw/schema/session-feature"
 import { testEffect } from "./lib/effect"
+
+/**
+ * 🔴 NC-SEC-020 — a ROOT names the agent it runs as; there is no anonymous chat. `build` records the
+ * POSTURE this chat runs in, which is the ordinary production case and keeps these tests' semantics
+ * unchanged: a posture is excluded from the canonical `ses_<agent>` id and from the one-chat guard.
+ */
+const rootAgent = AgentV2.ID.make("build")
 
 const projects = Layer.succeed(
   ProjectV2.Service,
@@ -79,7 +87,7 @@ describe("safe mode — the session column", () => {
   it.effect("survives create → row → Info", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
-      const created = yield* session.create({ location, safeMode: true })
+      const created = yield* session.create({ location, agent: rootAgent, safeMode: true })
       const stored = yield* session.get(created.id)
       expect(stored.safeMode, "safeMode did not survive create — a RESTRICTION was lost").toBe(true)
       expect((yield* resolveFor(created.id)).safeMode).toBe(true)
@@ -89,7 +97,7 @@ describe("safe mode — the session column", () => {
   it.effect("the Tuning switch writes it, and clearing returns it to inherit", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
-      const created = yield* session.create({ location })
+      const created = yield* session.create({ location, agent: rootAgent })
       expect((yield* session.get(created.id)).safeMode, "a fresh session must not be born opted-in").toBeUndefined()
 
       yield* session.switchFeature({ sessionID: created.id, feature: "safeMode", enabled: true })
@@ -109,9 +117,9 @@ describe("safe mode — the session column", () => {
   it.effect("a child inherits a parent's ON and cannot shed it by saying nothing", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
-      const parent = yield* session.create({ location })
+      const parent = yield* session.create({ location, agent: rootAgent })
       yield* session.switchFeature({ sessionID: parent.id, feature: "safeMode", enabled: true })
-      const child = yield* session.create({ location, parentID: parent.id })
+      const child = yield* session.create({ location, agent: rootAgent, parentID: parent.id })
 
       expect((yield* session.get(child.id)).safeMode, "the child's own row declares nothing").toBeUndefined()
       expect((yield* resolveFor(child.id)).safeMode, "…but it resolves to the parent's ON").toBe(true)
@@ -124,9 +132,9 @@ describe("safe mode — the session column", () => {
   it.effect("a fork of a safe-mode chain comes back in safe mode", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
-      const parent = yield* session.create({ location })
+      const parent = yield* session.create({ location, agent: rootAgent })
       yield* session.switchFeature({ sessionID: parent.id, feature: "safeMode", enabled: true })
-      const child = yield* session.create({ location, parentID: parent.id })
+      const child = yield* session.create({ location, agent: rootAgent, parentID: parent.id })
 
       const forked = yield* session.fork({ sessionID: child.id })
       const stored = yield* session.get(forked.id)

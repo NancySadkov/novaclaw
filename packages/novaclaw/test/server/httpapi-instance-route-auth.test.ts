@@ -143,9 +143,7 @@ describe("HttpApi instance route authorization", () => {
       const anonymous = await server.request(route, {
         method,
         headers:
-          method === "POST"
-            ? { ...headers, "content-type": "application/json", "content-length": "2" }
-            : headers,
+          method === "POST" ? { ...headers, "content-type": "application/json", "content-length": "2" } : headers,
         ...(method === "POST" ? { body: "{}" } : {}),
       })
       await cancelBody(anonymous)

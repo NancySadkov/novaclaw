@@ -398,14 +398,11 @@ describe("PublicApi OpenAPI v2 errors", () => {
     }
     expect(
       componentName(responseRef(spec.paths["/api/pty/{ptyID}/connect-token"]?.post?.responses?.["403"]) ?? ""),
-    ).toBe(
-      "ForbiddenError",
-    )
+    ).toBe("ForbiddenError")
     expect(
       spec.paths["/api/pty/{ptyID}/connect"]?.get?.parameters
         ?.filter((parameter) => parameter.in === "query")
         .map((parameter) => parameter.name),
     ).toEqual(["location[directory]", "location[workspace]", "cursor", "ticket"])
   })
-
 })

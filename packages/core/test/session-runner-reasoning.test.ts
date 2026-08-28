@@ -54,7 +54,11 @@ describe("SessionRunnerLLM — reasoning round trip", () => {
       harness,
       Effect.gen(function* () {
         const session = yield* SessionV2.Service
-        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Think first" }), resume: false })
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Think first" }),
+          resume: false,
+        })
         yield* session.resume(HARNESS_SESSION)
         // Durable, not merely live — rebuild from events before asserting.
         yield* harness.replayProjection(HARNESS_SESSION)
@@ -78,8 +82,7 @@ describe("SessionRunnerLLM — reasoning round trip", () => {
     // alone leaves the user-role nudge. Both, or the array length is wrong either way.
     const human = (messages: readonly unknown[]) =>
       (messages as Array<{ type: string; text?: string }>).filter(
-        (m) =>
-          (m.type === "user" || m.type === "assistant") && !String(m.text ?? "").startsWith("[Automated NovaClaw"),
+        (m) => (m.type === "user" || m.type === "assistant") && !String(m.text ?? "").startsWith("[Automated NovaClaw"),
       )
     expect(human(context)).toMatchObject([
       { type: "user", text: "Think first" },

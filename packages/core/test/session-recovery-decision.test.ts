@@ -106,10 +106,7 @@ describe("SessionRecoveryDecision", () => {
    * call whose output was silently lost, which is worse than replaying it.
    */
   test("the tool result is published BEFORE the checkpoint that authorises continuing", () => {
-    const source = readFileSync(
-      join(import.meta.dir, "..", "src", "session", "runner", "publish-llm-event.ts"),
-      "utf8",
-    )
+    const source = readFileSync(join(import.meta.dir, "..", "src", "session", "runner", "publish-llm-event.ts"), "utf8")
     // ⚠️ Scoped to the ONE block on purpose. A first draft searched the whole file and was vacuous:
     // `toolSettled` appears three times, so reordering the success path still found a later
     // occurrence and the test passed. Proved by reordering the real source and watching it stay

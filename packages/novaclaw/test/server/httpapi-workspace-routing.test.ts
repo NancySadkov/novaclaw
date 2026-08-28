@@ -567,7 +567,9 @@ describe("HttpApi workspace routing middleware", () => {
       // file-watchers on garbage-byte paths — so an unmade path yields 400 and the fallback under test
       // is never exercised. This test predates the guard and was pinned as Windows flakiness until
       // 2026-08-07; it was asserting against a rejection, not against the fallback.
-      yield* Effect.promise(() => Promise.all([mkdir(queryDir, { recursive: true }), mkdir(headerDir, { recursive: true })]))
+      yield* Effect.promise(() =>
+        Promise.all([mkdir(queryDir, { recursive: true }), mkdir(headerDir, { recursive: true })]),
+      )
       yield* serveProbe
 
       // Without a selected workspace, the middleware falls back to request
@@ -630,9 +632,9 @@ describe("HttpApi workspace routing middleware", () => {
       })
       yield* serveOrderProbe(reversed)
       const sessionID = "ses_0000000000000000000000000000"
-      const response = yield* HttpClient.get(
-        `/api/session/${sessionID}/probe?workspace=${workspace.id}`,
-      ).pipe(Effect.timeout("4 seconds"))
+      const response = yield* HttpClient.get(`/api/session/${sessionID}/probe?workspace=${workspace.id}`).pipe(
+        Effect.timeout("4 seconds"),
+      )
       return { response, forwarded: () => forwarded }
     })
 

@@ -82,9 +82,7 @@ const aliasesOf = (canonical: string): ReadonlyArray<string> => {
  * decoder: it then has fewer aliases to reject, never a vacuous pass.
  */
 const realAliases = (key: { raw: Buffer; canonical: string }) =>
-  aliasesOf(key.canonical).filter((alias) =>
-    Buffer.from(alias.slice("nid_".length), "base64url").equals(key.raw),
-  )
+  aliasesOf(key.canonical).filter((alias) => Buffer.from(alias.slice("nid_".length), "base64url").equals(key.raw))
 
 const signChannel = (key: ReturnType<typeof strangerKey>, author: string, body: string) => {
   const unsigned = { channel: CHANNEL, author, at: Date.now(), body }
@@ -162,8 +160,7 @@ describe("a nid_ is a KEY, not a spelling (p2p 1.2)", () => {
 
       const aliases = realAliases(key)
       expect(aliases.length).toBeGreaterThanOrEqual(3)
-      for (const alias of aliases)
-        expect(yield* direct.receive(send(alias))).toEqual({ rejected: "unverified" })
+      for (const alias of aliases) expect(yield* direct.receive(send(alias))).toEqual({ rejected: "unverified" })
     }),
   )
 

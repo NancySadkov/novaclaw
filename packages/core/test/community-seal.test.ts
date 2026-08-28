@@ -94,7 +94,13 @@ describe("CommunitySeal", () => {
 
   test("🔴 malformed keys are refused rather than thrown on — a peer is untrusted input", () => {
     const bob = CommunitySeal.generate()
-    for (const bad of ["", "!!!!", "short", Buffer.alloc(31).toString("base64url"), Buffer.alloc(64).toString("base64url")]) {
+    for (const bad of [
+      "",
+      "!!!!",
+      "short",
+      Buffer.alloc(31).toString("base64url"),
+      Buffer.alloc(64).toString("base64url"),
+    ]) {
       // Sealing TO nonsense must refuse rather than encrypt badly.
       expect(CommunitySeal.seal(bad, "hello", PAIR)).toBeUndefined()
       // Opening WITH nonsense must refuse rather than crash the request that carried it.

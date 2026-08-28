@@ -50,7 +50,6 @@ const ask = (handler: ReturnType<typeof app>, directory: string, body: unknown) 
   )
 }
 
-
 /** A real asker: an ed25519 identity that can sign its own question. */
 const asker = () => {
   const { publicKey, privateKey } = generateKeyPairSync("ed25519")

@@ -125,7 +125,7 @@ describe("v2 location HttpApi", () => {
     const response = await request("/api/session", tmp.path, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ title: "no location supplied" }),
+      body: JSON.stringify({ agent: "build", title: "no location supplied" }),
     })
     expect(response.status).toBe(200)
     const body = (await response.json()) as { data: { location: { directory: string } } }
@@ -144,7 +144,7 @@ describe("v2 location HttpApi", () => {
     const created = await request("/api/session", publisher.path, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ location: { directory: publisher.path } }),
+      body: JSON.stringify({ agent: "build", location: { directory: publisher.path } }),
     })
     expect(created.status).toBe(200)
     expect(await readEventType(reader, "session.created")).toMatchObject({

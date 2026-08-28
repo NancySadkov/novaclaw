@@ -29,9 +29,7 @@ describe("McpHealthContext.lines", () => {
   })
 
   test("a failed server names ITSELF and its fault, and points at the repair", () => {
-    const lines = McpHealthContext.lines([
-      { name: "searxng", status: { status: "failed", error: "spawn npx ENOENT" } },
-    ])
+    const lines = McpHealthContext.lines([{ name: "searxng", status: { status: "failed", error: "spawn npx ENOENT" } }])
     expect(lines).toEqual([
       'MCP server "searxng" is configured but unavailable this session: spawn npx ENOENT.',
       McpHealthContext.REPAIR_LINE,
@@ -102,7 +100,9 @@ describe("McpHealthContext.lines", () => {
       { name: "x", status: { status: "failed", error: "Error: connect ECONNREFUSED\n    at Socket.emit\n  at f" } },
     ])
     for (const line of lines) expect(line).not.toContain("\n")
-    expect(lines[0]).toBe('MCP server "x" is configured but unavailable this session: Error: connect ECONNREFUSED at Socket.emit at f.')
+    expect(lines[0]).toBe(
+      'MCP server "x" is configured but unavailable this session: Error: connect ECONNREFUSED at Socket.emit at f.',
+    )
   })
 
   test("a very long fault is truncated rather than paid for on every turn", () => {

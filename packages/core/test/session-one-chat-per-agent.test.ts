@@ -249,52 +249,55 @@ describe("one chat per colleague", () => {
     }),
   )
 
-  it.effect("a FORK is anonymous — it never becomes a second chat for the colleague", () =>
+  /**
+   * 🔴 **REWRITTEN 2026-08-28 (NC-SEC-020). Both tests here simulated a fork by creating an anonymous
+   * ROOT, and fork stopped producing that shape.**
+   *
+   * A fork is a CHILD of the chat it branches and carries that chat's owner (`session.ts`, fork). The
+   * old pair asserted the opposite — *"Fork makes a fresh ROOT"*, *"fork drops the identity"* — and
+   * one justified itself by saying the exemption *"passes `branchOf`"*. `branchOf` appears nowhere in
+   * the tree but that sentence. What the bodies actually pinned was the `agent === undefined` hole,
+   * which the second one's own comment called one that *"cannot be found and removed"*. It was found
+   * by removing it.
+   *
+   * What still needs protecting is the real invariant: branching Theron's chat must not produce a
+   * SECOND root for Theron. That is structural now — a child is not a root — and this says so.
+   */
+  it.effect("a fork branches a colleague's chat WITHOUT becoming a second chat for them", () =>
     Effect.gen(function* () {
       const d = yield* deps
-      // 🔴 Fork makes a fresh ROOT. Carrying the source's agent would be a second chat for that
-      // colleague — the one thing the invariant forbids — and the `SessionV2.fork` suite went red
-      // the moment the guard could see it. The fix is NOT an exemption (an exemption is the
-      // appendix); fork drops the identity and branches the transcript, which is what the user
-      // asked for. Forking an agent-session ENTITY is what `clone` already does.
       yield* seedChat(d.db, { id: "ses_theron", agent: "theron" })
 
       const branch = yield* createSessionRecord(d, {
         title: "fork of Theron's chat",
-        agent: undefined,
+        parentID: "ses_theron",
+        agent: "theron",
         location: { directory: here() },
       } as never)
 
       expect(String(branch.id)).not.toBe("ses_theron")
-      const roots_theron = yield* rootsFor(d.db, "theron")
-      expect(roots_theron.length).toBe(1)
+      expect(String(branch.parentID)).toBe("ses_theron")
+      // The colleague still has exactly one ROOT, which is what the invariant is about. The branch
+      // carries her identity and is reached through the chat it came from, not through the roster.
+      expect((yield* rootsFor(d.db, "theron")).length).toBe(1)
     }),
   )
 
-  it.effect("a FORK may still be anonymous — the one exemption, and it is spelled out", () =>
+  it.effect("🔴 an anonymous ROOT is refused outright — there is no chat belonging to nobody", () =>
     Effect.gen(function* () {
       const d = yield* deps
       /**
-       * 🔴 **SUPERSEDES "an AGENT-LESS root is untouched — the messenger console, recipes and the
-       * CLI"** (owner, 2026-08-28: *"no ghosthouse architecture"*). Those three now name an owner:
-       * the messenger and recipes run as service agents, `novaclaw run` as Nova, each with their
-       * per-item work as sub-sessions. The old test asserted they could stay ownerless, which is the
-       * behaviour that produced a chat belonging to nobody.
-       *
-       * Fork is the case left open — two rulings meet there — so it passes `branchOf` and the guard
-       * lets exactly that through. An exemption with a name can be found and removed; an
-       * `agent === undefined` hole cannot.
+       * The hole the two old tests pinned. `undefined` meant two different things: on a CHILD it
+       * means *inherit from the parent*, which is legitimate; on a ROOT it meant nothing at all, so
+       * every turn re-derived an owner from whatever the current default officer happened to be — a
+       * chat whose identity, and therefore whose private memory cabinet, changed under it.
        */
-      yield* seedChat(d.db, { id: "ses_theron2", agent: "theron2" })
-
-      const branch = yield* createSessionRecord(d, {
-        title: "fork of a chat",
+      const refused = yield* createSessionRecord(d, {
+        title: "a chat belonging to nobody",
         location: { directory: here() },
-      } as never)
+      } as never).pipe(Effect.flip)
 
-      expect(branch.agent).toBeUndefined()
-      const roots = yield* rootsFor(d.db, "theron2")
-      expect(roots.length).toBe(1)
+      expect(refused._tag).toBe("Session.OwnerRequiredError")
     }),
   )
 })

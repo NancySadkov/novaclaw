@@ -83,7 +83,10 @@ describe("who declared what", () => {
 
 describe("a colleague's standing choices", () => {
   test("declared fields become the baseline its chats start from", () => {
-    const folded = AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, agent({ permissionMode: "plan", strict: { enabled: true } }))
+    const folded = AgentDefaults.fold(
+      EFFECTIVE_CONFIG_DEFAULTS,
+      agent({ permissionMode: "plan", strict: { enabled: true } }),
+    )
     expect(folded.permissionMode).toBe("plan")
     expect(folded.strict).toEqual({ enabled: true })
   })

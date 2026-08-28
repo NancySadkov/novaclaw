@@ -64,11 +64,14 @@ function sourceFiles(root: string): string[] {
 }
 
 /** ⚠️ Comments stripped before matching — this file's own header names both sites on purpose. */
-const code = (text: string): string =>
-  text.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ")
+const code = (text: string): string => text.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ")
 
 /** `packages/<pkg>/src/...` with forward slashes, so a failure names something greppable. */
-const label = (file: string) => path.relative(packages, file).replaceAll("\\", "/").replace(/^([^/]+)\//, "$1/")
+const label = (file: string) =>
+  path
+    .relative(packages, file)
+    .replaceAll("\\", "/")
+    .replace(/^([^/]+)\//, "$1/")
 
 const sitesMatching = (pattern: RegExp): string[] => {
   const hits: string[] = []

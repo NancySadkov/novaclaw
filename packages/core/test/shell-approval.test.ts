@@ -67,9 +67,8 @@ describe("shell approval reduction", () => {
     })
   })
 
-  test.each(["echo hi > $TARGET", "cat <<EOF", "echo 'unterminated"])(
-    "fails ambiguous syntax closed: %s",
-    (command) => expect(ShellApproval.analyze(command, "/bin/bash").status).toBe("unparseable"),
+  test.each(["echo hi > $TARGET", "cat <<EOF", "echo 'unterminated"])("fails ambiguous syntax closed: %s", (command) =>
+    expect(ShellApproval.analyze(command, "/bin/bash").status).toBe("unparseable"),
   )
 
   test("fails an unknown shell closed", () => {

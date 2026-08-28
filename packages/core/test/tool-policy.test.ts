@@ -217,13 +217,17 @@ describe("the six outcomes, each reaching a real tool call", () => {
     expect(settlement.halted).toBeUndefined()
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({ decision: "deny", tool: "echo", tool_call_id: "call-policy" })
-    expect(rows[0]?.providers).toEqual([{ id: "no-secrets", outcome: "deny", detail: "this touches a credential store" }])
+    expect(rows[0]?.providers).toEqual([
+      { id: "no-secrets", outcome: "deny", detail: "this touches a credential store" },
+    ])
   })
 
   test("halt — the call is refused AND the settlement carries the drain latch", async () => {
     const settlement = await withHarness(({ registry, gate }) =>
       Effect.gen(function* () {
-        yield* gate.install([provider("stop-now", { type: "halt", reason: "the operator revoked this session" })]).pipe(Effect.orDie)
+        yield* gate
+          .install([provider("stop-now", { type: "halt", reason: "the operator revoked this session" })])
+          .pipe(Effect.orDie)
         return yield* call(registry, { command: "anything" })
       }).pipe(Effect.scoped),
     )
@@ -261,7 +265,9 @@ describe("the six outcomes, each reaching a real tool call", () => {
   test("context — the tool runs unchanged and the note rides its result", async () => {
     const settlement = await withHarness(({ registry, gate }) =>
       Effect.gen(function* () {
-        yield* gate.install([provider("noticer", { type: "context", text: "this ran as administrator" })]).pipe(Effect.orDie)
+        yield* gate
+          .install([provider("noticer", { type: "context", text: "this ran as administrator" })])
+          .pipe(Effect.orDie)
         return yield* call(registry, { command: "whoami" })
       }).pipe(Effect.scoped),
     )
@@ -460,9 +466,7 @@ describe("a provider that does not answer", () => {
     const { settlement, rows } = await withHarness(({ registry, gate }) =>
       Effect.gen(function* () {
         yield* gate
-          .install([
-            { id: "slow-advice", describe: "hangs", safetyCritical: false, evaluate: () => Effect.never },
-          ])
+          .install([{ id: "slow-advice", describe: "hangs", safetyCritical: false, evaluate: () => Effect.never }])
           .pipe(Effect.orDie)
         const settlement = yield* call(registry, { command: "hello" })
         return { settlement, rows: yield* receipts }
@@ -534,7 +538,9 @@ describe("what a novaclaw.json can and cannot buy its author", () => {
       ({ registry, gate }) =>
         Effect.gen(function* () {
           yield* gate
-            .install([provider("optional-guard", { type: "deny", reason: "the folder asked for me" }, { alwaysOn: false })])
+            .install([
+              provider("optional-guard", { type: "deny", reason: "the folder asked for me" }, { alwaysOn: false }),
+            ])
             .pipe(Effect.orDie)
           return resultText((yield* call(registry, { command: "hello" })).result)
         }).pipe(Effect.scoped),
@@ -546,7 +552,9 @@ describe("what a novaclaw.json can and cannot buy its author", () => {
     const dormant = await withHarness(({ registry, gate }) =>
       Effect.gen(function* () {
         yield* gate
-          .install([provider("optional-guard", { type: "deny", reason: "the folder asked for me" }, { alwaysOn: false })])
+          .install([
+            provider("optional-guard", { type: "deny", reason: "the folder asked for me" }, { alwaysOn: false }),
+          ])
           .pipe(Effect.orDie)
         return resultText((yield* call(registry, { command: "hello" })).result)
       }).pipe(Effect.scoped),
@@ -557,7 +565,9 @@ describe("what a novaclaw.json can and cannot buy its author", () => {
     const stillOn = await withHarness(
       ({ registry, gate }) =>
         Effect.gen(function* () {
-          yield* gate.install([provider("always-guard", { type: "deny", reason: "installed by the operator" })]).pipe(Effect.orDie)
+          yield* gate
+            .install([provider("always-guard", { type: "deny", reason: "installed by the operator" })])
+            .pipe(Effect.orDie)
           return resultText((yield* call(registry, { command: "hello" })).result)
         }).pipe(Effect.scoped),
       { project: { version: 1, policies: [] } },
@@ -652,7 +662,13 @@ describe("the shipped policy", () => {
     )
 
   test("refuses the host-wide irreversible commands", async () => {
-    for (const command of ["rm -rf /", "sudo rm -rf /*", "rm -rf $HOME/*", "mkfs.ext4 /dev/sda1", "dd if=/dev/zero of=/dev/sda"])
+    for (const command of [
+      "rm -rf /",
+      "sudo rm -rf /*",
+      "rm -rf $HOME/*",
+      "mkfs.ext4 /dev/sda1",
+      "dd if=/dev/zero of=/dev/sda",
+    ])
       expect((await decide(command)).type).toBe("deny")
   })
 

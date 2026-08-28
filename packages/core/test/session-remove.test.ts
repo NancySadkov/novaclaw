@@ -1,3 +1,4 @@
+import { AgentV2 } from "@novaclaw/core/agent"
 import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
 import { Database } from "@novaclaw/core/database/database"
@@ -22,6 +23,13 @@ import { testEffect } from "./lib/effect"
 // mid-turn, its in-flight or waiting entry — for the life of the instance. `removeSessionRecord`
 // takes it the same way it takes `interrupt`: an optional injected primitive, so the service-less
 // callers (the CLI's `session delete`) still compile and still mean something.
+
+/**
+ * 🔴 NC-SEC-020 — a ROOT names the agent it runs as; there is no anonymous chat. `build` records the
+ * POSTURE this chat runs in, which is the ordinary production case and keeps these tests' semantics
+ * unchanged: a posture is excluded from the canonical `ses_<agent>` id and from the one-chat guard.
+ */
+const rootAgent = AgentV2.ID.make("build")
 
 const projects = Layer.succeed(
   ProjectV2.Service,
@@ -55,7 +63,7 @@ describe("removeSessionRecord — scheduler eviction", () => {
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
       const scheduler = yield* SessionScheduler.Service
-      const created = yield* session.create({ location })
+      const created = yield* session.create({ location, agent: rootAgent })
       yield* scheduler.admit({ sessionID: created.id, deviceKey: "d", sessionClass: "interactive" })
       expect(ledgerHas(yield* scheduler.snapshot(), created.id)).toBe(true)
 
@@ -74,7 +82,7 @@ describe("removeSessionRecord — scheduler eviction", () => {
       const scheduler = yield* SessionScheduler.Service
       const { db } = yield* Database.Service
       const events = yield* EventV2.Service
-      const created = yield* session.create({ location })
+      const created = yield* session.create({ location, agent: rootAgent })
       yield* scheduler.admit({ sessionID: created.id, deviceKey: "d", sessionClass: "interactive" })
 
       // the pre-fix wiring: the seam called with {db, events} only
@@ -90,9 +98,9 @@ describe("removeSessionRecord — scheduler eviction", () => {
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
       const scheduler = yield* SessionScheduler.Service
-      const parent = yield* session.create({ location })
-      const child = yield* session.create({ location, parentID: parent.id })
-      const grandchild = yield* session.create({ location, parentID: child.id })
+      const parent = yield* session.create({ location, agent: rootAgent })
+      const child = yield* session.create({ location, agent: rootAgent, parentID: parent.id })
+      const grandchild = yield* session.create({ location, agent: rootAgent, parentID: child.id })
       // interactive, not batch: MAX_BATCH is 2, so a third batch admit would legitimately BLOCK
       for (const id of [parent.id, child.id, grandchild.id])
         yield* scheduler.admit({ sessionID: id, deviceKey: "d", sessionClass: "interactive" })
@@ -113,8 +121,8 @@ describe("removeSessionRecord — scheduler eviction", () => {
       // that cascade by hand.
       const session = yield* SessionV2.Service
       const { db } = yield* Database.Service
-      const created = yield* session.create({ location })
-      const other = yield* session.create({ location })
+      const created = yield* session.create({ location, agent: rootAgent })
+      const other = yield* session.create({ location, agent: rootAgent })
       const state: JhEngine.State = {
         tree: JhTree.create({ goal: "g", size: "atomic", success: "ok" }),
         artifacts: [{ id: "a.c", type: "file", hash: "h", content: "int main(){}" }],
@@ -141,8 +149,8 @@ describe("removeSessionRecord — scheduler eviction", () => {
       const session = yield* SessionV2.Service
       const { db } = yield* Database.Service
       const events = yield* EventV2.Service
-      const parent = yield* session.create({ location })
-      const child = yield* session.create({ location, parentID: parent.id })
+      const parent = yield* session.create({ location, agent: rootAgent })
+      const child = yield* session.create({ location, agent: rootAgent, parentID: parent.id })
       const evicted: string[] = []
 
       yield* SessionV2.removeSessionRecord(

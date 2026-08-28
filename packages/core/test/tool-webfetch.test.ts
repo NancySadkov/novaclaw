@@ -57,7 +57,8 @@ const permission = Layer.succeed(
 const toolLayer = (replacements: LayerNode.Replacements = []) =>
   AppNodeBuilder.build(LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, WebFetchTool.node]), [
     [PermissionV2.node, permission],
-    [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig], [ToolPolicyGate.node, bypassedPolicyGate],
+    [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
+    [ToolPolicyGate.node, bypassedPolicyGate],
     ...replacements,
   ])
 const it = testEffect(toolLayer([[LayerNodePlatform.httpClient, http]]))
@@ -208,8 +209,7 @@ describe("WebFetchTool registration", () => {
     Effect.gen(function* () {
       reset()
       const shell = `<html><head><script>renderEverything()</script></head><body><div id="root"></div></body></html>`
-      respond = () =>
-        Effect.succeed(new Response(shell, { headers: { "content-type": "text/html; charset=utf-8" } }))
+      respond = () => Effect.succeed(new Response(shell, { headers: { "content-type": "text/html; charset=utf-8" } }))
       const registry = yield* ToolRegistry.Service
 
       for (const format of ["markdown", "text"] as const) {
@@ -235,10 +235,8 @@ describe("WebFetchTool registration", () => {
   it.effect("an SPA shell whose only text is its <title> is named, not returned as content", () =>
     Effect.gen(function* () {
       reset()
-      const shell =
-        `<html><head><title>App</title><script>boot()</script></head><body><div id="root"></div></body></html>`
-      respond = () =>
-        Effect.succeed(new Response(shell, { headers: { "content-type": "text/html; charset=utf-8" } }))
+      const shell = `<html><head><title>App</title><script>boot()</script></head><body><div id="root"></div></body></html>`
+      respond = () => Effect.succeed(new Response(shell, { headers: { "content-type": "text/html; charset=utf-8" } }))
       const registry = yield* ToolRegistry.Service
 
       for (const format of ["markdown", "text"] as const) {

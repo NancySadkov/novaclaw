@@ -97,7 +97,9 @@ describe("writing novaclaw.json", () => {
       expect(after["futureSection"]).toEqual(RICH.futureSection)
       expect(after["telemetry"]).toBe("off")
       // And the whole document differs from the original in exactly one key.
-      const changed = Object.keys(after).filter((key) => JSON.stringify(after[key]) !== JSON.stringify((RICH as Record<string, unknown>)[key]))
+      const changed = Object.keys(after).filter(
+        (key) => JSON.stringify(after[key]) !== JSON.stringify((RICH as Record<string, unknown>)[key]),
+      )
       expect(changed).toEqual(["tune"])
     }),
   )
@@ -252,7 +254,10 @@ describe("writing novaclaw.json", () => {
       expect(resolved.root).toBe(dir)
       expect(resolved.file).toBe(at(dir))
       expect(resolved.info.name).toBe("Round")
-      expect(resolved.info.tune).toEqual({ mode: "interactive", features: { memory: true, safeMode: true, affective: false } })
+      expect(resolved.info.tune).toEqual({
+        mode: "interactive",
+        features: { memory: true, safeMode: true, affective: false },
+      })
     }),
   )
 

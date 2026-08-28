@@ -31,11 +31,15 @@ const outputStore = Layer.mock(ToolOutputStore.Service, {
     )
   },
 })
-const registryLayer = AppNodeBuilder.build(ToolRegistry.node, [[ToolOutputStore.node, outputStore], [ToolPolicyGate.node, bypassedPolicyGate]])
+const registryLayer = AppNodeBuilder.build(ToolRegistry.node, [
+  [ToolOutputStore.node, outputStore],
+  [ToolPolicyGate.node, bypassedPolicyGate],
+])
 const it = testEffect(registryLayer)
 const integrated = testEffect(
   AppNodeBuilder.build(LayerNode.group([ApplicationTools.node, ToolRegistry.node]), [
-    [ToolOutputStore.node, outputStore], [ToolPolicyGate.node, bypassedPolicyGate],
+    [ToolOutputStore.node, outputStore],
+    [ToolPolicyGate.node, bypassedPolicyGate],
   ]),
 )
 const identity = {

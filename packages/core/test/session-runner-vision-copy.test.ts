@@ -13,7 +13,8 @@ import { VisionCopy } from "@novaclaw/core/session/runner/vision-copy"
  * falsely.
  */
 
-const def = (name: string, description: string): ToolDefinition => ({ name, description, inputSchema: {} }) as ToolDefinition
+const def = (name: string, description: string): ToolDefinition =>
+  ({ name, description, inputSchema: {} }) as ToolDefinition
 
 const READ = def(ReadTool.name, ReadTool.DESCRIPTION)
 const OTHER = def("bash", "Run a shell command.")

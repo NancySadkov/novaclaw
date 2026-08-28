@@ -34,7 +34,9 @@ describe("it must NOT fire on an ordinary finished answer", () => {
   test("a completed summary ending on a statement", () => {
     expect(
       announcedToolButCalledNone([
-        assistant("I described all six glyphs: a broken heart, dice, a water droplet, a Kg weight, boots and a corset."),
+        assistant(
+          "I described all six glyphs: a broken heart, dice, a water droplet, a Kg weight, boots and a corset.",
+        ),
       ]),
     ).toBe(false)
   })
@@ -98,7 +100,10 @@ describe("it MUST fire on the measured failure", () => {
     // The detector runs at the end of a drain, so an older narrated turn that was already followed
     // by real work must not re-trigger it.
     expect(
-      announcedToolButCalledNone([assistant("Let me look:"), assistant("Here is what the icon shows: a broken heart.")]),
+      announcedToolButCalledNone([
+        assistant("Let me look:"),
+        assistant("Here is what the icon shows: a broken heart."),
+      ]),
     ).toBe(false)
   })
 })

@@ -28,7 +28,8 @@ Abilities:
 Str 11, Dex 17, Con 17, Int 10, Wis 10, Cha 10
 `
 
-const DOC = [1, 2, 3, 4, 5, 6].map((n) => STAT_BLOCK(`Creature${n}`)).join("\n") + "\nCause Avalanche (Su):\nOnce per day.\n"
+const DOC =
+  [1, 2, 3, 4, 5, 6].map((n) => STAT_BLOCK(`Creature${n}`)).join("\n") + "\nCause Avalanche (Su):\nOnce per day.\n"
 
 describe("KbAbsorbEval.deriveScaffolding", () => {
   test("field labels are found by REPETITION, without being listed", () => {

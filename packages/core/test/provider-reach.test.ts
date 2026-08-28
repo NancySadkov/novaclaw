@@ -4,7 +4,9 @@ import { ProviderReach } from "@novaclaw/core/provider-reach"
 
 const run = <A>(effect: Effect.Effect<A>) => Effect.runPromise(effect)
 
-const answering = (status = 200) => async () => ({ ok: status < 400, status })
+const answering =
+  (status = 200) =>
+  async () => ({ ok: status < 400, status })
 const throwing = (error: unknown) => async () => {
   throw error
 }
@@ -156,4 +158,3 @@ describe("which provider the board speaks for", () => {
     })
   })
 })
-

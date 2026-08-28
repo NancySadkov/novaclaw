@@ -138,9 +138,7 @@ describe("project exclusions — the promise", () => {
   it.live("a project that declares no exclude section excludes nothing", () =>
     withTmp((directory) =>
       Effect.gen(function* () {
-        yield* Effect.promise(() =>
-          fs.writeFile(path.join(directory, "novaclaw.json"), JSON.stringify({ version: 1 })),
-        )
+        yield* Effect.promise(() => fs.writeFile(path.join(directory, "novaclaw.json"), JSON.stringify({ version: 1 })))
         yield* write(path.join(directory, "secret.txt"), "x")
         expect(yield* verdictOf({ path: "secret.txt" })).toBe("allowed")
       }).pipe(provide(directory)),
@@ -253,27 +251,25 @@ describe("project exclusions — path aliases cannot spell their way around it",
     ),
   )
 
-  it.live(
-    "refuses through a directory exclusion reached by its 8.3 short name where the volume has one",
-    () =>
-      withTmp((directory) =>
-        Effect.gen(function* () {
-          if (process.platform !== "win32") return
-          yield* project(directory, ["Long Secret Folder/"])
-          yield* write(path.join(directory, "Long Secret Folder", "a.txt"), "x")
-          // 8.3 generation can be off on a volume; when it is, there is no alias to test and the
-          // case SAYS SO rather than passing vacuously. On the machine this was written on it is
-          // on, and the alias was `LONGSE~1` — which `fs.realpath` did not expand and
-          // `realpathSync.native` did. See `unalias` in `project-exclusion.ts`.
-          const short = shortName(directory, "Long Secret Folder")
-          if (short === undefined) {
-            console.log("[8.3] this volume generates no short names — vector not exercised here")
-            return
-          }
-          console.log(`[8.3] exercising alias ${short} for "Long Secret Folder"`)
-          expect(yield* verdictOf({ path: path.join(short, "a.txt") })).toBe("excluded")
-        }).pipe(provide(directory)),
-      ),
+  it.live("refuses through a directory exclusion reached by its 8.3 short name where the volume has one", () =>
+    withTmp((directory) =>
+      Effect.gen(function* () {
+        if (process.platform !== "win32") return
+        yield* project(directory, ["Long Secret Folder/"])
+        yield* write(path.join(directory, "Long Secret Folder", "a.txt"), "x")
+        // 8.3 generation can be off on a volume; when it is, there is no alias to test and the
+        // case SAYS SO rather than passing vacuously. On the machine this was written on it is
+        // on, and the alias was `LONGSE~1` — which `fs.realpath` did not expand and
+        // `realpathSync.native` did. See `unalias` in `project-exclusion.ts`.
+        const short = shortName(directory, "Long Secret Folder")
+        if (short === undefined) {
+          console.log("[8.3] this volume generates no short names — vector not exercised here")
+          return
+        }
+        console.log(`[8.3] exercising alias ${short} for "Long Secret Folder"`)
+        expect(yield* verdictOf({ path: path.join(short, "a.txt") })).toBe("excluded")
+      }).pipe(provide(directory)),
+    ),
   )
 
   it.live("refuses an extended-length `\\\\?\\` path naming the excluded file", () =>
@@ -699,7 +695,12 @@ describe("project exclusions — glob and grep filter their rows", () => {
       return yield* executeTool(registry, {
         sessionID: SessionV2.ID.make("ses_exclusion_search"),
         ...toolIdentity,
-        call: { type: "tool-call", id: `call-${tool}`, name: tool, input: { pattern: tool === "glob" ? "**/*" : "TOKEN" } },
+        call: {
+          type: "tool-call",
+          id: `call-${tool}`,
+          name: tool,
+          input: { pattern: tool === "glob" ? "**/*" : "TOKEN" },
+        },
       })
     }).pipe(
       Effect.provide(

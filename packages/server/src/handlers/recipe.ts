@@ -291,40 +291,48 @@ export const RecipeHandler = handlerLayer(
              * enforced in the database. The parent call is idempotent — `createSessionRecord` hands
              * back the service's existing chat rather than minting a sibling.
              */
-            const recipeRoot = yield* sessions.create({
-              agent: AgentV2.RECIPE_ID,
-              location: { directory: AbsolutePath.make(directory) },
-              title: "Recipes",
-            })
-            const session = yield* sessions.create({
-              agent: AgentV2.RECIPE_ID,
-              parentID: recipeRoot.id,
-              location: { directory: AbsolutePath.make(directory) },
-              title: recipe.name,
-              // Cooking is a "go and do it" action, not a conversation: the user picked a recipe and a folder
-              // and expects work to happen. Left interactive+ASK it landed them in a chat full of pending
-              // permission prompts for a task they had already approved by pressing Run — `bypass` is what
-              // fixed that, and it is write access to THIS FOLDER only (writing outside stays guarded
-              // independently of the mode). The work folder is freshly materialized for this cook, so "free
-              // inside it" is the whole intent.
-              //
-              // ⚠️ The TYPE is `interactive` deliberately, and reverting it to `goal-oriented` breaks
-              // cooking on Windows. Attendance is what the Agent Jail keys on: an UNATTENDED chain root
-              // requires sandbox confinement for raw shell execution, and no sandbox backend exists on
-              // Windows/macOS yet — so `bash` is DENIED outright there. Measured 2026-07-26: every one of
-              // the seven shipped recipes lost its shell on Windows; `hello-c` and `pi-100-machin` — the
-              // pair AGENTS.md calls the install health check — wrote correct C they could never compile,
-              // and `install-health-check` duly reported the install as broken. And the attendance claim is
-              // simply TRUE: the user pressed Run and is looking at the chat, so an ask (only reachable for
-              // out-of-folder work) reaches a human who can answer it.
-              type: "interactive",
-              permissionMode: "bypass",
-              ...(ctx.payload.strict ? { strict: ctx.payload.strict } : {}),
-              ...(model ? { model } : {}),
-              ...(ctx.payload.agent ? { agent: AgentV2.ID.make(ctx.payload.agent) } : {}),
-              // Traceable back to what was cooked, and which copy.
-              metadata: { recipeSlug: recipe.slug, recipeName: recipe.name },
-            })
+            // ⚠️ `OwnerRequiredError` is unreachable on both creates below — each names
+            // `RECIPE_ID` — so it is died on rather than widening this endpoint's error channel with
+            // something no caller can act on. If either agent ever went away, this fails loudly at
+            // the seam instead of returning a 400 that blames the user (NC-SEC-020).
+            const recipeRoot = yield* sessions
+              .create({
+                agent: AgentV2.RECIPE_ID,
+                location: { directory: AbsolutePath.make(directory) },
+                title: "Recipes",
+              })
+              .pipe(Effect.orDie)
+            const session = yield* sessions
+              .create({
+                agent: AgentV2.RECIPE_ID,
+                parentID: recipeRoot.id,
+                location: { directory: AbsolutePath.make(directory) },
+                title: recipe.name,
+                // Cooking is a "go and do it" action, not a conversation: the user picked a recipe and a folder
+                // and expects work to happen. Left interactive+ASK it landed them in a chat full of pending
+                // permission prompts for a task they had already approved by pressing Run — `bypass` is what
+                // fixed that, and it is write access to THIS FOLDER only (writing outside stays guarded
+                // independently of the mode). The work folder is freshly materialized for this cook, so "free
+                // inside it" is the whole intent.
+                //
+                // ⚠️ The TYPE is `interactive` deliberately, and reverting it to `goal-oriented` breaks
+                // cooking on Windows. Attendance is what the Agent Jail keys on: an UNATTENDED chain root
+                // requires sandbox confinement for raw shell execution, and no sandbox backend exists on
+                // Windows/macOS yet — so `bash` is DENIED outright there. Measured 2026-07-26: every one of
+                // the seven shipped recipes lost its shell on Windows; `hello-c` and `pi-100-machin` — the
+                // pair AGENTS.md calls the install health check — wrote correct C they could never compile,
+                // and `install-health-check` duly reported the install as broken. And the attendance claim is
+                // simply TRUE: the user pressed Run and is looking at the chat, so an ask (only reachable for
+                // out-of-folder work) reaches a human who can answer it.
+                type: "interactive",
+                permissionMode: "bypass",
+                ...(ctx.payload.strict ? { strict: ctx.payload.strict } : {}),
+                ...(model ? { model } : {}),
+                ...(ctx.payload.agent ? { agent: AgentV2.ID.make(ctx.payload.agent) } : {}),
+                // Traceable back to what was cooked, and which copy.
+                metadata: { recipeSlug: recipe.slug, recipeName: recipe.name },
+              })
+              .pipe(Effect.orDie)
             // The session already exists by now, so a prompt failure must not read as "nothing happened":
             // report it with the session id so the user can open that chat and send the recipe themselves.
             yield* sessions.prompt({ sessionID: session.id, prompt: { text: recipe.prompt }, delivery: "queue" }).pipe(

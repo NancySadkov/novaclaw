@@ -63,9 +63,7 @@ describe("CommunitySeeds.resolve", () => {
      * a network they could have reached went unjoined.
      */
     const started = Date.now()
-    const answered = await run(
-      CommunitySeeds.resolve({ host: "slow.invalid", lookup: () => new Promise(() => {}) }),
-    )
+    const answered = await run(CommunitySeeds.resolve({ host: "slow.invalid", lookup: () => new Promise(() => {}) }))
     expect(answered).toEqual([])
     expect(Date.now() - started).toBeLessThan(CommunitySeeds.LOOKUP_TIMEOUT_MS + 2_000)
   })

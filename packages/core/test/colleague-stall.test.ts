@@ -93,7 +93,11 @@ describe("which asks have gone unanswered", () => {
       { sessionID: "ses_theron", from: "aris", at: 0 },
       { sessionID: "ses_kallias", from: "aris", at: MINUTE },
     ]
-    expect(find({ landed, now: 60 * MINUTE }).map((s) => s.colleague).sort()).toEqual(["kallias", "theron"])
+    expect(
+      find({ landed, now: 60 * MINUTE })
+        .map((s) => s.colleague)
+        .sort(),
+    ).toEqual(["kallias", "theron"])
   })
 })
 

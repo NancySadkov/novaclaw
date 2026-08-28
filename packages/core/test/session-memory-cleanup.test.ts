@@ -1,3 +1,4 @@
+import { AgentV2 } from "@novaclaw/core/agent"
 import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
 import { Database } from "@novaclaw/core/database/database"
@@ -31,6 +32,13 @@ import { testEffect } from "./lib/effect"
  * inside the deletion would turn a ten-second outage into permanent retention with success already
  * reported, so the request is a DURABLE tombstone and the sweep is retryable.
  */
+
+/**
+ * 🔴 NC-SEC-020 — a ROOT names the agent it runs as; there is no anonymous chat. `build` records the
+ * POSTURE this chat runs in, which is the ordinary production case and keeps these tests' semantics
+ * unchanged: a posture is excluded from the canonical `ses_<agent>` id and from the one-chat guard.
+ */
+const rootAgent = AgentV2.ID.make("build")
 
 const projects = Layer.succeed(
   ProjectV2.Service,
@@ -74,9 +82,14 @@ const location = Location.Ref.make({ directory: AbsolutePath.make("/project") })
  * everything that ran before it.
  */
 const survivors = (memory: MemoryClient.Interface, ids: readonly string[]) =>
-  memory
-    .list({ limit: 500, includeInvalid: true })
-    .pipe(Effect.map((rows) => rows.filter((row) => ids.includes(row.id)).map((row) => row.id).sort()))
+  memory.list({ limit: 500, includeInvalid: true }).pipe(
+    Effect.map((rows) =>
+      rows
+        .filter((row) => ids.includes(row.id))
+        .map((row) => row.id)
+        .sort(),
+    ),
+  )
 
 function makeMemory(options: { available?: boolean } = {}) {
   const live = MemoryClient.stub()
@@ -97,7 +110,7 @@ describe("deleting a chat takes its memories", () => {
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
       const memory = Memory.client(yield* Memory.node.service)
-      const created = yield* session.create({ location })
+      const created = yield* session.create({ location, agent: rootAgent })
       yield* memory.addMemory({ id: "m1", kind: "entity", text: "a private note", scope: `session:${created.id}` })
       yield* memory.addMemory({ id: "keep", kind: "entity", text: "a shared note", scope: "global" })
 
@@ -115,8 +128,8 @@ describe("deleting a chat takes its memories", () => {
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
       const memory = Memory.client(yield* Memory.node.service)
-      const doomed = yield* session.create({ location })
-      const survivor = yield* session.create({ location })
+      const doomed = yield* session.create({ location, agent: rootAgent })
+      const survivor = yield* session.create({ location, agent: rootAgent })
       yield* memory.addMemory({ id: "gone", kind: "entity", text: "x", scope: `session:${doomed.id}` })
       yield* memory.addMemory({ id: "stays", kind: "entity", text: "y", scope: `session:${survivor.id}` })
 
@@ -130,8 +143,8 @@ describe("deleting a chat takes its memories", () => {
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
       const memory = Memory.client(yield* Memory.node.service)
-      const parent = yield* session.create({ location })
-      const child = yield* session.create({ location, parentID: parent.id })
+      const parent = yield* session.create({ location, agent: rootAgent })
+      const child = yield* session.create({ location, agent: rootAgent, parentID: parent.id })
       for (const id of [parent.id, child.id])
         yield* memory.addMemory({ id: `m_${id}`, kind: "entity", text: "note", scope: `session:${id}` })
 
@@ -145,7 +158,7 @@ describe("deleting a chat takes its memories", () => {
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
       const { db } = yield* Database.Service
-      const created = yield* session.create({ location })
+      const created = yield* session.create({ location, agent: rootAgent })
       yield* session.remove(created.id)
       expect(yield* SessionMemoryCleanup.pending(db)).toEqual([])
     }),
@@ -160,7 +173,7 @@ describe("the sweep itself", () => {
       // AFTER the sweep `session.remove` already attempted could not do its job.
       const session = yield* SessionV2.Service
       const { db } = yield* Database.Service
-      const created = yield* session.create({ location })
+      const created = yield* session.create({ location, agent: rootAgent })
       yield* session.remove(created.id)
       // Re-request as if the earlier sweep had failed: the session is gone, the work is not done.
       yield* SessionMemoryCleanup.request(db, created.id)
@@ -186,7 +199,7 @@ describe("the sweep itself", () => {
       const session = yield* SessionV2.Service
       const { db } = yield* Database.Service
       const memory = makeMemory()
-      const alive = yield* session.create({ location })
+      const alive = yield* session.create({ location, agent: rootAgent })
       yield* memory.live.addMemory({ id: "m1", kind: "entity", text: "still mine", scope: `session:${alive.id}` })
 
       yield* SessionMemoryCleanup.request(db, alive.id)
@@ -201,7 +214,7 @@ describe("the sweep itself", () => {
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
       const { db } = yield* Database.Service
-      const created = yield* session.create({ location })
+      const created = yield* session.create({ location, agent: rootAgent })
       yield* SessionMemoryCleanup.request(db, created.id)
       yield* SessionMemoryCleanup.request(db, created.id)
       expect((yield* SessionMemoryCleanup.pending(db)).length).toBe(1)

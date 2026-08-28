@@ -25,8 +25,7 @@ afterEach(async () => {
   await disposeAllInstances()
 })
 
-const tmp = (name: string) =>
-  fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `novaclaw-httpprojwrite-${name}-`)))
+const tmp = (name: string) => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `novaclaw-httpprojwrite-${name}-`)))
 
 const post = (directory: string, body: unknown) =>
   requestInDirectory(ExperimentalPaths.project, directory, {
@@ -437,7 +436,7 @@ describe("POST /api/project — the folder's policy list", () => {
     }),
   )
 
-  it.effect("removing the last entry CLEARS the section rather than leaving `\"policies\": []`", () =>
+  it.effect('removing the last entry CLEARS the section rather than leaving `"policies": []`', () =>
     Effect.gen(function* () {
       const directory = tmp("policies-clear")
       fs.writeFileSync(at(directory), JSON.stringify({ version: 1, name: "Acme", policies: ["house-style"] }))

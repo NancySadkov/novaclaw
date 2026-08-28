@@ -119,7 +119,7 @@ describe.skipIf(!installed)("install-time network fetches", () => {
     const script = read(dir, "scripts/postinstall.js")
     expect(script).toBeDefined()
     expect(script).not.toContain("https")
-    expect(script).not.toContain("require(\"http")
+    expect(script).not.toContain('require("http')
   })
 
   test("trustedDependencies is exactly the packages whose install scripts we audited", () => {

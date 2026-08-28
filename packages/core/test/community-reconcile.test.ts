@@ -21,7 +21,9 @@ describe("CommunityReconcile", () => {
     // Shuffled, because two instances hold the same messages in different local orders. If order
     // mattered, agreeing instances would exchange everything on every sync.
     const theirs = [...mine].reverse()
-    expect(CommunityReconcile.differing(CommunityReconcile.summarize(mine), CommunityReconcile.summarize(theirs))).toEqual([])
+    expect(
+      CommunityReconcile.differing(CommunityReconcile.summarize(mine), CommunityReconcile.summarize(theirs)),
+    ).toEqual([])
   })
 
   test("🔴 one message apart touches ONE bucket, not all of them", () => {
@@ -72,10 +74,7 @@ describe("CommunityReconcile", () => {
 
   test("an empty log asks for everything the peer has, and offers nothing back", () => {
     const theirs = ids(0, 50)
-    const buckets = CommunityReconcile.differing(
-      CommunityReconcile.summarize([]),
-      CommunityReconcile.summarize(theirs),
-    )
+    const buckets = CommunityReconcile.differing(CommunityReconcile.summarize([]), CommunityReconcile.summarize(theirs))
     const wanted = CommunityReconcile.missing(CommunityReconcile.idsIn(theirs, buckets), [])
     // The fresh-install case: a new instance joining a channel with history.
     expect(wanted.sort()).toEqual([...theirs].sort())
@@ -152,7 +151,10 @@ describe("what one id answer may cost us (Codex P1)", () => {
      */
     const full = ids(0, 5_000)
     const widest = Math.max(
-      ...Array.from({ length: CommunityReconcile.BUCKETS }, (_, bucket) => CommunityReconcile.idsIn(full, [bucket]).length),
+      ...Array.from(
+        { length: CommunityReconcile.BUCKETS },
+        (_, bucket) => CommunityReconcile.idsIn(full, [bucket]).length,
+      ),
     )
     expect(widest * CommunitySync.BUCKETS_PER_REQUEST).toBeLessThan(CommunityReconcile.MAX_IDS_PER_ANSWER)
   })

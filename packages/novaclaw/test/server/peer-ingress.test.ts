@@ -95,7 +95,9 @@ describe("the anonymous peer doors are bounded (Codex P1)", () => {
     const server = app()
     CommunityConsent.applied({ consented: true, enabled: true }, { enabled: false })
     for (let i = 0; i < CommunityAdmission.PER_SOURCE_PER_MINUTE; i++)
-      await cancelBody(await server.request(CommunityPeerPaths.identity, { headers: { "x-novaclaw-directory": tmp.path } }))
+      await cancelBody(
+        await server.request(CommunityPeerPaths.identity, { headers: { "x-novaclaw-directory": tmp.path } }),
+      )
 
     const refused = await server.request(CommunityPeerPaths.identity, {
       headers: { "x-novaclaw-directory": tmp.path },

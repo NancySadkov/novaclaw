@@ -117,9 +117,7 @@ describe("the five fields that were not components", () => {
     const written = await withRegistry(({ registry, sessionID }) =>
       Effect.gen(function* () {
         const catalog = yield* CatalogStore.Service
-        yield* catalog.setLayers(ProviderV2.ID.make("local"), [
-          { id: "local", models: { "tiny-1": {} } } as never,
-        ])
+        yield* catalog.setLayers(ProviderV2.ID.make("local"), [{ id: "local", models: { "tiny-1": {} } } as never])
         return yield* registry.put({ sessionID, kind: "model", value: { providerID: "local", id: "tiny-1" } })
       }),
     )

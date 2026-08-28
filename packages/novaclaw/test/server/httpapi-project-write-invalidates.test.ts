@@ -53,8 +53,7 @@ afterEach(async () => {
   await resetDatabase()
 })
 
-const tmp = (name: string) =>
-  fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `novaclaw-projinval-${name}-`)))
+const tmp = (name: string) => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `novaclaw-projinval-${name}-`)))
 
 const at = (directory: string) => path.join(directory, "novaclaw.json")
 
@@ -183,8 +182,7 @@ describe("POST /api/project invalidates the cache the kernel reads", () => {
           const stale = yield* kernelConfig(id, directory)
           // The entry went cold before we could use it — inconclusive, not a defect. (If invalidation
           // itself were broken this would still read `undefined`; what fails then is step 4.)
-          if (stale.project !== undefined)
-            return inconclusive("the warm entry expired before the control read")
+          if (stale.project !== undefined) return inconclusive("the warm entry expired before the control read")
           expect(stale.resolved["introspection"]).toBeUndefined()
 
           // ── 3. Now write through the ROUTE, which invalidates what it believes is the kernel's cache.
@@ -206,9 +204,7 @@ describe("POST /api/project invalidates the cache the kernel reads", () => {
           // The whole exchange has to fit inside the freshness bound, or step 4 could have been a
           // plain TTL expiry wearing an invalidation's clothes. Reported rather than assumed.
           const elapsed = Date.now() - warmedAt
-          return elapsed < 1000
-            ? conclusive
-            : inconclusive(`the round trip took ${elapsed} ms, past the 1000 ms TTL`)
+          return elapsed < 1000 ? conclusive : inconclusive(`the round trip took ${elapsed} ms, past the 1000 ms TTL`)
         }),
       ),
     60_000,
@@ -240,9 +236,7 @@ describe("POST /api/project invalidates the cache the kernel reads", () => {
           expect(fresh.resolved["quality"]).toBe(true)
 
           const elapsed = Date.now() - warmedAt
-          return elapsed < 1000
-            ? conclusive
-            : inconclusive(`the round trip took ${elapsed} ms, past the 1000 ms TTL`)
+          return elapsed < 1000 ? conclusive : inconclusive(`the round trip took ${elapsed} ms, past the 1000 ms TTL`)
         }),
       ),
     60_000,

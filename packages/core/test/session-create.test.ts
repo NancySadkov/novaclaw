@@ -47,6 +47,16 @@ const it = testEffect(
   ),
 )
 const location = Location.Ref.make({ directory: AbsolutePath.make("/project") })
+/**
+ * 🔴 NC-SEC-020 — a ROOT names the agent it runs as; there is no anonymous chat.
+ *
+ * `build` rather than a colleague, deliberately: it records the POSTURE this chat runs in, which is
+ * the ordinary production case (the one-live-root index measures 55–98 live `build` roots on the
+ * owner's own instances). It also keeps these tests' semantics exactly as they were — a posture is
+ * excluded from the canonical `ses_<agent>` id and from the one-chat-per-colleague guard, so ids and
+ * idempotence below still mean what they meant.
+ */
+const agent = AgentV2.ID.make("build")
 const id = SessionV2.ID.create()
 
 // A command-injecting harness for SessionV2.command: the location graph's CommandV2 is
@@ -89,8 +99,8 @@ describe("SessionV2.create", () => {
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
 
-      const first = yield* session.create({ location })
-      const second = yield* session.create({ location })
+      const first = yield* session.create({ location, agent })
+      const second = yield* session.create({ location, agent })
 
       expect(second.id).not.toBe(first.id)
       expect(yield* session.list()).toHaveLength(2)
@@ -100,7 +110,7 @@ describe("SessionV2.create", () => {
   it.effect("returns the original session when the ID is retried", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
-      const input = { id, location }
+      const input = { id, location, agent }
 
       const first = yield* session.create(input)
       const retried = yield* session.create(input)
@@ -133,13 +143,14 @@ describe("SessionV2.create", () => {
   it.effect("returns the existing Session when one ID is reused with different create arguments", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
-      const created = yield* session.create({ id, location })
+      const created = yield* session.create({ id, location, agent })
       const changed = [
-        { id, location: Location.Ref.make({ directory: AbsolutePath.make("/other") }) },
+        { id, location: Location.Ref.make({ directory: AbsolutePath.make("/other") }), agent },
         { id, location, agent: AgentV2.ID.make("build") },
         {
           id,
           location,
+          agent,
           model: ModelV2.Ref.make({ id: ModelV2.ID.make("sonnet"), providerID: ProviderV2.ID.anthropic }),
         },
       ]
@@ -154,7 +165,7 @@ describe("SessionV2.create", () => {
   it.effect("returns one recorded session to concurrent exact retries", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
-      const input = { id, location }
+      const input = { id, location, agent }
 
       const created = yield* Effect.all([session.create(input), session.create(input)], { concurrency: "unbounded" })
 
@@ -167,7 +178,7 @@ describe("SessionV2.create", () => {
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
       const { db } = yield* Database.Service
-      const input = { id, location }
+      const input = { id, location, agent }
       const created = yield* session.create(input)
 
       yield* db.update(SessionTable).set({ agent: "build" }).where(eq(SessionTable.id, id)).run().pipe(Effect.orDie)
@@ -180,7 +191,7 @@ describe("SessionV2.create", () => {
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
       const events = yield* EventV2.Service
-      const input = { id, location }
+      const input = { id, location, agent }
       const created = yield* session.create(input)
 
       yield* events.publish(SessionRecordEvent.Updated, {
@@ -206,7 +217,7 @@ describe("SessionV2.create", () => {
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
       const { db } = yield* Database.Service
-      const created = yield* session.create({ location })
+      const created = yield* session.create({ location, agent })
 
       expect(
         yield* db.select().from(EventTable).where(eq(EventTable.aggregate_id, created.id)).all().pipe(Effect.orDie),
@@ -218,7 +229,7 @@ describe("SessionV2.create", () => {
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
       const { db } = yield* Database.Service
-      const created = yield* session.create({ id, location })
+      const created = yield* session.create({ id, location, agent })
 
       expect(
         yield* db.select().from(EventTable).where(eq(EventTable.aggregate_id, created.id)).get().pipe(Effect.orDie),
@@ -233,7 +244,7 @@ describe("SessionV2.create", () => {
       const session = yield* SessionV2.Service
       const events = yield* EventV2.Service
       const { db } = yield* Database.Service
-      const created = yield* session.create({ location })
+      const created = yield* session.create({ location, agent })
       yield* session.prompt({ sessionID: created.id, prompt: Prompt.make({ text: "Hello" }), resume: false })
       yield* SessionInput.promoteSteers(db, events, created.id, Number.MAX_SAFE_INTEGER)
 
@@ -251,7 +262,7 @@ describe("SessionV2.create", () => {
       const session = yield* SessionV2.Service
       const sourceEvents = yield* EventV2.Service
       const sourceDb = (yield* Database.Service).db
-      const created = yield* session.create({ id: SessionV2.ID.make("ses_fresh_target_replay"), location })
+      const created = yield* session.create({ id: SessionV2.ID.make("ses_fresh_target_replay"), location, agent })
       const admitted = yield* session.prompt({
         sessionID: created.id,
         prompt: Prompt.make({ text: "Replay lifecycle" }),
@@ -334,14 +345,14 @@ describe("SessionV2.create", () => {
       const defect = new Error("unrelated projector defect")
       yield* event.project(SessionRecordEvent.Created, () => Effect.die(defect))
 
-      expect(yield* session.create({ id, location }).pipe(Effect.catchDefect(Effect.succeed))).toBe(defect)
+      expect(yield* session.create({ id, location, agent }).pipe(Effect.catchDefect(Effect.succeed))).toBe(defect)
     }),
   )
 
   it.effect("reports unfinished Session operations as unavailable", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
-      const created = yield* session.create({ location })
+      const created = yield* session.create({ location, agent })
       const unavailable = (
         effect: Effect.Effect<void, SessionV2.NotFoundError | SessionV2.OperationUnavailableError>,
       ) =>
@@ -363,6 +374,7 @@ describe("SessionV2.create", () => {
       const session = yield* SessionV2.Service
       const created = yield* session.create({
         location: Location.Ref.make({ directory: AbsolutePath.make(dir.path) }),
+        agent,
       })
 
       const messageID = yield* session.shell({ sessionID: created.id, command: "echo novaclaw-shell-smoke" })
@@ -393,7 +405,7 @@ describe("SessionV2.create", () => {
   it.effect("switches the selected agent through the durable Session event", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
-      const created = yield* session.create({ location })
+      const created = yield* session.create({ location, agent })
 
       yield* session.switchAgent({ sessionID: created.id, agent: "plan" })
 
@@ -421,7 +433,7 @@ describe("SessionV2.create", () => {
   it.effect("switches the selected model through the durable Session event", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
-      const created = yield* session.create({ location })
+      const created = yield* session.create({ location, agent })
       const model = ModelV2.Ref.make({
         id: ModelV2.ID.make("sonnet"),
         providerID: ProviderV2.ID.anthropic,
@@ -440,7 +452,7 @@ describe("SessionV2.create", () => {
   it.effect("ignores a model switch when the selected model is unchanged", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
-      const created = yield* session.create({ location })
+      const created = yield* session.create({ location, agent })
       const model = ModelV2.Ref.make({ id: ModelV2.ID.make("sonnet"), providerID: ProviderV2.ID.anthropic })
 
       yield* session.switchModel({ sessionID: created.id, model })
@@ -458,7 +470,7 @@ describe("SessionV2.create", () => {
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
       const model = ModelV2.Ref.make({ id: ModelV2.ID.make("sonnet"), providerID: ProviderV2.ID.anthropic })
-      const created = yield* session.create({ location, model })
+      const created = yield* session.create({ location, model, agent })
 
       yield* session.switchModel({
         sessionID: created.id,
@@ -496,7 +508,7 @@ describe("SessionV2.setTitle", () => {
   it.effect("sets the title through the durable legacy Updated event", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
-      const created = yield* session.create({ location })
+      const created = yield* session.create({ location, agent })
 
       yield* session.setTitle({ sessionID: created.id, title: "Renamed session" })
 
@@ -548,7 +560,7 @@ describe("SessionV2.setTitle", () => {
   it.effect("ignores a title update when the title is unchanged", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
-      const created = yield* session.create({ location })
+      const created = yield* session.create({ location, agent })
 
       yield* session.setTitle({ sessionID: created.id, title: "Once" })
       yield* session.setTitle({ sessionID: created.id, title: "Once" })
@@ -580,7 +592,7 @@ describe("SessionV2 setters", () => {
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
       const { db } = yield* Database.Service
-      const created = yield* session.create({ location })
+      const created = yield* session.create({ location, agent })
 
       yield* session.setMetadata({ sessionID: created.id, metadata: { source: "test", pinned: true } })
       yield* session.setMetadata({ sessionID: created.id, metadata: { source: "second" } })
@@ -594,7 +606,7 @@ describe("SessionV2 setters", () => {
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
       const { db } = yield* Database.Service
-      const created = yield* session.create({ location })
+      const created = yield* session.create({ location, agent })
       const before = yield* db
         .select()
         .from(SessionTable)
@@ -630,7 +642,7 @@ describe("SessionV2.children", () => {
   it.effect("lists the direct children of a parent session", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
-      const parent = yield* session.create({ location })
+      const parent = yield* session.create({ location, agent })
       const first = yield* session.create({ location, parentID: parent.id })
       const second = yield* session.create({ location, parentID: parent.id })
       const grandchild = yield* session.create({ location, parentID: first.id })
@@ -704,7 +716,7 @@ describe("SessionV2.fork", () => {
   it.effect("copies strictly before the anchor message (V1 parity)", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
-      const created = yield* session.create({ location })
+      const created = yield* session.create({ location, agent })
       yield* seedTurns(created.id, ["First", "Second"])
       const anchor = (yield* session.messages({ sessionID: created.id })).find(
         (message) => message.type === "user" && message.text === "Second",
@@ -721,7 +733,7 @@ describe("SessionV2.fork", () => {
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
       const { db } = yield* Database.Service
-      const created = yield* session.create({ location })
+      const created = yield* session.create({ location, agent })
       yield* seedTurns(created.id, ["First"])
 
       const forked = yield* session.fork({ sessionID: created.id })
@@ -744,7 +756,7 @@ describe("SessionV2.fork", () => {
   it.effect("rejects an unknown anchor message", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
-      const created = yield* session.create({ location })
+      const created = yield* session.create({ location, agent })
 
       expect(
         yield* session.fork({ sessionID: created.id, messageID: SessionMessage.ID.create() }).pipe(
@@ -774,7 +786,7 @@ describe("SessionV2.remove", () => {
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
       const { db } = yield* Database.Service
-      const created = yield* session.create({ location })
+      const created = yield* session.create({ location, agent })
 
       yield* session.remove(created.id)
 
@@ -797,7 +809,7 @@ describe("SessionV2.remove", () => {
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
       const { db } = yield* Database.Service
-      const parent = yield* session.create({ location })
+      const parent = yield* session.create({ location, agent })
       const child = yield* session.create({ location, parentID: parent.id })
       const grandchild = yield* session.create({ location, parentID: child.id })
 
@@ -815,10 +827,10 @@ describe("SessionV2.remove", () => {
   it.effect("allows re-creating a session under a removed ID", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
-      const created = yield* session.create({ id, location })
+      const created = yield* session.create({ id, location, agent })
 
       yield* session.remove(created.id)
-      const recreated = yield* session.create({ id, location })
+      const recreated = yield* session.create({ id, location, agent })
 
       expect(recreated.id).toBe(created.id)
       expect(yield* session.list()).toHaveLength(1)
@@ -850,6 +862,7 @@ describe("SessionV2.command", () => {
       const session = yield* SessionV2.Service
       const created = yield* session.create({
         location: Location.Ref.make({ directory: AbsolutePath.make(dir.path) }),
+        agent,
       })
 
       // "Hi $1 from !`echo bot`" with args "world" -> "$1" resolves to "world" and the
@@ -870,6 +883,7 @@ describe("SessionV2.command", () => {
       const session = yield* SessionV2.Service
       const created = yield* session.create({
         location: Location.Ref.make({ directory: AbsolutePath.make(dir.path) }),
+        agent,
       })
 
       // The "review" command declares agent "plan"; running it switches the session's agent
@@ -888,6 +902,7 @@ describe("SessionV2.command", () => {
       const session = yield* SessionV2.Service
       const created = yield* session.create({
         location: Location.Ref.make({ directory: AbsolutePath.make(dir.path) }),
+        agent,
       })
 
       // The "spawn" command sets subtask: true, so it spawns a CHILD session (not a prompt to

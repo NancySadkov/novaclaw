@@ -184,7 +184,7 @@ describe("DbRegistry", () => {
       yield* DbRegistry.insertRow({
         table: "data_migration",
         values: { name: "agent-write-probe", time_completed: 1 },
-      writer: "agent",
+        writer: "agent",
       })
       expect(
         (yield* DbRegistry.rows({ table: "data_migration" })).rows.some(

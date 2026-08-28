@@ -64,7 +64,6 @@ const stranger = () => {
   return `nid_${raw.toString("base64url")}`
 }
 
-
 let port = 30_000
 /**
  * 🔴 Engagement, as peer exchange really supplies it. `record` refuses a subject this instance has
@@ -79,7 +78,11 @@ const met = (peers: CommunityPeers.Interface, networkID: string) =>
 
 const ctx = { sessionID: "ses", agent: "build", assistantMessageID: "msg", toolCallID: "c1" } as any
 const invoke = (input: unknown) =>
-  Tool.settle(registered["community"]!, { id: "c1", name: "community", input } as never, ctx) as unknown as Effect.Effect<{
+  Tool.settle(
+    registered["community"]!,
+    { id: "c1", name: "community", input } as never,
+    ctx,
+  ) as unknown as Effect.Effect<{
     readonly structured: { readonly message: string }
   }>
 
@@ -157,7 +160,6 @@ describe("the agent can keep its own record", () => {
       expect(out.structured.message).toContain("needs")
     }),
   )
-
 
   it.effect("🔴 a stranger's words cannot manufacture a record about a THIRD party", () =>
     Effect.gen(function* () {

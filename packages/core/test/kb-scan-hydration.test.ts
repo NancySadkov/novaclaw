@@ -16,13 +16,7 @@ import { fileURLToPath } from "node:url"
 // the read paths select ids and hydrate by key. A/B: put `m.text AS text` back into `list`'s
 // selection query and this file goes red.
 
-const ENGINE = path.join(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "src",
-  "kb-graph",
-  "wasm-engine.ts",
-)
+const ENGINE = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "kb-graph", "wasm-engine.ts")
 const source = readFileSync(ENGINE, "utf8")
 
 /** The body of one method, from its signature to the next one at the same indent. */

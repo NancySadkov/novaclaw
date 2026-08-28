@@ -56,7 +56,9 @@ const at = Location.Service.of(location({ directory: AbsolutePath.make("/project
 const rosterWith = (fragment: Record<string, unknown>) =>
   Effect.gen(function* () {
     const agent = yield* AgentV2.Service
-    yield* AgentPlugin.Plugin.effect(host({ agent: agentHost(agent) })).pipe(Effect.provideService(Location.Service, at))
+    yield* AgentPlugin.Plugin.effect(host({ agent: agentHost(agent) })).pipe(
+      Effect.provideService(Location.Service, at),
+    )
     const store = memoryStore()
     yield* store.setLayers("theron", [Schema.decodeUnknownSync(ConfigAgentSchema.Info)(fragment)])
     yield* ConfigAgentPlugin.Plugin.effect(host({ agent: agentHost(agent) })).pipe(
@@ -67,10 +69,7 @@ const rosterWith = (fragment: Record<string, unknown>) =>
   })
 
 const effectFor = (rules: PermissionV2.Ruleset, action: string, resource = "src/x.ts") =>
-  PermissionV2.evaluate(action, resource, [
-    ...rules,
-    ...MODE_RULES[EFFECTIVE_CONFIG_DEFAULTS.permissionMode],
-  ]).effect
+  PermissionV2.evaluate(action, resource, [...rules, ...MODE_RULES[EFFECTIVE_CONFIG_DEFAULTS.permissionMode]]).effect
 
 describe("a colleague the user hired", () => {
   it.effect("stands on the SAME floor as a built-in, action for action", () =>

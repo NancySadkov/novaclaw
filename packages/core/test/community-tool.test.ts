@@ -128,8 +128,7 @@ describe("what the tool deliberately CANNOT do", () => {
      * ⚠️ And the concession is paid for: `say` asserts `community_say`, scoped per channel, so it is
      * a thing the user DELEGATES rather than a capability the model holds while reading strangers.
      */
-    for (const forbidden of ["block", "add", "forget", "join", "leave", "rotate"])
-      expect(ops).not.toContain(forbidden)
+    for (const forbidden of ["block", "add", "forget", "join", "leave", "rotate"]) expect(ops).not.toContain(forbidden)
     /**
      * 🔴 And it cannot reach the user's FILTERS, in either direction.
      *

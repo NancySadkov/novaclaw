@@ -104,7 +104,8 @@ const CLAIMS: readonly string[] = [
   "durably closes partial ${kind} when the provider stream is interrupted",
   "rejects duplicate streamed text starts",
   "transitions streamed raw tool input to parsed called input",
-  "rejects malformed streamed tool input ordering",]
+  "rejects malformed streamed tool input ordering",
+]
 
 const OLD_SUITE = "session-runner.test.ts"
 

@@ -178,7 +178,8 @@ describe("a locked path is `unreadable`, never `absent`", () => {
     // The tests above drive an injected resolver, which proves the POLICY. This drives the production
     // decision itself, which is the line that was wrong: without it the suite would pass on a module
     // that still folded EACCES into "missing", because the seam would never produce an `UNREADABLE`.
-    for (const code of ["ENOENT", "ENOTDIR"]) expect({ code, out: Recipe.fromStatError(code) }).toEqual({ code, out: null })
+    for (const code of ["ENOENT", "ENOTDIR"])
+      expect({ code, out: Recipe.fromStatError(code) }).toEqual({ code, out: null })
     for (const code of ["EACCES", "EPERM", "ELOOP", "EIO", "EBUSY", undefined, "SOMETHING_NEW"])
       expect({ code, out: Recipe.fromStatError(code) }).toEqual({ code, out: Recipe.UNREADABLE })
   })
@@ -197,7 +198,6 @@ describe("a locked path is `unreadable`, never `absent`", () => {
     expect(Recipe.resolveCommand(path.join(real, "child.exe"))).toBeNull()
   })
 })
-
 
 describe("unmetMessage — the refusal a normal person reads", () => {
   const checks = (resolve: (candidate: string) => string | null, facts: string[]) => Recipe.checkNeeds(facts, resolve)
@@ -335,6 +335,13 @@ describe("the door: recipe.run checks before it cooks", () => {
     const raises = source.includes("if (unmet !== undefined) return yield* new InvalidRequestError({ message: unmet })")
     expect({ raises }).toEqual({ raises: true })
     expect(at("if (unmet !== undefined)")).toBeLessThan(at("Recipe.materialize("))
-    expect(at("if (unmet !== undefined)")).toBeLessThan(at("sessions.create("))
+    /**
+     * ⚠️ `.create({` rather than `sessions.create(`, and the difference is not cosmetic. The needle
+     * was the latter until NC-SEC-020 wrapped both creates in `.pipe(Effect.orDie)` — prettier then
+     * broke `sessions` onto its own line and the needle stopped matching, failing a real ordering
+     * guard for a formatting reason. A needle that a line break can defeat is measuring the
+     * formatter, not the order.
+     */
+    expect(at("if (unmet !== undefined)")).toBeLessThan(at(".create({"))
   })
 })

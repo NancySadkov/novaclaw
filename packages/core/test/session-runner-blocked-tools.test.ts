@@ -319,7 +319,11 @@ describe("SessionRunnerLLM — tools blocked when the turn ends", () => {
               questions.ask({ sessionID: context.sessionID, questions: [] }).pipe(Effect.as({}), Effect.orDie),
           }),
         })
-        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Ask then stop" }), resume: false })
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Ask then stop" }),
+          resume: false,
+        })
 
         const run = yield* session.resume(HARNESS_SESSION).pipe(Effect.exit, Effect.forkChild)
         let pending = yield* questions.list()

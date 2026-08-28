@@ -20,7 +20,9 @@ import { testEffect } from "./lib/effect"
  */
 
 const it = testEffect(
-  LayerNode.compile(LayerNode.group([Database.node, InstanceIdentityStore.node, CommunityContacts.node, CommunityOffer.node])),
+  LayerNode.compile(
+    LayerNode.group([Database.node, InstanceIdentityStore.node, CommunityContacts.node, CommunityOffer.node]),
+  ),
 )
 
 /**
@@ -187,7 +189,6 @@ describe("CommunityOffer", () => {
     }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
   )
 
-
   it.effect("🔴 the PAYMENT ADDRESS is under the signature — the most profitable edit there is", () =>
     Effect.gen(function* () {
       /**
@@ -215,7 +216,6 @@ describe("CommunityOffer", () => {
       expect(CommunityOffer.verify(unpaid)).toBe(true)
     }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
   )
-
 
   it.effect("🔴 an offer is BOUNDED — it is re-verified on every read", () =>
     Effect.gen(function* () {
@@ -248,7 +248,6 @@ describe("CommunityOffer", () => {
     }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
   )
 
-
   it.effect("🔴 the offer STORE is bounded — a row costs a keypair and is re-verified on every read", () =>
     Effect.gen(function* () {
       /**
@@ -279,7 +278,10 @@ describe("CommunityOffer", () => {
         return { id: `nid_${key.toString("base64url")}`, document: "{}" }
       })
       for (let start = 0; start < rows.length; start += 200)
-        yield* db.insert(CommunityOfferTable).values(rows.slice(start, start + 200)).run()
+        yield* db
+          .insert(CommunityOfferTable)
+          .values(rows.slice(start, start + 200))
+          .run()
 
       // One more real offer trips the trim.
       expect(yield* offers.learn(stranger("https://last.example/v1"))).toBe(true)
@@ -295,7 +297,6 @@ describe("CommunityOffer", () => {
       expect((yield* offers.known()).map((offer) => offer.endpoint)).toContain("https://friend.example/v1")
     }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
   )
-
 
   it.effect("🔴 an offer from a BLOCKED peer is not collected", () =>
     Effect.gen(function* () {
@@ -330,7 +331,6 @@ describe("CommunityOffer", () => {
       expect(yield* offers.learn(theirs)).toBe(false)
     }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
   )
-
 
   it.effect("🔴 an endpoint must be an http(s) URL — it decides what our own SERVER opens", () =>
     Effect.gen(function* () {
@@ -377,7 +377,6 @@ describe("CommunityOffer", () => {
       }
     }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
   )
-
 
   it.effect("🔴 an endpoint that READS as one host and REACHES another is refused", () =>
     Effect.gen(function* () {
@@ -426,7 +425,6 @@ describe("CommunityOffer", () => {
     }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
   )
 
-
   it.effect("🔴 the PAYMENT ADDRESS is what the user pastes, so it must read as it copies", () =>
     Effect.gen(function* () {
       /**
@@ -468,7 +466,6 @@ describe("CommunityOffer", () => {
     }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
   )
 
-
   it.effect("🔴 an offer the CURRENT rules refuse is reported, not silently withdrawn", () =>
     Effect.gen(function* () {
       /**
@@ -509,5 +506,4 @@ describe("CommunityOffer", () => {
       expect(yield* offers.mine()).toBeUndefined()
     }).pipe(Effect.provide(CredentialCipher.defaultLayer)),
   )
-
 })

@@ -86,7 +86,8 @@ const withTool = <A, E, R>(
         Effect.provide(
           AppNodeBuilder.build(LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, RecipeTool.node]), [
             [Global.node, Global.layerWith({ data: tmp.path })],
-            [ToolOutputStore.node, outputStore], [ToolPolicyGate.node, bypassedPolicyGate],
+            [ToolOutputStore.node, outputStore],
+            [ToolPolicyGate.node, bypassedPolicyGate],
             [PermissionV2.node, permission],
             [Config.node, configStub],
           ]),

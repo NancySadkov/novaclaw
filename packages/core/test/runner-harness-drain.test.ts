@@ -3,7 +3,14 @@ import { Effect } from "effect"
 import { EventV2 } from "@novaclaw/core/event"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
-import { HARNESS_SESSION, completeTurn, drive, makeLatch, makeRunnerHarness, type RunnerHarness } from "./fixture/runner-harness"
+import {
+  HARNESS_SESSION,
+  completeTurn,
+  drive,
+  makeLatch,
+  makeRunnerHarness,
+  type RunnerHarness,
+} from "./fixture/runner-harness"
 
 /**
  * S2's ADMISSION TEST. Not a ported claim — the thing that must be true before any claim can be
@@ -181,4 +188,3 @@ describe("hidden startup work is interruptible", () => {
     expect(harness.requests, "interrupting during startup must not reach the provider").toHaveLength(0)
   })
 })
-

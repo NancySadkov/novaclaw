@@ -29,9 +29,7 @@ describe("whether a reassignment happened at all", () => {
   test("unset → the same colleague's scratch path is NOT a move", () => {
     // A user who picks the scratch folder explicitly has not moved the colleague anywhere, and a
     // message about nothing trains them to ignore the ones that mean something.
-    expect(
-      AgentWorkspace.moved({ agentID: "theron", from: undefined, to: Scratch.forAgent("theron") }),
-    ).toBe(false)
+    expect(AgentWorkspace.moved({ agentID: "theron", from: undefined, to: Scratch.forAgent("theron") })).toBe(false)
   })
 
   test("a real change IS a move, in both directions", () => {

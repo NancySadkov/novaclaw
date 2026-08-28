@@ -107,7 +107,11 @@ describe("SessionRunnerLLM — step allowance", () => {
           }),
         )
         const session = yield* SessionV2.Service
-        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Start work" }), resume: false })
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Start work" }),
+          resume: false,
+        })
 
         const run = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
         yield* Effect.promise(() => streamStarted.promise)

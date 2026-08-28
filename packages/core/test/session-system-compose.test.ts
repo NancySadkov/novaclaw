@@ -29,13 +29,7 @@ describe("SystemCompose — per-model pre-prompt composition", () => {
   const baseParts: Required<
     Omit<
       SystemCompose.SystemPromptParts,
-      | "modelPrePrompt"
-      | "projectScope"
-      | "toolDiscovery"
-      | "perception"
-      | "memoryStance"
-      | "workspace"
-      | "delegation"
+      "modelPrePrompt" | "projectScope" | "toolDiscovery" | "perception" | "memoryStance" | "workspace" | "delegation"
     >
   > = {
     persona: "You are Nova.",
@@ -155,7 +149,6 @@ describe("toolDiscoverySection — the model must know its tool list is partial"
     expect(SystemCompose.toolDiscoverySection(0)).toBeUndefined()
     expect(SystemCompose.toolDiscoverySection(-1)).toBeUndefined()
   })
-
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -219,7 +212,9 @@ describe("perceptionSection — the model must know it can see", () => {
     expect(SystemCompose.perceptionSection({ capabilities: { input: ["image/png"] }, canSpawn: false })).toBeDefined()
     // A near-miss must NOT match: "images" is fine (prefix), "imagination" would be too — so pin the
     // real negative instead, a modality that merely shares no prefix.
-    expect(SystemCompose.perceptionSection({ capabilities: { input: ["audio", "pdf"] }, canSpawn: false })).toBeUndefined()
+    expect(
+      SystemCompose.perceptionSection({ capabilities: { input: ["audio", "pdf"] }, canSpawn: false }),
+    ).toBeUndefined()
   })
 
   // 🔴 The owner's requirement: a folder of photos must not clobber the parent's context. The

@@ -137,9 +137,9 @@ describe("the toggle, through the route Settings actually calls", () => {
 
         // 🔴 And back on again, through the same route. A switch that only worked in the disabling
         // direction is a one-way door.
-        expect((yield* patchConfig(test.directory, { tool_policy: { "git-no-pager": { enabled: true } } })).status).toBe(
-          200,
-        )
+        expect(
+          (yield* patchConfig(test.directory, { tool_policy: { "git-no-pager": { enabled: true } } })).status,
+        ).toBe(200)
         expect((yield* read(test.directory)).installed.find((e) => e.id === "git-no-pager")?.enabled).toBe(true)
       }),
     { git: true, config: { formatter: false } },

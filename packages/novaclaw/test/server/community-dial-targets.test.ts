@@ -46,9 +46,10 @@ describe("what this instance dials on a peer", () => {
   test("🔴 every dialled path is one a stranger may reach without credentials", () => {
     const publicPaths = new Set<string>(Object.values(CommunityPeerPaths))
     for (const [name, path] of DIALLED)
-      expect(publicPaths.has(path), `${name} dials ${path}, which is NOT in CommunityPeerPaths — a peer with a password would refuse it`).toBe(
-        true,
-      )
+      expect(
+        publicPaths.has(path),
+        `${name} dials ${path}, which is NOT in CommunityPeerPaths — a peer with a password would refuse it`,
+      ).toBe(true)
   })
 
   test("🔴 the collection above is COMPLETE — a new dial target cannot be omitted from it", () => {

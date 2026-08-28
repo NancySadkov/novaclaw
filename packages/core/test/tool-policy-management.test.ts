@@ -264,9 +264,7 @@ describe("a folder that declared a policy the user then switched off", () => {
     const message = await withHarness(
       ({ registry, gate, settings }) =>
         Effect.gen(function* () {
-          yield* gate
-            .install([provider("opt-in-guard", { type: "allow" }, { alwaysOn: false })])
-            .pipe(Effect.orDie)
+          yield* gate.install([provider("opt-in-guard", { type: "allow" }, { alwaysOn: false })]).pipe(Effect.orDie)
           yield* settings.set("tool_policy", { "opt-in-guard": { enabled: false } })
           const settlement = yield* call(registry, "hello")
           return resultText(settlement.result)
@@ -376,9 +374,9 @@ describe("the fold from stored switches to the OFF set", () => {
     expect([...ToolPolicy.disabledPolicies([{ a: { enabled: false } }, { a: { enabled: true } }])]).toEqual([])
     expect([...ToolPolicy.disabledPolicies([{ a: { enabled: true } }, { a: { enabled: false } }])]).toEqual(["a"])
     // Untouched ids are carried through rather than reset by the later document.
-    expect(
-      [...ToolPolicy.disabledPolicies([{ a: { enabled: false }, b: { enabled: false } }, { a: { enabled: true } }])],
-    ).toEqual(["b"])
+    expect([
+      ...ToolPolicy.disabledPolicies([{ a: { enabled: false }, b: { enabled: false } }, { a: { enabled: true } }]),
+    ]).toEqual(["b"])
   })
 })
 

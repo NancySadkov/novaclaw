@@ -73,10 +73,45 @@ const declaredMethods = (source: string): string[] => {
  * exactly where a service method is most ordinarily named.
  */
 const FRAMEWORK = new Set([
-  "Effect", "Layer", "Schema", "Option", "Either", "Cause", "Exit", "Fiber", "Stream", "Chunk",
-  "Duration", "Clock", "Console", "Context", "Ref", "Deferred", "Queue", "Scope", "Predicate",
-  "Array", "Record", "String", "Number", "Boolean", "Object", "JSON", "Math", "Promise", "Date",
-  "Order", "Equal", "Hash", "Struct", "Tuple", "Data", "Match", "Config", "Logger", "Metric",
+  "Effect",
+  "Layer",
+  "Schema",
+  "Option",
+  "Either",
+  "Cause",
+  "Exit",
+  "Fiber",
+  "Stream",
+  "Chunk",
+  "Duration",
+  "Clock",
+  "Console",
+  "Context",
+  "Ref",
+  "Deferred",
+  "Queue",
+  "Scope",
+  "Predicate",
+  "Array",
+  "Record",
+  "String",
+  "Number",
+  "Boolean",
+  "Object",
+  "JSON",
+  "Math",
+  "Promise",
+  "Date",
+  "Order",
+  "Equal",
+  "Hash",
+  "Struct",
+  "Tuple",
+  "Data",
+  "Match",
+  "Config",
+  "Logger",
+  "Metric",
 ])
 
 /**
@@ -106,8 +141,7 @@ const calls = (source: string, method: string): boolean => {
  * to have a method of the same name. A real caller must first GET the service, and the only way to
  * do that is through this namespace — so a file that never mentions it cannot be calling into it.
  */
-const namespaceOf = (source: string): string | undefined =>
-  /export \* as (\w+) from/.exec(source)?.[1]
+const namespaceOf = (source: string): string | undefined => /export \* as (\w+) from/.exec(source)?.[1]
 
 /** Every .ts file under src, minus the file that declares the method. */
 const sourcesExcept = (exclude: string): string[] => {
@@ -121,8 +155,7 @@ const sourcesExcept = (exclude: string): string[] => {
        * are components, so a capability used ONLY from the UI read as an orphan here and would have
        * been reported as dead code to whoever came to prune it. `community/address.ts` was flagged
        * the moment the Community panel became its only external caller.
-       */
-      else if (
+       */ else if (
         (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx")) &&
         !entry.name.endsWith(".test.ts") &&
         !entry.name.endsWith(".test.tsx") &&

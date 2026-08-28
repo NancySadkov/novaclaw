@@ -65,8 +65,7 @@ const DOORS: Record<keyof typeof CommunityPeerPaths, "caller" | "content" | "ano
  * a guard once fired on prose explaining why a call was absent, and before that a comment described
  * a DM blocking check that had never been implemented. **A comment is not evidence.**
  */
-const strip = (text: string) =>
-  text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
+const strip = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
 
 const handlers = readFileSync(
   new URL("../../src/server/routes/instance/httpapi/handlers/community.ts", import.meta.url),

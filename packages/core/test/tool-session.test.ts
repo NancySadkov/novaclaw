@@ -79,7 +79,8 @@ const withTool = <A, E, R>(
           EventV2.node,
         ]),
         [
-          [ToolOutputStore.node, outputStore], [ToolPolicyGate.node, bypassedPolicyGate],
+          [ToolOutputStore.node, outputStore],
+          [ToolPolicyGate.node, bypassedPolicyGate],
           [PermissionV2.node, permissionLayer],
         ],
       ),

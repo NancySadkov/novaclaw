@@ -172,7 +172,7 @@ describe("Observability's file logger", () => {
     expect(report.guardedLogger).toBe("stderr")
     // …and the line really went to stderr, through the production logfmt formatter. Verifying the
     // CONTENT, not merely that something was written.
-    expect(stderr).toContain("message=\"boot-degrade probe reached the logger\"")
+    expect(stderr).toContain('message="boot-degrade probe reached the logger"')
     expect(stderr).toContain("level=INFO")
     // ⚠️ "write", not "open": Phase 2's writer degrades on the first failing WRITE as well as on a
     // failing open, and one wording covers both. A message that only said "could not open" would be

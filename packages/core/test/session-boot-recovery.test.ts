@@ -1,3 +1,4 @@
+import { AgentV2 } from "@novaclaw/core/agent"
 import { describe, expect, test } from "bun:test"
 import { DateTime, Deferred, Duration, Effect, Layer } from "effect"
 import { Database } from "@novaclaw/core/database/database"
@@ -42,6 +43,13 @@ import { tmpdir } from "./fixture/tmpdir"
  * Both now live in `session/boot-recovery.ts`, started where an instance adopts an executor. The
  * first test is the one that matters: it restarts a real graph over a real database file.
  */
+
+/**
+ * 🔴 NC-SEC-020 — a ROOT names the agent it runs as; there is no anonymous chat. `build` records the
+ * POSTURE this chat runs in, which is the ordinary production case and keeps these tests' semantics
+ * unchanged: a posture is excluded from the canonical `ses_<agent>` id and from the one-chat guard.
+ */
+const rootAgent = AgentV2.ID.make("build")
 
 const PROMPT = "the prompt that was accepted before the crash"
 
@@ -162,62 +170,66 @@ const ranWithin = (sessionID: string, window: Duration.Duration) =>
  * measures nothing and passes for it. (Found the honest way: the sweep probe fired once, at 0.)
  */
 describe("a restart does not eat an accepted prompt", () => {
-  bare.live("a second process resumes queued input the first one never promoted", () =>
-    Effect.gen(function* () {
-      const { location, database } = yield* restartFixture
+  bare.live(
+    "a second process resumes queued input the first one never promoted",
+    () =>
+      Effect.gen(function* () {
+        const { location, database } = yield* restartFixture
 
-      // ── process 1 — accepts the prompt, then dies without running it ────────────────────────
-      // Its scope CLOSES before the second graph opens, so the database file is genuinely handed
-      // from one process-shaped lifetime to another; nothing is shared in memory.
-      const sessionID = yield* Effect.scoped(
-        Effect.gen(function* () {
-          const session = yield* SessionV2.Service
-          const created = yield* session.create({ location })
-          yield* queue(created.id)
-          return created.id
-        }).pipe(Effect.provide(deadGraph(database))),
-      )
-      expect(runs).not.toContain(sessionID)
+        // ── process 1 — accepts the prompt, then dies without running it ────────────────────────
+        // Its scope CLOSES before the second graph opens, so the database file is genuinely handed
+        // from one process-shaped lifetime to another; nothing is shared in memory.
+        const sessionID = yield* Effect.scoped(
+          Effect.gen(function* () {
+            const session = yield* SessionV2.Service
+            const created = yield* session.create({ location, agent: rootAgent })
+            yield* queue(created.id)
+            return created.id
+          }).pipe(Effect.provide(deadGraph(database))),
+        )
+        expect(runs).not.toContain(sessionID)
 
-      // ── process 2 — boots over the same database ───────────────────────────────────────────
-      yield* Effect.scoped(
-        Effect.gen(function* () {
-          // Acquiring the service is what BUILDS the layer, exactly as the instance's routes do at
-          // server start. Nothing here prompts, resumes or spawns — the only thing that can start
-          // this session is the boot sweep, so a pass is evidence of the sweep and nothing else.
-          yield* SessionV2.Service
-          // Generous on purpose: the drain builds this directory's Location graph from scratch
-          // (config discovery, agents, tools), which is seconds on Windows and is the same cost
-          // `spawn-wakes-child.test.ts` budgets ten for.
-          expect(yield* ranWithin(sessionID, Duration.seconds(15))).toBe(true)
-        }).pipe(Effect.provide(liveGraph(database))),
-      )
-      expect(runs).toContain(sessionID)
-    }),
+        // ── process 2 — boots over the same database ───────────────────────────────────────────
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            // Acquiring the service is what BUILDS the layer, exactly as the instance's routes do at
+            // server start. Nothing here prompts, resumes or spawns — the only thing that can start
+            // this session is the boot sweep, so a pass is evidence of the sweep and nothing else.
+            yield* SessionV2.Service
+            // Generous on purpose: the drain builds this directory's Location graph from scratch
+            // (config discovery, agents, tools), which is seconds on Windows and is the same cost
+            // `spawn-wakes-child.test.ts` budgets ten for.
+            expect(yield* ranWithin(sessionID, Duration.seconds(15))).toBe(true)
+          }).pipe(Effect.provide(liveGraph(database))),
+        )
+        expect(runs).toContain(sessionID)
+      }),
     30_000,
   )
 
-  bare.live("NEGATIVE CONTROL: a session with no pending input is not woken by a boot", () =>
-    Effect.gen(function* () {
-      const { location, database } = yield* restartFixture
-      // Same two-process shape, same graphs, one difference: nothing was ever queued. If the sweep
-      // woke on session EXISTENCE rather than on pending input, the test above would pass for the
-      // wrong reason and this one would fail.
-      const sessionID = yield* Effect.scoped(
-        Effect.gen(function* () {
-          const session = yield* SessionV2.Service
-          return (yield* session.create({ location })).id
-        }).pipe(Effect.provide(deadGraph(database))),
-      )
+  bare.live(
+    "NEGATIVE CONTROL: a session with no pending input is not woken by a boot",
+    () =>
+      Effect.gen(function* () {
+        const { location, database } = yield* restartFixture
+        // Same two-process shape, same graphs, one difference: nothing was ever queued. If the sweep
+        // woke on session EXISTENCE rather than on pending input, the test above would pass for the
+        // wrong reason and this one would fail.
+        const sessionID = yield* Effect.scoped(
+          Effect.gen(function* () {
+            const session = yield* SessionV2.Service
+            return (yield* session.create({ location, agent: rootAgent })).id
+          }).pipe(Effect.provide(deadGraph(database))),
+        )
 
-      yield* Effect.scoped(
-        Effect.gen(function* () {
-          yield* SessionV2.Service
-          expect(yield* ranWithin(sessionID, Duration.seconds(3))).toBe(false)
-        }).pipe(Effect.provide(liveGraph(database))),
-      )
-      expect(runs).not.toContain(sessionID)
-    }),
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            yield* SessionV2.Service
+            expect(yield* ranWithin(sessionID, Duration.seconds(3))).toBe(false)
+          }).pipe(Effect.provide(liveGraph(database))),
+        )
+        expect(runs).not.toContain(sessionID)
+      }),
     30_000,
   )
 })
@@ -235,8 +247,8 @@ describe("which sessions the sweep hands back", () => {
       const { db } = yield* Database.Service
       const store = yield* SessionStoreService.Service
 
-      const queued = yield* session.create({ location })
-      const steered = yield* session.create({ location })
+      const queued = yield* session.create({ location, agent: rootAgent })
+      const steered = yield* session.create({ location, agent: rootAgent })
       yield* queue(queued.id)
       yield* queue(steered.id, "steer")
 
@@ -258,7 +270,7 @@ describe("which sessions the sweep hands back", () => {
       const events = yield* EventV2.Service
       const store = yield* SessionStoreService.Service
 
-      const promoted = yield* session.create({ location })
+      const promoted = yield* session.create({ location, agent: rootAgent })
       yield* queue(promoted.id)
       // What a completed drain does: promotion is what clears `promoted_seq IS NULL`.
       expect(yield* SessionInput.promoteNextQueued(db, events, promoted.id)).toBe(true)
@@ -276,7 +288,7 @@ describe("which sessions the sweep hands back", () => {
       const { db } = yield* Database.Service
       const store = yield* SessionStoreService.Service
 
-      const handedOff = yield* session.create({ location })
+      const handedOff = yield* session.create({ location, agent: rootAgent })
       yield* session.switchResponder({ sessionID: handedOff.id, responder: "operator" })
       yield* queue(handedOff.id)
 
@@ -301,7 +313,7 @@ describe("which sessions the sweep hands back", () => {
       const session = yield* SessionV2.Service
       const { db } = yield* Database.Service
 
-      const created = yield* session.create({ location })
+      const created = yield* session.create({ location, agent: rootAgent })
       yield* queue(created.id)
 
       // Only `.get` is reached by the config walk; the cast keeps the stub to the one method under

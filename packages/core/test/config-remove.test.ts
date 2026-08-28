@@ -133,7 +133,10 @@ describe("ConfigStoreWrite.remove — layer semantics", () => {
       const catalog = yield* CatalogStore.Service
       const id = ProviderV2.ID.make("spark-holo")
       yield* catalog.setLayers(id, [
-        decodeProvider({ api: { type: "native", settings: {}, url: "http://a/v1" }, models: { "holo3.1": { name: "seeded" } } }),
+        decodeProvider({
+          api: { type: "native", settings: {}, url: "http://a/v1" },
+          models: { "holo3.1": { name: "seeded" } },
+        }),
         decodeProvider({ models: { "holo3.1": { name: "edited" }, keep: { name: "keep" } } }),
       ])
 
@@ -368,33 +371,32 @@ describe("ConfigStoreWrite.remove — a removal is not a reboot (ruling 3)", () 
       yield* settings.set("mcp", MCP_TWO)
       yield* ConfigStoreWrite.apply(
         decodeInfo({
-          providers: { "spark-holo": { api: { type: "native", settings: {}, url: "http://spark/v1" }, models: { m: { name: "M" } } } },
+          providers: {
+            "spark-holo": {
+              api: { type: "native", settings: {}, url: "http://spark/v1" },
+              models: { m: { name: "M" } },
+            },
+          },
         }),
       )
 
       let mcpReloads = 0
       let catalogReloads = 0
       let commandReloads = 0
-      yield* ConfigStoreWrite.registerReload(
-        "mcp",
-        () =>
-          Effect.sync(() => {
-            mcpReloads += 1
-          }),
+      yield* ConfigStoreWrite.registerReload("mcp", () =>
+        Effect.sync(() => {
+          mcpReloads += 1
+        }),
       )
-      yield* ConfigStoreWrite.registerReload(
-        "catalog",
-        () =>
-          Effect.sync(() => {
-            catalogReloads += 1
-          }),
+      yield* ConfigStoreWrite.registerReload("catalog", () =>
+        Effect.sync(() => {
+          catalogReloads += 1
+        }),
       )
-      yield* ConfigStoreWrite.registerReload(
-        "commands",
-        () =>
-          Effect.sync(() => {
-            commandReloads += 1
-          }),
+      yield* ConfigStoreWrite.registerReload("commands", () =>
+        Effect.sync(() => {
+          commandReloads += 1
+        }),
       )
 
       yield* ConfigStoreWrite.remove([["mcp", "servers", "weather"]])

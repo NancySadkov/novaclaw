@@ -127,13 +127,17 @@ describe("the colleague loop is bounded by a mechanism", () => {
       const deliver = handoff(db, events, { [ARIS]: "aris", [THERON]: "theron" })
 
       // aris → theron. Nothing behind it, so this is hop 1.
-      expect((yield* deliver.deliver({ from: ARIS, colleague: "theron", message: "Can you check the ledger?" })).delivered).toBe(true)
+      expect(
+        (yield* deliver.deliver({ from: ARIS, colleague: "theron", message: "Can you check the ledger?" })).delivered,
+      ).toBe(true)
       expect(yield* stampedHops(db, THERON)).toBe(1)
       yield* promote(db, THERON)
 
       // theron → aris. Theron's own inbox now holds a hop-1 message, so its reply is hop 2. If the
       // count restarted here the cap could never be reached and the mechanism would be decorative.
-      expect((yield* deliver.deliver({ from: THERON, colleague: "aris", message: "It balances." })).delivered).toBe(true)
+      expect((yield* deliver.deliver({ from: THERON, colleague: "aris", message: "It balances." })).delivered).toBe(
+        true,
+      )
       expect(yield* stampedHops(db, ARIS)).toBe(2)
     }),
   )

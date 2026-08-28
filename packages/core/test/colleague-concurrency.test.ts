@@ -127,137 +127,129 @@ const admitted = (db: Database.Interface["db"]) =>
     )
 
 describe("a RING of officers terminates", () => {
-  it.effect(
-    "A→B→C→A is refused at the hop that would CLOSE it, and named as a loop",
-    () =>
-      Effect.gen(function* () {
-        ColleagueBound.reset()
-        const { db } = yield* Database.Service
-        const events = yield* EventV2.Service
-        yield* openAll(db)
-        const bridge = handoff(db, events, ROSTER)
+  it.effect("A→B→C→A is refused at the hop that would CLOSE it, and named as a loop", () =>
+    Effect.gen(function* () {
+      ColleagueBound.reset()
+      const { db } = yield* Database.Service
+      const events = yield* EventV2.Service
+      yield* openAll(db)
+      const bridge = handoff(db, events, ROSTER)
 
-        // 🔴 The shape no participant can see. Each colleague passes work to the NEXT one, which is a
-        // perfectly reasonable thing to do, and the loop only exists when you stand outside the ring.
-        const ring = ["aris", "theron", "kallias"] as const
-        let refusal: string | undefined
-        // Bounded well above the cap: if the counter did not survive the circuit this would run to the
-        // limit and the assertion below would catch it, rather than the test hanging.
-        for (let turn = 0; turn < 12; turn++) {
-          const from = ring[turn % ring.length]!
-          const to = ring[(turn + 1) % ring.length]!
-          const outcome = yield* bridge.deliver({ from: SESSION_OF[from]!, colleague: to, message: `pass ${turn}` })
-          if (!outcome.delivered) {
-            refusal = outcome.refused
-            break
-          }
-          yield* promote(db, SESSION_OF[to]!)
+      // 🔴 The shape no participant can see. Each colleague passes work to the NEXT one, which is a
+      // perfectly reasonable thing to do, and the loop only exists when you stand outside the ring.
+      const ring = ["aris", "theron", "kallias"] as const
+      let refusal: string | undefined
+      // Bounded well above the cap: if the counter did not survive the circuit this would run to the
+      // limit and the assertion below would catch it, rather than the test hanging.
+      for (let turn = 0; turn < 12; turn++) {
+        const from = ring[turn % ring.length]!
+        const to = ring[(turn + 1) % ring.length]!
+        const outcome = yield* bridge.deliver({ from: SESSION_OF[from]!, colleague: to, message: `pass ${turn}` })
+        if (!outcome.delivered) {
+          refusal = outcome.refused
+          break
         }
+        yield* promote(db, SESSION_OF[to]!)
+      }
 
-        expect(refusal).toBeDefined()
-        // The way out is still the user — the chain resets when a person speaks, so this is the
-        // mechanism rather than a brush-off.
-        expect(refusal!.toLowerCase()).toContain("user")
-        // 🔴 NAMED AS A LOOP, and that is the point of carrying a path. Refused as "too deep" a ring
-        // sends a model to wait and retry, which is the one thing that cannot help; it also never
-        // tells anybody it WAS a ring. `hops` is a number and cannot tell A→B→C→A from A→B→C→D.
-        expect(refusal!.toLowerCase()).toContain("loop")
-        expect(refusal!.toLowerCase()).not.toContain("limit is")
-        // ⚠️ THREE, and each one is a different fact — this used to be `toBe(HOP_CAP)`.
-        //
-        // Two are the hops that made progress (aris→theron, theron→kallias). The circuit is then cut
-        // at the hop that would CLOSE it — kallias→aris, with aris already on the path — where the
-        // old depth counter would have let a full lap and a half run first ("roughly two laps late").
-        //
-        // The third is the notice to the ORIGINATOR: aris started this chain and is the only
-        // participant that can dissolve it, so it is told the chain came back around. Nothing else
-        // in the field does that, and counting it here is what stops it being quietly dropped.
-        expect(yield* admitted(db)).toBe(3)
-      }).pipe(Effect.timeout(NO_HANG)),
+      expect(refusal).toBeDefined()
+      // The way out is still the user — the chain resets when a person speaks, so this is the
+      // mechanism rather than a brush-off.
+      expect(refusal!.toLowerCase()).toContain("user")
+      // 🔴 NAMED AS A LOOP, and that is the point of carrying a path. Refused as "too deep" a ring
+      // sends a model to wait and retry, which is the one thing that cannot help; it also never
+      // tells anybody it WAS a ring. `hops` is a number and cannot tell A→B→C→A from A→B→C→D.
+      expect(refusal!.toLowerCase()).toContain("loop")
+      expect(refusal!.toLowerCase()).not.toContain("limit is")
+      // ⚠️ THREE, and each one is a different fact — this used to be `toBe(HOP_CAP)`.
+      //
+      // Two are the hops that made progress (aris→theron, theron→kallias). The circuit is then cut
+      // at the hop that would CLOSE it — kallias→aris, with aris already on the path — where the
+      // old depth counter would have let a full lap and a half run first ("roughly two laps late").
+      //
+      // The third is the notice to the ORIGINATOR: aris started this chain and is the only
+      // participant that can dissolve it, so it is told the chain came back around. Nothing else
+      // in the field does that, and counting it here is what stops it being quietly dropped.
+      expect(yield* admitted(db)).toBe(3)
+    }).pipe(Effect.timeout(NO_HANG)),
   )
 })
 
 describe("simultaneous hand-offs", () => {
-  it.effect(
-    "one sender's concurrent sends cannot exceed its allowance",
-    () =>
-      Effect.gen(function* () {
-        ColleagueBound.reset()
-        const { db } = yield* Database.Service
-        const events = yield* EventV2.Service
-        yield* openAll(db)
-        const bridge = handoff(db, events, ROSTER)
+  it.effect("one sender's concurrent sends cannot exceed its allowance", () =>
+    Effect.gen(function* () {
+      ColleagueBound.reset()
+      const { db } = yield* Database.Service
+      const events = yield* EventV2.Service
+      yield* openAll(db)
+      const bridge = handoff(db, events, ROSTER)
 
-        // 🔴 The rate window is a read-modify-write on a Map. Fired sequentially it obviously holds;
-        // fired together, a lost update would let a colleague spend more than its allowance — and the
-        // window exists precisely for a model that has stopped reading and is hammering.
-        const attempts = ColleagueBound.RATE_LIMIT + 6
-        const results = yield* Effect.all(
-          Array.from({ length: attempts }, (_, n) =>
-            bridge.deliver({ from: ARIS, colleague: "theron", message: `burst ${n}` }),
-          ),
-          { concurrency: "unbounded" },
-        )
+      // 🔴 The rate window is a read-modify-write on a Map. Fired sequentially it obviously holds;
+      // fired together, a lost update would let a colleague spend more than its allowance — and the
+      // window exists precisely for a model that has stopped reading and is hammering.
+      const attempts = ColleagueBound.RATE_LIMIT + 6
+      const results = yield* Effect.all(
+        Array.from({ length: attempts }, (_, n) =>
+          bridge.deliver({ from: ARIS, colleague: "theron", message: `burst ${n}` }),
+        ),
+        { concurrency: "unbounded" },
+      )
 
-        const delivered = results.filter((r) => r.delivered).length
-        expect(delivered).toBeLessThanOrEqual(ColleagueBound.RATE_LIMIT)
-        // …and every refusal still SAYS something. A silently dropped hand-off is the shape this
-        // program spent a week removing.
-        for (const result of results.filter((r) => !r.delivered)) expect(result.refused).toBeTruthy()
-        // What was admitted matches what was reported. If these disagree the sender is being told one
-        // thing while the receiver got another.
-        expect(yield* admitted(db)).toBe(delivered)
-      }).pipe(Effect.timeout(NO_HANG)),
+      const delivered = results.filter((r) => r.delivered).length
+      expect(delivered).toBeLessThanOrEqual(ColleagueBound.RATE_LIMIT)
+      // …and every refusal still SAYS something. A silently dropped hand-off is the shape this
+      // program spent a week removing.
+      for (const result of results.filter((r) => !r.delivered)) expect(result.refused).toBeTruthy()
+      // What was admitted matches what was reported. If these disagree the sender is being told one
+      // thing while the receiver got another.
+      expect(yield* admitted(db)).toBe(delivered)
+    }).pipe(Effect.timeout(NO_HANG)),
   )
 
-  it.effect(
-    "two colleagues writing to each OTHER at once both complete",
-    () =>
-      Effect.gen(function* () {
-        ColleagueBound.reset()
-        const { db } = yield* Database.Service
-        const events = yield* EventV2.Service
-        yield* openAll(db)
-        const bridge = handoff(db, events, ROSTER)
+  it.effect("two colleagues writing to each OTHER at once both complete", () =>
+    Effect.gen(function* () {
+      ColleagueBound.reset()
+      const { db } = yield* Database.Service
+      const events = yield* EventV2.Service
+      yield* openAll(db)
+      const bridge = handoff(db, events, ROSTER)
 
-        // 🔴 The deadlock shape. Each delivery READS the sender's transcript and WRITES the
-        // receiver's; run mutually, a lock taken per session in a fixed order would have A holding
-        // aris while waiting for theron and B the reverse. The timeout is what makes that legible —
-        // without it the suite would simply stop.
-        const [a, b] = yield* Effect.all(
-          [
-            bridge.deliver({ from: ARIS, colleague: "theron", message: "from aris" }),
-            bridge.deliver({ from: THERON, colleague: "aris", message: "from theron" }),
-          ],
-          { concurrency: "unbounded" },
-        )
+      // 🔴 The deadlock shape. Each delivery READS the sender's transcript and WRITES the
+      // receiver's; run mutually, a lock taken per session in a fixed order would have A holding
+      // aris while waiting for theron and B the reverse. The timeout is what makes that legible —
+      // without it the suite would simply stop.
+      const [a, b] = yield* Effect.all(
+        [
+          bridge.deliver({ from: ARIS, colleague: "theron", message: "from aris" }),
+          bridge.deliver({ from: THERON, colleague: "aris", message: "from theron" }),
+        ],
+        { concurrency: "unbounded" },
+      )
 
-        expect(a.delivered).toBe(true)
-        expect(b.delivered).toBe(true)
-        expect(yield* admitted(db)).toBe(2)
-      }).pipe(Effect.timeout(NO_HANG)),
+      expect(a.delivered).toBe(true)
+      expect(b.delivered).toBe(true)
+      expect(yield* admitted(db)).toBe(2)
+    }).pipe(Effect.timeout(NO_HANG)),
   )
 
-  it.effect(
-    "a colleague messaging ITSELF is refused, not admitted into its own chat",
-    () =>
-      Effect.gen(function* () {
-        ColleagueBound.reset()
-        const { db } = yield* Database.Service
-        const events = yield* EventV2.Service
-        yield* openAll(db)
-        const bridge = handoff(db, events, ROSTER)
+  it.effect("a colleague messaging ITSELF is refused, not admitted into its own chat", () =>
+    Effect.gen(function* () {
+      ColleagueBound.reset()
+      const { db } = yield* Database.Service
+      const events = yield* EventV2.Service
+      yield* openAll(db)
+      const bridge = handoff(db, events, ROSTER)
 
-        // 🔴 THIS TEST FOUND A REAL HOLE. `ColleagueTool.addressable` filters the sender out of the
-        // roster it offers, and that is the layer a model meets — so the rule READ as though it were
-        // everywhere. It was not: `deliver` admitted a self-message, appending to the conversation the
-        // sender is currently having. An infinite regress it cannot see it is starting, and one the
-        // hop counter cannot bound because every lap looks like a fresh ask.
-        const outcome = yield* bridge.deliver({ from: ARIS, colleague: "aris", message: "note to self" })
-        expect(outcome.delivered).toBe(false)
-        expect(outcome.refused).toContain("is you")
-        // Nothing written. A refusal that still admitted would be the worst of both.
-        expect(yield* admitted(db)).toBe(0)
-      }).pipe(Effect.timeout(NO_HANG)),
+      // 🔴 THIS TEST FOUND A REAL HOLE. `ColleagueTool.addressable` filters the sender out of the
+      // roster it offers, and that is the layer a model meets — so the rule READ as though it were
+      // everywhere. It was not: `deliver` admitted a self-message, appending to the conversation the
+      // sender is currently having. An infinite regress it cannot see it is starting, and one the
+      // hop counter cannot bound because every lap looks like a fresh ask.
+      const outcome = yield* bridge.deliver({ from: ARIS, colleague: "aris", message: "note to self" })
+      expect(outcome.delivered).toBe(false)
+      expect(outcome.refused).toContain("is you")
+      // Nothing written. A refusal that still admitted would be the worst of both.
+      expect(yield* admitted(db)).toBe(0)
+    }).pipe(Effect.timeout(NO_HANG)),
   )
 })

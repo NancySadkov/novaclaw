@@ -97,7 +97,14 @@ const fill = (memory: MemoryClient.Interface, scope: string, ids: readonly strin
     ids,
     (id) =>
       memory
-        .addMemory({ id, kind: "episode", text: `${scope} remembers ${id}`, scope, relation: "staged", source: "ingest" })
+        .addMemory({
+          id,
+          kind: "episode",
+          text: `${scope} remembers ${id}`,
+          scope,
+          relation: "staged",
+          source: "ingest",
+        })
         // ⚠️ Rows written inside one clock tick share a `t_created`, and the policy's TIEBREAK is
         // age — without a gap an ordering assertion is flaky rather than wrong.
         .pipe(Effect.andThen(Effect.sleep("15 millis"))),
@@ -127,7 +134,9 @@ describe("the background loop actually forgets", () => {
         // showing memories that are gone until something else made it re-read.
         const forgotten = outcome.published.filter((event) => event.type === "memory.forgotten")
         expect(forgotten.length).toBe(3)
-        expect(new Set(forgotten.map((event) => (event.data as { mode: string }).mode))).toEqual(new Set(["invalidate"]))
+        expect(new Set(forgotten.map((event) => (event.data as { mode: string }).mode))).toEqual(
+          new Set(["invalidate"]),
+        )
       }),
     60_000,
   )

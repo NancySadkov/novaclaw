@@ -55,8 +55,8 @@ describe("the officer floor and the model's horizon", () => {
   test("a user's later rule still wins — the floor is a floor, not a lock", () => {
     // `findLast`: appending IS overriding. A user who wants their `build` agent spawning says so in
     // config and the tool comes back onto the horizon.
-    expect(
-      whollyDisabled("spawn", [...floorFor(false), { action: "spawn", resource: "*", effect: "allow" }]),
-    ).toBe(false)
+    expect(whollyDisabled("spawn", [...floorFor(false), { action: "spawn", resource: "*", effect: "allow" }])).toBe(
+      false,
+    )
   })
 })

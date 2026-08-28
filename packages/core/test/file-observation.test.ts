@@ -68,9 +68,9 @@ describe("FileObservation", () => {
             coverage: { start: 0, end: 1, total: 3, full: false },
           })
           expect(first).toMatchObject({ coverage: "partial" })
-          expect(
-            yield* service.validate({ token: first?.token, sessionID, target }).pipe(Effect.flip),
-          ).toMatchObject({ reason: "partial" })
+          expect(yield* service.validate({ token: first?.token, sessionID, target }).pipe(Effect.flip)).toMatchObject({
+            reason: "partial",
+          })
           const complete = yield* service.record({
             sessionID,
             target,

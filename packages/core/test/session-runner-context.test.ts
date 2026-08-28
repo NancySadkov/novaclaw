@@ -39,7 +39,9 @@ import {
 
 /** The durable-context part, located by content rather than by index. */
 const durableContext = (parts: readonly { text: string }[] | undefined) =>
-  (parts ?? []).map((part) => part.text).find((text) => text.startsWith("Initial context") || text.startsWith("Replacement context"))
+  (parts ?? [])
+    .map((part) => part.text)
+    .find((text) => text.startsWith("Initial context") || text.startsWith("Replacement context"))
 
 describe("SessionRunnerLLM — durable system context", () => {
   test("admits removed context as a chronological System message", async () => {
@@ -387,9 +389,7 @@ describe("SessionRunnerLLM — durable system context", () => {
     // lowering the removed-context claim documents), so a role filter sees none of them.
     const thirdBody = JSON.stringify((harness.requests[2]?.messages ?? []).map((message) => message.content))
     expect(thirdBody, "the first change is still present").toContain("Changed context")
-    expect(thirdBody, "and the second — collapsing them loses the intermediate state").toContain(
-      "Replacement context",
-    )
+    expect(thirdBody, "and the second — collapsing them loses the intermediate state").toContain("Replacement context")
     expect(types).toContain("model-switched")
     // ③ And the whole thing is rebuildable from events.
     //
@@ -506,10 +506,9 @@ describe("SessionRunnerLLM — durable system context", () => {
     )
 
     const last = harness.requests.at(-1)
-    expect(
-      durableContext(last?.system),
-      "the rebuild could not run, so the last known-good prefix stands",
-    ).toMatch(/^Initial context/)
+    expect(durableContext(last?.system), "the rebuild could not run, so the last known-good prefix stands").toMatch(
+      /^Initial context/,
+    )
     expect(
       JSON.stringify((last?.messages ?? []).map((message) => message.content)),
       "and the change already delivered chronologically is still there",

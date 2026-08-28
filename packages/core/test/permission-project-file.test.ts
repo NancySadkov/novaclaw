@@ -106,7 +106,12 @@ const itBare = testEffect(
       AgentV2.node,
       PermissionV2.node,
     ]),
-    [[Location.node, Layer.succeed(Location.Service, Location.Service.of(location({ directory: AbsolutePath.make(bare) })))]],
+    [
+      [
+        Location.node,
+        Layer.succeed(Location.Service, Location.Service.of(location({ directory: AbsolutePath.make(bare) }))),
+      ],
+    ],
   ),
 )
 
@@ -116,7 +121,14 @@ describe("without a project file", () => {
       const { db } = yield* Database.Service
       yield* db
         .insert(SessionTable)
-        .values({ id: SessionV2.ID.make("ses_test"), slug: "test", directory: bare, title: "test", version: "test", agent: "test" })
+        .values({
+          id: SessionV2.ID.make("ses_test"),
+          slug: "test",
+          directory: bare,
+          title: "test",
+          version: "test",
+          agent: "test",
+        })
         .onConflictDoNothing()
         .run()
         .pipe(Effect.orDie)

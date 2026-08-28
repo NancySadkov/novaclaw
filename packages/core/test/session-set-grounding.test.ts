@@ -37,7 +37,8 @@ describe("it must NOT fire on an honest line", () => {
 
   test("announcing the next file is not describing it", () => {
     // ⭐ The load-bearing exclusion: this is what a model does on every healthy turn.
-    const text = "Next I will open icon_003_r01_c03.png and say what it contains.\nLet me read icon_004_r01_c04.png now."
+    const text =
+      "Next I will open icon_003_r01_c03.png and say what it contains.\nLet me read icon_004_r01_c04.png now."
     expect(UnfinishedSet.describedWithoutOpening(opened, text)).toEqual([])
   })
 
@@ -74,10 +75,9 @@ describe("it MUST fire on the measured fabrication", () => {
   })
 
   test("a mixed answer reports only the ungrounded half", () => {
-    const text = [
-      "icon_001_r01_c01.png: a broken heart.",
-      "icon_060_r03_c20.png: a silver shield with a lion.",
-    ].join("\n")
+    const text = ["icon_001_r01_c01.png: a broken heart.", "icon_060_r03_c20.png: a silver shield with a lion."].join(
+      "\n",
+    )
     expect(UnfinishedSet.describedWithoutOpening(opened, text)).toEqual(["icon_060_r03_c20.png"])
   })
 })

@@ -99,7 +99,7 @@ describe("shouldContinue — every clause is a case that must NOT fire", () => {
     ).toBe(false)
   })
 
-  test("the zero case gets its own sentence, not \"you have opened 0 files\"", () => {
+  test('the zero case gets its own sentence, not "you have opened 0 files"', () => {
     // "You have opened 0 files" invites an argument about whether it was supposed to. Naming the
     // listing it just made, and the files to open, does not.
     const message = UnfinishedSet.continueMessage(SIX, 0)
@@ -125,9 +125,9 @@ describe("shouldContinue — every clause is a case that must NOT fire", () => {
     expect(
       UnfinishedSet.shouldContinue({ asked: true, coverage: partial, rounds: UnfinishedSet.MAX_STEER_ROUNDS - 1 }),
     ).toBe(true)
-    expect(UnfinishedSet.shouldContinue({ asked: true, coverage: partial, rounds: UnfinishedSet.MAX_STEER_ROUNDS })).toBe(
-      false,
-    )
+    expect(
+      UnfinishedSet.shouldContinue({ asked: true, coverage: partial, rounds: UnfinishedSet.MAX_STEER_ROUNDS }),
+    ).toBe(false)
   })
 })
 

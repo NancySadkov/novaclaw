@@ -385,9 +385,9 @@ describe("a refusal and a delivery are CLAIMS that must be proven (Codex P1)", (
 
       // The black hole: an impostor cannot produce this for a key it does not hold.
       const impostor = mintIdentity().networkID
-      expect(CommunityDirect.verifyDelivery({ ...ack, recipient: impostor }, { recipient: impostor, sender, message })).toBe(
-        false,
-      )
+      expect(
+        CommunityDirect.verifyDelivery({ ...ack, recipient: impostor }, { recipient: impostor, sender, message }),
+      ).toBe(false)
       // Bound to THIS message, so an ack cannot be replayed for the next one.
       expect(CommunityDirect.verifyDelivery(ack, { recipient, sender, message: "a-different-message" })).toBe(false)
       // …and it says nothing about the verdict, which is the property the uniform reply protects:

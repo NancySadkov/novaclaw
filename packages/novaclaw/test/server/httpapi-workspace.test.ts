@@ -225,7 +225,7 @@ describe("workspace HttpApi", () => {
       const created = yield* request(WorkspacePaths.list, dir, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ type: "local-test", branch: null }),
+        body: JSON.stringify({ agent: "build", type: "local-test", branch: null }),
       })
       expect(created.status).toBe(200)
       const workspace = (yield* created.json) as Workspace.Info
@@ -235,7 +235,7 @@ describe("workspace HttpApi", () => {
       const warped = yield* request(WorkspacePaths.warp, dir, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: workspace.id, sessionID: session.id }),
+        body: JSON.stringify({ agent: "build", id: workspace.id, sessionID: session.id }),
       })
       expect(warped.status).toBe(204)
 
@@ -282,7 +282,7 @@ describe("workspace HttpApi", () => {
       const response = yield* request(WorkspacePaths.warp, dir, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: workspaceID, sessionID: session.id }),
+        body: JSON.stringify({ agent: "build", id: workspaceID, sessionID: session.id }),
       })
 
       expect(response.status).toBe(404)
@@ -303,7 +303,7 @@ describe("workspace HttpApi", () => {
       const created = yield* request(WorkspacePaths.list, dir, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ type: "local-test", branch: null }),
+        body: JSON.stringify({ agent: "build", type: "local-test", branch: null }),
       })
 
       expect(created.status).toBe(200)
@@ -322,7 +322,7 @@ describe("workspace HttpApi", () => {
       const created = yield* requestServer(WorkspacePaths.list, dir, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ type: "worktree", branch: null }),
+        body: JSON.stringify({ agent: "build", type: "worktree", branch: null }),
       })
 
       const body = yield* Effect.promise(() => created.text())
@@ -342,7 +342,7 @@ describe("workspace HttpApi", () => {
       const created = yield* request(WorkspacePaths.list, dir, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ type: "local-target", branch: null }),
+        body: JSON.stringify({ agent: "build", type: "local-target", branch: null }),
       })
       const workspace = (yield* created.json) as Workspace.Info
 
@@ -398,7 +398,7 @@ describe("workspace HttpApi", () => {
       const created = yield* requestDefault(WorkspacePaths.list, dir, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ type: "remote-target", branch: null }),
+        body: JSON.stringify({ agent: "build", type: "remote-target", branch: null }),
       })
       const workspace = (yield* created.json) as Workspace.Info
 
@@ -414,7 +414,7 @@ describe("workspace HttpApi", () => {
             "content-type": "application/json",
             "x-novaclaw-workspace": "internal",
           },
-          body: JSON.stringify({ $schema: "https://novaclaw.app/config.json" }),
+          body: JSON.stringify({ agent: "build", $schema: "https://novaclaw.app/config.json" }),
         })
 
         const responseBody = yield* response.text
@@ -431,7 +431,7 @@ describe("workspace HttpApi", () => {
               "content-type": "application/json",
               "x-target-auth": "secret",
             }),
-            body: JSON.stringify({ $schema: "https://novaclaw.app/config.json" }),
+            body: JSON.stringify({ agent: "build", $schema: "https://novaclaw.app/config.json" }),
           },
         ])
         expect(forwarded[0]?.headers).not.toHaveProperty("x-novaclaw-directory")
@@ -474,7 +474,7 @@ describe("workspace HttpApi", () => {
       const created = yield* requestDefault(WorkspacePaths.list, dir, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ type: "remote-session-target", branch: null }),
+        body: JSON.stringify({ agent: "build", type: "remote-session-target", branch: null }),
       })
       const workspace = (yield* created.json) as Workspace.Info
       // ⚠️ `POST /session` — the bare V1 facade — was removed by the V1 nuke. There is no `session`
@@ -485,13 +485,13 @@ describe("workspace HttpApi", () => {
       const sessionResponse = yield* requestDefault("/api/session", dir, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ location: { directory: dir } }),
+        body: JSON.stringify({ agent: "build", location: { directory: dir } }),
       })
       const session = ((yield* sessionResponse.json) as { data: { id: string } }).data
       const warped = yield* requestDefault(WorkspacePaths.warp, dir, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: workspace.id, sessionID: session.id }),
+        body: JSON.stringify({ agent: "build", id: workspace.id, sessionID: session.id }),
       })
       expect(warped.status).toBe(204)
 
@@ -502,7 +502,7 @@ describe("workspace HttpApi", () => {
         const response = yield* requestDefault(`http://localhost/api/session/${session.id}/prompt`, dir, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ prompt: { text: "hello" }, delivery: "queue" }),
+          body: JSON.stringify({ agent: "build", prompt: { text: "hello" }, delivery: "queue" }),
         })
 
         const responseBody = yield* response.text
@@ -527,7 +527,9 @@ describe("workspace HttpApi", () => {
         // this machine — a locally-served interrupt could not answer 200 with a JSON body.
         const aborted = yield* request(`http://localhost/api/session/${session.id}/interrupt`, dir, { method: "POST" })
         expect(aborted.status).toBe(200)
-        expect(proxied.filter((item) => new URL(item.url).pathname === `/base/api/session/${session.id}/interrupt`)).toEqual([
+        expect(
+          proxied.filter((item) => new URL(item.url).pathname === `/base/api/session/${session.id}/interrupt`),
+        ).toEqual([
           expect.objectContaining({
             url: `http://127.0.0.1:${remote.port}/base/api/session/${session.id}/interrupt`,
             method: "POST",

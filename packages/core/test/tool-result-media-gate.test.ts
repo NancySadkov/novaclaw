@@ -655,4 +655,3 @@ describe("per-request image budget", () => {
     expect(lowered).not.toContain(noticeFor("c.png"))
   })
 })
-

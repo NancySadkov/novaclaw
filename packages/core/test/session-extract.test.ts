@@ -56,7 +56,10 @@ describe("SessionExtract durable-memory origin policy", () => {
     const start = source.indexOf('const extractMemory = Effect.fn("SessionMaintenance.extractMemory")')
     const end = source.indexOf("const refreshChangesSummary", start)
     expect(start).toBeGreaterThan(0)
-    const body = source.slice(start, end).replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1")
+    const body = source
+      .slice(start, end)
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/.*$/gm, "$1")
     // ONE rule, shared with the read side — not a second copy of the fallback.
     expect(body).toContain("SessionRecall.rememberScope(")
     // …and never the hardcoded session scope this replaced.
@@ -229,9 +232,7 @@ describe("SessionExtract.entityID — the cross-turn reconciliation key", () => 
   })
 
   test("different names are different entities (negative control)", () => {
-    expect(SessionExtract.entityID("global", "Mercury Project")).not.toBe(
-      SessionExtract.entityID("global", "Mercury"),
-    )
+    expect(SessionExtract.entityID("global", "Mercury Project")).not.toBe(SessionExtract.entityID("global", "Mercury"))
   })
 })
 

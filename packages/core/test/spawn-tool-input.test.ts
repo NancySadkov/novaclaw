@@ -45,6 +45,13 @@ import { tmpdir } from "./fixture/tmpdir"
 //      the assertions below run end to end and finish at `resolveSessionConfig`, which is the exact
 //      call the permission evaluator itself makes (`permission.ts` → `sessionConfig`).
 
+/**
+ * 🔴 NC-SEC-020 — a ROOT names the agent it runs as; there is no anonymous chat. `build` records the
+ * POSTURE this chat runs in, which is the ordinary production case and keeps these tests' semantics
+ * unchanged: a posture is excluded from the canonical `ses_<agent>` id and from the one-chat guard.
+ */
+const rootAgent = AgentV2.ID.make("build")
+
 const PROMPT = "do the delegated sub-task"
 
 /**
@@ -144,7 +151,7 @@ const parentSession = (permissionMode?: "plan" | "ask" | "surgical" | "bypass" |
   Effect.gen(function* () {
     const location = yield* workspace
     const session = yield* SessionV2.Service
-    const parent = yield* session.create({ location, ...(permissionMode ? { permissionMode } : {}) })
+    const parent = yield* session.create({ location, agent: rootAgent, ...(permissionMode ? { permissionMode } : {}) })
     yield* setAgentRules(location, ALLOW_ALL)
     return { location, parent }
   })

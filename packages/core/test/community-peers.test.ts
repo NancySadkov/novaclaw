@@ -158,7 +158,6 @@ describe("CommunityPeers", () => {
     }),
   )
 
-
   test("🔴 one sync operation reaches a BOUNDED number of peers", () => {
     /**
      * The seventh finding surviving in the paths its fix never reached. `transport.publish` and
@@ -197,7 +196,6 @@ describe("CommunityPeers", () => {
     expect(CommunitySync.MAX_PEERS_ASKED).toBeLessThanOrEqual(32)
   })
 
-
   it.effect("🔴 one px claim cannot put an unbounded address list on a peer", () =>
     Effect.gen(function* () {
       const peers = yield* CommunityPeers.Service
@@ -227,7 +225,6 @@ describe("CommunityPeers", () => {
       expect(after[0], "the address it just moved to was dropped by the cap").toBe("http://moved-here:9")
     }),
   )
-
 })
 
 describe("the introduction edge survives housekeeping (honesty-ledger (y)/(dd))", () => {

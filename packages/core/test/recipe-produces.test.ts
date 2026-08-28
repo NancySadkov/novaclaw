@@ -225,7 +225,10 @@ describe("outcome 2 of 4 — NOT WORKING (the instance did not do it)", () => {
     await using dir = await tmpdir()
     await fs.mkdir(path.join(dir.path, "brief.md"))
     const result = await receipt({ directory: dir.path, declares: ["brief.md"] })
-    expect(result.checks[0]!).toMatchObject({ outcome: "unmet", checked: "there is a folder, not a file, at that name" })
+    expect(result.checks[0]!).toMatchObject({
+      outcome: "unmet",
+      checked: "there is a folder, not a file, at that name",
+    })
   })
 })
 
@@ -336,11 +339,12 @@ describe("outcome 4 of 4 — `unknown`, and ruling 2: a fault is never described
       ({ declared: "x", outcome: "unknown", reason, checked: "" }) as const
     expect(RecipeVerify.verdictOf([un("not-measured")])).toBe("unknown")
     expect(RecipeVerify.verdictOf([un("not-applicable")])).toBe("not-available")
+    expect(RecipeVerify.verdictOf([un("not-measured"), { declared: "y", outcome: "met", checked: "" }])).toBe("working")
     expect(
-      RecipeVerify.verdictOf([un("not-measured"), { declared: "y", outcome: "met", checked: "" }]),
-    ).toBe("working")
-    expect(
-      RecipeVerify.verdictOf([{ declared: "y", outcome: "met", checked: "" }, { declared: "z", outcome: "unmet", checked: "" }]),
+      RecipeVerify.verdictOf([
+        { declared: "y", outcome: "met", checked: "" },
+        { declared: "z", outcome: "unmet", checked: "" },
+      ]),
     ).toBe("not-working")
   })
 })

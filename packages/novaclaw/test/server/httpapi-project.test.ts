@@ -71,10 +71,7 @@ describe("GET /api/project", () => {
   it.effect("🔴 offers what a .gitignore beside the project file WOULD add, and applies none of it", () =>
     Effect.gen(function* () {
       const directory = tmp("gitignore")
-      fs.writeFileSync(
-        path.join(directory, "novaclaw.json"),
-        JSON.stringify({ version: 1, exclude: ["node_modules"] }),
-      )
+      fs.writeFileSync(path.join(directory, "novaclaw.json"), JSON.stringify({ version: 1, exclude: ["node_modules"] }))
       fs.writeFileSync(
         path.join(directory, ".gitignore"),
         ["# deps", "node_modules", "", "/dist", "*.env", "!.env.example", String.raw`weird\ name`].join("\n"),
@@ -173,10 +170,7 @@ describe("GET /api/project — the `skills` section", () => {
       const directory = tmp("proto")
       // Written as TEXT: `{__proto__: v}` in source sets a prototype and serialises as `{}`, so an
       // object literal here would test nothing at all.
-      fs.writeFileSync(
-        path.join(directory, "novaclaw.json"),
-        '{"version":1,"skills":{"__proto__":{"show":false}}}',
-      )
+      fs.writeFileSync(path.join(directory, "novaclaw.json"), '{"version":1,"skills":{"__proto__":{"show":false}}}')
       const response = yield* requestInDirectory(ExperimentalPaths.project, directory)
       const body: Record<string, unknown> = JSON.parse(yield* response.text)
       expect(body["skills"]).toEqual(["__proto__"])
@@ -232,7 +226,10 @@ describe("GET /api/project — the `tune` the folder puts in force", () => {
       // A nested folder follows the file above it, and the panel names that file — so the tune it
       // reports has to be that file's, not an empty one because the leaf folder holds no `.json`.
       const root = tmp("ancestor")
-      fs.writeFileSync(path.join(root, "novaclaw.json"), JSON.stringify({ version: 1, tune: { features: { affective: true } } }))
+      fs.writeFileSync(
+        path.join(root, "novaclaw.json"),
+        JSON.stringify({ version: 1, tune: { features: { affective: true } } }),
+      )
       const nested = path.join(root, "packages", "app")
       fs.mkdirSync(nested, { recursive: true })
       const response = yield* requestInDirectory(ExperimentalPaths.project, nested)

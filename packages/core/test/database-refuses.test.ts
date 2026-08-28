@@ -349,9 +349,9 @@ describe("the constructs this fix depends on, pinned against effect@4.0.0-beta.8
 
   test("`Effect.ignore` does NOT see a defect either — the same trap, one call away", async () => {
     expect(Exit.isFailure(await Effect.runPromiseExit(Effect.die(new Error("boom")).pipe(Effect.ignore)))).toBe(true)
-    expect(
-      Exit.isSuccess(await Effect.runPromiseExit(Effect.die(new Error("boom")).pipe(Effect.ignoreCause))),
-    ).toBe(true)
+    expect(Exit.isSuccess(await Effect.runPromiseExit(Effect.die(new Error("boom")).pipe(Effect.ignoreCause)))).toBe(
+      true,
+    )
   })
 
   test("the foreign arm really is a DEFECT, so `catch` would have missed it", async () => {
@@ -505,9 +505,7 @@ describe("one process, one database", () => {
           const reader = Context.getUnsafe(second, Database.Service)
           yield* writer.db.run("CREATE TABLE IF NOT EXISTS two_memo_maps (id TEXT PRIMARY KEY)")
           const visible = yield* reader.db
-            .all<{ name: string }>(
-              sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'two_memo_maps'`,
-            )
+            .all<{ name: string }>(sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'two_memo_maps'`)
             .pipe(Effect.catchCause(() => Effect.succeed(undefined)))
           return { same: writer.db === reader.db, visible }
         } finally {

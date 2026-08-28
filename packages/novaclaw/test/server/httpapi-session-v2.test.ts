@@ -10,6 +10,7 @@
 //       write only session_message (the pre-F0 history lapses from the native
 //       fetch, owner decision ①).
 
+import { AgentV2 } from "@novaclaw/core/agent"
 import fs from "node:fs/promises"
 import fsSync from "node:fs"
 import { afterEach, describe, expect } from "bun:test"
@@ -128,6 +129,7 @@ describe("promptAsync routes to the V2 native engine (F1b: one engine)", () => {
 
           const session = yield* Effect.promise(() =>
             sdk.v2.session.create({
+              agent: AgentV2.BUILD_ID,
               title: "v2 reroute",
             }),
           )
@@ -243,7 +245,9 @@ describe("promptAsync routes to the V2 native engine (F1b: one engine)", () => {
           // directory disappearing, which is the behaviour the owner asked for and the only thing a
           // user would notice. `tests/lost-folder-probe.ts` does exactly this against a fleet model —
           // this is that probe reduced to the part a gate can run.
-          const created = yield* Effect.promise(() => sdk.v2.session.create({ title: "folder goes away" }))
+          const created = yield* Effect.promise(() =>
+            sdk.v2.session.create({ agent: AgentV2.BUILD_ID, title: "folder goes away" }),
+          )
           const sessionID = String(record(record(created.data).data).id)
 
           // Out from under it, while the session exists and is otherwise healthy.
@@ -299,7 +303,9 @@ describe("native session twins (V1-nuke A0)", () => {
     () =>
       withFakeLlm(({ sdk, directory }) =>
         Effect.gen(function* () {
-          const created = yield* Effect.promise(() => sdk.v2.session.create({ location: { directory } }))
+          const created = yield* Effect.promise(() =>
+            sdk.v2.session.create({ agent: AgentV2.BUILD_ID, location: { directory } }),
+          )
           const sessionID = String(record(record(created.data).data).id)
           expect(sessionID).toStartWith("ses_")
 

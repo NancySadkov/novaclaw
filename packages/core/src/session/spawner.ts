@@ -12,7 +12,7 @@ import { ProjectV2 } from "../project"
 import { Location } from "../location"
 import { AgentV2 } from "../agent"
 import { ModelV2 } from "../model"
-import { createSessionRecord } from "../session"
+import { createSessionRecord, OwnerRequiredError } from "../session"
 import { SpawnAdmission } from "./spawn-admission"
 import { SessionRunCoordinator } from "./run-coordinator"
 import { SessionStore } from "./store"
@@ -115,7 +115,12 @@ export interface SpawnResult {
 }
 
 export interface Interface {
-  readonly spawn: (input: SpawnInput) => Effect.Effect<SpawnResult, SpawnLimitError>
+  /**
+   * ⚠️ `OwnerRequiredError` is reachable on the ROOTLESS path only (NC-SEC-020): a spawn with no
+   * `parentID` creates a root, and a root names the agent it runs as. A spawn WITH a parent inherits
+   * and can never raise it.
+   */
+  readonly spawn: (input: SpawnInput) => Effect.Effect<SpawnResult, SpawnLimitError | OwnerRequiredError>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/SessionSpawner") {}
@@ -210,9 +215,7 @@ export const layer = Layer.effect(
             const recent = yield* db
               .select({ n: count() })
               .from(SessionTable)
-              .where(
-                and(eq(SessionTable.parent_id, parentID), gt(SessionTable.time_created, now - RATE_WINDOW_MS)),
-              )
+              .where(and(eq(SessionTable.parent_id, parentID), gt(SessionTable.time_created, now - RATE_WINDOW_MS)))
               .get()
               .pipe(Effect.orDie)
             if ((recent?.n ?? 0) >= MAX_SPAWNS_PER_MINUTE)

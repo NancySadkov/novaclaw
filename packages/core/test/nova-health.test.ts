@@ -159,7 +159,6 @@ describe("fromModel — declared capability, and it says so", () => {
   })
 })
 
-
 describe("NovaHealth.fromMemory", () => {
   /**
    * 🔴 This signal exists because its ABSENCE was the defect. Fault injection 2026-08-12 showed the

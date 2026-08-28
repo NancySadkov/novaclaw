@@ -58,7 +58,8 @@ const it = testEffect(
     ]),
     [
       [PermissionV2.node, permission],
-      [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig], [ToolPolicyGate.node, bypassedPolicyGate],
+      [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
+      [ToolPolicyGate.node, bypassedPolicyGate],
     ],
   ),
 )

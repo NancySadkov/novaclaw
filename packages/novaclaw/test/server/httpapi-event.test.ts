@@ -147,7 +147,7 @@ describe("event HttpApi", () => {
         const created = yield* requestInDirectory("/api/session", directory, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ location: { directory } }),
+          body: JSON.stringify({ agent: "build", location: { directory } }),
         })
         expect(created.status).toBe(200)
         expect(yield* readEventType(reader, "session.created")).toMatchObject({ type: "session.created" })

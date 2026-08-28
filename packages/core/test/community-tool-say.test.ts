@@ -137,8 +137,7 @@ describe("say when the module is not running", () => {
     // And before the post is stored, or it would sit there looking sent.
     expect(say.indexOf("participates")).toBeLessThan(say.indexOf("posts.post"))
 
-    for (const condition of ["offline mode is on", "switched off", "has not joined"])
-      expect(say).toContain(condition)
+    for (const condition of ["offline mode is on", "switched off", "has not joined"]) expect(say).toContain(condition)
   })
 })
 
@@ -189,7 +188,6 @@ describe("what a refused permission tells the model", () => {
     expect(mapper).toContain("Unable to reach the community.")
   })
 
-
   /**
    * 🔴 The tool's handler, EXECUTED — which the note at the top of this file wrongly said was
    * impossible. `Tool.settle` is how the session runner drives a tool, it is exported, and other
@@ -207,7 +205,11 @@ describe("what a refused permission tells the model", () => {
    * property under test — this tool reports refusals to the model as text rather than as errors.
    */
   const invoke = (input: unknown) =>
-    Tool.settle(registered["community"]!, { id: "c1", name: "community", input } as never, ctx) as unknown as Effect.Effect<{
+    Tool.settle(
+      registered["community"]!,
+      { id: "c1", name: "community", input } as never,
+      ctx,
+    ) as unknown as Effect.Effect<{
       readonly structured: { readonly message: string }
     }>
 
@@ -284,5 +286,4 @@ describe("what a refused permission tells the model", () => {
       expect(out.structured.message).toContain("has not joined")
     }).pipe(Effect.provide(Layer.mergeAll(captureTools, allowAll, CredentialCipher.defaultLayer))),
   )
-
 })

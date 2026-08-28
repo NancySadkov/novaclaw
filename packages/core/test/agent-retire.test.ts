@@ -68,7 +68,7 @@ describe("retiring a colleague", () => {
       yield* remember(memory, "agent:ghost", "The ghost knows where the bodies are buried.")
       yield* AgentUsage.record(db, { agent: "ghost", at: Date.now(), generated: 120 })
 
-      yield* AgentRetire.everything({ db, events: yield* events, memory, agent: "ghost" , at: AT })
+      yield* AgentRetire.everything({ db, events: yield* events, memory, agent: "ghost", at: AT })
 
       // The anti-bleed rule, unchanged: the id's own scope is empty, so a future colleague drawn on
       // that name inherits nothing.
@@ -92,7 +92,7 @@ describe("retiring a colleague", () => {
       yield* openChat(db, { id: SessionSchema.ID.make("ses_ghost_chat"), agent: "ghost" })
       expect(yield* RosterChat.chatFor(db, "ghost")).toBeDefined()
 
-      yield* AgentRetire.everything({ db, events: yield* events, memory: MemoryClient.stub(), agent: "ghost" , at: AT })
+      yield* AgentRetire.everything({ db, events: yield* events, memory: MemoryClient.stub(), agent: "ghost", at: AT })
 
       // Archived, not deleted: the record survives for the user, and the lookup no longer finds it.
       expect(yield* RosterChat.chatFor(db, "ghost")).toBeUndefined()
@@ -112,7 +112,7 @@ describe("retiring a colleague", () => {
       yield* AgentUsage.record(db, { agent: "theron", at: Date.now(), generated: 7 })
       yield* openChat(db, { id: SessionSchema.ID.make("ses_theron_chat"), agent: "theron" })
 
-      yield* AgentRetire.everything({ db, events: yield* events, memory, agent: "ghost" , at: AT })
+      yield* AgentRetire.everything({ db, events: yield* events, memory, agent: "ghost", at: AT })
 
       // The negative that gives the positive its meaning: a retirement that took the household's
       // shared memory with it would be a far worse defect than the one being fixed.
@@ -142,7 +142,13 @@ describe("retiring a colleague", () => {
   it.effect("retiring a colleague that remembered nothing is not an error", () =>
     Effect.gen(function* () {
       const { db } = yield* Database.Service
-      yield* AgentRetire.everything({ db, events: yield* events, memory: MemoryClient.stub(), agent: "never_spoke" , at: AT })
+      yield* AgentRetire.everything({
+        db,
+        events: yield* events,
+        memory: MemoryClient.stub(),
+        agent: "never_spoke",
+        at: AT,
+      })
     }),
   )
 })

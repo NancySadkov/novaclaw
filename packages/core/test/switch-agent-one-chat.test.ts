@@ -27,6 +27,13 @@ import { testEffect } from "./lib/effect"
  * frontmatter also reaches.
  */
 
+/**
+ * 🔴 NC-SEC-020 — a ROOT names the agent it runs as; there is no anonymous chat. `build` records the
+ * POSTURE this chat runs in, which is the ordinary production case and keeps these tests' semantics
+ * unchanged: a posture is excluded from the canonical `ses_<agent>` id and from the one-chat guard.
+ */
+const rootAgent = AgentV2.ID.make("build")
+
 const projects = Layer.succeed(
   ProjectV2.Service,
   ProjectV2.Service.of({
@@ -53,7 +60,7 @@ describe("switching a chat onto a colleague", () => {
       const session = yield* SessionV2.Service
       // Wren's chat, and a second unattributed root that someone tries to hand to Wren as well.
       yield* session.create({ location, agent: AgentV2.ID.make("writer") })
-      const other = yield* session.create({ location, title: "somewhere else" })
+      const other = yield* session.create({ location, agent: rootAgent, title: "somewhere else" })
 
       const refusal = yield* session.switchAgent({ sessionID: other.id, agent: "writer" }).pipe(Effect.flip)
       expect(String(refusal._tag)).toContain("OperationUnavailable")
@@ -83,7 +90,7 @@ describe("switching a chat onto a colleague", () => {
     Effect.gen(function* () {
       // The last ghost shape: a row saying neither who it belongs to nor what it is for.
       const session = yield* SessionV2.Service
-      const created = yield* session.create({ location })
+      const created = yield* session.create({ location, agent: rootAgent })
       expect(created.title).toBe("New session in project")
     }),
   )
@@ -104,7 +111,7 @@ describe("switching a chat onto a colleague", () => {
     Effect.gen(function* () {
       // The control. Without it, a `switchAgent` that refused everything would pass the test above.
       const session = yield* SessionV2.Service
-      const other = yield* session.create({ location, title: "somewhere else" })
+      const other = yield* session.create({ location, agent: rootAgent, title: "somewhere else" })
       const outcome = yield* session.switchAgent({ sessionID: other.id, agent: "editor" }).pipe(Effect.exit)
       expect(outcome._tag).toBe("Success")
     }),
@@ -129,7 +136,7 @@ describe("switching a chat onto a colleague", () => {
       // treating it as an owner would collapse every one of them into a single conversation.
       const session = yield* SessionV2.Service
       yield* session.create({ location, agent: AgentV2.BUILD_ID })
-      const other = yield* session.create({ location, title: "another" })
+      const other = yield* session.create({ location, agent: rootAgent, title: "another" })
       const outcome = yield* session
         .switchAgent({ sessionID: other.id, agent: String(AgentV2.BUILD_ID) })
         .pipe(Effect.exit)

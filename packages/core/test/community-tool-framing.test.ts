@@ -75,7 +75,11 @@ const stranger = () => {
 
 const ctx = { sessionID: "ses", agent: "build", assistantMessageID: "msg", toolCallID: "c1" } as any
 const invoke = (input: unknown) =>
-  Tool.settle(registered["community"]!, { id: "c1", name: "community", input } as never, ctx) as unknown as Effect.Effect<{
+  Tool.settle(
+    registered["community"]!,
+    { id: "c1", name: "community", input } as never,
+    ctx,
+  ) as unknown as Effect.Effect<{
     readonly structured: { readonly message: string }
   }>
 

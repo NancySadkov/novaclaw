@@ -91,7 +91,10 @@ const runSelfDriving = async (policies: readonly ToolPolicy.Provider[]) => {
 
 describe("a halt stops the drain; a deny does not", () => {
   test("🔴 halt — the refused call is the LAST provider request of the drain", async () => {
-    const harness = await runWith([policy("stopper", { type: "halt", reason: "the operator revoked this" })], "policy halt")
+    const harness = await runWith(
+      [policy("stopper", { type: "halt", reason: "the operator revoked this" })],
+      "policy halt",
+    )
     // One interactive request: the turn that made the refused call. A drain that continued would
     // have asked the model what to do next and consumed the second scripted turn.
     expect(harness.requests, "a halt must end the drain, not just the call").toHaveLength(1)

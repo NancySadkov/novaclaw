@@ -60,15 +60,12 @@ const clientLayer = Layer.succeed(
  * this function) is what decides instance identity.
  */
 const graph = () =>
-  AppNodeBuilder.build(
-    LayerNode.group([Database.node, EventV2.node, SessionProjector.node, SessionMaintenance.node]),
-    [
-      [LayerNodePlatform.llmClient, clientLayer],
-      [SessionRunnerModel.node, SessionRunnerModel.layerWith(() => Effect.succeed(model))],
-      [Snapshot.node, Snapshot.noopLayer],
-      [Location.node, Location.boundNode({ directory: AbsolutePath.make("/project") })],
-    ],
-  ) as Layer.Layer<Database.Service | EventV2.Service | SessionMaintenance.Service, unknown, never>
+  AppNodeBuilder.build(LayerNode.group([Database.node, EventV2.node, SessionProjector.node, SessionMaintenance.node]), [
+    [LayerNodePlatform.llmClient, clientLayer],
+    [SessionRunnerModel.node, SessionRunnerModel.layerWith(() => Effect.succeed(model))],
+    [Snapshot.node, Snapshot.noopLayer],
+    [Location.node, Location.boundNode({ directory: AbsolutePath.make("/project") })],
+  ]) as Layer.Layer<Database.Service | EventV2.Service | SessionMaintenance.Service, unknown, never>
 
 interface Probe {
   readonly maintenance: SessionMaintenance.Interface
@@ -126,10 +123,7 @@ const withTwoConsumers = <A, E>(
 ) => {
   const probes: Probe[] = []
   const built = graph()
-  const both = Layer.merge(
-    consumer(probes, built),
-    consumer(probes, options.fresh ? Layer.fresh(built) : built),
-  )
+  const both = Layer.merge(consumer(probes, built), consumer(probes, options.fresh ? Layer.fresh(built) : built))
   return runBounded(
     Effect.suspend(() => {
       expect(probes).toHaveLength(2)

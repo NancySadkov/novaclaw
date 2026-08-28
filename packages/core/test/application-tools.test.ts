@@ -16,7 +16,8 @@ import { testEffect } from "./lib/effect"
 
 const it = testEffect(
   AppNodeBuilder.build(LayerNode.group([ApplicationTools.node, ToolRegistry.node, ToolRegistry.toolsNode]), [
-    [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig], [ToolPolicyGate.node, bypassedPolicyGate],
+    [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
+    [ToolPolicyGate.node, bypassedPolicyGate],
   ]),
 )
 

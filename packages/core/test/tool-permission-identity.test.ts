@@ -55,7 +55,12 @@ import { ToolPolicyGate } from "@novaclaw/core/tool-policy-gate"
 const outputStore = Layer.mock(ToolOutputStore.Service, {
   bound: (input) => Effect.succeed({ output: input.output, outputPaths: [] }),
 })
-const it = testEffect(AppNodeBuilder.build(ToolRegistry.node, [[ToolOutputStore.node, outputStore], [ToolPolicyGate.node, bypassedPolicyGate]]))
+const it = testEffect(
+  AppNodeBuilder.build(ToolRegistry.node, [
+    [ToolOutputStore.node, outputStore],
+    [ToolPolicyGate.node, bypassedPolicyGate],
+  ]),
+)
 // `ToolRegistry.node` PROVIDES `ApplicationTools` rather than exporting it, so the second
 // registration seam is unreachable from the graph above and needs its own build. Measured, not
 // assumed: reaching for it through the registry's context fails "Service not found:

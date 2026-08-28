@@ -28,7 +28,6 @@ import { HARNESS_SESSION, drive, makeRunnerHarness } from "./fixture/runner-harn
  */
 
 describe("SessionRunnerLLM — stream projection", () => {
-
   test("rejects duplicate streamed text starts", async () => {
     const harness = makeRunnerHarness({
       turns: [[LLMEvent.textStart({ id: "text-1" }), LLMEvent.textStart({ id: "text-1" })]],
@@ -86,7 +85,11 @@ describe("SessionRunnerLLM — stream projection", () => {
       harness,
       Effect.gen(function* () {
         const session = yield* SessionV2.Service
-        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Two blocks" }), resume: false })
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Two blocks" }),
+          resume: false,
+        })
         yield* session.resume(HARNESS_SESSION)
         return yield* session.context(HARNESS_SESSION)
       }),

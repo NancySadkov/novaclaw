@@ -207,10 +207,10 @@ describe("SkillDiscovery.pull volume bounds", () => {
   })
 
   test("NEGATIVE CONTROL: an ordinary index and an ordinary skill are untouched by the caps", async () => {
-    const result = await pull(
-      [{ name: "normal", files: ["SKILL.md", "assets/one.txt"] }],
-      { [`${base}normal/SKILL.md`]: "# normal", [`${base}normal/assets/one.txt`]: "hello" },
-    )
+    const result = await pull([{ name: "normal", files: ["SKILL.md", "assets/one.txt"] }], {
+      [`${base}normal/SKILL.md`]: "# normal",
+      [`${base}normal/assets/one.txt`]: "hello",
+    })
     try {
       expect(result.directories.map((directory) => path.basename(directory))).toEqual(["normal"])
       expect(result.requests).toContain(`${base}normal/assets/one.txt`)

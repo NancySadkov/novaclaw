@@ -64,10 +64,12 @@ describe("settling everything inside one deadline", () => {
       expect(report.results.find((r) => r.name === "downloads")?.outcome).toBe("failed")
       expect(report.results.find((r) => r.name === "downloads")?.detail).toContain("disk went away")
       // Both siblings ran. If the first failure had propagated, these would be absent.
-      expect(report.results.filter((r) => r.outcome === "settled").map((r) => r.name).toSorted()).toEqual([
-        "sessions",
-        "terminals",
-      ])
+      expect(
+        report.results
+          .filter((r) => r.outcome === "settled")
+          .map((r) => r.name)
+          .toSorted(),
+      ).toEqual(["sessions", "terminals"])
       expect(report.forced).toEqual(["downloads"])
     }),
   )

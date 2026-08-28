@@ -53,7 +53,13 @@ describe("decoding what was stored", () => {
     })
     // ⚠️ A row written before `endpoint` existed keeps its verdict, with an empty endpoint. Dropping
     // it would re-measure every endpoint for the sake of a display detail.
-    expect(decoded["p/m"]).toEqual({ choice: "chat-only", rationale: "", measuredAt: 5, fingerprint: "f", endpoint: "" })
+    expect(decoded["p/m"]).toEqual({
+      choice: "chat-only",
+      rationale: "",
+      measuredAt: 5,
+      fingerprint: "f",
+      endpoint: "",
+    })
   })
 
   test("a serving identity round-trips, and its absence is silence", () => {

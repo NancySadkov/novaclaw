@@ -535,7 +535,9 @@ describe("EditTool — project exclusions are inherited", () => {
             withTool(tmp.path, (registry) =>
               Effect.gen(function* () {
                 yield* executeTool(registry, call({ path: "notes.md", oldString: "before", newString: "after" }))
-                expect(yield* Effect.promise(() => fs.readFile(path.join(tmp.path, "notes.md"), "utf8"))).toBe("after\n")
+                expect(yield* Effect.promise(() => fs.readFile(path.join(tmp.path, "notes.md"), "utf8"))).toBe(
+                  "after\n",
+                )
               }),
             ),
           ),

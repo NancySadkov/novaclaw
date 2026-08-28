@@ -121,7 +121,8 @@ const withTool = <A, E, R>(
           CatalogStore.node,
         ]),
         [
-          [ToolOutputStore.node, outputStore], [ToolPolicyGate.node, bypassedPolicyGate],
+          [ToolOutputStore.node, outputStore],
+          [ToolPolicyGate.node, bypassedPolicyGate],
           [PermissionV2.node, permission],
           [Config.node, configStub],
           [CapabilityRegistry.node, capabilityLayer],
@@ -492,13 +493,7 @@ describe("the tool reaches EVERY store the router writes to", () => {
         // All five are privileged, so exactly one card, carrying all five.
         expect(asserted).toHaveLength(1)
         expect(asserted[0]!.action).toBe("configure_privileged")
-        expect([...asserted[0]!.resources].sort()).toEqual([
-          "agents",
-          "commands",
-          "providers",
-          "references",
-          "skills",
-        ])
+        expect([...asserted[0]!.resources].sort()).toEqual(["agents", "commands", "providers", "references", "skills"])
       }),
     )
   })

@@ -1,3 +1,4 @@
+import { AgentV2 } from "@novaclaw/core/agent"
 import { afterEach, describe, expect } from "bun:test"
 import { Deferred, Effect, Layer } from "effect"
 import type * as Scope from "effect/Scope"
@@ -276,7 +277,7 @@ describe("HttpApi SDK", () => {
     ({ sdk, directory }) =>
       Effect.gen(function* () {
         const file = yield* call(() => sdk.file.read({ path: "hello.txt" }))
-        const session = yield* call(() => sdk.v2.session.create({ title: "sdk" }))
+        const session = yield* call(() => sdk.v2.session.create({ agent: AgentV2.BUILD_ID, title: "sdk" }))
         const listed = yield* call(() => sdk.v2.session.list({ roots: true, limit: 10 }))
 
         expect(file.response.status).toBe(200)
@@ -484,7 +485,7 @@ describe("HttpApi SDK", () => {
   serverPathParity("matches generated SDK session lifecycle routes", (serverPath) =>
     withStandardProject(serverPath, ({ sdk }) =>
       Effect.gen(function* () {
-        const parent = yield* capture(() => sdk.v2.session.create({ title: "parent" }))
+        const parent = yield* capture(() => sdk.v2.session.create({ agent: AgentV2.BUILD_ID, title: "parent" }))
         const parentID = String(record(parent.data).id)
         const child = yield* capture(() => sdk.v2.session.create({ title: "child", parentID }))
         const childID = String(record(child.data).id)

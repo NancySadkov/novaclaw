@@ -82,9 +82,7 @@ describe("scheduler capability", () => {
         throw new Error("forced scheduler boot defect")
       }),
     )
-    const graph = AppNodeBuilder.build(LayerNode.group([CalendarScheduler.node]), [
-      [CalendarScheduler.node, poisoned],
-    ])
+    const graph = AppNodeBuilder.build(LayerNode.group([CalendarScheduler.node]), [[CalendarScheduler.node, poisoned]])
 
     // ⚠️ A constructor that THROWS produces a defect, not a typed failure — `Effect.match` and
     // `catchAll` sail straight past it. That is the whole reason the capability edge has to exist:

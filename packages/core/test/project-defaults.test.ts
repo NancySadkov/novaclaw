@@ -87,7 +87,16 @@ describe("a folder's tune as a defaults layer", () => {
     // A ratchet across the two lists: a tune field that is not a `SessionConfig` component would
     // fold into defaults and then be dropped by `resolveConfig`, which reads only declared keys —
     // a setting that silently does nothing.
-    const declared = ["safeMode", "askBeforeChanges", "surgicalEdits", "contextBudget", "memory", "introspection", "quality", "affective"] as const
+    const declared = [
+      "safeMode",
+      "askBeforeChanges",
+      "surgicalEdits",
+      "contextBudget",
+      "memory",
+      "introspection",
+      "quality",
+      "affective",
+    ] as const
     for (const feature of declared) {
       expect(SESSION_CONFIG_FIELDS[feature], `${feature} is not a session component`).toBeDefined()
     }

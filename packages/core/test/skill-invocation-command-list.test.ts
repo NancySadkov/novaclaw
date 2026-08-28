@@ -60,7 +60,10 @@ const build = (external?: Layer.Layer<ExternalCommandSource.Service>) =>
 
 const writeSkill = async (directory: string, name: string) => {
   await fs.mkdir(path.join(directory, name), { recursive: true })
-  await fs.writeFile(path.join(directory, name, "SKILL.md"), `---\nname: ${name}\ndescription: ${name} does things\n---\n# ${name}`)
+  await fs.writeFile(
+    path.join(directory, name, "SKILL.md"),
+    `---\nname: ${name}\ndescription: ${name} does things\n---\n# ${name}`,
+  )
 }
 
 const withFixture = <A, E, R>(body: (input: { location: Location.Ref; skills: string }) => Effect.Effect<A, E, R>) =>
@@ -187,7 +190,6 @@ describe("hiding a skill must not delete the thing standing behind it", () => {
     ),
   )
 })
-
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // The PROJECT layer — `novaclaw.json`'s `skills` section, driven through the real wiring.
@@ -326,12 +328,14 @@ describe("a folder's novaclaw.json may hide a skill from the user's own slash me
       // `hidden-*` is not a legal skill id at all (`identify` refuses `*` because `Wildcard.match`
       // compiles it to `.*` with no escape), so the exact-key lookup can only ever match a skill
       // literally called that — and such a skill has no id either.
-      withProject({ version: 1, skills: { "hidden-*": { show: false }, "*": { show: false } } }, ({ location, skills }) =>
-        Effect.gen(function* () {
-          const listed = yield* names(skills)
-          expect(listed).toContain("skill:shown-skill")
-          expect(listed).toContain("skill:hidden-skill")
-        }).pipe(Effect.provide(LocationServiceMap.Service.get(location))),
+      withProject(
+        { version: 1, skills: { "hidden-*": { show: false }, "*": { show: false } } },
+        ({ location, skills }) =>
+          Effect.gen(function* () {
+            const listed = yield* names(skills)
+            expect(listed).toContain("skill:shown-skill")
+            expect(listed).toContain("skill:hidden-skill")
+          }).pipe(Effect.provide(LocationServiceMap.Service.get(location))),
       ),
     ),
   )
@@ -365,15 +369,17 @@ describe("a folder's novaclaw.json may hide a skill from the user's own slash me
       // ⚠️ `JSON.parse`, not an object literal. `{__proto__: v}` in source sets the PROTOTYPE and
       // serialises as `{}` — the exact trap `skill/invocation.ts` records — so a literal here would
       // write a file with no `skills` section at all and the test would pass for the wrong reason.
-      withProject(JSON.parse('{"version":1,"skills":{"__proto__":{"show":false}}}'), ({ location, skills, directory }) =>
-        Effect.gen(function* () {
-          yield* Effect.promise(() => writeSkill(skills, "__proto__"))
-          const listed = yield* names(skills)
-          expect(listed).not.toContain("skill:__proto__")
-          // …and the file did not accidentally hide everything else by polluting a prototype.
-          expect(listed).toContain("skill:shown-skill")
-          expect(directory.length).toBeGreaterThan(0)
-        }).pipe(Effect.provide(LocationServiceMap.Service.get(location))),
+      withProject(
+        JSON.parse('{"version":1,"skills":{"__proto__":{"show":false}}}'),
+        ({ location, skills, directory }) =>
+          Effect.gen(function* () {
+            yield* Effect.promise(() => writeSkill(skills, "__proto__"))
+            const listed = yield* names(skills)
+            expect(listed).not.toContain("skill:__proto__")
+            // …and the file did not accidentally hide everything else by polluting a prototype.
+            expect(listed).toContain("skill:shown-skill")
+            expect(directory.length).toBeGreaterThan(0)
+          }).pipe(Effect.provide(LocationServiceMap.Service.get(location))),
       ),
     ),
   )
@@ -385,9 +391,7 @@ describe("a folder's novaclaw.json may hide a skill from the user's own slash me
       // must not take their session down.
       withProject(undefined, ({ location, skills, directory }) =>
         Effect.gen(function* () {
-          yield* Effect.promise(() =>
-            fs.writeFile(path.join(directory, "novaclaw.json"), "{ this is not json"),
-          )
+          yield* Effect.promise(() => fs.writeFile(path.join(directory, "novaclaw.json"), "{ this is not json"))
           const listed = yield* names(skills)
           expect(listed).toContain("skill:shown-skill")
           expect(listed).toContain("skill:hidden-skill")

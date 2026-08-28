@@ -287,9 +287,7 @@ describe("WriteTool", () => {
               }),
             ),
           ),
-          Effect.andThen(
-            Effect.promise(async () => expect(await fs.readFile(target, "utf8")).toBe("replacement")),
-          ),
+          Effect.andThen(Effect.promise(async () => expect(await fs.readFile(target, "utf8")).toBe("replacement"))),
         )
       },
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),

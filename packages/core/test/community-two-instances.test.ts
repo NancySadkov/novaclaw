@@ -257,9 +257,10 @@ describe("two instances", () => {
       )
 
       const ignoredByBob = await Effect.runPromise(
-        CommunityChannels.Service.pipe(
-          Effect.flatMap((channels) => channels.history("#NovaClaw")),
-        ).pipe(Effect.provide(bob.graph), Effect.provide(CredentialCipher.defaultLayer)),
+        CommunityChannels.Service.pipe(Effect.flatMap((channels) => channels.history("#NovaClaw"))).pipe(
+          Effect.provide(bob.graph),
+          Effect.provide(CredentialCipher.defaultLayer),
+        ),
       )
       expect(ignoredByBob).toEqual([])
 
@@ -297,7 +298,6 @@ describe("two instances", () => {
       cleanup(bob.home)
     }
   })
-
 
   test("🔴 an instance that was AWAY catches up on what it missed", async () => {
     /**
@@ -678,9 +678,8 @@ describe("two instances", () => {
           const result = yield* channels.deliver(CommunityTopic.topicOf("#NovaClaw"), relocated as never)
           return {
             result,
-            inTarget: (yield* channels.history("#NovaClaw")).filter((m) =>
-              m.body.includes("another room entirely"),
-            ).length,
+            inTarget: (yield* channels.history("#NovaClaw")).filter((m) => m.body.includes("another room entirely"))
+              .length,
             inOrigin: (yield* channels.history("#elsewhere")).length,
           }
         }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
@@ -758,14 +757,12 @@ describe("two instances", () => {
        * home. Repair that costs reachability is not repair.
        */
       expect(repaired.routes, "the other address was discarded rather than kept").toContain(STALE)
-
     } finally {
       server?.stop(true)
       cleanup(alice.home)
       cleanup(bob.home)
     }
   })
-
 
   test("🔴 ONE address reaches a peer we were never told about — peer exchange", async () => {
     /**
@@ -852,7 +849,6 @@ describe("two instances", () => {
     }
   })
 
-
   test("🔴 a peer that was OFFLINE when someone rotated still finds them", async () => {
     /**
      * The reason rotation stayed unexposed until a transport existed: *a successor statement no peer
@@ -933,7 +929,6 @@ describe("two instances", () => {
       cleanup(carol.home)
     }
   })
-
 
   test("🔴 a channel is found TWO HOPS away, through a peer that does not have it", async () => {
     /**
@@ -1031,7 +1026,6 @@ describe("two instances", () => {
       cleanup(carol.home)
     }
   })
-
 
   test("🔴 a direct message is readable ONLY by its recipient — not by the relay carrying it", async () => {
     /**
@@ -1150,7 +1144,6 @@ describe("two instances", () => {
     }
   })
 
-
   test("🔴 a peer offering more ids than could exist cannot make us chase them", async () => {
     /**
      * The asker pays for the answerer's claim. Reconciliation asks a peer which ids it holds and then
@@ -1223,7 +1216,6 @@ describe("two instances", () => {
     }
   })
 
-
   test("🔴 publishing to a full peer table does not open a socket per peer", async () => {
     /**
      * Our OWN bound feeding an unlimited fan-out — the same mistake as trusting a peer's number, made
@@ -1262,7 +1254,11 @@ describe("two instances", () => {
           for (let index = 0; index < 40; index++) {
             const key = Buffer.alloc(32)
             key.writeUInt32BE(index + 1, 0)
-            yield* peers.learn(`nid_${key.toString("base64url")}`, [`http://127.0.0.1:${server!.port}/p${index}`], "lan")
+            yield* peers.learn(
+              `nid_${key.toString("base64url")}`,
+              [`http://127.0.0.1:${server!.port}/p${index}`],
+              "lan",
+            )
           }
           yield* posts.post("#NovaClaw", "to everyone at once?")
         }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
@@ -1277,7 +1273,6 @@ describe("two instances", () => {
       cleanup(alice.home)
     }
   })
-
 
   test("🔴 one search cannot walk the whole peer table", async () => {
     /**
@@ -1310,7 +1305,11 @@ describe("two instances", () => {
           for (let index = 0; index < 200; index++) {
             const key = Buffer.alloc(32)
             key.writeUInt32BE(index + 1, 0)
-            yield* peers.learn(`nid_${key.toString("base64url")}`, [`http://127.0.0.1:${server!.port}/p${index}`], "lan")
+            yield* peers.learn(
+              `nid_${key.toString("base64url")}`,
+              [`http://127.0.0.1:${server!.port}/p${index}`],
+              "lan",
+            )
           }
           return yield* search.search("nothing-has-this")
         }).pipe(Effect.provide(alice.graph), Effect.provide(CredentialCipher.defaultLayer)),
@@ -1326,7 +1325,6 @@ describe("two instances", () => {
       cleanup(alice.home)
     }
   })
-
 
   test("🔴 BLOCKING covers the private door too — a blocked sender's DM is refused", async () => {
     /**
@@ -1410,5 +1408,4 @@ describe("two instances", () => {
       cleanup(bob.home)
     }
   })
-
 })

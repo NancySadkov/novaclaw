@@ -1,3 +1,4 @@
+import { AgentV2 } from "@novaclaw/core/agent"
 import { describe, expect } from "bun:test"
 import { Effect, Layer, Schema } from "effect"
 import { Database } from "@novaclaw/core/database/database"
@@ -13,6 +14,13 @@ import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { testEffect } from "./lib/effect"
+
+/**
+ * 🔴 NC-SEC-020 — a ROOT names the agent it runs as; there is no anonymous chat. `build` records the
+ * POSTURE this chat runs in, which is the ordinary production case and keeps these tests' semantics
+ * unchanged: a posture is excluded from the canonical `ses_<agent>` id and from the one-chat guard.
+ */
+const rootAgent = AgentV2.ID.make("build")
 
 const projects = Layer.succeed(
   ProjectV2.Service,
@@ -63,7 +71,7 @@ describe("SessionV2.history", () => {
   it.effect("treats after as an exclusive aggregate sequence", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
-      const created = yield* session.create({ location })
+      const created = yield* session.create({ location, agent: rootAgent })
       yield* session.switchAgent({ sessionID: created.id, agent: "one" })
       yield* session.switchAgent({ sessionID: created.id, agent: "two" })
 
@@ -78,7 +86,7 @@ describe("SessionV2.history", () => {
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
       const events = yield* EventV2.Service
-      const created = yield* session.create({ location })
+      const created = yield* session.create({ location, agent: rootAgent })
       yield* session.switchAgent({ sessionID: created.id, agent: "one" })
       yield* events.publish(GapEvent, { sessionID: created.id, value: "filtered" })
       yield* session.switchAgent({ sessionID: created.id, agent: "two" })
@@ -103,7 +111,7 @@ describe("SessionV2.history", () => {
   it.effect("includes events committed between pages", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
-      const created = yield* session.create({ location })
+      const created = yield* session.create({ location, agent: rootAgent })
       yield* session.switchAgent({ sessionID: created.id, agent: "one" })
       yield* session.switchAgent({ sessionID: created.id, agent: "two" })
 
@@ -124,7 +132,7 @@ describe("SessionV2.history", () => {
   it.effect("reports exhaustion for exact-limit and limit-plus-one pages", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
-      const created = yield* session.create({ location })
+      const created = yield* session.create({ location, agent: rootAgent })
       yield* session.switchAgent({ sessionID: created.id, agent: "one" })
       yield* session.switchAgent({ sessionID: created.id, agent: "two" })
 

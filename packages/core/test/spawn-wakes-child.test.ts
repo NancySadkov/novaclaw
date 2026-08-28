@@ -41,6 +41,13 @@ import { tmpdir } from "./fixture/tmpdir"
 // root never wiring it again. So the assertions are on the END of the chain — the child's own exit
 // result, read back through the parent's join — never on "a drain was started".
 
+/**
+ * 🔴 NC-SEC-020 — a ROOT names the agent it runs as; there is no anonymous chat. `build` records the
+ * POSTURE this chat runs in, which is the ordinary production case and keeps these tests' semantics
+ * unchanged: a posture is excluded from the canonical `ses_<agent>` id and from the one-chat guard.
+ */
+const rootAgent = AgentV2.ID.make("build")
+
 const PROMPT = "do the delegated sub-task"
 
 /** Every run the fake runner performed — direct evidence a drain actually reached a given session. */
@@ -170,7 +177,7 @@ describe("SessionSpawner.spawn — the child actually runs", () => {
       const session = yield* SessionV2.Service
       // The parent is created and NEVER prompted, so nothing request-driven can be what ran the
       // child: the only thing that could have started it is the spawn itself.
-      const parent = yield* session.create({ location })
+      const parent = yield* session.create({ location, agent: rootAgent })
 
       const spawned = yield* spawnChild(parent.id, location)
 
@@ -191,7 +198,7 @@ describe("SessionSpawner.spawn — the child actually runs", () => {
       const location = yield* workspace
       const session = yield* SessionV2.Service
       const locations = yield* LocationServiceMap.Service
-      const parent = yield* session.create({ location })
+      const parent = yield* session.create({ location, agent: rootAgent })
 
       // v0.2.0 B4c: `spawn` is no longer granted by a compiled catch-all, so it falls through to the
       // evaluator's `ask` default. This test drives the REAL permission service under an ATTENDED
@@ -231,8 +238,8 @@ describe("wait — a durable, owned join", () => {
       const location = yield* workspace
       const session = yield* SessionV2.Service
       const events = yield* EventV2.Service
-      const parent = yield* session.create({ location })
-      const child = yield* session.create({ location, parentID: parent.id })
+      const parent = yield* session.create({ location, agent: rootAgent })
+      const child = yield* session.create({ location, agent: rootAgent, parentID: parent.id })
 
       const waiting = yield* settleWait(location, parent.id, child.id).pipe(Effect.forkChild)
       yield* Effect.yieldNow
@@ -252,9 +259,9 @@ describe("wait — a durable, owned join", () => {
     Effect.gen(function* () {
       const location = yield* workspace
       const session = yield* SessionV2.Service
-      const parent = yield* session.create({ location })
-      const child = yield* session.create({ location, parentID: parent.id })
-      const grandchild = yield* session.create({ location, parentID: child.id })
+      const parent = yield* session.create({ location, agent: rootAgent })
+      const child = yield* session.create({ location, agent: rootAgent, parentID: parent.id })
+      const grandchild = yield* session.create({ location, agent: rootAgent, parentID: child.id })
 
       const settlement = yield* settleWait(location, parent.id, grandchild.id)
       expect(settlement.result.type).toBe("error")
@@ -271,10 +278,10 @@ describe("SessionSpawner quotas use durable session facts", () => {
       const session = yield* SessionV2.Service
       const events = yield* EventV2.Service
       const { db } = yield* Database.Service
-      const parent = yield* session.create({ location })
+      const parent = yield* session.create({ location, agent: rootAgent })
 
       for (let index = 0; index < SessionSpawner.MAX_SPAWN_CHILDREN; index++) {
-        const child = yield* session.create({ location, parentID: parent.id })
+        const child = yield* session.create({ location, agent: rootAgent, parentID: parent.id })
         yield* events.publish(SessionEvent.Completed, {
           sessionID: child.id,
           timestamp: yield* DateTime.now,
@@ -297,13 +304,19 @@ describe("SessionSpawner quotas use durable session facts", () => {
     Effect.gen(function* () {
       const location = yield* workspace
       const session = yield* SessionV2.Service
-      const parent = yield* session.create({ location })
+      const parent = yield* session.create({ location, agent: rootAgent })
 
       for (let index = 0; index < SessionSpawner.MAX_SPAWNS_PER_MINUTE; index++) {
-        yield* session.create({ location, parentID: parent.id })
+        yield* session.create({ location, agent: rootAgent, parentID: parent.id })
       }
 
       const error = yield* spawnChildEffect(parent.id, location).pipe(Effect.flip)
+      // ⚠️ Narrowed, because `spawn` can now also fail with `OwnerRequiredError` (NC-SEC-020) — on
+      // the ROOTLESS path only, which this is not. Asserting the tag first is what keeps the
+      // failure legible if that ever changes: "expected rate, got OwnerRequired" beats a property
+      // that does not exist.
+      expect(error._tag).toBe("SessionSpawner.LimitError")
+      if (error._tag !== "SessionSpawner.LimitError") return
       expect(error.reason).toBe("rate")
       expect(error.depth).toBe(SessionSpawner.MAX_SPAWNS_PER_MINUTE)
     }),
@@ -320,12 +333,12 @@ describe("SessionV2.spawn — a global caller gets the same quota", () => {
       const location = yield* workspace
       const session = yield* SessionV2.Service
       const { db } = yield* Database.Service
-      const parent = yield* session.create({ location })
+      const parent = yield* session.create({ location, agent: rootAgent })
 
       // Sixteen children created OFF-SEAM — exactly what the messenger dispatcher used to do. The
       // cap is a DB count on `parent_id`, so it does not care who wrote the row.
       for (let index = 0; index < SessionSpawner.MAX_SPAWN_CHILDREN; index++) {
-        yield* session.create({ location, parentID: parent.id })
+        yield* session.create({ location, agent: rootAgent, parentID: parent.id })
       }
       // Backdate them past the rate window. Without this the RATE cap (10/min) fires first and the
       // assertion below would pass for the wrong reason — the caps are 10 and 16, so a loop that
@@ -355,7 +368,7 @@ describe("SessionV2.spawn — a global caller gets the same quota", () => {
       const ids: string[] = []
       for (let index = 0; index < SessionSpawner.MAX_SPAWNS_PER_MINUTE + 2; index++) {
         const spawned = yield* session
-          .spawn({ location, text: PROMPT, type: "goal-oriented", title: `scheduled ${index}` })
+          .spawn({ location, agent: rootAgent, text: PROMPT, type: "goal-oriented", title: `scheduled ${index}` })
           .pipe(Effect.orDie)
         ids.push(spawned.id)
       }
@@ -372,7 +385,7 @@ describe("SessionV2.spawn — a global caller gets the same quota", () => {
     Effect.gen(function* () {
       const location = yield* workspace
       const session = yield* SessionV2.Service
-      const parent = yield* session.create({ location })
+      const parent = yield* session.create({ location, agent: rootAgent })
 
       const spawned = yield* session
         .spawn({
@@ -463,7 +476,7 @@ describe("the guard actually bites", () => {
     Effect.gen(function* () {
       const location = yield* workspace
       const session = yield* SessionV2.Service
-      const parent = yield* session.create({ location })
+      const parent = yield* session.create({ location, agent: rootAgent })
 
       const spawned = yield* spawnChild(parent.id, location)
 

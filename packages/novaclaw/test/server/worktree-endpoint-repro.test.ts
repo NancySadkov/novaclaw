@@ -157,11 +157,7 @@ function createWorktreeScoped(input: {
         worktreeDirectory: created.directory,
         ready: created.ready,
       }).pipe(Effect.orDie),
-  ).pipe(
-    Effect.map(
-      (created) => ({ ...created.body, ready: created.ready }) satisfies CreatedWorktreeWithReady,
-    ),
-  )
+  ).pipe(Effect.map((created) => ({ ...created.body, ready: created.ready }) satisfies CreatedWorktreeWithReady))
 }
 
 // `setProjectStartCommand` lived here until 2026-08-07. It read `/project/current` and PATCHed

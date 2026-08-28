@@ -229,6 +229,16 @@ export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("Ses
   sessionID: SessionSchema.ID,
 }) {}
 
+/**
+ * A root session was created without naming its agent (NC-SEC-020).
+ *
+ * Typed rather than a defect: this is a caller mistake with a correct action attached — say whose
+ * chat it is — so it belongs in the API's error channel and not in the crash log.
+ */
+export class OwnerRequiredError extends Schema.TaggedErrorClass<OwnerRequiredError>()("Session.OwnerRequiredError", {
+  reason: Schema.String,
+}) {}
+
 export class OperationUnavailableError extends Schema.TaggedErrorClass<OperationUnavailableError>()(
   "Session.OperationUnavailableError",
   {
@@ -259,7 +269,11 @@ export type SpawnAt =
 
 export interface Interface {
   readonly list: (input?: ListInput) => Effect.Effect<SessionSchema.Info[]>
-  readonly create: (input: CreateInput) => Effect.Effect<SessionSchema.Info>
+  /**
+   * ⚠️ Fails with {@link OwnerRequiredError} when a ROOT is created without naming its agent
+   * (NC-SEC-020). A child may omit it — there `undefined` means *inherit from the parent*.
+   */
+  readonly create: (input: CreateInput) => Effect.Effect<SessionSchema.Info, OwnerRequiredError>
   /**
    * Fork a child of an existing session through the CANONICAL seam (v0.2.0 prep).
    *
@@ -279,7 +293,7 @@ export interface Interface {
    */
   readonly spawn: (
     input: SpawnAt,
-  ) => Effect.Effect<SessionSpawner.SpawnResult, NotFoundError | SessionSpawner.SpawnLimitError>
+  ) => Effect.Effect<SessionSpawner.SpawnResult, NotFoundError | OwnerRequiredError | SessionSpawner.SpawnLimitError>
   readonly get: (sessionID: SessionSchema.ID) => Effect.Effect<SessionSchema.Info, NotFoundError>
   readonly messages: (input: {
     sessionID: SessionSchema.ID
@@ -479,11 +493,17 @@ const guardOneChat = (
  * replace, so this form is inside that pattern — the folder name holds the place until the first real
  * exchange earns a better one, rather than becoming permanent.
  *
- * ⚠️ NOT applied when an agent is named. That row is already attributable, and its title is the
+ * ⚠️ NOT applied when a COLLEAGUE is named. That row is already attributable, and its title is the
  * colleague's business (the launcher and Contacts both pass one).
+ *
+ * ⚠️ A POSTURE is not a colleague, and the distinction became load-bearing when NC-SEC-020 made every
+ * root name an agent. Testing `agent !== undefined` would have handed every `build` root the bare
+ * *"New session"* — silently deleting the folder naming this function exists for, in exactly the case
+ * it was written for. The premise above is the test: is this row attributable to SOMEONE? A posture
+ * says how the chat runs, not whose it is.
  */
 const defaultTitle = (input: CreateInput): string => {
-  if (input.agent !== undefined) return "New session"
+  if (input.agent !== undefined && !AgentV2.POSTURE_IDS.has(input.agent)) return "New session"
   const folder = path.basename(input.location.directory).trim()
   return folder === "" ? "New session" : `New session in ${folder}`
 }
@@ -530,6 +550,29 @@ export const createSessionRecord = (
      * one predicate silently took the guard away from every explicit-id caller, which is a second
      * live chat waiting to happen.
      */
+    /**
+     * 🔴 **NC-SEC-020 — a ROOT session names its agent. There is no anonymous chat.**
+     *
+     * `undefined` used to mean two different things here, and only one of them is legitimate. On a
+     * CHILD it means *inherit from the parent*, which is the reading the report asks to reserve it
+     * for. On a ROOT it meant nothing at all: the row stored no owner, so every turn resolved one
+     * DYNAMICALLY from whatever the current default officer happened to be — a chat whose identity,
+     * and therefore whose private memory cabinet, could change under it between turns.
+     *
+     * ⚠️ A posture is a perfectly good answer. `agent: "build"` records that this chat RUNS AS the
+     * build posture — measured on the owner's own instances as 55–98 live `build` roots, i.e. the
+     * ordinary case, not a workaround. What is refused is the ABSENCE, because an absence is what
+     * gets re-derived per turn. The value may be anything; it may not be nothing.
+     *
+     * ⚠️ Refused rather than DEFAULTED, and the middle option was measured out of existence before
+     * this was written. Defaulting to a colleague cannot work: the one-live-root rule is a DB index
+     * on the `agent` column, so a second anonymous root owned by Nova violates it. Defaulting to a
+     * posture reintroduces exactly the ghost `DEFAULT_COLLEAGUE_ID` was moved OFF `build` to
+     * remove — a chat answering with no Contacts row, which *"did not appear to exist"*. The full
+     * table is in `todo/code-review.md` under NC-SEC-020.
+     */
+    if (input.parentID === undefined && input.agent === undefined)
+      return yield* new OwnerRequiredError({ reason: "A root session must name the agent it runs as." })
     const colleagueRoot =
       input.parentID === undefined && input.agent !== undefined && !AgentV2.POSTURE_IDS.has(input.agent)
     const canonical = colleagueRoot && input.id === undefined ? SessionSchema.ID.make(`ses_${input.agent}`) : undefined
@@ -1394,7 +1437,11 @@ export const layer = Layer.effect(
             memory: inherited.memory,
             shortChat: inherited.shortChat,
           },
-        )
+          // ⚠️ `OwnerRequiredError` is unreachable here and stays out of `fork`'s contract: the call
+          // above always passes `parentID`, and that error is raised only for a ROOT. A defect is the
+          // honest encoding of "this cannot happen" — if the parentID above ever went away, this
+          // would fail loudly at the seam rather than widening an error type nobody can act on.
+        ).pipe(Effect.orDie)
         const sourceRows = yield* db
           .select()
           .from(SessionMessageTable)

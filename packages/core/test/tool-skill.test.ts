@@ -71,7 +71,8 @@ describe("SkillTool", () => {
             [
               [PermissionV2.node, permission],
               [SkillV2.node, skills],
-              [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig], [ToolPolicyGate.node, bypassedPolicyGate],
+              [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
+              [ToolPolicyGate.node, bypassedPolicyGate],
             ],
           )
 

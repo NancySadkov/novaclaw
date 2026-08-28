@@ -112,7 +112,7 @@ const SessionCatalogHandler = handlerLayer(
             "session.create",
             Effect.fn(function* (ctx) {
               return {
-                data: yield* session.create({
+                data: yield* createWithOwner(session, {
                   id: ctx.payload.id,
                   parentID: ctx.payload.parentID,
                   agent: ctx.payload.agent,
@@ -1061,6 +1061,15 @@ const agentLocation = (agentID: string | undefined) =>
       workspaceID: (yield* Location.Service).workspaceID,
     }
     if (agentID === undefined || agentID === "") return requested
+    /**
+     * ⚠️ A POSTURE has no folder of its own, and this became load-bearing when NC-SEC-020 made every
+     * root name an agent. `build` and `plan` say HOW a chat runs, not WHOSE it is — there is no
+     * colleague whose project or scratch this could mean. Without this line every create that did
+     * not carry an explicit location silently landed in `…/scratch/build` instead of the directory
+     * the request came from, which is the same location-inheritance surprise that made `novaclaw
+     * run` look like it was hanging (NC-CS-002).
+     */
+    if (AgentV2.POSTURE_IDS.has(agentID)) return requested
     const agent = yield* AgentV2.Service.use((service) => service.get(AgentV2.ID.make(agentID)))
     if (agent === undefined) return requested
     const configured = (agent as unknown as Record<string, unknown>)["directory"]
@@ -1074,6 +1083,18 @@ const agentLocation = (agentID: string | undefined) =>
     yield* Effect.promise(() => Scratch.ensureForAgent(agentID, agent.name ?? agentID)).pipe(Effect.ignore)
     return { directory: AbsolutePath.make(folder), workspaceID: requested.workspaceID }
   })
+
+/**
+ * `session.create`, with NC-SEC-020's refusal translated for the wire.
+ *
+ * ⚠️ A caller mistake with a correct action attached — name the agent — so it becomes an
+ * `InvalidRequestError` (a 400) rather than a defect. The kernel raises it only for a ROOT; a child
+ * may still omit `agent`, where the absence means *inherit from the parent*.
+ */
+const createWithOwner = (session: SessionV2.Interface, input: Parameters<SessionV2.Interface["create"]>[0]) =>
+  session
+    .create(input)
+    .pipe(Effect.catchTag("Session.OwnerRequiredError", (error) => new InvalidRequestError({ message: error.reason })))
 
 export const SessionHandler = Layer.mergeAll(
   SessionCatalogHandler,

@@ -46,17 +46,16 @@ describe("what the request WAS cannot change while the drive runs", () => {
 })
 
 describe("the runner latches it", () => {
-  const source = fs.readFileSync(
-    path.join(import.meta.dir, "../src/session/runner/llm.ts"),
-    "utf8",
-  )
+  const source = fs.readFileSync(path.join(import.meta.dir, "../src/session/runner/llm.ts"), "utf8")
 
   test("the decision is stored per SESSION, not in a drain local", () => {
     // 🔴 The first version of this fix used drain locals and did nothing. Run 12: one `set.branch`
     // for a 36-minute run, `asked: false`, `calls: 0`. Every steer admits a prompt and starts a NEW
     // drain with fresh locals — that run had three — so after compaction each new drain re-derived
     // from the compacted window and never latched. The lifetime has to outlive the drain.
-    expect(source).toContain("const setRequests = new Map<string, { readonly asked: boolean; readonly limit?: number }>()")
+    expect(source).toContain(
+      "const setRequests = new Map<string, { readonly asked: boolean; readonly limit?: number }>()",
+    )
     expect(source).toContain("const askedForSet = setRequest?.asked ?? false")
     expect(source).toContain("const requested = setRequest?.limit")
     // …and NOT the drain locals it replaced.

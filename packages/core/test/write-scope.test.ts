@@ -76,10 +76,11 @@ describe("design principle 11: we do not write outside the home", () => {
     } catch {
       return // unreadable home — nothing to assert
     }
-    const ours = entries.filter((name) =>
-      // `nc-*` and `novaclaw*`: an instance home belongs at `~/.local/share/novaclaw`, never at `~/novaclaw`.
-      // `undefined`/`null`: the stringified-path bug, so its residue is caught here too.
-      /^(nc-|novaclaw|kbmem_|novaclaw-kbmem)/i.test(name) || /^(undefined|null)$/i.test(name),
+    const ours = entries.filter(
+      (name) =>
+        // `nc-*` and `novaclaw*`: an instance home belongs at `~/.local/share/novaclaw`, never at `~/novaclaw`.
+        // `undefined`/`null`: the stringified-path bug, so its residue is caught here too.
+        /^(nc-|novaclaw|kbmem_|novaclaw-kbmem)/i.test(name) || /^(undefined|null)$/i.test(name),
     )
     expect(
       ours,

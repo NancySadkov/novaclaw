@@ -220,9 +220,7 @@ describe("instance HttpApi", () => {
         HttpClientRequest.bodyJson({ name: "#a-private-room" }),
         Effect.flatMap(HttpClient.execute),
       )
-      expect(((yield* privateRoom.json) as { name: string }[]).map((entry) => entry.name)).toContain(
-        "#a-private-room",
-      )
+      expect(((yield* privateRoom.json) as { name: string }[]).map((entry) => entry.name)).toContain("#a-private-room")
       /**
        * 🔴 The peer door is SHUT until this instance has joined the community, so the check below
        * has to open it first — and asserting the closed state is the more valuable half.
@@ -307,17 +305,19 @@ describe("instance HttpApi", () => {
     }),
   )
 
-  it.live("🔴 the community tool is REGISTERED, not merely written", () =>
-    Effect.gen(function* () {
-      // A tool can compile, be listed in builtins, and still never reach an agent if its node fails
-      // to construct — the same class as an HttpApi group whose services are missing. Registration
-      // is the only thing that proves the dependency graph actually resolved.
-      const dir = yield* tmpdirScoped({ git: true })
-      const response = yield* HttpClient.get(`/experimental/tool/ids?directory=${encodeURIComponent(dir)}`)
-      expect(response.status).toBe(200)
-      const ids = (yield* response.json) as string[]
-      expect(ids).toContain("community")
-    }),
+  it.live(
+    "🔴 the community tool is REGISTERED, not merely written",
+    () =>
+      Effect.gen(function* () {
+        // A tool can compile, be listed in builtins, and still never reach an agent if its node fails
+        // to construct — the same class as an HttpApi group whose services are missing. Registration
+        // is the only thing that proves the dependency graph actually resolved.
+        const dir = yield* tmpdirScoped({ git: true })
+        const response = yield* HttpClient.get(`/experimental/tool/ids?directory=${encodeURIComponent(dir)}`)
+        expect(response.status).toBe(200)
+        const ids = (yield* response.json) as string[]
+        expect(ids).toContain("community")
+      }),
     // ⚠️ An EXPLICIT limit, because this endpoint materialises the WHOLE tool catalogue — every
     // tool's location node is constructed to answer it — which costs 5-8 s here, either side of
     // bun's 5 s default. Measured: it times out at the default and passes in 7.8 s with room.
@@ -370,7 +370,7 @@ describe("instance HttpApi", () => {
       // served by this same router (the OpenAPI test above asserts it is in `paths`).
       const response = yield* HttpClientRequest.post("/api/session").pipe(
         directoryHeader(dir),
-        HttpClientRequest.bodyJson({ location: { directory: dir } }),
+        HttpClientRequest.bodyJson({ agent: "build", location: { directory: dir } }),
         Effect.flatMap(HttpClient.execute),
       )
 
@@ -426,7 +426,7 @@ describe("instance HttpApi", () => {
         [
           request("/question/invalid-question-id/reply", {
             method: "POST",
-            body: JSON.stringify({ answers: [["Yes"]] }),
+            body: JSON.stringify({ agent: "build", answers: [["Yes"]] }),
           }),
           request("/question/invalid-question-id/reject", { method: "POST" }),
         ],
@@ -457,7 +457,7 @@ describe("instance HttpApi", () => {
         [
           request(`/question/${questionReplyID}/reply`, {
             method: "POST",
-            body: JSON.stringify({ answers: [["Yes"]] }),
+            body: JSON.stringify({ agent: "build", answers: [["Yes"]] }),
           }),
           request(`/question/${questionRejectID}/reject`, { method: "POST" }),
         ],
@@ -573,7 +573,10 @@ describe("instance HttpApi", () => {
       // default model names one, so this asserts the four are PRESENT rather than pinning the exact
       // set — pinning it would fail the moment a fixture configures a model, for no real reason.
       for (const id of ["database", "scheduler", "storage", "updates"]) {
-        expect(body.signals.map((signal) => signal.id), `missing the ${id} row`).toContain(id)
+        expect(
+          body.signals.map((signal) => signal.id),
+          `missing the ${id} row`,
+        ).toContain(id)
       }
 
       // ⚠️ Opening the board must not contact anyone. Reachability is the ONE reading that costs
@@ -598,5 +601,4 @@ describe("instance HttpApi", () => {
       }
     }),
   )
-
 })

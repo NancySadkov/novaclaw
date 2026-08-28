@@ -58,7 +58,8 @@ const it = testEffect(
     ]),
     [
       [PermissionV2.node, permission],
-      [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig], [ToolPolicyGate.node, bypassedPolicyGate],
+      [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
+      [ToolPolicyGate.node, bypassedPolicyGate],
     ],
   ),
 )
@@ -107,7 +108,10 @@ const cardEvents = (sessionID: string) =>
         ),
       )
       .all()
-      .pipe(Effect.orDie, Effect.map((rows) => rows.filter((row) => row.data.sessionID === sessionID)))
+      .pipe(
+        Effect.orDie,
+        Effect.map((rows) => rows.filter((row) => row.data.sessionID === sessionID)),
+      )
   })
 
 const REASON = "the plan is agreed and I now need to edit src/ to apply it"

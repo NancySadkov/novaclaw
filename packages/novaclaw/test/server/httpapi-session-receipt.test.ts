@@ -24,9 +24,7 @@ import { httpApiLayer, requestInDirectory } from "./httpapi-layer"
 
 // `SessionExecutionAttempt` is merged in because the test OPENS an attempt itself — the server has
 // its own copy inside the routed instance graph, and this one is the seeder, not the subject.
-const it = testEffectShared(
-  Layer.mergeAll(Database.defaultLayer, SessionExecutionAttempt.defaultLayer, httpApiLayer),
-)
+const it = testEffectShared(Layer.mergeAll(Database.defaultLayer, SessionExecutionAttempt.defaultLayer, httpApiLayer))
 
 afterEach(async () => {
   await disposeAllInstances()

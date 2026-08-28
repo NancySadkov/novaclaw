@@ -460,7 +460,11 @@ describe("Download.toFile volume bound", () => {
     // limit they never asked for.
     const uncapped = path.join(tmp.path, "uncapped.bin")
     await run(
-      Download.toFile({ url: "https://download.example/b.bin", destination: uncapped, integrity: { transportOnly: true } }),
+      Download.toFile({
+        url: "https://download.example/b.bin",
+        destination: uncapped,
+        integrity: { transportOnly: true },
+      }),
       client,
     )
     expect(await fs.readFile(uncapped, "utf8")).toBe("small enough")

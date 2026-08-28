@@ -29,12 +29,7 @@ const it = testEffect(
   LayerNode.compile(
     // Contacts is listed explicitly as well as being a dependency of Channels: the blocking case
     // drives it directly, and a service that is only a transitive dep is not in scope for the test.
-    LayerNode.group([
-      Database.node,
-      InstanceIdentityStore.node,
-      CommunityContacts.node,
-      CommunityChannels.node,
-    ]),
+    LayerNode.group([Database.node, InstanceIdentityStore.node, CommunityContacts.node, CommunityChannels.node]),
   ),
 )
 
@@ -91,7 +86,9 @@ describe("CommunityChannels", () => {
 
       yield* channels.join(CHANNEL)
       // Tampered: the signature no longer covers the body.
-      expect(yield* channels.record(CHANNEL, proven({ ...message, body: "edited" }))).toEqual({ rejected: "unverified" })
+      expect(yield* channels.record(CHANNEL, proven({ ...message, body: "edited" }))).toEqual({
+        rejected: "unverified",
+      })
       // Replayed from another channel onto this topic, signature perfectly valid.
       const elsewhere = yield* CommunityMessage.sign({ channel: "#elsewhere", body: "out of context" })
       expect(yield* channels.record(CHANNEL, proven(elsewhere))).toEqual({ rejected: "wrong-channel" })
@@ -257,7 +254,10 @@ describe("CommunityChannels", () => {
         signature: "x",
       }))
       for (let start = 0; start < rows.length; start += 200)
-        yield* db.insert(CommunityMessageTable).values(rows.slice(start, start + 200)).run()
+        yield* db
+          .insert(CommunityMessageTable)
+          .values(rows.slice(start, start + 200))
+          .run()
 
       yield* CommunityChannels.prune(db, CHANNEL, keep)
       const left = yield* db.select().from(CommunityMessageTable).all()
@@ -346,7 +346,6 @@ describe("CommunityChannels", () => {
     }),
   )
 
-
   it.effect("🔴 a peer who SPELLS the channel differently is in the SAME room", () =>
     Effect.gen(function* () {
       /**
@@ -392,7 +391,6 @@ describe("CommunityChannels", () => {
     }),
   )
 
-
   it.effect("🔴 leaving leaves the history REACHABLE, not just retained", () =>
     Effect.gen(function* () {
       /**
@@ -427,7 +425,6 @@ describe("CommunityChannels", () => {
     }),
   )
 
-
   it.effect("🔴 messages written under an EARLIER spelling of a room are not orphaned", () =>
     Effect.gen(function* () {
       /**
@@ -460,7 +457,6 @@ describe("CommunityChannels", () => {
     }),
   )
 
-
   it.effect("🔴 leaving and muting accept ANY spelling of the room", () =>
     Effect.gen(function* () {
       /**
@@ -485,7 +481,6 @@ describe("CommunityChannels", () => {
       expect(yield* channels.setMuted("#never-joined", true)).toBe(false)
     }),
   )
-
 
   it.effect("🔴 unpaid work is refused BEFORE the signature is ever verified", () =>
     Effect.gen(function* () {
@@ -514,7 +509,6 @@ describe("CommunityChannels", () => {
     }),
   )
 
-
   it.effect("🔴 an oversized body is refused — retention bounds COUNT, not bytes", () =>
     Effect.gen(function* () {
       /**
@@ -539,7 +533,6 @@ describe("CommunityChannels", () => {
       expect(yield* channels.record(CHANNEL, wide)).toEqual({ rejected: "too-large" })
     }),
   )
-
 
   it.effect("🔴 discovery reveals ONLY what the user chose to disclose", () =>
     Effect.gen(function* () {
@@ -577,7 +570,6 @@ describe("CommunityChannels", () => {
       expect(yield* channels.setListed("#not-joined", true)).toBe(false)
     }),
   )
-
 
   it.effect("🔴 a user's own words hide messages — at READ, never at ingress", () =>
     Effect.gen(function* () {
@@ -617,7 +609,6 @@ describe("CommunityChannels", () => {
     }),
   )
 
-
   it.effect("🔴 an enormous CHANNEL NAME is refused before anything touches it", () =>
     Effect.gen(function* () {
       /**
@@ -635,12 +626,11 @@ describe("CommunityChannels", () => {
 
       // ⚠️ And an ordinary name is untouched — the bound is far past anything anyone types, because a
       // name is hashed to a topic and length buys nothing.
-      expect("stored" in (yield* channels.record(CHANNEL, proven(fromStranger({ channel: CHANNEL, body: "ok" }))))).toBe(
-        true,
-      )
+      expect(
+        "stored" in (yield* channels.record(CHANNEL, proven(fromStranger({ channel: CHANNEL, body: "ok" })))),
+      ).toBe(true)
     }),
   )
-
 
   it.effect("🔴 a room NAME cannot carry a payload — it reaches a model unfenced", () =>
     Effect.gen(function* () {
@@ -681,7 +671,6 @@ describe("CommunityChannels", () => {
     }),
   )
 
-
   it.effect("🔴 room NAMES reach a model fenced, like the bodies beside them", () =>
     Effect.gen(function* () {
       /**
@@ -704,12 +693,11 @@ describe("CommunityChannels", () => {
       expect(framed.endsWith(`#NovaClaw${String.fromCharCode(10)}#bread (muted)`)).toBe(true)
       // ⚠️ The SHARED helper's wording, not a second one: a bespoke fence drifts from the real one,
       // and the repo ledger classifies tools by whether they call the shared helper at all.
-      expect(framed.startsWith(SessionOrigin.externalContentFrame("channel names, some advertised by other instances"))).toBe(
-        true,
-      )
+      expect(
+        framed.startsWith(SessionOrigin.externalContentFrame("channel names, some advertised by other instances")),
+      ).toBe(true)
     }),
   )
-
 })
 
 /**

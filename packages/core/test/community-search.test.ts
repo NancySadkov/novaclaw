@@ -74,9 +74,7 @@ describe("CommunitySearch.consider", () => {
     const ctx = context()
     // A flooder relaying its own queries through different neighbours would get a fresh budget per
     // neighbour if this were keyed on whoever handed it over. Distinct ids, one origin.
-    const verdicts = Array.from({ length: 14 }, (_, i) =>
-      CommunitySearch.consider(query({ id: `flood-${i}` }), ctx),
-    )
+    const verdicts = Array.from({ length: 14 }, (_, i) => CommunitySearch.consider(query({ id: `flood-${i}` }), ctx))
     expect(verdicts.filter((v) => v.forward)).toHaveLength(10)
     expect(verdicts.filter((v) => !v.forward && v.reason === "throttled")).toHaveLength(4)
   })
@@ -146,17 +144,21 @@ describe("a hostile TTL", () => {
     const seen = new CommunitySearch.Seen()
     const throttle = new CommunitySearch.Throttle()
     // Below our limit: untouched, so a short query is not silently lengthened either.
-    const short = CommunitySearch.consider(
-      proven({ id: "q2", terms: "x", ttl: 2, origin: "nid_them" }),
-      { self: "nid_us", seen, throttle, now: 1 },
-    )
+    const short = CommunitySearch.consider(proven({ id: "q2", terms: "x", ttl: 2, origin: "nid_them" }), {
+      self: "nid_us",
+      seen,
+      throttle,
+      now: 1,
+    })
     expect(short.forward && short.next.ttl).toBe(1)
     // And at the floor it stops.
     expect(
-      CommunitySearch.consider(
-        proven({ id: "q3", terms: "x", ttl: 1, origin: "nid_them" }),
-        { self: "nid_us", seen, throttle, now: 1 },
-      ),
+      CommunitySearch.consider(proven({ id: "q3", terms: "x", ttl: 1, origin: "nid_them" }), {
+        self: "nid_us",
+        seen,
+        throttle,
+        now: 1,
+      }),
     ).toEqual({ forward: false, reason: "expired" })
   })
 
@@ -201,7 +203,6 @@ describe("a hostile TTL", () => {
     expect(throttle.size).toBeLessThanOrEqual(100)
   })
 
-
   test("🔴 the dedup set has a CEILING — its prune was never called", () => {
     /**
      * `Seen.prune` is documented as "called periodically, not per query", and a grep for its callers
@@ -222,7 +223,6 @@ describe("a hostile TTL", () => {
     expect(seen.has("recent", 1)).toBe(true)
   })
 
-
   test("🔴 EVERY module that dials a peer shares the answer ceiling", () => {
     /**
      * The outbound size limit was written for `sync.ts`'s `ask` and stopped there. `search.ts` has
@@ -239,14 +239,11 @@ describe("a hostile TTL", () => {
       const source = readFileSync(new URL(`../src/community/${file}`, import.meta.url), "utf8")
       expect(source, `${file} reads a peer answer without the shared ceiling`).toContain("answerTooLarge(")
       // The ceiling must be the one in transport.ts, not a local copy that can drift.
-      expect(source, `${file} declares its own copy of the limit`).not.toContain(
-        "MAX_PEER_RESPONSE_BYTES = ",
-      )
+      expect(source, `${file} declares its own copy of the limit`).not.toContain("MAX_PEER_RESPONSE_BYTES = ")
     }
 
     // And the search answer is bounded by COUNT too — bytes do not bound how many names arrive.
     const search = readFileSync(new URL("../src/community/search.ts", import.meta.url), "utf8")
     expect(search).toContain("slice(0, MAX_CHANNELS_PER_ANSWER)")
   })
-
 })

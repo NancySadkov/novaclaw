@@ -128,7 +128,13 @@ describe("InstanceRegistry", () => {
     const found = InstanceRegistry.list({
       env: {} as NodeJS.ProcessEnv,
       homedir: home,
-      readFile: () => JSON.stringify({ entries: [{ name: "work", home: "/w" }, { name: "old", home: "/gone" }] }),
+      readFile: () =>
+        JSON.stringify({
+          entries: [
+            { name: "work", home: "/w" },
+            { name: "old", home: "/gone" },
+          ],
+        }),
       exists: (target) => ["/w", "/w/data"].includes(target.replaceAll("\\", "/")),
     })
     expect(found.instances.map((entry) => [entry.name, entry.reachability])).toEqual([

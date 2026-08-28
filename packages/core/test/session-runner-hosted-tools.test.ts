@@ -65,7 +65,11 @@ describe("SessionRunnerLLM — hosted tool results", () => {
       harness,
       Effect.gen(function* () {
         const session = yield* SessionV2.Service
-        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Search first" }), resume: false })
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Search first" }),
+          resume: false,
+        })
         yield* session.resume(HARNESS_SESSION)
         // Durable, not merely live: the replay is what proves the metadata survives a process boundary.
         yield* harness.replayProjection(HARNESS_SESSION)

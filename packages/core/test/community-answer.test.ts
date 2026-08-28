@@ -29,10 +29,7 @@ const stranger = () => {
 
 /** Joined the community, and separately willing to answer. */
 const answering = (limits?: { perDay?: number; perPeerPerDay?: number }) =>
-  CommunityConsent.applied(
-    { consented: true, answers: { enabled: true, ...limits } },
-    { enabled: false },
-  )
+  CommunityConsent.applied({ consented: true, answers: { enabled: true, ...limits } }, { enabled: false })
 
 describe("CommunityAnswer", () => {
   it.effect("🔴 OFF by default — joining is not consent to spend tokens", () =>
@@ -113,10 +110,7 @@ describe("CommunityAnswer", () => {
   it.effect("⚠️ a nonsense ceiling falls back rather than answering with silence", () =>
     Effect.gen(function* () {
       const answers = yield* CommunityAnswer.Service
-      CommunityConsent.applied(
-        { consented: true, answers: { enabled: true, maxTokens: "plenty" } },
-        { enabled: false },
-      )
+      CommunityConsent.applied({ consented: true, answers: { enabled: true, maxTokens: "plenty" } }, { enabled: false })
       // A bad value must not become a tiny one: too small is not a smaller answer, it is NO answer.
       expect((yield* answers.state()).gate.maxTokens).toBe(CommunityAnswer.DEFAULT_MAX_TOKENS)
     }),
@@ -125,10 +119,7 @@ describe("CommunityAnswer", () => {
   it.effect("⚠️ a nonsense limit falls back rather than disabling the feature", () =>
     Effect.gen(function* () {
       const answers = yield* CommunityAnswer.Service
-      CommunityConsent.applied(
-        { consented: true, answers: { enabled: true, perDay: "lots" } },
-        { enabled: false },
-      )
+      CommunityConsent.applied({ consented: true, answers: { enabled: true, perDay: "lots" } }, { enabled: false })
       // A string where a number belongs is a config mistake, not an instruction to answer nobody —
       // and not an instruction to answer everybody either. It takes the default.
       expect((yield* answers.state()).gate.perDay).toBe(CommunityAnswer.DEFAULT_PER_DAY)

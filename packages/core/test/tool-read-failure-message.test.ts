@@ -51,7 +51,10 @@ describe("a REFUSED file — real, but not openable", () => {
 
 describe("a LOCKED file — the one case where retrying is genuinely right", () => {
   test("says to wait and try again, or move on", () => {
-    for (const error of [byCode("EBUSY"), byText("The process cannot access the file: being used by another process")]) {
+    for (const error of [
+      byCode("EBUSY"),
+      byText("The process cannot access the file: being used by another process"),
+    ]) {
       const text = message(error, PATH)
       expect(text).toContain("locked by another process")
       expect(text).toContain("read it again")

@@ -64,13 +64,9 @@ describe("CommunitySuccession", () => {
 
       // Someone who met this instance long ago holds only `original`, and arrives at the current key
       // by following signatures — never by being told.
-      expect(CommunitySuccession.resolve(original, [first.statement, second.statement])).toBe(
-        second.identity.networkID,
-      )
+      expect(CommunitySuccession.resolve(original, [first.statement, second.statement])).toBe(second.identity.networkID)
       // Order must not matter: statements arrive from a gossip mesh, not in sequence.
-      expect(CommunitySuccession.resolve(original, [second.statement, first.statement])).toBe(
-        second.identity.networkID,
-      )
+      expect(CommunitySuccession.resolve(original, [second.statement, first.statement])).toBe(second.identity.networkID)
       // With the middle link missing, it stops at the last PROVEN key rather than guessing.
       expect(CommunitySuccession.resolve(original, [second.statement])).toBe(original)
     }),

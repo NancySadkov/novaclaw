@@ -27,7 +27,6 @@ import { absent, peers, scripted } from "./fixture/dht-sidecar"
 const run = <A>(effect: Effect.Effect<A, never, CommunityDht.Service>, options: CommunityDht.Options) =>
   Effect.runPromise(Effect.provide(effect, CommunityDht.layerWith(options)) as Effect.Effect<A>)
 
-
 describe("CommunityDht.parse", () => {
   test("🔴 addresses that could not be dialled are dropped, not passed on", () => {
     /**
@@ -79,7 +78,8 @@ describe("reading the sidecar's output", () => {
     const NEWLINE = String.fromCharCode(10)
     // ⚠️ Deliberately larger than the ceiling: a burst that did not exceed it would prove nothing
     // about the difference between "long" and "unterminated".
-    const many = Array.from({ length: 8_000 }, (_, index) => `{"line":${index},"pad":"xxxxxxxxxx"}`).join(NEWLINE) + NEWLINE
+    const many =
+      Array.from({ length: 8_000 }, (_, index) => `{"line":${index},"pad":"xxxxxxxxxx"}`).join(NEWLINE) + NEWLINE
     expect(many.length).toBeGreaterThan(CommunityDht.MAX_REPLY_BYTES)
     const lines = CommunityDht.readLines(state, many)
     expect(lines?.length).toBe(8_000)
@@ -90,7 +90,9 @@ describe("reading the sidecar's output", () => {
     // The ordinary case, and the reason the buffer exists at all: a reply can arrive in pieces.
     const state = { buffer: "" }
     expect(CommunityDht.readLines(state, '{"peers":')).toEqual([])
-    expect(CommunityDht.readLines(state, '["1.2.3.4:1"]}' + String.fromCharCode(10))).toEqual(['{"peers":["1.2.3.4:1"]}'])
+    expect(CommunityDht.readLines(state, '["1.2.3.4:1"]}' + String.fromCharCode(10))).toEqual([
+      '{"peers":["1.2.3.4:1"]}',
+    ])
   })
 })
 

@@ -91,7 +91,8 @@ const withBoth = <A, E, R>(
             ]),
             [
               [Global.node, Global.layerWith({ data: tmp.path })],
-              [ToolOutputStore.node, outputStore], [ToolPolicyGate.node, bypassedPolicyGate],
+              [ToolOutputStore.node, outputStore],
+              [ToolPolicyGate.node, bypassedPolicyGate],
               [PermissionV2.node, permission],
               [Config.node, Layer.succeed(Config.Service, Config.Service.of({ entries: () => Effect.succeed([]) }))],
             ],

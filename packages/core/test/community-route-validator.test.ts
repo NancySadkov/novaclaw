@@ -108,7 +108,10 @@ describe("CommunityRoute.dialable — what may be dialled", () => {
       "http://0x7f000001",
       "http://255.255.255.255",
     ]) {
-      expect(CommunityRoute.dialable(local, { hearsay: true }), `${local} is not reachable from elsewhere`).toBeUndefined()
+      expect(
+        CommunityRoute.dialable(local, { hearsay: true }),
+        `${local} is not reachable from elsewhere`,
+      ).toBeUndefined()
       // …and the same string from a source that CAN mean it is kept: this is what LAN discovery,
       // the DHT and a typed address all depend on.
       expect(CommunityRoute.dialable(local), `${local} must still be dialable when we found it ourselves`).toBeDefined()

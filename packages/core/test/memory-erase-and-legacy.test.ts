@@ -79,10 +79,12 @@ describe("erasing everything", () => {
   })
 
   test("an already-empty store reports 0 rather than implying something happened", async () => {
-    const erased = await Effect.runPromise(Effect.gen(function* () {
-      const memory = MemoryClient.stub()
-      return yield* memory.eraseAll()
-    }))
+    const erased = await Effect.runPromise(
+      Effect.gen(function* () {
+        const memory = MemoryClient.stub()
+        return yield* memory.eraseAll()
+      }),
+    )
     expect(erased).toBe(0)
   })
 })
