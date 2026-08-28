@@ -8,6 +8,12 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 import type { TitlebarTheme } from "../preload/types"
 import { CSP_HEADER, RENDERER_CSP } from "./csp"
 import { exportDebugLogs, write as writeLog } from "./logging"
+import {
+  createNavigationGuard,
+  isRendererUrl as isRendererUrlFor,
+  RENDERER_HOST,
+  RENDERER_PROTOCOL,
+} from "./navigation"
 import { resolveRendererDevUrl } from "./renderer-url"
 import { getStore } from "./store"
 import { PINCH_ZOOM_ENABLED_KEY } from "./store-keys"
@@ -15,8 +21,8 @@ import { createUnresponsiveSampler } from "./unresponsive"
 
 const root = dirname(fileURLToPath(import.meta.url))
 const rendererRoot = join(root, "../renderer")
-const rendererProtocol = "nc"
-const rendererHost = "renderer"
+const rendererProtocol = RENDERER_PROTOCOL
+const rendererHost = RENDERER_HOST
 const clipboardWritePermission = "clipboard-sanitized-write"
 const notificationPermission = "notifications"
 const rendererPermissions = new Set([clipboardWritePermission, notificationPermission])
@@ -168,6 +174,8 @@ export function createMainWindow() {
     if (/^https?:/i.test(url)) void shell.openExternal(url)
     return { action: "deny" }
   })
+
+  wireNavigationGuard(win)
 
   // ⚠️ There used to be an `onBeforeSendHeaders` hook here adding `Access-Control-Allow-Origin: *`
   // to every outgoing REQUEST. Deleted 2026-07-30: ACAO is a RESPONSE header and no step of the
@@ -395,6 +403,31 @@ function addHtmlDocumentHeaders(response: Response, file: string) {
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
 }
 
+/**
+ * 🔴 NC-SEC-002 — the main frame may only ever show the app's own renderer.
+ *
+ * The preload belongs to the webContents, not to the document: any page the main frame reaches
+ * inherits `window.api` and with it the filesystem. `setWindowOpenHandler` above covers
+ * `window.open`; this covers the other way out, which had no cover at all.
+ *
+ * ⚠️ Both events. `will-navigate` alone is a guard on the FIRST hop only — a trusted URL that
+ * 302s to a foreign origin never fires it, and `will-redirect` is the event that sees the second
+ * hop. Guarding one and not the other is the shape of a guard that reads as complete.
+ *
+ * ⚠️ Neither fires for `loadURL`, `goBack` or in-page hash changes, which is why the app's own
+ * boot and its hash routing are untouched by this.
+ */
+function wireNavigationGuard(win: BrowserWindow) {
+  const guard = createNavigationGuard({
+    origin: rendererOrigin,
+    openExternal: (url) => void shell.openExternal(url),
+    log: (message, url) => writeLog("navigation", message, { url }, "warn"),
+  })
+
+  win.webContents.on("will-navigate", (event, url) => guard(event, url))
+  win.webContents.on("will-redirect", (event, url) => guard(event, url))
+}
+
 function allowRendererPermissions(win: BrowserWindow) {
   const webContentsId = win.webContents.id
 
@@ -461,16 +494,22 @@ function addRendererHeaders(value: string, headers: Record<string, any>) {
   upsertKeyValue(headers, CSP_HEADER, [RENDERER_CSP])
 }
 
-function isRendererUrl(value?: string, html = false) {
-  if (!value || !URL.canParse(value)) return false
-  const url = new URL(value)
-  if (html && !url.pathname.endsWith(".html")) return false
-  if (url.protocol === `${rendererProtocol}:` && url.host === rendererHost) return true
+/**
+ * The trusted renderer origin, read fresh on every call.
+ *
+ * ⚠️ Not captured at module load. `app.isPackaged` is meaningful from the first tick, but reading
+ * it once here would make the trust set a startup snapshot — and this predicate answers questions
+ * (may this document hold the preload? may it request a permission?) that arrive throughout the
+ * session, so it must ask them of the current process, not of a remembered one.
+ */
+function rendererOrigin() {
   // Same guard as `loadWindow`: a packaged build must not trust an inherited dev-server origin as a
   // navigation target either. The upstream patch fixed only the load path; this is the second reader.
-  const devUrl = resolveRendererDevUrl(app.isPackaged, process.env.ELECTRON_RENDERER_URL)
-  if (!devUrl || !URL.canParse(devUrl)) return false
-  return url.origin === new URL(devUrl).origin
+  return { devUrl: resolveRendererDevUrl(app.isPackaged, process.env.ELECTRON_RENDERER_URL) }
+}
+
+function isRendererUrl(value?: string, html = false) {
+  return isRendererUrlFor(value, rendererOrigin(), html)
 }
 
 function wireZoom(win: BrowserWindow) {

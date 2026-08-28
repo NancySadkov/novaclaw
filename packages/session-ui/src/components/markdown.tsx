@@ -183,9 +183,11 @@ function createHtmlEmbed(srcdoc: string, hash: string, labels: EmbedLabels) {
   container.setAttribute("data-component", "markdown-html-embed")
   container.dataset.embedHash = hash
   const frame = document.createElement("iframe")
-  // sandbox WITHOUT allow-same-origin: scripts execute in an opaque origin with no
-  // cookies, storage, or parent access — that sandbox is the entire security boundary
-  // that lets the raw (never-sanitized) fence text run
+  // sandbox WITHOUT allow-same-origin: scripts execute in an opaque origin with no cookies,
+  // storage, or parent access. ⚠️ That is HALF the boundary, not all of it — it governs what the
+  // embedded document can READ locally and says nothing about what it can SEND. The other half is
+  // the CSP `htmlEmbedForBlock` puts at the top of every srcdoc (NC-SEC-003). Together they are
+  // what lets the raw, never-sanitized fence text run.
   frame.setAttribute("sandbox", HTML_EMBED_SANDBOX)
   frame.setAttribute("loading", "lazy")
   frame.setAttribute("referrerpolicy", "no-referrer")
