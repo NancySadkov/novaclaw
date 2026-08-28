@@ -1302,6 +1302,36 @@ export const layer = Layer.effect(
           { db, events, projects, store },
           {
             location,
+            /**
+             * 🔴 **A FORK IS A BRANCH OF ITS SOURCE — a child, carrying that chat's owner.**
+             *
+             * Owner, 2026-08-28: *"no ghosthouse architecture"*, and *"our vision breaks all ties …
+             * pick the best and most robust architecture, which fits our ECS nicely."*
+             *
+             * ⚠️ This SUPERSEDES the 2026-08-23 ruling that a fork drops the identity and makes a
+             * fresh ROOT. That call was right about what it forbade — a second ROOT bearing a
+             * colleague's id is a second chat for that colleague — and wrong about the only way out.
+             * Dropping the owner bought the exemption with a row belonging to nobody, which is the
+             * ghost the later ruling names.
+             *
+             * The ECS lens settles it. The chat is a COMPONENT of the agent, and a fork of Xenia's
+             * chat contains Xenia's words: it hangs off her, or it hangs off nothing. And the reason
+             * one-chat-per-colleague exists is that *"the roster is the only door to a colleague's
+             * chat"* — a branch is not reached from the roster, it is reached through the chat it
+             * came from. That is what a child IS. The invariant is untouched: it governs ROOTS.
+             *
+             * ⚠️ Deleting the source takes its branches with it (`removeSessionRecord` cascades), and
+             * that is the rule working rather than a wart: a branch whose source is gone is reachable
+             * from nowhere, which is the very thing being abolished.
+             *
+             * ⚠️ The TYPE is inherited, not forced, and that is what makes the tab work. The titlebar
+             * collapses SUB-AGENT sessions into their parent's tab — worker threads must not each open
+             * one — so a branch of an interactive chat is interactive and gets its own tab, while a
+             * branch of a worker stays a worker. Forcing `interactive` here would also have broken the
+             * contract the fork suite pins: a fork carries the source's resolved config.
+             */
+            parentID: SessionSchema.ID.make(input.sessionID),
+            ...(source.agent === undefined ? {} : { agent: source.agent }),
             title: SessionTitle.forked(source.title),
             metadata: source.metadata ? structuredClone({ ...source.metadata }) : undefined,
             // 🔴 A FORK DOES NOT CARRY A COLLEAGUE'S IDENTITY (owner, 2026-08-23:

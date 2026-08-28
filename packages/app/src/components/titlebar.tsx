@@ -191,7 +191,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
             )
             if (main) return main
             const s = session()
-            if (s?.parentID) {
+            if (s?.parentID && collapsesIntoParent(s)) {
               const parentID = s.parentID
               const parent = tabsStore.find(
                 (item) => item.type === "session" && item.server === route.server && item.sessionId === parentID,
@@ -200,6 +200,24 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
             }
           }
         }
+
+        /**
+         * 🔴 **Which sessions share their parent's tab — keyed on TYPE, not on parentage.**
+         *
+         * It read `parentID ?? id`, which says "a child never gets its own tab". What it MEANS is
+         * "a spawned WORKER never gets its own tab" — a fleet of sub-agents must not each open one.
+         * The two agreed until a fork became a branch of its source (2026-08-28): a conversation a
+         * person opened deliberately would have shared the tab of the chat it came from, leaving one
+         * of the two transcripts unreachable while the other was on screen.
+         *
+         * The schema already draws this line — `type: "interactive" | "sub-agent" | …` — and the
+         * spawner stamps `sub-agent` at both call sites, so the right field was there all along.
+         *
+         * ⚠️ Anything else gets its own tab, including a session whose `type` is absent. Rows written
+         * before the column existed are not workers, and a stale row must not silently swallow a
+         * chat's tab.
+         */
+        const collapsesIntoParent = (s: { type?: string | undefined }) => s.type === "sub-agent"
 
         const currentTab = () => matchRoute(layout.route())
 
@@ -215,7 +233,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
           if (route.type === "session") {
             const s = session()
             if (!s) return
-            const sessionId = s.parentID ?? s.id
+            const sessionId = collapsesIntoParent(s) ? (s.parentID ?? s.id) : s.id
             /**
              * ⚠️ The colleague only when this session IS the tab. A child session maps onto its
              * PARENT's tab, and the child's own agent is not necessarily the parent's — stamping it

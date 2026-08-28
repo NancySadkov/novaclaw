@@ -43,6 +43,30 @@ export const NOVA_ID = ID.make("nova")
  */
 export const DEFAULT_COLLEAGUE_ID = NOVA_ID
 
+/**
+ * 🔴 **NAMED SERVICE AGENTS — the subsystems that start work of their own.**
+ *
+ * Owner, 2026-08-28: *"if something needs special treatment, it needs a service/system agent, which
+ * can be named and pointed at. If we need to process multiple instance of that item at once, we just
+ * tell that agent to spawn sub agents. TLDR: no ghosthouse architecture."*
+ *
+ * The messenger gateway and the recipe cook used to create sessions with NO agent at all — rows that
+ * belonged to nobody, appeared on no roster, and could be reached from nowhere. That is the same
+ * haunting `DEFAULT_COLLEAGUE_ID` was written to end, arriving through a different door: a machine
+ * one instead of the composer.
+ *
+ * ⚠️ They are HIDDEN, not secret. A hidden agent still has a name, a title and a Contacts row under
+ * "Hidden" — so the thing that started a chat can be pointed at, which is the whole difference
+ * between a service and a ghost.
+ *
+ * ⚠️ **Many at once become CHILDREN, never siblings.** One live root per agent is enforced in the
+ * database, so a second messaging account cannot be a second messenger root. It is a sub-session of
+ * the messenger's own chat — which is what "tell that agent to spawn sub agents" means, and it is
+ * how the fleet already works everywhere else.
+ */
+export const MESSENGER_ID = ID.make("messenger")
+export const RECIPE_ID = ID.make("recipe")
+
 /** Agent ids the user may not redefine, rename or delete through any surface.
  *
  *  🔴 Nova is on this list because *"the charter is not editable from inside"*: an instance whose

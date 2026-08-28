@@ -681,7 +681,13 @@ describe("SessionV2.fork", () => {
       const forked = yield* session.fork({ sessionID: created.id })
 
       expect(forked.id).not.toBe(created.id)
-      expect(forked.parentID).toBeUndefined()
+      // 🔴 SUPERSEDED 2026-08-28: a fork is a BRANCH of its source, not a fresh root. It was rooted
+      // so it would not carry the source's agent (a second ROOT with a colleague's id is a second
+      // chat for them) — which bought the exemption with a row belonging to nobody. Note the
+      // `agent: created.agent` assertion below: the ownership was always intended; only the rooting
+      // was wrong. As a child it carries the owner and one-chat-per-colleague, which governs ROOTS,
+      // is untouched.
+      expect(forked.parentID).toBe(created.id)
       expect(forked.title).toBe(`${created.title} (fork #1)`)
       // The fork keeps the source's agent/model (deliberate V1 delta — V1 dropped them).
       expect(forked).toMatchObject({ agent: created.agent, model: created.model })

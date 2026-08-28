@@ -130,7 +130,10 @@ describe("safe mode — the session column", () => {
 
       const forked = yield* session.fork({ sessionID: child.id })
       const stored = yield* session.get(forked.id)
-      expect(stored.parentID, "a fork is a ROOT — nothing left to inherit from").toBeUndefined()
+      // 🔴 SUPERSEDED 2026-08-28: a fork hangs off its source. What this line was really guarding is
+      // the assertion below — that the fork MATERIALISED safe mode on its own row rather than leaning
+      // on a chain — and that is unchanged and still checked.
+      expect(stored.parentID, "a fork is a BRANCH of its source").toBe(child.id)
       expect(stored.safeMode, "the fork returned LESS restricted than its source (ruling 8)").toBe(true)
       expect((yield* resolveFor(forked.id)).safeMode).toBe(true)
     }),

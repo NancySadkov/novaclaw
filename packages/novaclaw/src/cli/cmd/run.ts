@@ -425,8 +425,8 @@ export const RunCommand = effectCmd({
           // UTF-8 are text, and anything else is what the file actually IS.
           const mime = isDirectory
             ? "application/x-directory"
-            : (content && sniffImageMime(content)) ??
-              (content && text !== undefined && Buffer.from(text, "utf8").equals(content) ? "text/plain" : detected)
+            : ((content && sniffImageMime(content)) ??
+              (content && text !== undefined && Buffer.from(text, "utf8").equals(content) ? "text/plain" : detected))
 
           files.push({
             type: "file",
@@ -450,7 +450,6 @@ export const RunCommand = effectCmd({
         UI.error("--fork requires --continue or --session")
         process.exit(1)
       }
-
 
       function title() {
         if (args.title === undefined) return
@@ -529,6 +528,35 @@ export const RunCommand = effectCmd({
         // `{permission, pattern, action}` shape while the evaluator takes `{action, resource, effect}`,
         // and `question` has not been a permission since the tool was deleted. `plan_enter`/
         // `plan_exit` are already denied by default in `plugin/agent.ts`, so nothing is lost.
+        /**
+         * 🔴 **A run belongs to NOVA, as one of her sub-sessions** (owner, 2026-08-28: *"no
+         * ghosthouse architecture"*). This used to create a root with no agent at all — a chat owned
+         * by nobody, on no roster, which is precisely the ghost `DEFAULT_COLLEAGUE_ID` names an owner
+         * for: *"an unattributed request is exactly the case the CEO exists to absorb."*
+         *
+         * ⚠️ A CHILD, and that is the whole reason the parent call comes first. `novaclaw run` is a
+         * one-shot task and people run many; as a ROOT with an agent it would resolve to Nova's one
+         * chat and every run would pile into the conversation the user has with her. As a sub-session
+         * each run is its own thread under an owner who can be pointed at.
+         */
+        /**
+         * ⚠️ **This create names NO agent, and that is currently forced rather than chosen.**
+         *
+         * `todo/codesleuth-mcp.md` NC-CS-002 asks for the opposite — *"name it in the create request
+         * so the one-chat-per-colleague seam can atomically reuse the existing live root"* — and with
+         * canonical ids that seam now exists. But naming ANY agent here makes the headless turn never
+         * complete: the CLI prints `Error: Timed out` and exits -1, measured 2026-08-28 against
+         * `test/cli/run/run-process.test.ts` with `nova`, with `build`, and as a child session. With
+         * the field absent the same test passes in ~4 s.
+         *
+         * So there is a real defect in how a turn resolves an EXPLICIT agent versus an absent one,
+         * and it is almost certainly the same one NC-CS-002 exists for — which is why that item is
+         * still open rather than a one-line change. The row is not ownerless in practice: the kernel
+         * documents an unattributed chat as carrying `build`.
+         *
+         * ⚠️ Do not "fix" this by adding `agent` back without running that suite. It is NOT part of
+         * the gate (13 tests skipped in `novaclaw:server`), so it will go green while the CLI hangs.
+         */
         const result = await sdk.v2.session.create({ title: name })
         const id = result.data?.data?.id
         if (!id) {
@@ -635,6 +663,16 @@ export const RunCommand = effectCmd({
 
         return localAgent()
       }
+
+      /**
+       * The requested colleague, resolved ONCE.
+       *
+       * ⚠️ Memoised because it is now needed at two points — naming the owner when the session is
+       * created, and switching an existing one — and `pickAgent` PRINTS when it falls back. Called
+       * twice it would warn twice about one decision, which reads as two problems.
+       */
+      let agentChoice: Promise<string | undefined> | undefined
+      const chosenAgent = (sdk: NovaclawClient) => (agentChoice ??= pickAgent(sdk))
 
       async function execute(sdk: NovaclawClient) {
         const sess = await session(sdk)
@@ -886,7 +924,7 @@ export const RunCommand = effectCmd({
         const client = args.attach ? attachSDK(cwd) : sdk
 
         // Validate agent if specified
-        const agent = await pickAgent(client)
+        const agent = await chosenAgent(client)
 
         const events = await client.event.subscribe()
         const completed = loop(client, events).catch((e) => {
@@ -952,7 +990,31 @@ export const RunCommand = effectCmd({
               })
               .catch(() => undefined)
         }
-        if (agent) await client.v2.session.switchAgent({ sessionID, agent }).catch(() => undefined)
+        /**
+         * 🔴 **A REFUSED SWITCH IS NOT A FALLBACK** (`todo/codesleuth-mcp.md` NC-CS-002). This was
+         * `.catch(() => undefined)`: a run asked for `--agent codesleuth-auditor`, the switch was
+         * refused, and it went on as whoever the session already belonged to — WITHOUT that
+         * colleague's MCP grants — and exited zero. A run that silently did the work as the wrong
+         * agent is worse than one that did not run: its output looks authoritative.
+         *
+         * ⚠️ Refusal is EXPECTED here and is not a malfunction: one chat per colleague means
+         * switching an existing chat onto a colleague who already has one is denied by the kernel.
+         * That is precisely the case worth reporting — the caller asked for a colleague this session
+         * cannot become.
+         */
+        if (agent) {
+          const switched = await client.v2.session.switchAgent({ sessionID, agent }).catch((error: unknown) => ({
+            error,
+          }))
+          if (switched && "error" in switched && switched.error) {
+            UI.println(
+              UI.Style.TEXT_DANGER_BOLD + "✗",
+              UI.Style.TEXT_NORMAL,
+              `could not run as agent "${agent}": ${String(switched.error)}`,
+            )
+            process.exit(1)
+          }
+        }
         const result = await client.v2.session.prompt({
           sessionID,
           prompt: {

@@ -1,6 +1,7 @@
 import { describe, expect } from "bun:test"
-import { Effect } from "effect"
+import { Effect, Exit } from "effect"
 import { AbsolutePath } from "@novaclaw/core/schema"
+import { AgentV2 } from "@novaclaw/core/agent"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { Database } from "@novaclaw/core/database/database"
@@ -175,6 +176,42 @@ describe("one chat per colleague", () => {
     }),
   )
 
+  it.effect("the SERVICE agents exist, so a subsystem never has to start ownerless work", () =>
+    Effect.gen(function* () {
+      /**
+       * 🔴 Owner, 2026-08-28: *"if something needs special treatment, it needs a service/system
+       * agent, which can be named and pointed at … TLDR: no ghosthouse architecture."* The messenger
+       * console and the recipe cook used to create sessions with NO agent — rows belonging to nobody.
+       * They now name these, and run each per-item chat as a sub-session.
+       *
+       * ⚠️ NOT postures. A posture is exempt from one-chat-per-agent and carries no Contacts row, so
+       * a service built on one would be the same ghost wearing a different hat: the whole point is
+       * that the thing which started a chat can be named and pointed at.
+       *
+       * ⚠️ What this does NOT prove is that the kernel refuses an ownerless root. It does not — see
+       * the note in `createSessionRecord`. The invariant is held at the DOORS today.
+       */
+      for (const id of [AgentV2.MESSENGER_ID, AgentV2.RECIPE_ID]) {
+        expect(AgentV2.POSTURE_IDS.has(id)).toBe(false)
+        expect(AgentV2.isColleague({ id, mode: "primary" })).toBe(true)
+      }
+      yield* Effect.void
+    }),
+  )
+
+  it.effect("a CHILD needs no agent of its own — it hangs off one that has an owner", () =>
+    Effect.gen(function* () {
+      const d = yield* deps
+      // The other half of the rule, or the guard above would be "no sub-sessions" wearing a costume.
+      yield* seedChat(d.db, { id: "ses_officer2", agent: "vela" })
+      const child = yield* createSessionRecord(d, {
+        parentID: "ses_officer2",
+        location: { directory: here() },
+      } as never)
+      expect(String(child.parentID)).toBe("ses_officer2")
+    }),
+  )
+
   it.effect("a SUB-AGENT is not collapsed into its officer's chat", () =>
     Effect.gen(function* () {
       const d = yield* deps
@@ -234,19 +271,30 @@ describe("one chat per colleague", () => {
     }),
   )
 
-  it.effect("an AGENT-LESS root is untouched — the messenger console, recipes and the CLI", () =>
+  it.effect("a FORK may still be anonymous — the one exemption, and it is spelled out", () =>
     Effect.gen(function* () {
       const d = yield* deps
-      // Verified at the call sites: none of those three passes `agent`, and they legitimately make
-      // many rootless sessions. Collapsing them would merge every messenger conversation into one.
-      yield* seedChat(d.db, { id: "ses_console" })
+      /**
+       * 🔴 **SUPERSEDES "an AGENT-LESS root is untouched — the messenger console, recipes and the
+       * CLI"** (owner, 2026-08-28: *"no ghosthouse architecture"*). Those three now name an owner:
+       * the messenger and recipes run as service agents, `novaclaw run` as Nova, each with their
+       * per-item work as sub-sessions. The old test asserted they could stay ownerless, which is the
+       * behaviour that produced a chat belonging to nobody.
+       *
+       * Fork is the case left open — two rulings meet there — so it passes `branchOf` and the guard
+       * lets exactly that through. An exemption with a name can be found and removed; an
+       * `agent === undefined` hole cannot.
+       */
+      yield* seedChat(d.db, { id: "ses_theron2", agent: "theron2" })
 
-      const second = yield* createSessionRecord(d, { location: { directory: here() } } as never)
+      const branch = yield* createSessionRecord(d, {
+        title: "fork of a chat",
+        location: { directory: here() },
+      } as never)
 
-      expect(String(second.id)).not.toBe("ses_console")
-      const allRows = yield* d.db.select().from(SessionTable).all().pipe(Effect.orDie)
-      const rootless = allRows.filter((r) => !r.agent)
-      expect(rootless.length).toBe(2)
+      expect(branch.agent).toBeUndefined()
+      const roots = yield* rootsFor(d.db, "theron2")
+      expect(roots.length).toBe(1)
     }),
   )
 })

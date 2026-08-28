@@ -281,7 +281,24 @@ export const RecipeHandler = handlerLayer(
 
             const model = modelRef(ctx.payload.model)
 
+            /**
+             * 🔴 **A cook belongs to the RECIPE service, and each run is one of its sub-sessions**
+             * (owner, 2026-08-28: *"no ghosthouse architecture"*). It used to be created with no
+             * agent at all — work nobody owned, which is exactly the shape the roster cannot show and
+             * the user cannot point at.
+             *
+             * ⚠️ A CHILD, not a second root: cooks run many at a time and one live root per agent is
+             * enforced in the database. The parent call is idempotent — `createSessionRecord` hands
+             * back the service's existing chat rather than minting a sibling.
+             */
+            const recipeRoot = yield* sessions.create({
+              agent: AgentV2.RECIPE_ID,
+              location: { directory: AbsolutePath.make(directory) },
+              title: "Recipes",
+            })
             const session = yield* sessions.create({
+              agent: AgentV2.RECIPE_ID,
+              parentID: recipeRoot.id,
               location: { directory: AbsolutePath.make(directory) },
               title: recipe.name,
               // Cooking is a "go and do it" action, not a conversation: the user picked a recipe and a folder

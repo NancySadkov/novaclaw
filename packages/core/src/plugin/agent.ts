@@ -164,7 +164,10 @@ agents should feel like operating machinery.`
  * communicate with each other" is the owner's sentence, and staffing stays Nova's alone — enforced by
  * `tool/colleague.ts` → `mayStaff`, independently of this dial.
  */
-export const floor = (input: { readonly scratchDirs: readonly string[]; readonly officer: boolean }): PermissionV2.Ruleset => [
+export const floor = (input: {
+  readonly scratchDirs: readonly string[]
+  readonly officer: boolean
+}): PermissionV2.Ruleset => [
   // v0.2.0 B4c: the compiled floor is an explicit ALLOWLIST of ambient-safe actions — never a
   // catch-all `{ action: "*", resource: "*", effect: "allow" }` again. Anything absent from it
   // falls through to the evaluator's `ask` default, which is what makes a per-action gate added
@@ -413,14 +416,48 @@ export const Plugin = define({
         item.name = "Researcher"
         item.title = "Research Officer"
         item.description =
-          "Research officer for questions that need EVIDENCE rather than an opinion: benchmarks, ablations, measurements, A/B comparisons, \"is this actually faster/better/broken\". Give it the question and what a useful answer would let you decide. It runs the instance's research commandments — checking the instrument before the number, controlling the environment, and refusing to report a result it cannot explain."
+          'Research officer for questions that need EVIDENCE rather than an opinion: benchmarks, ablations, measurements, A/B comparisons, "is this actually faster/better/broken". Give it the question and what a useful answer would let you decide. It runs the instance\'s research commandments — checking the instrument before the number, controlling the environment, and refusing to report a result it cannot explain.'
         item.avatar ??= "🔬"
         item.system ??= RESEARCHER_SYSTEM
         item.mode = "subagent"
         item.permissions.push(
-          ...PermissionV2.merge(defaults, [{ action: "skill", resource: SkillBuiltin.RESEARCH_SKILL, effect: "allow" }]),
+          ...PermissionV2.merge(defaults, [
+            { action: "skill", resource: SkillBuiltin.RESEARCH_SKILL, effect: "allow" },
+          ]),
         )
       })
+
+      /**
+       * The SERVICE agents. They own the sessions their subsystem starts, so no row is ever
+       * ownerless (`AgentV2.MESSENGER_ID` carries the doctrine).
+       *
+       * ⚠️ They stand on the SAME floor and carry the SAME prompt as `build`, deliberately: these
+       * sessions used to run unattributed, which the runner resolved to the default agent. Giving
+       * them an owner is a change of BOOKKEEPING, not of what the work may do — a service agent with
+       * a narrower permission set would have quietly broken recipe cooking and messaging.
+       *
+       * ⚠️ `hidden`, so they do not crowd the roster — but named and titled, so a chat they started
+       * can be traced to something a person can point at.
+       */
+      for (const service of [
+        { id: AgentV2.MESSENGER_ID, name: "Messenger", title: "Messaging Service" },
+        { id: AgentV2.RECIPE_ID, name: "Recipes", title: "Recipe Service" },
+      ]) {
+        draft.update(service.id, (item) => {
+          item.name = service.name
+          item.title = service.title
+          item.description = `Owns the chats ${service.name} starts, so none of them belongs to nobody.`
+          item.system ??= BUILD_SYSTEM
+          item.mode = "primary"
+          item.hidden = true
+          item.permissions.push(
+            ...PermissionV2.merge(defaults, [
+              { action: "question", resource: "*", effect: "allow" },
+              { action: "plan_enter", resource: "*", effect: "allow" },
+            ]),
+          )
+        })
+      }
 
       draft.update(AgentV2.ID.make("compaction"), (item) => {
         item.mode = "primary"

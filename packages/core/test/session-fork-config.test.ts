@@ -267,7 +267,18 @@ describe("SessionV2.fork — the fork carries the source's resolved config", () 
       // AGENT's ruleset and never consulted the session row — and it was typed in the LEGACY
       // `{permission, pattern, action}` shape the evaluator does not even take. Nothing replaces it;
       // one authority for permissions is the decision.
-      expectField("fork is a root", stored.parentID, undefined)
+      /**
+       * 🔴 **SUPERSEDED: a fork is a BRANCH of its source, not a root** (owner, 2026-08-28 — "no
+       * ghosthouse architecture", resolved against the ECS lens).
+       *
+       * It was a root so that it would not carry the source's agent, because a second ROOT bearing a
+       * colleague's id is a second chat for that colleague. That bought the exemption with a row
+       * belonging to nobody. As a child it carries the owner AND breaks nothing: one-chat-per-colleague
+       * governs roots, and the reason it exists — "the roster is the only door to a colleague's chat"
+       * — does not reach a branch, which is opened through the chat it came from.
+       */
+      expectField("fork hangs off its source", stored.parentID, source.id)
+      expectField("fork carries the source's owner", stored.agent, source.agent)
     }),
   )
 

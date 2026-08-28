@@ -140,11 +140,21 @@ describe("the built-in agents the plugin actually builds", () => {
         "compaction",
         "explore",
         "general",
+        /**
+         * The SERVICE agents (2026-08-28). The messenger console and the recipe cook used to create
+         * sessions with NO agent at all — rows belonging to nobody, on no roster, reachable from
+         * nowhere. They own that work now, so a chat a subsystem starts can be named and pointed at.
+         *
+         * ⚠️ Held to the SAME floor as every other built-in, which is what the loop below checks:
+         * owning a subsystem's chats grants no ambient authority over what may be run.
+         */
+        "messenger",
         // The CEO (AGENTS.md — the structural metaphor). Same ruleset as `build` plus the two
         // interactive grants: Nova talks to the user and routes work, it does not carry authority
         // its officers lack.
         "nova",
         "plan",
+        "recipe",
         // The Research Officer. Its only added rule names a single skill by resource, so it is not a
         // catch-all and the loop below still holds it to the same bar as the rest.
         "researcher",

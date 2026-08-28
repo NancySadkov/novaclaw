@@ -119,11 +119,21 @@ describe("AgentV2", () => {
         "compaction",
         "explore",
         "general",
+        /**
+         * The SERVICE agents (2026-08-28). The messenger console and the recipe cook used to create
+         * sessions with NO agent at all — rows belonging to nobody, on no roster, reachable from
+         * nowhere. They own that work now, so a chat a subsystem starts can be named and pointed at.
+         *
+         * ⚠️ Held to the SAME floor as every other built-in, which is what the loop below checks:
+         * owning a subsystem's chats grants no ambient authority over what may be run.
+         */
+        "messenger",
         // Nova, the CEO (AGENTS.md — the structural metaphor). It joins the built-in roster and is
         // held to the same floor as every other built-in below: governing WHO exists grants no
         // ambient authority over what they may run.
         "nova",
         "plan",
+        "recipe",
         // The Research Officer, shipped so a question that needs EVIDENCE has somebody whose charter
         // is the research commandments. It is held to the same floor as every other built-in: the ONE
         // thing its charter adds is `{action:"skill", resource:"research"}`, which is narrow by

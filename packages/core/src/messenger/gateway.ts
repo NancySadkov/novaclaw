@@ -15,6 +15,7 @@ import { LayerNode } from "../effect/layer-node"
 import { EventV2 } from "../event"
 import { Global } from "../global"
 import { Offline } from "../offline"
+import { AgentV2 } from "../agent"
 import { Log } from "@novaclaw/schema/log"
 import { SessionV2 } from "../session"
 import { SessionOrigin } from "../session/origin"
@@ -630,7 +631,27 @@ const build = (options: Options) =>
         // ⚠️ Same answer `schedule/scheduler.ts` already gives for the other rootless launch
         // (`schedule.location ?? global.home`), which is the point — two rootless launches on one
         // instance must not disagree about where "no particular folder" is.
+        /**
+         * 🔴 **The console belongs to the MESSENGER, and every account is one of its sub-sessions**
+         * (owner, 2026-08-28: *"if something needs special treatment, it needs a service/system
+         * agent, which can be named and pointed at … TLDR: no ghosthouse architecture"*).
+         *
+         * This used to create a session with NO agent — a row belonging to nobody, on no roster, and
+         * reachable from nowhere once its binding was forgotten.
+         *
+         * ⚠️ A CHILD, not a second root. One live root per agent is enforced in the database, so a
+         * second messaging account cannot be another messenger root; it is a sub-session of the
+         * messenger's own chat. `createSessionRecord` returns the existing root rather than making a
+         * sibling, so the first call here is idempotent and needs no "does it exist" dance.
+         */
+        const root = yield* sessions.create({
+          agent: AgentV2.MESSENGER_ID,
+          location: { directory: AbsolutePath.make(global.home) },
+          title: "Messenger",
+        })
         const session = yield* sessions.create({
+          agent: AgentV2.MESSENGER_ID,
+          parentID: root.id,
           location: { directory: AbsolutePath.make(global.home) },
           title: `${account.label} console`,
         })
@@ -1091,7 +1112,10 @@ const build = (options: Options) =>
         // Flood cap (§7.6): a chat firing faster than a human gets dropped past the cap, with a
         // single throttled slow-down reply. (Audience already coalesces, but a hard flood would
         // still flush size-batches back-to-back — the cap bounds that too.)
-        const flood = floodClear(MessengerPipeline.chatKey(account.id, event.chat.chatID), yield* Clock.currentTimeMillis)
+        const flood = floodClear(
+          MessengerPipeline.chatKey(account.id, event.chat.chatID),
+          yield* Clock.currentTimeMillis,
+        )
         if (!flood.ok) {
           if (flood.warn)
             yield* reply(
