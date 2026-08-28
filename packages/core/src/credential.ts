@@ -1,5 +1,6 @@
 export * as Credential from "./credential"
 
+import { Log } from "@novaclaw/schema/log"
 import { asc, eq } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
 import { Credential } from "@novaclaw/schema/credential"
@@ -56,15 +57,43 @@ export const layer = Layer.effect(
     const cipher = yield* CredentialCipher.Service
     const decode = Schema.decodeUnknownSync(Value)
     const aad = (id: ID) => `novaclaw:credential:${id}`
-    const encode = (id: ID, value: Value) => cipher.encrypt(JSON.stringify(value), aad(id))
+    /**
+     * 🔴 The unwind of app-managed encryption, continued (`todo/code-review.md`, NC-REL-030).
+     *
+     * Storing a credential is storing it. Decision §5 of `decisions-v0.2.0.md`, recorded six days
+     * AFTER the cipher landed with a one-line commit and no rationale, says secrets stay plaintext
+     * under OS account protection: no keyring exists in every run mode NovaClaw ships, and a
+     * partial one strands `novaclaw serve`, the CLI and backup/restore. What shipped was a key FILE
+     * beside this table — none of the security a keyring would have bought, all of the stranding.
+     */
+    const encode = (_id: ID, value: Value) => JSON.stringify(value)
     const stored = Effect.fn("Credential.stored")(function* (row: typeof CredentialTable.$inferSelect) {
       if (!row.integration_id) return
-      const plaintext = cipher.encrypted(row.value) ? yield* cipher.decrypt(row.value, aad(row.id)) : row.value
+      const wasEncrypted = cipher.encrypted(row.value)
+      /**
+       * ⚠️ A credential that will not open no longer takes the INSTANCE with it. `all()` is part of
+       * catalog boot and wraps this in `orDie`, so one row encrypted under a key that is gone
+       * aborted startup — the same fault as NC-REL-030 in a second place, and the comment here used
+       * to claim the opposite ("never instance boot"). It is skipped instead, which is also
+       * fail-closed: a credential nothing can read is a credential that authenticates nothing.
+       */
+      const plaintext = wasEncrypted
+        ? yield* cipher.decrypt(row.value, aad(row.id)).pipe(
+            Effect.catchCause((cause) =>
+              Log.event("credential.setting.undecryptable", {
+                "credential.path": `credential:${row.id}`,
+                "credential.cause": Log.fault(cause),
+              }).pipe(Effect.as(undefined)),
+            ),
+          )
+        : row.value
+      if (plaintext === undefined) return
       const value = decode(JSON.parse(plaintext))
-      // Online migration: a valid legacy row becomes encrypted the first time it is read. `all()` is
-      // part of catalog boot, so normal startup migrates the whole table without a schema migration or
-      // a second plaintext copy. A malformed row fails this credential read, never instance boot.
-      if (!cipher.encrypted(row.value))
+      // ⚠️ The DRAIN, and the direction is the opposite of what it was. This migration used to turn
+      // plaintext into ciphertext on first read; it now writes an opened envelope back as plaintext,
+      // so the ciphertext leaves the table while the key is still present. Stopping the writes
+      // without this would leave every existing row unreadable the moment the key went missing.
+      if (wasEncrypted)
         yield* db
           .update(CredentialTable)
           .set({ value: encode(row.id, value) })
