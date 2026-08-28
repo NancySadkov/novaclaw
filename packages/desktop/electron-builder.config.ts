@@ -6,14 +6,49 @@ import { promisify } from "node:util"
 import type { Configuration } from "electron-builder"
 
 import { resolveChannel } from "@novaclaw/script/channel"
+import { windowsSigning } from "./scripts/windows-signing"
 
 const execFileAsync = promisify(execFile)
 const packageDir = path.dirname(fileURLToPath(import.meta.url))
 const rootDir = path.resolve(packageDir, "../..")
 const signScript = path.join(rootDir, "script", "sign-windows.ps1")
+/**
+ * 🔴 **NC-SEC-010 — a RELEASE build that could not sign must not package.**
+ *
+ * This returned silently whenever it was not on Windows under GitHub Actions, and electron-builder
+ * has no force-signing requirement to contradict it, so `beta`/`latest` packaged to a normal `.7z`
+ * and every later hash/SBOM/release-record step ran green over an unsigned binary. One missing
+ * secret, one renamed CI variable, or one local emergency build was enough.
+ *
+ * ⚠️ **The build LOG is not evidence, and that is what made this survive.** electron-builder prints
+ * `• signing with signtool.exe path=…` BEFORE it calls this function — 267 of those lines in the
+ * 0.1.67 Windows build, with nothing signed. Reading that log is how a reviewer (and an agent, on
+ * 2026-08-28) concludes a build "signed everything". A guard here is the only thing that can tell
+ * the difference, because the log says the same words either way.
+ *
+ * ⚠️ `dev` is EXEMPT and stays silent-but-stated. Dev builds are the ones a person makes on their own
+ * machine all day, they are never published, and failing them would make the guard something people
+ * route around — which is how a release guard stops being one. The exemption is by CHANNEL, not by
+ * "am I in CI": a beta cut on a laptop is exactly the emergency build this exists to catch.
+ *
+ * The shape is the one this build already uses for the native host module: refuse to package rather
+ * than ship a degraded artifact and call it success.
+ */
 async function signWindows(configuration: { path: string }) {
-  if (process.platform !== "win32") return
-  if (process.env.GITHUB_ACTIONS !== "true") return
+  const verdict = windowsSigning({
+    channel,
+    platform: process.platform,
+    githubActions: process.env.GITHUB_ACTIONS,
+  })
+  if (verdict === "skip-allowed") return
+  if (verdict === "refuse")
+    throw new Error(
+      `Refusing to package a ${channel} Windows build without code signing.\n` +
+        `Signing runs only on Windows under GITHUB_ACTIONS=true, and this build is neither — so ` +
+        `"${configuration.path}" would ship with no authenticated publisher while every later ` +
+        `hash/SBOM/release step reported success.\n` +
+        `Build the ${channel} channel in CI, or use the dev channel for a local build.`,
+    )
 
   await execFileAsync(
     "pwsh",

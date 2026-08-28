@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { windowsSigning } from "./scripts/windows-signing"
 import type { Configuration } from "electron-builder"
 
 const channels = [
@@ -80,4 +81,28 @@ test("🔴 ships the DHT sidecar, which the desktop package did not carry at all
    * ⚠️ `build/`, not `target/release/`: cargo's scratch tree is hundreds of megabytes.
    */
   expect(config.extraResources).toContainEqual({ from: "../dht/build/", to: "dht/" })
+})
+
+/**
+ * 🔴 **NC-SEC-010 — a release build that could not sign must not package.**
+ *
+ * The callback returned silently unless it was on Windows under `GITHUB_ACTIONS=true`, and
+ * electron-builder has no force-signing requirement to contradict it: `beta`/`prod` packaged to a
+ * normal `.7z` and every later hash/SBOM/release step ran green over an unsigned binary.
+ *
+ * ⚠️ **The build log cannot tell you.** electron-builder prints `• signing with signtool.exe path=…`
+ * BEFORE calling the signer — 267 such lines in the 0.1.67 Windows build with nothing signed. That
+ * log line is why this survived review twice; only a guard can distinguish the two cases.
+ */
+test("a release channel REFUSES to package Windows without signing; dev may", () => {
+  const outsideCI = { platform: "win32", githubActions: undefined }
+  expect(windowsSigning({ ...outsideCI, channel: "beta" })).toBe("refuse")
+  expect(windowsSigning({ ...outsideCI, channel: "prod" })).toBe("refuse")
+  // Dev builds are made on a laptop all day and never published. Failing them is how a guard becomes
+  // something people route around.
+  expect(windowsSigning({ ...outsideCI, channel: "dev" })).toBe("skip-allowed")
+  // In CI on Windows it actually signs, for every channel.
+  expect(windowsSigning({ platform: "win32", githubActions: "true", channel: "prod" })).toBe("signs")
+  // Nothing to sign off-Windows — the mac/linux legs must not start failing.
+  expect(windowsSigning({ platform: "linux", githubActions: undefined, channel: "prod" })).toBe("skip-allowed")
 })
