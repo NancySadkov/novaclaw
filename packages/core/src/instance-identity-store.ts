@@ -229,10 +229,7 @@ export interface Interface {
    * would orphan every contact and channel that knows this peer, which is unrecoverable and looks
    * from the outside exactly like the instance being replaced by an impostor.
    */
-  readonly restore: (
-    backup: Backup,
-    options?: { readonly replace?: boolean },
-  ) => Effect.Effect<Identity, RestoreError>
+  readonly restore: (backup: Backup, options?: { readonly replace?: boolean }) => Effect.Effect<Identity, RestoreError>
   /**
    * Rotate to a fresh keypair, returning the new identity and a statement the OLD key signed.
    *
@@ -295,6 +292,30 @@ export const layer = Layer.effect(
     /** Its own AAD, so a sealing secret cannot be lifted into the identity column or the reverse. */
     const SEALING_AAD = "instance-identity.sealing_secret_key"
 
+    /**
+     * 🔴 The unwind of app-managed encryption, last consumer (`todo/code-review.md`, NC-REL-030).
+     *
+     * Decision §5 of `decisions-v0.2.0.md`, recorded after the cipher landed unexplained, says
+     * secrets stay plaintext under OS account protection: no keyring exists in every run mode
+     * NovaClaw ships, and a key FILE beside the database buys none of the security a keyring would
+     * while stranding `novaclaw serve`, the CLI and backup/restore.
+     *
+     * ⚠️ These are the one set of secrets a user CANNOT re-enter. A provider credential can be
+     * pasted again and an OAuth flow rerun; an Ed25519 identity that will not open is a network
+     * identity permanently lost, and every contact's record of it with it. So the tolerant read
+     * below is the load-bearing piece and it lands with the write change, not after it: while
+     * `openSecret` accepts BOTH forms, no row can ever be orphaned by which form it happens to be
+     * in.
+     *
+     * ⚠️ `encrypted()` is a prefix test on the envelope marker. A base64url secret cannot begin
+     * with `nc1:` — the alphabet has no colon — so the two forms cannot be confused.
+     */
+    const openSecret = (value: string, aad: string) =>
+      cipher.encrypted(value) ? cipher.decrypt(value, aad) : Effect.succeed(value)
+
+    /** Plaintext from here on; existing envelopes still open through `openSecret`. */
+    const sealSecret = (value: string, _aad: string) => value
+
     const row = () => db.select().from(InstanceIdentityTable).get().pipe(Effect.orDie)
 
     /**
@@ -311,7 +332,7 @@ export const layer = Layer.effect(
       const { publicKey, privateKey } = generateKeyPairSync("ed25519")
       const publicRaw = rawPublicKey(publicKey.export({ type: "spki", format: "der" }) as Buffer)
       const secretRaw = (privateKey.export({ type: "pkcs8", format: "der" }) as Buffer).subarray(PKCS8_PREFIX.length)
-      const secret = cipher.encrypt(secretRaw.toString("base64url"), AAD)
+      const secret = sealSecret(secretRaw.toString("base64url"), AAD)
       const publicEncoded = publicRaw.toString("base64url")
 
       if (existing === undefined) {
@@ -372,7 +393,7 @@ export const layer = Layer.effect(
             .update(InstanceIdentityTable)
             .set({
               sealing_public_key: minted.publicKey,
-              sealing_secret_key: cipher.encrypt(minted.secretKey, SEALING_AAD),
+              sealing_secret_key: sealSecret(minted.secretKey, SEALING_AAD),
             })
             // 🔴 Guarded on absence, like the identity backfill: two concurrent first calls must not
             // let the loser overwrite the winner's key, or a peer that already fetched the first one
@@ -382,7 +403,7 @@ export const layer = Layer.effect(
             .pipe(Effect.orDie)
           publicKey = (yield* row())?.sealing_public_key ?? minted.publicKey
         }
-        const secret = yield* cipher.decrypt(stored?.secret_key ?? "", AAD).pipe(Effect.orDie)
+        const secret = yield* openSecret(stored?.secret_key ?? "", AAD).pipe(Effect.orDie)
         const signature = sign(
           null,
           Buffer.from(sealingKeyBytes(publicKey)),
@@ -397,25 +418,23 @@ export const layer = Layer.effect(
       ) {
         const stored = yield* row()
         if (!stored?.sealing_secret_key) return undefined
-        const secret = yield* cipher.decrypt(stored.sealing_secret_key, SEALING_AAD).pipe(Effect.orDie)
+        const secret = yield* openSecret(stored.sealing_secret_key, SEALING_AAD).pipe(Effect.orDie)
         return CommunitySeal.unseal(secret, envelope, CommunitySeal.envelopeAAD(pair.from, pair.to))
       }),
 
       sign: Effect.fn("InstanceIdentityStore.sign")(function* (message: Uint8Array) {
         const stored = yield* ensure()
-        const secret = yield* cipher.decrypt(stored.secret_key ?? "", AAD).pipe(Effect.orDie)
+        const secret = yield* openSecret(stored.secret_key ?? "", AAD).pipe(Effect.orDie)
         return sign(null, Buffer.from(message), privateKeyFromRaw(Buffer.from(secret, "base64url")))
       }),
       rotate: Effect.fn("InstanceIdentityStore.rotate")(function* () {
         const stored = yield* ensure()
         const previousPublic = Buffer.from(stored.public_key ?? "", "base64url")
-        const previousSecret = yield* cipher.decrypt(stored.secret_key ?? "", AAD).pipe(Effect.orDie)
+        const previousSecret = yield* openSecret(stored.secret_key ?? "", AAD).pipe(Effect.orDie)
 
         const { publicKey, privateKey } = generateKeyPairSync("ed25519")
         const nextPublic = rawPublicKey(publicKey.export({ type: "spki", format: "der" }) as Buffer)
-        const nextSecret = (privateKey.export({ type: "pkcs8", format: "der" }) as Buffer).subarray(
-          PKCS8_PREFIX.length,
-        )
+        const nextSecret = (privateKey.export({ type: "pkcs8", format: "der" }) as Buffer).subarray(PKCS8_PREFIX.length)
 
         const statement = {
           predecessor: networkID(previousPublic),
@@ -444,7 +463,7 @@ export const layer = Layer.effect(
           .update(InstanceIdentityTable)
           .set({
             public_key: nextPublic.toString("base64url"),
-            secret_key: cipher.encrypt(nextSecret.toString("base64url"), AAD),
+            secret_key: sealSecret(nextSecret.toString("base64url"), AAD),
           })
           .run()
           .pipe(Effect.orDie)
@@ -460,7 +479,7 @@ export const layer = Layer.effect(
       }),
       backup: Effect.fn("InstanceIdentityStore.backup")(function* () {
         const stored = yield* ensure()
-        const secret = yield* cipher.decrypt(stored.secret_key ?? "", AAD).pipe(Effect.orDie)
+        const secret = yield* openSecret(stored.secret_key ?? "", AAD).pipe(Effect.orDie)
         const publicKey = Buffer.from(stored.public_key ?? "", "base64url")
         return { version: 1, id: stored.id, networkID: networkID(publicKey), secretKey: secret } satisfies Backup
       }),
@@ -469,11 +488,15 @@ export const layer = Layer.effect(
         options?: { readonly replace?: boolean },
       ) {
         if (backup.version !== 1)
-          return yield* new RestoreError({ message: `This backup is version ${backup.version}; this build reads version 1.` })
+          return yield* new RestoreError({
+            message: `This backup is version ${backup.version}; this build reads version 1.`,
+          })
 
         const secretRaw = Buffer.from(backup.secretKey ?? "", "base64url")
         if (secretRaw.length !== 32)
-          return yield* new RestoreError({ message: "The backup's secret key is not 32 bytes — it is truncated or not a NovaClaw backup." })
+          return yield* new RestoreError({
+            message: "The backup's secret key is not 32 bytes — it is truncated or not a NovaClaw backup.",
+          })
 
         /**
          * 🔴 DERIVE the public key from the secret rather than trusting the file's own `networkID`.
@@ -498,7 +521,7 @@ export const layer = Layer.effect(
               "This instance already has an identity. Restoring would orphan every contact that knows it, so it must be confirmed explicitly.",
           })
 
-        const encrypted = cipher.encrypt(secretRaw.toString("base64url"), AAD)
+        const encrypted = sealSecret(secretRaw.toString("base64url"), AAD)
         const publicEncoded = derived.toString("base64url")
         if (existing === undefined)
           yield* db
@@ -519,6 +542,9 @@ export const layer = Layer.effect(
   }),
 )
 
-export const defaultLayer = layer.pipe(Layer.provide(Database.defaultLayer), Layer.provide(CredentialCipher.defaultLayer))
+export const defaultLayer = layer.pipe(
+  Layer.provide(Database.defaultLayer),
+  Layer.provide(CredentialCipher.defaultLayer),
+)
 
 export const node = makeGlobalNode({ service: Service, layer, deps: [Database.node, CredentialCipher.node] })
