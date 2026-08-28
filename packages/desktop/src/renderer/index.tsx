@@ -184,9 +184,21 @@ const createPlatform = (): Platform => {
       const focused = await window.api.getWindowFocused().catch(() => document.hasFocus())
       if (focused) return
 
+      /**
+       * 🔴 **NC-SEC-015 — the icon is BUNDLED, not fetched.** This named
+       * `https://novaclaw.app/favicon-96x96-v3.png`, so every OS notification raised while the window
+       * was unfocused reached out to a public origin — without consulting the active instance's live
+       * airgap policy, which the desktop notification permission and the CSP's passive-HTTPS allowance
+       * both let through. An airgapped instance quietly told novaclaw.app whenever its user was away
+       * from the window, on a cadence set by the HTTP cache.
+       *
+       * ⚠️ The SAME asset already ships in the renderer (`packages/app/public/favicon-96x96-v3.png`,
+       * present in `out/renderer/`), which is what the web entry has always used. There was nothing to
+       * gain from the network copy — it is the identical file, one origin away.
+       */
       const notification = new Notification(title, {
         body: description ?? "",
-        icon: "https://novaclaw.app/favicon-96x96-v3.png",
+        icon: "/favicon-96x96-v3.png",
       })
       notification.onclick = () => {
         void window.api.showWindow()
