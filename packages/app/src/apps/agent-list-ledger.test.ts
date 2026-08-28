@@ -59,6 +59,7 @@ describe("every field the wire schema declares is accounted for", () => {
       system: "the brief",
       avatar: "W",
       memory: "own",
+      status: { task: "reviewing the P2P handshake", observed: 1_700_000_000_000 },
       workspace: "C:/data/scratch/wren",
       directory: "C:/work",
       model: { providerID: "spark", id: "holo" },

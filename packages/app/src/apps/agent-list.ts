@@ -78,6 +78,17 @@ export const listAgents = async (sdk: {
         // `ConfigAgent.Info.fields`, and `workspace` is derived rather than authored, so it appears
         // in no config schema by design.
         workspace: text("workspace"),
+        /**
+         * What this colleague is working on — carried explicitly for exactly the reason `workspace`
+         * above documents: this mapper is a hand-kept subset, and a derived field appears in no
+         * config schema, so nothing spreads it in. The ledger test is what caught it here.
+         *
+         * ⚠️ Absent stays absent. `undefined` means the colleague has no line yet, and Contacts
+         * renders the row without a status rather than with an empty one.
+         */
+        ...(row["status"] && typeof row["status"] === "object"
+          ? { status: row["status"] as { task: string; observed: number } }
+          : {}),
         color: text("color"),
         memory,
         ...(typeof row["archiveChats"] === "boolean" ? { archiveChats: row["archiveChats"] } : {}),

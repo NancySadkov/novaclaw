@@ -219,7 +219,9 @@ const withCreate = <A>(body: (create: CreateHandler) => Effect.Effect<A, unknown
 const createAndReload = (body: Record<string, unknown>) =>
   withCreate((create) =>
     Effect.gen(function* () {
-      const response = yield* create({ payload: decodeCreatePayload({ location: { directory: DIRECTORY }, ...body }) })
+      const response = yield* create({
+        payload: decodeCreatePayload({ location: { directory: DIRECTORY }, agent: "build", ...body }),
+      })
       const store = yield* SessionStore.Service
       const reloaded = yield* store.get(response.data.id)
       expect(reloaded, "the handler returned a session that is not in the store").toBeDefined()

@@ -1,11 +1,6 @@
 import { expect, test } from "bun:test"
 import { KbClaim } from "@novaclaw/core/kb-graph/claim"
-import {
-  CLAIM_PREDICATES,
-  EVIDENCE_KINDS,
-  MemoryGroup,
-  PERSON_CLAIM_STATUSES,
-} from "@novaclaw/protocol/groups/memory"
+import { CLAIM_PREDICATES, EVIDENCE_KINDS, MemoryGroup, PERSON_CLAIM_STATUSES } from "@novaclaw/protocol/groups/memory"
 
 /**
  * ─── THE CLAIM ENDPOINTS' VOCABULARIES, DERIVED RATHER THAN TRUSTED ──────────────────────────────

@@ -44,6 +44,14 @@ export interface AgentLike {
   readonly avatar?: string | undefined
   /** The colleague's own workspace — an absolute host path, derived server-side. Read-only. */
   readonly workspace?: string | undefined
+  /**
+   * What this colleague is currently working on, refreshed every few hours by the instance — the
+   * line Contacts shows under the name, like a chat app's contact status.
+   *
+   * ⚠️ Absent means "nothing to say", not "idle". A colleague nobody has worked with has no task,
+   * and a blank line where a sentence belongs is what "New session" was in the surface this replaces.
+   */
+  readonly status?: { readonly task: string; readonly observed: number } | undefined
   readonly memory?: "own" | "none" | undefined
   /** Keep compacted conversations in this colleague's own memory (default on). */
   readonly archiveChats?: boolean | undefined

@@ -157,7 +157,11 @@ const exportWith = (body: Record<string, unknown>) =>
     Effect.gen(function* () {
       const { key } = exportEndpoint()
       const session = yield* SessionV2.Service
-      const created = yield* session.create({ location: { directory: PROJECT } as never, title: "export me" })
+      const created = yield* session.create({
+        location: { directory: PROJECT } as never,
+        agent: "build" as never,
+        title: "export me",
+      })
       const context = yield* Layer.build(MessageHandler as unknown as Layer.Layer<never, never, never>)
       const built = context.mapUnsafe.get(key) as {
         readonly handlers: Map<string, { readonly handler: ExportHandler }>
@@ -167,11 +171,10 @@ const exportWith = (body: Record<string, unknown>) =>
         item,
         'server.message registered no handler for "session.exportMarkdown" — the route would 404',
       ).toBeDefined()
-      return yield* item!
-        .handler({ params: { sessionID: created.id }, payload: decodePayload(body) })
-        .pipe(Effect.map((ok) => ({ ok: true as const, ...ok })), Effect.catchCause((cause) =>
-          Effect.succeed({ ok: false as const, error: String(cause) }),
-        ))
+      return yield* item!.handler({ params: { sessionID: created.id }, payload: decodePayload(body) }).pipe(
+        Effect.map((ok) => ({ ok: true as const, ...ok })),
+        Effect.catchCause((cause) => Effect.succeed({ ok: false as const, error: String(cause) })),
+      )
     }).pipe(Effect.scoped, Effect.provide(environment)) as Effect.Effect<
       { ok: true; path: string } | { ok: false; error: string }
     >,

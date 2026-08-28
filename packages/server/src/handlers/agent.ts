@@ -1,3 +1,4 @@
+import { AgentStatus } from "@novaclaw/core/agent-status"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { InvalidRequestError } from "@novaclaw/protocol/errors"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
@@ -27,8 +28,22 @@ export const AgentHandler = handlerLayer(
           // root moves. The app cannot compute it — the root is under the instance's data directory,
           // which the client does not know and must not guess.
           const roster = yield* AgentV2.Service.use((agent) => agent.all())
+          /**
+           * ⚠️ ONE query for the whole roster, not one per colleague. The list is the Contacts
+           * screen's only call, and a per-agent lookup would turn opening it into N round trips
+           * against a table whose whole point is being cheap to read.
+           */
+          const lines = yield* AgentStatus.Service.use((status) => status.all())
+          const byAgent = new Map(lines.map((line) => [line.agent, { task: line.task, observed: line.observed }]))
           return yield* response(
-            Effect.succeed(roster.map((item) => ({ ...item, workspace: Scratch.forAgent(String(item.id)) }))),
+            Effect.succeed(
+              roster.map((item) => ({
+                ...item,
+                workspace: Scratch.forAgent(String(item.id)),
+                // Absent, not empty, when the colleague has no line yet — see `Agent.Info.status`.
+                ...(byAgent.has(String(item.id)) ? { status: byAgent.get(String(item.id)) } : {}),
+              })),
+            ),
           )
         }),
       )

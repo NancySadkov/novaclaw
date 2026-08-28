@@ -57,6 +57,27 @@ export const Info = Schema.Struct({
    * the files it writes there.
    */
   workspace: Schema.String.pipe(optional),
+  /**
+   * What this colleague is currently working on — one short line, for the Contacts row.
+   *
+   * 🔴 Owner, 2026-08-28: *"every few hours if agent did some work we update the current task name +
+   * status, which we display in the contacts app, just like normal chat apps display contact
+   * statuses"* — so both the user and other agents get quick feedback on any colleague without
+   * opening its chat.
+   *
+   * ⚠️ Read-only and server-derived, riding the agent record for the same reason `workspace` does: it
+   * is a property of the COLLEAGUE, and the app cannot compute it — it comes from a periodic pass
+   * over transcripts the client never sees.
+   *
+   * ⚠️ ABSENT, not empty, when there is nothing to say. A colleague nobody has worked with has no
+   * task, and a blank line where a sentence belongs is what "New session" was in the surface this
+   * replaces. Contacts renders the row without a status rather than with an empty one.
+   */
+  status: Schema.Struct({
+    task: Schema.String,
+    /** Epoch millis of the newest activity the line was derived from — how current it is. */
+    observed: Schema.Finite,
+  }).pipe(optional),
   /** Standing WORK choices — folded as a layer by `AgentDefaults`, absent = inherit. */
   permissionMode: Schema.Literals(["plan", "ask", "bypass", "yolo"]).pipe(optional),
   strict: Schema.Struct({

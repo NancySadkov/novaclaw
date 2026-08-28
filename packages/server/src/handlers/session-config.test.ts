@@ -331,6 +331,7 @@ describe("GET /api/session/:id/config over a real parent and child", () => {
         const sessions = yield* SessionV2.Service
         const parent = yield* sessions.create({
           location: { directory: DIRECTORY },
+          agent: "build" as never,
           systemPromptOverride: "inherited from the parent",
           permissionMode: "ask",
           type: "goal-oriented",
@@ -395,7 +396,11 @@ describe("GET /api/session/:id/config over a real parent and child", () => {
     const data = await withHandler((call) =>
       Effect.gen(function* () {
         const sessions = yield* SessionV2.Service
-        const parent = yield* sessions.create({ location: { directory: DIRECTORY }, priority: 4 })
+        const parent = yield* sessions.create({
+          location: { directory: DIRECTORY },
+          agent: "build" as never,
+          priority: 4,
+        })
         const child = yield* sessions.create({ location: { directory: DIRECTORY }, parentID: parent.id })
         return yield* call({ params: { sessionID: child.id } })
       }),
@@ -422,7 +427,10 @@ describe("GET /api/session/:id/config over a real parent and child", () => {
       const data = await withHandler((call) =>
         Effect.gen(function* () {
           const sessions = yield* SessionV2.Service
-          const session = yield* sessions.create({ location: { directory: AbsolutePath.make(root) } })
+          const session = yield* sessions.create({
+            location: { directory: AbsolutePath.make(root) },
+            agent: "build" as never,
+          })
           return yield* call({ params: { sessionID: session.id } })
         }),
       )

@@ -75,6 +75,10 @@ import { MessengerLogin } from "@novaclaw/core/messenger/login"
 import { MessengerPace } from "@novaclaw/core/messenger/pace"
 import { MessengerStore } from "@novaclaw/core/messenger/store"
 import { CommunityConsent } from "@novaclaw/core/community/consent"
+import { AgentStatus } from "@novaclaw/core/agent-status"
+import { SessionStore } from "@novaclaw/core/session/store"
+import { LocationServiceMap } from "@novaclaw/core/location-service-map"
+import { llmClient } from "@novaclaw/core/effect/app-node-platform"
 import { Offline } from "@novaclaw/core/offline"
 import { fetchChangelog } from "../../../maintenance/changelog"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
@@ -297,6 +301,21 @@ const app = LayerNode.group([
   CommandConfigStore.node,
   SettingsConfigStore.node,
   InstanceIdentityStore.node,
+  /**
+   * What each colleague is working on, for the Contacts row. Listed HERE because `agent.list` joins
+   * it and the calendar tick writes it — and because omitting it is invisible to `tsgo -b`: the
+   * scheduler declared the dependency, everything compiled green, and every route in the instance
+   * answered "Service not found: @novaclaw/v2/AgentStatus". The comment below names the same hazard
+   * for `ProjectFileCache`; this is the second time it has been the graph's missing node.
+   */
+  AgentStatus.node,
+  // Its two companions on the same seam: the sweep reads transcripts through `SessionStore` and
+  // enters each colleague's own location through `LocationServiceMap`. Both are declared by the
+  // scheduler node; both must EXIST here, because this list is what the instance actually builds.
+  SessionStore.node,
+  LocationServiceMap.node,
+  // ...and the client it asks for a line. Third and last of the sweep's additions.
+  llmClient,
   // The folder's `novaclaw.json`, cached. Listed HERE so `POST /api/project` can invalidate the very
   // entry the kernel reads after it rewrites the file — exactly the hazard the comment below names:
   // without it the handler compiled green under `tsgo -b` and every write answered 500 with

@@ -84,8 +84,7 @@ const fixtureLine = () =>
   )
 
 /** A second line under a DIFFERENT subsystem, so the subsystem/level filters have something to exclude. */
-const otherLine = () =>
-  emit(Log.event("log.file.usage", { "log.bytes": 1, "log.active.bytes": 1, "log.segments": 0 }))
+const otherLine = () => emit(Log.event("log.file.usage", { "log.bytes": 1, "log.active.bytes": 1, "log.segments": 0 }))
 
 /** A log directory on disk. OS temp — AGENTS.md principle 11(b). */
 function fixtureSource(lines: ReadonlyArray<string>): LogTool.Source {
@@ -231,8 +230,7 @@ describe("there is exactly one renderer of a log line", () => {
 
   test("every value on the wire is a scalar — nothing a client could project itself", () => {
     const source = fixtureSource([fixtureLine()])
-    for (const value of Object.values(read({}, source)))
-      expect(["string", "number", "boolean"]).toContain(typeof value)
+    for (const value of Object.values(read({}, source))) expect(["string", "number", "boolean"]).toContain(typeof value)
   })
 })
 
