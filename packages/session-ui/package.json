@@ -34,6 +34,7 @@
   "dependencies": {
     "@kobalte/core": "catalog:",
     "@novaclaw/core": "workspace:*",
+    "@novaclaw/schema": "workspace:*",
     "@novaclaw/sdk": "workspace:*",
     "@novaclaw/ui": "workspace:*",
     "@pierre/diffs": "catalog:",

@@ -1,3 +1,4 @@
+import { HTML_EMBED_CSP, isHtmlEmbedDocument } from "@novaclaw/schema/html-embed"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { Effect } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
@@ -13,7 +14,25 @@ export function themePreloadHash(body: string) {
   return body.match(/<script\b(?![^>]*\bsrc\s*=)[^>]*\bid=(['"])oc-theme-preload-script\1[^>]*>([\s\S]*?)<\/script>/i)
 }
 
-export function cspForHtml(body: string) {
+/**
+ * The policy for an HTML document this server serves.
+ *
+ * 🔴 NC-SEC-032 — the embed bootstrap gets its OWN policy, not the app's. The app policy has no
+ * `script-src 'unsafe-inline'`, and an agent canvas is inline by construction, so under the app
+ * policy canvases simply never ran on this surface. `csp.ts` on the desktop side warns about
+ * exactly that failure ("silently kills every HTML canvas, and no test outside this file would
+ * notice") — and this surface had been shipping it.
+ *
+ * ⚠️ Serving it as a real document is what makes this possible at all. `srcdoc`, `data:` and
+ * `blob:` children inherit the embedder's policy container; a network-delivered document does not,
+ * so the embed's policy is the embed's own. Measured in Chromium, both directions.
+ *
+ * ⚠️ The app policy is NOT loosened to accommodate the canvas. This surface is the one that is
+ * actually network-exposed (remote access), and widening its `script-src` to match the local
+ * desktop one would be fixing the safer surface by damaging the more dangerous one.
+ */
+export function cspForHtml(body: string, pathname = "") {
+  if (isHtmlEmbedDocument(pathname)) return HTML_EMBED_CSP
   const match = themePreloadHash(body)
   return csp(match ? createHash("sha256").update(match[2]).digest("base64") : "")
 }
@@ -105,7 +124,7 @@ function embeddedUIResponse(file: string, body: Uint8Array, ifNoneMatch?: string
   }
   const headers = new Headers({ "content-type": mime, etag, "cache-control": cacheControlFor(file, mime) })
   if (mime.startsWith("text/html")) {
-    headers.set("content-security-policy", cspForHtml(new TextDecoder().decode(body)))
+    headers.set("content-security-policy", cspForHtml(new TextDecoder().decode(body), file))
   }
   return HttpServerResponse.raw(body, { headers })
 }

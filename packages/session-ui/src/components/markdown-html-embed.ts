@@ -4,38 +4,23 @@
 // `bun test` — markdown.tsx owns the actual iframe construction.
 
 // The sandbox deliberately omits `allow-same-origin`: scripts run in an opaque origin
-// with no cookies, storage, or parent access. That sandbox — not DOMPurify — is the
-// entire security boundary that makes it safe to execute the raw fence text.
+// with no cookies, storage, or parent access. ⚠️ That is HALF the boundary — it governs
+// what a canvas can READ locally and says nothing about what it can SEND. The other half
+// is the policy below, which closes the network (NC-SEC-003/031). Together they are what
+// makes it safe to execute the raw, never-sanitized fence text.
 export const HTML_EMBED_SANDBOX = "allow-scripts"
 
 /**
- * 🔴 **NC-SEC-003 — the sandbox was never the whole boundary, and the comment above said it was.**
+ * The canvas policy and the meta tag that carries it live in `@novaclaw/schema/html-embed` — the
+ * one home both app surfaces can reach. Re-exported here because this module is where the embed is
+ * BUILT, and a caller looking for the policy looks here first.
  *
- * Omitting `allow-same-origin` puts the script in an opaque origin with no cookies, storage or parent
- * access — all true, and all about what it can READ locally. It says nothing about what it can SEND.
- * A canvas could `fetch()` any host, or simply set `img.src` to one, and the transcript text the
- * agent had just been given would leave the machine. On an instance the user has put in airgap mode
- * that is the promise broken by the one surface that renders untrusted output by default.
- *
- * `default-src 'none'` closes egress: no fetch, no XHR, no WebSocket, no beacon, no remote image,
- * script, font or stylesheet. `connect-src` inherits the `'none'`, which is the clause that matters.
- *
- * ⚠️ Inline script and style stay ALLOWED, because that is the whole feature — a throw-away chart or
- * demo is inline by construction, and a policy that broke it would simply be turned off. What is
- * removed is the network, not the ability to draw.
- *
- * ⚠️ `data:` and `blob:` are allowed for images, fonts and media so a canvas can still show what it
- * generated itself. Neither can reach a remote host, so neither is an exfiltration channel.
- *
- * ⚠️ Prepended rather than merged. CSPs COMBINE restrictively — if the agent's own HTML carries a
- * policy, both apply and the strictest wins — so a canvas cannot widen this by declaring its own.
+ * ⚠️ Re-exported, never restated. Two app policies with no shared source is the root cause of both
+ * NC-SEC-031 and NC-SEC-032; a third copy of the embed policy would be the same mistake again.
  */
-export const HTML_EMBED_CSP =
-  "default-src 'none'; img-src data: blob:; media-src data: blob:; font-src data:; " +
-  "style-src 'unsafe-inline'; script-src 'unsafe-inline'; form-action 'none'; base-uri 'none'"
+import { HTML_EMBED_CSP, htmlEmbedCspMeta } from "@novaclaw/schema/html-embed"
 
-/** The policy as the meta tag that carries it, ready to lead the document. */
-export const htmlEmbedCspMeta = () => `<meta http-equiv="Content-Security-Policy" content="${HTML_EMBED_CSP}">`
+export { HTML_EMBED_CSP, htmlEmbedCspMeta }
 
 // Case-insensitive on purpose: models emit ```HTML / ```Html often enough to matter.
 export function htmlEmbedLanguage(language: string | undefined) {
