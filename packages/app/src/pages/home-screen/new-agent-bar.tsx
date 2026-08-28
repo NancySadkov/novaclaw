@@ -217,8 +217,16 @@ export function NewAgentBar() {
     // ⚠️ A click while the ROSTER is still in flight used to spawn `spawn(undefined, undefined)` —
     // an agent-less chat in the shared scratch root, which then sat there as the thing every later
     // click reused (review D4). The chip shows a colleague; the click must create that colleague's
-    // chat or nothing. A roster that has SETTLED with nobody in it still falls through, so a
-    // degraded instance keeps its escape hatch.
+    // chat or nothing.
+    //
+    // 🔴 **The "degraded instance keeps its escape hatch" clause is GONE** (owner, 2026-08-28:
+    // *"Clicking `Start new chat` at home creates a ghost session `New session in scratch` — that
+    // shouldn't be possible at all, since can't have sessions without any agents"*). A settled roster
+    // with nobody in it used to fall through here on purpose. It is not an escape hatch: it is the
+    // one input that can mint an ownerless chat, and it fired exactly when the instance was already
+    // broken — so the app answered a fault by creating a session that belongs to no one and that no
+    // roster can ever show. An empty roster is now a FAULT at the source (`apps/agent-list.ts`), and
+    // this refuses rather than papering over it.
     if (agentsLoading()) {
       showToast({
         title: language.t("common.requestFailed"),
@@ -236,6 +244,16 @@ export function NewAgentBar() {
       return
     }
     const id = chosenAgent() ?? defaultOfficerID()
+    if (id === undefined) {
+      // Says WHICH fact is wrong — that Nova cannot be missing — rather than "not ready", which
+      // invites the user to wait for something that is never going to arrive.
+      showToast({
+        variant: "error",
+        title: language.t("common.requestFailed"),
+        description: language.t("home.newAgent.noColleagues"),
+      })
+      return
+    }
     void agent.spawn(id, chosenFolder(), agentOptions().find((option) => option.id === id)?.name)
   }
 

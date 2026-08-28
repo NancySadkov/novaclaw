@@ -2,6 +2,7 @@
 import { $ } from "bun"
 
 import { enforce } from "../../../script/lib/heavy-guard"
+import { sweepStrayServers } from "../../../script/lib/stray-servers"
 import { resolveChannel } from "./utils"
 import { prepareW64devkit } from "./prepare-w64devkit"
 import { prepareImageMagick } from "./prepare-imagemagick"
@@ -13,6 +14,20 @@ import { prepareImageMagick } from "./prepare-imagemagick"
 // 1 GB, sequentially. The 2.5 GB admission floor therefore protects the host without excluding the
 // laptops we ship for; the independent commit-charge ceiling still catches broader system pressure.
 enforce("a desktop build", process.argv, { minimumFreeBytes: 2.5 * 1024 ** 3 })
+
+/**
+ * 🔴 **Idle backends are swept before the build touches a file** (owner, 2026-08-28: *"please ensure
+ * that bun startup is guarded, so unless explicitly overridden, launching new bun or launching build
+ * kills existing buns"*). The 0.1.67 build refused to package minutes earlier: four `bun` servers
+ * left over from a session still held `packages/host/build/host.dll` open, and the linker reported
+ * `Permission denied`.
+ *
+ * ⚠️ AFTER `enforce`, never before. The heavy guard REFUSES when somebody else's build or suite is
+ * running, and that refusal is what protects a concurrent session — a sweep that ran first would be
+ * deciding the same question with a kill instead of a wait. This only removes what the heavy guard
+ * deliberately does not name: idle servers, which are free to restart.
+ */
+sweepStrayServers({ reason: "a desktop build" })
 
 const channel = resolveChannel()
 await prepareW64devkit()

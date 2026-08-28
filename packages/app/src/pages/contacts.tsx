@@ -287,9 +287,24 @@ export function ContactsPage() {
         <Show
           when={agentsError() === undefined && !agentsLoading()}
           fallback={
-            <p class="px-4 py-6 text-sm text-v2-text-text-faint">
-              {agentsError() !== undefined ? language.t("contacts.loadFailed") : language.t("contacts.loading")}
-            </p>
+            <div class="px-4 py-6 text-sm text-v2-text-text-faint">
+              <p>{agentsError() !== undefined ? language.t("contacts.loadFailed") : language.t("contacts.loading")}</p>
+              {/* 🔴 A failure the user can ACT on (owner, 2026-08-28: *"lack of agents … should
+                  trigger Novaclaw recovery sequence"*). The page already told the difference between
+                  "nobody" and "could not read"; what it did not do was offer a way back, so a roster
+                  that failed once stayed failed until the window was reopened. The retry is the same
+                  refetch the reconnect engine runs — one recovery path, reachable by hand. */}
+              <Show when={agentsError() !== undefined}>
+                <button
+                  type="button"
+                  data-action="contacts-retry"
+                  class="mt-3 rounded-md px-2 py-1 ring-1 ring-v2-border-border-base hover:bg-v2-background-bg-layer-02"
+                  onClick={() => refetchAgents()}
+                >
+                  {language.t("contacts.retry")}
+                </button>
+              </Show>
+            </div>
           }
         >
           <Show
@@ -444,9 +459,7 @@ function ContactRow(props: {
   /** The facts that FOLLOW the task, each present only when it has something to say. Built as a list
    *  so the separators can be joined between them rather than written beside each one. */
   const meta = createMemo<{ text: string; at?: number; title?: string }[]>(() => {
-    const parts: { text: string; at?: number; title?: string }[] = [
-      { text: language.t(`contacts.state.${state()}`) },
-    ]
+    const parts: { text: string; at?: number; title?: string }[] = [{ text: language.t(`contacts.state.${state()}`) }]
     const speed = perSecond()
     if (speed) parts.push({ text: language.t("contacts.perSecond", { tokens: speed }) })
     const stamp = lastTouched()
@@ -512,10 +525,7 @@ function ContactRow(props: {
             is. "No chat yet" is gone with it — the reader is being told about a TASK, and not having
             one is the same answer whether or not a conversation exists. */}
         <span class="block truncate text-xs">
-          <Show
-            when={task()}
-            fallback={<span class="text-v2-text-text-faint">{language.t("contacts.noTask")}</span>}
-          >
+          <Show when={task()} fallback={<span class="text-v2-text-text-faint">{language.t("contacts.noTask")}</span>}>
             {(value) => <span class="text-v2-text-text-base">{value()}</span>}
           </Show>
           {/* ⚠️ Separators are JOINED between the parts that exist, never written beside each one.

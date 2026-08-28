@@ -73,12 +73,29 @@ export type NewSessionDraft = {
   strict: StrictChoice | undefined
   features: FeatureChoices | undefined
   mode: SessionModeChoice | undefined
+  /** WHOSE chat this will be. See `NewSessionCreateBody.agent` for why it is sent at birth. */
+  agent: string | undefined
 }
 
 export type NewSessionCreateBody = Partial<Record<SessionFeatureName, boolean>> & {
   permissionMode?: PermissionMode
   strict?: StrictChoice
   type?: Exclude<SessionModeChoice, "interactive">
+  /**
+   * 🔴 **A chat is born OWNED** (owner, 2026-08-28: *"it should be impossible at all to happen, so
+   * there should be no `New session in scratch` or other ghost generator code"*).
+   *
+   * This path used to create the row with no agent and adopt it on the FIRST PROMPT, via the
+   * `switchAgent` call further down. That window is the ghost generator: a session created and never
+   * messaged stays ownerless forever — no colleague, so no roster row, so no door back to it, sitting
+   * in the shared scratch root titled "New session in scratch". It is the same class the composer's
+   * own note calls *"the ghost officer … re-entering through the composer"*.
+   *
+   * Sending it at creation closes the window rather than narrowing it: there is no instant at which
+   * the row exists without an owner. The `switchAgent` below is kept for sessions that PREDATE this
+   * and genuinely have no colleague yet — it is now a repair, not the mechanism.
+   */
+  agent?: string
 }
 
 /**
@@ -99,6 +116,9 @@ export function newSessionCreateBody(draft: NewSessionDraft): NewSessionCreateBo
     if (stance !== undefined) features[name] = stance
   }
   return {
+    // ⚠️ Emitted whenever it is KNOWN, unlike the sparse overrides around it. Those mean "inherit";
+    // an absent owner means nobody, which is not a value this app is allowed to write.
+    ...(draft.agent !== undefined ? { agent: draft.agent } : {}),
     ...(draft.permissionMode !== "ask" ? { permissionMode: draft.permissionMode } : {}),
     ...(draft.strict !== undefined ? { strict: draft.strict } : {}),
     ...features,
@@ -532,6 +552,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
             strict: local.strict.current(),
             features: local.features.current(),
             mode: local.mode.current(),
+            // Guarded above (`if (!currentModel || !currentAgent) return`), so this is never blank.
+            agent: currentAgent.name,
           }),
         )
         .then((x) => x.data?.data ?? undefined)

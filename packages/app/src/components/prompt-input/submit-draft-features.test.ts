@@ -62,7 +62,9 @@ const kernelFeatures = (): string[] => {
   return [...block![1]!.matchAll(/"([A-Za-z]+)"/g)].map((match) => match[1]!)
 }
 
-const base = { permissionMode: "ask", strict: undefined, mode: undefined } as const
+// `agent: undefined` so these cases keep asserting the SPARSE mapping. The owner is emitted only
+// when known, and it is covered on its own below rather than woven into every feature assertion.
+const base = { permissionMode: "ask", strict: undefined, mode: undefined, agent: undefined } as const
 
 describe("a draft's Tuning switches reach session.create", () => {
   // The premise. If the list here ever falls behind the kernel's, every case below would still pass
@@ -119,7 +121,13 @@ describe("a draft's Tuning switches reach session.create", () => {
   test("the non-feature draft choices still map as before", () => {
     expect(newSessionCreateBody({ ...base, features: undefined })).toEqual({})
     expect(
-      newSessionCreateBody({ permissionMode: "plan", strict: undefined, features: undefined, mode: undefined }),
+      newSessionCreateBody({
+        permissionMode: "plan",
+        strict: undefined,
+        features: undefined,
+        mode: undefined,
+        agent: undefined,
+      }),
     ).toEqual({ permissionMode: "plan" })
     expect(
       newSessionCreateBody({
@@ -127,12 +135,31 @@ describe("a draft's Tuning switches reach session.create", () => {
         strict: { enabled: true, attempts: 3 },
         features: undefined,
         mode: "goal-oriented",
+        agent: undefined,
       }),
     ).toEqual({ strict: { enabled: true, attempts: 3 }, type: "goal-oriented" })
     // "interactive" is the server default, so it is deliberately NOT sent.
     expect(
-      newSessionCreateBody({ permissionMode: "ask", strict: undefined, features: undefined, mode: "interactive" }),
+      newSessionCreateBody({
+        permissionMode: "ask",
+        strict: undefined,
+        features: undefined,
+        mode: "interactive",
+        agent: undefined,
+      }),
     ).toEqual({})
+  })
+
+  /**
+   * 🔴 **A chat is born OWNED** (owner, 2026-08-28: *"there should be no `New session in scratch` or
+   * other ghost generator code"*). The row used to be created with no agent and adopted on the first
+   * prompt — so a chat created and never messaged stayed ownerless forever: no colleague, no roster
+   * row, no door back to it.
+   *
+   * A/B: drop the `agent` line from `newSessionCreateBody` and this fails with `{}`.
+   */
+  test("🔴 the OWNER travels at creation, not on the first prompt", () => {
+    expect(newSessionCreateBody({ ...base, features: undefined, agent: "umbris" })).toEqual({ agent: "umbris" })
   })
 
   // A correct mapper that nothing calls is the same bug with better manners. `newSessionCreateBody`

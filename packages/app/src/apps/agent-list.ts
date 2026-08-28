@@ -12,8 +12,25 @@ import type { SessionLike, UsageMinute } from "./roster-live"
  *  projection whose entries are keyed by `name` and carry no `title`, `personality`, `avatar` or
  *  `memory`. Two shapes for one concept is a migration this page must not silently depend on — filed
  *  in `notes/named-agents.md`. */
-export const listAgents = async (sdk: { agent: { list: () => Promise<{ data?: unknown }> } }): Promise<AgentLike[]> => {
+export const listAgents = async (sdk: {
+  agent: { list: () => Promise<{ data?: unknown; error?: unknown }> }
+}): Promise<AgentLike[]> => {
   const response = await sdk.agent.list()
+  /**
+   * 🔴 **A FAILED read is not an empty roster** (owner, 2026-08-28: *"contacts app now has no
+   * contacts. Not even Nova itself … lack of agents (i.e. even nova itself being dead) should trigger
+   * Novaclaw recovery sequence"*).
+   *
+   * The SDK does not throw on an HTTP failure — it hands back `{ data?, error? }`. This function read
+   * only `data`, so a 401, a 500 or an instance that had gone away arrived as `data: undefined`, fell
+   * through `body?.data ?? []`, and was returned as a SUCCESSFUL empty list. `global.tsx` keeps the
+   * roster's failure precisely so Contacts can say "we could not read who you have" instead of "you
+   * have nobody" — and it never saw one, because there was never a rejection to catch.
+   *
+   * Measured on the owner's instance: it was pointed at a LAN instance that was no longer running,
+   * and every surface reported an organization with no people in it, Nova included.
+   */
+  if (response.error !== undefined && response.error !== null) throw response.error
   // ⚠️ TWO `data` hops, and they are different things. The SDK wraps the HTTP body as
   // `{ data: body }`, and every V2 location-scoped endpoint wraps its payload again as
   // `{ location, data }` (`Location.response`). Reading one hop yields the ENVELOPE — an object, not
@@ -22,8 +39,11 @@ export const listAgents = async (sdk: { agent: { list: () => Promise<{ data?: un
   // general and explore while this page rendered the empty state.
   const body = response.data as { readonly data?: unknown } | undefined
   const rows = (Array.isArray(body) ? body : (body?.data ?? [])) as ReadonlyArray<Record<string, unknown>>
-  if (!Array.isArray(rows)) return []
-  return rows.flatMap((row) => {
+  // ⚠️ THROWS rather than returning `[]`. A body this cannot read is a fault ABOUT THE RESPONSE, and
+  // the empty array it used to return was indistinguishable from a real answer — which is how the
+  // envelope bug described above stayed invisible until somebody opened the page and saw nobody.
+  if (!Array.isArray(rows)) throw new Error("agent.list returned a body that is not a list of agents")
+  const mapped = rows.flatMap((row) => {
     const id = typeof row["id"] === "string" ? row["id"] : undefined
     const mode = row["mode"]
     if (id === undefined || (mode !== "primary" && mode !== "subagent" && mode !== "all")) return []
@@ -72,6 +92,21 @@ export const listAgents = async (sdk: { agent: { list: () => Promise<{ data?: un
       } satisfies AgentLike,
     ]
   })
+  /**
+   * 🔴 **An EMPTY roster is a fault, not an answer** (owner, 2026-08-28: *"can't have sessions
+   * without any agents, and lack of agents (i.e. even nova itself being dead) should trigger Novaclaw
+   * recovery sequence"*).
+   *
+   * Nova is this instance's governing agent: protected from removal through every door
+   * (`AgentV2.isProtected`) and built in rather than configured, so it cannot be absent from a healthy
+   * instance — nor can `build` and `plan`. Zero colleagues therefore never describes an organization.
+   * It describes a read that did not work, or an instance that is not answering.
+   *
+   * Throwing routes it to the failure the roster already keeps and Contacts already renders, instead
+   * of leaving every surface to present an empty company it has no way to question.
+   */
+  if (mapped.length === 0) throw new Error("agent.list returned no agents — an instance always has at least Nova")
+  return mapped
 }
 
 /** Every session this instance holds, for the roster's work column.

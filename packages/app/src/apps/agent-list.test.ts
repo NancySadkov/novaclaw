@@ -55,7 +55,9 @@ describe("the fields a roster row keeps", () => {
 
   test("the identity fields a roster tile draws still come through", async () => {
     const [row] = await listAgents(
-      response([{ id: "iris", mode: "primary", name: "Iris", title: "Companion", avatar: "I", memory: "none" }]) as never,
+      response([
+        { id: "iris", mode: "primary", name: "Iris", title: "Companion", avatar: "I", memory: "none" },
+      ]) as never,
     )
     expect({ name: row?.name, title: row?.title, avatar: row?.avatar, memory: row?.memory }).toEqual({
       name: "Iris",
@@ -63,5 +65,41 @@ describe("the fields a roster row keeps", () => {
       avatar: "I",
       memory: "none",
     })
+  })
+})
+
+/**
+ * A ROSTER THAT COULD NOT BE READ IS NOT AN EMPTY COMPANY.
+ *
+ * 🔴 Owner, 2026-08-28: *"contacts app now has no contacts. Not even Nova itself … lack of agents
+ * (i.e. even nova itself being dead) should trigger Novaclaw recovery sequence"*. The instance was
+ * pointed at a LAN server that had gone away. The SDK does not throw on an HTTP failure — it returns
+ * `{ data?, error? }` — and this function read only `data`, so the failure arrived as a SUCCESSFUL
+ * empty list. `global.tsx` keeps the roster's error precisely so Contacts can say "could not read"
+ * instead of "you have nobody", and it never saw one because nothing ever rejected.
+ *
+ * A/B for each: delete the matching guard in `listAgents` and the test fails with a resolved `[]`.
+ */
+describe("a failed read is a fault, not an empty roster", () => {
+  test("🔴 an error response REJECTS instead of resolving empty", async () => {
+    const failing = { agent: { list: async () => ({ error: { _tag: "UnauthorizedError" } }) } }
+    expect(listAgents(failing as never)).rejects.toBeDefined()
+  })
+
+  test("a body that is not a list rejects rather than reading as nobody", async () => {
+    const wrong = { agent: { list: async () => ({ data: { data: { nope: true } } }) } }
+    expect(listAgents(wrong as never)).rejects.toThrow(/not a list/i)
+  })
+
+  test("🔴 zero colleagues rejects — Nova is built in and cannot be absent", async () => {
+    // `nova` is protected from removal through every door, so an instance that reports nobody is
+    // reporting a fault about itself.
+    expect(listAgents(response([]) as never)).rejects.toThrow(/at least Nova/i)
+  })
+
+  test("a healthy roster still comes back", async () => {
+    // The control: without this the three tests above would pass against a function that always threw.
+    const rows = await listAgents(response([{ id: "nova", mode: "primary", name: "Nova" }]) as never)
+    expect(rows.map((row) => row.id)).toEqual(["nova"])
   })
 })
