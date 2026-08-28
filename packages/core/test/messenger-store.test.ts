@@ -17,6 +17,47 @@ import { testEffect } from "./lib/effect"
 const it = testEffect(AppNodeBuilder.build(LayerNode.group([Database.node, MessengerStore.node, FSUtil.node])))
 
 describe("MessengerStore", () => {
+  /**
+   * 🔴 NC-REL-005 — `messenger_cursor` says in its own comment that restarts "never double-deliver or
+   * drop". Both happened, because queue admission is a process-memory handoff and not durable
+   * admission:
+   *   · the drivers advance the cursor after offering to an IN-MEMORY queue, so a crash before the
+   *     session received the message dropped it, with nothing anywhere to notice;
+   *   · an ignored cursor-write failure replayed the message, and with no `(account, chat, message)`
+   *     uniqueness the gateway drove the session a second time with the same text.
+   *
+   * The ledger answers both from one row. `routeInbound` skips `delivered` and re-delivers
+   * `recovering`.
+   *
+   * A/B: drop the `existing` lookup in `claimInbound` and the replay case returns "fresh" — the
+   * double-delivery this exists to stop.
+   */
+  it.effect("🔴 an inbound message is claimed once — replay is `delivered`, a crash leaves `recovering`", () =>
+    Effect.gen(function* () {
+      const store = yield* MessengerStore.Service
+      const account = yield* store.createAccount({ driverID: "fake", label: "ledger", enabled: true, settings: {} })
+      const key = { accountID: account.id, chatID: "c1", messageID: "m1" }
+
+      // Never seen: deliver it.
+      expect(yield* store.claimInbound(key)).toBe("fresh")
+
+      // The process died before delivery. A replay must be DELIVERED, not skipped — this is the drop
+      // case, and re-delivery is the only way anyone ever sees that message.
+      expect(yield* store.claimInbound(key)).toBe("recovering")
+
+      yield* store.markInboundRouted({ ...key, at: 1_000 })
+
+      // Now the provider replays it after a reconnect. This is the double-delivery case.
+      expect(yield* store.claimInbound(key)).toBe("delivered")
+
+      // A DIFFERENT message in the same chat is unaffected — the control: without it, "always
+      // delivered" would satisfy the line above while silencing the account.
+      expect(yield* store.claimInbound({ ...key, messageID: "m2" })).toBe("fresh")
+      // ...and the same message id in a different chat is a different message.
+      expect(yield* store.claimInbound({ ...key, chatID: "c2" })).toBe("fresh")
+    }),
+  )
+
   it.effect("accounts round-trip, patch, and list", () =>
     Effect.gen(function* () {
       const store = yield* MessengerStore.Service

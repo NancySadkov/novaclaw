@@ -1036,7 +1036,46 @@ const build = (options: Options) =>
         return { read: true as const, binding: undefined }
       })
 
+    /**
+     * 🔴 **NC-REL-005 — delivery is CLAIMED durably before it is attempted.** `messenger_cursor` says
+     * in its own comment that restarts "never double-deliver or drop"; both happened. The drivers
+     * advance the cursor after an IN-MEMORY queue handoff, so a crash before this function reached a
+     * session dropped the message with nothing to notice, and an ignored cursor-write failure replayed
+     * it with nothing to deduplicate against.
+     *
+     * · `delivered` — a previous run already gave it to a session. Skip; this is the replay case.
+     * · `recovering` — claimed by a run that died before delivering. Fall through and deliver it; this
+     *   is the drop case, and re-delivery is the only way anyone ever sees that message.
+     * · `fresh` — never seen.
+     *
+     * ⚠️ Marked routed only AFTER `deliverInbound` completes, and only if it does. A failure leaves the
+     * row unrouted, which is exactly the state `recovering` exists to describe — the message stays
+     * claimable rather than being silently consumed by the attempt that failed.
+     *
+     * ⚠️ "Routed" covers the deliberate non-deliveries too (blocked contact, no trigger word). Those
+     * are decisions ABOUT the message, and re-making them on every replay would be work with no
+     * outcome — and would leave a recovery sweep retrying them forever.
+     */
     const routeInbound = (account: Messenger.AccountInfo, connection: Connection, event: InboundEvent) =>
+      Effect.gen(function* () {
+        if (event.kind !== "message") return
+        if (event.sender.isSelf) return // echo guard #1
+        const claim = yield* store.claimInbound({
+          accountID: account.id,
+          chatID: event.chat.chatID,
+          messageID: event.messageID,
+        })
+        if (claim === "delivered") return
+        yield* deliverInbound(account, connection, event)
+        yield* store.markInboundRouted({
+          accountID: account.id,
+          chatID: event.chat.chatID,
+          messageID: event.messageID,
+          at: yield* Clock.currentTimeMillis,
+        })
+      })
+
+    const deliverInbound = (account: Messenger.AccountInfo, connection: Connection, event: InboundEvent) =>
       Effect.gen(function* () {
         if (event.kind !== "message") return
         if (event.sender.isSelf) return // echo guard #1

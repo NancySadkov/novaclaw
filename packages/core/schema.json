@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "8eb6ecd5-cfc0-448e-a77f-94738e22e8a3",
+  "id": "3ecd1aa2-1d5c-4b97-b1d2-bf8a92525fa8",
   "prevIds": [
-    "d9f10c28-b582-47bc-8f27-ff8ec6b8e90c"
+    "8eb6ecd5-cfc0-448e-a77f-94738e22e8a3"
   ],
   "ddl": [
     {
@@ -176,6 +176,10 @@
     },
     {
       "name": "messenger_cursor",
+      "entityType": "tables"
+    },
+    {
+      "name": "messenger_inbound",
       "entityType": "tables"
     },
     {
@@ -2942,6 +2946,66 @@
     },
     {
       "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "account_id",
+      "entityType": "columns",
+      "table": "messenger_inbound"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "chat_id",
+      "entityType": "columns",
+      "table": "messenger_inbound"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "message_id",
+      "entityType": "columns",
+      "table": "messenger_inbound"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_routed",
+      "entityType": "columns",
+      "table": "messenger_inbound"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_created",
+      "entityType": "columns",
+      "table": "messenger_inbound"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_updated",
+      "entityType": "columns",
+      "table": "messenger_inbound"
+    },
+    {
+      "type": "text",
       "notNull": false,
       "autoincrement": false,
       "default": null,
@@ -4904,6 +4968,17 @@
       "name": "messenger_contact_pk",
       "entityType": "pks",
       "table": "messenger_contact"
+    },
+    {
+      "columns": [
+        "account_id",
+        "chat_id",
+        "message_id"
+      ],
+      "nameExplicit": false,
+      "name": "messenger_inbound_pk",
+      "entityType": "pks",
+      "table": "messenger_inbound"
     },
     {
       "columns": [

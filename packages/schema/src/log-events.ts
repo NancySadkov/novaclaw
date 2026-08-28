@@ -1829,7 +1829,9 @@ export const EVENTS = {
     level: "warn",
     message: "an event stream client fell behind and was disconnected to force a resync",
     attributes: { "server.stream": "id", "server.buffered": "count" },
-    content: "user",
+    // A stream name and a count — no user content passes through this line, and the ledger in
+    // `test/log-events.test.ts` checks that the declaration and the fields agree.
+    content: "none",
     file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/global.ts",
   },
   "server.global.event.disconnected": {

@@ -454,6 +454,17 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`messenger_inbound\` (
+          \`account_id\` text NOT NULL,
+          \`chat_id\` text NOT NULL,
+          \`message_id\` text NOT NULL,
+          \`time_routed\` integer,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL,
+          CONSTRAINT \`messenger_inbound_pk\` PRIMARY KEY(\`account_id\`, \`chat_id\`, \`message_id\`)
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`messenger_initiation\` (
           \`scope\` text PRIMARY KEY,
           \`day\` text NOT NULL,

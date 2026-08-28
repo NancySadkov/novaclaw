@@ -10,6 +10,7 @@ import {
   MessengerAccountTable,
   MessengerBindingTable,
   MessengerChatTable,
+  MessengerInboundTable,
   MessengerContactTable,
   MessengerCursorTable,
   MessengerInitiationTable,
@@ -104,6 +105,32 @@ export interface Interface {
     readonly at: number
     /** The DRIVER's proposal (ruling 7). Absent = no evidence, stored as `unknown`. */
     readonly proposedAccess?: Messenger.SourceAccess
+  }) => Effect.Effect<void>
+  /**
+   * Claim one inbound message for delivery, and say whether it has already been delivered.
+   *
+   * 🔴 **NC-REL-005 — `messenger_cursor` was carrying a guarantee it never had.** Its own comment
+   * says restarts "never double-deliver or drop"; both happen. The drivers advance the cursor after
+   * offering an update to an IN-MEMORY queue, so a crash before the session received it drops the
+   * message with nothing to notice, and an ignored cursor-write failure replays it with nothing to
+   * deduplicate against.
+   *
+   * · `"fresh"` — never seen. Route it.
+   * · `"recovering"` — claimed by a previous run that died before delivering. Route it: this is the
+   *   drop case, and re-routing is the only way anyone ever sees that message.
+   * · `"delivered"` — already given to a session. Skip: this is the replay case.
+   */
+  readonly claimInbound: (input: {
+    readonly accountID: Messenger.AccountID
+    readonly chatID: string
+    readonly messageID: string
+  }) => Effect.Effect<"fresh" | "recovering" | "delivered">
+  /** Mark a claimed message delivered. Called AFTER the session has it, never before. */
+  readonly markInboundRouted: (input: {
+    readonly accountID: Messenger.AccountID
+    readonly chatID: string
+    readonly messageID: string
+    readonly at: number
   }) => Effect.Effect<void>
   readonly listChats: (accountID: Messenger.AccountID) => Effect.Effect<Messenger.ChatInfo[]>
   /**
@@ -435,6 +462,45 @@ export const layer = Layer.effect(
         yield* db.delete(MessengerAccountTable).where(eq(MessengerAccountTable.id, id)).run().pipe(Effect.orDie)
       }),
 
+      claimInbound: Effect.fn("MessengerStore.claimInbound")(function* (input) {
+        const existing = yield* db
+          .select({ routed: MessengerInboundTable.time_routed })
+          .from(MessengerInboundTable)
+          .where(
+            and(
+              eq(MessengerInboundTable.account_id, input.accountID),
+              eq(MessengerInboundTable.chat_id, input.chatID),
+              eq(MessengerInboundTable.message_id, input.messageID),
+            ),
+          )
+          .get()
+          .pipe(Effect.orDie)
+        if (existing) return existing.routed === null ? ("recovering" as const) : ("delivered" as const)
+        // ⚠️ `onConflictDoNothing` rather than a bare insert: two drivers for one account, or a
+        // reconnect racing its own replay, can reach this line concurrently. Losing that race must
+        // mean "somebody else claimed it", not a crash.
+        yield* db
+          .insert(MessengerInboundTable)
+          .values({ account_id: input.accountID, chat_id: input.chatID, message_id: input.messageID })
+          .onConflictDoNothing()
+          .run()
+          .pipe(Effect.orDie)
+        return "fresh" as const
+      }),
+      markInboundRouted: Effect.fn("MessengerStore.markInboundRouted")(function* (input) {
+        yield* db
+          .update(MessengerInboundTable)
+          .set({ time_routed: input.at })
+          .where(
+            and(
+              eq(MessengerInboundTable.account_id, input.accountID),
+              eq(MessengerInboundTable.chat_id, input.chatID),
+              eq(MessengerInboundTable.message_id, input.messageID),
+            ),
+          )
+          .run()
+          .pipe(Effect.orDie)
+      }),
       seenChat: Effect.fn("MessengerStore.seenChat")(function* (input) {
         yield* db
           .insert(MessengerChatTable)

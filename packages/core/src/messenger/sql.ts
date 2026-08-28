@@ -83,6 +83,38 @@ export const MessengerCursorTable = sqliteTable("messenger_cursor", {
 })
 
 /**
+ * 🔴 **NC-REL-005 — the durable inbound ledger the cursor was pretending to be.**
+ *
+ * `MessengerCursorTable` above claims restarts "never double-deliver or drop". They can do both, and
+ * the claim is what hid it: queue admission is a process-memory handoff, not durable admission.
+ *   · The drivers advance the cursor after offering an update to an in-memory queue, so a process
+ *     loss before `routeInbound` reaches the session SKIPS that message forever — nobody ever saw it.
+ *   · If the cursor write fails after routing (the failure is ignored), the provider replays the
+ *     message on reconnect and, with no `(account, chat, message)` uniqueness anywhere, the gateway
+ *     drives the session with it a second time.
+ *
+ * One row per inbound message makes both answerable: `time_routed IS NULL` means "claimed but never
+ * delivered" (re-route it), a present row with `time_routed` set means "already delivered" (skip it).
+ * The cursor stays what it is — a resume hint — instead of being asked to carry a guarantee it never
+ * had.
+ *
+ * ⚠️ The key is the PROVIDER's message id, not ours: it is the only identifier that survives a
+ * replay, which is the case this exists for.
+ */
+export const MessengerInboundTable = sqliteTable(
+  "messenger_inbound",
+  {
+    account_id: text().$type<Messenger.AccountID>().notNull(),
+    chat_id: text().notNull(),
+    message_id: text().notNull(),
+    /** When the session actually received it. NULL = claimed, not yet delivered. */
+    time_routed: integer(),
+    ...Timestamps,
+  },
+  (table) => [primaryKey({ columns: [table.account_id, table.chat_id, table.message_id] })],
+)
+
+/**
  * The daily cold-start budget (AGENTS.md #9(b): *starting* a conversation needs explicit permission
  * **and its own stricter rate limit*). **ONE ROW**, keyed by `scope`, always `"global"` —
  * `MessengerStore.INITIATION_SCOPE`.
