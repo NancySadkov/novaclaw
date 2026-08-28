@@ -11,6 +11,8 @@ import { Cause, Effect, Exit, Fiber } from "effect"
 export type StartupNotice = {
   readonly code: string
   readonly summary: string
+  /** Present only for `sidecar.database.unusable`, and only when the file was known. */
+  readonly databasePath?: string
   readonly detail: string
 }
 
@@ -54,11 +56,14 @@ export type SidecarStage =
  * and re-wrapped on the way; matching the tag and the fields it must carry is what survives that,
  * and it degrades to "not a database fault" rather than throwing if the shape ever changes.
  */
-function isDatabaseUnusable(
-  value: unknown,
-): value is { readonly fault: { summary: string; repair: readonly string[]; detail: string } } {
+function isDatabaseUnusable(value: unknown): value is {
+  readonly fault: { summary: string; repair: readonly string[]; detail: string; path?: string }
+} {
   if (typeof value !== "object" || value === null) return false
-  const tagged = value as { _tag?: unknown; fault?: { summary?: unknown; repair?: unknown; detail?: unknown } }
+  const tagged = value as {
+    _tag?: unknown
+    fault?: { summary?: unknown; repair?: unknown; detail?: unknown; path?: unknown }
+  }
   if (tagged._tag !== "DatabaseUnusable") return false
   return (
     typeof tagged.fault?.summary === "string" &&
@@ -111,6 +116,14 @@ export function describeSidecarFailure(
       summary: squashed.fault.summary,
       // The repair list IS the actionable half — the reason `Fault` carries one at all.
       detail: [...squashed.fault.repair, "", squashed.fault.detail].join("\n"),
+      /**
+       * 🔴 Carried through so the Recovery surface can OFFER the repair instead of describing it.
+       *
+       * ⚠️ Optional, and every consumer must treat it as such: `path` is `:memory:` for a hermetic
+       * run, and absent entirely if the fault was raised before the file was resolved. A
+       * move-aside button that cannot name its file is worse than no button at all.
+       */
+      databasePath: typeof squashed.fault.path === "string" ? squashed.fault.path : undefined,
     }
   if (Cause.isTimeoutError(squashed))
     return {

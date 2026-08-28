@@ -1,13 +1,14 @@
 import { randomUUID } from "node:crypto"
 import { updaterIsAirgapped } from "./updater-airgap"
 import { mkdirSync, rmSync } from "node:fs"
+import { rename } from "node:fs/promises"
 import * as http from "node:http"
 import { createServer } from "node:net"
 import { homedir, tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event } from "electron"
-import { app, BrowserWindow, dialog } from "electron"
+import { app, BrowserWindow, dialog, shell } from "electron"
 
 import { Cause, Deferred, Effect, Exit, Schedule } from "effect"
 import contextMenu from "electron-context-menu"
@@ -15,6 +16,7 @@ import contextMenu from "electron-context-menu"
 import type { ServerReadyData } from "../preload/types"
 import { checkAppExists, resolveAppPath } from "./apps"
 import { bootWindowFirst, describeSidecarFailure } from "./boot"
+import { movedAsideNotice, movedAsidePath, recoveryChoices } from "./boot-recovery"
 import { createBootTimeline, formatMark, formatSummary, type BootPhase, type ProcessMemory } from "./boot-timeline"
 import { CHANNEL } from "./constants"
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand } from "./ipc"
@@ -685,8 +687,80 @@ const main = Effect.gen(function* () {
         summary: failure.summary,
         detail: failure.detail,
       })
+      /**
+       * 🔴 NC-REL-024 — this used to LOG and return, and that was the whole of it.
+       *
+       * The database layer classifies its own faults and writes a sentence for a person plus a
+       * repair list; `describeSidecarFailure` picks all of it up. Nobody showed it. A user whose
+       * database came from a newer NovaClaw — an ordinary thing after a downgrade — got a window
+       * that never appeared and a log file they were never told about.
+       */
+      void offerBootRecovery(failure)
     },
   })
 })
+
+/**
+ * Show a boot failure and let the user ACT on it.
+ *
+ * ⚠️ Move aside, never delete. "Unreadable by this build" is not "unreadable forever" — a foreign
+ * database is somebody's working instance, and a downgrade is the commonest way to meet one. The
+ * file is renamed in place and the notice names the new path, because a rename the user cannot find
+ * reads exactly like a deletion.
+ *
+ * ⚠️ The rename is awaited and CHECKED. If it fails there is nothing to restart into, and telling
+ * the user it worked would leave them staring at the same failure with their file already moved in
+ * their mental model but not on disk.
+ */
+async function offerBootRecovery(failure: ReturnType<typeof describeSidecarFailure>) {
+  if (failure.kind === "interrupted") return
+  const databasePath =
+    failure.databasePath !== undefined && failure.databasePath !== ":memory:" ? failure.databasePath : undefined
+  const choices = recoveryChoices(databasePath)
+
+  const result = await dialog
+    .showMessageBox({
+      type: "error",
+      title: "NovaClaw could not start",
+      message: failure.summary,
+      detail: failure.detail,
+      buttons: choices.map((choice) => choice.label),
+      defaultId: 0,
+      cancelId: choices.length - 1,
+    })
+    .catch(() => undefined)
+  const action = choices[result?.response ?? choices.length - 1]?.action ?? "quit"
+
+  if (action === "export-logs") {
+    await exportDebugLogs().catch((error) => writeLog("main", "failed to export debug logs", { error }, "error"))
+    return offerBootRecovery(failure)
+  }
+  if (action === "open-folder") {
+    // ⚠️ Only when a path is known. `getLogDirectory()` returns a record, not a path, and its
+    // `root` is a different folder than the database — opening the wrong one is worse than the
+    // button being absent, because the user then believes they have LOOKED.
+    if (databasePath !== undefined) shell.showItemInFolder(databasePath)
+    return offerBootRecovery(failure)
+  }
+  if (action === "move-aside" && databasePath !== undefined) {
+    const target = movedAsidePath(databasePath, new Date().toISOString())
+    try {
+      await rename(databasePath, target)
+    } catch (error) {
+      writeLog("main", "could not move the unusable database aside", { databasePath, target, error }, "error")
+      dialog.showErrorBox(
+        "NovaClaw could not move the database",
+        `${String(error)}
+
+The file was NOT changed. You can move it yourself and start NovaClaw again.`,
+      )
+      return offerBootRecovery(failure)
+    }
+    writeLog("main", "moved the unusable database aside", { databasePath, target })
+    dialog.showMessageBoxSync({ type: "info", buttons: ["Restart"], message: movedAsideNotice(target) })
+    app.relaunch()
+  }
+  app.exit(action === "move-aside" ? 0 : 1)
+}
 
 Effect.runFork(main)
