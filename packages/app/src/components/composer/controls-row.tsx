@@ -8,6 +8,7 @@ import { ComposerAgentControl } from "./agent-control"
 import { useDirectoryPicker } from "@/components/directory-picker"
 import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
+import { useGlobal } from "@/context/global"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
 import type { ComposerAgentControlState } from "./agent-option"
@@ -26,6 +27,7 @@ export function ComposerControlsRow(props: { state: ComposerControlsRowState }) 
   const language = useLanguage()
   const pickDirectory = useDirectoryPicker()
   const server = useServer()
+  const global = useGlobal()
   const sync = useServerSync()
 
   /**
@@ -48,6 +50,22 @@ export function ComposerControlsRow(props: { state: ComposerControlsRowState }) 
         if (!picked) return
         void sync()
           .updateConfig({ agents: { [agentID]: { directory: picked } } } as never)
+          /**
+           * 🔴 **The WRITE is not the update** (owner, 2026-08-28: *"picking a new project folder by
+           * clicking project button in the chat windows doesn't change the current project: it still
+           * says 'No project'"*). The chip reads the shared roster resource, and a config PATCH does
+           * not touch it — so the folder changed on the server and the control that changed it went
+           * on reporting the old value. A picker that reports success and shows no change is
+           * indistinguishable from one that is broken.
+           *
+           * ⚠️ The same two lines Tune runs after a save, for the same reason and against the same
+           * resource. That is the tell: this was a THIRD writer of a value two other writers already
+           * knew had to be re-read.
+           */
+          .then(() => {
+            const current = server.current
+            if (current) global.ensureServerCtx(current).agents.refetch()
+          })
           .catch((error: unknown) => {
             // Said, never swallowed: a project that silently fails to change leaves the colleague
             // working somewhere the chip now claims it is not.

@@ -553,7 +553,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           tabs.promoteDraft(draftID, {
             server: tabs.draft(draftID).server,
             sessionId: session.id,
-            agent: session.agent,
+            // ⚠️ `created`, not `session`: the local is widened to `input.info()`'s `{ id }` shape,
+            // so reading the colleague off it does not typecheck — and the id alone is exactly the
+            // key that was never enough.
+            agent: created.agent,
           })
         else navigate(`/${base64Encode(sessionDirectory)}/session/${session.id}`)
         submission.retarget(prompt.capture({ dir: base64Encode(sessionDirectory), id: session.id }))
