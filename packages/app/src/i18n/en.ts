@@ -494,6 +494,7 @@ export const dict = {
   // than silence because a user picks this mode BECAUSE of it.
   "prompt.mode.auto-prompting.description":
     "Unattended: the agent keeps prompting itself until the task is done. Permission asks are auto-approved, and shell commands run with your account unless you turn on Safe mode below.",
+  "prompt.mode.control": "Autonomy mode",
   "prompt.mode.goal-oriented.title": "Goal-oriented",
   "prompt.mode.goal-oriented.description":
     "Unattended: the agent loops toward the goal you set until it's reached. Same guardrails as auto-prompting.",
@@ -915,6 +916,8 @@ export const dict = {
   // label said "Enter opens its chat", which described typing that never happened. It is a button.
   "home.newAgent.placeholder": "Start a new chat — opens ready to configure",
   "home.newAgent.notReady": "Still connecting to your workspace — try again in a moment.",
+  "session.control.reverted":
+    "{{control}} could not be changed on the server, so it has been put back. The chat is still running with the previous setting.",
   "home.newAgent.noColleagues":
     "This instance is not answering with its roster, so there is nobody to start a chat with. Nova is built in and can never be missing — check the server this window is connected to.",
   "home.newAgent.folder.scratch": "Scratch",

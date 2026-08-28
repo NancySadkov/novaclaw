@@ -1,4 +1,5 @@
 import { createQuery } from "@tanstack/solid-query"
+import { applyOptimistic } from "./optimistic-write"
 import { useSearchParams } from "@solidjs/router"
 import { type Accessor, createMemo, createResource, onCleanup, onMount } from "solid-js"
 import type { PromptInputControls } from "@/components/prompt-input"
@@ -101,15 +102,61 @@ export function createPromptInputController(input: {
   // 1K: mid-session permission-mode switch — update the local signal AND, when a session is live,
   // tell the server so the MODE_RULES overlay applies from the next turn (create-time uses the
   // signal only). Shared with the Strict switch, which raises the mode to its Bypass floor.
+  /**
+   * 🔴 **NC-REL-035 — an optimistic control write that FAILED must not stay on screen.**
+   *
+   * Every switch here wrote its value into persisted browser state FIRST, then fired the server
+   * request, and handled failure with `console.error` alone. So a refused write left the UI showing
+   * one posture while the kernel kept the other — and for the permission mode and the Strict switch
+   * that is a SAFETY posture: the composer says "plan" while the session is still running under the
+   * old permissions, and nothing anywhere says otherwise.
+   *
+   * ⚠️ Revert AND say so. Reverting silently would be its own lie — the control would appear to
+   * spring back for no reason — and this codebase's standing rule is that a failed mutation never
+   * reports success. The toast names which control went back.
+   */
+  /**
+   * Set a control optimistically and put it back if the server refuses. `applyOptimistic` owns the
+   * ORDER (apply, then revert only on rejection) and carries the reasoning and the tests; this adds
+   * the sentence the user reads.
+   */
+  const optimistic = <T>(input: {
+    readonly set: (value: T) => void
+    readonly previous: T
+    readonly next: T
+    readonly write: Promise<unknown>
+    readonly control: string
+  }) =>
+    void applyOptimistic({
+      set: input.set,
+      previous: input.previous,
+      next: input.next,
+      write: input.write,
+      onReverted: (error) =>
+        showToast({
+          variant: "error",
+          title: language.t("common.requestFailed"),
+          description: `${language.t("session.control.reverted", { control: input.control })} (${errorMessage(error, language.t("common.requestFailed"))})`,
+        }),
+    })
+
   const selectPermissionMode = (value: Parameters<typeof local.permissionMode.set>[0]) => {
-    local.permissionMode.set(value)
+    const previous = local.permissionMode.current()
     const id = input.sessionID()
     const conn = server.current
     const directory = sessionView.directory()
-    if (id && conn && directory)
-      void switchMode(conn.http, { directory, sessionID: id, permissionMode: value }).catch((error) =>
-        console.error("switchMode failed", error),
-      )
+    if (!id || !conn || !directory) {
+      // No live session yet: the choice is create-time only, so there is nothing to refuse it.
+      local.permissionMode.set(value)
+      return
+    }
+    optimistic({
+      set: local.permissionMode.set,
+      previous,
+      next: value,
+      write: switchMode(conn.http, { directory, sessionID: id, permissionMode: value }),
+      control: language.t("prompt.permissionMode.title"),
+    })
   }
 
   // The per-chat Strict switch (jh.md): this browser's explicit choice wins (it is what we last
@@ -479,14 +526,19 @@ export function createPromptInputController(input: {
       set: (value) => {
         // The draft signal is the instant UI truth (and the create-time payload); a live session
         // ALSO persists the override server-side so the runner reads it on the next turn.
-        local.strict.set(value)
+        const previousStrict = local.strict.current()
         const id = input.sessionID()
         const conn = server.current
         const directory = sessionView.directory()
-        if (id && conn && directory)
-          void switchStrict(conn.http, { directory, sessionID: id, strict: value }).catch((error) =>
-            console.error("switchStrict failed", error),
-          )
+        if (!id || !conn || !directory) local.strict.set(value)
+        else
+          optimistic({
+            set: local.strict.set,
+            previous: previousStrict,
+            next: value,
+            write: switchStrict(conn.http, { directory, sessionID: id, strict: value }),
+            control: "Strict",
+          })
         // The Strict harness executes autonomously — the runner's permission floor is Bypass
         // (llm.ts strict gate). Raise the mode with the switch so the toggle just works; the
         // popover says so out loud. Turning Strict off leaves the mode as the user set it.
@@ -553,14 +605,19 @@ export function createPromptInputController(input: {
         // Same contract as the feature toggles: the draft signal is the instant UI truth (and the
         // create-time payload); a live session ALSO flips the kernel thread type server-side —
         // attendance (out-of-folder deny-fast, Agent Jail confinement) applies immediately.
-        local.mode.set(value)
+        const previousMode = local.mode.current()
         const id = input.sessionID()
         const conn = server.current
         const directory = sessionView.directory()
-        if (id && conn && directory)
-          void switchType(conn.http, { directory, sessionID: id, type: value }).catch((error) =>
-            console.error("switchType failed", error),
-          )
+        if (!id || !conn || !directory) local.mode.set(value)
+        else
+          optimistic({
+            set: local.mode.set,
+            previous: previousMode,
+            next: value,
+            write: switchType(conn.http, { directory, sessionID: id, type: value }),
+            control: language.t("prompt.mode.control"),
+          })
       },
     },
     session: {
