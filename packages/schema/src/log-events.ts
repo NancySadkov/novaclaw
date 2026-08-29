@@ -2606,6 +2606,13 @@ export const EVENTS = {
     content: "user",
     file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/community.ts",
   },
+  "session.compaction.summary.truncated": {
+    level: "warn",
+    message: "compaction: the summary was cut off at max_tokens and was DISCARDED",
+    attributes: { "session.id": "correlate", "compaction.output.cap": "count", "compaction.summary.chars": "count" },
+    content: "correlated",
+    file: "packages/core/src/session/compaction.ts",
+  },
   "session.title.generate.empty": {
     level: "warn",
     message: "auto-title: model returned an empty completion",

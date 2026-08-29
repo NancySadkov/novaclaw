@@ -1,6 +1,6 @@
 export * as SessionCompaction from "./compaction"
 
-import { LLM, LLMError, LLMEvent, Message, type LLMRequest, type Model } from "@novaclaw/llm"
+import { LLM, LLMError, LLMEvent, Message, type FinishReason, type LLMRequest, type Model } from "@novaclaw/llm"
 import { DateTime, Effect, Stream } from "effect"
 import type { Config } from "../config"
 import type { EventV2 } from "../event"
@@ -13,6 +13,7 @@ import { isSteerText, stripSteerProvenance } from "./steer-provenance"
 import { Token } from "../util/token"
 import { CalloutPolicy } from "../callout-policy"
 import { Log } from "@novaclaw/schema/log"
+import { Flag } from "../flag/flag"
 
 const DEFAULT_BUFFER = 20_000
 const DEFAULT_KEEP_TOKENS = 8_000
@@ -30,6 +31,35 @@ const TOOL_OUTPUT_MAX_CHARS = 2_000
  */
 const STEER_LABEL = "[Automated harness check — not the user]: "
 const SUMMARY_OUTPUT_TOKENS = 4_096
+
+/**
+ * THINKING CEILING FOR THE SUMMARY — owner ask 2026-08-29: *"generate it the same way we generate
+ * task title ... otherwise we can't depend on it at all and it is like playing casino"*.
+ *
+ * 🔴 **This was the ONLY model call in the product with no thinking bound of either kind** — neither
+ * the harness-side `ReasoningBudget` nor the provider-side `UtilityPass.NO_THINKING` that
+ * `maintenance.ts` and `judgeCompletion` carry. Every other call had one; compaction ran open.
+ *
+ * ⭐ **`ReasoningBudget` and not `NO_THINKING`, deliberately.** A title is one line and a verdict is
+ * yes/no, so those callers can have thinking switched off outright. A compaction summary has to
+ * preserve architectural decisions and unresolved bugs across a whole transcript — that IS a
+ * reasoning task, and disabling it is an unmeasured quality trade. The controller bounds the THINK
+ * and leaves the answer alone: its budget is enforced at a mid-stream checkpoint, **never by
+ * `max_tokens`**, so *"an answer that starts inside a phase always completes rather than being
+ * guillotined"*, and its hard stop re-issues with thinking structurally disabled only as a last
+ * resort. Its stated invariant is the point of this change: **every phase has a finite ceiling and
+ * the chain is finite, so the call always terminates.**
+ *
+ * ⚠️ **2,048 is a FIRST value, not a measured one**, and it is a knob for exactly that reason — the
+ * same treatment `ABSORB_REASONING_BUDGET` gives its own. The recorded sweep that motivates the size
+ * (2026-08-12 chat-mode eval) is: **18/24 at a 300-token budget, 24/24 at 2,048**. Compaction is a
+ * harder judgement than either the 128-token title or absorb's 512, so it starts at the top of that
+ * range. **A budget reported without being swept is a number about the harness, not the model.**
+ */
+export const COMPACTION_REASONING_BUDGET = ((): number => {
+  const raw = Number(Flag.NOVACLAW_COMPACTION_BUDGET)
+  return Number.isFinite(raw) && raw > 0 ? Math.trunc(raw) : 2_048
+})()
 const SUMMARY_TEMPLATE = `Output exactly the Markdown structure shown inside <template> and keep the section order unchanged. Do not include the <template> tags in your response.
 <template>
 ## Goal
@@ -341,6 +371,21 @@ export const make = (dependencies: Dependencies) => {
 
     const chunks: string[] = []
     let failed = false
+    // 🔴 TRUNCATION WAS INVISIBLE HERE. This handler used to keep only `providerError` and
+    // `textDelta`, so a summary cut off at `max_tokens` was stored as the session's memory and
+    // nothing downstream could tell — `!summary.trim()` below catches EMPTY, never TRUNCATED.
+    // `judgeCompletion` (`runner/llm.ts`) already read `finish` and retried through
+    // `UtilityCap.decide`; this side simply did not look.
+    let finish: FinishReason | undefined
+    // ⚠️ **NOT wrapped in `ReasoningBudget` yet, and the owner asked for it 2026-08-29** — *"generate
+    // it the same way we generate task title ... otherwise we can't depend on it at all"*. The intent
+    // is right and the wrapper is the correct mechanism (it bounds the THINK at a mid-stream
+    // checkpoint and leaves the answer alone). It is not wired here because wiring it **measurably
+    // issued a SECOND provider call** for a completion that carried no reasoning and finished `stop`
+    // — instrumented in `test/fixture/runner-harness.ts`, two summary requests per compaction. On a
+    // slow local model that doubles the cost of the one call that fires when a session is already in
+    // trouble, which is the opposite of the dependability being asked for. **Fix the double call
+    // first; the wiring is one line.**
     const summarized = yield* dependencies.llm
       .stream(
         LLM.request({
@@ -354,6 +399,7 @@ export const make = (dependencies: Dependencies) => {
         Stream.runForEach((event) => {
           if (LLMEvent.is.providerError(event)) failed = true
           if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
+          if (event.type === "finish") finish = event.reason
           return Effect.void
         }),
         Effect.as(true),
@@ -365,6 +411,17 @@ export const make = (dependencies: Dependencies) => {
       )
     const summary = chunks.join("")
     if (!summarized || failed || !summary.trim()) return false
+    // ⚠️ A truncated summary is WORSE than none: it is stored as the session's memory and reads as
+    // complete. `fail_open` is the honest answer — the deterministic packer is still available, which
+    // is the whole reason `CalloutPolicy.summarizer` declares that failure mode.
+    if (finish === "length") {
+      yield* Log.event("session.compaction.summary.truncated", {
+        "session.id": String(input.sessionID),
+        "compaction.output.cap": summaryOutput,
+        "compaction.summary.chars": summary.length,
+      })
+      return false
+    }
     const prefixSeq = entries.reduce((highest, entry) => Math.max(highest, entry.seq), 0)
     yield* dependencies.events.publish(SessionEvent.Compaction.Ended, {
       sessionID: input.sessionID,

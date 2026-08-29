@@ -224,6 +224,59 @@ const primeForOverflow = Effect.fn("primeForOverflow")(function* (harness: Retur
 })
 
 describe("SessionRunnerLLM — overflow recovery", () => {
+  test("a summary cut off at max_tokens is DISCARDED, not stored", async () => {
+    // 🔴 A TRUNCATED SUMMARY IS WORSE THAN NONE. It becomes the session's durable memory and it READS
+    // as complete: the only guard used to be `!summary.trim()`, which catches EMPTY and never
+    // TRUNCATED. `maxTokens` is shared between reasoning and content, so on a thinking model a long
+    // think eats the budget and the answer is severed mid-sentence with `finish=length`.
+    //
+    // ⭐ `judgeCompletion` (`runner/llm.ts`) already read `finish` and escalated its cap through
+    // `UtilityCap.decide`; compaction simply never looked. `CalloutPolicy.summarizer` declares
+    // `failureMode: "fail_open"` precisely so the deterministic packer can answer instead, which is
+    // why DISCARDING is the right response and not a loss.
+    const truncated = fragmentFixture("text", "text-cut", ["## Goal - Half a sum"]).completeEvents.map(
+      (event) => (event.type === "finish" ? { ...event, reason: "length" as const } : event),
+    )
+    const harness = makeRunnerHarness({
+      turns: [
+        fragmentFixture("text", "text-first", ["Earlier answer"]).completeEvents,
+        fragmentFixture("text", "text-second", ["Second answer"]).completeEvents,
+        truncated,
+        fragmentFixture("text", "text-final", ["Continued"]).completeEvents,
+      ],
+    })
+
+    const context = await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        const store = yield* SessionStore.Service
+        for (const text of ["Earlier question ", "Second question "]) {
+          yield* session.prompt({
+            sessionID: HARNESS_SESSION,
+            prompt: Prompt.make({ text: text.repeat(180) }),
+            resume: false,
+          })
+          yield* session.resume(HARNESS_SESSION)
+        }
+        harness.controls.currentModel = harness.makeModel("compact", { context: 4_000, output: 50 })
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Recent exact request ".repeat(180) }),
+          resume: false,
+        })
+        yield* session.resume(HARNESS_SESSION)
+        return yield* store.context(HARNESS_SESSION)
+      }),
+      "claim — a truncated summary is discarded",
+    )
+
+    // 🔴 THE CLAIM: no `compaction` entry exists. Before this guard the half-summary was committed and
+    // the history it replaced was gone, so the session's own past became one severed sentence.
+    expect(context.map((message) => message.type)).not.toContain("compaction")
+    expect(JSON.stringify(context)).not.toContain("Half a sum")
+  })
+
   test("forces one compaction and retries after provider context overflow", async () => {
     // Three requests: the turn that overflows, the summary, then the retry built from that summary.
     // ⭐ The retry is the claim. A runner that compacted and stopped would leave the user's prompt
