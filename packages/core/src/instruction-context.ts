@@ -35,8 +35,7 @@ export const layer = Layer.effectDiscard(
         codec: Schema.toCodecJson(Files),
         load: Effect.succeed(value),
         baseline: render,
-        update: (_previous, current) =>
-          `These instructions replace all previously loaded ambient instructions.\n\n${render(current)}`,
+        update: instructionUpdate,
         removed: () => "Previously loaded instructions no longer apply.",
       })
 
@@ -121,6 +120,40 @@ export const node = makeLocationNode({
   layer,
   deps: [FSUtil.node, Global.node, Location.node, SystemContextRegistry.node, ProjectFileCache.node],
 })
+
+/**
+ * The instruction update, as a DIFF over FILES rather than a full re-render (CACHE-005).
+ *
+ * 🔴 This re-rendered EVERY loaded instruction file whenever ANY of them changed, into the durable
+ * transcript. In this repo `core/instructions` measures **45,644 characters** (read from a live
+ * session epoch), so one edit to one AGENTS.md deposited all of it again - permanently, and
+ * re-summarised by every later compaction.
+ *
+ * ⚠️ It is a TAIL update, so it does NOT invalidate the prefix cache. The cost is transcript bloat
+ * and a model re-reading instructions it already holds - the same shape as CACHE-004.
+ *
+ * ⚠️ **A file that DISAPPEARS must be reported.** Emitting only "what is new" would leave the model
+ * obeying instructions from a file deleted or moved out of scope - the failure the `removed` hook
+ * exists to prevent for the whole set, applied per file.
+ *
+ * ⚠️ Exported as a SEAM: a pure function over two file lists. Reaching it through
+ * `SystemContext.reconcile` would need a registry, an epoch and a store to read one string back.
+ */
+export const instructionUpdate = (previous: ReadonlyArray<File>, current: ReadonlyArray<File>): string => {
+  const before = new Map(previous.map((file) => [file.path, file.content]))
+  const after = new Map(current.map((file) => [file.path, file.content]))
+  const changed = current.filter((file) => before.get(file.path) !== file.content)
+  const gone = previous.filter((file) => !after.has(file.path))
+  // Nothing attributable to a file (ordering churn alone): fall back to the whole render rather
+  // than emitting an empty notice.
+  if (changed.length === 0 && gone.length === 0)
+    return `These instructions replace all previously loaded ambient instructions.\n\n${render(current)}`
+  return [
+    "These instructions have changed. Everything not mentioned here is unchanged and still applies.",
+    ...changed.map((file) => `\nInstructions from: ${file.path}\n${file.content}`),
+    ...gone.map((file) => `\nNo longer loaded: ${file.path}`),
+  ].join("\n")
+}
 
 function render(files: ReadonlyArray<File>) {
   return files.map((file) => `Instructions from: ${file.path}\n${file.content}`).join("\n\n")
