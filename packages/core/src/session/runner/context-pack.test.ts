@@ -453,3 +453,56 @@ describe("defaults", () => {
     expect(DEFAULT_CONTEXT_SIZE).toBe(32_000)
   })
 })
+
+/**
+ * ── WHAT THE PACKER KEEPS WHEN THE HISTORY IS PICTURES ───────────────────────────────────────────
+ *
+ * 🔴 `estimateMessage` priced a base64 image by its CHARACTER LENGTH until 2026-08-29: one 35 KB
+ * corpus icon scored **11,772 tokens** where the provider charges a measured **66**. The packer
+ * budgets on that number, so an image-reading session had its history dropped for room that was
+ * never occupied.
+ *
+ * ⚠️ This asserts what `pack` KEEPS, not what `estimateMessage` returns. The estimate is pinned in
+ * `test/media-estimate-all-sites.test.ts`; a number is not a decision, and this suite's 34 other
+ * tests stay green with the media charge removed entirely — so nothing here covered the behaviour
+ * that number drives.
+ */
+describe("image history is not evicted for space it never used", () => {
+  const IMAGE_B64 = "A".repeat(47_000)
+  const imageResult = (id: string) =>
+    Message.tool({
+      id,
+      name: "read",
+      result: [
+        { type: "text", text: "Image read successfully" },
+        { type: "file", uri: `data:image/png;base64,${IMAGE_B64}`, mime: "image/png", name: `${id}.png` },
+      ],
+    })
+
+  /** Six read calls and their image results — 396 provider tokens, once 70,632 by the old estimate. */
+  const sixImages = () => {
+    const messages = [user("describe every icon")]
+    for (let index = 0; index < 6; index++) {
+      messages.push(assistantCall(`c${index}`))
+      messages.push(imageResult(`c${index}`))
+    }
+    return messages
+  }
+
+  test("six images fit a 20,000-token budget — the old estimate called them 70,000", () => {
+    const result = pack(sixImages(), 20_000)
+    expect(result.dropped, "nothing should be dropped: this is ~400 provider tokens").toBe(0)
+    expect(result.changed).toBe(false)
+  })
+
+  // ⚠️ THE CONTROL. Without it this passes just as well if `pack` stopped evicting anything at all.
+  test("but six equally-large TEXT results still overflow the same budget", () => {
+    const messages = [user("read every file")]
+    for (let index = 0; index < 6; index++) {
+      messages.push(assistantCall(`t${index}`))
+      messages.push(toolResult(`t${index}`, "read", "o".repeat(47_000)))
+    }
+    const result = pack(messages, 20_000)
+    expect(result.changed, "70,000 tokens of real text must still be packed down").toBe(true)
+  })
+})
