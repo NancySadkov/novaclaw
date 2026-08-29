@@ -10,6 +10,7 @@ import { NovaHealthBoard } from "./nova-health"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import { SettingsExplainV2 } from "./explain"
+import { type ConfigWithDrives, resumeInterruptedOn, resumeInterruptedPatch } from "./recovery-state"
 
 // The UI-preference surface, and ONLY that. localStorage is the app's whole persistence backend on
 // web (servers, drafts, prompt history all live there — see utils/persist.ts), so a blanket
@@ -57,20 +58,14 @@ export const SettingsRecoveryV2: Component = () => {
   const platform = usePlatform()
   const serverSync = useServerSync()
 
-  /**
-   * `harness_drives.resumeInterrupted` — whether a run a crash interrupted is picked back up.
-   *
-   * ⚠️ **Absent means ON**, matching the config resolver. Reading a missing key as "off" here would
-   * show every existing instance a switch in the wrong position, and a user who then toggled it
-   * twice would have turned the feature OFF believing they had left it alone.
-   */
-  const drives = (): { resumeInterrupted?: boolean } =>
-    (serverSync().data.config as { harness_drives?: { resumeInterrupted?: boolean } }).harness_drives ?? {}
-  const resumeOn = () => drives().resumeInterrupted !== false
+  // Read/patch logic lives in `recovery-state.ts` so it can be ratcheted against the kernel's own
+  // default — see that file and its test.
+  const config = () => serverSync().data.config as ConfigWithDrives
+  const resumeOn = () => resumeInterruptedOn(config())
 
   async function setResume(value: boolean) {
     await serverSync()
-      .updateConfig({ harness_drives: { ...drives(), resumeInterrupted: value } } as never)
+      .updateConfig(resumeInterruptedPatch(config(), value) as never)
       .catch(() => {
         /* the row reflects the store on the next sync; a failed write simply does not move it */
       })
