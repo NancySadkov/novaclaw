@@ -409,7 +409,14 @@ export const make = (dependencies: Dependencies) => {
         Stream.runForEach((event) => {
           if (LLMEvent.is.providerError(event)) failed = true
           if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
-          if (event.type === "finish") finish = event.reason
+          // 🔴 BOTH events, because the two supported call shapes emit DIFFERENT ones — and reading
+          // only `finish` is how this guard would have died the moment somebody wired the thinking
+          // budget above. A raw `llm.stream` forwards the provider's `finish`; `ReasoningBudget`
+          // SWALLOWS it and closes with `stepFinish({ index, reason, usage })` instead
+          // (`runner/reasoning-budget.ts`, the `out.push` at the end of its finaliser). Same reason,
+          // different envelope. `judgeCompletion` reads `finish` and is safe only because it calls
+          // the provider directly; the titler and `absorb` go through the wrapper and read neither.
+          if (event.type === "finish" || event.type === "step-finish") finish = event.reason
           return Effect.void
         }),
         Effect.as(true),

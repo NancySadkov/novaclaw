@@ -277,6 +277,55 @@ describe("SessionRunnerLLM — overflow recovery", () => {
     expect(JSON.stringify(context)).not.toContain("Half a sum")
   })
 
+  test("and it is discarded when only step-finish carries the cut — the wrapped shape", async () => {
+    // 🔴 THE TWO CALL SHAPES EMIT DIFFERENT EVENTS, and reading one is how this guard dies silently.
+    // A raw `llm.stream` forwards the provider's `finish`. `ReasoningBudget` — the thinking bound the
+    // owner asked for, not yet wired — SWALLOWS it and closes with `stepFinish({index, reason, usage})`
+    // instead. Same reason, different envelope. The test above only covers `finish`, so without this
+    // one the `step-finish` branch is present, unexercised, and would be discovered broken by whoever
+    // wires the wrapper — which is exactly the moment it is supposed to be protecting.
+    const cutStepOnly = fragmentFixture("text", "text-cut2", ["## Goal - Half again"]).completeEvents.flatMap(
+      (event) =>
+        event.type === "step-finish" ? [{ ...event, reason: "length" as const }] : event.type === "finish" ? [] : [event],
+    )
+    const harness = makeRunnerHarness({
+      turns: [
+        fragmentFixture("text", "text-a", ["Earlier answer"]).completeEvents,
+        fragmentFixture("text", "text-b", ["Second answer"]).completeEvents,
+        cutStepOnly,
+        fragmentFixture("text", "text-c", ["Continued"]).completeEvents,
+      ],
+    })
+
+    const context = await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        const store = yield* SessionStore.Service
+        for (const text of ["Earlier question ", "Second question "]) {
+          yield* session.prompt({
+            sessionID: HARNESS_SESSION,
+            prompt: Prompt.make({ text: text.repeat(180) }),
+            resume: false,
+          })
+          yield* session.resume(HARNESS_SESSION)
+        }
+        harness.controls.currentModel = harness.makeModel("compact", { context: 4_000, output: 50 })
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Recent exact request ".repeat(180) }),
+          resume: false,
+        })
+        yield* session.resume(HARNESS_SESSION)
+        return yield* store.context(HARNESS_SESSION)
+      }),
+      "claim — a truncated summary is discarded via step-finish too",
+    )
+
+    expect(context.map((message) => message.type)).not.toContain("compaction")
+    expect(JSON.stringify(context)).not.toContain("Half again")
+  })
+
   test("forces one compaction and retries after provider context overflow", async () => {
     // Three requests: the turn that overflows, the summary, then the retry built from that summary.
     // ⭐ The retry is the claim. A runner that compacted and stopped would leave the user's prompt
