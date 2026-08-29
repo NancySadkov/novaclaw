@@ -289,9 +289,13 @@ describe("SessionRunnerLLM — overflow recovery", () => {
     // instead. Same reason, different envelope. The test above only covers `finish`, so without this
     // one the `step-finish` branch is present, unexercised, and would be discovered broken by whoever
     // wires the wrapper — which is exactly the moment it is supposed to be protecting.
-    const cutStepOnly = fragmentFixture("text", "text-cut2", ["## Goal - Half again"]).completeEvents.flatMap(
-      (event) =>
-        event.type === "step-finish" ? [{ ...event, reason: "length" as const }] : event.type === "finish" ? [] : [event],
+    // ⚠️ Annotated, because `flatMap` otherwise infers the element type from the FIRST branch — the
+    // narrowed step-finish shape — and then rejects every other event for lacking `reason`. `bun test`
+    // ran this happily; only the typecheck tier saw it.
+    const cutStepOnly: LLMEvent[] = fragmentFixture("text", "text-cut2", [
+      "## Goal - Half again",
+    ]).completeEvents.flatMap((event): LLMEvent[] =>
+      event.type === "step-finish" ? [{ ...event, reason: "length" as const }] : event.type === "finish" ? [] : [event],
     )
     const harness = makeRunnerHarness({
       turns: [
