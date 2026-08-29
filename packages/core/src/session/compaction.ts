@@ -380,12 +380,22 @@ export const make = (dependencies: Dependencies) => {
     // ⚠️ **NOT wrapped in `ReasoningBudget` yet, and the owner asked for it 2026-08-29** — *"generate
     // it the same way we generate task title ... otherwise we can't depend on it at all"*. The intent
     // is right and the wrapper is the correct mechanism (it bounds the THINK at a mid-stream
-    // checkpoint and leaves the answer alone). It is not wired here because wiring it **measurably
-    // issued a SECOND provider call** for a completion that carried no reasoning and finished `stop`
-    // — instrumented in `test/fixture/runner-harness.ts`, two summary requests per compaction. On a
-    // slow local model that doubles the cost of the one call that fires when a session is already in
-    // trouble, which is the opposite of the dependability being asked for. **Fix the double call
-    // first; the wiring is one line.**
+    // checkpoint and leaves the answer alone, and its own invariant is that every phase has a finite
+    // ceiling). It is not wired here because wiring it makes
+    // `session-runner-compaction.test.ts` — *"manual compact ... drains no turn"* — TIME OUT on a
+    // latch that never opens, and **that timeout has not been root-caused.**
+    //
+    // ⚠️ **One diagnosis of it has already been made and RETRACTED**, so do not repeat it: it is NOT
+    // a double provider call. `ReasoningBudget`'s own suite asserts one request for reasoning under
+    // budget, and a probe of the never-tested case — a completion with NO reasoning block at all —
+    // also returns exactly **one**. The `#2` seen in an instrumented run was a per-harness counter
+    // read across several tests, one of which compacts twice on purpose.
+    //
+    // ⭐ What IS known: the wrapper prefixes one system nudge line, and compaction previously sent
+    // **no system part at all** — `test/fixture/runner-harness.ts` keys its whole request router on
+    // exactly that (*"unless it is the compaction summary, which carries no agent system"*). Fixing
+    // that discriminator cleared a first timeout in the interrupt test and did not clear this one.
+    // **Start there, and start by root-causing rather than by adjusting the fixture again.**
     const summarized = yield* dependencies.llm
       .stream(
         LLM.request({
