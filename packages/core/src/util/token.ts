@@ -119,7 +119,12 @@ export const estimateStructured = (value: unknown): number => {
         return item
       }) ?? ""
   } catch {
-    return 0
+    // 🔴 NOT zero. `context-pack`'s `estimateMessage` previously fell back to `estimate(String(value))`
+    // here, and zero would tell the packer this message is FREE — the unsafe direction, because it
+    // over-packs a window it believes is empty. The two `estimateJson` callers did return 0, so this
+    // raises their floor as well; over-estimating is this module's stated contract ("a soft
+    // over-budget, never a hard overflow"), and an unstringifiable value is exactly when to take it.
+    return estimate(String(value))
   }
   return estimate(json) + mediaParts * MEDIA_PART_TOKENS
 }

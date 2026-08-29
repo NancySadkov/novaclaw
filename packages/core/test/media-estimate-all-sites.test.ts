@@ -97,3 +97,19 @@ describe("every site that prices content prices an image the same way", () => {
     expect(outputTokens(textual as never)).toBeGreaterThan(9_000)
   })
 })
+
+/**
+ * ⚠️ THE ERROR PATH, which the refactor silently changed.
+ *
+ * `context-pack`'s `estimateMessage` used to fall back to `estimate(String(value))` when
+ * `JSON.stringify` threw. Collapsing three call sites onto one helper replaced that with `return 0`
+ * — and zero tells the packer a message is FREE, so it over-packs a window it believes is empty.
+ * Found by reading the diff, not by a failing test: nothing here constructs a circular message.
+ */
+describe("an unstringifiable value is expensive, not free", () => {
+  test("a circular structure falls back to a non-zero estimate", () => {
+    const circular: Record<string, unknown> = { type: "text", text: "x".repeat(400) }
+    circular["self"] = circular
+    expect(Token.estimateStructured(circular)).toBeGreaterThan(0)
+  })
+})
