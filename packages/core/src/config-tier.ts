@@ -184,6 +184,17 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   // Ordered booleans over ALREADY-REGISTERED tools. The table can change a model's working set or
   // strand its repair tool, but registry permissions remain the final ceiling and cannot be widened.
   tool_routing: "consequential",
+  // The automatic continuations applied to a turn that thinks it is finished, plus the crash-resume
+  // switch. Five booleans and nothing else: no command, no endpoint, no prompt TEXT — the steer
+  // wording is fixed in source and the key only decides whether it is used, which is what separates
+  // this from `introspection` (privileged because it carries `prompt`/`interjection` text) and puts
+  // it beside `affective`, `strict` and `tool_routing`.
+  //
+  // ⚠️ Consequential rather than operational because turning one OFF is exactly the kind of change a
+  // user must get to see: work stops being resumed after a crash, a confident finish stops being
+  // re-grounded, a fan-out's forgotten child stops being reported. It grants nothing — it removes a
+  // check — and a removed check is still a different instance afterwards.
+  harness_drives: "consequential",
   // Real filesystem vs an app-private root — it decides what the product will browse at all.
   virtualFs: "consequential",
   // The FS watcher's ignore globs: it decides which file changes the product NOTICES, so a write

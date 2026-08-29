@@ -680,7 +680,44 @@ export const toLLMMessages = (
  * (*the model never instruments voluntarily; the harness must force it*), and is why a sub-session
  * that looks at ≤N images and returns TEXT is the shape that actually survives a large folder.
  */
-export const budgetedImageNotice = (name: string | undefined, sourcePath?: string, saidAfter?: string): string => {
+/**
+ * The cap, stated as a NUMBER when one is known — and as a plan the model can act on.
+ *
+ * ⚠️ *"the most recent ones were kept"* is a plural with no value, and a model that needs to plan a
+ * 400-file batch has to discover the value before it can choose a batch size. One that says "1" tells
+ * it the batch size in the same breath.
+ */
+const capSentence = (kept?: number): string =>
+  kept === undefined || kept < 1
+    ? "this model accepts only a limited number of images at once, so the most recent ones were kept."
+    : kept === 1
+      ? "this model holds only ONE image at a time, so only the most recently opened one is visible. " +
+        "Open ONE image per turn and write down what it shows before opening the next."
+      : `this model holds only ${kept} images at a time, so only the ${kept} most recently opened are visible. ` +
+        `Open at most ${kept} per turn and write down what they show before opening more.`
+
+export const budgetedImageNotice = (
+  name: string | undefined,
+  sourcePath?: string,
+  saidAfter?: string,
+  /**
+   * 🔴 **HOW MANY IMAGES SURVIVE — the number, not "a limited number".**
+   *
+   * Measured live 2026-08-29, N=400 corpus. This notice said *"only a limited number of images at
+   * once"*, and the model did what a careful reader does with a vague quantity: it went and measured
+   * it. Read 20, saw only #20; read 3, saw only #3; concluded *"only the most recent image is
+   * retained. This means one image per turn"*, and re-planned to one read plus one append per turn.
+   *
+   * ⭐ **It reasoned correctly and reached the right strategy — after fourteen minutes and nineteen
+   * wasted image reads, measuring a number the harness already had in hand.** `max` is right there
+   * at the call site. Passing it turns a paragraph the model must run an experiment against into a
+   * fact it can plan from on the first eviction.
+   *
+   * ⚠️ Absent ⇒ the old wording, unchanged. The notice is also produced where the cap is not known,
+   * and inventing one would be worse than being vague.
+   */
+  kept?: number,
+): string => {
   /**
    * ⭐ **When the model already spoke after opening this image, give it ITS OWN WORDS BACK instead of
    * telling it to look again.** The re-read is not free: measured 2026-08-26 on a 100-image run, a
@@ -698,7 +735,7 @@ export const budgetedImageNotice = (name: string | undefined, sourcePath?: strin
   if (saidAfter && saidAfter.trim().length > 0) {
     const readable = sourcePath?.startsWith("file:///") ? decodeURIComponent(sourcePath.slice(8)) : sourcePath
     const clipped = saidAfter.trim().length > 600 ? saidAfter.trim().slice(0, 600) + "\u2026" : saidAfter.trim()
-    return `[An image${name ? ` (${name})` : ""} you opened earlier is NOT in this request: this model accepts only a limited number of images at once. You do not need to open it again — what you said straight after opening it was: "${clipped}" If that already answers what you needed, carry it forward and move on. Do NOT invent anything further about the picture from memory.${readable ? ` If you genuinely still need to see it, it is at: ${readable}` : ""}]`
+    return `[An image${name ? ` (${name})` : ""} you opened earlier is NOT in this request: ${capSentence(kept)} You do not need to open it again — what you said straight after opening it was: "${clipped}" If that already answers what you needed, carry it forward and move on. Do NOT invent anything further about the picture from memory.${readable ? ` If you genuinely still need to see it, it is at: ${readable}` : ""}]`
   }
   // ⭐ The path, when we have one, is what turns "read it again" from advice into a step. See
   // `media()` for the measurement: the model DOES re-read an image it can name, and cannot re-read
@@ -707,7 +744,7 @@ export const budgetedImageNotice = (name: string | undefined, sourcePath?: strin
   const how = readable
     ? ` Read it again with \`read\` at this exact path: ${readable}`
     : " If this task needs it, read it again."
-  return `[An image${name ? ` (${name})` : ""} you opened earlier is NOT in this request: this model accepts only a limited number of images at once, so the most recent ones were kept. You cannot see it now. Do not describe it or name it from memory — that is a mistake this notice exists to prevent, and a description you invent here will be wrong.${how} Write down what each image shows as you go, so the description survives even when the picture does not.]`
+  return `[An image${name ? ` (${name})` : ""} you opened earlier is NOT in this request: ${capSentence(kept)} You cannot see it now. Do not describe it or name it from memory — that is a mistake this notice exists to prevent, and a description you invent here will be wrong.${how} Write down what each image shows as you go, so the description survives even when the picture does not.]`
 }
 
 // Type GUARDS, not predicates: the flatMap below reads `.filename` / `.name` off the narrowed arm,
@@ -785,7 +822,9 @@ export const budgetImages = (messages: readonly Message[], max: number | undefin
   return evictImages(messages, () => {
     const at = ++imageIndex
     const saidAfter = describedBefore.get(at)
-    return { evict: victims.has(at), ...(saidAfter === undefined ? {} : { saidAfter }) }
+    // `max` is the cap the eviction was computed from — the number the model would otherwise have
+    // to derive by experiment. See `budgetedImageNotice`'s `kept`.
+    return { evict: victims.has(at), kept: max, ...(saidAfter === undefined ? {} : { saidAfter }) }
   })
 }
 
@@ -856,7 +895,7 @@ const describedImageIndices = (messages: readonly Message[]): ReadonlyMap<number
  */
 const evictImages = (
   messages: readonly Message[],
-  take: () => { readonly evict: boolean; readonly saidAfter?: string },
+  take: () => { readonly evict: boolean; readonly saidAfter?: string; readonly kept?: number },
 ): readonly Message[] =>
   messages.map((message) => {
     if (!Array.isArray(message.content)) return message
@@ -873,6 +912,7 @@ const evictImages = (
                   part.filename,
                   (part.metadata as { readonly sourceUri?: string } | undefined)?.sourceUri,
                   verdict.saidAfter,
+                  verdict.kept,
                 ),
               },
             ]
@@ -887,7 +927,7 @@ const evictImages = (
         return verdict.evict
           ? // The TOOL door: `read` sets the file's own path as the content's name, so the notice
             // can point straight back at what produced it and no second field is needed.
-            [{ type: "text", text: budgetedImageNotice(item.name, item.name, verdict.saidAfter) }]
+            [{ type: "text", text: budgetedImageNotice(item.name, item.name, verdict.saidAfter, verdict.kept) }]
           : [item]
       })
       return [{ ...(part as ToolResultPart), result: { type: "content", value: gated } } as ContentPart]

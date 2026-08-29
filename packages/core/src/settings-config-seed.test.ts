@@ -73,6 +73,8 @@ const VALID: Record<string, unknown> = {
   persona: {},
   user_profile: { enabled: true, name: "Nancy" },
   introspection: {},
+  // All four switches present, so the row exercises the whole block rather than its defaults.
+  harness_drives: { reground: true, set: true, children: true, imageShortcut: true, resumeInterrupted: true },
   adhoc_tools: [],
   affective: {},
   strict: {},

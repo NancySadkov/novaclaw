@@ -150,6 +150,17 @@ const LEDGER = new Map<string, string>([
       "POSIX missing the ppid snapshot and the grace window.",
   ],
   [
+    "packages/watchdog/smoke.ts",
+    "`packages/watchdog` is a RUST package: it has a Cargo.toml and no package.json at all, so it is " +
+      "not in the bun workspace graph and cannot resolve `@novaclaw/core` by name. The only way to " +
+      "import `Shell.killTree` here is a relative path up into the kernel's source tree, which would " +
+      "make a Rust crate's smoke harness depend on TypeScript it is deliberately outside of — the same " +
+      "packaging decision the desktop entry above declines to make, one step further. The script's job " +
+      "is also the argument: it supervises a watchdog supervising a child, and its kill must survive " +
+      "the watchdog being the thing that is broken. Windows-only `taskkill /f /t`; the POSIX leg is a " +
+      "plain `kill`, which is enough because it only ever kills processes it spawned itself. FILED.",
+  ],
+  [
     "script/test.ts",
     "`reapOrphans` — the test harness's own orphan reaper, and the reason a wall-clock-killed unit no " +
       "longer poisons the next one (a leaked bun child holding 4.89 GB, 2026-07-27). Three reasons it " +

@@ -15,6 +15,57 @@ import { ResourcePressureContext } from "../resource-pressure-context"
 import { McpHealthContext } from "../mcp-health-context"
 import { CapabilityRegistry } from "../effect/capability-registry"
 
+/**
+ * The environment update, as a DIFF rather than a full re-render.
+ *
+ * 🔴 **CACHE-004, measured 2026-08-29.** Under memory pressure the resource line carries live
+ * megabytes (`resource-pressure-context.ts`), so it changes on nearly every probe and this update
+ * fired repeatedly: **13 of 66 messages in an N=400 sweep carried an `<env>` block, all 13 renders
+ * DISTINCT**, differing only in the MB figure. The control is a quiet-box run of the same rig and
+ * corpus: **0 of 217**.
+ *
+ * ⚠️ It is a TAIL update, so it does NOT invalidate the prefix cache — that claim was made and
+ * withdrawn. What it does is deposit ~250 characters of near-duplicate text into the DURABLE
+ * transcript each time, permanently: carried by every later turn, re-summarised by every
+ * compaction, and read by the model as a dozen near-identical notices it must reconcile. It fires
+ * only while the box is already short, so it spends context exactly when context is scarce.
+ *
+ * ⚠️ **Removals are reported too.** A naive "what is new" diff would silently drop the case that
+ * matters most — a warning CLEARING — leaving the model believing the machine is still short.
+ *
+ * ⚠️ Exported as a SEAM: it is a pure string diff and the only way to assert it through
+ * `SystemContext.reconcile` would be to build a registry, an epoch and a store to read one line back.
+ */
+export const environmentUpdate = (previous: string, current: string): string => {
+  const meaningful = (text: string) =>
+    text
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line !== "" && line !== "<env>" && line !== "</env>")
+  const before = meaningful(previous)
+  const after = meaningful(current)
+  const added = after.filter((line) => !before.includes(line))
+  /**
+   * ⚠️ A line whose VALUE moved is an update, not a removal. These read `<subject>: <value>`
+   * ("Memory headroom is low: 40655 MB of 43954 MB committed"), so a gone line is SUPERSEDED when an
+   * added line shares its subject — and emitting "No longer applies" for it would nearly double the
+   * notice while telling the model nothing, which is the bloat this change exists to remove.
+   */
+  const subject = (line: string) => line.slice(0, line.indexOf(":") + 1 || line.length)
+  const addedSubjects = new Set(added.map(subject))
+  const gone = before.filter((line) => !after.includes(line) && !addedSubjects.has(subject(line)))
+  // Nothing line-level to report (wrapper or whitespace churn): fall back to the whole render
+  // rather than emitting an empty notice.
+  if (added.length === 0 && gone.length === 0)
+    return ["The environment you are running in is now:", current].join("\n")
+  return [
+    "The environment you are running in has changed:",
+    ...added.map((line) => `  ${line}`),
+    ...gone.map((line) => `  No longer applies: ${line}`),
+  ].join("\n")
+}
+
+
 const builtIns = Layer.effectDiscard(
   Effect.gen(function* () {
     const registry = yield* SystemContextRegistry.Service
@@ -95,7 +146,7 @@ const builtIns = Layer.effectDiscard(
         load: environment,
         baseline: (environment) =>
           ["Here is some useful information about the environment you are running in:", environment].join("\n"),
-        update: (_previous, environment) => ["The environment you are running in is now:", environment].join("\n"),
+        update: environmentUpdate,
       }),
       SystemContext.make({
         key: SystemContext.Key.make("core/date"),

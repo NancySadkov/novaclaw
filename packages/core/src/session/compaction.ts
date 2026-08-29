@@ -107,7 +107,17 @@ type Input = {
   readonly request: LLMRequest
 }
 
-const estimate = (value: unknown) => Token.estimate(JSON.stringify(value))
+/**
+ * Token estimate for an assembled request.
+ *
+ * ⚠️ Exported as a SEAM, the same reason `serializeMessage` below is: the media rule is the whole
+ * point and cannot be asserted through `compactIfNeeded` without building a model route, a request
+ * and a config just to read one number back out of a boolean.
+ *
+ * 🔴 The media-aware logic lives in `util/token.ts` because THREE call sites needed it and each had
+ * written `estimate(JSON.stringify(value))` independently — see `Token.estimateStructured`.
+ */
+export const estimate = (value: unknown) => Token.estimateStructured(value)
 
 const truncate = (value: string) =>
   value.length <= TOOL_OUTPUT_MAX_CHARS ? value : `${value.slice(0, TOOL_OUTPUT_MAX_CHARS)}\n[truncated]`

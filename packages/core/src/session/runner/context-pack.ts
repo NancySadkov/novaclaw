@@ -45,25 +45,20 @@ const toolCallCount = (message: Message) =>
 
 /** tokens(msg) ≈ chars/4 (+8 per tool call/result) — tokenizer-free by design. */
 export const estimateMessage = (message: Message): number => {
-  let text: string
-  try {
-    text = JSON.stringify(message.content) ?? ""
-  } catch {
-    text = String(message.content)
-  }
-  return Token.estimate(text) + toolCallCount(message) * TOOL_CALL_OVERHEAD
+  // 🔴 Media-aware: a message's content carries tool results, and a read-tool image lowers to a
+  // `file` part whose base64 was being counted by the character. See `Token.estimateStructured`.
+  return Token.estimateStructured(message.content) + toolCallCount(message) * TOOL_CALL_OVERHEAD
 }
 
 export const estimateMessages = (messages: ReadonlyArray<Message>): number =>
   messages.reduce((total, message) => total + estimateMessage(message), 0)
 
-const estimateJson = (value: unknown): number => {
-  try {
-    return Token.estimate(JSON.stringify(value) ?? "")
-  } catch {
-    return 0
-  }
-}
+/**
+ * 🔴 Media-aware. This was `Token.estimate(JSON.stringify(value))`, which prices one base64 image at
+ * ~11,772 tokens against a provider's measured 66 — so the packer dropped history it had room for.
+ * See `Token.estimateStructured`.
+ */
+const estimateJson = (value: unknown): number => Token.estimateStructured(value)
 
 /**
  * Budget = contextSize − system − tools − responseReserve − headroom.

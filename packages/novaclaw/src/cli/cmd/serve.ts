@@ -21,6 +21,7 @@ import { ServeLiveness } from "../serve-liveness"
 // the user a dead port. `--no-supervise` opts out (and is how the child itself runs). The restart
 // policy itself lives in ../supervise.ts (pure, unit-tested).
 import { FAST_CRASH_GIVEUP, FAST_CRASH_MS, initialSuperviseState, superviseDecision } from "../supervise"
+import { ExitIntent } from "../exit-intent"
 
 /**
  * Stop the supervised child AND the layers under it.
@@ -85,12 +86,23 @@ const superviseLoop = async (): Promise<"clean" | "giveup"> => {
   // ⚠️ SIGINT/SIGTERM are async now; `exit` cannot be — nothing async survives it, so it keeps the
   // synchronous kill. That asymmetry is the point: the graceful path is for an ordinary stop, and
   // the sync one is the backstop for every other way this process can end.
-  process.on("SIGINT", () => {
-    void gracefulShutdown().finally(() => process.exit(0))
-  })
-  process.on("SIGTERM", () => {
-    void gracefulShutdown().finally(() => process.exit(0))
-  })
+  /**
+   * 🔴 **A DELIBERATE STOP MUST NOT LOOK LIKE A CRASH TO THE WATCHDOG.**
+   *
+   * `packages/watchdog` restarts anything that exits without a valid intent, which is the right
+   * default — silence means the work vanished. But a Ctrl-C is not silence, it is a decision, and
+   * without this the watchdog would faithfully restart the instance the operator just stopped,
+   * forever.
+   *
+   * ⚠️ `ExitIntent.settle` returns the code to use and writes the document in one call, so the two
+   * halves of the protocol cannot disagree. **Unsupervised it returns 0** — the status this path has
+   * always exited with — so a bare `novaclaw serve` behaves exactly as before for every shell, script
+   * and CI job that reads it.
+   */
+  const stopWith = (intent: ExitIntent.Intent) =>
+    void gracefulShutdown().finally(() => process.exit(ExitIntent.settle(intent, 0)))
+  process.on("SIGINT", () => stopWith({ kind: "shutdown" }))
+  process.on("SIGTERM", () => stopWith({ kind: "shutdown" }))
   process.on("exit", shutdown) // best-effort — a hard parent death still orphans (OS territory)
 
   const cmd = ServeChildCommand.current()
@@ -104,7 +116,9 @@ const superviseLoop = async (): Promise<"clean" | "giveup"> => {
       // forwarded, so supervised serve has the same visible stdout contract as the bare child.
       stdout: "pipe",
       stderr: "inherit",
-      env: process.env as Record<string, string>,
+      // 🔴 SCRUBBED, not inherited. This process is a supervisor under a watchdog; the child must not
+      // be able to answer the watchdog's question about US. See `ExitIntent.childEnv`.
+      env: ExitIntent.childEnv(process.env),
     })
     current = child
     void forwardStdout(child.stdout, (line) => {
@@ -227,11 +241,12 @@ export const ServeCommand = effectCmd({
       )
         .then((report) => {
           console.log(`novaclaw server stopping (${signal}). ${Shutdown.describe(report)}`)
-          process.exit(0)
+          process.exit(ExitIntent.settle({ kind: "shutdown" }, 0))
         })
         // Never let the reporting itself hold the process: an exit that hangs is worse than one
-        // that says less.
-        .catch(() => process.exit(0))
+        // that says less. The intent is still recorded — the operator asked to stop either way, and
+        // a failure to DESCRIBE the shutdown is not a reason to let the watchdog call it a crash.
+        .catch(() => process.exit(ExitIntent.settle({ kind: "shutdown" }, 0)))
     }
     process.on("SIGINT", () => settle("SIGINT"))
     process.on("SIGTERM", () => settle("SIGTERM"))

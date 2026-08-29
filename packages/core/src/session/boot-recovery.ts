@@ -80,7 +80,50 @@ export const sweepStaleOnce = (attempts: SessionExecutionAttempt.Interface) =>
     return yield* attempts.recoverStale(now - STALE_AFTER_MS)
   })
 
-export const recoverStaleLeases = (attempts: SessionExecutionAttempt.Interface) =>
+/**
+ * 🔴 **THE VERDICT WAS COMPUTED AND THROWN AWAY.**
+ *
+ * `recoverStale` classifies every abandoned execution through `SessionRecoveryDecision.decide` and
+ * stores the answer as `interrupted` (safe to resume) or `paused` (a human must look). It returns
+ * that decision to its caller. **Nothing ever acted on it** — the sweep logged a count and stopped,
+ * so a run interrupted mid-turn sat `interrupted` forever.
+ *
+ * ⚠️ `wakeAbandonedInput` below does NOT cover this. It wakes sessions holding UN-PROMOTED queued
+ * input — a prompt typed while the agent was busy. A session interrupted mid-drain has already had
+ * its input promoted, so it has no pending queue and that sweep skips it entirely. The two are
+ * complementary and neither subsumes the other: one repairs *input nobody promoted*, this one
+ * repairs *work nobody resumed*.
+ *
+ * Measured 2026-08-29: a serve hung under three sessions, the supervisor restarted it in a second,
+ * `session.recovered: 3` was logged — and the device went idle. Three runs lost, silently.
+ *
+ * ⭐ **This adds no policy.** Every safety question was already answered by `decide`: a session past
+ * `FAILURE_LIMIT` is `paused` (the circuit breaker against a run that keeps killing the instance),
+ * and one whose tool was dispatched with an unknown outcome is `paused` (the side-effect hazard).
+ * Only `automatic` decisions are woken here.
+ */
+export const resumeInterrupted = (input: {
+  readonly recovered: readonly SessionExecutionAttempt.Recovered[]
+  readonly wake: (sessionID: SessionSchema.ID) => Effect.Effect<void>
+}) =>
+  Effect.gen(function* () {
+    // ⚠️ The filter is the whole safety argument, so it reads off `decision.automatic` rather than
+    // re-deriving anything. A second opinion here would be a second policy, and the one that exists
+    // is the one the durable state was written from.
+    const resumable = input.recovered.filter((entry) => entry.decision.automatic)
+    if (resumable.length === 0) return 0
+    for (const entry of resumable) yield* input.wake(entry.sessionID)
+    yield* Log.event("session.interrupted.resumed", {
+      "session.resumed": resumable.length,
+      "session.paused": input.recovered.length - resumable.length,
+    })
+    return resumable.length
+  })
+
+export const recoverStaleLeases = (
+  attempts: SessionExecutionAttempt.Interface,
+  onRecovered?: (recovered: readonly SessionExecutionAttempt.Recovered[]) => Effect.Effect<unknown>,
+) =>
   /**
    * 🔴 **NC-REL-010 — the cutoff has to MOVE, and it did not.** This read
    * `attempts.recoverStale(Date.now() - STALE_AFTER_MS)`, which evaluates `Date.now()` once, while
@@ -102,7 +145,13 @@ export const recoverStaleLeases = (attempts: SessionExecutionAttempt.Interface) 
     Effect.flatMap((recovered) =>
       recovered.length === 0
         ? Effect.void
-        : Log.event("session.lease.stale.recovered", { "session.recovered": recovered.length }),
+        : Log.event("session.lease.stale.recovered", { "session.recovered": recovered.length }).pipe(
+            // 🔴 The sweep used to END here, which is the whole defect: it reclassified the rows and
+            // dropped the verdict it had just computed. `onRecovered` is where the verdict becomes an
+            // action; it is optional so the sweep keeps working for a caller that only wants the
+            // reclassification (and so every existing test of this function is unchanged).
+            Effect.andThen(onRecovered ? onRecovered(recovered) : Effect.void),
+          ),
     ),
     Effect.repeat(Schedule.spaced(RESWEEP_INTERVAL).pipe(Schedule.take(RESWEEP_PASSES))),
   )
@@ -165,9 +214,26 @@ export const start = (input: {
   readonly store: SessionStore.Interface
   readonly attempts: SessionExecutionAttempt.Interface
   readonly execution: SessionExecution.Interface
+  /**
+   * Whether a run interrupted mid-turn is resumed — `harness_drives.resumeInterrupted`, default ON.
+   *
+   * ⚠️ Read as a THUNK, not a boolean, so the switch is consulted when a sweep actually recovers
+   * something rather than once at layer construction. Ruling 3: *a settings change is not a reboot*,
+   * and the re-sweeps run across a 70-second boot window during which an operator may well be
+   * turning this off precisely because a run is misbehaving.
+   */
+  readonly resumeInterrupted?: () => Effect.Effect<boolean>
 }) =>
   Effect.gen(function* () {
-    yield* Effect.forkScoped(recoverStaleLeases(input.attempts).pipe(Effect.ignore))
+    yield* Effect.forkScoped(
+      recoverStaleLeases(input.attempts, (recovered) =>
+        Effect.gen(function* () {
+          const enabled = input.resumeInterrupted === undefined ? true : yield* input.resumeInterrupted()
+          if (!enabled) return
+          yield* resumeInterrupted({ recovered, wake: input.execution.wake })
+        }),
+      ).pipe(Effect.ignore),
+    )
     yield* Effect.forkScoped(
       wakeAbandonedInput({ db: input.db, store: input.store, wake: input.execution.wake }).pipe(Effect.ignore),
     )

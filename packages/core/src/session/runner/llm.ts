@@ -61,6 +61,7 @@ import { PermissionV2 } from "../../permission"
 import { PluginV2 } from "../../plugin"
 import { SessionScheduler } from "../scheduler"
 import { SpawnTool } from "../../tool/spawn"
+import { WaitTool } from "../../tool/wait"
 import { type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
 import { SessionMaintenance } from "./maintenance"
@@ -130,6 +131,8 @@ import { TodoReminder } from "./todo-reminder"
 import { CalloutPolicy } from "../../callout-policy"
 import { ProjectGrounding } from "./project-grounding"
 import { UnfinishedSet } from "./unfinished-set"
+import { UnjoinedChildren } from "./unjoined-children"
+import { SessionTitle } from "../title"
 import { lastRealUserText } from "../steer-provenance"
 import { ColleagueHop } from "../colleague-hop"
 import { ColleagueTool } from "../../tool/colleague"
@@ -763,6 +766,22 @@ export const layer = Layer.effect(
      */
     const setOpened = new Map<string, Set<string>>()
     /**
+     * Every corpus path the session has ATTEMPTED to read, successful or not — per session.
+     *
+     * 🔴 **Separate from `setOpened` because the two answer different questions**, and conflating
+     * them was a defect in both directions. `setOpened` is *what is DONE*: it decides what the steer
+     * may not name, so a read that ERRORED must not be in it — the model demonstrably could not see
+     * that file, and counting it made the drive agree that undone work was finished. This map is
+     * *WHERE the set lives*: it feeds `setDirectory`, and a failed read is perfectly good evidence of
+     * which folder the model is working in.
+     *
+     * ⚠️ Narrowing the single shared list would have re-opened the bug report §11 closed. A turn
+     * whose reads all failed would derive an empty set, `setDirectory` would return `undefined`, and
+     * the drive would fall back to `location.directory` — enumerating the session root, which is how
+     * `set.available: 2` was reported for 40-, 100- and 400-file corpora alike.
+     */
+    const setAttempted = new Map<string, Set<string>>()
+    /**
      * Consecutive steer rounds that opened nothing new, per session.
      *
      * 🔴 The THIRD value in this drive to be found in a drain local, and it failed the same way: every
@@ -776,6 +795,27 @@ export const layer = Layer.effect(
      * only ever see one.
      */
     const setBarrenBySession = new Map<string, { barren: number; lastOpened: number }>()
+    /**
+     * Every CHILD this session has joined — the ids it called `wait` on and got an answer for.
+     *
+     * 🔴 Session-scoped for the reason the three maps above it are, and it is not a style choice: a
+     * `wait` call sits in the transcript window, compaction rewrites that window, and a drain-local
+     * set would therefore forget joins the session really made and steer the parent to re-join
+     * children it already read. The measured version of this trap cost the set drive three separate
+     * corrections (`setRequests`, `setOpened`, `setBarrenBySession` all carry the same note).
+     *
+     * ⚠️ Accumulate-only, exactly like `setOpened`: a join is something the session HAS DONE, and no
+     * later read of a shrunken window may take it back.
+     */
+    const childrenJoined = new Map<string, Set<string>>()
+    /**
+     * How many times this session has been steered back to its unaccounted children. Bounded by
+     * `UnjoinedChildren.MAX_RESTART_ROUNDS` — a restart can itself spawn a child that fails, so this
+     * drive needs a ceiling for the same reason the set drive does, and session-scoped for the same
+     * reason: every steer admits a prompt and starts a new drain, so a drain-local counter resets
+     * before it can ever reach its bound.
+     */
+    const childRestartRounds = new Map<string, number>()
     /**
      * ⚠️ **`models.ref` is declared `… | undefined` and really is undefined in practice**, so this
      * takes an optional and answers `undefined` rather than dereferencing.
@@ -2922,7 +2962,7 @@ export const layer = Layer.effect(
               "session.set.asked": askedForSet,
               "session.set.calls": toolCallsSinceLastUser(context).length,
             })
-            const openedThisTurn = askedForSet
+            const readsThisTurn = askedForSet
               ? toolCallsSinceLastUser(context).flatMap((call) => {
                   // ⚠️ `input` is a STRING — `JSON.stringify` of the tool input, or whatever raw text
                   // the model sent. Treating it as an object is why the first version of this check
@@ -2934,34 +2974,70 @@ export const layer = Layer.effect(
                       typeof parsed === "object" && parsed !== null && "path" in parsed
                         ? String((parsed as { readonly path?: unknown }).path ?? "")
                         : ""
-                    return path.length > 0 ? [path] : []
+                    return path.length > 0 ? [{ path, failed: call.failed }] : []
                   } catch {
                     // A malformed argument is not a read we can attribute to a file.
                     return []
                   }
                 })
               : []
+            /**
+             * The reads that SUCCEEDED — what the session has actually seen.
+             *
+             * ⚠️ Both remaining consumers want this rather than every attempt. `describedWithoutOpening`
+             * asks whether the model wrote about a picture it never looked at, and a read that ERRORED
+             * returned no picture; counting it would make an invented description look honest. The
+             * `session.set.opened` log field is read as coverage in the reports, so it must mean the
+             * same thing there.
+             */
+            const openedThisTurn = readsThisTurn.filter((read) => !read.failed).map((read) => read.path)
             // 🔴 Was `openedThisTurn.length > 0`, which meant a turn that listed the folder and
             // opened nothing never even reached `shouldContinue` — measured twice on 2026-08-20,
             // `set.branch` fired and `set.considered` never did. The zero case is the one that most
             // needs steering; `MAX_BARREN_ROUNDS` bounds it.
-            if (askedForSet) {
+            // ⚠️ `harness.drives.set` gates the whole block, not just the steer: the enumeration
+            // below reads the folder from disk, and doing that work to then discard it would make
+            // "off" cost the same as "on" while the operator believed it was measuring an unaided
+            // model. Off means the drive does not run.
+            if (askedForSet && harness.drives.set) {
               // ⚠️ NOT the prompt's 40-name cap — that bound exists so a grounding MESSAGE stays
               // small, and this check pays no prompt cost per name. It asks for exactly as many
               // as the drive could ever complete, so the set it reasons about is the set it can
               // actually finish, and no file is silently outside the world.
+              /**
+               * 🔴 **THE DIRECTORY THE SET IS IN — from what the model OPENED, not the session cwd.**
+               *
+               * `readListing` is a flat `readdir`, and `location.directory` is the session's working
+               * directory. A request's files are routinely one level down (*"describe every image in
+               * folder X"*), so this listed a folder containing none of them. Measured 2026-08-29:
+               * `session.set.available: 2` for 40-, 100- AND 400-file corpora alike — the two
+               * non-directory entries in the session root — after which the drive told a model that
+               * had opened all 100 images to *"open these 2 next: novaclaw, run.log"*.
+               *
+               * ⚠️ The accumulated `opened` set is used, not this turn's, so the derivation survives
+               * compaction for the same reason the coverage does.
+               */
+              // ⚠️ Union this turn's opens into the request's running total FIRST — the listing below
+              // is derived from them. Compaction cannot take these back: they are what the session
+              // has actually done.
+              const opened = setOpened.get(input.sessionID) ?? new Set<string>()
+              // 🔴 SUCCESSFUL reads only. A file the model tried and failed to read has not been
+              // seen, and must stay in the set the steer names.
+              for (const name of openedThisTurn) opened.add(name)
+              setOpened.set(input.sessionID, opened)
+              // ⚠️ EVERY read, failed or not — this derives the DIRECTORY, and a failed read still
+              // says where the model is working. See `setAttempted`.
+              const attempted = setAttempted.get(input.sessionID) ?? new Set<string>()
+              for (const read of readsThisTurn) attempted.add(read.path)
+              setAttempted.set(input.sessionID, attempted)
+              const setDir = UnfinishedSet.setDirectory([...attempted]) ?? location.directory
               const listing = yield* Effect.promise(() =>
-                ProjectGrounding.readListing(location.directory, UnfinishedSet.MAX_ENUMERATED_SET),
+                ProjectGrounding.readListing(setDir, UnfinishedSet.MAX_ENUMERATED_SET),
               )
               // ⚠️ Bounded by the REQUEST when the user named a count. Without this the drive works
               // toward the folder — measured 2026-08-20, "the first 100 of 400" drove toward 200
               // names — and a harness that keeps working after the job is done is as wrong as one
               // that stops early. An unnamed count means the whole enumerated set, as before.
-              // Union this turn's opens into the request's running total BEFORE computing coverage.
-              // Compaction cannot take these back: they are what the session has actually done.
-              const opened = setOpened.get(input.sessionID) ?? new Set<string>()
-              for (const name of openedThisTurn) opened.add(name)
-              setOpened.set(input.sessionID, opened)
               const allNames = (listing?.entries ?? []).filter((entry) => !entry.directory).map((entry) => entry.name)
               // From the same latch, for the same reason — a count read after compaction would
               // silently widen the job to the whole folder, or narrow it to nothing.
@@ -3030,7 +3106,104 @@ export const layer = Layer.effect(
                 )
               }
             }
-            if (!regrounded && shouldReground(finalText, toolCallsSinceLastUser(context).length)) {
+            /**
+             * 🔴 **THE FAN-OUT SUPERVISOR — a child that was never joined** (`todo/delegation.md`).
+             *
+             * Measured 2026-08-27 on the delegated 100-file run `4623-S2`: `spawn:10` against
+             * `wait:9` and `exit:9`. Ten children started, nine joined, one launched and never
+             * accounted for — and the run completed, reported success, and surfaced nothing. ⭐ The
+             * nine successes are what hide the tenth: a merge of nine slices of ten has no ragged
+             * edge to notice.
+             *
+             * ⚠️ **Placed BEFORE the reground, deliberately.** Reground asks the model to walk its
+             * acceptance criteria; a model missing a whole slice will walk them against the nine it
+             * has and conclude it is done — the reground would be answered honestly and wrongly. Close
+             * the arithmetic gap first, then let reground check what is left.
+             *
+             * ⚠️ Runs on EVERY finished turn rather than behind a delegation cue, because the
+             * evidence that this session delegated is that it has children — one indexed
+             * `WHERE parent_id = ?` — and reading the user's prompt for a cue is the substring hazard
+             * `unfinished-set.ts` paid 835,145 tokens to learn. A session with no children costs one
+             * empty query and skips everything below.
+             */
+            // ⚠️ Gated BEFORE the query for the same reason: `off` must not pay for an indexed read
+            // it will throw away.
+            const kids = harness.drives.children
+              ? yield* store.children(input.sessionID).pipe(Effect.orElseSucceed(() => []))
+              : []
+            if (kids.length > 0) {
+              // ⚠️ Accumulated into the SESSION's set, never read fresh from the window — see
+              // `childrenJoined`. `wait` carries the child id in its own input, so the parent's joins
+              // are readable without a second source of truth.
+              const joined = childrenJoined.get(input.sessionID) ?? new Set<string>()
+              for (const call of toolCallsSinceLastUser(context)) {
+                if (call.name !== WaitTool.name) continue
+                try {
+                  const parsed: unknown = JSON.parse(call.input)
+                  const id =
+                    typeof parsed === "object" && parsed !== null && "sessionID" in parsed
+                      ? String((parsed as { readonly sessionID?: unknown }).sessionID ?? "")
+                      : ""
+                  if (id.length > 0) joined.add(id)
+                } catch {
+                  // A malformed argument is not a join we can attribute to a child.
+                }
+              }
+              childrenJoined.set(input.sessionID, joined)
+              const enumerated: UnjoinedChildren.Child[] = []
+              for (const kid of kids) {
+                const row = yield* store.get(kid).pipe(Effect.orElseSucceed(() => undefined))
+                // ⚠️ The child's TITLE, not the `spawn` prompt. The prompt is only reachable from a
+                // `spawn` call in the transcript window — which compaction takes back, and which
+                // cannot be paired with the child id anyway, since the id arrives in the call's
+                // OUTPUT and the trail carries only inputs. The title is on the durable row and is
+                // derived from that same opening prompt. Omitted while it is still a creation
+                // default, because "New session" names nothing and a slice must never be invented.
+                const title = row?.title
+                const slice = title !== undefined && title !== "" && !SessionTitle.isDefault(title) ? title : undefined
+                enumerated.push({
+                  id: kid,
+                  exited: row?.result !== undefined,
+                  ...(slice === undefined ? {} : { slice }),
+                })
+              }
+              const orphaned = UnjoinedChildren.unaccounted({ children: enumerated, joined })
+              const restartRounds = childRestartRounds.get(input.sessionID) ?? 0
+              // ⚠️ Logged at the DECISION and BEFORE the gate, so a run that never steers can still
+              // tell "the branch never ran" from "it ran and declined" — the trap that cost this
+              // programme two days on the fan-out, and the reason `set.branch` exists beside
+              // `set.considered`.
+              yield* Log.event("session.finish.children.considered", {
+                "session.id": input.sessionID,
+                "session.children.spawned": kids.length,
+                "session.children.joined": joined.size,
+                "session.children.unaccounted": orphaned.length,
+                "session.children.rounds": restartRounds,
+              })
+              if (UnjoinedChildren.shouldRestart({ unaccounted: orphaned, rounds: restartRounds })) {
+                childRestartRounds.set(input.sessionID, restartRounds + 1)
+                yield* Log.event("session.finish.children.restart", {
+                  "session.id": input.sessionID,
+                  "session.children.unaccounted": orphaned.length,
+                })
+                yield* SessionInput.steer(
+                  db,
+                  events,
+                  input.sessionID,
+                  UnjoinedChildren.restartMessage({
+                    spawned: kids.length,
+                    joined: joined.size,
+                    unaccounted: orphaned,
+                  }),
+                )
+                needsContinuation = true
+              }
+            }
+            // 🔴 THE DRIVE THAT MADE "UNAIDED" UNMEASURABLE. `session.finish.reground` fires in
+            // every session in BOTH of the rig's arms — the cue gates the set drive and never this
+            // one — so every number `todo/batch-file-planning.md` has produced was taken with at
+            // least one mitigation live. This switch is what lets that baseline finally be taken.
+            if (harness.drives.reground && !regrounded && shouldReground(finalText, toolCallsSinceLastUser(context).length)) {
               regrounded = true
               yield* Log.event("session.finish.reground", { "session.id": input.sessionID })
               yield* SessionInput.steer(db, events, input.sessionID, REGROUND_NUDGE)

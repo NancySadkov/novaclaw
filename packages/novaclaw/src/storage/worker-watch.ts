@@ -4,6 +4,7 @@ import os from "node:os"
 import { Effect, Layer, Schedule } from "effect"
 import { makeGlobalNode } from "@novaclaw/core/effect/app-node"
 import { Log } from "@novaclaw/schema/log"
+import { SessionWorkerCommand } from "@/session-worker/command"
 import { workerMemoryLimitBytes } from "@/session-worker/execution"
 import { WorkerBudget } from "./worker-budget"
 import { WorkerCommit } from "./worker-commit"
@@ -66,7 +67,19 @@ export const node = makeGlobalNode({
     Effect.gen(function* () {
       const limits = {
         // The SAME number the supervisor enforces per worker, not a second opinion about it.
-        perWorkerBytes: workerMemoryLimitBytes(".js"),
+        //
+        // 🔴 **AND IT WAS NOT, UNTIL 2026-08-29.** This passed a hardcoded `".js"`, so it always took
+        // the PACKAGED tier — while `execution.ts` enforces `workerMemoryLimitBytes(command.workerPath)`,
+        // which gives a `.ts` entrypoint 3 GiB instead of ~2. In source mode the two disagreed by a
+        // whole GiB, and a healthy worker at 2.15 GiB — 72 % of the limit actually enforced — logged
+        // `resource.fleet.exceeded` every five seconds.
+        // ⚠️ That is the `threshold-that-fires-on-normal` defect this file's own header names, and
+        // the same-function-different-argument shape is exactly the drift the comment above promised
+        // to prevent: calling one function is not sharing one number if the inputs differ.
+        // ⚠️ Source mode is not a corner: every dev run, every test and every measurement sweep this
+        // programme takes runs a `.ts` worker, so the warning was wrong in the only configuration
+        // anybody observes.
+        perWorkerBytes: workerMemoryLimitBytes(SessionWorkerCommand.current().workerPath),
         fleetBytes: fleetLimitBytes(),
         consecutiveSamples: CONSECUTIVE,
       }
