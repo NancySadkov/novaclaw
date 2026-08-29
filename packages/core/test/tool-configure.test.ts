@@ -195,6 +195,12 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       "disabled_providers",
       "enabled_providers",
       "expertise",
+      // The five harness drives (reground, set-listing, fan-out join, unfinished-set cue, image
+      // shortcut). Consequential rather than operational because each one CHANGES WHAT THE AGENT IS
+      // TOLD on later turns — switching one off does not degrade a single request, it removes a
+      // correction the model was relying on for the rest of the session. Not privileged: every drive
+      // is a `?? true` switch that can only ever withhold guidance, never widen authority.
+      "harness_drives",
       "model",
       // The capability probe's measured tool channel per model. Consequential rather than
       // operational: it decides HOW the agent is offered tools on every later turn, and a wrong
