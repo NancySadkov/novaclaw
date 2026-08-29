@@ -53,6 +53,7 @@ import { FSUtil } from "./fs-util"
 import { SessionDurable } from "@novaclaw/schema/durable-event-manifest"
 import { Config } from "./config"
 import { ConfigHarnessDrives } from "./config/harness-drives"
+import { SettingsConfigStore } from "./settings-config-store"
 import { CommandV2 } from "./command"
 import { ExternalCommandSource } from "./command/external-command-source"
 import { SkillCommand } from "./command/skill-command"
@@ -812,6 +813,20 @@ export const layer = Layer.effect(
     // unfinished: abandoned execution leases, and queued prompts nothing in memory will promote.
     // Here rather than in an executor because there are two of them (worker in production, local
     // in core) and only one had ever swept — see `session/boot-recovery.ts`.
+    /**
+     * 🔴 **The INSTANCE settings store, not `Config` — and the typechecker is what said so.**
+     *
+     * The first version read `Config.Service`, which failed to compile: `Config.node` is a
+     * LOCATION node and this is a GLOBAL one. That is not a lint, it is the architecture answering a
+     * question I had not asked — *which location's config governs a sweep over every session?* There
+     * is no answer, because the sweep is not in a location.
+     *
+     * `harness_drives` is an INSTANCE setting: it lives in the settings store, which is global, and
+     * a project's `novaclaw.json` has no business turning crash-resume off for the whole box (and
+     * could not, under principle 13's narrow-only rule). So the global store is both the thing that
+     * compiles and the thing that is correct.
+     */
+    const recoverySettings = yield* SettingsConfigStore.Service
     yield* SessionBootRecovery.start({
       db,
       store,
@@ -824,10 +839,23 @@ export const layer = Layer.effect(
        * the moment to prefer the safe direction.
        */
       resumeInterrupted: () =>
-        Effect.gen(function* () {
-          const config = yield* Config.Service
-          return ConfigHarnessDrives.resolve(Config.latest(yield* config.entries(), "harness_drives")).resumeInterrupted
-        }).pipe(Effect.orElseSucceed(() => true)),
+        // ⚠️ `config` is resolved at LAYER scope (above), not inside this thunk. Resolving the tag
+        // here leaks `Config.Service` into the Effect's requirement channel, and `start` types the
+        // callback as `Effect<boolean>` with no requirements — so the tag must already be in hand.
+        // It is also the pattern `session/join.ts` records a revert for: resolving a service inside a
+        // per-request closure is what broke the drain there.
+        recoverySettings.all().pipe(
+          Effect.map((all) => {
+            // ⚠️ Decoded defensively: the store is `Record<string, unknown>`, so a hand-edited or
+            // half-migrated row must not throw inside a boot sweep. An unreadable value falls through
+            // to the resolver's default, which is ON — the safe direction, since the whole point is
+            // that work is not silently lost.
+            const raw = all["harness_drives"]
+            const block = typeof raw === "object" && raw !== null ? (raw as ConfigHarnessDrives.Info) : undefined
+            return ConfigHarnessDrives.resolve(block).resumeInterrupted
+          }),
+          Effect.orElseSucceed(() => true),
+        ),
     })
     const isDurableSessionEvent = Schema.is(SessionEvent.Durable)
     const decode = SessionMessageRead.decodeRow
@@ -1603,5 +1631,8 @@ export const node = makeGlobalNode({
     SessionProjector.node,
     SessionCompactionRequest.node,
     Memory.node,
+    // For the boot-recovery resume switch — an INSTANCE setting, so the global store rather than the
+    // location-scoped `Config`. See the note at `recoverySettings`.
+    SettingsConfigStore.node,
   ],
 })

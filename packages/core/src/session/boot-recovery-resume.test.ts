@@ -32,7 +32,11 @@ const verdicts = {
     phase: "tool",
     checkpointed: false,
     failureCount: 1,
-    toolSideEffect: "write",
+    // ⚠️ `non-idempotent` is the shape that makes this dangerous: a write that cannot be repeated
+    // safely, dispatched with no durable result. `"write"` is not in the union at all — it typechecked
+    // nowhere and the test still PASSED, because `bun test` does not typecheck. The full typecheck is
+    // what caught it.
+    toolSideEffect: "non-idempotent",
     toolState: "dispatched",
   }),
 }
