@@ -21,7 +21,7 @@ const scope = (over: Partial<PromptEstimate.Scope> = {}): PromptEstimate.Scope =
   contextEpoch: 7,
   providerID: "wire-provider",
   modelID: "wire-model",
-  deviceKey: "http://device",
+  serverKey: "http://server/v1",
   routeID: "openai-chat",
   protocolID: "openai-chat",
   controllerKey: "plain",
@@ -59,6 +59,23 @@ describe("PromptEstimate", () => {
     })
   })
 
+  test("applies route calibration one-sided to a whole request and caps hostile factors", () => {
+    const current = request("dense 0123456789".repeat(200))
+    const heuristic = PromptEstimate.whole(current)
+
+    expect(
+      PromptEstimate.resolve({ request: current, messages: [], scope: scope(), calibrationFactor: 1.2 })
+        .estimatedTokens,
+    ).toBe(Math.ceil(heuristic * 1.2))
+    expect(
+      PromptEstimate.resolve({ request: current, messages: [], scope: scope(), calibrationFactor: 0.5 })
+        .estimatedTokens,
+    ).toBe(heuristic)
+    expect(
+      PromptEstimate.resolve({ request: current, messages: [], scope: scope(), calibrationFactor: 99 }).estimatedTokens,
+    ).toBe(Math.ceil(heuristic * 1.25))
+  })
+
   test("adds the signed heuristic delta to the last provider-reported prompt count", () => {
     const previous = request("old")
     const anchor = PromptEstimate.observe({
@@ -73,6 +90,26 @@ describe("PromptEstimate", () => {
     expect(result.deltaTokens).toBe(delta)
     expect(result.correctionTokens).toBe(120 - PromptEstimate.whole(previous))
     expect(result.fallback).toBe("none")
+  })
+
+  test("calibrates only positive growth beyond an exact anchor", () => {
+    const previous = request("old")
+    const anchor = PromptEstimate.observe({
+      request: previous,
+      usage: new Usage({ inputTokens: 120, outputTokens: 1, nonCachedInputTokens: 120 }),
+      scope: scope(),
+    })!
+    const current = request("old plus dense 0123456789".repeat(100))
+    const delta = PromptEstimate.whole(current) - PromptEstimate.whole(previous)
+    const result = PromptEstimate.resolve({
+      request: current,
+      messages: [assistant(anchor)],
+      scope: scope(),
+      calibrationFactor: 1.2,
+    })
+
+    expect(result.estimatedTokens).toBe(120 + Math.ceil(delta * 1.2))
+    expect(result.correctionTokens).toBe(result.estimatedTokens - result.heuristicTokens)
   })
 
   test("retains the last valid anchor across a settled response with no usage", () => {
@@ -152,6 +189,29 @@ describe("PromptEstimate", () => {
     ).toBeUndefined()
   })
 
+  test("distinguishes endpoint processes that share one physical device", () => {
+    const physicalDevice = "spark"
+    const firstServer = PromptEstimate.serverKey("http://spark.local:8010/v1/", physicalDevice)
+    const secondServer = PromptEstimate.serverKey("http://spark.local:8011/v1/", physicalDevice)
+    expect(firstServer).toBe("http://spark.local:8010/v1")
+    expect(secondServer).toBe("http://spark.local:8011/v1")
+    expect(PromptEstimate.serverKey(undefined, physicalDevice)).toBe(physicalDevice)
+
+    const previous = request("old")
+    const anchor = PromptEstimate.observe({
+      request: previous,
+      usage: new Usage({ inputTokens: 100, outputTokens: 1, nonCachedInputTokens: 100 }),
+      scope: scope({ serverKey: firstServer }),
+    })!
+    const result = PromptEstimate.resolve({
+      request: request("new"),
+      messages: [assistant(anchor)],
+      scope: scope({ serverKey: secondServer }),
+    })
+    expect(result.confidence).toBe("whole")
+    expect(result.fallback).toBe("server-changed")
+  })
+
   test("invalidates provider, model, server, route, protocol, controller, shape, epoch, and session changes", () => {
     const previous = request("old")
     const anchor = PromptEstimate.observe({
@@ -162,7 +222,8 @@ describe("PromptEstimate", () => {
     const cases: Array<[Partial<PromptEstimate.Scope>, string, PromptEstimate.Fallback]> = [
       [{ providerID: "other" }, "rules", "provider-changed"],
       [{ modelID: "other" }, "rules", "model-changed"],
-      [{ deviceKey: "other" }, "rules", "server-changed"],
+      [{ variant: "other" }, "rules", "model-changed"],
+      [{ serverKey: "other" }, "rules", "server-changed"],
       [{ routeID: "other" }, "rules", "route-changed"],
       [{ protocolID: "other" }, "rules", "protocol-changed"],
       [{ controllerKey: "other" }, "rules", "controller-changed"],

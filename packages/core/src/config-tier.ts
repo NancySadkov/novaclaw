@@ -153,7 +153,9 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   // in one request and is undone by deleting the entry, where a wrong tool channel costs an agent
   // that silently cannot act.
   provider_media_limit: "operational",
-
+  // Bounded measurements that make prompt packing conservative for one exact model/server route.
+  // A wrong row can only spend extra context or be deleted to restore defaults; it grants nothing.
+  provider_route_profile: "operational",
 
   // ── consequential: one card, savable per key ────────────────────────────────────────────────
   // Sampling numbers plus an enable flag. The nudge TEXT is compiled, not configured.

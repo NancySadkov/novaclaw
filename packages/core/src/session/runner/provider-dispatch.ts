@@ -62,6 +62,8 @@ export const stream = (input: {
   readonly onProviderStep?: (step: {
     readonly request: LLMRequest
     readonly usage: Usage | undefined
+    /** Serving-process provenance from the provider's own finish event, when it reports one. */
+    readonly providerMetadata: Readonly<Record<string, unknown>> | undefined
     /** Base/opening requests share the next ordinary turn's controller envelope. */
     readonly anchorable: boolean
   }) => Effect.Effect<void>
@@ -72,7 +74,12 @@ export const stream = (input: {
     return stream.pipe(
       Stream.tap((event) =>
         LLMEvent.is.stepFinish(event)
-          ? input.onProviderStep!({ request, usage: event.usage, anchorable: observation.anchorable })
+          ? input.onProviderStep!({
+              request,
+              usage: event.usage,
+              providerMetadata: event.providerMetadata,
+              anchorable: observation.anchorable,
+            })
           : Effect.void,
       ),
     )

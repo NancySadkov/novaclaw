@@ -539,7 +539,7 @@ describe("SessionProjector", () => {
             contextEpoch: 7,
             providerID: "provider",
             modelID: "model",
-            deviceKey: "http://device",
+            serverKey: "http://device",
             routeID: "route",
             protocolID: "protocol",
             controllerKey: "plain",

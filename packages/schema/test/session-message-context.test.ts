@@ -18,7 +18,7 @@ const promptAnchor = {
   contextEpoch: 7,
   providerID: "provider",
   modelID: "model",
-  deviceKey: "http://device",
+  serverKey: "http://server/v1",
   routeID: "route",
   protocolID: "protocol",
   controllerKey: "plain",
@@ -34,6 +34,11 @@ describe("SessionMessage.Context prompt anchor", () => {
 
   test("the content-free durable pair round-trips", () => {
     expect(decode({ ...base, promptAnchor })).toEqual({ ...base, promptAnchor })
+  })
+
+  test("the actual server identity is required", () => {
+    const { serverKey: _, ...withoutServer } = promptAnchor
+    expect(() => decode({ ...base, promptAnchor: { ...withoutServer, deviceKey: "physical-device" } })).toThrow()
   })
 
   test("zero, negative, and non-finite anchor token counts are rejected", () => {

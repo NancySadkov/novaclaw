@@ -319,7 +319,7 @@ export const PromptAnchor = Schema.Struct({
   providerID: Schema.String,
   modelID: Schema.String,
   variant: Schema.String.pipe(optional),
-  deviceKey: Schema.String,
+  serverKey: Schema.String,
   routeID: Schema.String,
   protocolID: Schema.String,
   controllerKey: Schema.String,

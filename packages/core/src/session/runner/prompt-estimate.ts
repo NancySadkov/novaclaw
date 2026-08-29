@@ -13,7 +13,7 @@ export interface Scope {
   readonly providerID: string
   readonly modelID: string
   readonly variant?: string
-  readonly deviceKey: string
+  readonly serverKey: string
   readonly routeID: string
   readonly protocolID: string
   readonly controllerKey: string
@@ -83,12 +83,25 @@ export const reportedPromptTokens = (usage: Usage | undefined): number | undefin
 export const shapeKey = (request: Pick<RequestShape, "system" | "tools">): string =>
   Hash.sha256(JSON.stringify({ system: request.system, tools: request.tools }))
 
+/**
+ * Stable identity of the server route that tokenized this prompt.
+ *
+ * A Device is physical scheduling capacity and may deliberately group several endpoint processes.
+ * Calibration and prompt anchors belong to the endpoint that applied the chat template, so retain
+ * the full base URL (including its path) and normalize only trailing slashes. Hosted/test seams that
+ * expose no URL fall back to the scheduler identity rather than losing anchoring altogether.
+ */
+export const serverKey = (baseURL: string | undefined, fallback: string): string => {
+  const normalized = baseURL?.replace(/\/+$/, "")
+  return normalized === undefined || normalized === "" ? fallback : normalized
+}
+
 const mismatch = (anchor: SessionMessage.PromptAnchor, scope: Scope, currentShapeKey: string): Fallback => {
   if (anchor.sessionID !== scope.sessionID) return "session-changed"
   if (anchor.contextEpoch !== scope.contextEpoch) return "epoch-changed"
   if (anchor.providerID !== scope.providerID) return "provider-changed"
   if (anchor.modelID !== scope.modelID || anchor.variant !== scope.variant) return "model-changed"
-  if (anchor.deviceKey !== scope.deviceKey) return "server-changed"
+  if (anchor.serverKey !== scope.serverKey) return "server-changed"
   if (anchor.routeID !== scope.routeID) return "route-changed"
   if (anchor.protocolID !== scope.protocolID) return "protocol-changed"
   if (anchor.controllerKey !== scope.controllerKey) return "controller-changed"
@@ -96,10 +109,16 @@ const mismatch = (anchor: SessionMessage.PromptAnchor, scope: Scope, currentShap
   return "none"
 }
 
-const full = (heuristicTokens: number, fallback: Fallback): Result => ({
+const calibrationFactor = (value: number | undefined): number =>
+  value !== undefined && Number.isFinite(value) ? Math.min(1.25, Math.max(1, value)) : 1
+
+const inflate = (tokens: number, factor: number): number =>
+  Math.min(Number.MAX_SAFE_INTEGER, Math.ceil(tokens * factor))
+
+const full = (heuristicTokens: number, fallback: Fallback, factor: number = 1): Result => ({
   heuristicTokens,
-  estimatedTokens: heuristicTokens,
-  correctionTokens: 0,
+  estimatedTokens: inflate(heuristicTokens, factor),
+  correctionTokens: inflate(heuristicTokens, factor) - heuristicTokens,
   deltaTokens: 0,
   growth: 0,
   confidence: "whole",
@@ -136,9 +155,12 @@ export const resolve = (input: {
   readonly request: RequestShape
   readonly messages: readonly SessionMessage.Message[]
   readonly scope: Scope
+  /** Median provider/heuristic ratio for this exact route; one-sided and capped defensively. */
+  readonly calibrationFactor?: number
 }): Result => {
   const heuristicTokens = whole(input.request)
-  if (!positiveInt(heuristicTokens)) return full(heuristicTokens, "invalid")
+  const factor = calibrationFactor(input.calibrationFactor)
+  if (!positiveInt(heuristicTokens)) return full(heuristicTokens, "invalid", factor)
   const currentShapeKey = shapeKey(input.request)
   let fallback: Fallback = "unavailable"
   let anchor: SessionMessage.PromptAnchor | undefined
@@ -154,13 +176,18 @@ export const resolve = (input: {
     }
     if (fallback === "unavailable") fallback = reason
   }
-  if (anchor === undefined) return full(heuristicTokens, fallback)
+  if (anchor === undefined) return full(heuristicTokens, fallback, factor)
   if (!positiveInt(anchor.heuristicTokens) || !positiveInt(anchor.reportedTokens))
-    return full(heuristicTokens, "invalid")
+    return full(heuristicTokens, "invalid", factor)
   const deltaTokens = heuristicTokens - anchor.heuristicTokens
-  const estimatedTokens = anchor.reportedTokens + deltaTokens
-  if (!positiveInt(estimatedTokens)) return full(heuristicTokens, "invalid")
-  const growth = Math.max(0, deltaTokens) / anchor.reportedTokens
+  // The durable anchor is exact for its settled prefix. Calibrate only NEW positive growth; applying
+  // the whole-prompt factor again would double-charge the provider-reported base. A shrinking
+  // request keeps its signed delta because one-sided calibration may inflate, never manufacture a
+  // larger shrink than the heuristic observed.
+  const calibratedDelta = deltaTokens > 0 ? inflate(deltaTokens, factor) : deltaTokens
+  const estimatedTokens = anchor.reportedTokens + calibratedDelta
+  if (!positiveInt(estimatedTokens)) return full(heuristicTokens, "invalid", factor)
+  const growth = Math.max(0, calibratedDelta) / anchor.reportedTokens
   return {
     heuristicTokens,
     estimatedTokens,

@@ -63,11 +63,24 @@ const VALID: Record<string, unknown> = {
   community: { consented: true },
   context: { enabled: true },
   provider_capability: {
-    "spark-holo/holo3.1": { choice: "native", rationale: "a well-formed native tool call", measuredAt: 1, fingerprint: "f" },
+    "spark-holo/holo3.1": {
+      choice: "native",
+      rationale: "a well-formed native tool call",
+      measuredAt: 1,
+      fingerprint: "f",
+    },
   },
   // The learned per-request image cap, keyed "providerID/modelID". A plain number: absent means no
   // cap is known, which lowers byte-identically to an endpoint that never had one.
   provider_media_limit: { "spark-holo/holo3.1": 3 },
+  provider_route_profile: {
+    '["spark-holo","holo3.1","http://127.0.0.1:8010/v1","openai-chat","openai-chat"]': {
+      promptRatios: [1.02, 1.08],
+      imagePatchPixels: 32,
+      prefixCacheRetentionTokens: 130_000,
+      servedBy: "process-a",
+    },
+  },
   provider_connection: { stall_timeout_ms: 300_000 },
   permissions: [{ action: "bash", resource: "*", effect: "ask" }],
   persona: {},

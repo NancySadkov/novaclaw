@@ -37465,7 +37465,7 @@
           "variant": {
             "type": "string"
           },
-          "deviceKey": {
+          "serverKey": {
             "type": "string"
           },
           "routeID": {
@@ -37494,7 +37494,7 @@
           "contextEpoch",
           "providerID",
           "modelID",
-          "deviceKey",
+          "serverKey",
           "routeID",
           "protocolID",
           "controllerKey",
@@ -43541,6 +43541,31 @@
                   "enum": ["Infinity", "-Infinity", "NaN"]
                 }
               ]
+            }
+          },
+          "provider_route_profile": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "promptRatios": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  }
+                },
+                "imagePatchPixels": {
+                  "type": "number"
+                },
+                "prefixCacheRetentionTokens": {
+                  "type": "number"
+                },
+                "servedBy": {
+                  "type": "string"
+                }
+              },
+              "required": ["promptRatios"],
+              "additionalProperties": false
             }
           },
           "provider_capability": {

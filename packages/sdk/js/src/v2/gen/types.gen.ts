@@ -2694,7 +2694,7 @@ export type SessionMessagePromptAnchor = {
   providerID: string
   modelID: string
   variant?: string
-  deviceKey: string
+  serverKey: string
   routeID: string
   protocolID: string
   controllerKey: string
@@ -4561,6 +4561,14 @@ export type ConfigInfo = {
   local_model_catalog?: ConfigV2LocalModelCatalog
   provider_media_limit?: {
     [key: string]: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+  provider_route_profile?: {
+    [key: string]: {
+      promptRatios: Array<number>
+      imagePatchPixels?: number
+      prefixCacheRetentionTokens?: number
+      servedBy?: string
+    }
   }
   provider_capability?: {
     [key: string]: {

@@ -187,6 +187,9 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       // request and is undone by deleting the entry, where a wrong TOOL CHANNEL (consequential,
       // below) leaves an agent that silently cannot act.
       "provider_media_limit",
+      // Bounded measurements for one exact provider route. A bad row only reserves extra prompt
+      // room or is ignored, and deleting it restores the conservative built-in estimate.
+      "provider_route_profile",
       "tool_output",
     ])
 

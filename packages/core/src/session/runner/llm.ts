@@ -91,6 +91,7 @@ import { UtilityCap } from "./utility-cap"
 import { UtilityPass } from "./utility-pass"
 import { ContextPack } from "./context-pack"
 import { PromptEstimate } from "./prompt-estimate"
+import { ModelRouteProfileStore } from "./model-route-profile-store"
 import { RequestFootprint } from "./footprint"
 import { ContextBudget } from "./context-budget"
 import { ShortChat } from "./short-chat"
@@ -324,6 +325,7 @@ export const layer = Layer.effect(
     const agents = yield* AgentV2.Service
     const tools = yield* ToolRegistry.Service
     const models = yield* SessionRunnerModel.Service
+    const routeProfiles = yield* ModelRouteProfileStore.Service
     const store = yield* SessionStore.Service
     // THE config entry point (`session/effective-config.ts`). Every reader in this runner resolves
     // through it, which is what lets a folder's tune reach the turn at all.
@@ -1656,7 +1658,7 @@ export const layer = Layer.effect(
       const attemptModelRef = {
         id: ModelV2.ID.make(model.id),
         providerID: ProviderV2.ID.make(model.provider),
-        ...(session.model?.variant === undefined ? {} : { variant: session.model.variant }),
+        ...(modelSession.model?.variant === undefined ? {} : { variant: modelSession.model.variant }),
       }
       // The controller envelope is part of tokenizer identity: a budgeted opening request carries a
       // stable extra system part, while a plain request does not. A change falls back for one turn.
@@ -1668,16 +1670,25 @@ export const layer = Layer.effect(
         providerID: attemptModelRef.providerID,
         modelID: attemptModelRef.id,
         ...(attemptModelRef.variant === undefined ? {} : { variant: attemptModelRef.variant }),
-        deviceKey: scheduledDevice.key,
+        serverKey: PromptEstimate.serverKey(model.route.endpoint?.baseURL, scheduledDevice.key),
         routeID: model.route.id,
         protocolID: model.route.protocol,
         controllerKey:
           budgetEnforced && !isLastStep && thinkingBudget > 0 ? `reasoning-budget:${thinkingBudget}` : "plain",
       }
+      const routeProfileScope: ModelRouteProfileStore.Scope = {
+        providerID: attemptModelRef.providerID,
+        wireModelID: attemptModelRef.id,
+        serverKey: promptScope.serverKey,
+        routeID: promptScope.routeID,
+        protocolID: promptScope.protocolID,
+      }
+      const promptCalibrationFactor = yield* routeProfiles.factor(routeProfileScope).pipe(Effect.orElseSucceed(() => 1))
       const promptEstimate = PromptEstimate.resolve({
         request: fullRequest,
         messages: entries.map((entry) => entry.message),
         scope: promptScope,
+        calibrationFactor: promptCalibrationFactor,
       })
       yield* timingEnd("request-build")
       // ⚠️ `compactIfNeeded` is a CHECK that usually declines — window unknown, no summary model, or
@@ -1792,7 +1803,7 @@ export const layer = Layer.effect(
         request,
         enabled: budgetEnforced && !isLastStep,
         budget: thinkingBudget,
-        onProviderStep: ({ request: providerRequest, usage, anchorable }) => {
+        onProviderStep: ({ request: providerRequest, usage, providerMetadata, anchorable }) => {
           const estimatedPrompt = PromptEstimate.whole(providerRequest)
           const reportedPrompt = PromptEstimate.reportedPromptTokens(usage)
           if (reportedPrompt !== undefined)
@@ -1802,16 +1813,29 @@ export const layer = Layer.effect(
             if (observed !== undefined) providerPromptAnchor = observed
           }
           const comparable = reportedPrompt !== undefined && estimatedPrompt > 0
-          return Log.event("session.context.estimate.drift", {
-            "session.id": session.id,
-            "provider.id": attemptModelRef.providerID,
-            "model.id": attemptModelRef.id,
-            "session.prompt.reported": reportedPrompt !== undefined,
-            "session.prompt.tokens": reportedPrompt ?? 0,
-            "session.estimated.tokens": estimatedPrompt,
-            "session.estimate.comparable": comparable,
-            "session.estimate.ratio": comparable ? Math.round((reportedPrompt! / estimatedPrompt) * 100) / 100 : 0,
-          })
+          const remember = comparable
+            ? routeProfiles
+                .observe(
+                  routeProfileScope,
+                  { estimatedTokens: estimatedPrompt, reportedTokens: reportedPrompt! },
+                  ProviderCapability.servingIdentityOf(providerMetadata),
+                )
+                .pipe(Effect.ignore)
+            : Effect.void
+          return remember.pipe(
+            Effect.andThen(
+              Log.event("session.context.estimate.drift", {
+                "session.id": session.id,
+                "provider.id": attemptModelRef.providerID,
+                "model.id": attemptModelRef.id,
+                "session.prompt.reported": reportedPrompt !== undefined,
+                "session.prompt.tokens": reportedPrompt ?? 0,
+                "session.estimated.tokens": estimatedPrompt,
+                "session.estimate.comparable": comparable,
+                "session.estimate.ratio": comparable ? Math.round((reportedPrompt! / estimatedPrompt) * 100) / 100 : 0,
+              }),
+            ),
+          )
         },
       })
       // STEER INTERRUPT (owner 2026-07-26). Reasoning and the answer can be cut safely — the only thing that
@@ -3491,6 +3515,7 @@ export const node = makeLocationNode({
     ToolRegistry.node,
     ToolCatalogueGuidance.node,
     SessionRunnerModel.node,
+    ModelRouteProfileStore.node,
     SessionMaintenance.node,
     SessionStore.node,
     SessionEffectiveConfig.node,

@@ -346,12 +346,10 @@ export class Info extends Schema.Class<Info>("Config.Info")({
      * only from peers they name. Absent means "use the shipped defaults".
      */
     dht: Schema.Struct({
-      bootstrap: Schema.Array(Schema.String)
-        .pipe(Schema.optional)
-        .annotate({
-          description:
-            "libp2p multiaddrs the DHT sidecar dials at startup, e.g. /dnsaddr/bootstrap.libp2p.io/p2p/Qm… . Absent uses the addresses shipped with this build; an empty list dials nobody automatically. Point it at operators you trust if the defaults stop working — no reinstall needed.",
-        }),
+      bootstrap: Schema.Array(Schema.String).pipe(Schema.optional).annotate({
+        description:
+          "libp2p multiaddrs the DHT sidecar dials at startup, e.g. /dnsaddr/bootstrap.libp2p.io/p2p/Qm… . Absent uses the addresses shipped with this build; an empty list dials nobody automatically. Point it at operators you trust if the defaults stop working — no reinstall needed.",
+      }),
     })
       .pipe(Schema.optional)
       .annotate({
@@ -670,6 +668,28 @@ export class Info extends Schema.Class<Info>("Config.Info")({
         'How many images each model accepts in one request, keyed "providerID/modelID" — e.g. ' +
         '{"spark-holo/holo3.1":3}. Learned from the endpoint\'s own refusal; absent means no cap ' +
         "is known and every image is sent.",
+    }),
+
+  /**
+   * Bounded measurements for one exact provider wire route. The key is a serialized tuple of
+   * provider, wire-model, endpoint, route and protocol, so two servers sharing one scheduler Device
+   * never share tokenizer evidence. Machine-written observations remain visible and repairable
+   * through the ordinary config surface; malformed rows are ignored by the runtime reader.
+   */
+  provider_route_profile: Schema.Record(
+    Schema.String,
+    Schema.Struct({
+      promptRatios: Schema.Array(Schema.Finite),
+      imagePatchPixels: Schema.Finite.pipe(Schema.optional),
+      prefixCacheRetentionTokens: Schema.Finite.pipe(Schema.optional),
+      servedBy: Schema.String.pipe(Schema.optional),
+    }),
+  )
+    .pipe(Schema.optional)
+    .annotate({
+      description:
+        "Measured prompt-token ratios and model/server properties for an exact provider route. " +
+        "Prompt samples are bounded to the newest eight; deleting an entry restores safe defaults.",
     }),
 
   provider_capability: Schema.Record(
