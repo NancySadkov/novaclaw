@@ -106,14 +106,24 @@ const appProcess = Layer.succeed(
       }),
   } as unknown as AppProcess.Interface),
 )
+/**
+ * Config entries this suite hands the tool, mutable so ONE test can vary ONE key.
+ *
+ * 🔴 It was a fixed `[]`, which meant every drive `bash` reads resolved to its default and the
+ * SWITCH was unreachable from here. `harness_drives.imageShortcut` is read at the point of use
+ * inside `BashTool`, and nothing in this repo had ever executed that branch with the drive off.
+ */
+let configEntries: ConstructorParameters<typeof Config.Document>[0]["info"] | undefined
 const config = Layer.succeed(
   Config.Service,
   Config.Service.of({
-    entries: () => Effect.succeed([]),
+    entries: () =>
+      Effect.succeed(configEntries === undefined ? [] : [new Config.Document({ type: "document", info: configEntries })]),
   }),
 )
 
 const reset = () => {
+  configEntries = undefined
   assertions.length = 0
   runs.length = 0
   denyAction = undefined
@@ -176,6 +186,49 @@ const call = (input: typeof BashTool.Input.Type, id = "call-bash") => ({
 const it = testEffect(Layer.empty)
 
 describe("BashTool", () => {
+  /**
+   * ── THE IMAGE-SHORTCUT DRIVE, AT ITS CALL SITE ─────────────────────────────────────────────────
+   *
+   * 🔴 `ImageShortcut` has a thorough module suite and `ConfigHarnessDrives.resolve` has its own.
+   * NEITHER proves `BashTool` asks. That is the third switch this session found in that position —
+   * after `reground` (fixed, `729b25fdb`) and `set` (still open) — and the shape has a name in
+   * `notes/`: a feature can be built, tested, and never called.
+   *
+   * ⚠️ It matters for the same reason as the others: an "unaided" baseline is only unaided if every
+   * drive it turned off actually turned off. A switch that silently failed would leave the harness
+   * still refusing the model's shell shortcuts while the operator recorded a model working alone.
+   */
+  it.live("REFUSES a shell shortcut at an image by default, without running anything", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.gen(function* () {
+          const output = yield* withTool(tmp.path, (registry) =>
+            executeTool(registry, call({ command: "base64 icon_004.png" })),
+          )
+          expect(JSON.stringify(output)).toContain("icon_004.png")
+          // 🔴 Nothing may reach the process layer: the refusal replaces the run, it does not follow it.
+          expect(runs).toEqual([])
+        }),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("and RUNS it when harness_drives.imageShortcut is off — the switch reaches the tool", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.gen(function* () {
+          configEntries = { harness_drives: { imageShortcut: false } } as never
+          yield* withTool(tmp.path, (registry) => executeTool(registry, call({ command: "base64 icon_004.png" })))
+          // The command reaches the process layer, which is the whole claim: with the drive off the
+          // harness stops intercepting and the shell does what the model asked.
+          expect(runs.length).toBe(1)
+        }),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
   it.live("registers and returns structured successful output from the active Location", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
