@@ -170,6 +170,62 @@ export const requestedLimit = (userText: string): number | undefined => {
   return undefined
 }
 
+/**
+ * 🔴 **WHICH DIRECTORY THE SET LIVES IN — derived from what the model OPENED, not from the cwd.**
+ *
+ * Measured 2026-08-29, and it is a 100% reproducible defect, not an edge case. The drive built
+ * `available` from `readListing(location.directory)` — a flat, non-recursive `readdir` of the
+ * SESSION's working directory. The files a request names are routinely in a SUBdirectory (*"describe
+ * every image in folder X"* is the ordinary shape), so the drive's world contained none of them.
+ *
+ * Every sample in the batch-file-planning sweep reported **`available: 2`** — with a 40-file corpus,
+ * a 100-file corpus and a 400-file corpus alike, because 2 was the number of non-directory entries in
+ * the session root. ⭐ A count that does not move when the subject quadruples is the instrument
+ * talking, and that is how this was found.
+ *
+ * **And the drive fired on it.** After the model had correctly opened all 100 images it was told:
+ * *"Not finished: you have opened 100 files and 2 remain. Open these 2 next … : novaclaw, run.log"* —
+ * steered onto a directory junction and a log file.
+ *
+ * 🔴 **This is the mechanism behind `todo/vision.md`'s SHOWSTOPPER**, which records the drive
+ * *"fabricated twenty ROOT files as user-requested work"*. The root files are the session root's
+ * listing; that entry describes this function's absence.
+ *
+ * **The fix is the principle the drive already claims to follow** — where the harness can enumerate
+ * ground truth it must CHECK, never guess. The model told us where the set is by opening it: the
+ * modal directory of the paths it actually read.
+ *
+ * ⚠️ **Returns `undefined` when nothing has been opened, and the caller then keeps the old
+ * behaviour.** That case is deliberately NOT changed here: `shouldContinue`'s zero-opened branch
+ * exists for a measured failure (*"the model ran glob and bash ls, listed the folder, and finished
+ * with zero reads"*), and the showstopper's own case — a request about TOOLS that was never about
+ * files at all — also needs `asksForSet` tightened, which is a separate fix. Widening this one to
+ * cover it would be guessing at two defects with one change.
+ *
+ * ⚠️ **MODAL, not first.** A model that reads one stray file outside the corpus (a README, its own
+ * notes) must not move the whole set's directory; the majority of reads is the set.
+ */
+export const setDirectory = (openedPaths: readonly string[]): string | undefined => {
+  const counts = new Map<string, number>()
+  for (const raw of openedPaths) {
+    // Normalise separators before splitting: the model writes whichever it likes, and on win32 both
+    // appear in one transcript.
+    const parts = raw.replaceAll("\\", "/").split("/")
+    if (parts.length < 2) continue
+    const directory = parts.slice(0, -1).join("/")
+    if (directory === "") continue
+    counts.set(directory, (counts.get(directory) ?? 0) + 1)
+  }
+  let best: string | undefined
+  let bestCount = 0
+  for (const [directory, count] of counts)
+    if (count > bestCount) {
+      best = directory
+      bestCount = count
+    }
+  return best
+}
+
 export interface Coverage {
   /** Files the harness listed for this folder — the set the user could have meant. */
   readonly available: ReadonlyArray<string>

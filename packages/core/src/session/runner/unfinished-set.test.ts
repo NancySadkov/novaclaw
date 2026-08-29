@@ -44,3 +44,40 @@ describe("asksToDelegate — the exemption the set gate needs", () => {
     expect(UnfinishedSet.asksToDelegate("ask my coworkers about it")).toBe(false)
   })
 })
+
+describe("setDirectory — which folder the set is actually in", () => {
+  // 🔴 THE MEASURED DEFECT, reproduced. The drive listed the SESSION's cwd, which held two
+  // non-directory entries, so `available` was 2 for a 40-, 100- AND 400-file corpus alike — and it
+  // then told a model that had opened all 100 images to "open these 2 next: novaclaw, run.log".
+  test("derives the corpus folder from the paths the model opened", () => {
+    const opened = Array.from({ length: 100 }, (_, i) => `C:/x/tmp/batch-corpus-100/icon_${i}.png`)
+    expect(UnfinishedSet.setDirectory(opened)).toBe("C:/x/tmp/batch-corpus-100")
+  })
+  // ⚠️ ALL-backslash on purpose. A mixed list lets the forward-slash path carry the assertion
+  // and the test passes with normalisation DELETED — verified by poisoning it. Every path here
+  // needs normalising, so removing it yields `undefined` and this goes red.
+  test("normalises separators — a win32 transcript uses backslashes throughout", () => {
+    expect(UnfinishedSet.setDirectory(["C:\\x\\corpus\\a.png", "C:\\x\\corpus\\b.png"])).toBe("C:/x/corpus")
+  })
+  // ⚠️ MODAL, not first. One stray read outside the corpus — a README, the model's own notes — must
+  // not relocate the whole set.
+  test("a stray read outside the corpus does not move the set", () => {
+    const opened = ["C:/x/README.md", ...Array.from({ length: 9 }, (_, i) => `C:/x/corpus/i${i}.png`)]
+    expect(UnfinishedSet.setDirectory(opened)).toBe("C:/x/corpus")
+  })
+
+  // ⚠️ The caller falls back to the session cwd here, which is the OLD behaviour — deliberately
+  // unchanged, because the zero-opened branch exists for a measured failure and the showstopper's
+  // own case needs `asksForSet` tightened too. Two defects, two fixes.
+  test("nothing opened yields undefined, so the caller keeps the old behaviour", () => {
+    expect(UnfinishedSet.setDirectory([])).toBeUndefined()
+  })
+
+  test("bare filenames with no directory component yield undefined", () => {
+    expect(UnfinishedSet.setDirectory(["a.png", "b.png"])).toBeUndefined()
+  })
+
+  test("a relative path keeps its directory", () => {
+    expect(UnfinishedSet.setDirectory(["tmp/corpus/a.png", "tmp/corpus/b.png"])).toBe("tmp/corpus")
+  })
+})

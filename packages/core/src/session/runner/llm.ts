@@ -2961,18 +2961,33 @@ export const layer = Layer.effect(
               // small, and this check pays no prompt cost per name. It asks for exactly as many
               // as the drive could ever complete, so the set it reasons about is the set it can
               // actually finish, and no file is silently outside the world.
+              /**
+               * 🔴 **THE DIRECTORY THE SET IS IN — from what the model OPENED, not the session cwd.**
+               *
+               * `readListing` is a flat `readdir`, and `location.directory` is the session's working
+               * directory. A request's files are routinely one level down (*"describe every image in
+               * folder X"*), so this listed a folder containing none of them. Measured 2026-08-29:
+               * `session.set.available: 2` for 40-, 100- AND 400-file corpora alike — the two
+               * non-directory entries in the session root — after which the drive told a model that
+               * had opened all 100 images to *"open these 2 next: novaclaw, run.log"*.
+               *
+               * ⚠️ The accumulated `opened` set is used, not this turn's, so the derivation survives
+               * compaction for the same reason the coverage does.
+               */
+              // ⚠️ Union this turn's opens into the request's running total FIRST — the listing below
+              // is derived from them. Compaction cannot take these back: they are what the session
+              // has actually done.
+              const opened = setOpened.get(input.sessionID) ?? new Set<string>()
+              for (const name of openedThisTurn) opened.add(name)
+              setOpened.set(input.sessionID, opened)
+              const setDir = UnfinishedSet.setDirectory([...opened]) ?? location.directory
               const listing = yield* Effect.promise(() =>
-                ProjectGrounding.readListing(location.directory, UnfinishedSet.MAX_ENUMERATED_SET),
+                ProjectGrounding.readListing(setDir, UnfinishedSet.MAX_ENUMERATED_SET),
               )
               // ⚠️ Bounded by the REQUEST when the user named a count. Without this the drive works
               // toward the folder — measured 2026-08-20, "the first 100 of 400" drove toward 200
               // names — and a harness that keeps working after the job is done is as wrong as one
               // that stops early. An unnamed count means the whole enumerated set, as before.
-              // Union this turn's opens into the request's running total BEFORE computing coverage.
-              // Compaction cannot take these back: they are what the session has actually done.
-              const opened = setOpened.get(input.sessionID) ?? new Set<string>()
-              for (const name of openedThisTurn) opened.add(name)
-              setOpened.set(input.sessionID, opened)
               const allNames = (listing?.entries ?? []).filter((entry) => !entry.directory).map((entry) => entry.name)
               // From the same latch, for the same reason — a count read after compaction would
               // silently widen the job to the whole folder, or narrow it to nothing.
