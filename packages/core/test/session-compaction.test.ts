@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
+import path from "node:path"
 import { ColleagueNote } from "@novaclaw/core/session/colleague-note"
 import { SessionCompaction } from "@novaclaw/core/session/compaction"
 import { applySteerProvenance, STEER_PROVENANCE_PREFIX } from "@novaclaw/core/session/steer-provenance"
@@ -176,4 +178,37 @@ describe("a colleague is never attributed to the user either", () => {
     ]
     expect(new Set(labels.map((line) => line.slice(0, line.indexOf("]") + 1))).size).toBe(3)
   })
+})
+
+// ── The auto-trigger has to SAY what it measured, and say it when it DECLINES ────────────────────
+//
+// 🔴 Across five recorded sweeps — 3,055 messages, 33 sessions — the stores hold ZERO rows of type
+// `compaction`. Nothing has ever compacted. A guard that returns `false` silently leaves no trace, so
+// the only evidence anybody had was a rig counter that fired on a 200-message poll window sliding.
+// That counter is why a summary-template reorder was reverted on 2026-08-26 and why three mechanisms
+// were proposed and withdrawn for a slowdown it seemed to explain.
+//
+// ⚠️ **The ordering is the whole point.** Move the log below the early return and it only ever fires
+// on the case that has never happened — which is indistinguishable from deleting it. A behavioural
+// test cannot see this: there is no log-capture seam in these fixtures, and the numbers are
+// identical either way.
+test("the compaction trigger logs what it measured BEFORE it declines", () => {
+  const source = readFileSync(path.join(import.meta.dir, "..", "src", "session", "compaction.ts"), "utf8")
+    .split("\n")
+    .filter((line) => {
+      const t = line.trimStart()
+      return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*")
+    })
+    .join("\n")
+
+  const logAt = source.indexOf('Log.event("session.compaction.threshold"')
+  const returnAt = source.indexOf("if (estimated <= threshold) return false")
+  expect(logAt, "the threshold log moved — re-point this test, do not delete it").toBeGreaterThan(-1)
+  expect(returnAt, "the early return moved — re-point this test, do not delete it").toBeGreaterThan(-1)
+  expect(logAt).toBeLessThan(returnAt)
+  // And it must report BOTH sides plus the verdict: an estimate with no threshold beside it is a
+  // number nobody can act on, which is the state this line exists to end.
+  expect(source).toContain('"compaction.estimated": estimated')
+  expect(source).toContain('"compaction.threshold": threshold')
+  expect(source).toContain('"compaction.fires": estimated > threshold')
 })

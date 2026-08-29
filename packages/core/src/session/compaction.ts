@@ -457,11 +457,35 @@ export const make = (dependencies: Dependencies) => {
     const context = input.model.route.defaults.limits?.context
     if (context === undefined || context <= 0) return false
     const output = input.request.generation?.maxTokens ?? input.model.route.defaults.limits?.output ?? 0
-    if (
-      estimate({ system: input.request.system, messages: input.request.messages, tools: input.request.tools }) <=
-      context - Math.max(output, config.buffer)
-    )
-      return false
+    /**
+     * 🔴 **SAY WHAT THIS GUARD MEASURED, EVERY TURN, WHETHER OR NOT IT FIRES.**
+     *
+     * Across five recorded sweeps — 3,055 messages, 33 sessions — the session stores hold **ZERO**
+     * rows of type `compaction`. Nothing has ever compacted, and until this line there was no way to
+     * see why: a guard that returns `false` silently leaves no trace, so the only evidence anybody
+     * had was a rig counter that fired on a `limit=200` message window sliding and reported
+     * compactions that never happened.
+     *
+     * ⚠️ **That counter is why a summary-template reorder was reverted on 2026-08-26** (*"0
+     * compactions against 8 in the run before it"*) and why three separate mechanisms were proposed
+     * and withdrawn for a slowdown it appeared to explain. **One number, at the point the guard
+     * computes it, settles all of that** — and it costs a `debug` line per turn.
+     *
+     * ⚠️ Logged BEFORE the early return, deliberately: the interesting case is the one that declines.
+     */
+    const estimated = estimate({
+      system: input.request.system,
+      messages: input.request.messages,
+      tools: input.request.tools,
+    })
+    const threshold = context - Math.max(output, config.buffer)
+    yield* Log.event("session.compaction.threshold", {
+      "session.id": String(input.sessionID),
+      "compaction.estimated": estimated,
+      "compaction.threshold": threshold,
+      "compaction.fires": estimated > threshold,
+    })
+    if (estimated <= threshold) return false
     // The cheap tier runs inside `compactAfterOverflow`, ahead of the summary prompt — the
     // threshold test above reads the ALREADY-ASSEMBLED request, which prune cannot shrink.
     return yield* compactAfterOverflow(input)

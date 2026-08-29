@@ -2606,6 +2606,13 @@ export const EVENTS = {
     content: "user",
     file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/community.ts",
   },
+  "session.compaction.threshold": {
+    level: "debug",
+    message: "compaction: what the auto-trigger measured this turn, and whether it fires",
+    attributes: { "session.id": "correlate", "compaction.estimated": "count", "compaction.threshold": "count", "compaction.fires": "flag" },
+    content: "correlated",
+    file: "packages/core/src/session/compaction.ts",
+  },
   "session.compaction.summary.truncated": {
     level: "warn",
     message: "compaction: the summary was cut off at max_tokens and was DISCARDED",
