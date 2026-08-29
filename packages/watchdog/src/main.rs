@@ -287,7 +287,17 @@ fn main() -> ExitCode {
         let _ = fs::remove_file(&intent_path);
 
         let started = now_ms();
-        let mut child = match Command::new(&args.command[0]).args(&args.command[1..]).spawn() {
+        // 🔴 TELL THE CHILD IT IS SUPERVISED, and how to reach us.
+        //
+        // Without this the child cannot know whether anything is listening, and the only safe thing
+        // it could do is behave as though nothing were — which is exactly right when nothing is. The
+        // variable is set by this program and by nothing else, so its presence is a complete answer
+        // and an unsupervised run's exit statuses stay byte-identical to what they always were.
+        let mut child = match Command::new(&args.command[0])
+            .args(&args.command[1..])
+            .env("NOVACLAW_WATCHDOG_STATE", &args.state_dir)
+            .spawn()
+        {
             Ok(child) => child,
             Err(error) => {
                 // A command that cannot even start is a crash like any other — it may be a

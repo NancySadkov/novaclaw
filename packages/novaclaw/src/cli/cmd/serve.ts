@@ -21,6 +21,7 @@ import { ServeLiveness } from "../serve-liveness"
 // the user a dead port. `--no-supervise` opts out (and is how the child itself runs). The restart
 // policy itself lives in ../supervise.ts (pure, unit-tested).
 import { FAST_CRASH_GIVEUP, FAST_CRASH_MS, initialSuperviseState, superviseDecision } from "../supervise"
+import { ExitIntent } from "../exit-intent"
 
 /**
  * Stop the supervised child AND the layers under it.
@@ -85,12 +86,23 @@ const superviseLoop = async (): Promise<"clean" | "giveup"> => {
   // ⚠️ SIGINT/SIGTERM are async now; `exit` cannot be — nothing async survives it, so it keeps the
   // synchronous kill. That asymmetry is the point: the graceful path is for an ordinary stop, and
   // the sync one is the backstop for every other way this process can end.
-  process.on("SIGINT", () => {
-    void gracefulShutdown().finally(() => process.exit(0))
-  })
-  process.on("SIGTERM", () => {
-    void gracefulShutdown().finally(() => process.exit(0))
-  })
+  /**
+   * 🔴 **A DELIBERATE STOP MUST NOT LOOK LIKE A CRASH TO THE WATCHDOG.**
+   *
+   * `packages/watchdog` restarts anything that exits without a valid intent, which is the right
+   * default — silence means the work vanished. But a Ctrl-C is not silence, it is a decision, and
+   * without this the watchdog would faithfully restart the instance the operator just stopped,
+   * forever.
+   *
+   * ⚠️ `ExitIntent.settle` returns the code to use and writes the document in one call, so the two
+   * halves of the protocol cannot disagree. **Unsupervised it returns 0** — the status this path has
+   * always exited with — so a bare `novaclaw serve` behaves exactly as before for every shell, script
+   * and CI job that reads it.
+   */
+  const stopWith = (intent: ExitIntent.Intent) =>
+    void gracefulShutdown().finally(() => process.exit(ExitIntent.settle(intent, 0)))
+  process.on("SIGINT", () => stopWith({ kind: "shutdown" }))
+  process.on("SIGTERM", () => stopWith({ kind: "shutdown" }))
   process.on("exit", shutdown) // best-effort — a hard parent death still orphans (OS territory)
 
   const cmd = ServeChildCommand.current()
