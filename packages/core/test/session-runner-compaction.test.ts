@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Effect, Fiber } from "effect"
-import { LLMError, LLMEvent, InvalidRequestReason } from "@novaclaw/llm"
+import { LLMError, LLMEvent, InvalidRequestReason, TransportReason } from "@novaclaw/llm"
 import { Stream } from "effect"
 import { EventV2 } from "@novaclaw/core/event"
 import { SessionV2 } from "@novaclaw/core/session"
@@ -29,8 +29,8 @@ import { fragmentFixture } from "./fixture/fragments"
  * immediately never even produces the settle log — which is how a false "the config is not applied"
  * conclusion was reached. Wait for the compaction events.
  *
- * (A third fact lives in the harness: the summary request carries no system prompt, so the fixture has
- * to recognise it by name or it is classified as an out-of-band utility pass and starved.)
+ * (A third fact lives in the harness: the summary request carries the reasoning-budget system nudge,
+ * so the fixture recognises it by its durable user-message marker rather than system-prompt shape.)
  */
 
 describe("SessionRunnerLLM — compaction", () => {
@@ -101,6 +101,7 @@ describe("SessionRunnerLLM — compaction", () => {
     // Exactly ONE provider request: the summary. No turn followed it.
     expect(harness.requests, "a manual compact must not drain a turn as well").toHaveLength(1)
     expect(userTexts(harness.requests[0]!)[0]).toContain("anchored summary")
+    expect(JSON.stringify(harness.requests[0]!.system)).toContain("reasoning budget")
     expect(context[0]).toMatchObject({ type: "compaction", summary: "## Goal\n- Manual summary" })
   })
 
@@ -224,6 +225,169 @@ const primeForOverflow = Effect.fn("primeForOverflow")(function* (harness: Retur
 })
 
 describe("SessionRunnerLLM — overflow recovery", () => {
+  test("a summary cut off at max_tokens is DISCARDED, not stored", async () => {
+    // 🔴 A TRUNCATED SUMMARY IS WORSE THAN NONE. It becomes the session's durable memory and it READS
+    // as complete: the only guard used to be `!summary.trim()`, which catches EMPTY and never
+    // TRUNCATED. `maxTokens` is shared between reasoning and content, so on a thinking model a long
+    // think eats the budget and the answer is severed mid-sentence with `finish=length`.
+    //
+    // ⭐ `judgeCompletion` (`runner/llm.ts`) already read `finish` and escalated its cap through
+    // `UtilityCap.decide`; compaction simply never looked. `CalloutPolicy.summarizer` declares
+    // `failureMode: "fail_open"` precisely so the deterministic packer can answer instead, which is
+    // why DISCARDING is the right response and not a loss.
+    // ⚠️ BOTH events carry the cut, because a real provider stream sets them together — the fixture
+    // helper emits `stepFinish(reason)` and `finish(reason)` from one value. An earlier version of
+    // this test overrode only `finish`, which modelled a stream that cannot occur and then failed for
+    // the wrong reason under `ReasoningBudget` (which reads `stepFinish` and drops `finish`).
+    const truncated = fragmentFixture("text", "text-cut", ["## Goal - Half a sum"]).completeEvents.map(
+      (event) =>
+        event.type === "finish" || event.type === "step-finish" ? { ...event, reason: "length" as const } : event,
+    )
+    const harness = makeRunnerHarness({
+      turns: [
+        fragmentFixture("text", "text-first", ["Earlier answer"]).completeEvents,
+        fragmentFixture("text", "text-second", ["Second answer"]).completeEvents,
+        truncated,
+        fragmentFixture("text", "text-final", ["Continued"]).completeEvents,
+      ],
+    })
+
+    const context = await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        const store = yield* SessionStore.Service
+        for (const text of ["Earlier question ", "Second question "]) {
+          yield* session.prompt({
+            sessionID: HARNESS_SESSION,
+            prompt: Prompt.make({ text: text.repeat(180) }),
+            resume: false,
+          })
+          yield* session.resume(HARNESS_SESSION)
+        }
+        harness.controls.currentModel = harness.makeModel("compact", { context: 4_000, output: 50 })
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Recent exact request ".repeat(180) }),
+          resume: false,
+        })
+        yield* session.resume(HARNESS_SESSION)
+        return yield* store.context(HARNESS_SESSION)
+      }),
+      "claim — a truncated summary is discarded",
+    )
+
+    // 🔴 THE CLAIM: no `compaction` entry exists. Before this guard the half-summary was committed and
+    // the history it replaced was gone, so the session's own past became one severed sentence.
+    expect(context.map((message) => message.type)).not.toContain("compaction")
+    expect(JSON.stringify(context)).not.toContain("Half a sum")
+  })
+
+  test("and it is discarded when only step-finish carries the cut — the wrapped shape", async () => {
+    // 🔴 THE TWO CALL SHAPES EMIT DIFFERENT EVENTS, and reading one is how this guard dies silently.
+    // A raw `llm.stream` forwards the provider's `finish`. `ReasoningBudget` — the thinking bound used
+    // by compaction — SWALLOWS it and closes with `stepFinish({index, reason, usage})`
+    // instead. Same reason, different envelope. The test above only covers `finish`, so without this
+    // one the `step-finish` branch is present, unexercised, and would be discovered broken by whoever
+    // wires the wrapper — which is exactly the moment it is supposed to be protecting.
+    // ⚠️ Annotated, because `flatMap` otherwise infers the element type from the FIRST branch — the
+    // narrowed step-finish shape — and then rejects every other event for lacking `reason`. `bun test`
+    // ran this happily; only the typecheck tier saw it.
+    const cutStepOnly: LLMEvent[] = fragmentFixture("text", "text-cut2", [
+      "## Goal - Half again",
+    ]).completeEvents.flatMap((event): LLMEvent[] =>
+      event.type === "step-finish" ? [{ ...event, reason: "length" as const }] : event.type === "finish" ? [] : [event],
+    )
+    const harness = makeRunnerHarness({
+      turns: [
+        fragmentFixture("text", "text-a", ["Earlier answer"]).completeEvents,
+        fragmentFixture("text", "text-b", ["Second answer"]).completeEvents,
+        cutStepOnly,
+        fragmentFixture("text", "text-c", ["Continued"]).completeEvents,
+      ],
+    })
+
+    const context = await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        const store = yield* SessionStore.Service
+        for (const text of ["Earlier question ", "Second question "]) {
+          yield* session.prompt({
+            sessionID: HARNESS_SESSION,
+            prompt: Prompt.make({ text: text.repeat(180) }),
+            resume: false,
+          })
+          yield* session.resume(HARNESS_SESSION)
+        }
+        harness.controls.currentModel = harness.makeModel("compact", { context: 4_000, output: 50 })
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Recent exact request ".repeat(180) }),
+          resume: false,
+        })
+        yield* session.resume(HARNESS_SESSION)
+        return yield* store.context(HARNESS_SESSION)
+      }),
+      "claim — a truncated summary is discarded via step-finish too",
+    )
+
+    expect(context.map((message) => message.type)).not.toContain("compaction")
+    expect(JSON.stringify(context)).not.toContain("Half again")
+  })
+
+  test("discards partial summary text when a reasoning continuation fails", async () => {
+    const continuationFailure = Stream.concat(
+      Stream.fromIterable<LLMEvent>([
+        LLMEvent.textDelta({ id: "text-partial-summary", text: "## Goal\n- Partial and unsafe" }),
+      ]),
+      Stream.fail(
+        new LLMError({
+          module: "test",
+          method: "stream",
+          reason: new TransportReason({ message: "summary continuation failed" }),
+        }),
+      ),
+    )
+    const harness = makeRunnerHarness({
+      turns: [
+        fragmentFixture("text", "text-a", ["Earlier answer"]).completeEvents,
+        fragmentFixture("text", "text-b", ["Second answer"]).completeEvents,
+        [LLMEvent.reasoningDelta({ id: "reasoning-summary", text: "r".repeat(7_000) })],
+        continuationFailure,
+        fragmentFixture("text", "text-c", ["Continued without compaction"]).completeEvents,
+      ],
+    })
+
+    const context = await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        const store = yield* SessionStore.Service
+        for (const text of ["Earlier question ", "Second question "]) {
+          yield* session.prompt({
+            sessionID: HARNESS_SESSION,
+            prompt: Prompt.make({ text: text.repeat(180) }),
+            resume: false,
+          })
+          yield* session.resume(HARNESS_SESSION)
+        }
+        harness.controls.currentModel = harness.makeModel("compact", { context: 4_000, output: 50 })
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Recent exact request ".repeat(180) }),
+          resume: false,
+        })
+        yield* session.resume(HARNESS_SESSION)
+        return yield* store.context(HARNESS_SESSION)
+      }),
+      "claim — a failed continuation cannot persist a partial summary",
+    )
+
+    expect(context.map((message) => message.type)).not.toContain("compaction")
+    expect(JSON.stringify(context)).not.toContain("Partial and unsafe")
+  })
+
   test("forces one compaction and retries after provider context overflow", async () => {
     // Three requests: the turn that overflows, the summary, then the retry built from that summary.
     // ⭐ The retry is the claim. A runner that compacted and stopped would leave the user's prompt

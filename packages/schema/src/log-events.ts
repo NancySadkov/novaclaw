@@ -347,6 +347,13 @@ export const CORRELATION_ATTRIBUTES = {
    * class is for.
    */
   "agent.id": "correlate",
+  /**
+   * Runtime catalog ids may be operator-defined and persist across sessions. They are needed locally
+   * to calibrate one estimator per model/server pair, but together they join a person's activity to
+   * that configured endpoint, so they stay on the data plane.
+   */
+  "provider.id": "correlate",
+  "model.id": "correlate",
 
   // ── the two arguable exceptions, argued ────────────────────────────────────────────────────
   /**
@@ -2131,6 +2138,22 @@ export const EVENTS = {
     content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  "session.context.estimate.drift": {
+    level: "debug",
+    message: "context: one exact provider request against that response's own prompt count",
+    attributes: {
+      "session.id": "correlate",
+      "provider.id": "correlate",
+      "model.id": "correlate",
+      "session.prompt.reported": "flag",
+      "session.prompt.tokens": "count",
+      "session.estimated.tokens": "count",
+      "session.estimate.comparable": "flag",
+      "session.estimate.ratio": "count",
+    },
+    content: "correlated",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   "session.context.pressure.high": {
     level: "warn",
     message: "ctx_pressure: real prompt near the context window",
@@ -2605,6 +2628,20 @@ export const EVENTS = {
     attributes: { "community.cause": "fault" },
     content: "user",
     file: "packages/novaclaw/src/server/routes/instance/httpapi/handlers/community.ts",
+  },
+  "session.compaction.threshold": {
+    level: "debug",
+    message: "compaction: what the auto-trigger measured this turn, and whether it fires",
+    attributes: { "session.id": "correlate", "compaction.estimated": "count", "compaction.threshold": "count", "compaction.fires": "flag" },
+    content: "correlated",
+    file: "packages/core/src/session/compaction.ts",
+  },
+  "session.compaction.summary.truncated": {
+    level: "warn",
+    message: "compaction: the summary was cut off at max_tokens and was DISCARDED",
+    attributes: { "session.id": "correlate", "compaction.output.cap": "count", "compaction.summary.chars": "count" },
+    content: "correlated",
+    file: "packages/core/src/session/compaction.ts",
   },
   "session.title.generate.empty": {
     level: "warn",

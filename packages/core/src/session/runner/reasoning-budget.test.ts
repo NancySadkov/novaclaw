@@ -16,8 +16,8 @@ const rDelta = (chars: number) => LLMEvent.reasoningDelta({ id: "reasoning-0", t
 const tDelta = (text: string) => LLMEvent.textDelta({ id: "text-0", text })
 const finish = (reason: "stop" | "length") => LLMEvent.stepFinish({ index: 0, reason })
 
-/** A per-phase script: canned events, or "ERROR" to make that phase's provider stream fail. */
-type PhaseScript = LLMEvent[] | "ERROR"
+/** A per-phase script: canned events, an immediate failure, or events followed by a failure. */
+type PhaseScript = LLMEvent[] | "ERROR" | { readonly events: LLMEvent[]; readonly error: Error }
 
 /** Canned per-phase event streams; records the request (prefill) each phase received. */
 const faker = (phases: PhaseScript[]) => {
@@ -27,7 +27,9 @@ const faker = (phases: PhaseScript[]) => {
     requests.push(request)
     const script = phases[call] ?? []
     call += 1
-    return script === "ERROR" ? Stream.fail(new Error("provider 400")) : Stream.fromIterable(script)
+    if (script === "ERROR") return Stream.fail(new Error("provider 400"))
+    if (Array.isArray(script)) return Stream.fromIterable(script)
+    return Stream.concat(Stream.fromIterable(script.events), Stream.fail(script.error))
   }
   return { stream, requests }
 }
@@ -191,7 +193,7 @@ describe("ReasoningBudget", () => {
     expect(prefillOf(requests[1]!)).not.toContain("</think>")
   })
 
-  test("continuation failure degrades gracefully — no crash, reasoning closed", () => {
+  test("continuation failure degrades gracefully — no crash, reasoning closed as an error", () => {
     // budget 100 → opening crosses at 70 tokens, fires a mid continuation whose provider stream FAILS
     // (e.g. an unsupported backend or a context-overflow 400). The turn must not crash: it closes the
     // reasoning it already has and finishes cleanly.
@@ -210,6 +212,20 @@ describe("ReasoningBudget", () => {
       "step-finish",
     ])
     expect(requests).toHaveLength(2) // opening + the (failed) mid continuation
+    expect(events.at(-1)).toMatchObject({ type: "step-finish", reason: "error" })
+  })
+
+  test("partial continuation text can never terminate as a clean answer", () => {
+    const { events } = run(
+      [
+        [rDelta(300)],
+        { events: [tDelta("partial answer")], error: new Error("connection lost") },
+      ],
+      { budget: 100 },
+    )
+
+    expect(events).toContainEqual(expect.objectContaining({ type: "text-delta", text: "partial answer" }))
+    expect(events.at(-1)).toMatchObject({ type: "step-finish", reason: "error" })
   })
 
   test("tool call ends reasoning and is forwarded", () => {

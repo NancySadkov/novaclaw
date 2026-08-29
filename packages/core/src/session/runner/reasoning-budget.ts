@@ -327,7 +327,18 @@ export const stream = <E, R>(input: Input<E, R>): Stream.Stream<LLMEvent, E, R> 
     // transient error — degrade gracefully by closing out the reasoning we already have, rather than
     // failing the whole turn with a raw provider error. The opening phase is the normal request; let
     // ITS errors propagate to the runner's pre-stream retry path.
-    return phase === "opening" ? source : source.pipe(Stream.catchCause(() => finalize()))
+    return phase === "opening"
+      ? source
+      : source.pipe(
+          Stream.catchCause(() => {
+            // A continuation may have emitted partial answer text before its transport failed. The
+            // text is still useful to an interactive caller, but it is not a completed answer and
+            // must never masquerade as one (especially when this controller wraps a compaction
+            // summary). Preserve the graceful stream close while making the terminal fact explicit.
+            state.finish = "error"
+            return finalize()
+          }),
+        )
   }
 
   const decide = (phase: Phase): Stream.Stream<LLMEvent, E, R> => {

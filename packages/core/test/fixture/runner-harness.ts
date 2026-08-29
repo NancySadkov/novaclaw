@@ -402,13 +402,20 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
         // recognise the probes somebody already knew about; this recognises the turn itself, and every
         // present and future utility pass falls out on the other side by construction.
         const parts = request.system ?? []
-        if (parts.length === 0) {
-          // …unless it is the compaction summary, which carries no agent system but IS the work.
-          const isSummary = (request.messages ?? []).some((message) =>
-            (message.content as ReadonlyArray<{ type: string; text?: string }> | undefined)?.some(
-              (content) => content.type === "text" && (content.text ?? "").includes(COMPACTION_SUMMARY_MARKER),
-            ),
-          )
+        // …unless it is the compaction summary, which IS the work.
+        //
+        // ⚠️ **This test used to be nested inside `parts.length === 0`**, on the reasoning that the
+        // summary "carries no agent system". That stopped being true when compaction was wrapped in
+        // `ReasoningBudget`, which prefixes one nudge line of its own — the summary then fell through
+        // to the marker routing below, matched nothing, and a latch never opened. **The marker in the
+        // MESSAGE is the durable discriminator**; the absence of a system part was an implementation
+        // detail of the caller, which a fixture must not depend on.
+        const isSummary = (request.messages ?? []).some((message) =>
+          (message.content as ReadonlyArray<{ type: string; text?: string }> | undefined)?.some(
+            (content) => content.type === "text" && (content.text ?? "").includes(COMPACTION_SUMMARY_MARKER),
+          ),
+        )
+        if (parts.length === 0 || isSummary) {
           if (!isSummary) {
             utilityRequests.push(request)
             return Stream.fromIterable(utilityTurns.shift() ?? [])

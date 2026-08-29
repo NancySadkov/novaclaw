@@ -1713,6 +1713,34 @@ export const layer = Layer.effect(
         request,
         enabled: budgetEnforced && !isLastStep,
         budget: thinkingBudget,
+        onProviderStep: ({ request: providerRequest, usage }) => {
+          const estimatedPrompt = SessionCompaction.estimate({
+            system: providerRequest.system,
+            messages: providerRequest.messages,
+            tools: providerRequest.tools,
+          })
+          const finite = (value: number | undefined) =>
+            Number.isFinite(value) ? Math.max(0, value ?? 0) : 0
+          const reportedPrompt =
+            usage === undefined
+              ? undefined
+              : finite(usage.nonCachedInputTokens) +
+                finite(usage.cacheReadInputTokens) +
+                finite(usage.cacheWriteInputTokens)
+          const comparable = reportedPrompt !== undefined && estimatedPrompt > 0
+          return Log.event("session.context.estimate.drift", {
+            "session.id": session.id,
+            "provider.id": attemptModelRef.providerID,
+            "model.id": attemptModelRef.id,
+            "session.prompt.reported": reportedPrompt !== undefined,
+            "session.prompt.tokens": reportedPrompt ?? 0,
+            "session.estimated.tokens": estimatedPrompt,
+            "session.estimate.comparable": comparable,
+            "session.estimate.ratio": comparable
+              ? Math.round((reportedPrompt! / estimatedPrompt) * 100) / 100
+              : 0,
+          })
+        },
       })
       // STEER INTERRUPT (owner 2026-07-26). Reasoning and the answer can be cut safely — the only thing that
       // must not be interrupted is a TOOL, because a half-written file or a half-sent message is real damage.

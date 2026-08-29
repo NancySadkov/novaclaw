@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
+import path from "node:path"
 import { ColleagueNote } from "@novaclaw/core/session/colleague-note"
 import { SessionCompaction } from "@novaclaw/core/session/compaction"
 import { applySteerProvenance, STEER_PROVENANCE_PREFIX } from "@novaclaw/core/session/steer-provenance"
@@ -176,4 +178,104 @@ describe("a colleague is never attributed to the user either", () => {
     ]
     expect(new Set(labels.map((line) => line.slice(0, line.indexOf("]") + 1))).size).toBe(3)
   })
+})
+
+// ── The auto-trigger has to SAY what it measured, and say it when it DECLINES ────────────────────
+//
+// 🔴 Across five recorded sweeps — 3,055 messages, 33 sessions — the stores hold ZERO rows of type
+// `compaction`. Nothing has ever compacted. A guard that returns `false` silently leaves no trace, so
+// the only evidence anybody had was a rig counter that fired on a 200-message poll window sliding.
+// That counter is why a summary-template reorder was reverted on 2026-08-26 and why three mechanisms
+// were proposed and withdrawn for a slowdown it seemed to explain.
+//
+// ⚠️ **The ordering is the whole point.** Move the log below the early return and it only ever fires
+// on the case that has never happened — which is indistinguishable from deleting it. A behavioural
+// test cannot see this: there is no log-capture seam in these fixtures, and the numbers are
+// identical either way.
+test("the compaction trigger logs what it measured BEFORE it declines", () => {
+  const source = readFileSync(path.join(import.meta.dir, "..", "src", "session", "compaction.ts"), "utf8")
+    .split("\n")
+    .filter((line) => {
+      const t = line.trimStart()
+      return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*")
+    })
+    .join("\n")
+
+  const logAt = source.indexOf('Log.event("session.compaction.threshold"')
+  const returnAt = source.indexOf("if (estimated <= threshold) return false")
+  expect(logAt, "the threshold log moved — re-point this test, do not delete it").toBeGreaterThan(-1)
+  expect(returnAt, "the early return moved — re-point this test, do not delete it").toBeGreaterThan(-1)
+  expect(logAt).toBeLessThan(returnAt)
+  // And it must report BOTH sides plus the verdict: an estimate with no threshold beside it is a
+  // number nobody can act on, which is the state this line exists to end.
+  expect(source).toContain('"compaction.estimated": estimated')
+  expect(source).toContain('"compaction.threshold": threshold')
+  expect(source).toContain('"compaction.fires": estimated > threshold')
+})
+
+// ── The summary call goes through the thinking budget ────────────────────────────────────────────
+//
+// Owner, 2026-08-29: *"please ensure that we generate it the same way we generate task title …
+// otherwise we can't depend on it at all and it is like playing casino or making sports bets"*.
+//
+// 🔴 Compaction was the ONLY model call in the product with no thinking bound of either kind — not
+// the harness-side `ReasoningBudget`, not the provider-side `UtilityPass.NO_THINKING`. The inherited
+// summariser did nothing about thinking AND called `Effect.die` on the empty completion a reasoning
+// model returns when it burns its cap, so this was the one call that could neither bound the think
+// nor survive it.
+//
+// ⚠️ A behavioural test cannot see this. Every compaction claim in this suite passes with the wrapper
+// removed — the fixtures return canned events either way, and the budget only bites on a real long
+// think. So the wiring is asserted at the call site.
+test("the summary is generated through ReasoningBudget, with a declared budget", () => {
+  const source = readFileSync(path.join(import.meta.dir, "..", "src", "session", "compaction.ts"), "utf8")
+    .split("\n")
+    .filter((line) => {
+      const t = line.trimStart()
+      return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*")
+    })
+    .join("\n")
+
+  expect(source, "the summary call moved — re-point this test, do not delete it").toContain("summaryPrompt")
+  expect(source).toContain("ReasoningBudget.stream({")
+  expect(source).toContain("budget: COMPACTION_REASONING_BUDGET")
+  // 🔴 And NOT a bare provider call for the summary: that is the state this replaced.
+  expect(source).not.toContain("dependencies.llm\n      .stream(")
+})
+
+// ── "A token" is not one thing, and the only honest number is the provider's own ─────────────────
+//
+// Owner, 2026-08-29: *"different models, providers and model servers [have] different definitions of
+// `token` … do we leave a bit of margin for the case when token is larger than our heuristics
+// predicts, while the provider's api offers no good feedback?"*
+//
+// We leave ONE fixed margin — `BUDGET_KEEP_FRACTION = 0.9` — applied uniformly to every model and
+// every server, and nothing had ever checked it against a provider's own count. The pair that would
+// check it arrives on every response, and was discarded below the 95 % pressure tripwire: recorded
+// only once the margin had already failed.
+//
+// The provider-dispatch suite drives the callback with and without usage. This wiring ratchet keeps
+// the runner on the exact request seen by that callback: using `packed.estimatedTokens` here compares
+// message history alone with provider usage for system + messages + tool schemas.
+test("the estimate-vs-provider ratio compares one exact provider request with its response", () => {
+  const runner = readFileSync(path.join(import.meta.dir, "..", "src", "session", "runner", "llm.ts"), "utf8")
+  const dispatch = readFileSync(
+    path.join(import.meta.dir, "..", "src", "session", "runner", "provider-dispatch.ts"),
+    "utf8",
+  )
+
+  expect(dispatch).toContain("LLMEvent.is.stepFinish(event)")
+  expect(dispatch).toContain("input.onProviderStep!({ request, usage: event.usage })")
+  expect(runner).toContain("onProviderStep: ({ request: providerRequest, usage })")
+  expect(runner).toContain("SessionCompaction.estimate({")
+  expect(runner).toContain("system: providerRequest.system")
+  expect(runner).toContain('"session.prompt.reported": reportedPrompt !== undefined')
+  expect(runner).toContain('Log.event("session.context.estimate.drift"')
+  const callbackAt = runner.indexOf("onProviderStep: ({ request: providerRequest, usage })")
+  const pressureAt = runner.indexOf('Log.event("session.context.pressure.high"', callbackAt)
+  expect(callbackAt).toBeGreaterThan(-1)
+  expect(pressureAt).toBeGreaterThan(callbackAt)
+  expect(runner.slice(callbackAt, pressureAt)).not.toContain(
+    '"session.estimated.tokens": packed.estimatedTokens',
+  )
 })

@@ -1,7 +1,7 @@
 export * as ProviderDispatch from "./provider-dispatch"
 
 import { Cause, Duration, Effect, Exit, Option, Stream } from "effect"
-import { LLM, type LLMClientShape, type LLMError, type LLMRequest } from "@novaclaw/llm"
+import { LLM, LLMEvent, type LLMClientShape, type LLMError, type LLMRequest, type Usage } from "@novaclaw/llm"
 import { Log } from "@novaclaw/schema/log"
 import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
 import type { SessionMessage } from "@novaclaw/schema/session-message"
@@ -55,14 +55,32 @@ export const stream = (input: {
   readonly request: LLMRequest
   readonly enabled: boolean
   readonly budget: number
-}): Stream.Stream<import("@novaclaw/llm").LLMEvent, LLMError> =>
-  input.enabled && input.budget > 0 && thinkingEnabled(input.request)
+  /** Observe the exact request/usage pair for every provider response, before a controller can
+   * collapse several reasoning phases into one synthetic settlement. */
+  readonly onProviderStep?: (step: {
+    readonly request: LLMRequest
+    readonly usage: Usage | undefined
+  }) => Effect.Effect<void>
+}): Stream.Stream<import("@novaclaw/llm").LLMEvent, LLMError> => {
+  const source = (request: LLMRequest) => {
+    const stream = input.llm.stream(request)
+    if (input.onProviderStep === undefined) return stream
+    return stream.pipe(
+      Stream.tap((event) =>
+        LLMEvent.is.stepFinish(event)
+          ? input.onProviderStep!({ request, usage: event.usage })
+          : Effect.void,
+      ),
+    )
+  }
+  return input.enabled && input.budget > 0 && thinkingEnabled(input.request)
     ? ReasoningBudget.stream({
         request: input.request,
-        stream: (request) => input.llm.stream(request),
+        stream: source,
         budget: input.budget,
       })
-    : input.llm.stream(input.request)
+    : source(input.request)
+}
 
 export interface Input<E, R> {
   readonly events: EventV2.Interface

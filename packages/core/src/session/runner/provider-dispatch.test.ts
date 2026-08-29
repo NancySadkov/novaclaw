@@ -65,6 +65,13 @@ describe("ProviderDispatch", () => {
   test("routes an enabled completion through the reasoning controller", async () => {
     const model = Model.make({ id: "fake", provider: "fake", route: OpenAIChat.route })
     const requests: LLMRequest[] = []
+    const observed: Array<{ request: LLMRequest; usage: unknown }> = []
+    const usage = {
+      inputTokens: 42,
+      outputTokens: 2,
+      nonCachedInputTokens: 30,
+      cacheReadInputTokens: 12,
+    }
     const llm = {
       stream: (request: LLMRequest) => {
         requests.push(request)
@@ -72,7 +79,7 @@ describe("ProviderDispatch", () => {
           LLMEvent.textStart({ id: "text-0" }),
           LLMEvent.textDelta({ id: "text-0", text: "OK" }),
           LLMEvent.textEnd({ id: "text-0" }),
-          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop", usage }),
         ])
       },
     } as never
@@ -82,10 +89,76 @@ describe("ProviderDispatch", () => {
         request: LLM.request({ model, messages: [Message.user("answer")] }),
         enabled: true,
         budget: 64,
+        onProviderStep: (step) =>
+          Effect.sync(() => {
+            observed.push(step)
+          }),
       }).pipe(Stream.runDrain),
     )
     expect(requests).toHaveLength(1)
     expect(requests[0]!.system.at(-1)?.text).toContain("reasoning budget of about 64 tokens")
+    expect(observed).toHaveLength(1)
+    expect(observed[0]!.request).toBe(requests[0])
+    expect(observed[0]!.usage).toEqual(usage)
+  })
+
+  test("observes a settled response even when the provider reports no usage", async () => {
+    const model = Model.make({ id: "fake", provider: "fake", route: OpenAIChat.route })
+    const request = LLM.request({ model, messages: [Message.user("answer")] })
+    const observed: Array<{ request: LLMRequest; usage: unknown }> = []
+    const llm = {
+      stream: () => Stream.fromIterable([LLMEvent.stepFinish({ index: 0, reason: "stop" })]),
+    } as never
+
+    await Effect.runPromise(
+      ProviderDispatch.stream({
+        llm,
+        request,
+        enabled: false,
+        budget: 0,
+        onProviderStep: (step) =>
+          Effect.sync(() => {
+            observed.push(step)
+          }),
+      }).pipe(Stream.runDrain),
+    )
+
+    expect(observed).toEqual([{ request, usage: undefined }])
+  })
+
+  test("observes the exact settled continuation request below the reasoning controller", async () => {
+    const model = Model.make({ id: "fake", provider: "fake", route: OpenAIChat.route })
+    const requests: LLMRequest[] = []
+    const observed: Array<{ request: LLMRequest; usage: unknown }> = []
+    const usage = { inputTokens: 50, outputTokens: 2, nonCachedInputTokens: 50 }
+    const llm = {
+      stream: (request: LLMRequest) => {
+        requests.push(request)
+        return requests.length === 1
+          ? Stream.fromIterable([LLMEvent.reasoningDelta({ id: "reasoning-0", text: "r".repeat(40) })])
+          : Stream.fromIterable([
+              LLMEvent.textDelta({ id: "text-0", text: "OK" }),
+              LLMEvent.stepFinish({ index: 0, reason: "stop", usage }),
+            ])
+      },
+    } as never
+
+    await Effect.runPromise(
+      ProviderDispatch.stream({
+        llm,
+        request: LLM.request({ model, messages: [Message.user("answer")] }),
+        enabled: true,
+        budget: 8,
+        onProviderStep: (step) =>
+          Effect.sync(() => {
+            observed.push(step)
+          }),
+      }).pipe(Stream.runDrain),
+    )
+
+    expect(requests).toHaveLength(2)
+    expect(observed).toEqual([{ request: requests[1], usage }])
+    expect(requests[1]!.http?.body?.continue_final_message).toBe(true)
   })
 
   test("admits once, retries before output, and always releases", async () => {

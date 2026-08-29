@@ -64,6 +64,9 @@ export const Flag = {
   NOVACLAW_KB_MEMORY_DIM: env("NOVACLAW_KB_MEMORY_DIM"),
   /** Reasoning budget for document absorption. A KNOB so the value can be MEASURED, not guessed. */
   NOVACLAW_KB_ABSORB_BUDGET: env("NOVACLAW_KB_ABSORB_BUDGET"),
+  /** Reasoning budget for the compaction summary. A KNOB for the same reason: 2,048 is a first
+   *  value and the sweep that would defend it has not been run. */
+  NOVACLAW_COMPACTION_BUDGET: env("NOVACLAW_COMPACTION_BUDGET"),
   // Opt-IN: npm-install `@novaclaw/plugin` into each `.novaclaw` config dir so user
   // plugin files can VALUE-import it. Default OFF: the package is not published
   // to npm (post-rename), so the fetch is a guaranteed 404 at every boot — and a
