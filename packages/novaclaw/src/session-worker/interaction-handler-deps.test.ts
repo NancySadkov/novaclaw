@@ -18,8 +18,9 @@ import path from "node:path"
  *  · every unit test passes — 20/20 units and 16/16 typechecks, plus ten new tests for the feature;
  *  · the failure is a SILENTLY abandoned turn, not an error anywhere.
  *
- * ⚠️ **The three capabilities that were already there are safe BY ACCIDENT** — `PermissionV2`,
- * `QuestionV2` and `SessionSpawner` all happen to be services the location graph constructs anyway.
+ * ⚠️ **The four capabilities that were already there are safe BY ACCIDENT** — `AgentV2`,
+ * `PermissionV2`, `QuestionV2` and `SessionSpawner` all happen to be services the location graph
+ * constructs anyway.
  * Nothing made that true and nothing kept it true, which is exactly the shape ruling 1 exists for.
  *
  * **The rule:** a capability added to the interaction bridge is either built from a value the handler
@@ -30,6 +31,7 @@ import path from "node:path"
 
 const ROOT = path.resolve(import.meta.dir, "..", "..", "..", "..")
 const SOURCE = path.join(ROOT, "packages/novaclaw/src/session-worker/execution.ts")
+const LOCATION_SERVICES_SOURCE = path.join(ROOT, "packages/core/src/location-services.ts")
 
 /**
  * Services the LOCATION GRAPH already constructs for every session, so resolving them inside the
@@ -39,6 +41,7 @@ const SOURCE = path.join(ROOT, "packages/novaclaw/src/session-worker/execution.t
  * added here in spirit on 2026-08-06 and had to be reverted.
  */
 const ALREADY_IN_THE_GRAPH = new Set([
+  "AgentV2", // the authoritative colleague roster, explicitly listed in `locationServices`
   "PermissionV2", // the permission service every turn asserts through
   "QuestionV2", // the question service the ask tool uses
   "SessionSpawner", // the spawn tool's own seam, built for the session that owns the tool
@@ -61,6 +64,7 @@ export const resolvedServices = (source: string): ReadonlyArray<string> => {
 
 describe("the interaction handler resolves only services the location graph already builds", () => {
   const source = fs.readFileSync(SOURCE, "utf8")
+  const locationServicesSource = fs.readFileSync(LOCATION_SERVICES_SOURCE, "utf8")
 
   test("the sweep found the handler at all", () => {
     // Without this the assertion below is vacuously green if the callback is ever renamed or moved.
@@ -81,6 +85,17 @@ describe("the interaction handler resolves only services the location graph alre
             `evidence that the graph constructs it for every session.`,
         ),
     ).toEqual([])
+  })
+
+  test("🔴 every allow-listed service is explicitly in the location graph", () => {
+    const start = locationServicesSource.indexOf("export const locationServices = LayerNode.group([")
+    const end = locationServicesSource.indexOf("\n])", start)
+    expect(start).toBeGreaterThanOrEqual(0)
+    expect(end).toBeGreaterThan(start)
+
+    const graph = locationServicesSource.slice(start, end)
+    const graphServices = new Set([...graph.matchAll(/\b([A-Za-z0-9_]+)\.node\b/g)].map((match) => match[1]!))
+    expect([...ALREADY_IN_THE_GRAPH].filter((name) => !graphServices.has(name))).toEqual([])
   })
 
   test("⚠️ SessionJoin specifically must NOT come back as a resolution", () => {

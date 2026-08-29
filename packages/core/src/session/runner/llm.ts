@@ -1394,7 +1394,8 @@ export const layer = Layer.effect(
       const latched = setRequests.get(session.id)
       const userText = lastRealUserText(context) ?? ""
       const drivingASet =
-        latched?.asked ?? (UnfinishedSet.asksForSet(userText) && !UnfinishedSet.asksToDelegate(userText))
+        harness.drives.set &&
+        (latched?.asked ?? (UnfinishedSet.asksForSet(userText) && !UnfinishedSet.asksToDelegate(userText)))
       const toolMaterialization = isLastStep
         ? undefined
         : yield* tools.materialize(
@@ -3030,7 +3031,7 @@ export const layer = Layer.effect(
               const attempted = setAttempted.get(input.sessionID) ?? new Set<string>()
               for (const read of readsThisTurn) attempted.add(read.path)
               setAttempted.set(input.sessionID, attempted)
-              const setDir = UnfinishedSet.setDirectory([...attempted]) ?? location.directory
+              const setDir = UnfinishedSet.resolveSetDirectory(location.directory, [...attempted])
               const listing = yield* Effect.promise(() =>
                 ProjectGrounding.readListing(setDir, UnfinishedSet.MAX_ENUMERATED_SET),
               )
@@ -3107,7 +3108,7 @@ export const layer = Layer.effect(
               }
             }
             /**
-             * 🔴 **THE FAN-OUT SUPERVISOR — a child that was never joined** (`todo/delegation.md`).
+             * 🔴 **THE FAN-OUT SUPERVISOR — a child that was never joined.**
              *
              * Measured 2026-08-27 on the delegated 100-file run `4623-S2`: `spawn:10` against
              * `wait:9` and `exit:9`. Ten children started, nine joined, one launched and never
@@ -3133,11 +3134,16 @@ export const layer = Layer.effect(
               : []
             if (kids.length > 0) {
               // ⚠️ Accumulated into the SESSION's set, never read fresh from the window — see
-              // `childrenJoined`. `wait` carries the child id in its own input, so the parent's joins
-              // are readable without a second source of truth.
+              // `childrenJoined`. `wait` carries the child id in its input and a terminal marker in
+              // its persisted structured output, so a live timeout is not mistaken for a join.
               const joined = childrenJoined.get(input.sessionID) ?? new Set<string>()
               for (const call of toolCallsSinceLastUser(context)) {
-                if (call.name !== WaitTool.name) continue
+                if (
+                  call.name !== WaitTool.name ||
+                  call.failed ||
+                  !UnjoinedChildren.isTerminalWaitResult(call.structured)
+                )
+                  continue
                 try {
                   const parsed: unknown = JSON.parse(call.input)
                   const id =
@@ -3201,9 +3207,13 @@ export const layer = Layer.effect(
             }
             // 🔴 THE DRIVE THAT MADE "UNAIDED" UNMEASURABLE. `session.finish.reground` fires in
             // every session in BOTH of the rig's arms — the cue gates the set drive and never this
-            // one — so every number `todo/batch-file-planning.md` has produced was taken with at
+            // one — so every batch-file measurement before this switch was taken with at
             // least one mitigation live. This switch is what lets that baseline finally be taken.
-            if (harness.drives.reground && !regrounded && shouldReground(finalText, toolCallsSinceLastUser(context).length)) {
+            if (
+              harness.drives.reground &&
+              !regrounded &&
+              shouldReground(finalText, toolCallsSinceLastUser(context).length)
+            ) {
               regrounded = true
               yield* Log.event("session.finish.reground", { "session.id": input.sessionID })
               yield* SessionInput.steer(db, events, input.sessionID, REGROUND_NUDGE)

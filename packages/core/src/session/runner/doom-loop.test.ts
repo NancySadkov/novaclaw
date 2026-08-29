@@ -29,10 +29,15 @@ const fail = (name: string, input: string, failed = true) => ({ name, input, fai
 const userMsg = (text: string) => ({ type: "user", text }) as unknown as SessionMessage.Message
 const steerMsg = (text: string) =>
   ({ type: "user", text: SessionInput.applySteerProvenance(text) }) as unknown as SessionMessage.Message
-const toolPart = (name: string, input: Record<string, unknown>, failed: boolean) => ({
+const toolPart = (
+  name: string,
+  input: Record<string, unknown>,
+  failed: boolean,
+  structured: Record<string, unknown> = {},
+) => ({
   type: "tool",
   name,
-  state: { status: failed ? "error" : "completed", input },
+  state: { status: failed ? "error" : "completed", input, structured },
 })
 const assistantMsg = (parts: ReadonlyArray<Record<string, unknown>>, error?: { message: string }) =>
   ({ type: "assistant", content: parts, ...(error ? { error } : {}) }) as unknown as SessionMessage.Message
@@ -244,6 +249,12 @@ describe("toolCallsSinceLastUser", () => {
     ]
     const calls = toolCallsSinceLastUser(context)
     expect(calls.map((c) => c.failed)).toEqual([true, false])
+  })
+
+  test("preserves structured output for outcome-aware harness checks", () => {
+    const structured = { completed: false, terminal: false }
+    const context = [userMsg("go"), assistantMsg([toolPart("wait", { sessionID: "ses_child" }, false, structured)])]
+    expect(toolCallsSinceLastUser(context)[0]?.structured).toEqual(structured)
   })
 })
 

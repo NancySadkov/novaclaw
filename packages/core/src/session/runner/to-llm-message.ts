@@ -688,13 +688,15 @@ export const toLLMMessages = (
  * it the batch size in the same breath.
  */
 const capSentence = (kept?: number): string =>
-  kept === undefined || kept < 1
+  kept === undefined || kept < 0
     ? "this model accepts only a limited number of images at once, so the most recent ones were kept."
-    : kept === 1
-      ? "this model holds only ONE image at a time, so only the most recently opened one is visible. " +
-        "Open ONE image per turn and write down what it shows before opening the next."
-      : `this model holds only ${kept} images at a time, so only the ${kept} most recently opened are visible. ` +
-        `Open at most ${kept} per turn and write down what they show before opening more.`
+    : kept === 0
+      ? "this model holds NO images in a request, so no image pixels were retained."
+      : kept === 1
+        ? "this model holds only ONE image at a time, so only the most recently opened one is visible. " +
+          "Open ONE image per turn and write down what it shows before opening the next."
+        : `this model holds only ${kept} images at a time, so only the ${kept} most recently opened are visible. ` +
+          `Open at most ${kept} per turn and write down what they show before opening more.`
 
 export const budgetedImageNotice = (
   name: string | undefined,
@@ -735,16 +737,29 @@ export const budgetedImageNotice = (
   if (saidAfter && saidAfter.trim().length > 0) {
     const readable = sourcePath?.startsWith("file:///") ? decodeURIComponent(sourcePath.slice(8)) : sourcePath
     const clipped = saidAfter.trim().length > 600 ? saidAfter.trim().slice(0, 600) + "\u2026" : saidAfter.trim()
-    return `[An image${name ? ` (${name})` : ""} you opened earlier is NOT in this request: ${capSentence(kept)} You do not need to open it again — what you said straight after opening it was: "${clipped}" If that already answers what you needed, carry it forward and move on. Do NOT invent anything further about the picture from memory.${readable ? ` If you genuinely still need to see it, it is at: ${readable}` : ""}]`
+    const reopen =
+      kept === 0
+        ? " Opening it again will not make it visible in this configuration."
+        : readable
+          ? ` If you genuinely still need to see it, it is at: ${readable}`
+          : ""
+    return `[An image${name ? ` (${name})` : ""} you opened earlier is NOT in this request: ${capSentence(kept)} You do not need to open it again — what you said straight after opening it was: "${clipped}" If that already answers what you needed, carry it forward and move on. Do NOT invent anything further about the picture from memory.${reopen}]`
   }
   // ⭐ The path, when we have one, is what turns "read it again" from advice into a step. See
   // `media()` for the measurement: the model DOES re-read an image it can name, and cannot re-read
   // one it cannot. A `file://` URI is de-scheme'd because that is the spelling `read` takes.
   const readable = sourcePath?.startsWith("file:///") ? decodeURIComponent(sourcePath.slice(8)) : sourcePath
-  const how = readable
-    ? ` Read it again with \`read\` at this exact path: ${readable}`
-    : " If this task needs it, read it again."
-  return `[An image${name ? ` (${name})` : ""} you opened earlier is NOT in this request: ${capSentence(kept)} You cannot see it now. Do not describe it or name it from memory — that is a mistake this notice exists to prevent, and a description you invent here will be wrong.${how} Write down what each image shows as you go, so the description survives even when the picture does not.]`
+  const how =
+    kept === 0
+      ? " Opening it again will not make it visible in this configuration. Use available text or another non-image route instead."
+      : readable
+        ? ` Read it again with \`read\` at this exact path: ${readable}`
+        : " If this task needs it, read it again."
+  const record =
+    kept === 0
+      ? ""
+      : " Write down what each image shows as you go, so the description survives even when the picture does not."
+  return `[An image${name ? ` (${name})` : ""} you opened earlier is NOT in this request: ${capSentence(kept)} You cannot see it now. Do not describe it or name it from memory — that is a mistake this notice exists to prevent, and a description you invent here will be wrong.${how}${record}]`
 }
 
 // Type GUARDS, not predicates: the flatMap below reads `.filename` / `.name` off the narrowed arm,

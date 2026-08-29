@@ -1,7 +1,10 @@
 export * as ExitIntent from "./exit-intent"
 
 import { mkdirSync, renameSync, writeFileSync } from "node:fs"
+import os from "node:os"
 import path from "node:path"
+import { FSUtil } from "@novaclaw/core/fs-util"
+import { Global } from "@novaclaw/core/global"
 
 /**
  * The child's half of the watchdog protocol — saying *why* it is leaving.
@@ -37,9 +40,42 @@ export const EXIT_CODE = 77
  */
 export const VAR = "NOVACLAW_WATCHDOG_STATE"
 
-export const stateDir = (env: Record<string, string | undefined> = process.env): string | undefined => {
+/**
+ * Roots in which NovaClaw is allowed to own watchdog protocol bytes.
+ *
+ * The environment says which supervision edge is present; it does not grant filesystem authority.
+ * Keep that authority rooted in the instance directories or the OS temp directory. A caller with a
+ * real project root may pass it explicitly through `trustedRoots` — an ambient cwd is not proof that
+ * a folder is a selected project.
+ */
+export const trustedStateRoots = (): readonly string[] => [
+  Global.Path.data,
+  Global.Path.cache,
+  Global.Path.config,
+  Global.Path.state,
+  Global.Path.tmp,
+  os.tmpdir(),
+]
+
+/** Canonical containment closes the ordinary symlink/junction escape for prospective paths. */
+export const isTrustedStateDir = (dir: string, trustedRoots?: readonly string[]): boolean => {
+  if (!path.isAbsolute(dir)) return false
+  try {
+    return (trustedRoots ?? trustedStateRoots()).some(
+      (root) => path.isAbsolute(root) && FSUtil.containsCanonical(root, dir),
+    )
+  } catch {
+    return false
+  }
+}
+
+export const stateDir = (
+  env: Record<string, string | undefined> = process.env,
+  trustedRoots?: readonly string[],
+): string | undefined => {
   const dir = env[VAR]
-  return dir === undefined || dir === "" ? undefined : dir
+  // Preserve the historical unsupervised path without even resolving instance directories.
+  return dir === undefined || dir === "" || !isTrustedStateDir(dir, trustedRoots) ? undefined : dir
 }
 
 /**
@@ -96,7 +132,8 @@ export const serialise = (intent: Intent): string => JSON.stringify(intent)
  * shutdown that is already happening; the consequence is simply that the watchdog reads no intent
  * and restarts — the safe direction again. Callers that care can log the `false`.
  */
-export const write = (dir: string, intent: Intent): boolean => {
+export const write = (dir: string, intent: Intent, trustedRoots?: readonly string[]): boolean => {
+  if (!isTrustedStateDir(dir, trustedRoots)) return false
   try {
     mkdirSync(dir, { recursive: true })
     const target = path.join(dir, "exit-intent.json")
@@ -123,11 +160,12 @@ export const settle = (
   intent: Intent,
   unsupervised = 0,
   env: Record<string, string | undefined> = process.env,
+  trustedRoots?: readonly string[],
 ): number => {
-  const dir = stateDir(env)
+  const dir = stateDir(env, trustedRoots)
   if (dir === undefined) return unsupervised
   // ⚠️ If the write fails we must NOT return the reserved code: that would be the clean status with
   // no document, which the watchdog reads as a crash anyway — but by returning the ordinary code we
   // keep the two signals honest rather than emitting half a promise.
-  return write(dir, intent) ? EXIT_CODE : unsupervised
+  return write(dir, intent, trustedRoots) ? EXIT_CODE : unsupervised
 }

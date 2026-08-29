@@ -1,5 +1,7 @@
 export * as UnfinishedSet from "./unfinished-set"
 
+import path from "node:path"
+
 /**
  * A turn that answered about SOME of a set and stopped.
  *
@@ -24,7 +26,17 @@ export * as UnfinishedSet from "./unfinished-set"
  */
 
 /** Words that mean "all of them" rather than "one of them". Matched on the USER's own message. */
-const COLLECTION_CUES = ["each", "every", "all of", "all the", "all", "both", "them all", "one by one", "list the"] as const
+const COLLECTION_CUES = [
+  "each",
+  "every",
+  "all of",
+  "all the",
+  "all",
+  "both",
+  "them all",
+  "one by one",
+  "list the",
+] as const
 
 /** One matcher per cue, anchored at WORD BOUNDARIES on both ends — see `asksForSet`. Every cue is
  *  letters and spaces, so nothing here needs regex-escaping and none is applied: a cue that ever
@@ -187,7 +199,7 @@ export const requestedLimit = (userText: string): number | undefined => {
  * *"Not finished: you have opened 100 files and 2 remain. Open these 2 next … : novaclaw, run.log"* —
  * steered onto a directory junction and a log file.
  *
- * 🔴 **This is the mechanism behind `todo/vision.md`'s SHOWSTOPPER**, which records the drive
+ * 🔴 **This is the mechanism behind the measured SHOWSTOPPER:** the drive
  * *"fabricated twenty ROOT files as user-requested work"*. The root files are the session root's
  * listing; that entry describes this function's absence.
  *
@@ -224,6 +236,12 @@ export const setDirectory = (openedPaths: readonly string[]): string | undefined
       bestCount = count
     }
   return best
+}
+
+/** Resolve the modal corpus directory in the same location namespace as the read tool. */
+export const resolveSetDirectory = (locationDirectory: string, attemptedPaths: readonly string[]): string => {
+  const directory = setDirectory(attemptedPaths)
+  return directory === undefined ? locationDirectory : path.resolve(locationDirectory, directory)
 }
 
 export interface Coverage {

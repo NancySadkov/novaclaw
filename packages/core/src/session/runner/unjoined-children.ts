@@ -18,7 +18,8 @@ export * as UnjoinedChildren from "./unjoined-children"
  * ⭐ **The harness enumerates GROUND TRUTH here, so it CHECKS rather than asks** — the principle
  * `unfinished-set.ts` applies to files, applied to children. `SessionStore.children` is a durable
  * list of every child this session created and each child's row carries its `exit(result)`; the
- * parent's own `wait` calls say which it read. The difference is computed, never believed.
+ * parent's terminal `wait` results say which it actually joined. The difference is computed, never
+ * believed.
  *
  * ─────────────────────────────────────────────────────────────────────────────
  * 🔴 **THE DIVISION OF LABOUR WITH `tool/wait.ts`, and why this module does NOT judge liveness.**
@@ -121,8 +122,8 @@ export const unaccounted = (input: {
  * 🔴 **A bound, not a target — and the reason it is SMALL.** This drive fires at the end of a turn
  * that believes it is finished, and its instruction is *go join / re-issue*. Unlike the set drive,
  * whose work is bounded by the folder, a restart can itself spawn a child that fails, producing
- * another unaccounted child, producing another steer. `todo/delegation.md` names that loop
- * explicitly: *"A restart that itself fails must not loop."*
+ * another unaccounted child, producing another steer. The bound is explicit: *"A restart that
+ * itself fails must not loop."*
  *
  * Three rounds is one join, one replacement, and one last look — past that the fan-out is not
  * recovering and the honest move is to stop, which is what a hard ceiling delivers. Same shape as
@@ -130,6 +131,10 @@ export const unaccounted = (input: {
  * a mechanism that is actually broken.
  */
 export const MAX_RESTART_ROUNDS = 3
+
+/** A wait accounts for a child only after the tool has established a terminal outcome. */
+export const isTerminalWaitResult = (result: unknown): boolean =>
+  typeof result === "object" && result !== null && "terminal" in result && result.terminal === true
 
 /**
  * The most children one message will name.
@@ -207,41 +212,4 @@ export const restartMessage = (input: {
     `do not deliver the merged answer with a note that some part is missing — a merge that silently ` +
     `drops a slice looks exactly like a complete one, which is why you are being told to close this.`
   )
-}
-
-/**
- * The consolidator's join check: does the merged answer cover the input EXACTLY ONCE?
- *
- * 🔴 **The merge is where a lost slice becomes invisible** (`todo/delegation.md`, *"What good looks
- * like"*), and `notes/` already records the general form: **a split feature's JOIN is what nothing
- * tests.** Five children each describe a slice and one agent merges them — so the merge is the only
- * place that can see the union, and it is the one step with no ground truth of its own unless the
- * harness supplies it.
- *
- * Two failures, and they are NOT the same failure:
- *  · **missing** — an item no child covered. The answer is short and looks complete.
- *  · **duplicated** — an item two children both covered, which is how a renumbered or overlapping
- *    slice presents. The answer is long and looks thorough. ⚠️ It also MASKS a gap: ten items
- *    covered eleven times reads as full coverage on any count that is not per-item.
- *
- * ⚠️ Counting is per-ITEM, never totals. `covered.length === expected.length` passes a merge that
- * dropped one item and double-covered another — precisely the renumbered-slice shape.
- */
-export interface JoinCheck {
-  readonly missing: readonly string[]
-  readonly duplicated: readonly string[]
-  readonly exact: boolean
-}
-
-/**
- * @param expected every item the request covers, in the harness's own enumeration.
- * @param covered every item the children actually reported, one entry per report — duplicates
- *   INCLUDED, because collapsing them here is what would hide the duplication being looked for.
- */
-export const checkJoin = (expected: readonly string[], covered: readonly string[]): JoinCheck => {
-  const counts = new Map<string, number>()
-  for (const item of covered) counts.set(item, (counts.get(item) ?? 0) + 1)
-  const missing = expected.filter((item) => (counts.get(item) ?? 0) === 0)
-  const duplicated = expected.filter((item) => (counts.get(item) ?? 0) > 1)
-  return { missing, duplicated, exact: missing.length === 0 && duplicated.length === 0 }
 }

@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
+import path from "node:path"
 import { LLM, Message, Model, SystemPart, ToolDefinition } from "@novaclaw/llm"
 import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
 import { SessionInput } from "../input"
@@ -457,8 +459,8 @@ describe("defaults", () => {
 /**
  * ── WHAT THE PACKER KEEPS WHEN THE HISTORY IS PICTURES ───────────────────────────────────────────
  *
- * 🔴 `estimateMessage` priced a base64 image by its CHARACTER LENGTH until 2026-08-29: one 35 KB
- * corpus icon scored **11,772 tokens** where the provider charges a measured **66**. The packer
+ * 🔴 `estimateMessage` priced a base64 image by its CHARACTER LENGTH until 2026-08-29: one real
+ * corpus icon scored thousands of tokens where the provider charges a measured **66**. The packer
  * budgets on that number, so an image-reading session had its history dropped for room that was
  * never occupied.
  *
@@ -468,7 +470,9 @@ describe("defaults", () => {
  * that number drives.
  */
 describe("image history is not evicted for space it never used", () => {
-  const IMAGE_B64 = "A".repeat(47_000)
+  const IMAGE_B64 = readFileSync(
+    path.join(import.meta.dir, "..", "..", "..", "..", "app", "public", "assets", "skin", "glyphs", "calendar.png"),
+  ).toString("base64")
   const imageResult = (id: string) =>
     Message.tool({
       id,
@@ -489,7 +493,7 @@ describe("image history is not evicted for space it never used", () => {
     return messages
   }
 
-  test("six images fit a 20,000-token budget — the old estimate called them 70,000", () => {
+  test("six real images fit a 20,000-token budget — the old estimate called them over 40,000", () => {
     const result = pack(sixImages(), 20_000)
     expect(result.dropped, "nothing should be dropped: this is ~400 provider tokens").toBe(0)
     expect(result.changed).toBe(false)

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { UnjoinedChildren } from "./unjoined-children"
 
-// The delegation supervisor — `todo/delegation.md`, *"The parent does not restart a failed child"*.
+// The delegation supervisor pins the measured case where a parent did not restart a failed child.
 //
 // The measured failure being pinned: `spawn:10` against `wait:9` and `exit:9` on the delegated
 // 100-file run `4623-S2` (2026-08-27). Ten children started, nine joined, one silently lost, run
@@ -63,7 +63,7 @@ describe("shouldRestart", () => {
     expect(UnjoinedChildren.shouldRestart({ unaccounted: [], rounds: 0 })).toBe(false)
   })
 
-  // 🔴 THE BOUND — `todo/delegation.md`: "A restart that itself fails must not loop." A replacement
+  // 🔴 THE BOUND: a restart that itself fails must not loop. A replacement
   // child can itself fail, producing another unaccounted child, producing another steer.
   test("stops at MAX_RESTART_ROUNDS however many children remain", () => {
     const unaccounted = UnjoinedChildren.unaccounted({
@@ -145,44 +145,15 @@ describe("restartMessage", () => {
   })
 })
 
-describe("checkJoin — the consolidator's union check", () => {
-  test("exact coverage passes", () => {
-    expect(UnjoinedChildren.checkJoin(["a", "b", "c"], ["a", "b", "c"])).toEqual({
-      missing: [],
-      duplicated: [],
-      exact: true,
-    })
+describe("isTerminalWaitResult", () => {
+  test("accepts completed and confirmed-dead terminal outcomes", () => {
+    expect(UnjoinedChildren.isTerminalWaitResult({ completed: true, terminal: true })).toBe(true)
+    expect(UnjoinedChildren.isTerminalWaitResult({ completed: false, terminal: true })).toBe(true)
   })
 
-  test("a dropped slice is MISSING", () => {
-    const result = UnjoinedChildren.checkJoin(["a", "b", "c"], ["a", "b"])
-    expect(result.missing).toEqual(["c"])
-    expect(result.exact).toBe(false)
-  })
-
-  // 🔴 THE RENUMBERED-SLICE SHAPE, and the reason this counts per item rather than totals. Two
-  // children both took "b" and nobody took "c": the total is 3 of 3 and the answer looks complete.
-  // A length comparison passes this. Only a per-item count sees it.
-  test("a duplicated slice MASKING a gap is caught, though the totals match", () => {
-    const expected = ["a", "b", "c"]
-    const covered = ["a", "b", "b"]
-    expect(covered).toHaveLength(expected.length) // the check a total-based join would have made
-    const result = UnjoinedChildren.checkJoin(expected, covered)
-    expect(result.missing).toEqual(["c"])
-    expect(result.duplicated).toEqual(["b"])
-    expect(result.exact).toBe(false)
-  })
-
-  test("an item nobody expected does not become a false 'missing'", () => {
-    const result = UnjoinedChildren.checkJoin(["a"], ["a", "z"])
-    expect(result.missing).toEqual([])
-    expect(result.duplicated).toEqual([])
-    expect(result.exact).toBe(true)
-  })
-
-  test("an empty merge against a real request is entirely missing", () => {
-    const result = UnjoinedChildren.checkJoin(["a", "b"], [])
-    expect(result.missing).toEqual(["a", "b"])
-    expect(result.exact).toBe(false)
+  test("rejects a live timeout and missing or malformed results", () => {
+    expect(UnjoinedChildren.isTerminalWaitResult({ completed: false, terminal: false })).toBe(false)
+    expect(UnjoinedChildren.isTerminalWaitResult(undefined)).toBe(false)
+    expect(UnjoinedChildren.isTerminalWaitResult({ terminal: "true" })).toBe(false)
   })
 })

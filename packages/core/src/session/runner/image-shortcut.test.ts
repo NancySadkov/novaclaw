@@ -1,8 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { ImageShortcut } from "./image-shortcut"
 
-// `todo/batch-file-planning.md`'s first-ranked lever: *"Treat a shell command aimed at an image as
-// the shortcut it is."*
+// The first-ranked measured lever: treat a shell command aimed at an image as the shortcut it is.
 //
 // 🔴 The expensive error here is the FALSE POSITIVE, and it has already been made once. The rig's
 // first version of this check flagged any bash command containing an image name and reported 17
@@ -23,6 +22,10 @@ describe("isImageShortcut — the true positives", () => {
     "identify icon_009.png",
     "exiftool icon_010.jpg",
     "stat icon_011.png",
+    "base64 icon_012.png > dump.txt",
+    "xxd icon_013.png | head > bytes.txt",
+    'base64 "my icon.png"',
+    "xxd *.png",
   ]
   for (const command of shortcuts)
     test(`flags: ${command.slice(0, 44)}`, () => expect(ImageShortcut.isImageShortcut(command)).toBe(true))
@@ -32,9 +35,7 @@ describe("isImageShortcut — the false positives that matter", () => {
   // 🔴 THE MEASURED ONE. This is the command that produced 17 phantom shortcuts, and it is the model
   // doing the job correctly: writing out a description it got by LOOKING.
   test("printing a description that merely names the file is NOT a shortcut", () => {
-    expect(
-      ImageShortcut.isImageShortcut('printf -- "- icon_017.png: A stylized golden bird in flight"'),
-    ).toBe(false)
+    expect(ImageShortcut.isImageShortcut('printf -- "- icon_017.png: A stylized golden bird in flight"')).toBe(false)
   })
 
   // ⭐ The ledger's own second lever is "give the batch a cheaper unit of progress" — the model
@@ -42,7 +43,8 @@ describe("isImageShortcut — the false positives that matter", () => {
   test("appending descriptions to a file is NOT a shortcut", () => {
     expect(ImageShortcut.isImageShortcut('echo "icon_020.png: a red circle" >> descriptions.md')).toBe(false)
     expect(ImageShortcut.isImageShortcut('printf "%s\\n" "icon_021.png: a blue square" > out.txt')).toBe(false)
-    expect(ImageShortcut.isImageShortcut('cat notes.txt | grep icon_022.png | tee kept.md')).toBe(false)
+    expect(ImageShortcut.isImageShortcut("cat notes.txt | grep icon_022.png | tee kept.md")).toBe(false)
+    expect(ImageShortcut.isImageShortcut("cat notes.txt > icon_023.png")).toBe(false)
   })
 
   test("listing or counting the folder is NOT a shortcut — it never names bytes of one image", () => {
@@ -65,6 +67,11 @@ describe("isImageShortcut — the false positives that matter", () => {
 describe("targetOf", () => {
   test("names the image so the refusal can point at it", () => {
     expect(ImageShortcut.targetOf("xxd tmp/corpus/icon_001.png | head")).toBe("tmp/corpus/icon_001.png")
+  })
+
+  test("preserves quoted-space and glob targets", () => {
+    expect(ImageShortcut.targetOf('base64 "my icon.png"')).toBe("my icon.png")
+    expect(ImageShortcut.targetOf("xxd *.png")).toBe("*.png")
   })
 
   test("answers undefined when no image is named", () => {
@@ -94,9 +101,10 @@ describe("refusal", () => {
     expect(ImageShortcut.refusal("xxd icon_001.png")).toContain("no cheaper route")
   })
 
-  test("degrades sanely when no filename could be extracted", () => {
+  test("names a wildcard target rather than falling back to an unspecified image", () => {
     const text = ImageShortcut.refusal("xxd *.png")
-    expect(text).toContain("read tool")
+    expect(text).toContain("FILE BYTES of *.png")
+    expect(text).toContain('Call read with path="*.png"')
     expect(text).not.toContain("undefined")
   })
 })

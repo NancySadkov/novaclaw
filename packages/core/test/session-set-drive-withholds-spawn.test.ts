@@ -51,6 +51,7 @@ describe("the runner actually applies it", () => {
     // is gated on the set predicate — not the phrasing around it.
     const source = fs.readFileSync(path.join(import.meta.dir, "../src/session/runner/llm.ts"), "utf8")
     expect(source).toContain("drivingASet")
+    expect(source).toContain("harness.drives.set &&")
     expect(source).toContain("!(drivingASet && name === SpawnTool.name)")
     // Gated on the drive's OWN latched decision rather than a second, drifting copy of the rule.
     // 🔴 It used to read `UnfinishedSet.asksForSet(lastRealUserText(context))` afresh every step, which

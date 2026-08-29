@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import path from "node:path"
 import { UnfinishedSet } from "./unfinished-set"
 
 // The SET gate and the DELEGATION exemption it needs, as pure rules.
@@ -79,5 +80,17 @@ describe("setDirectory — which folder the set is actually in", () => {
 
   test("a relative path keeps its directory", () => {
     expect(UnfinishedSet.setDirectory(["tmp/corpus/a.png", "tmp/corpus/b.png"])).toBe("tmp/corpus")
+  })
+
+  test("resolves a relative corpus against the session location", () => {
+    const location = path.resolve("project-root")
+    expect(UnfinishedSet.resolveSetDirectory(location, ["tmp/corpus/a.png", "tmp/corpus/b.png"])).toBe(
+      path.join(location, "tmp", "corpus"),
+    )
+  })
+
+  test("keeps an absolute corpus authoritative over the session location", () => {
+    const corpus = path.resolve("elsewhere", "corpus")
+    expect(UnfinishedSet.resolveSetDirectory(path.resolve("project-root"), [path.join(corpus, "a.png")])).toBe(corpus)
   })
 })

@@ -128,7 +128,9 @@ enum Intent {
 enum Decision {
     Stop,
     RestartNow,
-    RestartAt { wake_at_ms: u128 },
+    RestartAt {
+        wake_at_ms: u128,
+    },
     /// The exit was not legitimate. Restart after the ladder's delay for this attempt.
     RestartAfterCrash,
 }
@@ -144,53 +146,137 @@ fn classify(code: Option<i32>, intent: Option<Intent>) -> Decision {
     match (code, intent) {
         (Some(INTENT_EXIT_CODE), Some(Intent::Shutdown)) => Decision::Stop,
         (Some(INTENT_EXIT_CODE), Some(Intent::Restart)) => Decision::RestartNow,
-        (Some(INTENT_EXIT_CODE), Some(Intent::Dormant { wake_at_ms })) => Decision::RestartAt { wake_at_ms },
+        (Some(INTENT_EXIT_CODE), Some(Intent::Dormant { wake_at_ms })) => {
+            Decision::RestartAt { wake_at_ms }
+        }
         _ => Decision::RestartAfterCrash,
     }
 }
 
-/// Parse an intent document. Hand-rolled rather than pulling in a JSON crate: the grammar is three
-/// keys, and a dependency-free watchdog is worth more than a general parser.
+/// A deliberately tiny JSON cursor for the exact flat object the TypeScript writer emits.
 ///
-/// ⚠️ Anything unrecognised returns `None`, which the classifier reads as a crash — the safe
-/// direction. A truncated write, a half-flushed buffer and a file from a future version of NovaClaw
-/// all land here, and all of them should produce a restart rather than a guess.
-fn parse_intent(text: &str) -> Option<Intent> {
-    let kind = json_string(text, "kind")?;
-    match kind.as_str() {
-        "shutdown" => Some(Intent::Shutdown),
-        "restart" => Some(Intent::Restart),
-        "dormant" => {
-            // ⚠️ A dormant intent WITHOUT a wake time is not a dormant intent. Defaulting it to
-            // "now" would be inventing a policy the writer did not state, and defaulting it to
-            // "never" would strand the instance — so it is malformed, and malformed means restart.
-            let wake_at_ms = json_number(text, "wakeAtMs")?;
-            Some(Intent::Dormant { wake_at_ms })
+/// This is still dependency-free, but unlike substring search it consumes the WHOLE document. That
+/// distinction is the fail-safe boundary: `{"kind":"shutdown"` and `wakeAtMs:12garbage` must not
+/// become valid instructions merely because a recognisable prefix appeared before the corruption.
+struct JsonCursor<'a> {
+    bytes: &'a [u8],
+    at: usize,
+}
+
+impl<'a> JsonCursor<'a> {
+    fn new(text: &'a str) -> Self {
+        Self {
+            bytes: text.as_bytes(),
+            at: 0,
         }
-        _ => None,
+    }
+
+    fn whitespace(&mut self) {
+        while matches!(self.bytes.get(self.at), Some(b' ' | b'\n' | b'\r' | b'\t')) {
+            self.at += 1;
+        }
+    }
+
+    fn take(&mut self, byte: u8) -> bool {
+        self.whitespace();
+        if self.bytes.get(self.at) != Some(&byte) {
+            return false;
+        }
+        self.at += 1;
+        true
+    }
+
+    /// Protocol strings are unescaped identifiers. Reject escapes rather than implement a partial
+    /// decoder whose edge cases could make malformed input look authoritative.
+    fn string(&mut self) -> Option<String> {
+        self.whitespace();
+        if self.bytes.get(self.at) != Some(&b'"') {
+            return None;
+        }
+        self.at += 1;
+        let start = self.at;
+        while let Some(byte) = self.bytes.get(self.at).copied() {
+            match byte {
+                b'"' => {
+                    let value = std::str::from_utf8(&self.bytes[start..self.at])
+                        .ok()?
+                        .to_string();
+                    self.at += 1;
+                    return Some(value);
+                }
+                b'\\' | 0..=0x1f => return None,
+                _ => self.at += 1,
+            }
+        }
+        None
+    }
+
+    fn number(&mut self) -> Option<u128> {
+        self.whitespace();
+        let start = self.at;
+        while matches!(self.bytes.get(self.at), Some(b'0'..=b'9')) {
+            self.at += 1;
+        }
+        if self.at == start {
+            return None;
+        }
+        // JSON has no octal spelling: zero is valid, a multi-digit integer beginning with zero is
+        // malformed and must not be accepted as a plausible prefix.
+        if self.at - start > 1 && self.bytes[start] == b'0' {
+            return None;
+        }
+        std::str::from_utf8(&self.bytes[start..self.at])
+            .ok()?
+            .parse()
+            .ok()
+    }
+
+    fn finished(&mut self) -> bool {
+        self.whitespace();
+        self.at == self.bytes.len()
     }
 }
 
-/// The value of `"<key>": "<string>"`, or `None`.
-fn json_string(text: &str, key: &str) -> Option<String> {
-    let needle = format!("\"{key}\"");
-    let after = &text[text.find(&needle)? + needle.len()..];
-    let after = after.trim_start().strip_prefix(':')?.trim_start();
-    let rest = after.strip_prefix('"')?;
-    let end = rest.find('"')?;
-    Some(rest[..end].to_string())
-}
-
-/// The value of `"<key>": <number>`, or `None`. Rejects anything that is not a plain integer.
-fn json_number(text: &str, key: &str) -> Option<u128> {
-    let needle = format!("\"{key}\"");
-    let after = &text[text.find(&needle)? + needle.len()..];
-    let after = after.trim_start().strip_prefix(':')?.trim_start();
-    let digits: String = after.chars().take_while(|c| c.is_ascii_digit()).collect();
-    if digits.is_empty() {
+/// Parse and fully consume an intent document. Unknown/duplicate fields, trailing bytes, truncated
+/// objects and values of the wrong type all return `None`, which the classifier reads as a crash.
+fn parse_intent(text: &str) -> Option<Intent> {
+    let mut cursor = JsonCursor::new(text);
+    if !cursor.take(b'{') {
         return None;
     }
-    digits.parse().ok()
+    if cursor.take(b'}') {
+        return None;
+    }
+
+    let mut kind: Option<String> = None;
+    let mut wake_at_ms: Option<u128> = None;
+    loop {
+        let key = cursor.string()?;
+        if !cursor.take(b':') {
+            return None;
+        }
+        match key.as_str() {
+            "kind" if kind.is_none() => kind = Some(cursor.string()?),
+            "wakeAtMs" if wake_at_ms.is_none() => wake_at_ms = Some(cursor.number()?),
+            _ => return None,
+        }
+        if cursor.take(b'}') {
+            break;
+        }
+        if !cursor.take(b',') {
+            return None;
+        }
+    }
+    if !cursor.finished() {
+        return None;
+    }
+
+    match (kind.as_deref(), wake_at_ms) {
+        (Some("shutdown"), None) => Some(Intent::Shutdown),
+        (Some("restart"), None) => Some(Intent::Restart),
+        (Some("dormant"), Some(wake_at_ms)) => Some(Intent::Dormant { wake_at_ms }),
+        _ => None,
+    }
 }
 
 /// Read and CONSUME the intent file. Deleting on read is what makes an intent single-use, so a file
@@ -210,12 +296,19 @@ fn take_intent(path: &Path) -> Option<Intent> {
 }
 
 fn now_ms() -> u128 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0)
 }
 
 /// Sleep until `wake_at_ms`, in short ticks, so the wait stays interruptible and a clock that jumps
 /// backwards cannot park the instance for years.
 fn sleep_until(wake_at_ms: u128, wake_now: &Path) {
+    // A marker belongs only to a dormancy already in progress. One left while the child was active,
+    // or across a watchdog restart, must not cancel a future sleep it could not have referred to.
+    // Clearing at the sleep boundary gives markers created AFTER this point their intended meaning.
+    let _ = fs::remove_file(wake_now);
     loop {
         let now = now_ms();
         if now >= wake_at_ms {
@@ -249,7 +342,9 @@ fn parse_args() -> Result<Args, String> {
     while index < argv.len() {
         match argv[index].as_str() {
             "--state" => {
-                state_dir = Some(PathBuf::from(argv.get(index + 1).ok_or("--state needs a directory")?));
+                state_dir = Some(PathBuf::from(
+                    argv.get(index + 1).ok_or("--state needs a directory")?,
+                ));
                 index += 2;
             }
             "--" => {
@@ -257,7 +352,10 @@ fn parse_args() -> Result<Args, String> {
                 if command.is_empty() {
                     return Err("no command after --".into());
                 }
-                return Ok(Args { state_dir: state_dir.ok_or("--state is required")?, command });
+                return Ok(Args {
+                    state_dir: state_dir.ok_or("--state is required")?,
+                    command,
+                });
             }
             other => return Err(format!("unexpected argument {other}")),
         }
@@ -363,8 +461,14 @@ mod tests {
     // extra steps.
     #[test]
     fn intent_without_the_clean_code_is_a_crash() {
-        assert_eq!(classify(Some(0), Some(Intent::Shutdown)), Decision::RestartAfterCrash);
-        assert_eq!(classify(Some(1), Some(Intent::Shutdown)), Decision::RestartAfterCrash);
+        assert_eq!(
+            classify(Some(0), Some(Intent::Shutdown)),
+            Decision::RestartAfterCrash
+        );
+        assert_eq!(
+            classify(Some(1), Some(Intent::Shutdown)),
+            Decision::RestartAfterCrash
+        );
         assert_eq!(
             classify(Some(1), Some(Intent::Dormant { wake_at_ms: 42 })),
             Decision::RestartAfterCrash
@@ -373,20 +477,35 @@ mod tests {
 
     #[test]
     fn the_clean_code_without_an_intent_is_a_crash() {
-        assert_eq!(classify(Some(INTENT_EXIT_CODE), None), Decision::RestartAfterCrash);
+        assert_eq!(
+            classify(Some(INTENT_EXIT_CODE), None),
+            Decision::RestartAfterCrash
+        );
     }
 
     #[test]
     fn a_signal_kill_is_a_crash_even_with_an_intent() {
-        assert_eq!(classify(None, Some(Intent::Shutdown)), Decision::RestartAfterCrash);
+        assert_eq!(
+            classify(None, Some(Intent::Shutdown)),
+            Decision::RestartAfterCrash
+        );
     }
 
     #[test]
     fn both_signals_agreeing_is_honoured() {
-        assert_eq!(classify(Some(INTENT_EXIT_CODE), Some(Intent::Shutdown)), Decision::Stop);
-        assert_eq!(classify(Some(INTENT_EXIT_CODE), Some(Intent::Restart)), Decision::RestartNow);
         assert_eq!(
-            classify(Some(INTENT_EXIT_CODE), Some(Intent::Dormant { wake_at_ms: 99 })),
+            classify(Some(INTENT_EXIT_CODE), Some(Intent::Shutdown)),
+            Decision::Stop
+        );
+        assert_eq!(
+            classify(Some(INTENT_EXIT_CODE), Some(Intent::Restart)),
+            Decision::RestartNow
+        );
+        assert_eq!(
+            classify(
+                Some(INTENT_EXIT_CODE),
+                Some(Intent::Dormant { wake_at_ms: 99 })
+            ),
             Decision::RestartAt { wake_at_ms: 99 }
         );
     }
@@ -400,11 +519,16 @@ mod tests {
 
     #[test]
     fn parses_the_three_kinds() {
-        assert_eq!(parse_intent(r#"{"kind":"shutdown"}"#), Some(Intent::Shutdown));
+        assert_eq!(
+            parse_intent(r#"{"kind":"shutdown"}"#),
+            Some(Intent::Shutdown)
+        );
         assert_eq!(parse_intent(r#"{"kind":"restart"}"#), Some(Intent::Restart));
         assert_eq!(
             parse_intent(r#"{"kind":"dormant","wakeAtMs":1787961234567}"#),
-            Some(Intent::Dormant { wake_at_ms: 1787961234567 })
+            Some(Intent::Dormant {
+                wake_at_ms: 1787961234567
+            })
         );
     }
 
@@ -423,10 +547,78 @@ mod tests {
         assert_eq!(parse_intent(""), None);
         assert_eq!(parse_intent("{"), None);
         assert_eq!(parse_intent(r#"{"kind":"dorm"#), None, "a truncated write");
-        assert_eq!(parse_intent(r#"{"kind":"hibernate"}"#), None, "a kind from a future version");
-        assert_eq!(parse_intent(r#"{"kind":"dormant"}"#), None, "dormant with no wake time");
-        assert_eq!(parse_intent(r#"{"kind":"dormant","wakeAtMs":"soon"}"#), None);
-        assert_eq!(parse_intent(r#"{"kind":"dormant","wakeAtMs":-5}"#), None, "a negative instant");
+        assert_eq!(
+            parse_intent(r#"{"kind":"shutdown""#),
+            None,
+            "a full value in a truncated object"
+        );
+        assert_eq!(
+            parse_intent(r#"{"kind":"shutdown"}garbage"#),
+            None,
+            "trailing bytes"
+        );
+        assert_eq!(
+            parse_intent(r#"{"kind":"hibernate"}"#),
+            None,
+            "a kind from a future version"
+        );
+        assert_eq!(
+            parse_intent(r#"{"kind":"dormant"}"#),
+            None,
+            "dormant with no wake time"
+        );
+        assert_eq!(
+            parse_intent(r#"{"kind":"dormant","wakeAtMs":"soon"}"#),
+            None
+        );
+        assert_eq!(
+            parse_intent(r#"{"kind":"dormant","wakeAtMs":-5}"#),
+            None,
+            "a negative instant"
+        );
+        assert_eq!(
+            parse_intent(r#"{"kind":"dormant","wakeAtMs":5oops}"#),
+            None,
+            "numeric suffix"
+        );
+        assert_eq!(
+            parse_intent(r#"{"kind":"dormant","wakeAtMs":05}"#),
+            None,
+            "leading zero"
+        );
+        assert_eq!(
+            parse_intent(r#"{"kind":"shutdown","extra":1}"#),
+            None,
+            "unknown field"
+        );
+        assert_eq!(
+            parse_intent(r#"{"kind":"shutdown","kind":"restart"}"#),
+            None,
+            "duplicate field"
+        );
+        assert_eq!(
+            parse_intent(r#"{"kind":"shutdown",}"#),
+            None,
+            "trailing comma"
+        );
+    }
+
+    #[test]
+    fn a_stale_wake_marker_does_not_cancel_a_later_dormancy() {
+        let directory = std::env::temp_dir().join(format!(
+            "novaclaw-watchdog-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let marker = directory.join("wake-now");
+        fs::write(&marker, b"stale").unwrap();
+        sleep_until(now_ms() + 2, &marker);
+        assert!(
+            !marker.exists(),
+            "the stale marker must be consumed before the new sleep begins"
+        );
+        let _ = fs::remove_dir_all(directory);
     }
 
     // ⚠️ The ladder must CAP rather than run off the end of the array, and it must never stop

@@ -19,10 +19,9 @@
  * 🔴 **AND THERE IS A PROMISE ATTACHED TO THIS BINARY THAT THE DHT HAS NO EQUIVALENT OF.** Settings
  * carries a user-visible auto-restart row. A build without this binary leaves that switch offering
  * something the install cannot do, which is worse than a missing feature because the user has been
- * told otherwise. Skipping the build is legitimate; leaving the switch promising is not — see
- * `todo/watchdog.md`.
+ * told otherwise. Skipping the build is legitimate; leaving the switch promising is not.
  */
-import { existsSync } from "node:fs"
+import { existsSync, mkdirSync, rmSync } from "node:fs"
 import path from "node:path"
 
 const root = path.dirname(Bun.fileURLToPath(import.meta.url))
@@ -35,7 +34,22 @@ const built = path.join(root, "target", "release", exe)
  * of intermediate objects beside the ~200 KB we want. Copying it would bloat the installer; naming the
  * file in two places would let them drift.
  */
-const shipped = path.join(root, "build", exe)
+const staging = path.join(root, "build")
+const shipped = path.join(staging, exe)
+
+/**
+ * Clear BOTH possible sources of a borrowed artifact before asking whether this build can produce
+ * one. Cargo leaves its last successful executable under `target/release`, while electron-builder
+ * copies `build/`; either one surviving a failed or skipped build would let yesterday's watchdog
+ * masquerade as today's output.
+ *
+ * The empty staging directory is deliberate. The watchdog is an optional outer recovery layer, so
+ * desktop packaging always has a real source directory to copy even when Cargo is unavailable; an
+ * empty directory means "not present in this build", never "reuse whatever happened to be here".
+ */
+rmSync(staging, { recursive: true, force: true })
+mkdirSync(staging, { recursive: true })
+rmSync(built, { force: true })
 
 const cargo = Bun.which("cargo")
 if (cargo === null) {

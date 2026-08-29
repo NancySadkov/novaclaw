@@ -1,3 +1,5 @@
+import type { Config } from "@novaclaw/sdk/v2/client"
+
 /**
  * The Health & recovery tab's readable state — separated from `recovery.tsx` for the reason
  * `confinement-state.ts` is separated from `confinement.tsx`: a claim a screen makes about the
@@ -6,23 +8,6 @@
  * The whole of it is one question — is "pick work back up" on? — and that question has exactly one
  * way to go wrong, below.
  */
-
-/**
- * The shape this surface reads out of instance config.
- *
- * ⚠️ **One KNOWN field plus an open rest, and that is the honest type.** `harness_drives` carries
- * four other switches this tab neither renders nor understands (reground, set, children,
- * imageShortcut), and the merge below must carry them through untouched. Declaring only the field we
- * own would make the preserving spread a type error — which is how a "tidy" type turns into a
- * setting that silently clears its neighbours.
- */
-export type HarnessDrivesConfig = { readonly resumeInterrupted?: boolean } & {
-  readonly [key: string]: unknown
-}
-
-export interface ConfigWithDrives {
-  readonly harness_drives?: HarnessDrivesConfig
-}
 
 /**
  * 🔴 **ABSENT MEANS ON, and getting this backwards is the defect worth a test.**
@@ -35,7 +20,7 @@ export interface ConfigWithDrives {
  *
  * ⚠️ So this is `!== false`, not `=== true`, and the two are only the same when the key is present.
  */
-export const resumeInterruptedOn = (config: ConfigWithDrives | undefined): boolean =>
+export const resumeInterruptedOn = (config: Config | undefined): boolean =>
   config?.harness_drives?.resumeInterrupted !== false
 
 /**
@@ -46,8 +31,8 @@ export const resumeInterruptedOn = (config: ConfigWithDrives | undefined): boole
  * whichever of them an operator had set. The tab only owns one field of a block it does not own.
  */
 export const resumeInterruptedPatch = (
-  config: ConfigWithDrives | undefined,
+  config: Config | undefined,
   value: boolean,
-): { readonly harness_drives: HarnessDrivesConfig } => ({
+): { readonly harness_drives: NonNullable<Config["harness_drives"]> } => ({
   harness_drives: { ...(config?.harness_drives ?? {}), resumeInterrupted: value },
 })

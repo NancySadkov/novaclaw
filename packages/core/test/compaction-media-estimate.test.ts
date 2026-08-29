@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
+import path from "node:path"
 import { DateTime } from "effect"
 import { Model } from "@novaclaw/llm"
 import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
@@ -25,10 +27,17 @@ import { estimate } from "@novaclaw/core/session/compaction"
  * merely divided by a constant would still have grown with how badly a PNG compressed.
  */
 
-const media = (bytes: number) => ({
+const glyph = (name: string) =>
+  readFileSync(path.join(import.meta.dir, "..", "..", "app", "public", "assets", "skin", "glyphs", name)).toString(
+    "base64",
+  )
+const CALENDAR = glyph("calendar.png")
+const CHATS = glyph("chats.png")
+
+const media = (data = CALENDAR) => ({
   type: "media",
   mediaType: "image/png",
-  data: `data:image/png;base64,${"A".repeat(bytes)}`,
+  data: `data:image/png;base64,${data}`,
   filename: "icon.png",
 })
 
@@ -38,29 +47,28 @@ const request = (...parts: unknown[]) => ({
   tools: [],
 })
 
-describe("the compaction threshold prices a media part by COUNT, not by payload", () => {
-  test("one image does not cost eleven thousand tokens", () => {
-    // 47,000 base64 chars — the real size of this programme's corpus icons.
-    const withImage = estimate(request({ type: "text", text: "describe it" }, media(47_000)))
-    expect(withImage, "the old estimate scored this at ~11,772").toBeLessThan(3_000)
-    expect(withImage, "but a media part is not free either").toBeGreaterThan(1_000)
+describe("the compaction threshold prices media by measured dimensions, not payload", () => {
+  test("one real 256px image lands near its measured 66 tokens", () => {
+    const withImage = estimate(request({ type: "text", text: "describe it" }, media()))
+    expect(withImage, "the old estimate counted thousands of base64 tokens").toBeLessThan(200)
+    expect(withImage, "the measured image charge must not disappear").toBeGreaterThanOrEqual(66)
   })
 
-  // 🔴 THE SHAPE. Two icons from one corpus differed 139x vs 250x purely by compression.
-  test("payload size does not change the estimate — the model never sees those bytes", () => {
-    const small = estimate(request(media(36_000)))
-    const large = estimate(request(media(66_000)))
+  // 🔴 THE SHAPE. These are two valid 256px PNGs with different encoded sizes and the same patch grid.
+  test("file size does not change the estimate when dimensions are identical", () => {
+    const small = estimate(request(media(CHATS)))
+    const large = estimate(request(media(CALENDAR)))
     expect(large).toBe(small)
   })
 
-  test("and it scales with the NUMBER of images, which is what the provider charges for", () => {
-    const one = estimate(request(media(47_000)))
-    const three = estimate(request(media(47_000), media(47_000), media(47_000)))
+  test("and it scales with each image's measured patch-grid charge", () => {
+    const one = estimate(request(media()))
+    const three = estimate(request(media(), media(), media()))
     // Two more images add two more media charges. Not asserted to the token, because the JSON
     // punctuation around the extra parts is real content the text half legitimately counts.
     const perImage = three - one
-    expect(perImage).toBeGreaterThan(2_900)
-    expect(perImage).toBeLessThan(3_100)
+    expect(perImage).toBeGreaterThan(130)
+    expect(perImage).toBeLessThan(180)
   })
 
   // ⚠️ Text must be untouched: chars/4 is close for prose and this fix must not disturb it.
@@ -76,7 +84,7 @@ describe("the compaction threshold prices a media part by COUNT, not by payload"
  * ── THE WIRING, ON A GENUINELY ASSEMBLED REQUEST ─────────────────────────────────────────────────
  *
  * 🔴 **The first version of this fix matched only `type: "media"` and was INERT for the workload that
- * motivated it.** A user attachment lowers to `media`; a TOOL RESULT keeps `{type:"file", mime, data}`
+ * motivated it.** A user attachment lowers to `media`; a TOOL RESULT keeps `{type:"file", mime, uri}`
  * — and every image in the batch-file programme arrives through the `read` TOOL. The tests above all
  * passed, because they hand-build the part they assert on. That is the fifth time this session a
  * helper proved itself while the caller went unchecked.
@@ -86,7 +94,6 @@ describe("the compaction threshold prices a media part by COUNT, not by payload"
  */
 describe("the wiring: a real lowered tool result", () => {
   const created = DateTime.makeUnsafe(0)
-  const BIG = "A".repeat(47_000) // the base64 length of this programme's corpus icons
 
   const readResultWithImage = () =>
     SessionMessage.Assistant.make({
@@ -104,7 +111,7 @@ describe("the wiring: a real lowered tool result", () => {
             input: {},
             content: [
               { type: "text", text: "Image read successfully" },
-              { type: "file", uri: `data:image/png;base64,${BIG}`, mime: "image/png", name: "icon_001.png" },
+              { type: "file", uri: `data:image/png;base64,${CALENDAR}`, mime: "image/png", name: "icon_001.png" },
             ],
             structured: {},
             result: undefined,
@@ -120,7 +127,9 @@ describe("the wiring: a real lowered tool result", () => {
     const lowered = toLLMMessages([readResultWithImage()], model, { input: ["text", "image"] })
     // Sanity: the payload really is in there, so a small estimate means the RULE fired, not that the
     // image was dropped somewhere upstream.
-    expect(JSON.stringify(lowered)).toContain(BIG.slice(0, 200))
-    expect(estimate({ system: [], messages: lowered, tools: [] })).toBeLessThan(3_000)
+    expect(JSON.stringify(lowered)).toContain(CALENDAR.slice(0, 200))
+    const tokens = estimate({ system: [], messages: lowered, tools: [] })
+    expect(tokens).toBeGreaterThanOrEqual(66)
+    expect(tokens).toBeLessThan(300)
   })
 })

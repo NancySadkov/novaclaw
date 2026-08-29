@@ -551,8 +551,12 @@ describe("per-request image budget", () => {
   test("a zero budget elides everything and still never deletes a part", () => {
     const lowered = JSON.stringify(toLLMMessages(sweep(2), model, VISION, 0))
     expect(lowered.split('"type":"file"').length - 1).toBe(0)
-    expect(lowered).toContain(budgetedImageNotice("icon_1.png", "icon_1.png"))
-    expect(lowered).toContain(budgetedImageNotice("icon_2.png", "icon_2.png"))
+    expect(lowered).toContain(budgetedImageNotice("icon_1.png", "icon_1.png", undefined, 0))
+    expect(lowered).toContain(budgetedImageNotice("icon_2.png", "icon_2.png", undefined, 0))
+    expect(lowered).toContain("NO images in a request")
+    expect(lowered).toContain("no image pixels were retained")
+    expect(lowered).not.toContain("the most recent ones were kept")
+    expect(lowered).not.toContain("Read it again with")
     // ⚠️ And the bytes are GONE — not re-shipped as structured JSON, the trap `gateToolMedia`
     // records. An empty content array would send `structured`, which for `read` is the same image.
     expect(lowered).not.toContain(IMAGE_BYTES)
@@ -699,10 +703,19 @@ describe("budgetedImageNotice states the cap", () => {
     expect(notice).toContain("at most 4 per turn")
   })
 
+  test("a zero cap says that NO pixels survive and does not recommend a futile re-open", () => {
+    const notice = budgetedImageNotice("icon_001.png", "icon_001.png", undefined, 0)
+    expect(notice).toContain("NO images in a request")
+    expect(notice).toContain("no image pixels were retained")
+    expect(notice).toContain("will not make it visible")
+    expect(notice).not.toContain("the most recent ones were kept")
+    expect(notice).not.toContain("read it again")
+  })
+
   // ⚠️ THE FALLBACK MUST SURVIVE. This notice is also produced where the cap is not known, and
   // inventing a number there would be worse than being vague — the model would plan against a lie.
   test("no cap keeps the original wording rather than guessing one", () => {
-    for (const absent of [undefined, 0, -1]) {
+    for (const absent of [undefined, -1]) {
       const notice = budgetedImageNotice("icon_001.png", undefined, undefined, absent)
       expect(notice).toContain("a limited number of images")
       expect(notice).not.toContain("at a time, so only the")

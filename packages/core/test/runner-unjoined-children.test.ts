@@ -30,11 +30,7 @@ import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixtu
 /** The 1N provenance prefix every harness steer carries. */
 const STEER_PREFIX = "[Automated NovaClaw check"
 
-const runWithChildren = async (
-  children: { exited: boolean }[],
-  label: string,
-  drives?: { children?: boolean },
-) => {
+const runWithChildren = async (children: { exited: boolean }[], label: string, drives?: { children?: boolean }) => {
   const harness = makeRunnerHarness({ turns: [completeTurn("text-1", "All done — every slice is covered.")] })
   if (drives !== undefined) harness.controls.harnessDrives = drives
   let transcript: { type: string; text?: string }[] = []
@@ -110,7 +106,7 @@ describe("the runner asks the fan-out supervisor", () => {
   })
 
   /**
-   * 🔴 THE BOUND, end to end — `todo/delegation.md`: *"A restart that itself fails must not loop."*
+   * 🔴 THE BOUND, end to end: *"A restart that itself fails must not loop."*
    *
    * ⭐ This is the assertion the pure module CANNOT make. `shouldRestart` is a predicate over a round
    * counter; whether that counter actually advances depends on where it LIVES, and the set drive was

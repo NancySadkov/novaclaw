@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import path from "node:path"
-import { SessionWorkerCommand } from "@/session-worker/command"
 import { workerMemoryLimitBytes } from "@/session-worker/execution"
 
 // 🔴 THE GUARD MUST MEASURE AGAINST THE NUMBER THE SUPERVISOR ENFORCES.
@@ -17,6 +16,26 @@ import { workerMemoryLimitBytes } from "@/session-worker/execution"
 // not sharing a number when the arguments differ.
 
 const GIB = 1024 * 1024 * 1024
+
+const code = (file: string) =>
+  readFileSync(file, "utf8")
+    .split("\n")
+    .filter((line) => {
+      const t = line.trimStart()
+      return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*")
+    })
+    .join("\n")
+
+const watcherUsesResolvedWorker = (source: string) =>
+  source.includes("workerMemoryLimitBytes(SessionWorkerCommand.current().workerPath)") &&
+  !source.includes('workerMemoryLimitBytes(".js")') &&
+  !source.includes('workerMemoryLimitBytes(".ts")')
+
+const supervisorUsesResolvedWorker = (source: string) =>
+  source.includes("const command = SessionWorkerCommand.current()") &&
+  source.includes("memoryLimitBytes: workerMemoryLimitBytes(command.workerPath)") &&
+  !source.includes('memoryLimitBytes: workerMemoryLimitBytes(".js")') &&
+  !source.includes('memoryLimitBytes: workerMemoryLimitBytes(".ts")')
 
 describe("the two tiers are genuinely different, so the argument matters", () => {
   test("a .ts worker is allowed strictly more than a packaged one", () => {
@@ -36,15 +55,6 @@ describe("the two tiers are genuinely different, so the argument matters", () =>
 })
 
 describe("the watcher and the supervisor agree", () => {
-  // 🔴 THE PROPERTY, stated against the resolver both sides use rather than against a literal.
-  test("the watcher's ceiling equals the supervisor's for the CURRENT worker", () => {
-    const resolved = SessionWorkerCommand.current().workerPath
-    expect(workerMemoryLimitBytes(resolved)).toBe(workerMemoryLimitBytes(SessionWorkerCommand.current().workerPath))
-    // And under test that resolver really does yield the source-mode worker, so this run exercises
-    // the tier the old code got wrong rather than agreeing by accident on the packaged one.
-    expect(resolved.endsWith(".ts")).toBe(true)
-  })
-
   /**
    * ⚠️ A SOURCE TEST, because the alternative is booting a fleet and reading a log line.
    *
@@ -53,17 +63,27 @@ describe("the watcher and the supervisor agree", () => {
    * call site, and only the call site can witness it. It asserts its anchor was found before
    * concluding anything, so a pattern that matches nothing cannot read as a pattern that matched.
    */
-  test("worker-watch derives its ceiling from the resolved path, never a literal extension", () => {
-    const source = readFileSync(path.join(import.meta.dir, "worker-watch.ts"), "utf8")
-      .split("\n")
-      .filter((line) => {
-        const t = line.trimStart()
-        return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*")
-      })
-      .join("\n")
-    expect(source, "the call moved — re-point this test, do not delete it").toContain("perWorkerBytes:")
-    expect(source).toContain("workerMemoryLimitBytes(SessionWorkerCommand.current().workerPath)")
-    expect(source).not.toContain('workerMemoryLimitBytes(".js")')
-    expect(source).not.toContain('workerMemoryLimitBytes(".ts")')
+  test("both production call sites derive their ceiling from the resolved worker path", () => {
+    const watcher = code(path.join(import.meta.dir, "worker-watch.ts"))
+    const supervisor = code(path.join(import.meta.dir, "..", "session-worker", "execution.ts"))
+    expect(watcher, "the watcher call moved — re-point this test, do not delete it").toContain("perWorkerBytes:")
+    expect(supervisor, "the supervisor call moved — re-point this test, do not delete it").toContain(
+      "memoryLimitBytes:",
+    )
+    expect(watcherUsesResolvedWorker(watcher)).toBe(true)
+    expect(supervisorUsesResolvedWorker(supervisor)).toBe(true)
+  })
+
+  test("the guard rejects the old hardcoded argument on either side", () => {
+    const watcher = code(path.join(import.meta.dir, "worker-watch.ts")).replace(
+      "workerMemoryLimitBytes(SessionWorkerCommand.current().workerPath)",
+      'workerMemoryLimitBytes(".js")',
+    )
+    const supervisor = code(path.join(import.meta.dir, "..", "session-worker", "execution.ts")).replace(
+      "memoryLimitBytes: workerMemoryLimitBytes(command.workerPath)",
+      'memoryLimitBytes: workerMemoryLimitBytes(".js")',
+    )
+    expect(watcherUsesResolvedWorker(watcher)).toBe(false)
+    expect(supervisorUsesResolvedWorker(supervisor)).toBe(false)
   })
 })

@@ -9,8 +9,8 @@ import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixtu
 /**
  * ── THE REGROUND DRIVE, AT ITS CALL SITE ─────────────────────────────────────────────────────────
  *
- * 🔴 **This switch is the blocker on the programme's headline question.** `todo/batch-file-planning.md`
- * records that every number the batch-file work has produced was taken with `session.finish.reground`
+ * 🔴 **This switch is the blocker on the programme's headline question.** Every earlier batch-file
+ * measurement was taken with `session.finish.reground`
  * live — it fires in every session and no prompt gates it — so *"can the model do this alone?"* has
  * never been asked. `harness_drives.reground` exists to ask it, and until something exercises the
  * runner's branch, a switch that silently failed would produce a "baseline" that is nothing of the
@@ -48,7 +48,8 @@ const toolTurn = (calls: number): LLMEvent[] => [
  * (`containsUnverified`), so a turn that admitted doubt would make the OFF case pass for the wrong
  * reason — silent because the TEXT disqualified it, not because the switch worked.
  */
-const confidentFinish = (id: string): LLMEvent[] => completeTurn(id, "All done — every file in the set has been described.")
+const confidentFinish = (id: string): LLMEvent[] =>
+  completeTurn(id, "All done — every file in the set has been described.")
 
 const runWithDrive = async (label: string, drives?: { reground?: boolean }) => {
   const harness = makeRunnerHarness({

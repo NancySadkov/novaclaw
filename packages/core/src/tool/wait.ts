@@ -64,7 +64,7 @@ export const Input = Schema.Struct({
   sessionID: Schema.String.annotate({ description: "The child session id to wait for (returned by a prior spawn)." }),
 })
 
-const StructuredOutput = Schema.Struct({ completed: Schema.Boolean })
+const StructuredOutput = Schema.Struct({ completed: Schema.Boolean, terminal: Schema.Boolean })
 const Output = Schema.Struct({ ...StructuredOutput.fields, message: Schema.String })
 type Output = typeof Output.Type
 
@@ -81,11 +81,11 @@ export const layer = Layer.effectDiscard(
         [name]: Tool.make({
           description:
             "Block until a child session (spawned earlier) completes via exit(), then return its result. " +
-            "Times out after ~2 minutes if the child has not completed.",
+            "Times out after ~10 minutes if the child has not completed.",
           input: Input,
           output: Output,
           structured: StructuredOutput,
-          toStructuredOutput: ({ output }) => ({ completed: output.completed }),
+          toStructuredOutput: ({ output }) => ({ completed: output.completed, terminal: output.terminal }),
           toModelOutput: ({ output }) => [{ type: "text", text: output.message }],
           execute: (input, context) =>
             Effect.gen(function* () {
@@ -120,7 +120,7 @@ export const layer = Layer.effectDiscard(
                 ? undefined
                 : yield* attempts.get(childID).pipe(Effect.orElseSucceed(() => undefined))
               const dead = joined.completed ? undefined : deadChildMessage(childID, attempt?.state)
-              if (dead) return { completed: false, message: dead }
+              if (dead) return { completed: false, terminal: true, message: dead }
               if (!joined.completed)
                 // ⚠️ Says what it MEANS, because the model reasons from this sentence. Measured
                 // 2026-08-20: given a bare "Timed out waiting for session …", the model concluded
@@ -129,12 +129,17 @@ export const layer = Layer.effectDiscard(
                 // YET", and the recovery is one more call.
                 return {
                   completed: false,
+                  terminal: false,
                   message:
                     `Session ${childID} has not finished yet (waited ${Math.round(WAIT_TIMEOUT_MS / 60_000)} minutes). ` +
                     `It may still be working — this is not an error and does not mean it failed. ` +
                     `Call wait on ${childID} again to keep waiting, or carry on and join it later.`,
                 }
-              return { completed: true, message: `Session ${childID} completed. Result: ${joined.result ?? ""}` }
+              return {
+                completed: true,
+                terminal: true,
+                message: `Session ${childID} completed. Result: ${joined.result ?? ""}`,
+              }
             }).pipe(
               Effect.mapError((error) =>
                 error instanceof ToolFailure ? error : new ToolFailure({ message: "Unable to wait for session." }),

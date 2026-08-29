@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtempSync, readFileSync, rmSync, existsSync, writeFileSync, mkdirSync } from "node:fs"
+import { mkdtempSync, readFileSync, rmSync, existsSync, writeFileSync, mkdirSync, symlinkSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { ExitIntent } from "./exit-intent"
@@ -25,8 +25,37 @@ describe("stateDir", () => {
     expect(ExitIntent.stateDir({ NOVACLAW_WATCHDOG_STATE: "" })).toBeUndefined()
   })
 
-  test("a set value is the state directory", () => {
-    expect(ExitIntent.stateDir({ NOVACLAW_WATCHDOG_STATE: "/x/y" })).toBe("/x/y")
+  test("a set value inside an explicit trusted root is the state directory", () => {
+    const root = tmp()
+    const dir = path.join(root, "watchdog")
+    expect(ExitIntent.stateDir(WATCHED(dir), [root])).toBe(dir)
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  test("a relative or sibling path cannot acquire write authority from the environment", () => {
+    const parent = tmp()
+    const root = path.join(parent, "allowed")
+    mkdirSync(root)
+    expect(ExitIntent.stateDir(WATCHED("relative/watchdog"), [root])).toBeUndefined()
+    expect(ExitIntent.stateDir(WATCHED(path.join(parent, "sibling")), [root])).toBeUndefined()
+    rmSync(parent, { recursive: true, force: true })
+  })
+
+  test("the default policy rejects a filesystem root", () => {
+    const root = path.parse(os.tmpdir()).root
+    expect(ExitIntent.stateDir(WATCHED(root))).toBeUndefined()
+  })
+
+  test("canonical containment rejects a directory symlink that escapes its trusted root", () => {
+    const parent = tmp()
+    const root = path.join(parent, "allowed")
+    const outside = path.join(parent, "outside")
+    mkdirSync(root)
+    mkdirSync(outside)
+    const link = path.join(root, "escape")
+    symlinkSync(outside, link, process.platform === "win32" ? "junction" : "dir")
+    expect(ExitIntent.stateDir(WATCHED(path.join(link, "watchdog")), [root])).toBeUndefined()
+    rmSync(parent, { recursive: true, force: true })
   })
 })
 
@@ -50,6 +79,16 @@ describe("settle", () => {
     expect(ExitIntent.settle({ kind: "shutdown" }, 0, WATCHED(dir))).toBe(ExitIntent.EXIT_CODE)
     expect(JSON.parse(readFileSync(path.join(dir, "exit-intent.json"), "utf8"))).toEqual({ kind: "shutdown" })
     rmSync(dir, { recursive: true, force: true })
+  })
+
+  test("an untrusted environment path falls back without creating protocol files", () => {
+    const parent = tmp()
+    const root = path.join(parent, "allowed")
+    const outside = path.join(parent, "outside")
+    mkdirSync(root)
+    expect(ExitIntent.settle({ kind: "shutdown" }, 4, WATCHED(outside), [root])).toBe(4)
+    expect(existsSync(outside)).toBe(false)
+    rmSync(parent, { recursive: true, force: true })
   })
 
   test("supervised: a dormant intent carries its absolute wake time", () => {

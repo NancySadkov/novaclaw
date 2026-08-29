@@ -62,6 +62,8 @@ export interface FailedCallRef extends ToolCallRef {
   // unknown-tool results MUST be classified as failures by the caller "or the nudge never fires on
   // exactly the loops it was built for" (codehamr).
   readonly failed: boolean
+  /** Persisted structured output for harness checks that must distinguish invocation from outcome. */
+  readonly structured?: Readonly<Record<string, unknown>>
 }
 
 export interface FailureStreak {
@@ -301,6 +303,7 @@ export const toolCallsSinceLastUser = (context: readonly SessionMessage.Message[
         name: part.name,
         input: typeof part.state.input === "string" ? part.state.input : JSON.stringify(part.state.input),
         failed: part.state.status === "error",
+        structured: "structured" in part.state ? part.state.structured : undefined,
       })
     }
   }

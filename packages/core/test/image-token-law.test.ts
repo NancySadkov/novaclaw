@@ -89,11 +89,14 @@ describe("the header readers", () => {
 
   test("PNG dimensions come from the IHDR at fixed offsets", () => {
     // 8-byte signature, 4-byte length, "IHDR", then width and height as big-endian u32.
-    const png = pad([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52,
-      0, 0, 0x04, 0x00, 0, 0, 0x03, 0x00], 64)
-    expect(Token.estimateStructured([media("image/png", b64(png))])).toBeLessThan(
-      Token.imageTokens(1024, 768) + 60,
+    const png = pad(
+      [
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0x04, 0x00, 0, 0,
+        0x03, 0x00,
+      ],
+      64,
     )
+    expect(Token.estimateStructured([media("image/png", b64(png))])).toBeLessThan(Token.imageTokens(1024, 768) + 60)
   })
 
   test("GIF dimensions are LITTLE-endian, which is the easy one to get backwards", () => {
@@ -103,6 +106,67 @@ describe("the header readers", () => {
     expect(got).toBeLessThan(Token.imageTokens(1024, 768) + 60)
     // A big-endian misread would give 4x3 patches, i.e. the floor. Assert we did NOT land there.
     expect(got).toBeGreaterThan(Token.imageTokens(256, 256) + 60)
+  })
+
+  test("JPEG reaches SOF beyond ordinary EXIF-sized prefixes", () => {
+    const metadata = Array(4_096).fill(0)
+    // APP1 length includes its two length bytes. SOF0 describes a real 4000x3000, 3-component frame.
+    const jpeg = [
+      0xff,
+      0xd8,
+      0xff,
+      0xe1,
+      0x10,
+      0x02,
+      ...metadata,
+      0xff,
+      0xc0,
+      0,
+      17,
+      8,
+      0x0b,
+      0xb8,
+      0x0f,
+      0xa0,
+      3,
+      1,
+      0x11,
+      0,
+      2,
+      0x11,
+      0,
+      3,
+      0x11,
+      0,
+    ]
+    const got = Token.estimateStructured([media("image/jpeg", b64(jpeg))])
+    expect(got).toBeGreaterThanOrEqual(Token.imageTokens(4_000, 3_000))
+    expect(got).toBeLessThan(Token.imageTokens(4_000, 3_000) + 60)
+  })
+
+  test("partial signatures cannot manufacture dimensions", () => {
+    const fakePng = pad([0x89, 0x50, 0x4e, 0x47], 24)
+    fakePng.splice(16, 8, 0, 0, 0x04, 0, 0, 0, 0x03, 0)
+    const fakeGif = pad([0x47, 0x49, 0x46, 0, 0, 0, 0, 4, 0, 3], 32)
+    const fakeWebp = pad([0, 0, 0, 0, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50], 32)
+    const fakeVp8 = pad(
+      [0x52, 0x49, 0x46, 0x46, 22, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x20, 10, 0, 0, 0],
+      32,
+    )
+    for (const bytes of [fakePng, fakeGif, fakeWebp, fakeVp8])
+      expect(Token.imageDimensionsFromHeader(Uint8Array.from(bytes))).toBeUndefined()
+  })
+
+  test("otherwise-valid headers reject absurd dimensions", () => {
+    const png = pad(
+      [
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0xff, 0xff, 0xff, 0xff, 0,
+        0, 0, 1,
+      ],
+      64,
+    )
+    expect(Token.imageDimensionsFromHeader(Uint8Array.from(png))).toBeUndefined()
+    expect(Token.estimateStructured([media("image/png", b64(png))])).toBeGreaterThanOrEqual(Token.MEDIA_PART_TOKENS)
   })
 })
 
@@ -123,8 +187,6 @@ describe("what it does when it CANNOT read the header", () => {
   // way nobody has measured - and inventing a second unmeasured law would be worse than keeping it.
   test("a non-image media part keeps the constant", () => {
     const pdf = Buffer.from("%PDF-1.7 ...").toString("base64")
-    expect(Token.estimateStructured([media("application/pdf", pdf)])).toBeGreaterThanOrEqual(
-      Token.MEDIA_PART_TOKENS,
-    )
+    expect(Token.estimateStructured([media("application/pdf", pdf)])).toBeGreaterThanOrEqual(Token.MEDIA_PART_TOKENS)
   })
 })

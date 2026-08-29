@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
+import path from "node:path"
 import { DateTime } from "effect"
 import { Token } from "@novaclaw/core/util/token"
 import { SessionMessage } from "@novaclaw/core/session/message"
@@ -25,8 +27,9 @@ import { outputTokens } from "@novaclaw/core/session/compaction-prune"
  */
 
 const created = DateTime.makeUnsafe(0)
-/** The base64 length of a real 35 KB corpus icon. */
-const BIG = "A".repeat(47_000)
+/** A real 256x256 PNG: every consumer must reach its 66-token dimensions, not the fallback. */
+const GLYPH = path.join(import.meta.dir, "..", "..", "app", "public", "assets", "skin", "glyphs", "calendar.png")
+const BIG = readFileSync(GLYPH).toString("base64")
 
 const imageToolPart = () =>
   SessionMessage.AssistantTool.make({
@@ -62,21 +65,23 @@ const NAIVE = Math.round(BIG.length / 4)
 describe("every site that prices content prices an image the same way", () => {
   test("the shared estimator itself", () => {
     const part = { type: "file", uri: `data:image/png;base64,${BIG}`, mime: "image/png" }
-    expect(Token.estimateStructured(part)).toBeLessThan(Token.MEDIA_PART_TOKENS + 500)
-    expect(NAIVE).toBeGreaterThan(11_000) // the number it replaces, kept visible
+    expect(Token.estimateStructured(part)).toBeGreaterThanOrEqual(66)
+    expect(Token.estimateStructured(part)).toBeLessThan(200)
+    expect(NAIVE).toBeGreaterThan(5_000) // the base64 estimate it replaces, kept visible
   })
 
   // 🔴 WHAT FITS THE WINDOW. Over-pricing here drops history the model had room for.
   test("context-pack's estimateMessage, on a real assistant message", () => {
     const tokens = estimateMessage(assistantWithImage() as never)
-    expect(tokens, "an image must not cost eleven thousand tokens of window").toBeLessThan(3_000)
-    expect(tokens, "but it is not free").toBeGreaterThan(1_000)
+    expect(tokens, "a real icon must reach its measured 66-token dimensions").toBeGreaterThanOrEqual(66)
+    expect(tokens, "an image must not cost thousands of tokens of window").toBeLessThan(500)
   })
 
   // 🔴 WHICH OUTPUTS GET ERASED. This one destroys content when it is wrong.
   test("compaction-prune's outputTokens, on a real completed tool state", () => {
     const tokens = outputTokens(imageToolPart() as never)
-    expect(tokens, "erasing this image reclaims ~66 provider tokens, not 11,772").toBeLessThan(3_000)
+    expect(tokens, "a real icon must reach its measured 66-token dimensions").toBeGreaterThanOrEqual(66)
+    expect(tokens, "erasing this image reclaims ~66 provider tokens, not its base64 length").toBeLessThan(500)
   })
 
   // ⚠️ Text must be untouched at every site — chars/4 is close for prose and the fix must not move it.
@@ -107,9 +112,20 @@ describe("every site that prices content prices an image the same way", () => {
  * Found by reading the diff, not by a failing test: nothing here constructs a circular message.
  */
 describe("an unstringifiable value is expensive, not free", () => {
-  test("a circular structure falls back to a non-zero estimate", () => {
+  test("a circular structure retains the text it actually contains", () => {
     const circular: Record<string, unknown> = { type: "text", text: "x".repeat(400) }
     circular["self"] = circular
-    expect(Token.estimateStructured(circular)).toBeGreaterThan(0)
+    expect(Token.estimateStructured(circular)).toBeGreaterThan(100)
+    expect(Token.estimateStructured(circular)).toBeLessThan(200)
+  })
+
+  test("a hostile getter saturates at a finite safe estimate", () => {
+    const hostile = Object.defineProperty({}, "value", {
+      enumerable: true,
+      get: () => {
+        throw new Error("no inspection")
+      },
+    })
+    expect(Token.estimateStructured(hostile)).toBe(Number.MAX_SAFE_INTEGER)
   })
 })

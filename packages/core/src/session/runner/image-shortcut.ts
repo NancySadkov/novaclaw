@@ -3,8 +3,8 @@ export * as ImageShortcut from "./image-shortcut"
 /**
  * A shell command aimed at an IMAGE — the shortcut a model reaches for instead of looking.
  *
- * 🔴 **The failure this exists for** (`todo/batch-file-planning.md`, the measurement that defines the
- * programme). Asked for 400 image descriptions, one run *"covered 223 at 2.9x and stopped clean,
+ * 🔴 **The measured failure this exists for.** Asked for 400 image descriptions, one run
+ * *"covered 223 at 2.9x and stopped clean,
  * having spent its budget hunting for a way to produce 400 descriptions WITHOUT opening them — PNG
  * bytes through `xxd`, a generator script, a search for pre-made `.txt` files. No errors, no stalls,
  * 109 correct steers: the mechanism worked, the plan did not."*
@@ -37,12 +37,27 @@ export * as ImageShortcut from "./image-shortcut"
  * entirely (`tests/batch-file-planning.ts`).
  *
  * ⚠️ `cat`, `head` and `tail` are the ambiguous ones and they stay IN: on a PNG they are exactly the
- * shortcut, and the false-positive risk they carry is handled by the write-detection below rather
- * than by dropping them — a model that pipes a description INTO a file is doing the right thing and
- * must not be interrupted for it.
+ * shortcut. The classifier therefore ties the image to that command's own input arguments and
+ * excludes its output-redirection target; a description pipeline that only mentions an image in a
+ * later command is left alone.
  */
-const BYTE_READERS =
-  /\b(?:xxd|od|hexdump|base64|cat|head|tail|file|identify|exiftool|strings|magick|convert|stat|wc)\b/i
+const BYTE_READERS = new Set([
+  "xxd",
+  "od",
+  "hexdump",
+  "base64",
+  "cat",
+  "head",
+  "tail",
+  "file",
+  "identify",
+  "exiftool",
+  "strings",
+  "magick",
+  "convert",
+  "stat",
+  "wc",
+])
 
 /**
  * The extensions the harness treats as "a picture you have to look at".
@@ -52,35 +67,102 @@ const BYTE_READERS =
  * basename-only match hands back `icon_001.png` for a file referred to as
  * `tmp/batch-corpus-40/icon_001.png`, and the replacement call then fails to resolve.
  */
-const IMAGE_FILE = /[\w.:\/\-]+\.(?:png|jpe?g|webp|gif|bmp|tiff?)\b/i
+const IMAGE_FILE = /\.(?:png|jpe?g|webp|gif|bmp|tiff?)(?:$|[?#])/i
+const SEGMENT_BOUNDARY = new Set(["|", "||", ";", "&&", "&"])
+const OUTPUT_REDIRECT = new Set([">", ">>"])
 
-/**
- * Writing INTO a path is not reading it.
- *
- * ⚠️ A model that has looked at the images and is now saving its answers — `printf ... > out.md`,
- * `echo ... >> descriptions.md` — is doing precisely what the ledger's *"give the batch a cheaper unit
- * of progress"* lever wants it to do. Refusing that would punish the behaviour the programme is trying
- * to encourage, so a redirect into a file makes the command a WRITE and this check declines.
- */
-const WRITES_OUT = /(^|\s)(?:>|>>|\|\s*tee\b)/
+/** Minimal shell tokenisation for locating a reader's own arguments, not merely words elsewhere in
+ * a pipeline. Quotes preserve paths with spaces; control and redirect operators remain tokens. */
+const shellTokens = (command: string): string[] => {
+  const tokens: string[] = []
+  let word = ""
+  let quote: "'" | '"' | undefined
+  const flush = () => {
+    if (word === "") return
+    tokens.push(word)
+    word = ""
+  }
+  for (let index = 0; index < command.length; index++) {
+    const char = command[index]!
+    if (quote !== undefined) {
+      if (char === quote) quote = undefined
+      else if (char === "\\" && quote === '"' && index + 1 < command.length) word += command[++index]!
+      else word += char
+      continue
+    }
+    if (char === "'" || char === '"') {
+      quote = char
+      continue
+    }
+    if (char === "\\" && index + 1 < command.length) {
+      word += command[++index]!
+      continue
+    }
+    if (/\s/.test(char)) {
+      flush()
+      continue
+    }
+    if ("|;&<>".includes(char)) {
+      flush()
+      const next = command[index + 1]
+      if (next === char && (char === "|" || char === "&" || char === ">" || char === "<")) {
+        tokens.push(char + next)
+        index++
+      } else tokens.push(char)
+      continue
+    }
+    word += char
+  }
+  flush()
+  return tokens
+}
+
+const executableName = (token: string): string => token.replaceAll("\\", "/").split("/").at(-1)?.toLowerCase() ?? ""
+const assignment = (token: string): boolean => /^[A-Za-z_][A-Za-z0-9_]*=/.test(token)
+
+const readerTarget = (segment: readonly string[]): string | undefined => {
+  let executable = 0
+  while (executable < segment.length && assignment(segment[executable]!)) executable++
+  if (segment[executable] === "command" || segment[executable] === "sudo" || segment[executable] === "env") {
+    executable++
+    while (executable < segment.length && (segment[executable]!.startsWith("-") || assignment(segment[executable]!)))
+      executable++
+  }
+  if (!BYTE_READERS.has(executableName(segment[executable] ?? ""))) return undefined
+
+  for (let index = executable + 1; index < segment.length; index++) {
+    const token = segment[index]!
+    if (OUTPUT_REDIRECT.has(token)) {
+      index++
+      continue
+    }
+    if (IMAGE_FILE.test(token)) return token
+  }
+  return undefined
+}
+
+const target = (command: string): string | undefined => {
+  let segment: string[] = []
+  for (const token of shellTokens(command)) {
+    if (SEGMENT_BOUNDARY.has(token)) {
+      const found = readerTarget(segment)
+      if (found !== undefined) return found
+      segment = []
+    } else segment.push(token)
+  }
+  return readerTarget(segment)
+}
 
 /**
  * Is this bash command trying to read an image's bytes instead of looking at the image?
  *
- * Three clauses, each of which must hold:
- *  · the command names a file with an image extension;
- *  · it invokes something that reads bytes;
- *  · it is not redirecting output into a file (see `WRITES_OUT`).
+ * The image must be an argument of the byte-reading command itself. This keeps description-writing
+ * pipelines out while still catching readers whose byte dump is redirected elsewhere.
  */
-export const isImageShortcut = (command: string): boolean => {
-  if (!IMAGE_FILE.test(command)) return false
-  if (!BYTE_READERS.test(command)) return false
-  if (WRITES_OUT.test(command)) return false
-  return true
-}
+export const isImageShortcut = (command: string): boolean => target(command) !== undefined
 
 /** The image path the command was aimed at, for naming it in the refusal. */
-export const targetOf = (command: string): string | undefined => IMAGE_FILE.exec(command)?.[0]
+export const targetOf = target
 
 /**
  * What the model gets back INSTEAD of the bytes.

@@ -42925,6 +42925,27 @@
             },
             "additionalProperties": false
           },
+          "harness_drives": {
+            "type": "object",
+            "properties": {
+              "reground": {
+                "type": "boolean"
+              },
+              "set": {
+                "type": "boolean"
+              },
+              "children": {
+                "type": "boolean"
+              },
+              "imageShortcut": {
+                "type": "boolean"
+              },
+              "resumeInterrupted": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          },
           "adhoc_tools": {
             "type": "array",
             "items": {

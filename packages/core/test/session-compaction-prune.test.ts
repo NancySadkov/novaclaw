@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
+import path from "node:path"
 import { CompactionPrune } from "@novaclaw/core/session/compaction-prune"
 import { SessionCompaction } from "@novaclaw/core/session/compaction"
 import { applySteerProvenance } from "@novaclaw/core/session/steer-provenance"
@@ -440,12 +442,12 @@ describe("the cheap tier runs inside compactAfterOverflow, ahead of the summariz
  * ── WHAT THE PRUNER DOES TO PICTURES ─────────────────────────────────────────────────────────────
  *
  * 🔴 The pruner ERASES tool outputs to reclaim context and ranks candidates by `outputTokens`. Until
- * 2026-08-29 that weighed a base64 image by its CHARACTER LENGTH: one 35 KB corpus icon scored
- * **11,772 tokens**, where the provider charges a measured **66**.
+ * 2026-08-29 that weighed a base64 image by its CHARACTER LENGTH: one real corpus icon scored
+ * thousands of tokens, where the provider charges a measured **66**.
  *
- * So six images crossed `PROTECT_TOOL_OUTPUT_TOKENS` (40,000) and two more cleared
+ * So six images crossed `PROTECT_TOOL_OUTPUT_TOKENS` (40,000) and three more cleared
  * `MIN_RECLAIM_TOKENS` (20,000) — the pruner committed, erased the pictures, and reported reclaiming
- * ~23,000 tokens while freeing about 130. **It destroyed the one content the model cannot rebuild
+ * ~22,000 tokens while freeing about 200. **It destroyed the one content the model cannot rebuild
  * from text, for nothing.**
  *
  * ⚠️ This asserts `plan()`, not `outputTokens`. The estimate is pinned in
@@ -453,7 +455,9 @@ describe("the cheap tier runs inside compactAfterOverflow, ahead of the summariz
  * unit test of the number would not have shown the erasure.
  */
 describe("images are not mistaken for reclaimable bulk", () => {
-  const IMAGE_B64 = "A".repeat(47_000) // a real corpus icon's base64 length
+  const IMAGE_B64 = readFileSync(
+    path.join(import.meta.dir, "..", "..", "app", "public", "assets", "skin", "glyphs", "calendar.png"),
+  ).toString("base64")
 
   const imageTool = (): SessionMessage.AssistantTool =>
     ({
@@ -483,7 +487,7 @@ describe("images are not mistaken for reclaimable bulk", () => {
     assistant("still working"),
   ]
 
-  test("🔴 ten images do NOT trigger a prune — they are ~660 provider tokens, not 117,000", () => {
+  test("🔴 ten real images do NOT trigger a prune — they are ~660 provider tokens, not over 70,000", () => {
     const plan = CompactionPrune.plan(tenImages())
     expect(plan.commit, "the old estimate committed here and erased the pictures").toBe(false)
     expect(plan.targets, "nothing may be selected for erasure").toEqual([])

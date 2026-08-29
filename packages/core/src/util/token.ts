@@ -110,27 +110,45 @@ const IMAGE_DELIMITER_TOKENS = 2
 
 export const imageTokens = (width: number, height: number): number =>
   IMAGE_DELIMITER_TOKENS +
-  Math.max(
-    IMAGE_MIN_PATCHES,
-    Math.floor(width / IMAGE_PATCH_PX) * Math.floor(height / IMAGE_PATCH_PX),
-  )
+  Math.max(IMAGE_MIN_PATCHES, Math.floor(width / IMAGE_PATCH_PX) * Math.floor(height / IMAGE_PATCH_PX))
+
+/** A dimension large enough for ordinary source images while rejecting header-spoofed u32 values. */
+const MAX_IMAGE_DIMENSION = 100_000
+/** One gigapixel is already far beyond an ordinary model input, but remains finite and representable. */
+const MAX_IMAGE_PIXELS = 1_000_000_000
+const ORDINARY_HEADER_BYTES = 64
+/**
+ * JPEG permits 65,535-byte APP segments and commonly puts EXIF plus a split ICC profile before SOF.
+ * Four maximum-sized metadata segments fit in this bound; crossing it takes the explicit unknown
+ * header fallback instead of decoding an entire photograph on the request path.
+ */
+const JPEG_HEADER_BYTES = 256 * 1_024
+
+const starts = (bytes: Uint8Array, signature: readonly number[], at = 0): boolean =>
+  signature.every((byte, index) => bytes[at + index] === byte)
+
+const saneDimensions = (
+  width: number,
+  height: number,
+): { readonly width: number; readonly height: number } | undefined =>
+  Number.isSafeInteger(width) &&
+  Number.isSafeInteger(height) &&
+  width > 0 &&
+  height > 0 &&
+  width <= MAX_IMAGE_DIMENSION &&
+  height <= MAX_IMAGE_DIMENSION &&
+  width * height <= MAX_IMAGE_PIXELS
+    ? { width, height }
+    : undefined
 
 /**
- * Decode just enough of a base64 payload to read an image header.
- *
- * ⚠️ **`atob`, not `Buffer`, ON PURPOSE.** This module is a zero-import leaf that the UI bundles too,
- * and `Buffer` is a Node global that does not exist in a browser. `atob` exists in both.
- * ⚠️ Only a PREFIX is decoded. Every format below carries its dimensions in the first few hundred
- * bytes, and decoding a whole 700 KB screenshot to read four integers is the cost this fix exists to
- * remove.
+ * Decode a bounded base64 prefix without importing Node's `Buffer` into this browser-bundled leaf.
  */
-const HEADER_B64_CHARS = 2_048
-const headerBytes = (data: string): Uint8Array | undefined => {
-  const comma = data.indexOf(",")
-  const b64 = data.slice(0, 5) === "data:" && comma >= 0 ? data.slice(comma + 1) : data
-  // atob rejects a length that is not a multiple of 4, so the prefix is cut on a group boundary.
-  const cut = Math.min(b64.length, HEADER_B64_CHARS) & ~3
-  if (cut < 16) return undefined
+const decodeBase64Prefix = (b64: string, bytes: number): Uint8Array | undefined => {
+  const chars = Math.ceil(bytes / 3) * 4
+  // atob rejects a length that is not a multiple of 4, so a partial prefix stops on a group boundary.
+  const cut = Math.min(b64.length, chars) & ~3
+  if (cut < 4) return undefined
   try {
     const binary = atob(b64.slice(0, cut))
     const out = new Uint8Array(binary.length)
@@ -141,38 +159,55 @@ const headerBytes = (data: string): Uint8Array | undefined => {
   }
 }
 
+const base64Payload = (data: string): string | undefined => {
+  if (!data.startsWith("data:")) return data
+  const comma = data.indexOf(",")
+  if (comma < 0 || !data.slice(5, comma).toLowerCase().split(";").includes("base64")) return undefined
+  return data.slice(comma + 1)
+}
+
 /**
  * Image dimensions from a header, or `undefined` when they cannot be read.
  *
  * 🔴 `undefined` is NOT "no image" and must never be read as zero — the caller falls back to
  * `MEDIA_PART_TOKENS`. A format this does not know is priced by the old constant, not by nothing.
  */
-const dimensionsOf = (b: Uint8Array): { width: number; height: number } | undefined => {
+export const imageDimensionsFromHeader = (
+  b: Uint8Array,
+): { readonly width: number; readonly height: number } | undefined => {
   const u16 = (i: number) => (b[i]! << 8) | b[i + 1]!
   const u32 = (i: number) => ((b[i]! << 24) | (b[i + 1]! << 16) | (b[i + 2]! << 8) | b[i + 3]!) >>> 0
+  const u32le = (i: number) => (b[i]! | (b[i + 1]! << 8) | (b[i + 2]! << 16) | (b[i + 3]! << 24)) >>> 0
 
   // PNG: 8-byte signature, then an IHDR chunk whose width/height are at fixed offsets 16 and 20.
-  if (b.length >= 24 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47)
-    return { width: u32(16), height: u32(20) }
+  if (starts(b, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) {
+    if (b.length < 24 || u32(8) !== 13 || !starts(b, [0x49, 0x48, 0x44, 0x52], 12)) return undefined
+    return saneDimensions(u32(16), u32(20))
+  }
 
-  // GIF: "GIF8", then width/height as LITTLE-endian u16 at offsets 6 and 8.
-  if (b.length >= 10 && b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46)
-    return { width: b[6]! | (b[7]! << 8), height: b[8]! | (b[9]! << 8) }
+  // GIF: exact version signature, then width/height as LITTLE-endian u16 at offsets 6 and 8.
+  if (starts(b, [0x47, 0x49, 0x46, 0x38, 0x37, 0x61]) || starts(b, [0x47, 0x49, 0x46, 0x38, 0x39, 0x61])) {
+    if (b.length < 10) return undefined
+    return saneDimensions(b[6]! | (b[7]! << 8), b[8]! | (b[9]! << 8))
+  }
 
   // WebP: "RIFF"...."WEBP", then one of three chunk layouts.
-  if (b.length >= 30 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) {
+  if (starts(b, [0x52, 0x49, 0x46, 0x46]) && starts(b, [0x57, 0x45, 0x42, 0x50], 8)) {
+    if (b.length < 20 || u32le(4) < 12) return undefined
     const kind = String.fromCharCode(b[12]!, b[13]!, b[14]!, b[15]!)
-    if (kind === "VP8 " && b.length >= 30)
-      return { width: (b[26]! | (b[27]! << 8)) & 0x3fff, height: (b[28]! | (b[29]! << 8)) & 0x3fff }
-    if (kind === "VP8L" && b.length >= 25) {
+    const chunkBytes = u32le(16)
+    if (chunkBytes > u32le(4) - 12) return undefined
+    if (kind === "VP8 " && chunkBytes >= 10 && b.length >= 30 && starts(b, [0x9d, 0x01, 0x2a], 23))
+      return saneDimensions((b[26]! | (b[27]! << 8)) & 0x3fff, (b[28]! | (b[29]! << 8)) & 0x3fff)
+    if (kind === "VP8L" && chunkBytes >= 5 && b.length >= 25 && b[20] === 0x2f) {
       const bits = b[21]! | (b[22]! << 8) | (b[23]! << 16) | (b[24]! << 24)
-      return { width: (bits & 0x3fff) + 1, height: ((bits >> 14) & 0x3fff) + 1 }
+      return saneDimensions((bits & 0x3fff) + 1, ((bits >> 14) & 0x3fff) + 1)
     }
-    if (kind === "VP8X" && b.length >= 30)
-      return {
-        width: (b[24]! | (b[25]! << 8) | (b[26]! << 16)) + 1,
-        height: (b[27]! | (b[28]! << 8) | (b[29]! << 16)) + 1,
-      }
+    if (kind === "VP8X" && chunkBytes === 10 && b.length >= 30)
+      return saneDimensions(
+        (b[24]! | (b[25]! << 8) | (b[26]! << 16)) + 1,
+        (b[27]! | (b[28]! << 8) | (b[29]! << 16)) + 1,
+      )
     return undefined
   }
 
@@ -180,26 +215,42 @@ const dimensionsOf = (b: Uint8Array): { width: number; height: number } | undefi
   // arbitrary run of APPn/COM segments precedes the frame, so the chain must actually be walked.
   if (b.length >= 4 && b[0] === 0xff && b[1] === 0xd8) {
     let i = 2
-    while (i + 9 < b.length) {
-      if (b[i] !== 0xff) {
-        i++
-        continue
-      }
-      const marker = b[i + 1]!
+    while (i < b.length) {
+      if (b[i] !== 0xff) return undefined
+      while (i < b.length && b[i] === 0xff) i++
+      if (i >= b.length) return undefined
+      const marker = b[i++]!
+      if (marker === 0x00 || marker === 0xd9 || marker === 0xda) return undefined
       // SOF0..SOF15, excluding DHT (c4), JPGA (c8) and DAC (cc), which are not frame headers.
-      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc)
-        return { width: u16(i + 7), height: u16(i + 5) }
       if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
-        i += 2
         continue
       }
-      const len = u16(i + 2)
-      if (len < 2) return undefined
-      i += 2 + len
+      if (i + 1 >= b.length) return undefined
+      const len = u16(i)
+      if (len < 2 || i + len > b.length) return undefined
+      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+        const components = b[i + 7]
+        return components !== undefined && components > 0 && len === 8 + 3 * components
+          ? saneDimensions(u16(i + 5), u16(i + 3))
+          : undefined
+      }
+      i += len
     }
     return undefined
   }
   return undefined
+}
+
+/** Dimensions behind raw base64 or a base64 data URI, decoding only a bounded header prefix. */
+export const imageDimensionsFromData = (
+  data: string,
+): { readonly width: number; readonly height: number } | undefined => {
+  const b64 = base64Payload(data)
+  if (b64 === undefined) return undefined
+  const ordinary = decodeBase64Prefix(b64, ORDINARY_HEADER_BYTES)
+  if (ordinary === undefined) return undefined
+  const bytes = starts(ordinary, [0xff, 0xd8]) ? decodeBase64Prefix(b64, JPEG_HEADER_BYTES) : ordinary
+  return bytes === undefined ? undefined : imageDimensionsFromHeader(bytes)
 }
 
 /**
@@ -213,10 +264,8 @@ const mediaTokens = (item: Record<string, unknown>): number => {
   if (typeof mime === "string" && !mime.startsWith("image/")) return MEDIA_PART_TOKENS
   const data = item["data"] ?? item["uri"]
   if (typeof data !== "string" || data.length === 0) return MEDIA_PART_TOKENS
-  const bytes = headerBytes(data)
-  if (bytes === undefined) return MEDIA_PART_TOKENS
-  const dim = dimensionsOf(bytes)
-  if (dim === undefined || !(dim.width > 0) || !(dim.height > 0)) return MEDIA_PART_TOKENS
+  const dim = imageDimensionsFromData(data)
+  if (dim === undefined) return MEDIA_PART_TOKENS
   return imageTokens(dim.width, dim.height)
 }
 
@@ -264,7 +313,56 @@ export const estimateStructured = (value: unknown): number => {
     // over-packs a window it believes is empty. The two `estimateJson` callers did return 0, so this
     // raises their floor as well; over-estimating is this module's stated contract ("a soft
     // over-budget, never a hard overflow"), and an unstringifiable value is exactly when to take it.
-    return estimate(String(value))
+    return estimateUnstringifiable(value)
   }
   return estimate(json) + mediaTokenTotal
+}
+
+const FALLBACK_MAX_NODES = 100_000
+const FALLBACK_SATURATION_TOKENS = Number.MAX_SAFE_INTEGER
+
+/**
+ * JSON rejected this value, so walk its unique graph without recursing. Strings and media retain
+ * their real charge; cycles are visited once; a hostile graph/getter saturates at a finite value that
+ * cannot be mistaken for spare context.
+ */
+const estimateUnstringifiable = (value: unknown): number => {
+  const stack: unknown[] = [value]
+  const seen = new WeakSet<object>()
+  let nodes = 0
+  let total = 0
+  const add = (tokens: number) => {
+    total = Math.min(FALLBACK_SATURATION_TOKENS, total + tokens)
+  }
+
+  try {
+    while (stack.length > 0) {
+      if (++nodes > FALLBACK_MAX_NODES) return FALLBACK_SATURATION_TOKENS
+      const item = stack.pop()
+      if (typeof item === "string") {
+        add(estimate(item) + 1)
+        continue
+      }
+      if (item === null || typeof item !== "object") {
+        add(estimate(String(item)) + 1)
+        continue
+      }
+      if (seen.has(item)) {
+        add(2)
+        continue
+      }
+      seen.add(item)
+      const record = item as Record<string, unknown>
+      const media = isMediaPart(record)
+      if (media) add(mediaTokens(record))
+      for (const [key, child] of Object.entries(record)) {
+        add(estimate(key) + 1)
+        if (!media || (key !== "data" && key !== "uri")) stack.push(child)
+      }
+      if (total === FALLBACK_SATURATION_TOKENS) return total
+    }
+    return Math.max(1, total)
+  } catch {
+    return FALLBACK_SATURATION_TOKENS
+  }
 }

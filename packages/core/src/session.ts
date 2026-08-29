@@ -838,20 +838,16 @@ export const layer = Layer.effect(
        * the moment to prefer the safe direction.
        */
       resumeInterrupted: () =>
-        // ⚠️ `config` is resolved at LAYER scope (above), not inside this thunk. Resolving the tag
-        // here leaks `Config.Service` into the Effect's requirement channel, and `start` types the
-        // callback as `Effect<boolean>` with no requirements — so the tag must already be in hand.
+        // ⚠️ `recoverySettings` is resolved at LAYER scope (above), not inside this thunk. Resolving
+        // the tag here leaks `SettingsConfigStore.Service` into the Effect's requirement channel, and
+        // `start` types the callback as `Effect<boolean>` with no requirements — so it must be in hand.
         // It is also the pattern `session/join.ts` records a revert for: resolving a service inside a
         // per-request closure is what broke the drain there.
         recoverySettings.all().pipe(
           Effect.map((all) => {
-            // ⚠️ Decoded defensively: the store is `Record<string, unknown>`, so a hand-edited or
-            // half-migrated row must not throw inside a boot sweep. An unreadable value falls through
-            // to the resolver's default, which is ON — the safe direction, since the whole point is
-            // that work is not silently lost.
-            const raw = all["harness_drives"]
-            const block = typeof raw === "object" && raw !== null ? (raw as ConfigHarnessDrives.Info) : undefined
-            return ConfigHarnessDrives.resolve(block).resumeInterrupted
+            // The resolver schema-checks this unknown store value. A hand-edited or half-migrated row
+            // falls through to ON — the safe direction, since the point is that work is not silently lost.
+            return ConfigHarnessDrives.resolve(all["harness_drives"]).resumeInterrupted
           }),
           Effect.orElseSucceed(() => true),
         ),

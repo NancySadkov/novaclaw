@@ -4391,6 +4391,13 @@ export type ConfigInfo = {
     interjection?: string
     generateInterjection?: boolean
   }
+  harness_drives?: {
+    reground?: boolean
+    set?: boolean
+    children?: boolean
+    imageShortcut?: boolean
+    resumeInterrupted?: boolean
+  }
   adhoc_tools?: Array<{
     /**
      * Tool name (lowercase slug) listed in the system prompt

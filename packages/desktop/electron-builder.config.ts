@@ -160,7 +160,7 @@ const getBase = (appId: string): Configuration => ({
       // supervision layers in a line (watchdog → `serve --supervise` → server) and that is a design
       // decision to take on purpose, not to arrive at by packaging. But the binary must be PRESENT
       // before it can be adopted, it costs a fifth of a megabyte, and a build step nobody has ever
-      // run is the one that fails on the day it is finally needed. See `todo/watchdog.md`.
+      // run is the one that fails on the day it is finally needed.
       from: "../watchdog/build/",
       to: "watchdog/",
     },

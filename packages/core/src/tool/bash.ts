@@ -147,7 +147,9 @@ const externalCommandDirectories = (command: string, cwd: string) => {
 const commandPathTokens = (command: string, cwd: string) => {
   const candidates = new Map<string, string>()
   for (const token of shellTokens(command)) {
-    const value = unquote(token).replace(/^[<>]+/, "").replace(/[;,|&]+$/, "")
+    const value = unquote(token)
+      .replace(/^[<>]+/, "")
+      .replace(/[;,|&]+$/, "")
     if (value.length === 0) continue
     // A token is a path candidate when it is absolute, or relative-looking (has a separator or an
     // extension). A bare word like `cat` or `--flag` is not worth a stat.
@@ -233,8 +235,8 @@ export const layer = Layer.effectDiscard(
               const commandText = input.command
 
               /**
-               * 🔴 **THE IMAGE SHORTCUT, REFUSED MECHANICALLY** (`todo/batch-file-planning.md`'s
-               * first-ranked lever). Asked for 400 image descriptions, a measured run *"spent its
+               * 🔴 **THE IMAGE SHORTCUT, REFUSED MECHANICALLY.** Asked for 400 image descriptions,
+               * a measured run *"spent its
                * budget hunting for a way to produce 400 descriptions WITHOUT opening them — PNG bytes
                * through `xxd`, a generator script, a search for pre-made `.txt` files"*, and covered
                * 223 of 400. `xxd` on a PNG cannot describe it; the harness knows that and the model
@@ -269,7 +271,11 @@ export const layer = Layer.effectDiscard(
               }
               // `readsContent: false` — classifying a WORKING DIRECTORY reads nothing. Excluded paths named
               // inside the command itself are screened separately below, on the parsed tokens.
-              const target = yield* mutation.resolve({ path: input.workdir ?? ".", kind: "directory", readsContent: false })
+              const target = yield* mutation.resolve({
+                path: input.workdir ?? ".",
+                kind: "directory",
+                readsContent: false,
+              })
 
               // Agent Jail P0b/P1 (notes/agent-jail-plan.md §2.3): in an UNATTENDED chain (root
               // type auto-prompting / goal-oriented) raw host execution additionally requires a
@@ -399,7 +405,11 @@ export const layer = Layer.effectDiscard(
                     : path.resolve(target.canonical, redirect.target)
                   // `readsContent: false` — a redirect TARGET is written, not read. `<` input redirections are
                   // not in `approval.redirects`; the token screen above covers them.
-                  const redirectTarget = yield* mutation.resolve({ path: redirectPath, kind: "file", readsContent: false })
+                  const redirectTarget = yield* mutation.resolve({
+                    path: redirectPath,
+                    kind: "file",
+                    readsContent: false,
+                  })
                   if (redirectTarget.externalDirectory)
                     yield* permission.assert({
                       ...LocationMutation.externalDirectoryPermission(redirectTarget.externalDirectory, "write"),
@@ -407,12 +417,10 @@ export const layer = Layer.effectDiscard(
                       agent: context.agent,
                       source,
                     })
-                  const existed = yield* fs
-                    .stat(redirectTarget.canonical)
-                    .pipe(
-                      Effect.as(true),
-                      Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(false)),
-                    )
+                  const existed = yield* fs.stat(redirectTarget.canonical).pipe(
+                    Effect.as(true),
+                    Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(false)),
+                  )
                   yield* permission.assert({
                     action: existed ? "write" : "create",
                     resources: [redirectTarget.resource],
@@ -426,12 +434,10 @@ export const layer = Layer.effectDiscard(
                     ...(existed ? { minimumEffect: "ask" as const } : {}),
                   })
                   if (!existed) {
-                    const appeared = yield* fs
-                      .stat(redirectTarget.canonical)
-                      .pipe(
-                        Effect.as(true),
-                        Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(false)),
-                      )
+                    const appeared = yield* fs.stat(redirectTarget.canonical).pipe(
+                      Effect.as(true),
+                      Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(false)),
+                    )
                     if (appeared)
                       return yield* Effect.fail(
                         new ToolFailure({

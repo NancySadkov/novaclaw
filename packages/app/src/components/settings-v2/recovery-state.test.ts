@@ -47,7 +47,7 @@ describe("resumeInterruptedPatch", () => {
   // of them an operator had set — a setting silently turning OFF three others is the worst kind of
   // config bug, because nothing points at the screen that did it.
   test("preserves the sibling switches it does not own", () => {
-    const config = { harness_drives: { reground: false, imageShortcut: false } } as never
+    const config = { harness_drives: { reground: false, imageShortcut: false } }
     expect(resumeInterruptedPatch(config, true)).toEqual({
       harness_drives: { reground: false, imageShortcut: false, resumeInterrupted: true },
     })

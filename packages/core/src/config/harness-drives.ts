@@ -4,11 +4,11 @@ import { Schema } from "effect"
 
 /**
  * The HARNESS DRIVES — the automatic continuations the harness applies to a turn that thinks it is
- * finished. Both default ON; this block exists so either can be turned OFF.
+ * finished. All default ON; this block exists so each can be turned OFF independently.
  *
  * 🔴 **Why a switch exists at all: without one, "can the model do this alone?" is unanswerable.**
- * `todo/batch-file-planning.md` records the gap in as many words — *every number this programme has
- * produced was taken with at least one drive live*, because `session.finish.reground` fires in every
+ * Every earlier batch-file measurement was taken with at least one drive live, because
+ * `session.finish.reground` fires in every
  * session and is not gated on anything a prompt can change. So the programme's own baseline is a
  * measurement of the model PLUS a harness that marched it, and no arm the rig can select separates
  * them. A measurement taken under a mitigation measures the mitigation.
@@ -113,15 +113,18 @@ export interface Resolved {
 }
 
 /**
- * ⚠️ **Absent means ON.** `?? true` rather than a truthiness check, so an explicit `false` survives
- * and a missing block behaves exactly as the harness did before this key existed. The distinction
- * matters: `Config.latest` returns `undefined` for an unset key, and reading that as "off" would
- * silently disable all three drives on every instance that never set them.
+ * ⚠️ **Absent or malformed means ON.** The settings store is an unknown-data boundary, so the
+ * whole block is schema-checked before any field is read. `?? true` then preserves an explicit
+ * boolean `false`, while an unreadable block behaves exactly as the harness did before this key
+ * existed. Reading malformed data as false would silently disable recovery or another drive.
  */
-export const resolve = (info: Info | undefined): Resolved => ({
-  reground: info?.reground ?? true,
-  set: info?.set ?? true,
-  children: info?.children ?? true,
-  imageShortcut: info?.imageShortcut ?? true,
-  resumeInterrupted: info?.resumeInterrupted ?? true,
-})
+export const resolve = (value: unknown): Resolved => {
+  const info = Schema.is(Info)(value) ? value : undefined
+  return {
+    reground: info?.reground ?? true,
+    set: info?.set ?? true,
+    children: info?.children ?? true,
+    imageShortcut: info?.imageShortcut ?? true,
+    resumeInterrupted: info?.resumeInterrupted ?? true,
+  }
+}

@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import { windowsSigning } from "./scripts/windows-signing"
 import { dhtArtifactRequired } from "./scripts/dht-packaging"
 import type { Configuration } from "electron-builder"
@@ -104,12 +106,25 @@ test("ships the watchdog, which nothing launches yet — the binary must exist B
    * switch in Settings promising otherwise.
    *
    * ⚠️ Nothing SPAWNS it yet, on purpose: adoption puts three supervision layers in a line and is a
-   * decision to take deliberately (`todo/watchdog.md`). Packaging it is not that decision. It costs
+   * decision to take deliberately. Packaging it is not that decision. It costs
    * 220 KB, and a build step nobody has ever run is the one that fails on the day it is needed.
    *
    * ⚠️ `build/`, not `target/release/`: cargo's scratch tree is hundreds of megabytes.
    */
   expect(config.extraResources).toContainEqual({ from: "../watchdog/build/", to: "watchdog/" })
+})
+
+test("clears watchdog staging before the optional Cargo decision", () => {
+  const source = readFileSync(join(import.meta.dir, "..", "watchdog", "build.ts"), "utf8")
+  const clearStaging = source.indexOf("rmSync(staging, { recursive: true, force: true })")
+  const createStaging = source.indexOf("mkdirSync(staging, { recursive: true })")
+  const clearCargoOutput = source.indexOf("rmSync(built, { force: true })")
+  const findCargo = source.indexOf('Bun.which("cargo")')
+
+  expect(clearStaging).toBeGreaterThan(-1)
+  expect(createStaging).toBeGreaterThan(clearStaging)
+  expect(clearCargoOutput).toBeGreaterThan(createStaging)
+  expect(findCargo).toBeGreaterThan(clearCargoOutput)
 })
 
 /**
