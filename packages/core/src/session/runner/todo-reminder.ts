@@ -61,7 +61,7 @@ const line = (todo: SessionTodo.Info) => `- [${label(todo.status)}] ${todo.conte
 const omittedLine = (count: number) =>
   `- … ${count} more checklist ${count === 1 ? "item" : "items"} omitted by the reminder budget.`
 const INTRO = applySteerProvenance(
-  "Task checklist reminder — continue from this plan and keep it current with `todowrite`:",
+  "Task checklist reminder — continue it and keep it current with `todowrite`:",
 )
 
 const compose = (lines: readonly string[], omitted: number) =>

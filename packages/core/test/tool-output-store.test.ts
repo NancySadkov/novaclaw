@@ -63,9 +63,74 @@ describe("ToolOutputStore", () => {
         })
         expect(result.output.structured).toEqual({ kind: "report" })
         expect(result.outputPaths).toHaveLength(1)
+        expect(result.artifacts).toEqual([
+          {
+            path: result.outputPaths[0],
+            byteLength: Buffer.byteLength(first + second),
+            semanticSummary: "eligible",
+          },
+        ])
         expect(yield* fs.readFileString(result.outputPaths[0])).toBe(first + second)
         if (result.output.content[0]?.type !== "text") throw new Error("expected text preview")
         expect(Buffer.byteLength(result.output.content[0].text)).toBeLessThanOrEqual(ToolOutputStore.MAX_BYTES)
+      }),
+    ),
+  )
+
+  it.live("keeps the 4 MiB boundary eligible for semantic summarization", () =>
+    withStore(({ store, fs }) =>
+      Effect.gen(function* () {
+        const text = "x".repeat(ToolOutputStore.SEMANTIC_SUMMARY_MAX_BYTES)
+        const result = yield* store.bound({
+          sessionID,
+          toolCallID: "call-summary-boundary",
+          output: { structured: {}, content: [{ type: "text", text }] },
+        })
+
+        expect(ToolOutputStore.semanticSummaryDisposition(Buffer.byteLength(text))).toBe("eligible")
+        expect(result.artifacts).toEqual([
+          {
+            path: result.outputPaths[0],
+            byteLength: ToolOutputStore.SEMANTIC_SUMMARY_MAX_BYTES,
+            semanticSummary: "eligible",
+          },
+        ])
+        expect(yield* fs.readFileString(result.outputPaths[0])).toBe(text)
+      }),
+    ),
+  )
+
+  it.live("bypasses semantic summarization above 4 MiB and exposes the retained artifact path", () =>
+    withStore(
+      ({ store, fs }) =>
+        Effect.gen(function* () {
+          const text = "x".repeat(ToolOutputStore.SEMANTIC_SUMMARY_MAX_BYTES + 1)
+          const result = yield* store.bound({
+            sessionID,
+            toolCallID: "call-summary-bypass",
+            output: { structured: { kind: "huge" }, content: [{ type: "text", text }] },
+          })
+
+          expect(ToolOutputStore.semanticSummaryDisposition(Buffer.byteLength(text))).toBe("bypass-too-large")
+          expect(result.artifacts).toEqual([
+            {
+              path: result.outputPaths[0],
+              byteLength: ToolOutputStore.SEMANTIC_SUMMARY_MAX_BYTES + 1,
+              semanticSummary: "bypass-too-large",
+            },
+          ])
+          expect(yield* fs.readFileString(result.outputPaths[0])).toBe(text)
+          if (result.output.content[0]?.type !== "text") throw new Error("expected artifact notice")
+          expect(Buffer.byteLength(result.output.content[0].text)).toBeLessThan(1_024)
+          expect(result.output.content[0].text).toContain("too large to include or summarize")
+          expect(result.output.content[0].text).toContain(result.outputPaths[0])
+        }),
+      // The 4 MiB safety boundary is absolute even when a user raises the ordinary preview limit.
+      new Config.Info({
+        tool_output: new ConfigToolOutput.Info({
+          max_lines: 10_000,
+          max_bytes: ToolOutputStore.SEMANTIC_SUMMARY_MAX_BYTES * 2,
+        }),
       }),
     ),
   )

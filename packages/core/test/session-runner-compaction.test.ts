@@ -225,16 +225,37 @@ const primeForOverflow = Effect.fn("primeForOverflow")(function* (harness: Retur
 })
 
 describe("SessionRunnerLLM — overflow recovery", () => {
-  test("a summary cut off at max_tokens is DISCARDED, not stored", async () => {
-    // 🔴 A TRUNCATED SUMMARY IS WORSE THAN NONE. It becomes the session's durable memory and it READS
-    // as complete: the only guard used to be `!summary.trim()`, which catches EMPTY and never
-    // TRUNCATED. `maxTokens` is shared between reasoning and content, so on a thinking model a long
-    // think eats the budget and the answer is severed mid-sentence with `finish=length`.
-    //
-    // ⭐ `judgeCompletion` (`runner/llm.ts`) already read `finish` and escalated its cap through
-    // `UtilityCap.decide`; compaction simply never looked. `CalloutPolicy.summarizer` declares
-    // `failureMode: "fail_open"` precisely so the deterministic packer can answer instead, which is
-    // why DISCARDING is the right response and not a loss.
+  test("a token-dense first call that exceeds the whole context fails legibly without an unchanged retry", async () => {
+    const dense = "0123456789".repeat(1_000)
+    const harness = makeRunnerHarness({ turns: [overflowTurn()] })
+    harness.controls.currentModel = harness.makeModel("dense-first-call", { context: 4_096, output: 512 })
+
+    const context = await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: dense }),
+          resume: false,
+        })
+        yield* session.resume(HARNESS_SESSION)
+        return yield* session.context(HARNESS_SESSION)
+      }),
+      "claim — a dense first call cannot trigger an unchanged overflow retry",
+    )
+
+    expect(harness.requests, "no compactable head exists, so the same oversized call is never retried").toHaveLength(1)
+    expect(context.slice(-2)).toMatchObject([
+      { type: "user", text: dense },
+      { type: "assistant", finish: "error", error: { message: "prompt too long" } },
+    ])
+  })
+
+  test("a summary cut off at max_tokens is retried once and only the clean rewrite is stored", async () => {
+    // A truncated summary cannot become durable memory. Give the model one bounded chance to trim
+    // the ACTUAL first answer, then store only the clean rewrite. The pure compaction suite owns the
+    // mechanical fallback when this second request also fails.
     // ⚠️ BOTH events carry the cut, because a real provider stream sets them together — the fixture
     // helper emits `stepFinish(reason)` and `finish(reason)` from one value. An earlier version of
     // this test overrode only `finish`, which modelled a stream that cannot occur and then failed for
@@ -248,6 +269,7 @@ describe("SessionRunnerLLM — overflow recovery", () => {
         fragmentFixture("text", "text-first", ["Earlier answer"]).completeEvents,
         fragmentFixture("text", "text-second", ["Second answer"]).completeEvents,
         truncated,
+        fragmentFixture("text", "text-trimmed", ["## Goal\n- Trimmed safely"]).completeEvents,
         fragmentFixture("text", "text-final", ["Continued"]).completeEvents,
       ],
     })
@@ -274,16 +296,14 @@ describe("SessionRunnerLLM — overflow recovery", () => {
         yield* session.resume(HARNESS_SESSION)
         return yield* store.context(HARNESS_SESSION)
       }),
-      "claim — a truncated summary is discarded",
+      "claim — a truncated summary is rewritten once",
     )
 
-    // 🔴 THE CLAIM: no `compaction` entry exists. Before this guard the half-summary was committed and
-    // the history it replaced was gone, so the session's own past became one severed sentence.
-    expect(context.map((message) => message.type)).not.toContain("compaction")
+    expect(context[0]).toMatchObject({ type: "compaction", summary: "## Goal\n- Trimmed safely" })
     expect(JSON.stringify(context)).not.toContain("Half a sum")
   })
 
-  test("and it is discarded when only step-finish carries the cut — the wrapped shape", async () => {
+  test("and the retry also runs when only step-finish carries the cut — the wrapped shape", async () => {
     // 🔴 THE TWO CALL SHAPES EMIT DIFFERENT EVENTS, and reading one is how this guard dies silently.
     // A raw `llm.stream` forwards the provider's `finish`. `ReasoningBudget` — the thinking bound used
     // by compaction — SWALLOWS it and closes with `stepFinish({index, reason, usage})`
@@ -303,6 +323,7 @@ describe("SessionRunnerLLM — overflow recovery", () => {
         fragmentFixture("text", "text-a", ["Earlier answer"]).completeEvents,
         fragmentFixture("text", "text-b", ["Second answer"]).completeEvents,
         cutStepOnly,
+        fragmentFixture("text", "text-trimmed2", ["## Goal\n- Trimmed wrapped summary"]).completeEvents,
         fragmentFixture("text", "text-c", ["Continued"]).completeEvents,
       ],
     })
@@ -329,10 +350,10 @@ describe("SessionRunnerLLM — overflow recovery", () => {
         yield* session.resume(HARNESS_SESSION)
         return yield* store.context(HARNESS_SESSION)
       }),
-      "claim — a truncated summary is discarded via step-finish too",
+      "claim — a truncated summary is rewritten via step-finish too",
     )
 
-    expect(context.map((message) => message.type)).not.toContain("compaction")
+    expect(context[0]).toMatchObject({ type: "compaction", summary: "## Goal\n- Trimmed wrapped summary" })
     expect(JSON.stringify(context)).not.toContain("Half again")
   })
 

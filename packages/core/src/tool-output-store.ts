@@ -13,6 +13,8 @@ import type { ToolOutput } from "@novaclaw/llm"
 
 export const MAX_LINES = 2_000
 export const MAX_BYTES = 50 * 1024
+/** Inputs above this size must not be sent through a semantic summarization model. */
+export const SEMANTIC_SUMMARY_MAX_BYTES = 4 * 1024 * 1024
 export const RETENTION = Duration.days(7)
 
 export const MANAGED_DIRECTORY = "tool-output"
@@ -28,7 +30,20 @@ export interface BoundInput {
 export interface BoundResult {
   readonly output: ToolOutput
   readonly outputPaths: ReadonlyArray<string>
+  /** Metadata for complete outputs retained outside the provider-facing prompt. */
+  readonly artifacts?: ReadonlyArray<OutputArtifact>
 }
+
+export type SemanticSummaryDisposition = "eligible" | "bypass-too-large"
+
+export interface OutputArtifact {
+  readonly path: string
+  readonly byteLength: number
+  readonly semanticSummary: SemanticSummaryDisposition
+}
+
+export const semanticSummaryDisposition = (byteLength: number): SemanticSummaryDisposition =>
+  byteLength <= SEMANTIC_SUMMARY_MAX_BYTES ? "eligible" : "bypass-too-large"
 
 export class StorageError extends Schema.TaggedErrorClass<StorageError>()("ToolOutputStore.StorageError", {
   operation: Schema.Literals(["encode", "write"]),
@@ -87,9 +102,11 @@ export const layer = Layer.effect(
               catch: (cause) => new StorageError({ operation: "encode", cause }),
             })
           : text.map((item) => item.text).join("")
+      const byteLength = Buffer.byteLength(contextual, "utf-8")
       if (
         ToolTruncation.lineCount(contextual) <= outputLimits.maxLines &&
-        Buffer.byteLength(contextual, "utf-8") <= outputLimits.maxBytes
+        byteLength <= outputLimits.maxBytes &&
+        byteLength <= SEMANTIC_SUMMARY_MAX_BYTES
       )
         return {
           output: input.output,
@@ -97,6 +114,21 @@ export const layer = Layer.effect(
         }
 
       const outputPath = yield* write(contextual)
+      const semanticSummary = semanticSummaryDisposition(byteLength)
+      const artifact = { path: outputPath, byteLength, semanticSummary } satisfies OutputArtifact
+      if (semanticSummary === "bypass-too-large") {
+        const notice =
+          `Tool output was too large to include or summarize (${byteLength} bytes). ` +
+          `The complete original remains available at ${outputPath}.`
+        return {
+          output: {
+            structured: input.output.structured,
+            content: [{ type: "text" as const, text: notice }, ...media],
+          },
+          outputPaths: [outputPath],
+          artifacts: [artifact],
+        }
+      }
       const marker =
         input.preview === "earliest"
           ? `... later results omitted from this preview (${ToolTruncation.lineCount(contextual)} lines total); full content saved to ${outputPath} ...`
@@ -120,6 +152,7 @@ export const layer = Layer.effect(
           ],
         },
         outputPaths: [outputPath],
+        artifacts: [artifact],
       }
     })
 

@@ -68,7 +68,10 @@ describe("the compaction threshold prices media by measured dimensions, not payl
     // punctuation around the extra parts is real content the text half legitimately counts.
     const perImage = three - one
     expect(perImage).toBeGreaterThan(130)
-    expect(perImage).toBeLessThan(180)
+    // Content-shape estimation deliberately prices compact object syntax more densely than prose.
+    // The media law still dominates and, critically, this allowance is constant per part rather
+    // than growing with the base64 payload.
+    expect(perImage).toBeLessThan(240)
   })
 
   // ⚠️ Text must be untouched: chars/4 is close for prose and this fix must not disturb it.

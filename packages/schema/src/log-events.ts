@@ -2651,7 +2651,7 @@ export const EVENTS = {
   },
   "session.compaction.summary.truncated": {
     level: "warn",
-    message: "compaction: the summary was cut off at max_tokens and was DISCARDED",
+    message: "compaction: the first summary exceeded its output budget and entered bounded recovery",
     attributes: { "session.id": "correlate", "compaction.output.cap": "count", "compaction.summary.chars": "count" },
     content: "correlated",
     file: "packages/core/src/session/compaction.ts",

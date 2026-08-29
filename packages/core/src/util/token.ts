@@ -6,14 +6,17 @@ export * as Token from "./token"
 // usage (`usage.reasoningTokens`/`tokens.*` → publish-llm-event.ts → the session row); this estimate
 // is only for the mid-stream / pre-flight gap where that authoritative number does not exist yet.
 //
-// Method: ~4 characters per token for Latin/general text — the standard BPE-prose ratio, and Qwen's
-// byte-level BPE averages 3–4 chars/tok on English. CJK runs far denser (~1.7 chars/tok on Qwen), so
-// a flat chars/4 under-counts CJK by ~2.5x. `estimate` splits CJK from the rest and weights each,
-// removing the naive rule's largest error for one extra scan. (Code/JSON tokenize a touch denser than
-// prose at ~3.2, but the prose ratio is close and errs SAFE — a soft over-budget, never a hard
-// overflow, since the real ceiling is always the provider's own count.)
+// Method: segment text by the shapes tokenizers actually see. Prose keeps the familiar ~4 chars/token
+// rate; compact structure, paths and high-entropy runs are charged more densely; digit runs are one
+// token per character; and non-ASCII uses script/UTF-8-aware rates. This is deliberately a bounded,
+// zero-dependency pre-flight estimate. Once a request settles, provider-reported usage anchors the
+// next estimate and outranks every heuristic here.
 const CHARS_PER_TOKEN = 4
-const CJK_CHARS_PER_TOKEN = 1.7
+const CJK_CHARS_PER_TOKEN = 1.5
+const PATH_CHARS_PER_TOKEN = 2.2
+const STRUCTURED_CHARS_PER_TOKEN = 2.4
+const HIGH_ENTROPY_CHARS_PER_TOKEN = 1.2
+const OTHER_UNICODE_BYTES_PER_TOKEN = 1.5
 
 // Char-code ranges (not a regex literal, to stay ASCII-safe in source) for the scripts a byte-level
 // BPE spends far more tokens on: CJK symbols/punctuation + Hiragana/Katakana (3000–30FF), CJK Unified
@@ -27,19 +30,98 @@ const isCjk = (code: number): boolean =>
   (code >= 0xf900 && code <= 0xfaff) ||
   (code >= 0xff00 && code <= 0xffef)
 
-/** Approximate the token count of TEXT (CJK-aware). Use when the string itself is available. */
+const utf8Bytes = (codePoint: number): number =>
+  codePoint <= 0x7f ? 1 : codePoint <= 0x7ff ? 2 : codePoint <= 0xffff ? 3 : 4
+
+const isAsciiWhitespace = (code: number): boolean => code === 0x20 || (code >= 0x09 && code <= 0x0d)
+const isAsciiDigit = (code: number): boolean => code >= 0x30 && code <= 0x39
+
+const distinctAscii = (value: string): number => {
+  const seen = new Set<number>()
+  for (let index = 0; index < value.length; index++) seen.add(value.charCodeAt(index))
+  return seen.size
+}
+
+const estimateAsciiRun = (value: string): number => {
+  if (!value) return 0
+  let digits = 0
+  let structured = 0
+  let path = false
+  let base64Alphabet = true
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index)
+    if (isAsciiDigit(code)) digits++
+    if (`{}[],:;()<>\"'=`.includes(value[index]!)) structured++
+    if (code === 0x2f || code === 0x5c) path = true
+    if (
+      !(
+        (code >= 0x41 && code <= 0x5a) ||
+        (code >= 0x61 && code <= 0x7a) ||
+        isAsciiDigit(code) ||
+        code === 0x2b ||
+        code === 0x2f ||
+        code === 0x3d ||
+        code === 0x5f ||
+        code === 0x2d
+      )
+    )
+      base64Alphabet = false
+  }
+  if (digits === value.length) return value.length
+  if (value.length >= 24 && base64Alphabet && distinctAscii(value) >= 8)
+    return value.length / HIGH_ENTROPY_CHARS_PER_TOKEN
+  if (path || value.includes("://")) return value.length / PATH_CHARS_PER_TOKEN
+  if (structured >= 2 && structured / value.length >= 0.08)
+    return value.length / STRUCTURED_CHARS_PER_TOKEN
+  // Digits embedded in an otherwise ordinary span still need their one-token floor.
+  return (value.length - digits) / CHARS_PER_TOKEN + digits
+}
+
+/** Approximate the token count of TEXT from content shape. Use when the string itself is available. */
 export const estimate = (input: string): number => {
   if (!input) return 0
-  let cjk = 0
-  for (let i = 0; i < input.length; i++) if (isCjk(input.charCodeAt(i))) cjk++
-  const latin = input.length - cjk
-  return Math.max(0, Math.round(latin / CHARS_PER_TOKEN + cjk / CJK_CHARS_PER_TOKEN))
+  let total = 0
+  let ascii = ""
+  const flushAscii = () => {
+    total += estimateAsciiRun(ascii)
+    ascii = ""
+  }
+  for (let index = 0; index < input.length; ) {
+    const codePoint = input.codePointAt(index)!
+    const width = codePoint > 0xffff ? 2 : 1
+    if (codePoint <= 0x7f) {
+      if (isAsciiWhitespace(codePoint)) {
+        flushAscii()
+        let spaces = 0
+        let newlines = 0
+        while (index < input.length) {
+          const code = input.charCodeAt(index)
+          if (!isAsciiWhitespace(code)) break
+          if (code === 0x0a || code === 0x0d) newlines++
+          else spaces++
+          index++
+        }
+        // Ordinary single spaces retain chars/4; long indentation compresses much better.
+        total += newlines + spaces / (spaces >= 4 ? 8 : CHARS_PER_TOKEN)
+        continue
+      }
+      ascii += input[index]
+    } else {
+      flushAscii()
+      total += isCjk(codePoint)
+        ? 1 / CJK_CHARS_PER_TOKEN
+        : utf8Bytes(codePoint) / OTHER_UNICODE_BYTES_PER_TOKEN
+    }
+    index += width
+  }
+  flushAscii()
+  return Math.max(0, Math.ceil(total))
 }
 
 /**
  * Approximate tokens from a CHARACTER COUNT alone — for streaming meters that accumulate lengths, not
- * the text itself, so the CJK-aware `estimate` can't apply. Kept on the same ratio so every estimate
- * across the app agrees. Prefer `estimate` whenever the actual string is available.
+ * the text itself, so content-shape classification cannot apply. This deliberately retains the prose
+ * fallback; prefer `estimate` whenever the actual string is available.
  */
 export const estimateFromChars = (chars: number): number => Math.max(0, Math.round(chars / CHARS_PER_TOKEN))
 

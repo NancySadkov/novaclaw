@@ -107,6 +107,15 @@ describe("PromptEstimate", () => {
     expect(result.fallback).toBe("none")
   })
 
+  test("a token-dense first request is recognized as larger than a chars/4 context", () => {
+    const digits = "0123456789".repeat(3_300)
+    const current = request(digits)
+    const result = PromptEstimate.resolve({ request: current, messages: [], scope: scope() })
+    expect(result.confidence).toBe("whole")
+    expect(result.estimatedTokens).toBeGreaterThan(32_000)
+    expect(result.estimatedTokens).toBeGreaterThan(digits.length / 4)
+  })
+
   test("uses inclusive inputTokens once and rejects missing, zero, or contradictory usage", () => {
     expect(
       PromptEstimate.reportedPromptTokens(

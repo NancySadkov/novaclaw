@@ -25,8 +25,21 @@ const outputStore = Layer.mock(ToolOutputStore.Service, {
           ? {
               output: { structured: {}, content: [{ type: "text" as const, text: "bounded reference" }] },
               outputPaths: ["/managed/generic"],
+              artifacts: [{ path: "/managed/generic", byteLength: 100_000, semanticSummary: "eligible" as const }],
             }
-          : { output: input.output, outputPaths: [] },
+          : input.toolCallID === "call-summary-bypass"
+            ? {
+                output: { structured: {}, content: [{ type: "text" as const, text: "artifact notice" }] },
+                outputPaths: ["/managed/huge"],
+                artifacts: [
+                  {
+                    path: "/managed/huge",
+                    byteLength: 4 * 1024 * 1024 + 1,
+                    semanticSummary: "bypass-too-large" as const,
+                  },
+                ],
+              }
+            : { output: input.output, outputPaths: [] },
       ),
     )
   },
@@ -288,8 +301,28 @@ describe("ToolRegistry", () => {
         result: { type: "text", value: "bounded reference" },
         output: { structured: {}, content: [{ type: "text", text: "bounded reference" }] },
         outputPaths: ["/managed/generic"],
+        semanticSummarySource: {
+          output: { structured: { text: "complete" }, content: [{ type: "text", text: "complete" }] },
+          artifacts: [{ path: "/managed/generic", byteLength: 100_000, semanticSummary: "eligible" }],
+        },
       })
       expect(bounds).toHaveLength(1)
+    }),
+  )
+
+  it.effect("never exposes a >4 MiB artifact as an in-process semantic-summary source", () =>
+    Effect.gen(function* () {
+      const service = yield* ToolRegistry.Service
+      yield* service.register({ bounded: make() })
+      const settlement = yield* settleTool(service, {
+        sessionID,
+        ...identity,
+        call: { type: "tool-call", id: "call-summary-bypass", name: "bounded", input: { text: "huge" } },
+      })
+
+      expect(settlement.outputPaths).toEqual(["/managed/huge"])
+      expect(settlement.result).toEqual({ type: "text", value: "artifact notice" })
+      expect(settlement.semanticSummarySource).toBeUndefined()
     }),
   )
 

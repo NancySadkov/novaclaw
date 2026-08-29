@@ -78,6 +78,19 @@ export interface Settlement {
   readonly output?: ToolOutput
   readonly outputPaths?: ReadonlyArray<string>
   /**
+   * Ephemeral source for the runner's model-aware oversized-output summarizer.
+   *
+   * The normal `result` / `output` fields above are already bounded and are the ONLY values that
+   * may be published into durable history or sent to a provider. This field deliberately exists
+   * only on the in-process settlement crossing from the registry to the runner: the registry owns
+   * the one bounding seam, while only the runner knows which model and context limit are in force.
+   * Outputs above the store's semantic-summary ceiling never enter this field.
+   */
+  readonly semanticSummarySource?: {
+    readonly output: ToolOutput
+    readonly artifacts: ReadonlyArray<ToolOutputStore.OutputArtifact>
+  }
+  /**
    * A pre-action policy returned `halt`: the call did not run AND the drain must stop.
    *
    * ⚠️ Distinct from an ordinary refused call, which is just an error result the model routes
@@ -231,7 +244,10 @@ const registryLayer = Layer.effect(
           ...(invokeDeferred === undefined || !deferredDispatchers.has(registration.tool) ? {} : { invokeDeferred }),
         },
       )
-      return { output: screened.note === undefined ? output : withPolicyNote(output, screened.note), tool: registration.tool }
+      return {
+        output: screened.note === undefined ? output : withPolicyNote(output, screened.note),
+        tool: registration.tool,
+      }
     })
 
     // `advertised` is the identity materialization handed to the model, and it is always supplied: the only
@@ -250,8 +266,7 @@ const registryLayer = Layer.effect(
           Effect.succeed({ result: { type: "error" as const, value: failure.message } }),
         ),
       )
-      if ("result" in pending)
-        return halt?.halted === true ? { ...pending, halted: true as const } : pending
+      if ("result" in pending) return halt?.halted === true ? { ...pending, halted: true as const } : pending
       const output = pending.output
       const bounded = yield* resources.bound({
         sessionID: input.sessionID,
@@ -259,16 +274,25 @@ const registryLayer = Layer.effect(
         output,
         preview: outputPreview(pending.tool),
       })
+      const retainedArtifacts = bounded.artifacts ?? []
+      // All retained paths describe one output. If any component crosses the model-bypass ceiling,
+      // never hand the combined unbounded value to a summarizer under cover of an eligible sibling.
+      const semanticArtifacts =
+        retainedArtifacts.length > 0 && retainedArtifacts.every((artifact) => artifact.semanticSummary === "eligible")
+          ? retainedArtifacts
+          : []
+      const semanticSummarySource =
+        semanticArtifacts.length === 0 ? {} : { semanticSummarySource: { output, artifacts: semanticArtifacts } }
       const result = ToolOutput.toResultValue(bounded.output)
       // A nested deferred invocation can halt while the OUTER tool still returns normally, so the
       // latch is read here too rather than only on the refusal path.
       const halted = halt?.halted === true ? ({ halted: true } as const) : {}
       if (result.type === "error")
         return bounded.outputPaths.length > 0
-          ? { result, outputPaths: bounded.outputPaths, ...halted }
+          ? { result, outputPaths: bounded.outputPaths, ...semanticSummarySource, ...halted }
           : { result, ...halted }
       return bounded.outputPaths.length > 0
-        ? { result, output: bounded.output, outputPaths: bounded.outputPaths, ...halted }
+        ? { result, output: bounded.output, outputPaths: bounded.outputPaths, ...semanticSummarySource, ...halted }
         : { result, output: bounded.output, ...halted }
     })
 

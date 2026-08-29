@@ -3,8 +3,15 @@ import { readFileSync } from "node:fs"
 import path from "node:path"
 import { ColleagueNote } from "@novaclaw/core/session/colleague-note"
 import { SessionCompaction } from "@novaclaw/core/session/compaction"
+import type { Config } from "@novaclaw/core/config"
+import type { EventV2 } from "@novaclaw/core/event"
+import { SessionEvent } from "@novaclaw/core/session/event"
 import { applySteerProvenance, STEER_PROVENANCE_PREFIX } from "@novaclaw/core/session/steer-provenance"
 import type { SessionMessage } from "@novaclaw/core/session/message"
+import type { SessionSchema } from "@novaclaw/core/session/schema"
+import { LLM, LLMEvent, Model, type LLMRequest } from "@novaclaw/llm"
+import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
+import { Effect, Stream } from "effect"
 
 test("compaction describes tool media without embedding base64", () => {
   const base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB"
@@ -278,4 +285,137 @@ test("the estimate-vs-provider ratio compares one exact provider request with it
   expect(callbackAt).toBeGreaterThan(-1)
   expect(pressureAt).toBeGreaterThan(callbackAt)
   expect(runner.slice(callbackAt, pressureAt)).not.toContain('"session.estimated.tokens": packed.estimatedTokens')
+})
+
+// ── A summary has a finite, hard output chain ─────────────────────────────────────────────────────────────────────
+
+type SummaryAttempt = {
+  readonly text: string
+  readonly reason: "stop" | "length"
+  readonly outputTokens?: number
+  readonly fail?: boolean
+}
+
+const summaryModel = Model.make({
+  id: "summary-budget-test",
+  provider: "test",
+  route: OpenAIChat.route.with({ limits: { context: 100_000, output: 32 } }),
+})
+
+const driveSummary = (attempts: readonly SummaryAttempt[]) => {
+  const requests: LLMRequest[] = []
+  const published: { readonly type: string; readonly data: Record<string, unknown> }[] = []
+  let index = 0
+  const compactor = SessionCompaction.make({
+    events: {
+      publish: (definition: { type: string }, data: Record<string, unknown>) =>
+        Effect.sync(() => {
+          published.push({ type: definition.type, data })
+        }),
+    } as unknown as EventV2.Interface,
+    llm: {
+      stream: (request: LLMRequest) => {
+        requests.push(request)
+        const attempt = attempts[index++]!
+        if (attempt.fail) return Stream.fromIterable([LLMEvent.providerError({ message: "trim failed" })])
+        return Stream.fromIterable([
+          LLMEvent.textDelta({ id: `summary-${index}`, text: attempt.text }),
+          LLMEvent.stepFinish({
+            index: 0,
+            reason: attempt.reason,
+            usage: attempt.outputTokens === undefined ? undefined : { outputTokens: attempt.outputTokens },
+          }),
+        ])
+      },
+    },
+    config: [
+      {
+        type: "document",
+        info: { compaction: { keep: { tokens: 8 } } },
+      } as unknown as Config.Entry,
+    ],
+    prefixHash: () => Effect.succeed("0".repeat(64)),
+  })
+  const compacted = Effect.runSync(
+    compactor.compactAfterOverflow(
+      {
+        sessionID: "ses_summary_budget" as unknown as SessionSchema.ID,
+        entries: entries(
+          user(`old question ${"detail ".repeat(80)}`),
+          assistant(`old answer ${"fact ".repeat(80)}`),
+          user(`new question ${"exact ".repeat(80)}`),
+          assistant("new answer"),
+        ),
+        model: summaryModel,
+        request: LLM.request({ model: summaryModel, messages: [], tools: [] }),
+      },
+      "manual",
+    ),
+  )
+  const ended = published.find((event) => event.type === SessionEvent.Compaction.Ended.type)?.data as
+    | { readonly text?: string }
+    | undefined
+  const userPrompt = (request: LLMRequest) =>
+    request.messages.flatMap((message) => message.content.map((part) => ("text" in part ? part.text : ""))).join("\n")
+  return { compacted, requests, ended, userPrompt }
+}
+
+describe("bounded compaction summaries", () => {
+  test("mechanical head removal preserves complete Unicode scalars in the newest tail", () => {
+    const rocket = String.fromCodePoint(0x1f680)
+    const trimmed = SessionCompaction.trimSummaryHead(`${"old ".repeat(80)}${rocket.repeat(12)}`, 20)
+    expect(trimmed).toEndWith(rocket)
+    expect(() => encodeURI(trimmed)).not.toThrow()
+    expect(SessionCompaction.summaryWithinBudget(trimmed, 20)).toBe(true)
+  })
+
+  test("a Token.estimate over-budget summary is retried even when provider usage under-reports it", () => {
+    // Digit-dense output defeats chars/4 dramatically: this is over 32 estimated tokens despite
+    // the canned provider claiming only 12.
+    const first = `## Goal\n- ${"1234567890".repeat(5)}`
+    const second = "## Goal\n- concise\n\n## Next Steps\n- continue"
+    const run = driveSummary([
+      { text: first, reason: "stop", outputTokens: 12 },
+      { text: second, reason: "stop", outputTokens: 12 },
+    ])
+
+    expect(run.compacted).toBe(true)
+    expect(run.requests).toHaveLength(2)
+    expect(run.userPrompt(run.requests[1]!)).toContain(first)
+    expect(run.userPrompt(run.requests[1]!)).toContain("no more than 32 output tokens")
+    expect(SessionCompaction.summaryWithinBudget(run.userPrompt(run.requests[1]!), 100_000 - 32)).toBe(true)
+    expect(run.requests.every((request) => request.generation?.maxTokens === 32)).toBe(true)
+    expect(run.ended?.text).toBe(second)
+  })
+
+  test("finish=length retries once, then a failed retry cuts the oldest head of the first summary", () => {
+    const newest = "## Relevant Files\n- src/new.ts: newest fact"
+    const first = `## Goal\n- ${"old ".repeat(80)}\n\n${newest}`
+    const run = driveSummary([
+      { text: first, reason: "length", outputTokens: 96 },
+      { text: "", reason: "stop", fail: true },
+    ])
+
+    expect(run.compacted).toBe(true)
+    expect(run.requests).toHaveLength(2)
+    expect(run.ended?.text).toContain("Older summary content removed")
+    expect(run.ended?.text).toContain(newest)
+    expect(run.ended?.text).not.toContain("## Goal")
+    expect(SessionCompaction.summaryWithinBudget(run.ended!.text!, 32)).toBe(true)
+  })
+
+  test("an over-budget retry is the final model call and is mechanically tail-trimmed", () => {
+    const newest = "## Relevant Files\n- src/final.ts: keep this"
+    const second = `## Goal\n- ${"still too long ".repeat(80)}\n\n${newest}`
+    const run = driveSummary([
+      { text: `## Goal\n- ${"first ".repeat(80)}`, reason: "stop", outputTokens: 90 },
+      { text: second, reason: "stop", outputTokens: 100 },
+    ])
+
+    expect(run.compacted).toBe(true)
+    expect(run.requests).toHaveLength(2)
+    expect(run.ended?.text).toContain(newest)
+    expect(run.ended?.text).not.toContain("## Goal")
+    expect(SessionCompaction.summaryWithinBudget(run.ended!.text!, 32)).toBe(true)
+  })
 })

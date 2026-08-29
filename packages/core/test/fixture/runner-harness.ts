@@ -48,6 +48,7 @@ import { SkillGuidance } from "@novaclaw/core/skill/guidance"
 import { ReferenceGuidance } from "@novaclaw/core/reference/guidance"
 import { Location } from "@novaclaw/core/location"
 import { PluginV2 } from "@novaclaw/core/plugin"
+import { Global } from "@novaclaw/core/global"
 
 /**
  * A drain harness with NO shared state — the one property the old suite lacks.
@@ -124,8 +125,12 @@ export interface RunnerScript {
   maintenanceTurns?: LLMEvent[][]
   /** Events the system-prompt-less utility passes get. Default: an empty stream. */
   utilityTurns?: LLMEvent[][]
+  /** Events the bounded, system-prompt-less semantic tool-output summarizer gets. */
+  toolSummaryTurns?: LLMEvent[][]
   /** A real OS-temp workspace for claims that execute Strict host actions. Default stays `/project`. */
   directory?: AbsolutePath
+  /** Optional isolated instance-data root for claims that exercise retained tool artifacts. */
+  dataRoot?: string
   /**
    * Enable a deterministic snapshot service and return these files at the start/end boundary.
    * Absent keeps the historical noop snapshot layer used by every normal-drain claim.
@@ -252,6 +257,7 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
   const titleRequests: LLMRequest[] = []
   const maintenanceRequests: LLMRequest[] = []
   const utilityRequests: LLMRequest[] = []
+  const toolSummaryRequests: LLMRequest[] = []
   /**
    * The world a test can change MID-RUN. Mutable, and deliberately so — a family of claims is about
    * context becoming unavailable, a producer being removed, or a baseline changing *between* turns, and
@@ -361,6 +367,7 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
   const titleTurns = [...(script.titleTurns ?? [])]
   const maintenanceTurns = [...(script.maintenanceTurns ?? [])]
   const utilityTurns = [...(script.utilityTurns ?? [])]
+  const toolSummaryTurns = [...(script.toolSummaryTurns ?? [])]
   /** Every tool input the echo tool was called with, in order. Per-harness, like everything else. */
   const executions: string[] = []
 
@@ -415,7 +422,19 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
             (content) => content.type === "text" && (content.text ?? "").includes(COMPACTION_SUMMARY_MARKER),
           ),
         )
+        const isToolSummary = (request.messages ?? []).some((message) =>
+          (message.content as ReadonlyArray<{ type: string; text?: string }> | undefined)?.some(
+            (content) =>
+              content.type === "text" &&
+              (content.text ?? "").includes("tool output being summarized") &&
+              (content.text ?? "").includes("<tool-output>"),
+          ),
+        )
         if (parts.length === 0 || isSummary) {
+          if (isToolSummary) {
+            toolSummaryRequests.push(request)
+            return Stream.fromIterable(toolSummaryTurns.shift() ?? [])
+          }
           if (!isSummary) {
             utilityRequests.push(request)
             return Stream.fromIterable(utilityTurns.shift() ?? [])
@@ -693,6 +712,7 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     [ReferenceGuidance.node, referenceGuidance],
     [PermissionV2.node, permission],
     [Config.node, config],
+    ...(script.dataRoot === undefined ? [] : ([[Global.node, Global.layerWith({ data: script.dataRoot })]] as const)),
   ])
 
   const execution = Layer.effect(
@@ -755,6 +775,7 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
       [Snapshot.node, snapshotLayer],
       [SessionExecution.node, execution],
       [Config.node, config],
+      ...(script.dataRoot === undefined ? [] : ([[Global.node, Global.layerWith({ data: script.dataRoot })]] as const)),
     ],
   )
 
@@ -886,6 +907,8 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     maintenanceRequests,
     /** Utility passes that carry NO system prompt. The class a marker list cannot recognise. */
     utilityRequests,
+    /** Bounded map/reduce calls made specifically for oversized tool-output summaries. */
+    toolSummaryRequests,
     /** Snapshot ids minted in capture order; empty unless `snapshotFiles` enabled the fake service. */
     snapshotCaptures,
     /** Text the echo tool was asked to echo, in call order. */

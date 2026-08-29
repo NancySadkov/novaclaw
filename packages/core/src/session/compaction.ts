@@ -34,6 +34,7 @@ const TOOL_OUTPUT_MAX_CHARS = 2_000
  */
 const STEER_LABEL = "[Automated harness check — not the user]: "
 const SUMMARY_OUTPUT_TOKENS = 4_096
+const SUMMARY_HEAD_REMOVED = "[Older summary content removed to fit the summary budget.]"
 
 /**
  * THINKING CEILING FOR THE SUMMARY — owner ask 2026-08-29: *"generate it the same way we generate
@@ -301,8 +302,100 @@ ${input.previousSummary}
     ...input.context,
   ].join("\n\n")
 
+/**
+ * Enforce the shared token estimate on every summary. Provider-reported visible usage is an
+ * additional ceiling when it exists; some local servers omit it, but a missing count must never be
+ * mistaken for a free/unbounded output.
+ */
+export const summaryWithinBudget = (text: string, budgetTokens: number, reportedTokens?: number) => {
+  if (!Number.isFinite(budgetTokens) || budgetTokens <= 0) return false
+  if (Token.estimate(text) > budgetTokens) return false
+  return reportedTokens === undefined || !Number.isFinite(reportedTokens) || reportedTokens <= budgetTokens
+}
+
+/**
+ * Last-resort deterministic fallback after the model has already had one chance to trim itself.
+ * Keep the newest/Tail facts and remove the oldest/Head facts. The omission marker is model-visible;
+ * when even that marker cannot fit, the suffix alone is preferable to lying about a complete summary.
+ *
+ * The cut is tested through `Token.estimate` itself, not a `chars * 4` surrogate. That distinction
+ * matters for dense structure, paths, digits, high-entropy strings, and non-ASCII text.
+ */
+export const trimSummaryHead = (text: string, budgetTokens: number) => {
+  const value = text.trimEnd()
+  if (!value || !Number.isFinite(budgetTokens) || budgetTokens <= 0) return ""
+  const fits = (candidate: string) => Token.estimate(candidate) <= budgetTokens
+  if (fits(value)) return value
+
+  // Search by Unicode scalar rather than UTF-16 code unit so the kept tail never begins with half
+  // a surrogate pair. Mechanical recovery is allowed to lose the oldest prose, not corrupt the
+  // newest identifier or emoji into an invalid string.
+  const scalars = Array.from(value)
+
+  const withMarker = (length: number) =>
+    length <= 0 ? SUMMARY_HEAD_REMOVED : `${SUMMARY_HEAD_REMOVED}\n${scalars.slice(scalars.length - length).join("")}`
+  const markerFits = fits(SUMMARY_HEAD_REMOVED)
+  let low = 0
+  let high = scalars.length
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2)
+    const candidate = markerFits ? withMarker(middle) : scalars.slice(scalars.length - middle).join("")
+    if (fits(candidate)) low = middle
+    else high = middle - 1
+  }
+  if (low === 0) return markerFits ? SUMMARY_HEAD_REMOVED : ""
+  return markerFits ? withMarker(low) : scalars.slice(scalars.length - low).join("")
+}
+
+export const buildSummaryTrimPrompt = (summary: string, budgetTokens: number) =>
+  `Rewrite the actual summary inside <summary-to-trim> so it is complete and no more than ${budgetTokens} output tokens.
+Output only the rewritten summary. Do not add facts. Preserve the Markdown section order and headings, merging or shortening bullets as needed.
+
+<summary-to-trim>
+${summary}
+</summary-to-trim>`
+
 export const make = (dependencies: Dependencies) => {
   const config = settings(dependencies.config)
+  const summarize = Effect.fn("SessionCompaction.summarize")(function* (input: {
+    readonly prompt: string
+    readonly model: Model
+    readonly outputTokens: number
+  }) {
+    const chunks: string[] = []
+    let failed = false
+    let finish: FinishReason | undefined
+    let reportedTokens: number | undefined
+    const completed = yield* ReasoningBudget.stream({
+      request: LLM.request({
+        model: input.model,
+        messages: [Message.user(input.prompt)],
+        tools: [],
+        generation: { maxTokens: input.outputTokens },
+      }),
+      stream: (request) => dependencies.llm.stream(request),
+      budget: COMPACTION_REASONING_BUDGET,
+    }).pipe(
+      Stream.runForEach((event) => {
+        if (LLMEvent.is.providerError(event)) failed = true
+        if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
+        if (event.type === "finish" || event.type === "step-finish") {
+          finish = event.reason
+          const visible = event.usage?.visibleOutputTokens
+          if (visible !== undefined && Number.isFinite(visible) && visible > 0)
+            reportedTokens = Math.max(reportedTokens ?? 0, visible)
+        }
+        return Effect.void
+      }),
+      Effect.as(true),
+      Effect.catchTag("LLM.Error", () => Effect.succeed(false)),
+      Effect.timeoutOrElse({
+        duration: CalloutPolicy.summarizer.timeoutMs,
+        orElse: () => Effect.succeed(false),
+      }),
+    )
+    return { text: chunks.join(""), completed, failed, finish, reportedTokens } as const
+  })
   /**
    * A2-a — the CHEAP tier, ahead of everything the summarizer does.
    *
@@ -363,7 +456,13 @@ export const make = (dependencies: Dependencies) => {
       previousSummary: previousSummary?.type === "compaction" ? previousSummary.summary : undefined,
       context: [previousSummary?.type === "compaction" ? previousSummary.recent : "", selected.head].filter(Boolean),
     })
-    const summaryOutput = Math.min(output || SUMMARY_OUTPUT_TOKENS, SUMMARY_OUTPUT_TOKENS)
+    const requestedSummaryOutput = Math.min(output || SUMMARY_OUTPUT_TOKENS, SUMMARY_OUTPUT_TOKENS)
+    // The retry contains the first answer AND reserves the same amount for its replacement. Cap the
+    // answer so a conforming first attempt can always be quoted into a second request without
+    // overflowing the model merely because the recovery envelope exists.
+    const retryEnvelope = Token.estimate(buildSummaryTrimPrompt("", requestedSummaryOutput))
+    const summaryOutput = Math.min(requestedSummaryOutput, Math.floor((context - retryEnvelope) / 2))
+    if (summaryOutput <= 0) return false
     if (Token.estimate(summaryPrompt) > context - summaryOutput) return false
     const messageID = SessionMessage.ID.create()
     yield* dependencies.events.publish(SessionEvent.Compaction.Started, {
@@ -373,62 +472,48 @@ export const make = (dependencies: Dependencies) => {
       reason,
     })
 
-    const chunks: string[] = []
-    let failed = false
-    // 🔴 TRUNCATION WAS INVISIBLE HERE. This handler used to keep only `providerError` and
-    // `textDelta`, so a summary cut off at `max_tokens` was stored as the session's memory and
-    // nothing downstream could tell — `!summary.trim()` below catches EMPTY, never TRUNCATED.
-    // `judgeCompletion` (`runner/llm.ts`) already read `finish` and retried through
-    // `UtilityCap.decide`; this side simply did not look.
-    let finish: FinishReason | undefined
-    // The summary uses the same bounded controller as other judgement calls. The fixture routes it
-    // by the durable marker in the user message rather than by the old incidental absence of system
-    // parts, because ReasoningBudget adds its own system nudge.
-    const summarized = yield* ReasoningBudget.stream({
-      request: LLM.request({
-        model: input.model,
-        messages: [Message.user(summaryPrompt)],
-        tools: [],
-        generation: { maxTokens: summaryOutput },
-      }),
-      stream: (request) => dependencies.llm.stream(request),
-      budget: COMPACTION_REASONING_BUDGET,
-    }).pipe(
-      Stream.runForEach((event) => {
-        if (LLMEvent.is.providerError(event)) failed = true
-        if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
-        // 🔴 BOTH events, because the two supported call shapes emit DIFFERENT ones — and reading
-        // only `finish` is how this guard would have died the moment somebody wired the thinking
-        // budget above. A raw `llm.stream` forwards the provider's `finish`; `ReasoningBudget`
-        // SWALLOWS it and closes with `stepFinish({ index, reason, usage })` instead
-        // (`runner/reasoning-budget.ts`, the `out.push` at the end of its finaliser). Same reason,
-        // different envelope. `judgeCompletion` reads `finish` and is safe only because it calls
-        // the provider directly; the titler and `absorb` go through the wrapper and read neither.
-        if (event.type === "finish" || event.type === "step-finish") finish = event.reason
-        return Effect.void
-      }),
-      Effect.as(true),
-      Effect.catchTag("LLM.Error", () => Effect.succeed(false)),
-      Effect.timeoutOrElse({
-        duration: CalloutPolicy.summarizer.timeoutMs,
-        orElse: () => Effect.succeed(false),
-      }),
-    )
-    const summary = chunks.join("")
-    if (!summarized || failed || !summary.trim()) return false
-    // ⚠️ A non-clean summary is WORSE than none: it is stored as the session's memory and reads as
-    // complete. `fail_open` is the honest answer — the deterministic packer is still available, which
-    // is the whole reason `CalloutPolicy.summarizer` declares that failure mode. `undefined` is also
-    // rejected: a summary is durable state, so absence of a success envelope is not success.
-    if (finish !== "stop") {
-      if (FinishRecovery.isTruncated(finish))
-        yield* Log.event("session.compaction.summary.truncated", {
-          "session.id": String(input.sessionID),
-          "compaction.output.cap": summaryOutput,
-          "compaction.summary.chars": summary.length,
-        })
-      return false
+    // The chain is deliberately finite: one ordinary summary, one request to trim that ACTUAL
+    // output, then a deterministic oldest-first cut. A model cannot turn compaction into an
+    // unbounded self-edit loop.
+    const first = yield* summarize({ prompt: summaryPrompt, model: input.model, outputTokens: summaryOutput })
+    if (!first.completed || first.failed || !first.text.trim()) return false
+    const firstFits = summaryWithinBudget(first.text, summaryOutput, first.reportedTokens)
+    const firstClean = first.finish === "stop" && firstFits
+    let summary = first.text
+    if (!firstClean) {
+      const retryable = FinishRecovery.isTruncated(first.finish) || (first.finish === "stop" && !firstFits)
+      if (!retryable) return false
+      yield* Log.event("session.compaction.summary.truncated", {
+        "session.id": String(input.sessionID),
+        "compaction.output.cap": summaryOutput,
+        "compaction.summary.chars": first.text.length,
+      })
+      const trimPrompt = buildSummaryTrimPrompt(first.text, summaryOutput)
+      // A non-conforming server may emit more than its requested max_tokens. Never turn that defect
+      // into a second oversized request; the deterministic fallback is already the terminal step.
+      const second =
+        Token.estimate(trimPrompt) <= context - summaryOutput
+          ? yield* summarize({ prompt: trimPrompt, model: input.model, outputTokens: summaryOutput })
+          : undefined
+      const secondClean =
+        second !== undefined &&
+        second.completed &&
+        !second.failed &&
+        !!second.text.trim() &&
+        second.finish === "stop" &&
+        summaryWithinBudget(second.text, summaryOutput, second.reportedTokens)
+      if (secondClean) summary = second.text
+      else {
+        // If the retry completed but remained oversized, its rewritten text is the best source.
+        // If it failed or was cut off, retain the first attempt: it is the only completed candidate.
+        const source =
+          second !== undefined && second.completed && !second.failed && second.finish === "stop" && second.text.trim()
+            ? second
+            : first
+        summary = trimSummaryHead(source.text, summaryOutput)
+      }
     }
+    if (!summary.trim()) return false
     const prefixSeq = entries.reduce((highest, entry) => Math.max(highest, entry.seq), 0)
     yield* dependencies.events.publish(SessionEvent.Compaction.Ended, {
       sessionID: input.sessionID,

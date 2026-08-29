@@ -139,6 +139,7 @@ import { ColleagueHop } from "../colleague-hop"
 import { ColleagueTool } from "../../tool/colleague"
 import { ColleagueBound } from "../colleague-bound"
 import { VisionCopy } from "./vision-copy"
+import { ToolOutputSummary } from "./tool-output-summary"
 
 // Ordering can only choose among retrieved candidates — fetch wider than the recall budget.
 
@@ -620,6 +621,63 @@ export const layer = Layer.effect(
         cap = verdict.cap
       }
       return chunks.join("")
+    })
+
+    /**
+     * One bounded utility call for the map/reduce tool-output summarizer.
+     *
+     * The tool call's device slot has already been released before settlement begins. This request
+     * therefore uses the selected model without holding the interactive generation admission, carries
+     * no tools, disables ordinary thinking, and has an explicit output ceiling. The caller applies
+     * one wall-clock deadline to the WHOLE finite map/reduce chain rather than multiplying that
+     * deadline by the number of chunks.
+     */
+    const completeToolOutputSummary = Effect.fn("SessionRunner.toolOutputSummary")(function* (
+      model: Parameters<typeof LLM.request>[0]["model"],
+      input: ToolOutputSummary.CompletionInput,
+    ) {
+      const chunks: string[] = []
+      let finish: FinishReason | undefined
+      let failed = false
+      yield* llm
+        .stream(
+          LLM.request({
+            model,
+            messages: [Message.user(input.prompt)],
+            tools: [],
+            generation: { maxTokens: input.maxTokens },
+            http: { body: UtilityPass.NO_THINKING },
+          }),
+        )
+        .pipe(
+          Stream.runForEach((event) => {
+            if (LLMEvent.is.providerError(event)) failed = true
+            if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
+            if (event.type === "finish" || event.type === "step-finish") finish = event.reason
+            return Effect.void
+          }),
+        )
+      return { text: failed ? "" : chunks.join(""), finish }
+    })
+
+    const summarizeToolSettlement = Effect.fn("SessionRunner.summarizeToolSettlement")(function* (
+      settlement: ToolRegistry.Settlement,
+      model: Parameters<typeof LLM.request>[0]["model"],
+    ) {
+      if (settlement.semanticSummarySource === undefined || settlement.output === undefined) return settlement
+      const replacement = yield* ToolOutputSummary.summarize({
+        source: settlement.semanticSummarySource,
+        boundedOutput: settlement.output,
+        contextTokens: model.route.defaults.limits?.context ?? 0,
+        complete: (input) => completeToolOutputSummary(model, input),
+      }).pipe(
+        Effect.catchTag("LLM.Error", () => Effect.succeed(undefined)),
+        Effect.timeoutOrElse({
+          duration: CalloutPolicy.summarizer.timeoutMs,
+          orElse: () => Effect.succeed(undefined),
+        }),
+      )
+      return replacement === undefined ? settlement : { ...settlement, ...replacement }
     })
 
     const introspect = Effect.fn("SessionRunner.introspect")(function* (
@@ -1882,16 +1940,22 @@ export const layer = Layer.effect(
               ).pipe(
                 Effect.flatMap((settlement) =>
                   Effect.gen(function* () {
+                    // The registry has already retained and mechanically bounded oversized output.
+                    // Only the runner knows the selected model and its context, so semantic
+                    // map/reduction happens here. A failed utility pass keeps the deterministic
+                    // preview; a >4 MiB artifact never carries `semanticSummarySource` and therefore
+                    // never reaches a model call at all.
+                    const modelSettlement = yield* summarizeToolSettlement(settlement, model)
                     // A pre-action policy halted. The call did not run; the refusal is already the
                     // tool result the model sees, and this latch is the half a `deny` does not have —
                     // it ends the drain rather than letting the model route around the refusal.
-                    if (settlement.halted === true) policyHalted = true
+                    if (modelSettlement.halted === true) policyHalted = true
                     // Count the images this turn has actually been handed, so the NEXT call in the
                     // same turn sees an accurate `held`. Counting the settled RESULT rather than the
                     // call is deliberate: a read that failed, was denied, or returned the withheld
                     // notice hands over no pixels and must not consume the budget.
-                    if (settlement.result.type === "content")
-                      for (const entry of settlement.result.value)
+                    if (modelSettlement.result.type === "content")
+                      for (const entry of modelSettlement.result.value)
                         if (entry.type === "file" && entry.mime.toLowerCase().startsWith("image/")) imagesHeldThisTurn++
                     // A missing file is authoritative negative evidence. If recalled memory led this
                     // exact step to that path, invalidate the claim before the next step recalls again.
@@ -1899,7 +1963,7 @@ export const layer = Layer.effect(
                     // transient I/O failures must never erase a valid memory.
                     if (
                       event.name === "read" &&
-                      settlement.result.type === "error" &&
+                      modelSettlement.result.type === "error" &&
                       typeof event.input === "object" &&
                       event.input !== null &&
                       "path" in event.input &&
@@ -1934,10 +1998,10 @@ export const layer = Layer.effect(
                       LLMEvent.toolResult({
                         id: event.id,
                         name: event.name,
-                        result: settlement.result,
-                        output: settlement.output,
+                        result: modelSettlement.result,
+                        output: modelSettlement.output,
                       }),
-                      settlement.outputPaths ?? [],
+                      modelSettlement.outputPaths ?? [],
                     )
                   }),
                 ),

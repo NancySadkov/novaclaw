@@ -35,7 +35,7 @@ export const DEFAULT_CONTEXT_SIZE = 32_000
 export const MIN_RESPONSE_RESERVE = 8_192
 /** Flat per-tool-call token overhead the chars/4 estimate can't see (ids, wire framing). */
 export const TOOL_CALL_OVERHEAD = 8
-/** chars/4 UNDERcounts code/JSON-heavy history — keep 10% headroom (pack to 90% of available). */
+/** Heuristics remain approximate across model tokenizers — keep 10% headroom (pack to 90% of available). */
 export const BUDGET_KEEP_FRACTION = 0.9
 /** ctx_pressure tripwire: reported prompt tokens at ≥95% of the window flags the estimator. */
 export const PRESSURE_THRESHOLD = 0.95
@@ -43,7 +43,7 @@ export const PRESSURE_THRESHOLD = 0.95
 const toolCallCount = (message: Message) =>
   message.content.filter((part) => part.type === "tool-call" || part.type === "tool-result").length
 
-/** tokens(msg) ≈ chars/4 (+8 per tool call/result) — tokenizer-free by design. */
+/** Tokenizer-free content-shape estimate (+8 per tool call/result). */
 export const estimateMessage = (message: Message): number => {
   // 🔴 Media-aware: a message's content carries tool results, and a read-tool image lowers to a
   // `file` part whose base64 was being counted by the character. See `Token.estimateStructured`.
