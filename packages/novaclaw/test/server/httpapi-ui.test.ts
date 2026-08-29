@@ -4,6 +4,7 @@ import { Flag } from "@novaclaw/core/flag/flag"
 import { ConfigProvider, Effect, Layer } from "effect"
 import { HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { FSUtil } from "@novaclaw/core/fs-util"
+import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { RuntimeFlags } from "../../src/effect/runtime-flags"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
 import { serveEmbeddedUIEffect, serveUIEffect } from "../../src/server/shared/ui"
@@ -83,6 +84,9 @@ function uiApp(input?: {
       Layer.provide([
         input?.fs ? Layer.succeed(FSUtil.Service)(input.fs) : FSUtil.defaultLayer,
         RuntimeFlags.layer({ disableEmbeddedWebUi: input?.disableEmbeddedWebUi ?? false }),
+        Layer.mock(SettingsConfigStore.Service)({
+          serverPassword: () => Effect.succeed(undefined),
+        }),
         HttpServer.layerServices,
         ConfigProvider.layer(
           ConfigProvider.fromUnknown({

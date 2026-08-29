@@ -2,15 +2,22 @@ export * as AppRegistry from "./app-registry"
 
 import fs from "fs/promises"
 import path from "path"
+import { isManifestRouteId, MANIFEST_ROUTE_IDS, type ManifestRouteId } from "./app-route"
 import { Global } from "./global"
 
 // The persisted home-app registry (B14): the server-side half of the "make me an app" seam. An
-// agent (or the user) registers a MANIFEST — a launcher, not code: open a route, a URL, or a chat
-// draft pre-filled with a prompt. Manifests live one-per-file under Global.Path.data/apps/<id>.json;
+// agent (or the user) registers a MANIFEST — a launcher, not code: open a closed built-in route id,
+// a URL, or a chat draft pre-filled with a prompt. Manifests live one-per-file under
+// Global.Path.data/apps/<id>.json;
 // the client loads them on mount and merges them into registeredApps(). Plain async functions over
 // node:fs/promises (trash.ts style) — the tool + HTTP handlers call these directly.
 
 export type OpenType = "route" | "url" | "prompt"
+
+export type ManifestOpen =
+  | { readonly type: "route"; readonly value: ManifestRouteId }
+  | { readonly type: "url"; readonly value: string }
+  | { readonly type: "prompt"; readonly value: string }
 
 export interface Manifest {
   readonly id: string
@@ -18,7 +25,7 @@ export interface Manifest {
   readonly icon?: string
   readonly accent?: string
   readonly subtitle?: string
-  readonly open: { readonly type: OpenType; readonly value: string }
+  readonly open: ManifestOpen
   readonly createdAt: number
   readonly updatedAt: number
 }
@@ -93,20 +100,29 @@ export function slugify(title: string): string {
 
 const OPEN_TYPES: readonly OpenType[] = ["route", "url", "prompt"]
 
+function normalizeOpen(open: SaveInput["open"]): Manifest["open"] {
+  if (!OPEN_TYPES.includes(open.type)) throw new Error(`Invalid open.type "${open.type}": route | url | prompt`)
+  const value = open.value.trim()
+  if (!value) throw new Error("open.value must not be empty")
+  if (open.type === "route") {
+    if (!isManifestRouteId(value))
+      throw new Error(`Unknown app route id "${value}". Choose one of: ${MANIFEST_ROUTE_IDS.join(", ")}`)
+    return { type: "route", value }
+  }
+  if (open.type === "url") {
+    if (!/^https?:\/\//.test(value)) throw new Error("open.value for a url app must start with http:// or https://")
+    return { type: "url", value }
+  }
+  return { type: "prompt", value }
+}
+
 /** Validate + normalize a SaveInput; throws with a model/user-legible message. */
 export function normalize(input: SaveInput, options?: Options): Manifest {
   const id = input.id?.trim() || slugify(input.title)
   if (!isValidId(id)) throw new Error(`Invalid app id "${id}": use a lowercase slug (a-z, 0-9, -, _)`)
   if (RESERVED_IDS.has(id)) throw new Error(`App id "${id}" is reserved by a built-in app`)
   if (!input.title.trim()) throw new Error("App title must not be empty")
-  if (!OPEN_TYPES.includes(input.open.type))
-    throw new Error(`Invalid open.type "${input.open.type}": route | url | prompt`)
-  const value = input.open.value.trim()
-  if (!value) throw new Error("open.value must not be empty")
-  if (input.open.type === "url" && !/^https?:\/\//.test(value))
-    throw new Error("open.value for a url app must start with http:// or https://")
-  if (input.open.type === "route" && !value.startsWith("/"))
-    throw new Error("open.value for a route app must start with /")
+  const open = normalizeOpen(input.open)
   const now = (options?.now ?? (() => new Date()))().getTime()
   return {
     id,
@@ -114,7 +130,7 @@ export function normalize(input: SaveInput, options?: Options): Manifest {
     ...(input.icon?.trim() ? { icon: input.icon.trim() } : {}),
     ...(input.accent?.trim() ? { accent: input.accent.trim() } : {}),
     ...(input.subtitle?.trim() ? { subtitle: input.subtitle.trim() } : {}),
-    open: { type: input.open.type, value },
+    open,
     createdAt: now,
     updatedAt: now,
   }
@@ -145,9 +161,11 @@ export async function listApps(options?: Options): Promise<Manifest[]> {
     if (!raw) continue
     try {
       const parsed = JSON.parse(raw) as Manifest
-      if (isValidId(parsed.id) && parsed.title && parsed.open?.value) manifests.push(parsed)
+      if (!isValidId(parsed.id) || !parsed.title || !parsed.open?.value) continue
+      const open = normalizeOpen(parsed.open)
+      manifests.push({ ...parsed, open })
     } catch {
-      // A torn write mid-crash — skip rather than fail the whole listing.
+      // A torn write or a manifest from an older/free-form contract cannot cost the whole launcher.
     }
   }
   return manifests.sort((a, b) => a.title.localeCompare(b.title))

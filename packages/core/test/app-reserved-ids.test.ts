@@ -121,8 +121,10 @@ describe("the two RESERVED_IDS lists are the same list", () => {
     // exported `normalize` actually enforces, so a refactor that moves the check elsewhere cannot
     // leave this file congratulating a dead constant.
     for (const id of core!)
-      expect(() => AppRegistry.normalize({ title: id, id, open: { type: "route", value: "/x" } })).toThrow(/reserved/)
-    expect(AppRegistry.normalize({ title: "Stock prices", open: { type: "route", value: "/x" } }).id).toBe(
+      expect(() => AppRegistry.normalize({ title: id, id, open: { type: "route", value: "files" } })).toThrow(
+        /reserved/,
+      )
+    expect(AppRegistry.normalize({ title: "Stock prices", open: { type: "route", value: "files" } }).id).toBe(
       "stock-prices",
     )
   })

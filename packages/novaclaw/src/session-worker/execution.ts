@@ -188,6 +188,10 @@ export const layer = Layer.effect(
         // prompt with nothing after it. Shared with the in-process executor because THIS is the
         // layer the server binds — a fix that lives only in `execution/local.ts` never runs.
         const noteInterrupted = SessionInterruptNotice.publish({ events, store, sessionID, located })
+        // `idle` is the scheduler axis only: it means this session is no longer consuming a worker.
+        // The attempt row is updated BEFORE every call below and owns whether the stop was settled,
+        // interrupted, failed or paused. UI attention must join both facts; treating idle alone as
+        // success is how an exhausted recovery used to disappear behind a healthy-looking roster.
         const publishIdle = Effect.gen(function* () {
           const latest = yield* store.get(sessionID).pipe(Effect.orElseSucceed(() => undefined))
           if (latest?.result === undefined) yield* publishStatus({ type: "idle" })

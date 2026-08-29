@@ -6,6 +6,7 @@ import { ServerScope } from "@/utils/server-scope"
 
 type StoredProject = { worktree: string; expanded: boolean }
 type StoredServer = string | ServerConnection.HttpBase | ServerConnection.Http
+type StoredAuthOverride = { password: string | null }
 type ServerProjectState = { projects: Record<string, StoredProject[]>; lastProject: Record<string, string> }
 const HEALTH_POLL_INTERVAL_MS = 10_000
 
@@ -114,6 +115,7 @@ export function createServerProjects<T extends ServerProjectState>(input: {
 export function resolveServerList(input: {
   props?: Array<ServerConnection.Any>
   stored: StoredServer[]
+  auth?: Record<string, StoredAuthOverride>
 }): Array<ServerConnection.Any> {
   const deduped = new Map<ServerConnection.Key, ServerConnection.Any>(
     input.props?.map((v) => [ServerConnection.key(v), v]) ?? [],
@@ -141,7 +143,14 @@ export function resolveServerList(input: {
     else deduped.set(key, conn)
   }
 
-  return [...deduped.values()]
+  return [...deduped.values()].map((conn) => {
+    const override = input.auth?.[ServerConnection.key(conn)]
+    if (!override) return conn
+    return {
+      ...conn,
+      http: { ...conn.http, password: override.password ?? undefined },
+    }
+  })
 }
 
 export namespace ServerConnection {
@@ -218,7 +227,11 @@ export function nextServerAfterRemoval(
   return next ? ServerConnection.key(next) : fallback
 }
 
-export const { use: useServer, provider: ServerProvider, context: ServerContext } = createSimpleContext({
+export const {
+  use: useServer,
+  provider: ServerProvider,
+  context: ServerContext,
+} = createSimpleContext({
   name: "Server",
   gate: true,
   init: (props: {
@@ -233,6 +246,7 @@ export const { use: useServer, provider: ServerProvider, context: ServerContext 
       },
       createStore({
         list: [] as StoredServer[],
+        auth: {} as Record<string, StoredAuthOverride>,
         projects: {} as Record<string, StoredProject[]>,
         lastProject: {} as Record<string, string>,
       }),
@@ -241,7 +255,7 @@ export const { use: useServer, provider: ServerProvider, context: ServerContext 
     const url = (x: StoredServer) => (typeof x === "string" ? x : "type" in x ? x.http.url : x.url)
 
     const allServers = createMemo((): Array<ServerConnection.Any> => {
-      return resolveServerList({ stored: store.list, props: props.servers })
+      return resolveServerList({ stored: store.list, props: props.servers, auth: store.auth })
     })
 
     const [state, setState] = createStore({
@@ -273,7 +287,38 @@ export const { use: useServer, provider: ServerProvider, context: ServerContext 
       const list = store.list.filter((x) => url(x) !== key)
       batch(() => {
         setStore("list", list)
+        setStore("auth", (auth) => {
+          const remaining = { ...auth }
+          delete remaining[key]
+          return remaining
+        })
         if (state.active === key) setState("active", next)
+      })
+    }
+
+    /**
+     * Keep the authenticated client on the same side of an incoming-token rotation.
+     *
+     * Sidecars already have a launcher default, so clearing the stored token removes the override
+     * and reveals that fresh default again. Ordinary HTTP connections have no launcher-owned
+     * credential; clearing records an explicit open connection instead of resurrecting an old
+     * password from the saved server row.
+     */
+    function setIncomingToken(key: ServerConnection.Key, token: string) {
+      const conn = allServers().find((candidate) => ServerConnection.key(candidate) === key)
+      if (!conn) return
+      if (token.length > 0) {
+        setStore("auth", key, { password: token })
+        return
+      }
+      if (conn.type !== "sidecar") {
+        setStore("auth", key, { password: null })
+        return
+      }
+      setStore("auth", (auth) => {
+        const remaining = { ...auth }
+        delete remaining[key]
+        return remaining
       })
     }
 
@@ -318,6 +363,7 @@ export const { use: useServer, provider: ServerProvider, context: ServerContext 
       setActive,
       add,
       remove,
+      setIncomingToken,
       scope,
       projects: {
         ...projects,

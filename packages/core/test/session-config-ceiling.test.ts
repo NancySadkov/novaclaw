@@ -68,9 +68,11 @@ describe("the memory ceiling", () => {
     // reads.
     const source = fs.readFileSync(path.join(SRC, "session", "effective-config.ts"), "utf8")
     expect(source).toMatch(/ProjectDefaults\.fold\(/)
-    // clamp(resolve(folded.defaults, …)) — the resolve is the clamp ARGUMENT, so the ceiling lands on
-    // the chain-resolved value and cannot be climbed back over by an explicit `true`.
-    expect(source).toMatch(/clampToCeilings\(\s*resolve(SessionConfig|Config)\(\s*folded\.defaults/)
+    // A project-file fault may strengthen the folded defaults before the chain walk, so pin the
+    // intermediate layer's provenance as well as the nesting: clamp(resolve(guardedDefaults, …)).
+    // The resolve is still the clamp ARGUMENT, so an explicit `true` cannot climb over the ceiling.
+    expect(source).toMatch(/guardedDefaults\s*=\s*[^;]*folded\.defaults/)
+    expect(source).toMatch(/clampToCeilings\(\s*resolve(SessionConfig|Config)\(\s*guardedDefaults/)
   })
 
   test("no reader re-applies the ceiling by hand", () => {

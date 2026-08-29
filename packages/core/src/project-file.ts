@@ -30,7 +30,18 @@ export type Resolution =
    * to a grandparent's would apply settings they did not ask for while their own edit did nothing and
    * said nothing. A broken file is a thing to report, not a thing to route around.
    */
-  | { readonly kind: "invalid"; readonly file: string; readonly reason: string; readonly detail: string }
+  | {
+      readonly kind: "invalid"
+      readonly file: string
+      /**
+       * The enforcement classification. `reason` remains the parser/presentation detail, while
+       * this field keeps a filesystem read failure distinct from malformed bytes and keeps a file
+       * written by a newer build distinct from both.
+       */
+      readonly failure: "invalid" | "future-version" | "unreadable"
+      readonly reason: string
+      readonly detail: string
+    }
   /** No file at or above the folder, within the boundary. The folder is usable, just not a Project. */
   | { readonly kind: "none" }
 
@@ -50,18 +61,35 @@ export interface WalkOptions {
 /**
  * The walk, with reading injected so it can be tested without a filesystem.
  *
- * `read` returns the file's text, or `undefined` when there is no file there.
+ * `read` returns the file's text, `undefined` only when it is absent, or an `unreadable` result for
+ * every other I/O failure.
  */
-export function walk(options: WalkOptions, read: (file: string) => string | undefined): Resolution {
+export type ReadResult = string | undefined | { readonly kind: "unreadable"; readonly detail: string }
+
+export function walk(options: WalkOptions, read: (file: string) => ReadResult): Resolution {
   const boundary = path.resolve(options.boundary ?? os.homedir())
   let dir = path.resolve(options.from)
   for (;;) {
     const file = path.join(dir, FILENAME)
     const text = read(file)
+    if (typeof text === "object")
+      return {
+        kind: "invalid",
+        file,
+        failure: "unreadable",
+        reason: "unreadable",
+        detail: text.detail,
+      }
     if (text !== undefined) {
       const parsed = ProjectFile.parse(text)
       if (parsed.ok) return { kind: "project", root: dir, file, info: parsed.info }
-      return { kind: "invalid", file, reason: parsed.reason, detail: parsed.detail }
+      return {
+        kind: "invalid",
+        file,
+        failure: parsed.reason === "future-version" ? "future-version" : "invalid",
+        reason: parsed.reason,
+        detail: parsed.detail,
+      }
     }
     // The boundary is checked AFTER reading, so a `novaclaw.json` in the boundary directory itself
     // still counts. A user who puts one at `~` meant it; what they cannot have meant is one above.
@@ -77,14 +105,13 @@ export function walk(options: WalkOptions, read: (file: string) => string | unde
 /**
  * The same walk against the real filesystem.
  *
- * ⚠️ Reads with `readFileStringSafe`, so an unreadable file — permissions, a race with a delete —
- * is `undefined` and the walk CONTINUES upward. That is different from a file that exists and is
- * malformed, which stops it: "I cannot see it" and "it is broken" are not the same statement, and
- * only the second is something the user can act on.
+ * Not-found is the one read outcome that means "keep walking". Every other I/O failure stops at the
+ * file and remains distinguishable from malformed bytes: a temporary lock or ACL error must never
+ * erase the constraints the nearest project file may contain.
  */
 export const resolve = Effect.fn("ProjectFile.resolve")(function* (from: string, boundary?: string) {
   const fs = yield* FSUtil.Service
-  const texts = new Map<string, string | undefined>()
+  const texts = new Map<string, ReadResult>()
   // Two passes: collect the candidate paths, read them, then run the pure walk over what was read.
   // The alternative — an Effect-shaped loop — would put the interesting logic somewhere it cannot be
   // tested without a filesystem, which is where it was easiest to get wrong.
@@ -92,7 +119,15 @@ export const resolve = Effect.fn("ProjectFile.resolve")(function* (from: string,
   const limit = path.resolve(boundary ?? os.homedir())
   for (;;) {
     const file = path.join(dir, FILENAME)
-    texts.set(file, yield* fs.readFileStringSafe(file).pipe(Effect.orElseSucceed(() => undefined)))
+    texts.set(
+      file,
+      yield* fs.readFileStringSafe(file).pipe(
+        Effect.match({
+          onFailure: (error) => ({ kind: "unreadable" as const, detail: error.message }),
+          onSuccess: (text) => text,
+        }),
+      ),
+    )
     if (dir === limit) break
     const parent = path.dirname(dir)
     if (parent === dir) break

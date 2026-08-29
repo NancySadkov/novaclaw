@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
+import { MANIFEST_ROUTE_IDS, MANIFEST_ROUTE_TARGETS, manifestRoutePath } from "@novaclaw/core/app-route"
 
 // Two invariants left behind by collapsing the `newLayoutDesigns` legacy shell (v0.2.0-prep §5).
 // Both are the defect class standing decision 1 names: violating either compiles green.
@@ -67,6 +68,46 @@ describe("the legacy directory URL shape still resolves", () => {
           "novaclaw:// deep links use that URL shape, and nothing else answers it.",
       ).toBe(true)
     }
+  })
+})
+
+describe("persisted launcher routes are a closed build-owned vocabulary", () => {
+  const routes = code("app.tsx")
+
+  function routeBackedBuiltins(): Record<string, string> {
+    const source = code("apps/builtins.tsx")
+    const starts = [...source.matchAll(/^\s*id: "([a-z0-9-]+)",$/gm)]
+    return Object.fromEntries(
+      starts.flatMap((match, index) => {
+        const body = source.slice(match.index, starts[index + 1]?.index ?? source.length)
+        const route = /navigate\("(\/[^"]*)"\)/.exec(body)?.[1]
+        return route ? [[match[1]!, route]] : []
+      }),
+    )
+  }
+
+  test("the shared ids are exactly the route-backed built-in app registry", () => {
+    expect(MANIFEST_ROUTE_TARGETS as Readonly<Record<string, string>>).toEqual(routeBackedBuiltins())
+  })
+
+  test("every accepted route id resolves to an explicitly registered page", () => {
+    const unresolved = MANIFEST_ROUTE_IDS.flatMap((id) => {
+      const route = manifestRoutePath(id)
+      return route && routes.includes(`<Route path="${route}"`) ? [] : [`${id} -> ${route ?? "(missing)"}`]
+    })
+    expect(
+      unresolved,
+      "A manifest route id is a promise that this build owns the target. Register the page in app.tsx " +
+        "or remove the id from the shared manifest route contract.",
+    ).toEqual([])
+  })
+
+  test("manifest launchers resolve ids instead of navigating persisted paths", () => {
+    const source = code("apps/manifest-apps.ts")
+    expect(source).toContain("manifestRoutePath(manifest.open.value)")
+    expect(source).not.toContain("navigate(manifest.open.value)")
+    expect(manifestRoutePath("/files")).toBeUndefined()
+    expect(manifestRoutePath("stocks")).toBeUndefined()
   })
 })
 
@@ -150,9 +191,14 @@ function pageFileForRoute(route: string): string | undefined {
   const component = new RegExp(`<Route path="${escaped}" component=\\{(\\w+)\\}`).exec(app)?.[1]
   if (!component) return undefined
   for (const entry of app.matchAll(/^import\s+(?:\{([^}]+)\}|(\w+))\s+from\s+"@\/(pages\/[^"]+)"/gm)) {
-    const names = (entry[1] ?? entry[2] ?? "")
-      .split(",")
-      .map((name) => name.trim().split(/\s+as\s+/).pop()?.trim() ?? "")
+    const names = (entry[1] ?? entry[2] ?? "").split(",").map(
+      (name) =>
+        name
+          .trim()
+          .split(/\s+as\s+/)
+          .pop()
+          ?.trim() ?? "",
+    )
     if (!names.includes(component)) continue
     for (const candidate of [`${entry[3]}.tsx`, `${entry[3]}.ts`, `${entry[3]}/index.tsx`]) {
       if (fs.existsSync(path.join(SRC, candidate))) return candidate

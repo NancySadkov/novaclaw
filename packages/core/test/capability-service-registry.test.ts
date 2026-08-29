@@ -29,6 +29,7 @@ const settingsOf = (value: () => Declarations | undefined) =>
     SettingsConfigStore.Service,
     SettingsConfigStore.Service.of({
       all: () => Effect.sync(() => ({ capability_services: value() })),
+      serverPassword: () => Effect.succeed(undefined),
       set: () => Effect.void,
       remove: () => Effect.void,
       unreadable: () => Effect.succeed([]),

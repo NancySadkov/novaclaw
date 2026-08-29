@@ -270,6 +270,12 @@ describe("Config layer settings overlay (8c: jsonc is not a runtime source)", ()
       SettingsConfigStore.Service,
       SettingsConfigStore.Service.of({
         all: () => Effect.succeed({ ...values }),
+        serverPassword: () =>
+          Effect.succeed(
+            typeof (values.server as { password?: unknown } | undefined)?.password === "string"
+              ? (values.server as { password: string }).password || undefined
+              : undefined,
+          ),
         set: (key, value) =>
           Effect.sync(() => {
             values[key] = value

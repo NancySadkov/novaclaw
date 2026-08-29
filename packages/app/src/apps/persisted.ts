@@ -4,9 +4,9 @@ import { authTokenFromCredentials } from "@/utils/server"
 
 // The persisted half of the app registry (B14): server-side manifests written by the agent's
 // `register-app` tool (or POST /app), fetched over the V1 instance API. A manifest is a LAUNCHER —
-// open a route, a URL, or a chat draft pre-filled with a prompt — never code. This module holds the
-// DATA (a module signal, like registry.tsx); mapping manifests to HomeApps with live openers is the
-// home screen's job (openers need component scope: navigate/tabs).
+// open a closed route id, a URL, or a chat draft pre-filled with a prompt — never code. This module
+// holds the DATA (a module signal, like registry.tsx); mapping manifests to HomeApps with live openers
+// is the home screen's job (openers need component scope: navigate/tabs).
 
 export interface AppManifest {
   readonly id: string

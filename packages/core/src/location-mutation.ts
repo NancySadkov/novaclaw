@@ -92,13 +92,15 @@ export interface Interface {
    */
   readonly resolve: (
     input: ResolveInput,
-  ) => Effect.Effect<Target, PathError | FSUtil.Error | ProjectExclusion.ExcludedError>
+  ) => Effect.Effect<Target, PathError | FSUtil.Error | ProjectExclusion.ExcludedError | ProjectFileCache.FaultError>
   /**
    * The `novaclaw.json` exclusion list governing a canonical directory, for the two tools that
    * ENUMERATE rather than name (`glob`, `grep`). `resolve` speaks for their search root; only they
    * can speak for their rows. Everyone else should be using `resolve` and nothing else.
    */
-  readonly exclusionsFor: (directory: string) => Effect.Effect<ProjectExclusion.Declaration | undefined>
+  readonly exclusionsFor: (
+    directory: string,
+  ) => Effect.Effect<ProjectExclusion.Declaration | undefined, ProjectFileCache.FaultError>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/LocationMutation") {}

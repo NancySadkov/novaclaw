@@ -301,8 +301,10 @@ export const makeSessionGroups = <
             parentID: Session.ID.pipe(Schema.optional),
             agent: Agent.ID.pipe(Schema.optional),
             model: Model.Ref.pipe(Schema.optional),
-            // Device affinity (v0.2.0 B2) — the `DeviceRegistry` id whose admission gate and fairness
-            // ledger this session's turns queue on. Without this line the field is DROPPED at the
+            // Device placement (v0.2.0 B2) — a real `DeviceRegistry` id that must contain a catalog
+            // placement of the resolved model. The runner validates it before provider dispatch and
+            // derives admission identity from that placement; this string can never mint a gate.
+            // Without this line the field is DROPPED at the
             // edge rather than passed through: a `session.device` column with no wire writer would be
             // settable by nothing outside the kernel, which is the inert shape B2's first step
             // deleted three fields for.
@@ -317,7 +319,7 @@ export const makeSessionGroups = <
             // argument above needs — but a client is never TOLD it was ignored. That distinction is
             // the whole of NC-SEC-012, and the spec promising a rejection the runtime does not
             // perform is its own honesty defect (ruling 2), not something to re-derive from here.
-            device: Schema.String.pipe(Schema.optional),
+            device: Schema.NonEmptyString.pipe(Schema.optional),
             controlBinding: Schema.NonEmptyString.pipe(Schema.optional),
             systemPromptOverride: Schema.String.pipe(Schema.optional),
             type: Schema.Literals(["interactive", "sub-agent", "auto-prompting", "goal-oriented"]).pipe(
@@ -562,19 +564,22 @@ export const makeSessionGroups = <
           payload: Schema.Struct({
             title: Schema.optional(Schema.String),
             metadata: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+            /** A string pins a real Device; null removes the sparse override and restores automatic placement. */
+            device: Schema.optional(Schema.NullOr(Schema.NonEmptyString)),
             // Archive/unarchive: epoch millis to archive, null to restore (V1-nuke slice C — the
             // archive flow rode the V1 update route before).
             archived: Schema.optional(Schema.NullOr(Schema.Finite)),
           }),
           success: Schema.Struct({ data: Session.Info }),
-          error: SessionNotFoundError,
+          error: [SessionNotFoundError, InvalidRequestError],
         })
           .middleware(sessionLocationMiddleware)
           .annotateMerge(
             OpenApi.annotations({
               identifier: "v2.session.update",
               summary: "Update session",
-              description: "Rename a session and/or replace its metadata; returns the updated record.",
+              description:
+                "Rename a session, replace its metadata, archive it, or set/remove its Device pin; returns the updated record.",
             }),
           ),
       )

@@ -1,7 +1,7 @@
 export * as ProjectFileCache from "./project-file-cache"
 
 import path from "node:path"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
 import { Permission } from "@novaclaw/schema/permission"
 import { ProjectFile } from "@novaclaw/schema/project-file"
 import { makeGlobalNode, makeLocationNode } from "./effect/app-node"
@@ -61,7 +61,7 @@ const comparable = (directory: string) =>
  */
 const MAX_ENTRIES = 64
 
-export interface Entry {
+interface Values {
   /** The project's permission rules, or empty when no project governs the folder. */
   readonly rules: Permission.Ruleset
   /** The project's declared tune, or `undefined` when it declares none. */
@@ -106,20 +106,77 @@ export interface Entry {
    * report them.
    */
   readonly skills: readonly string[]
-  /** The directory holding the file, when one was found. */
-  readonly root?: string
-  /** The file itself, when one was found. */
-  readonly file?: string
 }
 
-export const EMPTY: Entry = { rules: [], tune: undefined, exclude: [], policies: [], skills: [] }
+export const FaultKind = Schema.Literals(["invalid", "future-version", "unreadable"])
+export type FaultKind = typeof FaultKind.Type
+
+export type AvailableEntry =
+  | (Values & { readonly kind: "none"; readonly root?: never; readonly file?: never })
+  | (Values & { readonly kind: "project"; readonly root: string; readonly file: string })
+
+export type FaultEntry = Values & {
+  readonly kind: FaultKind
+  /** The nearest file. A fault stops the walk and never falls through to an ancestor. */
+  readonly file: string
+  /** The resolver's detail, retained for the presentation surface and diagnostics. */
+  readonly detail: string
+  readonly root?: never
+}
+
+/**
+ * The authoritative shared reading of a folder's project file.
+ *
+ * Faults retain empty section values only so non-security presentation can render a calm fallback.
+ * Agentic consumers MUST branch on `kind` (or use {@link fault}) before reading those values; the
+ * empty arrays are not an enforcement answer.
+ */
+export type Entry = AvailableEntry | FaultEntry
+
+export const EMPTY: AvailableEntry = {
+  kind: "none",
+  rules: [],
+  tune: undefined,
+  exclude: [],
+  policies: [],
+  skills: [],
+}
+
+export function fault(entry: Entry): FaultEntry | undefined {
+  return entry.kind === "invalid" || entry.kind === "future-version" || entry.kind === "unreadable" ? entry : undefined
+}
+
+/** One actionable sentence shared by every agentic consumer. */
+export function refusal(entry: Pick<FaultEntry, "kind" | "file">): string {
+  if (entry.kind === "future-version")
+    return `Agent action refused because '${entry.file}' was created by a newer NovaClaw. Upgrade NovaClaw, then try again; the chat remains available.`
+  if (entry.kind === "unreadable")
+    return `Agent action refused because '${entry.file}' cannot be read. Unlock the file or restore read access, then try again; the chat remains available.`
+  return `Agent action refused because '${entry.file}' is invalid. Fix the project file, then try again; the chat remains available.`
+}
+
+export class FaultError extends Schema.TaggedErrorClass<FaultError>()("ProjectFileCache.FaultError", {
+  kind: FaultKind,
+  file: Schema.String,
+  detail: Schema.String,
+}) {
+  override get message() {
+    return refusal(this)
+  }
+}
+
+export function refuseFault(entry: Entry): Effect.Effect<void, FaultError> {
+  const found = fault(entry)
+  return found === undefined
+    ? Effect.void
+    : Effect.fail(new FaultError({ kind: found.kind, file: found.file, detail: found.detail }))
+}
 
 export interface Interface {
   /**
-   * The project governing `directory`. Never fails: an unreadable or malformed file means NO
-   * project — the same posture as no file — because a folder the user cannot read must not take
-   * their session down. The resolver still distinguishes "missing" from "malformed" for the surface
-   * that reports it.
+   * The project-file state governing `directory`. Never fails: expected faults are values, retained
+   * as `invalid`, `future-version`, or `unreadable` so presentation can recover and agentic consumers
+   * can fail closed. Only `none` means there was genuinely no project constraint to inherit.
    */
   readonly read: (directory: string) => Effect.Effect<Entry>
   /**
@@ -165,6 +222,7 @@ export const layer = Layer.effect(
             (resolution): Entry =>
               resolution.kind === "project"
                 ? {
+                    kind: "project",
                     rules: resolution.info.permissions ?? [],
                     tune: resolution.info.tune,
                     exclude: resolution.info.exclude ?? [],
@@ -175,9 +233,19 @@ export const layer = Layer.effect(
                     root: resolution.root,
                     file: resolution.file,
                   }
-                : EMPTY,
+                : resolution.kind === "none"
+                  ? EMPTY
+                  : {
+                      kind: resolution.failure,
+                      rules: [],
+                      tune: undefined,
+                      exclude: [],
+                      policies: [],
+                      skills: [],
+                      file: resolution.file,
+                      detail: resolution.detail,
+                    },
           ),
-          Effect.orElseSucceed(() => EMPTY),
         )
         // Delete-then-set so a refreshed key moves to the end of the insertion order and the
         // eviction below drops the least recently READ entry rather than the oldest key.

@@ -292,6 +292,13 @@ export const layer = Layer.effect(
     const screen: Interface["screen"] = Effect.fn("ToolPolicyGate.screen")(function* (input) {
       const directory = yield* directoryOf(input.sessionID)
       const project = yield* projects.read(directory)
+      const projectFault = ProjectFileCache.fault(project)
+      if (projectFault !== undefined)
+        return {
+          kind: "refuse",
+          halt: false,
+          message: ProjectFileCache.refusal(projectFault),
+        } satisfies Screened
       const requested = project.policies
 
       // A folder that asked for a guard which is not installed gets a refusal, never silence.
@@ -483,9 +490,9 @@ export function refusalMessage(decision: ToolPolicy.Decision) {
     `differently will be refused the same way.`
   return decision.type === "halt"
     ? `${shared} This is a HALT, not a single refusal: stop working, and report what you had done and ` +
-      `what was refused. Do not call another tool.`
+        `what was refused. Do not call another tool.`
     : `${shared} Continue with what you ARE able to do; if the task genuinely cannot finish without this ` +
-      `call, name it in your reply and stop retrying.`
+        `call, name it in your reply and stop retrying.`
 }
 
 export const node = makeLocationNode({

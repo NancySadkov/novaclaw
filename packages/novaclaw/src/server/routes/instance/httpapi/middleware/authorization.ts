@@ -5,11 +5,24 @@ import { HttpApiError, HttpApiMiddleware } from "effect/unstable/httpapi"
 import { isPublicUIPath } from "@/server/shared/public-ui"
 import { ServerAuth as V2ServerAuth } from "@novaclaw/server/auth"
 import { authorizationLayer as unconfiguredServerAuthorizationLayer } from "@novaclaw/server/middleware/authorization"
+import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 export { Authorization as ServerAuthorization } from "@novaclaw/server/middleware/authorization"
 
 const AUTH_TOKEN_QUERY = "auth_token"
 const UNAUTHORIZED = 401
 const WWW_AUTHENTICATE = 'Basic realm="Secure Area"'
+
+/**
+ * The launcher credential is a bootstrap default, not a second data-plane password. These two
+ * read-only probes are the only requests the desktop parent must still make after a stored token
+ * takes authority: liveness for supervision and the updater's airgap decision. Everything carrying
+ * user data is authorized solely against the effective (stored-first) credential.
+ */
+const LAUNCH_DEFAULT_PROBE_PATHS = new Set(["/global/health", "/shell/offline"])
+
+export function acceptsLaunchDefaultProbe(method: string, pathname: string) {
+  return method === "GET" && LAUNCH_DEFAULT_PROBE_PATHS.has(pathname)
+}
 
 // Avoid HttpApiSecurity alternatives here: Effect security middleware wraps the
 // full handler, so a downstream failure can make the next auth alternative run
@@ -61,10 +74,6 @@ function decodeCredential(input: string) {
   )
 }
 
-function credentialFromRequest(request: HttpServerRequest.HttpServerRequest) {
-  return credentialFromURL(new URL(request.url, "http://localhost"), request)
-}
-
 function credentialFromURL(url: URL, request: HttpServerRequest.HttpServerRequest) {
   const token = url.searchParams.get(AUTH_TOKEN_QUERY)
   if (token) return decodeCredential(token)
@@ -92,18 +101,20 @@ function validateRawCredential<A, E, R>(
 export const authorizationRouterMiddleware = HttpRouter.middleware()(
   Effect.gen(function* () {
     const envConfig = yield* ServerAuth.Config
+    const settings = yield* SettingsConfigStore.Service
 
-    // P2P: resolve per request (env → settings store) so token edits apply live.
+    // Resolve per request (stored server.password → launcher default) so token edits apply live.
     return (effect) =>
       Effect.gen(function* () {
-        const config = ServerAuth.effective(envConfig)
+        const config = ServerAuth.effective(envConfig, yield* settings.serverPassword())
         if (!ServerAuth.required(config)) return yield* effect
         const request = yield* HttpServerRequest.HttpServerRequest
         const url = new URL(request.url, "http://localhost")
         if (isPublicUIPath(request.method, url.pathname)) return yield* effect
-        return yield* credentialFromURL(url, request).pipe(
-          Effect.flatMap((credential) => validateRawCredential(effect, credential, config)),
-        )
+        const credential = yield* credentialFromURL(url, request)
+        if (acceptsLaunchDefaultProbe(request.method, url.pathname) && ServerAuth.authorized(credential, envConfig))
+          return yield* effect
+        return yield* validateRawCredential(effect, credential, config)
       })
   }),
 )
@@ -112,14 +123,17 @@ export const authorizationLayer = Layer.effect(
   Authorization,
   Effect.gen(function* () {
     const envConfig = yield* ServerAuth.Config
+    const settings = yield* SettingsConfigStore.Service
     return Authorization.of((effect) =>
       Effect.gen(function* () {
-        const config = ServerAuth.effective(envConfig)
+        const config = ServerAuth.effective(envConfig, yield* settings.serverPassword())
         if (!ServerAuth.required(config)) return yield* effect
         const request = yield* HttpServerRequest.HttpServerRequest
-        return yield* credentialFromRequest(request).pipe(
-          Effect.flatMap((credential) => validateCredential(effect, credential, config)),
-        )
+        const url = new URL(request.url, "http://localhost")
+        const credential = yield* credentialFromURL(url, request)
+        if (acceptsLaunchDefaultProbe(request.method, url.pathname) && ServerAuth.authorized(credential, envConfig))
+          return yield* effect
+        return yield* validateCredential(effect, credential, config)
       }),
     )
   }),

@@ -111,12 +111,16 @@ type TranscriptActions = {
   onRevert?: (messageID: string) => void
   onRetry?: (messageID: string) => void | Promise<void>
   onChooseModel?: () => void
+  onUnpinDevice?: (sessionID: string) => void | Promise<void>
   labels?: {
     retry: string
     chooseModel: string
     technicalDetails: string
     copyDetails: string
     working: string
+    unpinDevice: string
+    unpinningDevice: string
+    deviceUnpinned: string
   }
 }
 const TranscriptActionsContext = createContext<Accessor<TranscriptActions>>(() => ({}))
@@ -146,6 +150,7 @@ export function NativeTranscript(props: {
   onRevert?: (messageID: string) => void
   onRetry?: (messageID: string) => void | Promise<void>
   onChooseModel?: () => void
+  onUnpinDevice?: (sessionID: string) => void | Promise<void>
   errorLabels?: TranscriptActions["labels"]
   status?: SessionStatus
   /**
@@ -193,6 +198,7 @@ export function NativeTranscript(props: {
           onRevert: props.onRevert,
           onRetry: props.onRetry,
           onChooseModel: props.onChooseModel,
+          onUnpinDevice: props.onUnpinDevice,
           labels: props.errorLabels,
         })}
       >
@@ -340,48 +346,48 @@ function Turn(props: {
         }
       >
         {(closingMessage) => (
-        <>
-        <details data-slot="native-turn-work">
-          <summary>
-            {/* The flex lives HERE, not on <summary> — see the css note; flexing the summary drops
+          <>
+            <details data-slot="native-turn-work">
+              <summary>
+                {/* The flex lives HERE, not on <summary> — see the css note; flexing the summary drops
                 the native triangle, which is what left this fold without one. */}
-            <span data-slot="native-turn-work-summary">
-              <span data-slot="native-turn-work-label">Done</span>
-              <Show when={toolCount() > 0}>
-                <span data-slot="native-turn-work-count">
-                  {toolCount()} {toolCount() === 1 ? "step" : "steps"}
+                <span data-slot="native-turn-work-summary">
+                  <span data-slot="native-turn-work-label">Done</span>
+                  <Show when={toolCount() > 0}>
+                    <span data-slot="native-turn-work-count">
+                      {toolCount()} {toolCount() === 1 ? "step" : "steps"}
+                    </span>
+                  </Show>
                 </span>
-              </Show>
-            </span>
-          </summary>
-          <div data-slot="native-turn-work-body">
-            <For each={body().slice(0, -1)}>
-              {(message) => (
-                <NativeMessage message={message} developer={props.developer} liveTiming={props.liveTiming} />
-              )}
-            </For>
-            <AssistantMessage
-              message={closingMessage}
-              developer={props.developer}
-              liveTiming={props.liveTiming}
-              half="work"
-            />
-          </div>
-        </details>
-        <Show
-          when={outcome()}
-          fallback={
-            <AssistantMessage
-              message={closingMessage}
-              developer={props.developer}
-              liveTiming={props.liveTiming}
-              half="answer"
-            />
-          }
-        >
-          {(line) => <p data-slot="native-turn-outcome">{line()}</p>}
-        </Show>
-        </>
+              </summary>
+              <div data-slot="native-turn-work-body">
+                <For each={body().slice(0, -1)}>
+                  {(message) => (
+                    <NativeMessage message={message} developer={props.developer} liveTiming={props.liveTiming} />
+                  )}
+                </For>
+                <AssistantMessage
+                  message={closingMessage}
+                  developer={props.developer}
+                  liveTiming={props.liveTiming}
+                  half="work"
+                />
+              </div>
+            </details>
+            <Show
+              when={outcome()}
+              fallback={
+                <AssistantMessage
+                  message={closingMessage}
+                  developer={props.developer}
+                  liveTiming={props.liveTiming}
+                  half="answer"
+                />
+              }
+            >
+              {(line) => <p data-slot="native-turn-outcome">{line()}</p>}
+            </Show>
+          </>
         )}
       </Show>
     </div>
@@ -406,7 +412,12 @@ function NativeMessage(props: { message: SessionMessage; developer?: boolean; li
         {(m) => <NoticeMessage kind="system" text={m().text} />}
       </Match>
       <Match when={props.message.type === "synthetic" && props.message}>
-        {(m) => <NoticeMessage kind="synthetic" text={(m() as SessionMessageSynthetic).text} />}
+        {(m) => {
+          const message = m() as SessionMessageSynthetic
+          return (
+            <NoticeMessage kind="synthetic" text={message.text} sessionID={message.sessionID} repair={message.repair} />
+          )
+        }}
       </Match>
       <Match when={props.message.type === "compaction" && props.message}>
         {(m) => <CompactionMessage message={m()} />}
@@ -1044,7 +1055,25 @@ function ShellMessage(props: { message: SessionMessageShell }) {
   )
 }
 
-function NoticeMessage(props: { kind: "system" | "synthetic"; text: string }) {
+function NoticeMessage(props: {
+  kind: "system" | "synthetic"
+  text: string
+  sessionID?: string
+  repair?: SessionMessageSynthetic["repair"]
+}) {
+  const actions = useContext(TranscriptActionsContext)
+  const [repairState, setRepairState] = createSignal<"idle" | "pending" | "done">("idle")
+  const unpinDevice = async () => {
+    const handler = actions().onUnpinDevice
+    if (!handler || !props.sessionID || repairState() === "pending") return
+    setRepairState("pending")
+    try {
+      await handler(props.sessionID)
+      setRepairState("done")
+    } catch {
+      setRepairState("idle")
+    }
+  }
   // `synthetic` currently carries only runtime FAILURE notices (e.g. a pre-turn model error emitted
   // by the runner) — render it VISIBLE so the user actually sees why a turn didn't run, rather than
   // a collapsed "System note". `system` (injected context) stays a collapsed "Context" note.
@@ -1065,6 +1094,29 @@ function NoticeMessage(props: { kind: "system" | "synthetic"; text: string }) {
         }}
       >
         <Markdown text={props.text} />
+        <Show when={props.repair?.type === "unpin-device" && actions().onUnpinDevice}>
+          <button
+            type="button"
+            data-slot="native-notice-repair"
+            disabled={repairState() !== "idle"}
+            onClick={() => void unpinDevice()}
+            style={{
+              margin: "0.5rem 0 0",
+              padding: "0.375rem 0.625rem",
+              "border-radius": "6px",
+              border: "1px solid var(--v2-border-border-muted)",
+              background: "var(--v2-background-bg-layer-02)",
+              color: "var(--v2-text-text-base)",
+              cursor: repairState() === "idle" ? "pointer" : "default",
+            }}
+          >
+            {repairState() === "done"
+              ? (actions().labels?.deviceUnpinned ?? "Device pin removed")
+              : repairState() === "pending"
+                ? (actions().labels?.unpinningDevice ?? "Removing Device pin…")
+                : (actions().labels?.unpinDevice ?? "Remove Device pin")}
+          </button>
+        </Show>
       </div>
     )
   return (

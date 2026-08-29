@@ -25,6 +25,24 @@ describe("checkServerHealth", () => {
     expect(result).toEqual({ healthy: true, version: "1.2.3" })
   })
 
+  test("preserves the non-secret effective auth provenance", async () => {
+    const fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          healthy: true,
+          version: "1.2.3",
+          auth: { required: true, source: "stored" },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )) as unknown as typeof globalThis.fetch
+
+    await expect(checkServerHealth(server, fetch)).resolves.toEqual({
+      healthy: true,
+      version: "1.2.3",
+      auth: { required: true, source: "stored" },
+    })
+  })
+
   test("allows slow servers thirty seconds by default", async () => {
     const timeout = Object.getOwnPropertyDescriptor(AbortSignal, "timeout")
     let timeoutMs = 0

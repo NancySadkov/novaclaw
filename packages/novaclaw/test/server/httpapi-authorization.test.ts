@@ -1,10 +1,11 @@
 import { NodeHttpServer } from "@effect/platform-node"
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { Effect, Layer, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest, HttpRouter } from "effect/unstable/http"
 import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiError, HttpApiGroup } from "effect/unstable/httpapi"
 import { ServerAuth } from "../../src/server/auth"
 import { ServerAuth as V2ServerAuth } from "@novaclaw/server/auth"
+import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 // The UNPAIRED layer, on purpose. Production imports `serverAuthorizationLayer` from the middleware
 // module, which since 2026-07-28 arrives with `@novaclaw/server`'s own config already provided so no
 // call site can pick the wrong one of the two `ServerAuth.Config` tags. A test that wants to INJECT a
@@ -12,6 +13,7 @@ import { ServerAuth as V2ServerAuth } from "@novaclaw/server/auth"
 // where choosing a config is the caller's job.
 import { authorizationLayer as serverAuthorizationLayer } from "@novaclaw/server/middleware/authorization"
 import {
+  acceptsLaunchDefaultProbe,
   Authorization,
   authorizationLayer,
   ServerAuthorization,
@@ -68,15 +70,34 @@ const kitSecretLayer = ServerAuth.Config.layer({ password: Option.some("secret")
 // `serverAuthorizationLayer` comes from `@novaclaw/server`, so it needs THAT package's tag — a separate
 // key since 2026-07-28 (U3). Providing the instance layer here used to satisfy it by id collision.
 const v2SecretLayer = V2ServerAuth.Config.layer({ password: Option.some("secret"), username: "novaclaw" })
+const noStoredTokenLayer = Layer.succeed(
+  SettingsConfigStore.Service,
+  SettingsConfigStore.Service.of({
+    all: () => Effect.succeed({}),
+    serverPassword: () => Effect.succeed(undefined),
+    set: () => Effect.void,
+    remove: () => Effect.void,
+    unreadable: () => Effect.succeed([]),
+    isEmpty: () => Effect.succeed(true),
+  }),
+)
 
-const it = testEffect(apiLayer.pipe(Layer.provide(noAuthLayer)))
-const itSecret = testEffect(apiLayer.pipe(Layer.provide(secretLayer)))
-const itKitSecret = testEffect(apiLayer.pipe(Layer.provide(kitSecretLayer)))
-const itV2Secret = testEffect(v2ApiLayer.pipe(Layer.provide(v2SecretLayer)))
+const it = testEffect(apiLayer.pipe(Layer.provide(noAuthLayer), Layer.provide(noStoredTokenLayer)))
+const itSecret = testEffect(apiLayer.pipe(Layer.provide(secretLayer), Layer.provide(noStoredTokenLayer)))
+const itKitSecret = testEffect(apiLayer.pipe(Layer.provide(kitSecretLayer), Layer.provide(noStoredTokenLayer)))
+const itV2Secret = testEffect(v2ApiLayer.pipe(Layer.provide(v2SecretLayer), Layer.provide(noStoredTokenLayer)))
 
 const basic = (username: string, password: string) => ServerAuth.header({ username, password }) ?? ""
 
 const token = (username: string, password: string) => Buffer.from(`${username}:${password}`).toString("base64")
+
+test("launcher defaults are confined to the two read-only supervisor probes", () => {
+  expect(acceptsLaunchDefaultProbe("GET", "/global/health")).toBe(true)
+  expect(acceptsLaunchDefaultProbe("GET", "/shell/offline")).toBe(true)
+  expect(acceptsLaunchDefaultProbe("PATCH", "/global/health")).toBe(false)
+  expect(acceptsLaunchDefaultProbe("GET", "/global/config")).toBe(false)
+  expect(acceptsLaunchDefaultProbe("GET", "/api/session")).toBe(false)
+})
 
 const getProbe = (headers?: Record<string, string>) =>
   HttpClientRequest.get("/probe").pipe(

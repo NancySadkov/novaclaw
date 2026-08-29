@@ -159,8 +159,20 @@ export const DenialReason = Schema.Literals([
    * A reader told only *denied* would go looking in the wrong place.
    */
   "project-denied",
+  /** The nearest project file is present but cannot be enforced. These stay distinct because the
+   * action is respectively fix, upgrade, or unlock; one generic denial would send two thirds of
+   * users to the wrong remedy. */
+  "project-file-invalid",
+  "project-file-future-version",
+  "project-file-unreadable",
 ])
 export type DenialReason = typeof DenialReason.Type
+
+const PROJECT_FILE_DENIAL_REASON: Record<ProjectFileCache.FaultKind, DenialReason> = {
+  invalid: "project-file-invalid",
+  "future-version": "project-file-future-version",
+  unreadable: "project-file-unreadable",
+}
 
 export class DeniedError extends Schema.TaggedErrorClass<DeniedError>()("PermissionV2.DeniedError", {
   rules: Permission.Ruleset,
@@ -179,6 +191,7 @@ export type Error = DeniedError | RejectedError | CorrectedError
  * including the user's optional reject feedback — instead of collapsing into "Unable to <x>".
  */
 export function denialMessage(error: unknown): string | undefined {
+  if (error instanceof ProjectFileCache.FaultError) return error.message
   // A `novaclaw.json` exclusion is a refusal of the same KIND — the user said no — and it arrives
   // through the same `mapError` absorbers, so it is lowered here rather than by a line added to
   // every tool. That is what makes the refusal legible in tools nobody edited: without it, `read`'s
@@ -242,6 +255,11 @@ export function denialMessage(error: unknown): string | undefined {
         `allowed to do, and if the task genuinely cannot finish without '${actions}', name it in your result ` +
         `together with the project file so the user can decide.`
       )
+    if (error.reason === "project-file-invalid") return ProjectFileCache.refusal({ kind: "invalid", file: resources })
+    if (error.reason === "project-file-future-version")
+      return ProjectFileCache.refusal({ kind: "future-version", file: resources })
+    if (error.reason === "project-file-unreadable")
+      return ProjectFileCache.refusal({ kind: "unreadable", file: resources })
     // The B4c follow-up. Nobody RULED on this action, so the evaluator's honest verdict is `ask` —
     // and in an unattended chain an ask has no answerer, which makes it a hang rather than a gate.
     // The refusal has to be ACTIONABLE, not merely legible: name the action, say the waiting is
@@ -505,11 +523,7 @@ const RESTRICTIVENESS: Readonly<Record<Permission.Effect, number>> = { allow: 0,
  * nothing, and treating its silence as `ask` would let an empty project file tighten every action the
  * operator had allowed.
  */
-export function matchRule(
-  action: string,
-  resource: string,
-  ruleset: Permission.Ruleset,
-): Permission.Rule | undefined {
+export function matchRule(action: string, resource: string, ruleset: Permission.Ruleset): Permission.Rule | undefined {
   // `findLast`, matching `evaluate`: within ONE ruleset the later rule wins.
   return ruleset.findLast((rule) => Wildcard.match(action, rule.action) && Wildcard.match(resource, rule.resource))
 }
@@ -605,8 +619,8 @@ export const layer = Layer.effect(
       // fallback direction for a narrowing constraint must be the stricter one.
       return session?.location.directory ?? location.directory
     })
-    const projectPermissions = EffectRuntime.fnUntraced(function* (sessionID: SessionV2.ID) {
-      return (yield* projects.read(yield* sessionDirectory(sessionID))).rules
+    const projectEntry = EffectRuntime.fnUntraced(function* (sessionID: SessionV2.ID) {
+      return yield* projects.read(yield* sessionDirectory(sessionID))
     })
 
     const autoGrants = yield* SessionAutoGrant.Service
@@ -857,6 +871,18 @@ export const layer = Layer.effect(
       // out-of-folder shell writes: it belongs in `agent-jail.ts`, not in this ruleset.
       const stance = unattendedStanceRules(rootType, mode)
       const configuredRules = yield* configured(input.sessionID, input.agent)
+      // A present-but-unusable project file is a constraint we cannot read, never an empty one.
+      // Refuse before any model-authored action and name the exact remedy. The synthetic rule's
+      // resource is the FILE (not the requested target) so the shared denial voice can identify
+      // what the user must fix, upgrade for, or unlock.
+      const project = yield* projectEntry(input.sessionID)
+      const projectFault = ProjectFileCache.fault(project)
+      if (projectFault !== undefined)
+        return {
+          effect: "deny" as const,
+          rules: [{ action: input.action, resource: projectFault.file, effect: "deny" as const }],
+          reason: PROJECT_FILE_DENIAL_REASON[projectFault.kind],
+        }
       // The mode overlay, plus Analyze's one carve-out. "Analyze" (mode `plan`) is read-only EXCEPT that it
       // may still write its findings somewhere — a review that cannot save its own report is not much use.
       // The allows land AFTER the mode denies (findLast) so they apply to the temp dir and nowhere else, and
@@ -949,7 +975,7 @@ export const layer = Layer.effect(
       // Resolved ONCE per evaluation, not per resource: a multi-resource assert must be judged
       // against ONE view of the file, or two resources in the same call could be answered from
       // either side of an edit.
-      const projectRules = yield* projectPermissions(input.sessionID)
+      const projectRules = project.rules
       const effects = input.resources.map(
         (resource) => evaluateNarrowed(input.action, resource, [all], [projectRules]).effect,
       )

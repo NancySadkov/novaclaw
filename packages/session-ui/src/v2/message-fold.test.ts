@@ -80,6 +80,24 @@ describe("applySessionNextEvent", () => {
     }
   })
 
+  test("synthetic Device refusal preserves its structured one-click repair", () => {
+    const messages = fold(
+      [],
+      ev("session.next.synthetic", {
+        timestamp: 2,
+        sessionID: "ses_test",
+        messageID: "msg_device",
+        text: "Device pin is incompatible.",
+        repair: { type: "unpin-device", device: "spark" },
+      }),
+    )
+    expect(messages[0]).toMatchObject({
+      type: "synthetic",
+      sessionID: "ses_test",
+      repair: { type: "unpin-device", device: "spark" },
+    })
+  })
+
   test("permission.changed → first-class permission card message", () => {
     const messages = fold(
       [],
@@ -463,7 +481,10 @@ describe("mergeNativeMessages", () => {
     // The second shape found in the same sweep: a sub-agent's task prompt carried a `created` from
     // days earlier and sorted ahead of 22 messages that genuinely preceded nothing.
     const old = { ...userMsg("msg_task", 1784587644222, "Do the subtask"), seq: 26 } as SessionMessage
-    const notice = { ...assistantMsg("msg_earlier", 1786070022492, { completed: 1786070022500 }), seq: 23 } as SessionMessage
+    const notice = {
+      ...assistantMsg("msg_earlier", 1786070022492, { completed: 1786070022500 }),
+      seq: 23,
+    } as SessionMessage
     expect(mergeNativeMessages([], [old, notice]).map((m) => m.id)).toEqual(["msg_earlier", "msg_task"])
   })
 

@@ -292,6 +292,20 @@
                     "version": {
                       "type": "string"
                     },
+                    "auth": {
+                      "type": "object",
+                      "properties": {
+                        "required": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": ["stored", "launcher", "open"]
+                        }
+                      },
+                      "required": ["required", "source"],
+                      "additionalProperties": false
+                    },
                     "instanceID": {
                       "type": "string"
                     },
@@ -305,7 +319,7 @@
                       "type": "string"
                     }
                   },
-                  "required": ["healthy", "version", "instanceID", "networkID"],
+                  "required": ["healthy", "version", "auth", "instanceID", "networkID"],
                   "additionalProperties": false,
                   "description": "Health information"
                 }
@@ -16812,7 +16826,8 @@
                     "$ref": "#/components/schemas/ModelRef"
                   },
                   "device": {
-                    "type": "string"
+                    "type": "string",
+                    "minLength": 1
                   },
                   "controlBinding": {
                     "type": "string",
@@ -17533,7 +17548,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/InvalidRequestError"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
                 }
               }
             }
@@ -17566,7 +17588,7 @@
             }
           }
         },
-        "description": "Rename a session and/or replace its metadata; returns the updated record.",
+        "description": "Rename a session, replace its metadata, archive it, or set/remove its Device pin; returns the updated record.",
         "summary": "Update session",
         "requestBody": {
           "content": {
@@ -17579,6 +17601,17 @@
                   },
                   "metadata": {
                     "type": "object"
+                  },
+                  "device": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "archived": {
                     "anyOf": [
@@ -28994,9 +29027,6 @@
             "$ref": "#/components/schemas/EventSessionStatus"
           },
           {
-            "$ref": "#/components/schemas/EventSessionIdle"
-          },
-          {
             "$ref": "#/components/schemas/EventQuestionAsked"
           },
           {
@@ -30528,6 +30558,9 @@
                       },
                       "text": {
                         "type": "string"
+                      },
+                      "repair": {
+                        "$ref": "#/components/schemas/SessionMessageSyntheticRepair"
                       }
                     },
                     "required": ["timestamp", "sessionID", "messageID", "text"],
@@ -33044,32 +33077,6 @@
                       }
                     },
                     "required": ["sessionID", "status"],
-                    "additionalProperties": false
-                  }
-                },
-                "required": ["id", "type", "properties"],
-                "additionalProperties": false
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "pattern": "^evt_"
-                  },
-                  "type": {
-                    "type": "string",
-                    "enum": ["session.idle"]
-                  },
-                  "properties": {
-                    "type": "object",
-                    "properties": {
-                      "sessionID": {
-                        "type": "string",
-                        "pattern": "^ses"
-                      }
-                    },
-                    "required": ["sessionID"],
                     "additionalProperties": false
                   }
                 },
@@ -36081,9 +36088,6 @@
             "$ref": "#/components/schemas/session.status"
           },
           {
-            "$ref": "#/components/schemas/SessionIdle"
-          },
-          {
             "$ref": "#/components/schemas/QuestionAsked"
           },
           {
@@ -36827,6 +36831,21 @@
           }
         ]
       },
+      "SessionMessageSyntheticRepair": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["unpin-device"]
+          },
+          "device": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": ["type", "device"],
+        "additionalProperties": false
+      },
       "SessionMessageAgentSwitched": {
         "type": "object",
         "properties": {
@@ -37043,6 +37062,9 @@
           },
           "text": {
             "type": "string"
+          },
+          "repair": {
+            "$ref": "#/components/schemas/SessionMessageSyntheticRepair"
           },
           "type": {
             "type": "string",
@@ -39353,6 +39375,9 @@
                   },
                   "text": {
                     "type": "string"
+                  },
+                  "repair": {
+                    "$ref": "#/components/schemas/SessionMessageSyntheticRepair"
                   }
                 },
                 "required": ["timestamp", "sessionID", "messageID", "text"],
@@ -45855,6 +45880,9 @@
               },
               "text": {
                 "type": "string"
+              },
+              "repair": {
+                "$ref": "#/components/schemas/SessionMessageSyntheticRepair"
               }
             },
             "required": ["timestamp", "sessionID", "messageID", "text"],
@@ -52396,54 +52424,6 @@
         "required": ["id", "type", "data"],
         "additionalProperties": false
       },
-      "SessionIdle": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["session.idle"]
-          },
-          "durable": {
-            "type": "object",
-            "properties": {
-              "aggregateID": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer"
-              },
-              "version": {
-                "type": "integer"
-              }
-            },
-            "required": ["aggregateID", "seq", "version"],
-            "additionalProperties": false
-          },
-          "location": {
-            "$ref": "#/components/schemas/LocationRef"
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "sessionID": {
-                "type": "string",
-                "pattern": "^ses"
-              }
-            },
-            "required": ["sessionID"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "data"],
-        "additionalProperties": false
-      },
       "QuestionAsked": {
         "type": "object",
         "properties": {
@@ -53968,6 +53948,9 @@
               },
               "text": {
                 "type": "string"
+              },
+              "repair": {
+                "$ref": "#/components/schemas/SessionMessageSyntheticRepair"
               }
             },
             "required": ["timestamp", "sessionID", "messageID", "text"],
@@ -56463,32 +56446,6 @@
               }
             },
             "required": ["sessionID", "status"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "properties"],
-        "additionalProperties": false
-      },
-      "EventSessionIdle": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["session.idle"]
-          },
-          "properties": {
-            "type": "object",
-            "properties": {
-              "sessionID": {
-                "type": "string",
-                "pattern": "^ses"
-              }
-            },
-            "required": ["sessionID"],
             "additionalProperties": false
           }
         },

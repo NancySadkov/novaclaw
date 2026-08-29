@@ -16,7 +16,7 @@ const subscriberCapacity = 256
  * 🔴 The bus is WIDER than the wire, and that asymmetry used to kill the subscription.
  * `EventV2.allBounded` hands us every event the instance publishes — the full
  * `EventManifest.Definitions` — while `NovaClawEvent` is `ServerDefinitions` ∪ `server.connected`,
- * roughly twenty types narrower (`session.status`, `session.idle`, `session.error`,
+ * roughly twenty types narrower (`session.status`, `session.error`,
  * `permission.*`, `question.*`, `mcp.*`, `installation.*`, `workspace.*`, `worktree.*`,
  * `vcs.branch.updated`). `Schema.encodeUnknownSync` THROWS on a non-member, and a throw inside
  * `Stream.map` is a defect that terminates the response body.

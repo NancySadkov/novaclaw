@@ -11,6 +11,11 @@ import { described } from "./metadata"
 const GlobalHealth = Schema.Struct({
   healthy: Schema.Literal(true),
   version: Schema.String,
+  /** Which non-secret credential tier is authoritative for incoming API requests right now. */
+  auth: Schema.Struct({
+    required: Schema.Boolean,
+    source: Schema.Literals(["stored", "launcher", "open"]),
+  }),
   // Remote-access R7: the instance's stable identity — lets a client recognize the SAME
   // instance behind different URLs (mDNS name vs LAN IP vs tunnel).
   instanceID: Schema.String,

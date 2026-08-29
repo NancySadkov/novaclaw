@@ -17,6 +17,7 @@ import { MemoryPrunePolicy } from "./prune-policy"
 import { MemoryClient } from "./memory-client"
 import { MemoryObserved } from "./memory-observed"
 import { MemorySetting } from "./memory-setting"
+import { GraphSnapshot } from "./snapshot"
 import { WasmMemory } from "./wasm-engine"
 
 // Boot-wire the graph-memory engine INTO the instance (§2.0). The engine is now WASM IN-PROCESS — the
@@ -110,7 +111,13 @@ export const layerFromConfig = (
         if (opening) return opening
         currentRuntimeStatus = { stage: "loading" }
         opening = WasmMemory.open(dbDir, cfg.dim === undefined ? {} : { dim: cfg.dim })
-          .then((opened) => {
+          .then(async (opened) => {
+            // Discard the pre-roster global leak before the first caller can observe the store. This
+            // used to run in a boot fiber, which made the supposedly lazy capability allocate the
+            // WASM engine even when the instance never used memory. Keeping the idempotent cleanup
+            // inside the shared open promise preserves the ordering without making boot eager.
+            const discarded = await opened.discardLegacyGlobalExtracts().catch(() => 0)
+            if (discarded > 0) Effect.runFork(Log.event("kb.memory.legacy.discarded", { "memory.rows": discarded }))
             engine = opened
             // A store that opened by FALLING BACK is ready, but not the same ready — the user is
             // reading an older generation and some of their newest memories are gone. Reporting it
@@ -143,6 +150,21 @@ export const layerFromConfig = (
           try: open,
           catch: (cause) => new MemoryClient.MemoryError({ reason: String(cause).slice(0, 300) }),
         }).pipe(Effect.flatMap(run))
+      const durableStoreExists = () => {
+        try {
+          return GraphSnapshot.candidates(dbDir).length > 0
+        } catch {
+          // An unreadable path may still contain the user's store. Let the real opener diagnose it;
+          // treating uncertainty as absence would silently skip a requested cleanup.
+          return true
+        }
+      }
+      const mutateExistingStore = (
+        run: (live: MemoryClient.Interface) => Effect.Effect<void, MemoryClient.MemoryError>,
+      ) =>
+        Effect.suspend(() =>
+          engine !== undefined || opening !== undefined || durableStoreExists() ? client(run) : Effect.void,
+        )
       const lazyClient: MemoryClient.Interface = {
         health: () => client((live) => live.health()).pipe(Effect.orElseSucceed(() => false)),
         addMemory: (input) => client((live) => live.addMemory(input)),
@@ -156,8 +178,11 @@ export const layerFromConfig = (
         claimHistory: (id, access) => client((live) => live.claimHistory(id, access)),
         reviewEvidence: (locator, access) => client((live) => live.reviewEvidence(locator, access)),
         setClaimStatus: (id, status, access) => client((live) => live.setClaimStatus(id, status, access)),
-        moveScope: (from, to) => client((live) => live.moveScope(from, to)),
-        clearScope: (scope) => client((live) => live.clearScope(scope)),
+        // Session deletion and colleague retirement are allowed to prove an absent store cheaply.
+        // Creating a 1.3 GB WASM engine in order to delete from a store that has never existed is not
+        // cleanup; it is a new subsystem allocation on a teardown path.
+        moveScope: (from, to) => mutateExistingStore((live) => live.moveScope(from, to)),
+        clearScope: (scope) => mutateExistingStore((live) => live.clearScope(scope)),
         eraseAll: () => client((live) => live.eraseAll()),
         discardLegacyGlobalExtracts: () => client((live) => live.discardLegacyGlobalExtracts()),
         stats: () => client((live) => live.stats()),
@@ -169,35 +194,6 @@ export const layerFromConfig = (
       // Background consolidation (§1.3.4): periodically promote this instance's session memories to
       // global so auto-extracted facts become cross-session. Best-effort; a no-op until the engine is
       // live. Runs off the turn hot-path (a forked fiber, stopped on scope close).
-      // 🔴 DISCARD THE PRE-ROSTER LEAK, once, before the background loop starts (owner, 2026-08-22:
-      // *"we do not migrate the memories created by Novaclaw versions pre corporate structure — just
-      // discard them"*). Auto-extraction used to write to `session:<id>` and consolidation promoted
-      // those into `global`, so one colleague's automatically-learned facts became readable by every
-      // other. Measured on the owner's own store: 77 such rows in `global`, none in any cabinet.
-      //
-      // ⚠️ Forked, not awaited: the engine is lazy and this must not hold up the first turn. And
-      // idempotent by construction — after one pass the predicate matches nothing, and nothing writes
-      // rows that match it again, so there is no "have I run this?" flag to keep true.
-      yield* Effect.forkScoped(
-        Effect.gen(function* () {
-          // ⚠️ **`open()`, not `engine`** — and the first version read the variable, which is
-          // `undefined` until something opens the store. The fork ran at boot, found nothing, and
-          // returned: the discard was dead on arrival and the 77 leaked rows were still there on the
-          // owner's instance a day later. `open()` is the lazy opener the client itself goes through,
-          // so this waits for the store rather than racing it.
-          //
-          // ⚠️ It opens the engine EARLIER than a purely lazy instance would. That is the cost of
-          // doing this at all, and it is bounded: one store open per boot, off the turn path, on an
-          // instance that was going to open it the first time anything recalled anything.
-          yield* Effect.tryPromise(() => open()).pipe(Effect.orElseSucceed(() => undefined))
-          const live = engine
-          if (!live) return
-          const discarded = yield* Effect.tryPromise(() => live.discardLegacyGlobalExtracts()).pipe(
-            Effect.orElseSucceed(() => 0),
-          )
-          if (discarded > 0) yield* Log.event("kb.memory.legacy.discarded", { "memory.rows": discarded })
-        }),
-      )
       const consolidateEvery = Duration.millis(cfg.consolidateEveryMs ?? 5 * 60_000)
       /**
        * CONSOLIDATE, THEN FORGET — the background pass, now with the access ledger in the loop.
@@ -351,9 +347,7 @@ export const forgetOverCap = (
        * `memory-observed.ts` records at length: an optional dependency read at the call site means
        * every call site must remember, and the one that forgot is always the one nobody watches.
        */
-      yield* events
-        .publish(MemoryEvent.Forgotten, { id, mode: "invalidate" })
-        .pipe(Effect.ignore)
+      yield* events.publish(MemoryEvent.Forgotten, { id, mode: "invalidate" }).pipe(Effect.ignore)
     }
     if (choice.victims.length > 0)
       yield* Log.event("kb.memory.forget.done", {

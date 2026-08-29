@@ -159,10 +159,17 @@ export const User = Schema.Struct({
 }).annotate({ identifier: "Session.Message.User" })
 
 export interface Synthetic extends Schema.Schema.Type<typeof Synthetic> {}
+export const SyntheticRepair = Schema.Struct({
+  type: Schema.Literal("unpin-device"),
+  device: Schema.NonEmptyString,
+}).annotate({ identifier: "Session.Message.SyntheticRepair" })
+export type SyntheticRepair = typeof SyntheticRepair.Type
+
 export const Synthetic = Schema.Struct({
   ...Base,
   sessionID: SessionID,
   text: Schema.String,
+  repair: SyntheticRepair.pipe(optional),
   type: Schema.Literal("synthetic"),
 }).annotate({ identifier: "Session.Message.Synthetic" })
 

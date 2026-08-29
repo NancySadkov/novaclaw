@@ -284,6 +284,10 @@ export interface Declaration {
 export const declarationFor = Effect.fn("ProjectExclusion.declarationFor")(function* (directory: string) {
   const projects = yield* ProjectFileCache.Service
   const entry = yield* projects.read(directory)
+  // Empty exclusion fields on a fault are a presentation fallback, never an authorization. Every
+  // path-taking agentic tool passes through this declaration seam, so failing it closes reads,
+  // enumerations and mutations together without duplicating the classification in each tool.
+  yield* ProjectFileCache.refuseFault(entry)
   if (entry.root === undefined || entry.file === undefined || entry.exclude.length === 0) return undefined
   return {
     root: entry.root,

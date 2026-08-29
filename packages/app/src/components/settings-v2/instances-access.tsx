@@ -27,6 +27,8 @@ import { mergePeer, type Peer } from "./peer-token"
 export const InstancesAccess: Component = () => {
   const language = useLanguage()
   const serverSync = useServerSync()
+  const server = useServer()
+  const global = useGlobal()
 
   const config = createMemo(() => serverSync().data.config as { server?: { password?: string }; instances?: Peer[] })
   const [tokenDraft, setTokenDraft] = createSignal<string | undefined>(undefined)
@@ -34,11 +36,26 @@ export const InstancesAccess: Component = () => {
   const tokenValue = () => tokenDraft() ?? tokenSaved()
   const tokenDirty = () => tokenDraft() !== undefined && tokenDraft() !== tokenSaved()
   const saveToken = (next: string) => {
-    setTokenDraft(undefined)
     void serverSync()
-      .updateConfig({ server: { ...(config().server ?? {}), password: next } } as never)
+      .updateConfig({ server: { ...(config().server ?? {}), password: next } } as never, {
+        // The server applies the new credential before this response returns. Change the saved
+        // connection in the same success turn, before any follow-up read can use the old header.
+        onAccepted: () => {
+          server.setIncomingToken(server.key, next)
+          setTokenDraft(undefined)
+        },
+        // Updating the connection rebuilds its SDK context; that new context owns the bootstrap.
+        refetch: false,
+      })
       .catch(() => undefined)
   }
+  const tokenSource = createMemo(() => global.servers.health[server.key]?.auth?.source)
+  const tokenSourceCopy = createMemo(() => {
+    if (tokenSource() === "stored") return language.t("settings.instances.access.source.stored")
+    if (tokenSource() === "launcher") return language.t("settings.instances.access.source.launcher")
+    if (tokenSource() === "open") return language.t("settings.instances.access.source.open")
+    return language.t("settings.instances.access.source.checking")
+  })
 
   const peers = createMemo(() => config().instances ?? [])
   const [draft, setDraft] = createSignal<Peer>({ name: "", url: "", token: "" })
@@ -53,8 +70,6 @@ export const InstancesAccess: Component = () => {
   // instance, and Settings → Instances is opened for other reasons far more often than for adding a
   // peer. ⚠️ `self` is filtered out — the scanning instance always finds itself, and offering it
   // would invite a peer pointing at the machine you are already using.
-  const server = useServer()
-  const global = useGlobal()
   const [scanning, setScanning] = createSignal(false)
   const [found, setFound] = createSignal<DiscoveredInstance[] | undefined>(undefined)
   const scan = async () => {
@@ -105,6 +120,9 @@ export const InstancesAccess: Component = () => {
           </span>
           <span class="text-[12px] leading-snug text-v2-text-text-faint">
             {language.t("settings.instances.access.hint")}
+          </span>
+          <span class="text-[12px] leading-snug text-v2-text-text-faint" data-slot="instances-access-source">
+            {tokenSourceCopy()}
           </span>
           <div class="flex items-center gap-2 pt-1">
             <TextInputV2

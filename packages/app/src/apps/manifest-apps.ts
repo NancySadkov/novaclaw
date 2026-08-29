@@ -1,5 +1,6 @@
 import { createEffect, createMemo } from "solid-js"
 import { useNavigate } from "@solidjs/router"
+import { manifestRoutePath } from "@novaclaw/core/app-route"
 import { isIconName } from "@novaclaw/ui/v2/icon"
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
@@ -42,7 +43,14 @@ export function useManifestApps(): () => HomeApp[] {
   })
 
   const open = (manifest: AppManifest) => {
-    if (manifest.open.type === "route") return navigate(manifest.open.value)
+    if (manifest.open.type === "route") {
+      const route = manifestRoutePath(manifest.open.value)
+      if (!route) {
+        console.warn(`[apps] ignoring unavailable manifest route id "${manifest.open.value}"`)
+        return
+      }
+      return navigate(route)
+    }
     // platform.openLink, never bare window.open: on desktop it routes through the open-link
     // IPC → shell.openExternal (the user's browser, not a raw Electron child window); on web
     // it uses an anchor click that popup blockers can't silently eat.

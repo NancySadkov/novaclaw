@@ -38,10 +38,10 @@ import { SessionStore } from "./store"
  * instance no matter whose folder was asked about — correct only while every session sits in the
  * instance's own folder, which is not a property the kernel has.
  *
- * ⚠️ Never fails. `SessionStore.get` orDies, and an unreadable project file resolves to no project,
- * so the only outcomes are "resolved with a folder layer" and "resolved without one". A config walk
- * that could fail typed would put a fallback at every reader, and the honest fallback for a
- * permission mode does not exist (see `permission.ts`'s note on that catch).
+ * ⚠️ Never fails. `SessionStore.get` orDies, and a project-file fault resolves to the strict
+ * supervision rails while the permission/policy seams carry the actionable refusal. A config walk
+ * that failed typed would put a fallback at every reader and take the chat down before it could say
+ * what the user needs to fix.
  */
 
 export interface Resolution {
@@ -213,11 +213,23 @@ export const layer = Layer.effect(
       const chain = yield* sessionConfigChain(sessionID, (id) => sessions.get(id as SessionSchema.ID))
       const agentID = agentOf(chain)
       const colleague = agentID === undefined ? undefined : yield* declaredFor(agentID)
-      const folded = ProjectDefaults.fold(AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, colleague), found.tune)
-      const config = clampToCeilings(resolveConfig(folded.defaults, chain), currentCeilings())
+      const projectFault = ProjectFileCache.fault(found)
+      const folded = ProjectDefaults.fold(
+        AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, colleague),
+        projectFault === undefined ? found.tune : undefined,
+      )
+      const guardedDefaults =
+        projectFault === undefined ? folded.defaults : { ...folded.defaults, safeMode: true, askBeforeChanges: true }
+      const resolved = clampToCeilings(resolveConfig(guardedDefaults, chain), currentCeilings())
+      // A tune we cannot read is not permission to keep a looser stance. These are the two
+      // supervision rails a project may raise but never lower, applied AFTER the session chain so a
+      // per-chat override cannot turn a project-file fault back into capability. Permission and
+      // policy consumers provide the actionable refusal; keeping config resolution successful is
+      // what lets the chat itself remain usable.
+      const config = projectFault === undefined ? resolved : { ...resolved, safeMode: true, askBeforeChanges: true }
       return {
         config,
-        defaults: folded.defaults,
+        defaults: guardedDefaults,
         applied: folded.applied,
         refused: folded.refused,
         deferred: folded.deferred,

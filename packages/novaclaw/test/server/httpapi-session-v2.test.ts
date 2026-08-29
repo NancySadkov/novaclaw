@@ -173,7 +173,6 @@ describe("promptAsync routes to the V2 native engine (F1b: one engine)", () => {
               }
               if (type === "session.status" && record(record(payload.properties).status).type === "busy")
                 Deferred.doneUnsafe(sawBusy, Effect.void)
-              if (type === "session.idle") Deferred.doneUnsafe(sawIdle, Effect.void)
               if (type === "session.status" && record(record(payload.properties).status).type === "idle")
                 Deferred.doneUnsafe(sawIdle, Effect.void)
             }

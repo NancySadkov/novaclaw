@@ -135,10 +135,7 @@ export interface Definition<A = any> {
    * write gate refuses: clearing `responder` undoes a human's takeover, and clearing `session_type`
    * changes attendance. A gate on one door only is not a gate.
    */
-  readonly validateRemove?: (input: {
-    readonly id?: string
-    readonly system: boolean
-  }) => Effect.Effect<void, unknown>
+  readonly validateRemove?: (input: { readonly id?: string; readonly system: boolean }) => Effect.Effect<void, unknown>
   /** Decode an older stored version into the current typed value. Absence makes drift explicit. */
   readonly migrate?: (input: { readonly version: number; readonly value: Schema.Json }) => Effect.Effect<A>
 }
@@ -931,7 +928,7 @@ const compiledDefinitions = Effect.gen(function* () {
     kernelDefinition({
       kind: "device",
       description:
-        "The scheduling device id for this session. It groups capacity; it does not choose which model answers. Remove to inherit.",
+        "A real Device placement for this session. The selected Device must serve the resolved model; an unknown or incompatible pin refuses the turn before provider dispatch. Remove to restore automatic placement.",
       cardinality: "singleton",
       lifetime: "entity",
       version: 1,
@@ -1080,7 +1077,8 @@ const compiledDefinitions = Effect.gen(function* () {
         // The column is a plain JSON object; `Model.Ref` is branded. The codec re-decodes it either
         // way, so the cast is at the boundary where the shapes are known to match rather than spread
         // across the projection.
-        get: (sessionID) => current(sessionID).pipe(Effect.map((row) => (row?.model ?? undefined) as Model.Ref | undefined)),
+        get: (sessionID) =>
+          current(sessionID).pipe(Effect.map((row) => (row?.model ?? undefined) as Model.Ref | undefined)),
         // The catalog is the registry this field resolves through, so "does this model exist" is
         // answered HERE rather than at the next turn, where an unservable ref surfaces as a provider
         // error the user has no way to connect back to the write that caused it.
@@ -1091,7 +1089,9 @@ const compiledDefinitions = Effect.gen(function* () {
             // ⚠️ ANY layer, not the merged view: a model added by a later layer is servable, and
             // re-implementing the merge here would be a second copy of the catalog's own algebra.
             if (!layers?.some((layer) => layer.models?.[value.id] !== undefined))
-              return yield* Effect.fail(new Error(`No model ${value.providerID}/${value.id} in this instance's catalog`))
+              return yield* Effect.fail(
+                new Error(`No model ${value.providerID}/${value.id} in this instance's catalog`),
+              )
           }),
         put: (sessionID, value) =>
           Effect.gen(function* () {

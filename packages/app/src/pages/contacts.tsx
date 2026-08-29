@@ -31,6 +31,7 @@ import { sessionHref } from "@/utils/session-route"
 import { AgentConfigDialog } from "@/components/agent-config-dialog"
 import { AgentPortrait } from "@/components/agent-portrait"
 import { useDialog } from "@novaclaw/ui/context/dialog"
+import { sessionExecutions, type SessionExecutionInfo } from "@/utils/session-execution-api"
 
 // The Contacts app — the roster of colleagues this instance employs (AGENTS.md → *the structural
 // metaphor*; `notes/named-agents.md`).
@@ -145,6 +146,28 @@ export function ContactsPage() {
       return current && ids.length > 0 ? { current, ids } : undefined
     },
     ({ current, ids }) => listUsage(current.sdk.client.v2 as never, ids),
+  )
+
+  // The lifecycle says whether a chat is RUNNING; this durable row says how its last attempt
+  // stopped. Refetch when a terminal status arrives, so a recovery-paused colleague cannot be
+  // flattened into healthy Idle. The status signature is the trigger rather than a timer: the
+  // roster is a live projection, not a polling dashboard.
+  const executionSource = createMemo(() => {
+    const current = ctx()
+    if (!current) return undefined
+    const terminal = Object.entries(current.sync.session.data.session_status)
+      .flatMap(([sessionID, status]) =>
+        status.type === "idle" || status.type === "exited" ? [`${sessionID}:${status.type}`] : [],
+      )
+      .sort()
+      .join("|")
+    return { current, terminal }
+  })
+  const [executions] = createResource(executionSource, ({ current }) =>
+    sessionExecutions(current.sdk.server.http).catch(() => [] as SessionExecutionInfo[]),
+  )
+  const executionBySession = createMemo(
+    () => new Map((executions() ?? []).map((execution) => [execution.sessionID, execution])),
   )
 
   const serverKey = createMemo(() => {
@@ -323,6 +346,7 @@ export function ContactsPage() {
                   starting={starting() === view.id}
                   onStart={() => void startTheirChat(view.id, view.name)}
                   usage={usage()?.[view.id] ?? []}
+                  executions={executionBySession()}
                   serverKey={serverKey()}
                   onOpen={() => openConfig(view.id)}
                 />
@@ -353,6 +377,7 @@ export function ContactsPage() {
                   starting={starting() === view.id}
                   onStart={() => void startTheirChat(view.id, view.name)}
                   usage={usage()?.[view.id] ?? []}
+                  executions={executionBySession()}
                   serverKey={serverKey()}
                   onOpen={() => openConfig(view.id)}
                 />
@@ -398,6 +423,7 @@ function ContactRow(props: {
    *  fresh `Map`s over every session in the instance (review D6). One memo, one pass. */
   sessions: readonly SessionLike[]
   usage: readonly UsageMinute[]
+  executions: ReadonlyMap<string, SessionExecutionInfo>
   starting: boolean
   onStart: () => void
   serverKey: ServerConnection.Key | undefined
@@ -428,6 +454,7 @@ function ContactRow(props: {
     return rosterState({
       status: sessionData().session_status[sessionID],
       working: sessionData().session_working(sessionID),
+      execution: props.executions.get(sessionID),
     })
   })
   /**

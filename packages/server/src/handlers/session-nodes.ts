@@ -2,6 +2,7 @@ import { SessionV2 } from "@novaclaw/core/session"
 import { SessionEffectiveConfig } from "@novaclaw/core/session/effective-config"
 import { SessionExecution } from "@novaclaw/core/session/execution"
 import { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
+import { SessionComponentRegistry } from "@novaclaw/core/session/component-registry"
 import { SessionPresence } from "@novaclaw/core/session/presence"
 import { SessionReceipt } from "@novaclaw/core/session/receipt"
 import { SessionTags } from "@novaclaw/core/session/tags"
@@ -57,6 +58,7 @@ export const SESSION_HANDLER_NODES = [
   SessionTags.node,
   SessionEffectiveConfig.node,
   SessionExecutionAttempt.node,
+  SessionComponentRegistry.node,
   SessionReceipt.node,
   SessionPresence.node,
   SessionExecution.node,

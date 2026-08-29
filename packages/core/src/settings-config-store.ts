@@ -38,6 +38,8 @@ export interface Interface {
   readonly unreadable: () => Effect.Effect<ReadonlyArray<{ readonly path: string }>>
   /** Every stored setting, keyed by the top-level config key. */
   readonly all: () => Effect.Effect<Record<string, unknown>>
+  /** The live incoming API token, already decoded by this store; undefined means use the launcher default. */
+  readonly serverPassword: () => Effect.Effect<string | undefined>
   /** Insert or replace one setting's whole value (latest() semantics — no layers). */
   readonly set: (key: string, value: unknown) => Effect.Effect<void>
   /** Remove one stored setting (the key falls back to config documents until step 8). */
@@ -69,6 +71,9 @@ export const layer = Layer.effect(
 
     const isRecord = (value: unknown): value is Record<string, unknown> =>
       typeof value === "object" && value !== null && !Array.isArray(value)
+    const passwordOf = (value: unknown): string | undefined =>
+      isRecord(value) && typeof value.password === "string" && value.password.length > 0 ? value.password : undefined
+    let serverPassword: string | undefined
     const secretAad = (path: string) => `novaclaw:runtime-setting:${path}`
     /**
      * 🔴 The unwind of app-managed encryption, step 2 (see `todo/code-review.md`, NC-REL-030).
@@ -188,7 +193,11 @@ export const layer = Layer.effect(
           if (opened.migrated && opened.damaged.length === 0) yield* settings.set(key, protect(key, opened.value))
         }
         LogSettings.apply(result.log)
+        serverPassword = passwordOf(result.server)
         return result
+      }),
+      serverPassword: Effect.fn("SettingsConfigStore.serverPassword")(function* () {
+        return serverPassword
       }),
       unreadable: Effect.fn("SettingsConfigStore.unreadable")(function* () {
         const stored = yield* settings.all()
@@ -201,9 +210,11 @@ export const layer = Layer.effect(
       }),
       set: Effect.fn("SettingsConfigStore.set")(function* (key, value) {
         yield* settings.set(key, protect(key, value))
+        if (key === "server") serverPassword = passwordOf(value)
       }),
       remove: Effect.fn("SettingsConfigStore.remove")(function* (key) {
         yield* settings.remove(key)
+        if (key === "server") serverPassword = undefined
       }),
       isEmpty: Effect.fn("SettingsConfigStore.isEmpty")(function* () {
         return yield* settings.isEmpty()

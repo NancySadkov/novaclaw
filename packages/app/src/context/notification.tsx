@@ -18,6 +18,8 @@ import { ServerConnection, useServer } from "./server"
 import { type DraftTab, useTabs } from "./tabs"
 import { requireServerKey } from "@/utils/session-route"
 import type { ServerScope } from "@/utils/server-scope"
+import { sessionExecutions } from "@/utils/session-execution-api"
+import { terminalAttention } from "@/apps/roster-live"
 
 type NotificationBase = {
   directory?: string
@@ -55,6 +57,20 @@ type NotificationIndex = {
     unseenCount: Record<string, number>
     unseenHasError: Record<string, boolean>
   }
+}
+
+type ExecutionNotificationMetadata = {
+  executionAttemptID: string
+  terminalAttention: "complete" | "recovery"
+}
+
+const isExecutionNotificationMetadata = (value: unknown): value is ExecutionNotificationMetadata => {
+  if (typeof value !== "object" || value === null) return false
+  const metadata = value as Record<string, unknown>
+  return (
+    typeof metadata["executionAttemptID"] === "string" &&
+    (metadata["terminalAttention"] === "complete" || metadata["terminalAttention"] === "recovery")
+  )
 }
 
 const MAX_NOTIFICATIONS = 500
@@ -342,12 +358,74 @@ function createServerNotificationState(input: {
     return sessionID === activeSession
   }
 
-  const handleSessionIdle = (directory: string, event: { properties: { sessionID?: string } }, time: number) => {
+  const handleSessionStatus = (
+    directory: string,
+    event: { properties: { sessionID?: string; status?: { type?: string } } },
+    time: number,
+  ) => {
     const sessionID = event.properties.sessionID
-    void lookup(directory, sessionID).then((session) => {
+    const lifecycle = event.properties.status?.type
+    if (lifecycle !== "idle" && lifecycle !== "exited") return
+
+    // `session.status` owns whether the process is running; the execution ledger owns HOW it
+    // stopped. The runner can publish an early idle before post-run maintenance and before the
+    // lease settles, so an idle event by itself is not completion evidence. The host publishes the
+    // terminal idle again after it has durably settled/paused the attempt.
+    void lookup(directory, sessionID).then(async (session) => {
       if (meta.disposed) return
       if (!session) return
+      // A child completes as part of its visible root's work. The root's own terminal transition
+      // will carry the one notification; a child must never appear as a second colleague.
       if (session.parentID) return
+
+      const executions = await sessionExecutions(serverSDK().server.http).catch(() => [])
+      if (meta.disposed) return
+      const execution = executions.find((item) => item.sessionID === sessionID)
+      const attention = terminalAttention({ lifecycle, execution: execution?.state })
+      if (attention === undefined) return
+      // The runner's early idle and the host's post-settlement idle can race this async lookup. If
+      // the ledger settles between event receipt and this read, BOTH handlers see the same terminal
+      // attempt. Keying the indication by its durable attempt id makes that one completion/recovery
+      // fact produce one notification, regardless of which lifecycle delivery observed it first.
+      if (
+        execution &&
+        store.list.some(
+          (notification) =>
+            notification.session === sessionID &&
+            isExecutionNotificationMetadata(notification.metadata) &&
+            notification.metadata.executionAttemptID === execution.attemptID &&
+            notification.metadata.terminalAttention === attention,
+        )
+      )
+        return
+
+      const metadata = execution
+        ? ({
+            executionAttemptID: execution.attemptID,
+            terminalAttention: attention,
+          } satisfies ExecutionNotificationMetadata)
+        : undefined
+
+      const href = `/${base64Encode(directory)}/session/${sessionID}`
+      if (attention === "recovery") {
+        if (settings.sounds.errorsEnabled()) void playSoundById(settings.sounds.errors())
+
+        const detail =
+          execution?.failureDetail?.trim() || language.t("notification.session.recovery.fallbackDescription")
+        append({
+          directory,
+          time,
+          viewed: viewedInCurrentSession(directory, sessionID),
+          type: "error",
+          session: sessionID,
+          error: { message: detail },
+          metadata,
+        })
+        if (settings.notifications.errors()) {
+          void platform.notify(language.t("notification.session.recovery.title"), detail, href)
+        }
+        return
+      }
 
       if (settings.sounds.agentEnabled()) {
         void playSoundById(settings.sounds.agent())
@@ -359,9 +437,9 @@ function createServerNotificationState(input: {
         viewed: viewedInCurrentSession(directory, sessionID),
         type: "turn-complete",
         session: sessionID,
+        metadata,
       })
 
-      const href = `/${base64Encode(directory)}/session/${sessionID}`
       if (settings.notifications.agent()) {
         void platform.notify(language.t("notification.session.responseReady.title"), session.title ?? sessionID, href)
       }
@@ -434,12 +512,12 @@ function createServerNotificationState(input: {
       if (sessionID) purgeSession(sessionID)
       return
     }
-    if (event.type !== "session.idle" && event.type !== "session.error") return
+    if (event.type !== "session.status" && event.type !== "session.error") return
 
     const directory = e.name
     const time = Date.now()
-    if (event.type === "session.idle") {
-      handleSessionIdle(directory, event, time)
+    if (event.type === "session.status") {
+      handleSessionStatus(directory, event, time)
       return
     }
     handleSessionError(directory, event, time)

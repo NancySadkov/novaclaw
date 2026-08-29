@@ -1,6 +1,6 @@
 /**
  * Model-facing "make me an app" leaf (B14): registers a home-screen app MANIFEST —
- * a launcher tile (open a route, a URL, or a pre-filled chat prompt), never code.
+ * a launcher tile (open a closed built-in route id, a URL, or a pre-filled chat prompt), never code.
  * Persisted under Global.Path.data/apps/<id>.json; the client merges persisted
  * manifests into the home screen. Permission-gated like `trash`.
  */
@@ -12,12 +12,15 @@ import { Effect, Layer, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
 import { EventV2 } from "../event"
 import { PermissionV2 } from "../permission"
-import { saveApp } from "../app-registry"
+import { saveApp, type ManifestOpen } from "../app-registry"
+import { MANIFEST_ROUTE_IDS } from "../app-route"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
 
 export const name = "register-app"
+
+const RouteId = Schema.Literals(MANIFEST_ROUTE_IDS)
 
 // Flat params — nested structs trip small models; this rides the tool-call recovery path.
 export const Input = Schema.Struct({
@@ -33,13 +36,29 @@ export const Input = Schema.Struct({
   }),
   open_type: Schema.Literals(["route", "url", "prompt"]).annotate({
     description:
-      "What the tile opens: 'route' = an in-app path (/files), 'url' = an external http(s) page, 'prompt' = a new chat pre-filled with this prompt",
+      "What the tile opens: 'route' = a built-in app selected by id, 'url' = an external http(s) page, 'prompt' = a new chat pre-filled with this prompt",
   }),
-  open_value: Schema.String.annotate({
+  route_id: Schema.optional(RouteId).annotate({
+    description: `Built-in app to open when open_type is 'route'. Choose one of: ${MANIFEST_ROUTE_IDS.join(", ")}`,
+  }),
+  open_value: Schema.optional(Schema.String).annotate({
     description:
-      "The route path, URL, or prompt text — e.g. open_type 'prompt' + open_value 'Show me today's stock prices for my portfolio'",
+      "External URL or prompt text when open_type is 'url' or 'prompt'. Example: open_type 'prompt' + open_value 'Show me today's stock prices for my portfolio'",
   }),
 })
+
+type OpenInput = Pick<typeof Input.Type, "open_type" | "route_id" | "open_value">
+
+/** Convert the flat, small-model-friendly input into the persisted launcher's closed open spec. */
+export function openFromInput(input: OpenInput): ManifestOpen {
+  if (input.open_type === "route") {
+    if (!input.route_id)
+      throw new Error(`open_type "route" requires route_id. Choose one of: ${MANIFEST_ROUTE_IDS.join(", ")}`)
+    return { type: "route", value: input.route_id }
+  }
+  if (!input.open_value?.trim()) throw new Error(`open_type "${input.open_type}" requires open_value`)
+  return { type: input.open_type, value: input.open_value }
+}
 
 export const Output = Schema.Struct({
   id: Schema.String,
@@ -60,8 +79,7 @@ export const layer = Layer.effectDiscard(
       .register({
         [name]: Tool.withDeferred(
           Tool.make({
-            description:
-              "Register (or update) an app tile on the user's home screen. An app is a LAUNCHER manifest: it opens an in-app route, an external URL, or a new chat pre-filled with a prompt — use open_type 'prompt' to turn a repeatable request into a one-tap app. Reusing an id updates that app.",
+            description: `Register (or update) an app tile on the user's home screen. An app is a LAUNCHER manifest: it opens a built-in app by route id (${MANIFEST_ROUTE_IDS.join(", ")}), an external URL, or a new chat pre-filled with a prompt — use open_type 'prompt' to turn a repeatable request into a one-tap app. Reusing an id updates that app.`,
             input: Input,
             output: Output,
             toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
@@ -86,7 +104,7 @@ export const layer = Layer.effectDiscard(
                     icon: input.icon,
                     accent: input.accent,
                     subtitle: input.subtitle,
-                    open: { type: input.open_type, value: input.open_value },
+                    open: openFromInput(input),
                   }),
                 )
                 yield* events.publish(AppEvent.Registered, { id: manifest.id, title: manifest.title })

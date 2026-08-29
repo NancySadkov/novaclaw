@@ -49,6 +49,7 @@ const SessionCatalogHandler = handlerLayer(
       const presence = yield* SessionPresence.Service
       const execution = yield* SessionExecution.Service
       const effective = yield* SessionEffectiveConfig.Service
+      const components = yield* SessionComponentRegistry.Service
 
       return (
         handlers
@@ -117,8 +118,8 @@ const SessionCatalogHandler = handlerLayer(
                   parentID: ctx.payload.parentID,
                   agent: ctx.payload.agent,
                   model: ctx.payload.model,
-                  // Device affinity (v0.2.0 B2). Forwarded raw like the tri-states below and for the
-                  // same reason: `undefined` means INHERIT, so coalescing it to a derived key here
+                  // A Device PIN, validated against the resolved model immediately before provider
+                  // dispatch. `undefined` still means INHERIT, so coalescing it to a derived key here
                   // would stamp one session's backend onto every child it ever spawns.
                   device: ctx.payload.device,
                   controlBinding: ctx.payload.controlBinding,
@@ -329,6 +330,12 @@ const SessionCatalogHandler = handlerLayer(
                   sessionID: error.sessionID,
                   message: `Session not found: ${error.sessionID}`,
                 })
+              // Component writers validate their own values, not entity existence. Preserve the
+              // update route's 404 contract before touching the sparse Device component.
+              if (ctx.payload.device !== undefined)
+                yield* session
+                  .get(ctx.params.sessionID)
+                  .pipe(Effect.catchTag("Session.NotFoundError", (error) => notFound(error)))
               if (ctx.payload.title !== undefined)
                 yield* session
                   .setTitle({ sessionID: ctx.params.sessionID, title: ctx.payload.title })
@@ -345,6 +352,26 @@ const SessionCatalogHandler = handlerLayer(
                     ...(ctx.payload.archived === null ? {} : { time: ctx.payload.archived }),
                   })
                   .pipe(Effect.catchTag("Session.NotFoundError", (error) => notFound(error)))
+              if (ctx.payload.device === null)
+                yield* components.remove({ sessionID: ctx.params.sessionID, kind: "device" }).pipe(
+                  Effect.mapError(
+                    (error) =>
+                      new InvalidRequestError({
+                        message: `Could not update this chat's Device pin: ${error.message}`,
+                      }),
+                  ),
+                )
+              else if (ctx.payload.device !== undefined)
+                yield* components
+                  .put({ sessionID: ctx.params.sessionID, kind: "device", value: ctx.payload.device })
+                  .pipe(
+                    Effect.mapError(
+                      (error) =>
+                        new InvalidRequestError({
+                          message: `Could not update this chat's Device pin: ${error.message}`,
+                        }),
+                    ),
+                  )
               return {
                 data: yield* session
                   .get(ctx.params.sessionID)

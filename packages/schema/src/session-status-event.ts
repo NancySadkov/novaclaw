@@ -49,12 +49,4 @@ export const Status = Event.define({
   },
 })
 
-// deprecated
-export const Idle = Event.define({
-  type: "session.idle",
-  schema: {
-    sessionID: SessionID,
-  },
-})
-
-export const Definitions = Event.inventory(Status, Idle)
+export const Definitions = Event.inventory(Status)

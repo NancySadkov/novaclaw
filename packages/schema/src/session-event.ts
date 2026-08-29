@@ -289,6 +289,7 @@ export const Synthetic = Event.define({
     ...Base,
     messageID: SessionMessage.ID,
     text: Schema.String,
+    repair: SessionMessage.SyntheticRepair.pipe(optional),
   },
 })
 export type Synthetic = typeof Synthetic.Type

@@ -382,4 +382,54 @@ describe("InstructionContext — project exclusions", () => {
       ),
     ),
   )
+
+  it.live("an invalid project file makes ambient project instructions unavailable instead of reading through", () =>
+    Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ).pipe(
+      Effect.flatMap((tmp) =>
+        Effect.gen(function* () {
+          const global = path.join(tmp.path, "global")
+          const project = path.join(tmp.path, "project")
+          const directory = path.join(project, "src")
+          const projectInstructions = AbsolutePath.make(path.join(project, "AGENTS.md"))
+          yield* Effect.promise(async () => {
+            await fs.mkdir(global, { recursive: true })
+            await fs.mkdir(directory, { recursive: true })
+            await fs.writeFile(path.join(global, "AGENTS.md"), "global-instructions")
+            await fs.writeFile(projectInstructions, "new-project-instructions")
+            await fs.writeFile(path.join(project, "novaclaw.json"), "{ not json")
+          })
+
+          const context = yield* SystemContextRegistry.Service.pipe(
+            Effect.flatMap((service) => service.load()),
+            Effect.provide(
+              instructionLayer({
+                config: global,
+                locationServiceLayer: Layer.succeed(
+                  Location.Service,
+                  Location.Service.of(
+                    location(
+                      { directory: AbsolutePath.make(directory) },
+                      { projectDirectory: AbsolutePath.make(project) },
+                    ),
+                  ),
+                ),
+              }),
+            ),
+          )
+
+          expect(
+            yield* SystemContext.reconcile(context, {
+              "core/instructions": {
+                value: [{ path: projectInstructions, content: "previously-admitted" }],
+                removed: "Previously loaded instructions no longer apply.",
+              },
+            }),
+          ).toEqual({ _tag: "Unchanged" })
+        }),
+      ),
+    ),
+  )
 })

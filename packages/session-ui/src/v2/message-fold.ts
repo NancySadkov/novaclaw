@@ -72,7 +72,11 @@ export function isOptimistic(message: SessionMessage | undefined): boolean {
  * completes, and `isInFlightAssistant` reads exactly that field — so the transcript would show a turn
  * spinning forever instead of a turn that ended.
  */
-function stamp(message: { time?: { created?: number; ran?: number; completed?: number } }, field: "ran" | "completed", at: number): void {
+function stamp(
+  message: { time?: { created?: number; ran?: number; completed?: number } },
+  field: "ran" | "completed",
+  at: number,
+): void {
   const time = (message.time ??= { created: at })
   time[field] = at
 }
@@ -187,6 +191,7 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
         type: "synthetic",
         sessionID: event.data.sessionID,
         text: event.data.text,
+        repair: event.data.repair,
         time: { created: event.data.timestamp },
       })
       break

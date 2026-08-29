@@ -58,7 +58,6 @@ const fold = (state: ActivityState, activity: MemoryActivity, now: number, anima
 
 describe("decodeMemoryEvent", () => {
   test("anything that is not a memory event is not ours", () => {
-    expect(decodeMemoryEvent({ type: "session.idle", properties: {} })).toBeUndefined()
     expect(decodeMemoryEvent({ type: undefined, properties: {} })).toBeUndefined()
     expect(decodeMemoryEvent({ type: "memory.something.new", properties: {} })).toBeUndefined()
   })

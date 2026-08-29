@@ -4483,7 +4483,7 @@ class ApiV2Session extends NovaClawApiClient {
   /**
    * Update session
    *
-   * Rename a session and/or replace its metadata; returns the updated record.
+   * Rename a session, replace its metadata, archive it, or set/remove its Device pin; returns the updated record.
    */
   public update<ThrowOnError extends boolean = false>(
     parameters: {
@@ -4492,6 +4492,7 @@ class ApiV2Session extends NovaClawApiClient {
       metadata?: {
         [key: string]: unknown
       }
+      device?: string | null
       archived?: number | null
     },
     options?: Options<never, ThrowOnError>,
@@ -4500,6 +4501,7 @@ class ApiV2Session extends NovaClawApiClient {
     const body = {
       title: parameters?.["title"],
       metadata: parameters?.["metadata"],
+      device: parameters?.["device"],
       archived: parameters?.["archived"],
     }
     return (options?.client ?? this.client).patch<T.V2SessionUpdateResponses, T.V2SessionUpdateErrors, ThrowOnError>({

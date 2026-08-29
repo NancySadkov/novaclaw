@@ -85,7 +85,7 @@ type SchemaDocument = {
  * Four of these seven are the point of the ledger. `PATCH /api/session/{sessionID}`'s `archived` and
  * the three `POST /api/session/{sessionID}/…` overrides are `Schema.NullOr`, and `null` is the value
  * that CLEARS the override so the session inherits from its parent chain — architecture.md's keystone,
- * reachable over HTTP. Until 2026-07-31 all four were typed non-nullable in the generated client and a
+ * reachable over HTTP. Until 2026-07-31 the original fields were typed non-nullable in the generated client and a
  * typed caller simply could not express *inherit*.
  *
  * ⚠️ **A shrinking list is the alarm.** An entry disappears legitimately only when the protocol stops
@@ -97,6 +97,7 @@ const NULLABLE_REQUEST_FIELDS = [
   "POST /experimental/workspace extra (optional)",
   "POST /experimental/workspace/warp id",
   "PATCH /api/session/{sessionID} archived (optional)",
+  "PATCH /api/session/{sessionID} device (optional)",
   "POST /api/session/{sessionID}/strict strict",
   "POST /api/session/{sessionID}/feature enabled",
   "POST /api/session/{sessionID}/prompt-override override",
@@ -243,7 +244,7 @@ const GENERATE_TIMEOUT_MS = 60_000
 // ⚠️ The same warning still stands, and applies to this entry too: set-identity is what makes the
 // re-pin safe. A fingerprint change that ADDS, REMOVES or REPOINTS a `source -> emitted` pair is a
 // public API change and must be reviewed as one, not re-pinned by copying the received hash.
-const SCHEMA_NAME_FINGERPRINT = "eab0760f6314071b26e3bb9f34f5d56c941fb184d5398dd8c2d85d817c491cec"
+const SCHEMA_NAME_FINGERPRINT = "90958fe866f381ad466d43c011a89bcf99b8a6305089ec2bb466f129a17d8ea6"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {
@@ -400,7 +401,7 @@ describe("the SDK's generated artifacts", () => {
       nullable.sort(),
       [
         "packages/sdk/openapi.json no longer offers `null` on every request-body field the protocol",
-        "declares as `Schema.NullOr`. On the three per-session override routes `null` is what CLEARS the",
+        "declares as `Schema.NullOr`. On the per-session override routes `null` is what CLEARS the",
         "override so the session inherits from its parent chain — dropping it makes `inherit` unsendable.",
         `Fix:  ${REGEN}  (after fixing \`stripOptionalNull\` in packages/novaclaw/…/httpapi/public.ts)`,
       ].join("\n"),

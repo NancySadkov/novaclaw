@@ -221,12 +221,45 @@ export const formatTokensPerSecond = (perMinute: number | undefined): string | u
  * deleted: richer telemetry belongs to a world where model servers are a reliable standard, and
  * until then a status with more resolution than the source has is decoration.
  */
-export type RosterState = "idle" | "working" | "error"
+export type ExecutionState = "starting" | "busy" | "recovering" | "paused" | "failed" | "interrupted" | "settled"
+
+export type TerminalAttention = "complete" | "recovery"
+
+export const isRecoveryExecutionState = (state: ExecutionState | undefined): boolean =>
+  state === "paused" || state === "failed" || state === "interrupted"
+
+/**
+ * Turn a terminal lifecycle transition plus its durable execution row into one user-facing fact.
+ *
+ * `idle` says only that the scheduler stopped running this session. It deliberately does NOT say
+ * whether the turn settled or was parked after an unsafe/failed attempt; the execution ledger owns
+ * that distinction. `exited`, by contrast, follows the durable Completed event and is itself the
+ * terminal result for an autonomous thread.
+ *
+ * An early runner `idle` can arrive while post-run maintenance is still inside a busy lease. It is
+ * ignored here; the host publishes the same lifecycle transition after settling the lease, which is
+ * the only point at which completion attention is truthful.
+ */
+export const terminalAttention = (input: {
+  readonly lifecycle: string | undefined
+  readonly execution: ExecutionState | undefined
+}): TerminalAttention | undefined => {
+  if (input.lifecycle === "exited") return "complete"
+  if (input.lifecycle !== "idle") return undefined
+  if (input.execution === "settled") return "complete"
+  if (isRecoveryExecutionState(input.execution)) return "recovery"
+  return undefined
+}
+
+export type RosterState = "idle" | "working" | "error" | "paused"
 
 export const rosterState = (input: {
   readonly status: { readonly type: string } | undefined
   readonly working: boolean
+  readonly execution?: { readonly state: ExecutionState } | undefined
 }): RosterState => {
   if (input.status?.type === "retry") return "error"
-  return input.working ? "working" : "idle"
+  if (input.working) return "working"
+  if (isRecoveryExecutionState(input.execution?.state)) return "paused"
+  return "idle"
 }

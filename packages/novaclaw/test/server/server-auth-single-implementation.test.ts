@@ -100,7 +100,7 @@ describe("ServerAuth absorption", () => {
       .filter((name) => !INSTANCE_OWNED.has(name))
       .sort()
 
-    expect(reExported).toEqual(["authorized", "effective", "headerFrom", "headersFrom", "required"])
+    expect(reExported).toEqual(["authorized", "effective", "headerFrom", "headersFrom", "required", "resolve"])
   })
 
   test("re-exports the shared implementation rather than redeclaring it", () => {
@@ -260,6 +260,23 @@ describe("ServerAuth request decision", () => {
   // before this file, and it is now the only copy, so the decision is covered where it lives. The
   // end-to-end 401/200 path over a real server stays in `httpapi-authorization.test.ts`.
   const config: SharedInfo = { password: Option.some("secret"), username: "alice" }
+
+  test("stored runtime token outranks the launcher default", () => {
+    const result = Shared.resolve(config, "rotated")
+
+    expect(result.source).toBe("stored")
+    expect(result.config.password).toEqual(Option.some("rotated"))
+    expect(Shared.authorized({ username: "alice", password: Redacted.make("secret") }, result.config)).toBe(false)
+    expect(Shared.authorized({ username: "alice", password: Redacted.make("rotated") }, result.config)).toBe(true)
+  })
+
+  test("launcher default is used only when no stored token exists, then the server is open", () => {
+    expect(Shared.resolve(config, null).source).toBe("launcher")
+    expect(Shared.resolve({ password: Option.none(), username: "alice" }, null)).toEqual({
+      config: { password: Option.none(), username: "alice" },
+      source: "open",
+    })
+  })
 
   test("accepts the configured username and password", () => {
     expect(Shared.required(config)).toBe(true)

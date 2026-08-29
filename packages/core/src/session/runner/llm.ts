@@ -927,9 +927,25 @@ export const layer = Layer.effect(
       // chain-resolved answer, which includes the colleague's own configuration — so asking it "did
       // the user name this?" always says yes. The row is where an explicit `--model`, a switch or a
       // per-turn override actually lands.
-      const model = yield* tap(models.resolve(modelSession, { requested: session.model !== undefined }))
+      // Resolve the provider route and scheduler identity in ONE decision. A Device pin is allowed
+      // to select another real catalog placement of the same model, so resolving these separately
+      // could dispatch one endpoint while charging another endpoint's capacity ledger.
+      const resolvedModel = yield* tap(
+        models.resolveWithDevice(modelSession, { requested: session.model !== undefined }),
+      )
+      const model = resolvedModel.model
       const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
-      return { session, config, agent, system, modelSession, model, entries, promoted }
+      return {
+        session,
+        config,
+        agent,
+        system,
+        modelSession,
+        model,
+        scheduledDevice: resolvedModel.device,
+        entries,
+        promoted,
+      }
     })
 
     const runTurnAttempt = Effect.fn("SessionRunner.runTurn")(function* (
@@ -1000,7 +1016,8 @@ export const layer = Layer.effect(
             // the complete, accurate sentence — routing it through the "…is unavailable" template
             // below would describe the fault falsely (ruling 2). The model is not unavailable; it
             // is present, reachable, and simply cannot read what was attached.
-            error instanceof SessionRunnerModel.ModelInputUnsupportedError
+            error instanceof SessionRunnerModel.ModelInputUnsupportedError ||
+            error instanceof SessionRunnerModel.DevicePinError
               ? undefined
               : error !== null && typeof error === "object" && "providerID" in error && "modelID" in error
                 ? `${(error as { providerID: string }).providerID}/${(error as { modelID: string }).modelID}`
@@ -1015,12 +1032,15 @@ export const layer = Layer.effect(
             messageID: SessionMessage.ID.create(),
             timestamp: yield* DateTime.now,
             text,
+            ...(error instanceof SessionRunnerModel.DevicePinError
+              ? { repair: { type: "unpin-device" as const, device: error.deviceID } }
+              : {}),
           })
         }).pipe(Effect.ignore)
       const prepared = yield* prepareTurn(sessionID, { promotion, onFailure: surfacePreTurnFailure })
       // The session moved to another location while this drain was queued — not ours to run.
       if (prepared === undefined) return yield* Effect.interrupt
-      const { session, config, agent, system, modelSession, model, entries } = prepared
+      const { session, config, agent, system, modelSession, model, scheduledDevice, entries } = prepared
       const toolFibers = yield* FiberSet.make<void, ToolOutputStore.Error>()
       let needsContinuation = false
       /** A pre-action policy returned `halt` for one of this turn's tool calls. See `tool-policy.ts`. */
@@ -1854,16 +1874,13 @@ export const layer = Layer.effect(
       // oversubscribes exactly the box the gate above exists to protect. `deviceKeyFor` keys on the
       // normalized endpoint ORIGIN instead; see its own comment for the cloud-model carve-out and
       // for why this is the substrate for `deviceKey = resolvedDevice` rather than the whole of it.
-      // The `??` keeps a scheduling key from ever failing a turn: `device` is best-effort, and the
-      // old per-model key is always safe (it can only over-partition, never over-share).
-      const scheduledDevice = yield* models.device(modelSession)
       const dispatchSlot = {
         sessionID: session.id as string,
-        deviceKey: scheduledDevice?.key ?? `${model.provider}/${model.id}`,
+        deviceKey: scheduledDevice.key,
         sessionClass: SessionScheduler.classForSessionType(config.type),
         ...(config.priority > 0 ? { priority: config.priority } : {}),
-        ...(scheduledDevice?.concurrency === undefined ? {} : { concurrency: scheduledDevice.concurrency }),
-        ...(scheduledDevice?.locality === undefined ? {} : { locality: scheduledDevice.locality }),
+        ...(scheduledDevice.concurrency === undefined ? {} : { concurrency: scheduledDevice.concurrency }),
+        ...(scheduledDevice.locality === undefined ? {} : { locality: scheduledDevice.locality }),
       }
       const generation = (stream: Exit.Exit<void, LLMError>, restore: ProviderDispatch.Restore) =>
         Effect.gen(function* () {

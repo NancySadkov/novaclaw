@@ -119,6 +119,21 @@ export class UnsupportedApiError extends Schema.TaggedErrorClass<UnsupportedApiE
   }
 }
 
+export class DevicePinError extends Schema.TaggedErrorClass<DevicePinError>()("SessionRunnerModel.DevicePinError", {
+  deviceID: Schema.NonEmptyString,
+  providerID: ProviderV2.ID,
+  modelID: ModelV2.ID,
+  reason: Schema.Literals(["unknown", "incompatible"]),
+}) {
+  override get message() {
+    const problem =
+      this.reason === "unknown"
+        ? `device \`${this.deviceID}\` is no longer available`
+        : `device \`${this.deviceID}\` cannot serve \`${this.providerID}/${this.modelID}\``
+    return `This chat could not start because ${problem}. Remove its Device pin to use automatic placement`
+  }
+}
+
 export type Error =
   | ModelNotSelectedError
   | NoDefaultModelError
@@ -126,6 +141,7 @@ export type Error =
   | VariantUnavailableError
   | UnsupportedApiError
   | ModelInputUnsupportedError
+  | DevicePinError
   | LocalModelManager.UnavailableError
   | Integration.AuthorizationError
 
@@ -140,6 +156,11 @@ export interface Interface {
     session: SessionSchema.Info,
     options?: { readonly requested?: boolean },
   ) => Effect.Effect<Model, Error>
+  /** Resolve the provider route and the scheduler identity from one placement decision. */
+  readonly resolveWithDevice: (
+    session: SessionSchema.Info,
+    options?: { readonly requested?: boolean },
+  ) => Effect.Effect<{ readonly model: Model; readonly device: ScheduledDevice }, Error>
   /**
    * Report WHICH process served a live turn, so a verdict measured on another is discarded.
    *
@@ -298,6 +319,13 @@ export const layerWith = (
     Service,
     Service.of({
       resolve,
+      resolveWithDevice: (session, options) =>
+        Effect.all({ model: resolve(session, options), device: device(session) }).pipe(
+          Effect.map(({ model, device }) => ({
+            model,
+            device: device ?? { key: `${model.provider}/${model.id}` },
+          })),
+        ),
       resolveDefault,
       learnedImageLimit,
       rememberImageLimit,
@@ -334,39 +362,28 @@ export const layerWith = (
  * would serialize unrelated background work for nothing. Known endpoint -> shared hardware ->
  * shared device; unknown endpoint -> no hardware of ours to protect -> leave them apart.
  *
- * ✅ **`deviceKey = resolvedDevice` LANDED HERE (B2, 2026-08-07), and this is the whole of it.** Both
- * overrides resolve inside this one function rather than at the call site, which is why the previous
- * pass wrote it as the single override point:
- *
- *  1. `override.declared` — the session's CHAIN-RESOLVED `SessionConfig.device`, i.e. the OS's
- *     CPU-affinity: this thread runs on that CPU. It wins outright, including over an id no registry
- *     entry names. That is safe by the asymmetry below: a declaration can only ever make turns queue
- *     together, never make two gates out of one box.
- *  2. `override.endpoints` — the `DeviceRegistry` index (`session/device-registry.ts`), which regroups
+ * The `DeviceRegistry` index (`session/device-registry.ts`) regroups
  *     ORIGINS onto a declared device. This is the half `e5c4e4ec6` could not derive: `:8010` and
  *     `:8011` on one host are two origins and one GPU, and no URL says so.
  *
- * ⚠️ **The two errors are not symmetric, and every fallback below picks the same side.** Over-sharing
+ * ⚠️ **The errors are not symmetric, and every fallback below picks the same side.** Over-sharing
  * a key makes unrelated turns queue behind one another — a throughput loss, visible, undone by
  * deleting a config entry. Under-sharing hands out `MAX_BATCH` twice for capacity that exists once,
  * which oversubscribes real hardware. So a malformed URL, an unregistered origin and an unresolvable
- * model all fall back to the per-model key (over-partition, the *cheap* error), while a declaration
- * is honoured verbatim (over-group, also the cheap error).
+ * model all fall back to the per-model key (over-partition, the *cheap* error).
  *
- * The declared Device's concurrency and locality ride beside this key. Concurrency is an operator
+ * A session pin is resolved separately by `resolveDevicePlacement`. It may select only a catalog
+ * model that really routes to the named Device; it never becomes a scheduler key merely because a
+ * caller supplied a string. The selected Device's concurrency and locality ride beside this key.
+ * Concurrency is an operator
  * declaration, not a measurement: there is still no KV/VRAM accounting anywhere in the tree.
  */
 export interface DeviceOverride {
-  /** The session's chain-resolved `SessionConfig.device`, if it declared one. */
-  readonly declared?: string
   /** The `DeviceRegistry`'s normalized-origin → device-id index. */
   readonly endpoints?: DeviceRegistry.EndpointMap
 }
 
 export const deviceKeyFor = (model: ModelV2.Info, override?: DeviceOverride): string => {
-  // An empty string is not a declaration — it is a column that was written blank, and treating it as
-  // a device id would collapse every such session onto one gate named "".
-  if (override?.declared !== undefined && override.declared !== "") return override.declared
   const url = model.api.url
   if (url !== undefined) {
     const origin = DeviceRegistry.normalizeOrigin(url)
@@ -375,6 +392,50 @@ export const deviceKeyFor = (model: ModelV2.Info, override?: DeviceOverride): st
     if (origin !== undefined) return override?.endpoints?.get(origin) ?? origin
   }
   return `${model.providerID}/${model.id}`
+}
+
+export type DevicePlacement =
+  | { readonly _tag: "placed"; readonly model: ModelV2.Info; readonly key: string }
+  | { readonly _tag: "refused"; readonly reason: "unknown" | "incompatible" }
+
+/**
+ * Bind a session pin to a real catalog placement.
+ *
+ * The stable scheduler identity is always derived from the candidate's endpoint and the registry.
+ * A pin therefore chooses among actual placements of the SAME catalog model (same public id and
+ * provider-side id); it never mints a capacity namespace. A configured Device with no matching
+ * placement is known-but-incompatible, while a string naming neither a configured Device nor any
+ * catalog endpoint is unknown.
+ */
+export const resolveDevicePlacement = (input: {
+  readonly selected: ModelV2.Info
+  readonly available: readonly ModelV2.Info[]
+  readonly declared?: string
+  readonly declaredKnown?: boolean
+  readonly endpoints?: DeviceRegistry.EndpointMap
+}): DevicePlacement => {
+  if (input.declared === undefined || input.declared === "")
+    return { _tag: "placed", model: input.selected, key: deviceKeyFor(input.selected, input) }
+
+  const onDevice = input.available.filter((candidate) => deviceKeyFor(candidate, input) === input.declared)
+  const current = onDevice.find(
+    (candidate) =>
+      candidate.providerID === input.selected.providerID &&
+      candidate.id === input.selected.id &&
+      candidate.api.id === input.selected.api.id,
+  )
+  if (current !== undefined) return { _tag: "placed", model: current, key: input.declared }
+
+  const alternate = onDevice.find(
+    (candidate) =>
+      candidate.id === input.selected.id && candidate.api.id === input.selected.api.id && supported(candidate),
+  )
+  if (alternate !== undefined) return { _tag: "placed", model: alternate, key: input.declared }
+
+  return {
+    _tag: "refused",
+    reason: input.declaredKnown === true || onDevice.length > 0 ? "incompatible" : "unknown",
+  }
 }
 
 const apiKey = (model: ModelV2.Info, credential?: Credential.Value) => {
@@ -663,7 +724,7 @@ export const locationLayer = Layer.effect(
       return entry?.choice === "native" || entry?.choice === "prompted" ? entry.choice : undefined
     })
 
-    return Service.of({
+    const base: Omit<Interface, "resolveWithDevice"> = {
       /**
        * A live turn reported WHICH process served it — discard a verdict measured on another.
        *
@@ -889,17 +950,107 @@ export const locationLayer = Layer.effect(
       // device without declaring one, which is what makes this a config field rather than a column.
       device: Effect.fn("SessionRunnerModel.device")(function* (session) {
         const model = yield* select(session).pipe(Effect.orElseSucceed(() => undefined))
-        // A declared pin still holds when the model cannot be resolved — the turn is about to fail
-        // on `resolve` anyway, and dropping the declaration here would be the one case where an
-        // explicit affinity silently became a per-model key.
-        const key =
-          model === undefined
-            ? session.device
-            : deviceKeyFor(model, { declared: session.device, endpoints: yield* devices.endpoints() })
-        if (key === undefined) return undefined
-        return { key, ...(yield* devices.profile(key)) }
+        if (model === undefined) return undefined
+        const endpoints = yield* devices.endpoints()
+        const declaredProfile = session.device === undefined ? undefined : yield* devices.profile(session.device)
+        const placement = resolveDevicePlacement({
+          selected: model,
+          available: yield* catalog.model.available(),
+          declared: session.device,
+          declaredKnown: declaredProfile !== undefined,
+          endpoints,
+        })
+        if (placement._tag === "refused") return undefined
+        const profile = placement.key === session.device ? declaredProfile : yield* devices.profile(placement.key)
+        return { key: placement.key, ...profile }
       }),
-    })
+    }
+
+    const resolveWithDevice: Interface["resolveWithDevice"] = Effect.fn("SessionRunnerModel.resolveWithDevice")(
+      function* (session, options) {
+        // A pin chooses the catalog placement BEFORE we wake a managed model or resolve credentials.
+        // Resolving the unpinned route first briefly started the wrong backend and could fail on its
+        // unavailable integration even when the pinned placement was healthy. A pin is an explicit
+        // placement decision, so it also does not inherit the automatic model-health fallback.
+        if (session.device !== undefined && session.device !== "") {
+          let selected = yield* select(session)
+          if (!selected) {
+            yield* plugins.ready.pipe(Effect.timeoutOrElse({ duration: "5 seconds", orElse: () => Effect.void }))
+            selected = yield* select(session)
+          }
+          const declaredProfile = yield* devices.profile(session.device)
+          if (selected === undefined && session.model && options?.requested === true)
+            return yield* new ModelUnavailableError({
+              providerID: session.model.providerID,
+              modelID: session.model.id,
+            })
+          if (selected === undefined && session.model)
+            return yield* new DevicePinError({
+              deviceID: session.device,
+              providerID: session.model.providerID,
+              modelID: session.model.id,
+              reason: declaredProfile === undefined ? "unknown" : "incompatible",
+            })
+          if (selected === undefined) return yield* new ModelNotSelectedError({ sessionID: session.id })
+
+          const placement = resolveDevicePlacement({
+            selected,
+            available: yield* catalog.model.available(),
+            declared: session.device,
+            declaredKnown: declaredProfile !== undefined,
+            endpoints: yield* devices.endpoints(),
+          })
+          if (placement._tag === "refused")
+            return yield* new DevicePinError({
+              deviceID: session.device,
+              providerID: selected.providerID,
+              modelID: selected.id,
+              reason: placement.reason,
+            })
+
+          yield* ensureManagedModel(
+            localModels,
+            placement.model,
+            Config.latest(yield* config.entries(), "local_model_catalog"),
+          )
+          const provider = yield* catalog.provider.get(placement.model.providerID)
+          const connection = yield* integrations.connection.active(
+            provider?.integrationID ?? Integration.ID.make(placement.model.providerID),
+          )
+          const routed = yield* resolve(
+            session,
+            placement.model,
+            connection ? yield* integrations.connection.resolve(connection) : undefined,
+            yield* measuredChannel(placement.model),
+          )
+          return { model: routed, device: { key: placement.key, ...declaredProfile } }
+        }
+
+        // Automatic placement retains the existing fallback/health selection and then derives the
+        // scheduler identity from the route that selection produced.
+        let routed = yield* base.resolve(session, options)
+        const available = yield* catalog.model.available()
+        const selected = available.find(
+          (candidate) =>
+            String(candidate.providerID) === String(routed.provider) && String(candidate.api.id) === String(routed.id),
+        )
+        const endpoints = yield* devices.endpoints()
+
+        if (selected === undefined) return { model: routed, device: { key: `${routed.provider}/${routed.id}` } }
+
+        const placement = resolveDevicePlacement({
+          selected,
+          available,
+          endpoints,
+        })
+        // With no declaration this branch is exhaustive by construction.
+        if (placement._tag === "refused") return { model: routed, device: { key: `${routed.provider}/${routed.id}` } }
+        const profile = yield* devices.profile(placement.key)
+        return { model: routed, device: { key: placement.key, ...profile } }
+      },
+    )
+
+    return Service.of({ ...base, resolveWithDevice })
   }),
 )
 

@@ -37,12 +37,16 @@ export function NativeTimeline(props: {
   onRevert?: (messageID: string) => void
   onRetry?: (messageID: string) => void | Promise<void>
   onChooseModel?: () => void
+  onUnpinDevice?: (sessionID: string) => void | Promise<void>
   errorLabels?: {
     retry: string
     chooseModel: string
     technicalDetails: string
     copyDetails: string
     working: string
+    unpinDevice: string
+    unpinningDevice: string
+    deviceUnpinned: string
   }
   /**
    * The staged-revert boundary (`session.revert.messageID`). The boundary message and everything
@@ -263,6 +267,7 @@ export function NativeTimeline(props: {
             onRevert={props.onRevert}
             onRetry={props.onRetry}
             onChooseModel={props.onChooseModel}
+            onUnpinDevice={props.onUnpinDevice}
             errorLabels={props.errorLabels}
             status={serverSync().session.data.session_status[props.sessionID]}
           />

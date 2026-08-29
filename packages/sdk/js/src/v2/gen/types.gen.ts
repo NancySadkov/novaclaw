@@ -94,7 +94,6 @@ export type Event =
   | EventMcpToolsChanged
   | EventMcpBrowserOpenFailed
   | EventSessionStatus
-  | EventSessionIdle
   | EventQuestionAsked
   | EventQuestionReplied
   | EventQuestionRejected
@@ -563,6 +562,7 @@ export type GlobalEvent = {
           sessionID: string
           messageID: string
           text: string
+          repair?: SessionMessageSyntheticRepair
         }
       }
     | {
@@ -1278,13 +1278,6 @@ export type GlobalEvent = {
         properties: {
           sessionID: string
           status: SessionStatus
-        }
-      }
-    | {
-        id: string
-        type: "session.idle"
-        properties: {
-          sessionID: string
         }
       }
     | {
@@ -2209,7 +2202,6 @@ export type V2Event =
   | McpToolsChanged
   | McpBrowserOpenFailed
   | SessionStatus2
-  | SessionIdle
   | QuestionAsked
   | QuestionReplied2
   | QuestionRejected2
@@ -2478,6 +2470,11 @@ export type PromptOrigin =
       at?: number
     }
 
+export type SessionMessageSyntheticRepair = {
+  type: "unpin-device"
+  device: string
+}
+
 export type SessionMessageAgentSwitched = {
   id: string
   metadata?: {
@@ -2548,6 +2545,7 @@ export type SessionMessageSynthetic = {
   seq?: number
   sessionID: string
   text: string
+  repair?: SessionMessageSyntheticRepair
   type: "synthetic"
 }
 
@@ -3272,6 +3270,7 @@ export type SyncEventSessionNextSynthetic = {
       sessionID: string
       messageID: string
       text: string
+      repair?: SessionMessageSyntheticRepair
     }
   }
 }
@@ -5214,6 +5213,7 @@ export type SessionNextSynthetic = {
     sessionID: string
     messageID: string
     text: string
+    repair?: SessionMessageSyntheticRepair
   }
 }
 
@@ -7117,23 +7117,6 @@ export type McpBrowserOpenFailed = {
   }
 }
 
-export type SessionIdle = {
-  id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  type: "session.idle"
-  durable?: {
-    aggregateID: string
-    seq: number
-    version: number
-  }
-  location?: LocationRef
-  data: {
-    sessionID: string
-  }
-}
-
 export type QuestionAsked = {
   id: string
   metadata?: {
@@ -7629,6 +7612,7 @@ export type EventSessionNextSynthetic = {
     sessionID: string
     messageID: string
     text: string
+    repair?: SessionMessageSyntheticRepair
   }
 }
 
@@ -8411,14 +8395,6 @@ export type EventSessionStatus = {
   }
 }
 
-export type EventSessionIdle = {
-  id: string
-  type: "session.idle"
-  properties: {
-    sessionID: string
-  }
-}
-
 export type EventQuestionAsked = {
   id: string
   type: "question.asked"
@@ -8720,6 +8696,10 @@ export type GlobalHealthResponses = {
   200: {
     healthy: true
     version: string
+    auth: {
+      required: boolean
+      source: "stored" | "launcher" | "open"
+    }
     instanceID: string
     networkID: string
     sealingKey?: string
@@ -14586,6 +14566,7 @@ export type V2SessionUpdateData = {
     metadata?: {
       [key: string]: unknown
     }
+    device?: string | null
     archived?: number | null
   }
   path: {
@@ -14599,7 +14580,7 @@ export type V2SessionUpdateErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError
+  400: InvalidRequestError | InvalidRequestError
   /**
    * UnauthorizedError
    */

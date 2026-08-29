@@ -20,6 +20,8 @@ import * as Sse from "effect/unstable/encoding/Sse"
 import { RootHttpApi } from "../api"
 import { Log } from "@novaclaw/schema/log"
 import { mutateConfig } from "./config-mutation"
+import { ServerAuth } from "@/server/auth"
+import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 
 function eventData(data: unknown): Sse.Event {
   return {
@@ -104,6 +106,8 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     const identity = yield* InstanceIdentityStore.Service
     const localModels = yield* LocalModelManager.Service
     const storage = yield* Storage.Service
+    const launchAuth = yield* ServerAuth.Config
+    const settings = yield* SettingsConfigStore.Service
 
     const health = Effect.fn("GlobalHttpApi.health")(function* () {
       // `identity()` rather than `get()`: both read the same row, so reporting the network identity
@@ -113,9 +117,11 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       // endpoint that is polled hard — and it is what lets ONE fetch teach a peer both halves of who
       // lives here: the identity to verify signatures against, and the key to seal to.
       const sealing = yield* identity.sealingKey()
+      const auth = ServerAuth.resolve(launchAuth, yield* settings.serverPassword())
       return {
         healthy: true as const,
         version: InstallationVersion,
+        auth: { required: ServerAuth.required(auth.config), source: auth.source },
         instanceID: self.id,
         networkID: self.networkID,
         sealingKey: sealing.publicKey,

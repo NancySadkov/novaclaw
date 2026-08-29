@@ -153,3 +153,40 @@ describe("ProjectFileCache.invalidate", () => {
     expect(seen).toBe("webfetch")
   })
 })
+
+describe("ProjectFileCache project-file states", () => {
+  test("only a genuinely absent file is `none`", async () => {
+    const root = tempRoot()
+    const entry = await run(Effect.flatMap(ProjectFileCache.Service, (cache) => cache.read(root)))
+    expect(entry.kind).toBe("none")
+    expect(ProjectFileCache.fault(entry)).toBeUndefined()
+  })
+
+  test("malformed and future-version files remain distinct cached faults", async () => {
+    const malformed = tempRoot()
+    fs.writeFileSync(path.join(malformed, "novaclaw.json"), "{ not json")
+    const future = tempRoot()
+    fs.writeFileSync(path.join(future, "novaclaw.json"), JSON.stringify({ version: 9999 }))
+
+    const entries = await run(
+      Effect.gen(function* () {
+        const cache = yield* ProjectFileCache.Service
+        return [yield* cache.read(malformed), yield* cache.read(future)] as const
+      }),
+    )
+    expect(entries[0].kind).toBe("invalid")
+    expect(entries[1].kind).toBe("future-version")
+    expect(ProjectFileCache.refusal(ProjectFileCache.fault(entries[0])!)).toContain("Fix the project file")
+    expect(ProjectFileCache.refusal(ProjectFileCache.fault(entries[1])!)).toContain("Upgrade NovaClaw")
+  })
+
+  test("an existing unreadable path is cached as `unreadable`, not flattened to `none`", async () => {
+    const root = tempRoot()
+    fs.mkdirSync(path.join(root, "novaclaw.json"))
+    const entry = await run(Effect.flatMap(ProjectFileCache.Service, (cache) => cache.read(root)))
+    expect(entry.kind).toBe("unreadable")
+    const fault = ProjectFileCache.fault(entry)!
+    expect(fault.file).toBe(path.join(root, "novaclaw.json"))
+    expect(ProjectFileCache.refusal(fault)).toContain("restore read access")
+  })
+})

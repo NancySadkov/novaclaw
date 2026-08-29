@@ -384,30 +384,26 @@ describe("a folder's novaclaw.json may hide a skill from the user's own slash me
     ),
   )
 
-  it.live("🔴 a malformed project file means NO project — the menu is intact, the session is up", () =>
+  it.live("🔴 a malformed project file hides every project-visible skill without taking the menu down", () =>
     Effect.scoped(
-      // Not JSON at all. The posture is the one `ProjectFileCache` already takes for every other
-      // section: an unreadable file is the same as no file, because a folder the user cannot read
-      // must not take their session down.
       withProject(undefined, ({ location, skills, directory }) =>
         Effect.gen(function* () {
           yield* Effect.promise(() => fs.writeFile(path.join(directory, "novaclaw.json"), "{ this is not json"))
           const listed = yield* names(skills)
-          expect(listed).toContain("skill:shown-skill")
-          expect(listed).toContain("skill:hidden-skill")
+          expect(listed).not.toContain("skill:shown-skill")
+          expect(listed).not.toContain("skill:hidden-skill")
         }).pipe(Effect.provide(LocationServiceMap.Service.get(location))),
       ),
     ),
   )
 
-  it.live("🔴 a file from a NEWER NovaClaw means NO project rather than a crash", () =>
+  it.live("🔴 a file from a NEWER NovaClaw hides skills rather than guessing at its section", () =>
     Effect.scoped(
       withProject({ version: 99, skills: { "hidden-skill": { show: false } } }, ({ location, skills }) =>
         Effect.gen(function* () {
-          // `version` is checked before the shape, and a future version is refused whole — so its
-          // `skills` section does not bite either. The list is served, and it is complete.
           const listed = yield* names(skills)
-          expect(listed).toContain("skill:hidden-skill")
+          expect(listed).not.toContain("skill:hidden-skill")
+          expect(listed).not.toContain("skill:shown-skill")
         }).pipe(Effect.provide(LocationServiceMap.Service.get(location))),
       ),
     ),
@@ -423,7 +419,8 @@ describe("a folder's novaclaw.json may hide a skill from the user's own slash me
         ({ location, skills }) =>
           Effect.gen(function* () {
             const listed = yield* names(skills)
-            expect(listed).toContain("skill:hidden-skill")
+            expect(listed).not.toContain("skill:hidden-skill")
+            expect(listed).not.toContain("skill:shown-skill")
           }).pipe(Effect.provide(LocationServiceMap.Service.get(location))),
       ),
     ),

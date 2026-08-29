@@ -77,6 +77,17 @@ function makeQueryOptionsApi(
 }
 export type QueryOptionsApi = ReturnType<typeof makeQueryOptionsApi>
 
+export type ConfigUpdateOptions = {
+  readonly onAccepted?: () => void
+  readonly refetch?: boolean
+}
+
+/** The ordering boundary for auth rotations: switch credentials before any follow-up request. */
+export function settleConfigUpdate(options: ConfigUpdateOptions, refetch: () => void) {
+  options.onAccepted?.()
+  if (options.refetch !== false) refetch()
+}
+
 export function createServerSyncContextInner(serverSDK: ServerSDK) {
   const language = useLanguage()
   const owner = getOwner()
@@ -532,9 +543,15 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
   }
 
   const updateConfigMutation = useMutation(() => ({
-    mutationFn: (config: Config) => serverSDK.client.global.config.update({ configInfo: config }),
-    onSuccess: () => {
-      bootstrap.refetch()
+    mutationFn: (input: {
+      config: Config
+      /** Runs after the server accepted the write and before this context starts any follow-up read. */
+      onAccepted?: () => void
+      /** A credential rotation rebuilds the whole server context, whose bootstrap performs the read. */
+      refetch?: boolean
+    }) => serverSDK.client.global.config.update({ configInfo: input.config }),
+    onSuccess: (_response, input) => {
+      settleConfigUpdate(input, () => void bootstrap.refetch())
       // Invalidate all provider queries so newly configured custom providers
       // appear immediately in the available provider list across all directories.
       queryClient.invalidateQueries({ queryKey: [serverSDK.scope, null, "providers"] })
@@ -558,7 +575,8 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     disableMcp: children.disableMcp,
     queryOptions: queryOptionsApi,
     // bootstrap,
-    updateConfig: updateConfigMutation.mutateAsync,
+    updateConfig: (config: Config, options?: ConfigUpdateOptions) =>
+      updateConfigMutation.mutateAsync({ config, ...options }),
     // Re-read the global config after something OTHER than `updateConfig` wrote it — the capability
     // probe writes its measured verdict server-side, and without this the panel that just triggered
     // the measurement keeps showing the answer from before it.
@@ -604,7 +622,11 @@ export function createServerSyncContext(serverSDK: ServerSDK) {
 
 export type ServerSync = ReturnType<typeof createServerSyncContext>
 
-export const { use: useServerSync, provider: ServerSyncProvider, context: ServerSyncContext } = createSimpleContext({
+export const {
+  use: useServerSync,
+  provider: ServerSyncProvider,
+  context: ServerSyncContext,
+} = createSimpleContext({
   name: "ServerSync",
   // Returns an accessor so the resolved server can change reactively without
   // re-instantiating the subtree (mirrors useServerSDK).

@@ -59,6 +59,37 @@ describe("resolveServerList", () => {
     })
     expect(list[0]?.type === "http" ? list[0].authToken : true).toBeUndefined()
   })
+
+  test("a rotated token overrides the launcher's bootstrap credential", () => {
+    const list = resolveServerList({
+      stored: [],
+      props: [
+        {
+          type: "sidecar",
+          variant: "base",
+          http: { url: "http://127.0.0.1:4096", username: "novaclaw", password: "launch-default" },
+        },
+      ],
+      auth: { sidecar: { password: "stored-token" } },
+    })
+
+    expect(list[0]?.http.password).toBe("stored-token")
+  })
+
+  test("an explicit open override does not resurrect a saved remote password", () => {
+    const list = resolveServerList({
+      stored: [
+        {
+          url: "https://server.example.test",
+          username: "novaclaw",
+          password: "old-token",
+        },
+      ],
+      auth: { "https://server.example.test": { password: null } },
+    })
+
+    expect(list[0]?.http.password).toBeUndefined()
+  })
 })
 
 test("treats WSL sidecars as remote server connections", () => {

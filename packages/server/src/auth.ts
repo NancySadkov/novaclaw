@@ -1,6 +1,5 @@
 export * as ServerAuth from "./auth"
 
-import { ServerToken } from "@novaclaw/core/server-token"
 import { Config as EffectConfig, Context, Effect, Layer, Option, Redacted } from "effect"
 
 // THE server-auth implementation. `packages/novaclaw/src/server/auth.ts` used to carry a second,
@@ -26,6 +25,13 @@ export type Info = {
   readonly username: string
 }
 
+export type EffectiveSource = "stored" | "launcher" | "open"
+
+export type Effective = {
+  readonly config: Info
+  readonly source: EffectiveSource
+}
+
 export class Config extends Context.Service<Config, Info>()("@novaclaw/ServerAuthConfig") {
   static layer(input: Info) {
     return Layer.succeed(this, this.of(input))
@@ -46,11 +52,21 @@ export class Config extends Context.Service<Config, Info>()("@novaclaw/ServerAut
   }
 }
 
-/** P2P: env password wins; otherwise the settings store's server.password (live, TTL-cached). */
-export function effective(config: Info): Info {
-  if (Option.isSome(config.password) && config.password.value !== "") return config
-  const stored = ServerToken.storedPassword()
-  return stored ? { ...config, password: Option.some(stored) } : config
+/**
+ * Resolve the incoming API credential and say where it came from without exposing the secret.
+ *
+ * The launch/environment credential is a bootstrap default: a stored `server.password` is the
+ * runtime authority and therefore wins. Callers pass the live value from `SettingsConfigStore` on
+ * every request; accepting it as an argument keeps this precedence function pure and testable.
+ */
+export function resolve(config: Info, stored?: string | null): Effective {
+  if (stored) return { config: { ...config, password: Option.some(stored) }, source: "stored" }
+  if (Option.isSome(config.password) && config.password.value !== "") return { config, source: "launcher" }
+  return { config, source: "open" }
+}
+
+export function effective(config: Info, stored?: string | null): Info {
+  return resolve(config, stored).config
 }
 
 export function required(config: Info) {

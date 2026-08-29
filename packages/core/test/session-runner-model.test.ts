@@ -687,24 +687,56 @@ describe("deviceKeyFor — a DEVICE is a backend, not a model", () => {
     }),
   )
 
-  // The session's own declaration — the OS's CPU affinity — outranks both. It is honoured even for
-  // an id no registry entry names, because the error it can cause (turns queue together) is the
-  // cheap one; discarding it would silently ignore a user's explicit choice.
-  it.effect("a session's declared device wins over the registry AND the endpoint", () =>
+  it.effect("an unknown pin cannot mint a scheduler capacity namespace", () =>
     Effect.sync(() => {
       const model = named("holo3.1", "spark-holo", "http://192.168.178.40:8010/v1")
-      expect(SessionRunnerModel.deviceKeyFor(model, { declared: "laptop", endpoints: spark })).toBe("laptop")
-      expect(SessionRunnerModel.deviceKeyFor(model, { declared: "never-registered" })).toBe("never-registered")
+      expect(
+        SessionRunnerModel.resolveDevicePlacement({
+          selected: model,
+          available: [model],
+          declared: "never-registered",
+          endpoints: spark,
+        }),
+      ).toEqual({ _tag: "refused", reason: "unknown" })
     }),
   )
 
-  // A column written blank is not a declaration; treating it as one would collapse every such
-  // session onto a single gate named "".
-  it.effect("an empty declaration is not a device", () =>
+  it.effect("a known Device refuses a model it cannot serve", () =>
     Effect.sync(() => {
-      expect(SessionRunnerModel.deviceKeyFor(named("m", "p", "http://192.168.178.40:8010/v1"), { declared: "" })).toBe(
-        "http://192.168.178.40:8010",
-      )
+      const model = named("holo3.1", "spark-holo", "http://192.168.178.41:8010/v1")
+      expect(
+        SessionRunnerModel.resolveDevicePlacement({
+          selected: model,
+          available: [model],
+          declared: "spark",
+          declaredKnown: true,
+          endpoints: spark,
+        }),
+      ).toEqual({ _tag: "refused", reason: "incompatible" })
+    }),
+  )
+
+  it.effect("a valid pin selects the same model on that Device and derives the real key", () =>
+    Effect.sync(() => {
+      const laptop = named("holo3.1", "laptop-holo", "http://192.168.178.41:8010/v1")
+      const onSpark = named("holo3.1", "spark-holo", "http://192.168.178.40:8010/v1")
+      const placement = SessionRunnerModel.resolveDevicePlacement({
+        selected: laptop,
+        available: [laptop, onSpark],
+        declared: "spark",
+        declaredKnown: true,
+        endpoints: spark,
+      })
+      expect(placement).toMatchObject({ _tag: "placed", model: onSpark, key: "spark" })
+    }),
+  )
+
+  it.effect("an empty declaration uses automatic endpoint placement", () =>
+    Effect.sync(() => {
+      const model = named("m", "p", "http://192.168.178.40:8010/v1")
+      expect(
+        SessionRunnerModel.resolveDevicePlacement({ selected: model, available: [model], declared: "" }),
+      ).toMatchObject({ _tag: "placed", key: "http://192.168.178.40:8010" })
     }),
   )
 })
@@ -733,32 +765,61 @@ describe("the runner CONSULTS the device key (source ratchet)", () => {
     // Non-vacuity: an empty or moved file must FAIL rather than satisfy every "not present" check.
     expect(raw.length).toBeGreaterThan(10_000)
     const code = stripComments(raw)
-    expect(code).toContain("const scheduledDevice")
+    expect(code).toContain("scheduledDevice: resolvedModel.device")
     return code
+  }
+
+  const modelSource = () => {
+    const file = path.resolve(import.meta.dir, "../src/session/runner/model.ts")
+    const raw = fs.readFileSync(file, "utf8")
+    expect(raw.length).toBeGreaterThan(10_000)
+    return stripComments(raw)
   }
 
   it.effect("computes scheduling facts from SessionRunnerModel.device, not from the wire model id", () =>
     Effect.sync(() => {
       const code = runnerSource()
-      const line = code.split("\n").find((text) => text.includes("const scheduledDevice"))
+      const line = code.split("\n").find((text) => text.includes("models.resolveWithDevice("))
       expect(line).toBeDefined()
-      expect(line).toContain("models.device(")
+      expect(line).toContain("models.resolveWithDevice(")
     }),
   )
 
-  it.effect("the retired per-model expression survives ONLY as the never-fails fallback", () =>
+  it.effect("resolves and refuses a Device pin before provider dispatch can start", () =>
     Effect.sync(() => {
       const code = runnerSource()
-      const fallback = code.split("\n").find((line) => line.includes("${model.provider}/${model.id}"))
-      expect(fallback).toContain("scheduledDevice?.key")
+      const placement = code.indexOf("models.resolveWithDevice(")
+      const dispatch = code.indexOf("ProviderDispatch.runAndSettle(")
+      expect(placement).toBeGreaterThan(0)
+      expect(dispatch).toBeGreaterThan(placement)
+    }),
+  )
+
+  it.effect("chooses a pinned catalog placement before resolving the automatic provider route", () =>
+    Effect.sync(() => {
+      const code = modelSource()
+      const compound = code.indexOf('const resolveWithDevice: Interface["resolveWithDevice"]')
+      const pin = code.indexOf('if (session.device !== undefined && session.device !== "")', compound)
+      const automatic = code.indexOf("base.resolve(session, options)", compound)
+      expect(compound).toBeGreaterThan(0)
+      expect(pin).toBeGreaterThan(compound)
+      expect(automatic).toBeGreaterThan(pin)
+    }),
+  )
+
+  it.effect("has no scheduler-key fallback after the placement decision", () =>
+    Effect.sync(() => {
+      const code = runnerSource()
+      expect(code).not.toContain("deviceKey: scheduledDevice?.key ??")
+      expect(code).toContain("deviceKey: scheduledDevice.key")
     }),
   )
 
   it.effect("carries declared concurrency and locality into the scheduler slot", () =>
     Effect.sync(() => {
       const code = runnerSource()
-      expect(code).toContain("scheduledDevice?.concurrency")
-      expect(code).toContain("scheduledDevice?.locality")
+      expect(code).toContain("scheduledDevice.concurrency")
+      expect(code).toContain("scheduledDevice.locality")
     }),
   )
 

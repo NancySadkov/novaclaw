@@ -19,9 +19,7 @@ const declaration = (inputBytes?: number, healthIntervalMs?: number) =>
       estimated_resident_bytes: 100,
       estimated_peak_bytes: 200,
     }),
-    ...(inputBytes === undefined
-      ? {}
-      : { limits: new ConfigCapabilityService.Limits({ input_bytes: inputBytes }) }),
+    ...(inputBytes === undefined ? {} : { limits: new ConfigCapabilityService.Limits({ input_bytes: inputBytes }) }),
     ...(healthIntervalMs === undefined
       ? {}
       : {
@@ -50,6 +48,7 @@ const graph = (input: {
           const configured = typeof input.services === "function" ? input.services() : input.services
           return { capability_services: configured ?? { parser: input.info ?? declaration() } }
         }),
+      serverPassword: () => Effect.succeed(undefined),
       set: () => Effect.void,
       remove: () => Effect.void,
       unreadable: () => Effect.succeed([]),
@@ -325,8 +324,7 @@ describe("CapabilityServiceRuntime", () => {
       capacity: () => ({ limitBytes: 1_000, usedBytes, floorUsedFraction: 0.8 }),
       worker: {
         start: (serviceID) => Effect.sync(() => calls.push(`start:${serviceID}`)).pipe(Effect.asVoid),
-        run: (request) =>
-          Effect.sync(() => (calls.push(`run:${request.serviceID}`), { service: request.serviceID })),
+        run: (request) => Effect.sync(() => (calls.push(`run:${request.serviceID}`), { service: request.serviceID })),
         stop: (serviceID) =>
           Effect.sync(() => {
             calls.push(`stop:${serviceID}`)
@@ -479,10 +477,7 @@ describe("CapabilityServiceRuntime", () => {
       worker: {
         start: () => Effect.void,
         run: () =>
-          Effect.sync(() => calls.push("run")).pipe(
-            Effect.andThen(Deferred.await(runGate)),
-            Effect.as("done"),
-          ),
+          Effect.sync(() => calls.push("run")).pipe(Effect.andThen(Deferred.await(runGate)), Effect.as("done")),
         stop: () => Effect.void,
         health: () => Effect.sync(() => (calls.push("health"), true)),
       },

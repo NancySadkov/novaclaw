@@ -70,6 +70,7 @@ describe("resolving a project", () => {
     expect(result.kind).toBe("invalid")
     if (result.kind !== "invalid") return
     expect(result.file).toBe(file(at("work", "acme")))
+    expect(result.failure).toBe("invalid")
     expect(result.reason).toBe("unreadable")
   })
 
@@ -81,6 +82,7 @@ describe("resolving a project", () => {
     expect(result.kind).toBe("invalid")
     if (result.kind !== "invalid") return
     // Upgrade, versus fix the file — the caller must be able to tell a user which one.
+    expect(result.failure).toBe("future-version")
     expect(result.reason).toBe("future-version")
   })
 
@@ -172,6 +174,48 @@ describe("resolving against the filesystem", () => {
       fs.writeFileSync(path.join(nested, "novaclaw.json"), "{ broken")
       const result = yield* ProjectFileResolve.resolve(nested, base)
       expect(result.kind).toBe("invalid")
+      if (result.kind === "invalid") expect(result.failure).toBe("invalid")
+      fs.rmSync(base, { recursive: true, force: true })
+    }),
+  )
+
+  it.effect("an existing directory in the file's place is UNREADABLE, never absent", () =>
+    Effect.gen(function* () {
+      const base = tmp()
+      fs.mkdirSync(path.join(base, "novaclaw.json"))
+      const result = yield* ProjectFileResolve.resolve(base, base)
+      expect(result.kind).toBe("invalid")
+      if (result.kind !== "invalid") return
+      expect(result.failure).toBe("unreadable")
+      expect(result.file).toBe(path.join(base, "novaclaw.json"))
+      fs.rmSync(base, { recursive: true, force: true })
+    }),
+  )
+
+  it.effect("a transient filesystem read failure is UNREADABLE and stops at the nearest file", () =>
+    Effect.gen(function* () {
+      const base = tmp()
+      const nested = path.join(base, "child")
+      fs.mkdirSync(nested)
+      const real = yield* FSUtil.Service
+      const nearest = path.join(nested, "novaclaw.json")
+      const failing = FSUtil.Service.of({
+        ...real,
+        readFileStringSafe: (candidate) =>
+          candidate === nearest
+            ? Effect.fail(
+                new FSUtil.FileSystemError({ method: "readFileString", cause: new Error("temporarily locked") }),
+              )
+            : real.readFileStringSafe(candidate),
+      })
+      const result = yield* ProjectFileResolve.resolve(nested, base).pipe(
+        Effect.provideService(FSUtil.Service, failing),
+      )
+      expect(result.kind).toBe("invalid")
+      if (result.kind !== "invalid") return
+      expect(result.failure).toBe("unreadable")
+      expect(result.file).toBe(nearest)
+      expect(result.detail).toContain("temporarily locked")
       fs.rmSync(base, { recursive: true, force: true })
     }),
   )

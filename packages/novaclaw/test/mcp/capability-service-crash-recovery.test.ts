@@ -29,6 +29,7 @@ const graph = (fixture: string) => {
     SettingsConfigStore.Service,
     SettingsConfigStore.Service.of({
       all: () => Effect.succeed({ capability_services: { parser: info } }),
+      serverPassword: () => Effect.succeed(undefined),
       set: () => Effect.void,
       remove: () => Effect.void,
       unreadable: () => Effect.succeed([]),
@@ -41,8 +42,7 @@ const graph = (fixture: string) => {
     ResourcePressureContext.Service.of({
       lines: () => Effect.succeed([]),
       inspect: () => Effect.succeed([]),
-      capacity: () =>
-        Effect.succeed({ limitBytes: 1_000, usedBytes: 100, floorUsedFraction: 0.8 }),
+      capacity: () => Effect.succeed({ limitBytes: 1_000, usedBytes: 100, floorUsedFraction: 0.8 }),
     }),
   )
   const auth = Layer.succeed(
@@ -66,11 +66,7 @@ const graph = (fixture: string) => {
     Layer.provide(auth),
     Layer.provide(Global.layerWith({ data: process.cwd(), config: process.cwd() })),
   )
-  return CapabilityServiceRuntime.layer.pipe(
-    Layer.provide(registry),
-    Layer.provide(pressure),
-    Layer.provide(worker),
-  )
+  return CapabilityServiceRuntime.layer.pipe(Layer.provide(registry), Layer.provide(pressure), Layer.provide(worker))
 }
 
 describe("capability service crash recovery", () => {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect } from "bun:test"
-import { mkdtempSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Effect, Layer } from "effect"
@@ -29,9 +29,9 @@ import { testEffect } from "./lib/effect"
  * failure.
  *
  * ⚠️ The rows are `source: "ingest"`, not `"auto-extract"`. A `global` + `auto-extract` row is what
- * `discardLegacyGlobalExtracts` deletes at boot — the layer forks that discard before the loop
- * starts, so a corpus written that way would vanish for a reason that has nothing to do with
- * forgetting, and the test would pass while proving nothing.
+ * `discardLegacyGlobalExtracts` deletes during the first real store open, so a corpus written that
+ * way would vanish for a reason that has nothing to do with forgetting, and the test would pass
+ * while proving nothing.
  */
 
 const it = testEffect(Database.layerFromPath(":memory:"))
@@ -112,6 +112,27 @@ const fill = (memory: MemoryClient.Interface, scope: string, ids: readonly strin
   )
 
 describe("the background loop actually forgets", () => {
+  it.live(
+    "a cleanup against a store that never existed does not allocate the WASM engine",
+    () =>
+      Effect.gen(function* () {
+        const bus = recorder()
+        dir = mkdtempSync(join(tmpdir(), "kb-absent-cleanup-"))
+        const graph = join(dir, "graph")
+        const layer = Memory.layerFromConfig({ enabled: true, dim: 8, dbDir: graph })
+        yield* Effect.gen(function* () {
+          const memory = yield* MemoryClient.Service
+          yield* memory.clearScope("session:already-gone")
+          yield* memory.moveScope("agent:already-gone", "retired:already-gone")
+        }).pipe(Effect.provide(layer.pipe(Layer.provide(bus.layer))), Effect.scoped)
+
+        // Both calls are no-ops only because there are no bytes to mutate. Creating `graph` would
+        // mean teardown started the 1.3 GB engine merely to discover the same fact expensively.
+        expect(existsSync(graph)).toBe(false)
+      }),
+    10_000,
+  )
+
   it.live(
     "🔴 a household pile written past its cap is evicted BY THE LOOP, with nobody asking",
     () =>

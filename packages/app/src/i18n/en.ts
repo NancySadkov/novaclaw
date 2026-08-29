@@ -823,6 +823,9 @@ export const dict = {
   "notification.permission.title": "Permission required",
 
   "notification.session.responseReady.title": "Response ready",
+  "notification.session.recovery.title": "Chat paused safely",
+  "notification.session.recovery.fallbackDescription":
+    "This chat paused safely and needs review before it can continue.",
   "notification.session.error.title": "Chat error",
   "notification.session.error.fallbackDescription": "An error occurred",
 
@@ -976,6 +979,10 @@ export const dict = {
   "session.review.source.incomplete": "Recording incomplete",
   "session.review.loadFailed": "Could not load these changes right now.",
   "session.review.retry": "Try again",
+  "session.device.unpin": "Remove Device pin",
+  "session.device.unpinning": "Removing Device pin…",
+  "session.device.unpinned": "Device pin removed",
+  "session.device.unpinFailed": "Could not remove the Device pin",
   // Shown INSTEAD of the transcript when a message cannot be rendered — one calm line, never a stack
   // trace. The rest of the app keeps working; the fault is contained to this pane.
   "session.timeline.degraded": "This conversation couldn’t be displayed. Your messages are safe.",
@@ -1841,6 +1848,10 @@ export const dict = {
   "settings.instances.access.hint":
     "The API token other instances and agents must present to reach this one (HTTP Basic, username 'novaclaw'). Empty means open. Applies immediately.",
   "settings.instances.access.placeholder": "API token",
+  "settings.instances.access.source.stored": "Stored token in force.",
+  "settings.instances.access.source.launcher": "Launcher default in force.",
+  "settings.instances.access.source.open": "No token in force — this instance is open.",
+  "settings.instances.access.source.checking": "Checking which token is in force…",
   "settings.instances.peers.title": "Agent peers",
   "settings.instances.peers.hint":
     "Peer instances this instance's agents may drive over HTTP — full API access with the stored token. Agents see them in their environment.",
@@ -1893,8 +1904,7 @@ export const dict = {
   "settings.updates.toast.latest.title": "You're up to date",
   "settings.updates.toast.latest.description": "You're running the latest version of NovaClaw.",
   "settings.updates.toast.blocked.title": "Update check blocked",
-  "settings.updates.refusal.airgap":
-    "Offline / airgap mode is on, so NovaClaw did not contact the update service.",
+  "settings.updates.refusal.airgap": "Offline / airgap mode is on, so NovaClaw did not contact the update service.",
   "settings.updates.refusal.policyUnavailable":
     "NovaClaw could not confirm that offline / airgap mode is off, so it kept the update service blocked.",
   "sound.option.none": "None",
@@ -2828,6 +2838,7 @@ export const dict = {
   // Three words, matching what the scheduler actually knows. "Error" is the reachability case — a
   // provider being retried — because a colleague that cannot run must not read as a healthy pause.
   "contacts.state.idle": "Idle",
+  "contacts.state.paused": "Paused safely",
   "contacts.state.working": "Working",
   "contacts.state.error": "Error",
   "contacts.rateTitle": "Tokens produced per minute, averaged over the last {{window}} minutes",

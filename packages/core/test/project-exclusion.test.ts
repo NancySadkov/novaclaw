@@ -10,6 +10,7 @@ import { Location } from "@novaclaw/core/location"
 import { LocationMutation } from "@novaclaw/core/location-mutation"
 import { PermissionV2 } from "@novaclaw/core/permission"
 import { ProjectExclusion } from "@novaclaw/core/project-exclusion"
+import { ProjectFileCache } from "@novaclaw/core/project-file-cache"
 import { Ripgrep } from "@novaclaw/core/ripgrep"
 import { SessionV2 } from "@novaclaw/core/session"
 import { GlobTool } from "@novaclaw/core/tool/glob"
@@ -87,7 +88,9 @@ const verdictOf = (input: LocationMutation.ResolveInput) =>
         Effect.succeed(
           error instanceof ProjectExclusion.ExcludedError
             ? "excluded"
-            : `other-failure:${(error as { _tag?: string })._tag ?? String(error)}`,
+            : error instanceof ProjectFileCache.FaultError
+              ? `${error.kind}:${PermissionV2.denialMessage(error)}`
+              : `other-failure:${(error as { _tag?: string })._tag ?? String(error)}`,
         ),
       ),
     )
@@ -148,12 +151,37 @@ describe("project exclusions — the promise", () => {
   it.live("an unparseable novaclaw.json does not silently grant access it cannot read", () =>
     withTmp((directory) =>
       Effect.gen(function* () {
-        // A malformed file means NO project (the posture `ProjectFileCache` already takes so a
-        // broken file cannot take the session down), so it declares no exclusions either. The point
-        // of pinning it is that the answer is a DECISION, not an accident of error handling.
         yield* Effect.promise(() => fs.writeFile(path.join(directory, "novaclaw.json"), "{ not json"))
         yield* write(path.join(directory, "secret.txt"), "x")
-        expect(yield* verdictOf({ path: "secret.txt" })).toBe("allowed")
+        const verdict = yield* verdictOf({ path: "secret.txt" })
+        expect(verdict).toStartWith("invalid:")
+        expect(verdict).toContain("Fix the project file")
+      }).pipe(provide(directory)),
+    ),
+  )
+
+  it.live("a future-version project file refuses reads with the upgrade remedy", () =>
+    withTmp((directory) =>
+      Effect.gen(function* () {
+        yield* Effect.promise(() =>
+          fs.writeFile(path.join(directory, "novaclaw.json"), JSON.stringify({ version: 9999 })),
+        )
+        yield* write(path.join(directory, "secret.txt"), "x")
+        const verdict = yield* verdictOf({ path: "secret.txt" })
+        expect(verdict).toStartWith("future-version:")
+        expect(verdict).toContain("Upgrade NovaClaw")
+      }).pipe(provide(directory)),
+    ),
+  )
+
+  it.live("an unreadable project-file path refuses reads with the unlock remedy", () =>
+    withTmp((directory) =>
+      Effect.gen(function* () {
+        yield* Effect.promise(() => fs.mkdir(path.join(directory, "novaclaw.json")))
+        yield* write(path.join(directory, "secret.txt"), "x")
+        const verdict = yield* verdictOf({ path: "secret.txt" })
+        expect(verdict).toStartWith("unreadable:")
+        expect(verdict).toContain("restore read access")
       }).pipe(provide(directory)),
     ),
   )

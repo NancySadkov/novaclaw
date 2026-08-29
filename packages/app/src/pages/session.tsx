@@ -50,13 +50,10 @@ import {
   createSessionComposerRegionController,
   SessionComposerRegion,
 } from "@/pages/session/composer"
-import {
-  createOpenReviewFile,
-  createSessionTabs,
-  createSizing,
-} from "@/pages/session/helpers"
+import { createOpenReviewFile, createSessionTabs, createSizing } from "@/pages/session/helpers"
 import { createSessionKeyboardController } from "@/pages/session/keyboard-controller"
 import { NativeTimeline, type NativeTimelineController } from "@/pages/session/timeline/native-timeline"
+import { unpinSessionDevice } from "@/pages/session/timeline/device-repair"
 import { createTimelineModel } from "@/pages/session/timeline/model"
 import { createSessionRevertController } from "@/pages/session/revert-controller"
 import { createReviewNavigation } from "@/pages/session/review-navigation"
@@ -113,8 +110,7 @@ export default function Page() {
   // answer to "is the agent working", so the two can never disagree.
   const presence = createSessionPresence({
     sessionID: () => params.id,
-    label: () =>
-      language.t(platform.platform === "desktop" ? "presence.viewer.desktop" : "presence.viewer.browser"),
+    label: () => language.t(platform.platform === "desktop" ? "presence.viewer.desktop" : "presence.viewer.browser"),
     writing: () => prompt.dirty(),
     report: (report) => serverSync().session.reportPresence(report),
   })
@@ -667,6 +663,19 @@ export default function Page() {
     rolled,
   } = revertController
 
+  const unpinDevice = async (sessionID: string) => {
+    try {
+      await unpinSessionDevice(sdk().client, sessionID)
+    } catch (error) {
+      showToast({
+        title: language.t("session.device.unpinFailed"),
+        description: String(error),
+        variant: "error",
+      })
+      throw error
+    }
+  }
+
   useComposerCommands()
   useSessionCommands({
     navigateMessageByOffset,
@@ -1140,19 +1149,23 @@ export default function Page() {
                         }}
                       >
                         <NativeTimeline
-                        sessionID={_id}
-                        setController={(controller) => (timelineController = controller)}
-                        directory={sdk().directory}
-                        onRevert={revertToPrompt}
-                        onRetry={retryFailedTurn}
-                        onChooseModel={chooseAnotherModel}
-                        errorLabels={{
-                          retry: language.t("session.review.retry"),
-                          chooseModel: language.t("command.model.choose"),
-                          technicalDetails: language.t("error.page.details.show"),
-                          copyDetails: language.t("ui.toolErrorCard.copyError"),
-                          working: language.t("processes.status.working"),
-                        }}
+                          sessionID={_id}
+                          setController={(controller) => (timelineController = controller)}
+                          directory={sdk().directory}
+                          onRevert={revertToPrompt}
+                          onRetry={retryFailedTurn}
+                          onChooseModel={chooseAnotherModel}
+                          onUnpinDevice={unpinDevice}
+                          errorLabels={{
+                            retry: language.t("session.review.retry"),
+                            chooseModel: language.t("command.model.choose"),
+                            technicalDetails: language.t("error.page.details.show"),
+                            copyDetails: language.t("ui.toolErrorCard.copyError"),
+                            working: language.t("processes.status.working"),
+                            unpinDevice: language.t("session.device.unpin"),
+                            unpinningDevice: language.t("session.device.unpinning"),
+                            deviceUnpinned: language.t("session.device.unpinned"),
+                          }}
                           revertMessageID={revertMessageID()}
                         />
                       </ErrorBoundary>

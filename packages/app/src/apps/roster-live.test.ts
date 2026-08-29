@@ -7,6 +7,7 @@ import {
   ratePerMinute,
   rosterState,
   rosterTask,
+  terminalAttention,
   threadOf,
   type SessionLike,
 } from "./roster-live"
@@ -225,5 +226,37 @@ describe("rosterState — the scheduler's answer, not a phase inspector", () => 
     // The reachability case: nothing can run, so "Idle" would read as a healthy pause.
     expect(rosterState({ status: { type: "retry" }, working: false })).toBe("error")
     expect(rosterState({ status: { type: "retry" }, working: true })).toBe("error")
+  })
+
+  test("a terminal recovery outcome is Paused, never healthy Idle", () => {
+    for (const state of ["paused", "failed", "interrupted"] as const) {
+      expect(rosterState({ status: { type: "idle" }, working: false, execution: { state } })).toBe("paused")
+    }
+  })
+
+  test("a new live run outranks the previous attempt's paused outcome", () => {
+    expect(rosterState({ status: { type: "busy" }, working: true, execution: { state: "paused" } })).toBe("working")
+  })
+})
+
+describe("terminal attention", () => {
+  test("a settled idle root produces one completion indication", () => {
+    expect(terminalAttention({ lifecycle: "idle", execution: "settled" })).toBe("complete")
+  })
+
+  test("paused, failed, and interrupted roots produce recovery attention", () => {
+    for (const execution of ["paused", "failed", "interrupted"] as const) {
+      expect(terminalAttention({ lifecycle: "idle", execution })).toBe("recovery")
+    }
+  })
+
+  test("an early idle does not claim a busy/recovering lease completed", () => {
+    expect(terminalAttention({ lifecycle: "idle", execution: "busy" })).toBeUndefined()
+    expect(terminalAttention({ lifecycle: "idle", execution: "recovering" })).toBeUndefined()
+    expect(terminalAttention({ lifecycle: "busy", execution: "settled" })).toBeUndefined()
+  })
+
+  test("an exited lifecycle is completion because it follows the durable result event", () => {
+    expect(terminalAttention({ lifecycle: "exited", execution: "busy" })).toBe("complete")
   })
 })

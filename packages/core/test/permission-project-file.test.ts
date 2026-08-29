@@ -2,6 +2,7 @@ import { describe, expect } from "bun:test"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import { eq } from "drizzle-orm"
 import { Cause, Effect, Exit, Layer } from "effect"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
@@ -12,6 +13,7 @@ import { AgentV2 } from "@novaclaw/core/agent"
 import { Location } from "@novaclaw/core/location"
 import { PermissionV2 } from "@novaclaw/core/permission"
 import { PermissionSaved } from "@novaclaw/core/permission/saved"
+import { SessionEffectiveConfig } from "@novaclaw/core/session/effective-config"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { SessionV2 } from "@novaclaw/core/session"
@@ -46,6 +48,7 @@ const it = testEffect(
       EventV2.node,
       FSUtil.node,
       SessionStore.node,
+      SessionEffectiveConfig.node,
       PermissionSaved.node,
       AgentV2.node,
       PermissionV2.node,
@@ -102,6 +105,7 @@ const itBare = testEffect(
       EventV2.node,
       FSUtil.node,
       SessionStore.node,
+      SessionEffectiveConfig.node,
       PermissionSaved.node,
       AgentV2.node,
       PermissionV2.node,
@@ -223,6 +227,57 @@ describe("a project file constrains the live evaluator", () => {
       // would make this test pass or fail for a reason that has nothing to do with the project file.
       const verdict = yield* service.ask(assertion("read", path.join(root, "file.txt")))
       expect(verdict.effect).toBe("allow")
+    }),
+  )
+})
+
+describe("an unusable project file fails closed", () => {
+  for (const scenario of [
+    {
+      name: "malformed",
+      content: "{ not json",
+      reason: "project-file-invalid" as const,
+      remedy: "Fix the project file",
+    },
+    {
+      name: "future-version",
+      content: JSON.stringify({ version: 9999 }),
+      reason: "project-file-future-version" as const,
+      remedy: "Upgrade NovaClaw",
+    },
+  ])
+    it.effect(`${scenario.name} refuses an otherwise allowed action and names the repair`, () =>
+      Effect.gen(function* () {
+        fs.writeFileSync(path.join(root, "novaclaw.json"), scenario.content)
+        yield* seed([{ action: "read", resource: "*", effect: "allow" }])
+        const service = yield* PermissionV2.Service
+        expect((yield* service.ask(assertion("read", "README.md"))).effect).toBe("deny")
+
+        const result = yield* service.assert(assertion("read", "README.md")).pipe(Effect.exit)
+        expect(Exit.isFailure(result)).toBe(true)
+        if (!Exit.isFailure(result)) return
+        const error = Cause.squash(result.cause)
+        expect(error).toBeInstanceOf(PermissionV2.DeniedError)
+        expect((error as PermissionV2.DeniedError).reason).toBe(scenario.reason)
+        expect(PermissionV2.denialMessage(error)).toContain(path.join(root, "novaclaw.json"))
+        expect(PermissionV2.denialMessage(error)).toContain(scenario.remedy)
+      }),
+    )
+
+  it.effect("a fault raises both supervision rails even over explicit per-chat false values", () =>
+    Effect.gen(function* () {
+      fs.writeFileSync(path.join(root, "novaclaw.json"), "{ not json")
+      yield* seed([{ action: "*", resource: "*", effect: "allow" }])
+      const { db } = yield* Database.Service
+      yield* db
+        .update(SessionTable)
+        .set({ safe_mode: false, ask_before_changes: false })
+        .where(eq(SessionTable.id, SessionV2.ID.make("ses_test")))
+        .run()
+        .pipe(Effect.orDie)
+      const config = yield* (yield* SessionEffectiveConfig.Service).resolve(SessionV2.ID.make("ses_test"))
+      expect(config.safeMode).toBe(true)
+      expect(config.askBeforeChanges).toBe(true)
     }),
   )
 })

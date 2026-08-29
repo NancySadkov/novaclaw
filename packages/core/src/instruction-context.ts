@@ -67,14 +67,11 @@ export const layer = Layer.effectDiscard(
       const screened = yield* Effect.forEach(
         [...discovered],
         (candidate) =>
-          projects.read(dirname(candidate)).pipe(
-            Effect.map((entry) => {
-              if (entry.root === undefined || entry.exclude.length === 0) return candidate
-              const verdict = ProjectExclusion.evaluate(
-                ProjectExclusion.compile(entry.exclude),
-                ProjectExclusion.relativeWithin(entry.root, candidate) ?? "",
-                false,
-              )
+          ProjectExclusion.declarationFor(dirname(candidate)).pipe(
+            Effect.provideService(ProjectFileCache.Service, projects),
+            Effect.map((declaration) => {
+              if (declaration === undefined) return candidate
+              const verdict = ProjectExclusion.screen(declaration, candidate, false)
               return verdict.excluded ? undefined : candidate
             }),
           ),

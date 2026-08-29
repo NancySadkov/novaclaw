@@ -18,8 +18,15 @@ import { Config as EffectConfig } from "effect"
 // Both differences are pinned, with negative controls, by
 // `test/server/server-auth-single-implementation.test.ts`. Re-copying any of the re-exports below into
 // this file fails that test on reference identity, so drift is unrepresentable rather than discouraged.
-export { authorized, effective, headerFrom, headersFrom, required } from "@novaclaw/server/auth"
-export type { Credentials, DecodedCredentials, EnvCredentials, Info } from "@novaclaw/server/auth"
+export { authorized, effective, headerFrom, headersFrom, required, resolve } from "@novaclaw/server/auth"
+export type {
+  Credentials,
+  DecodedCredentials,
+  Effective,
+  EffectiveSource,
+  EnvCredentials,
+  Info,
+} from "@novaclaw/server/auth"
 
 // ⚠️ NOT `@novaclaw/ServerAuthConfig` — that key belongs to `packages/server/src/auth.ts`, and this is a
 // SECOND, independent declaration that happens to carry the same two env vars. Both registered the same

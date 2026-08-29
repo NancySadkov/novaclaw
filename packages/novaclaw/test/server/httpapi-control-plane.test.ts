@@ -7,6 +7,7 @@ import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { MoveSession } from "@novaclaw/core/control-plane/move-session"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
+import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { LocalModelManager } from "@novaclaw/core/local-model-manager"
 import { Auth } from "../../src/auth"
 import { Config } from "../../src/config/config"
@@ -49,6 +50,11 @@ const apiLayer = HttpRouter.serve(
     }),
   ),
   Layer.provide(ServerAuth.Config.layer({ password: Option.none(), username: "novaclaw" })),
+  Layer.provide(
+    Layer.mock(SettingsConfigStore.Service)({
+      serverPassword: () => Effect.succeed(undefined),
+    }),
+  ),
 )
 const it = testEffect(apiLayer)
 

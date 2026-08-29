@@ -72,19 +72,16 @@ const savedInvocation = Effect.fn("CommandList.savedInvocation")(function* () {
  * asking to SHOW a skill the user hid never reaches this function at all. A project may hide, never
  * un-hide.
  */
-const projectHidden = Effect.fn("CommandList.projectHidden")(function* () {
+const projectVisibility = Effect.fn("CommandList.projectVisibility")(function* () {
   const project = yield* ProjectFileCache.LocalService
-  return (yield* project.entry).skills
+  const entry = yield* project.entry
+  return { hidden: entry.skills, faulted: ProjectFileCache.fault(entry) !== undefined }
 })
 
 export const list: Effect.Effect<
   Command.Info[],
   never,
-  | CommandV2.Service
-  | SkillV2.Service
-  | ExternalCommandSource.Service
-  | Config.Service
-  | ProjectFileCache.LocalService
+  CommandV2.Service | SkillV2.Service | ExternalCommandSource.Service | Config.Service | ProjectFileCache.LocalService
 > = Effect.gen(function* () {
   const commands = yield* CommandV2.Service
   const skills = yield* SkillV2.Service
@@ -96,7 +93,7 @@ export const list: Effect.Effect<
   const invocation = yield* savedInvocation()
   // ⚠️ Resolved ONCE per list rather than per skill: a mid-list TTL expiry would otherwise let two
   // skills in one popover be judged against two different readings of one file.
-  const hidden = yield* projectHidden()
+  const visibility = yield* projectVisibility()
 
   const result: Command.Info[] = []
   const seen = new Set<string>()
@@ -105,12 +102,16 @@ export const list: Effect.Effect<
     result.push({ ...cmd, source: "command", hints: hints(cmd.template) })
   }
   for (const skill of yield* skills.list()) {
+    // The file may contain a hide declaration we cannot currently read. Suppress project-visible
+    // skills until it is fixed/unlocked/upgraded instead of treating the empty presentation
+    // fallback as "hide nothing". Built-in commands remain available, including repair paths.
+    if (visibility.faulted) continue
     if (seen.has(skill.name)) continue
     // ⚠️ NOT added to `seen` when hidden. `seen` is the collision ledger — it exists so a CommandV2
     // command outranks a same-named skill which outranks a same-named MCP prompt. Marking a hidden
     // skill as seen would let it suppress the MCP prompt behind it, so hiding one entry would
     // silently delete a different one.
-    if (!SkillInvocation.showsToUser(invocation, hidden, skill.name)) continue
+    if (!SkillInvocation.showsToUser(invocation, visibility.hidden, skill.name)) continue
     seen.add(skill.name)
     result.push({
       name: skill.name,

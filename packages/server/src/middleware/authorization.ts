@@ -3,6 +3,7 @@ import { UnauthorizedError } from "@novaclaw/protocol/errors"
 import { Authorization } from "@novaclaw/protocol/middleware/authorization"
 export { Authorization } from "@novaclaw/protocol/middleware/authorization"
 import { hasPtyConnectTicketURL } from "@novaclaw/protocol/groups/pty"
+import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { Effect, Encoding, Layer, Redacted } from "effect"
 import { HttpEffect, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 
@@ -39,11 +40,12 @@ export const authorizationLayer = Layer.effect(
   Authorization,
   Effect.gen(function* () {
     const envConfig = yield* ServerAuth.Config
-    // P2P: resolve the EFFECTIVE config per request (env override → the settings store's
-    // server.password) so a token set in Settings → Instances starts gating without a restart.
+    const settings = yield* SettingsConfigStore.Service
+    // Resolve the EFFECTIVE config per request (stored server.password → launcher default) so a
+    // runtime token change takes authority immediately without a restart.
     return Authorization.of((effect) =>
       Effect.gen(function* () {
-        const config = ServerAuth.effective(envConfig)
+        const config = ServerAuth.effective(envConfig, yield* settings.serverPassword())
         if (!ServerAuth.required(config)) return yield* effect
         const request = yield* HttpServerRequest.HttpServerRequest
         // Browsers cannot set headers on WebSocket upgrades, so a ticketed PTY connect skips

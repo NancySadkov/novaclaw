@@ -61,6 +61,10 @@ function authorization() {
   return `Basic ${btoa(`${auth.username}:${auth.password}`)}`
 }
 
+function authorizationFor(password: string) {
+  return `Basic ${btoa(`${auth.username}:${password}`)}`
+}
+
 function socketURL(listener: Awaited<ReturnType<typeof startListener>>, id: string, dir: string, ticket?: string) {
   const url = new URL(PtyPaths.connect.replace(":ptyID", id), listener.url)
   url.protocol = "ws:"
@@ -208,6 +212,44 @@ async function openPtySocket(listener: Awaited<ReturnType<typeof startListener>>
 }
 
 describe("HttpApi Server.listen", () => {
+  test("stored token rotates live, reports provenance, and clearing restores the launcher default", async () => {
+    const listener = await startListener()
+    const rotated = "rotated-listen-secret"
+    const configURL = new URL("/global/config", listener.url)
+    const healthURL = new URL("/global/health", listener.url)
+    const patch = (password: string, credential: string) =>
+      fetch(configURL, {
+        method: "PATCH",
+        headers: {
+          authorization: authorizationFor(credential),
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ server: { password } }),
+      })
+
+    try {
+      expect((await patch(rotated, auth.password)).status).toBe(200)
+
+      const [oldConfig, newConfig, bootstrapHealth] = await Promise.all([
+        fetch(configURL, { headers: { authorization: authorization() } }),
+        fetch(configURL, { headers: { authorization: authorizationFor(rotated) } }),
+        fetch(healthURL, { headers: { authorization: authorization() } }),
+      ])
+      expect(oldConfig.status).toBe(401)
+      expect(newConfig.status).toBe(200)
+      expect(bootstrapHealth.status).toBe(200)
+      expect((await bootstrapHealth.json()).auth).toEqual({ required: true, source: "stored" })
+
+      expect((await patch("", rotated)).status).toBe(200)
+      expect((await fetch(configURL, { headers: { authorization: authorization() } })).status).toBe(200)
+      expect((await fetch(configURL, { headers: { authorization: authorizationFor(rotated) } })).status).toBe(401)
+      const restored = await fetch(healthURL, { headers: { authorization: authorization() } })
+      expect((await restored.json()).auth).toEqual({ required: true, source: "launcher" })
+    } finally {
+      await stop(listener, "token rotation listener cleanup")
+    }
+  })
+
   testPty("serves HTTP routes and upgrades PTY websocket through Server.listen", async () => {
     await using tmp = await tmpdir({ config: { formatter: false } })
     const listener = await startListener()
