@@ -116,7 +116,9 @@ const superviseLoop = async (): Promise<"clean" | "giveup"> => {
       // forwarded, so supervised serve has the same visible stdout contract as the bare child.
       stdout: "pipe",
       stderr: "inherit",
-      env: process.env as Record<string, string>,
+      // 🔴 SCRUBBED, not inherited. This process is a supervisor under a watchdog; the child must not
+      // be able to answer the watchdog's question about US. See `ExitIntent.childEnv`.
+      env: ExitIntent.childEnv(process.env),
     })
     current = child
     void forwardStdout(child.stdout, (line) => {
@@ -239,11 +241,12 @@ export const ServeCommand = effectCmd({
       )
         .then((report) => {
           console.log(`novaclaw server stopping (${signal}). ${Shutdown.describe(report)}`)
-          process.exit(0)
+          process.exit(ExitIntent.settle({ kind: "shutdown" }, 0))
         })
         // Never let the reporting itself hold the process: an exit that hangs is worse than one
-        // that says less.
-        .catch(() => process.exit(0))
+        // that says less. The intent is still recorded — the operator asked to stop either way, and
+        // a failure to DESCRIBE the shutdown is not a reason to let the watchdog call it a crash.
+        .catch(() => process.exit(ExitIntent.settle({ kind: "shutdown" }, 0)))
     }
     process.on("SIGINT", () => settle("SIGINT"))
     process.on("SIGTERM", () => settle("SIGTERM"))

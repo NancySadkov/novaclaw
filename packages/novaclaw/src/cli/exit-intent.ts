@@ -35,9 +35,37 @@ export const EXIT_CODE = 77
  * ordinary stop. The env var is set by the watchdog and by nothing else, so its absence is a
  * complete answer: exit the way this process always has.
  */
+export const VAR = "NOVACLAW_WATCHDOG_STATE"
+
 export const stateDir = (env: Record<string, string | undefined> = process.env): string | undefined => {
-  const dir = env["NOVACLAW_WATCHDOG_STATE"]
+  const dir = env[VAR]
   return dir === undefined || dir === "" ? undefined : dir
+}
+
+/**
+ * The environment for a process WE spawn — with the watchdog's state directory removed.
+ *
+ * 🔴 **The state directory names one supervision edge, not a lineage.** It says *"the watchdog
+ * immediately above you is listening at this path"*, and a child that passes it on hands a
+ * grandchild the authority to write a document about a process it is not.
+ *
+ * That matters here because `serve --supervise` is itself a supervisor: watchdog → supervisor →
+ * server. Inherit the variable and the innermost server can answer a question the watchdog asked the
+ * supervisor. The direction it fails in is the bad one — the server stopping cleanly leaves a
+ * `shutdown` document behind, and when the SUPERVISOR later dies of something real, the watchdog
+ * reads that stale intent, believes the stop was deliberate, and stays down. That is precisely the
+ * outcome this whole mechanism exists to prevent (owner, 2026-08-29: *"why are crashed runs lost
+ * forever?"*).
+ *
+ * ⚠️ Today the inner server writes no intent, so nothing is broken yet. This is not a fix for a live
+ * bug; it is the reason the OTHER half of this change — teaching the plain server to emit intent so a
+ * watchdog can supervise it directly — is safe to make. Landing that half without this one arms the
+ * trap above. They belong in one commit for that reason.
+ */
+export const childEnv = (env: Record<string, string | undefined> = process.env): Record<string, string> => {
+  const out: Record<string, string> = {}
+  for (const [key, value] of Object.entries(env)) if (key !== VAR && value !== undefined) out[key] = value
+  return out
 }
 
 export type Intent =

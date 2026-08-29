@@ -126,3 +126,73 @@ describe("the reserved code agrees with the reader", () => {
 
 // Keep the import used on platforms where the blocked-path case cannot be constructed.
 void mkdirSync
+
+/**
+ * ── THE STATE DIRECTORY IS ONE EDGE, NOT A LINEAGE ───────────────────────────────────────────────
+ *
+ * `serve --supervise` is a supervisor running under a watchdog, so the real topology is
+ * watchdog → supervisor → server. `NOVACLAW_WATCHDOG_STATE` tells a process where the watchdog
+ * DIRECTLY ABOVE IT is listening; inherited one level further it lets the innermost server answer a
+ * question that was asked of the supervisor.
+ *
+ * 🔴 The failure is silent and points the wrong way. The server stops cleanly, writes `shutdown`,
+ * and the document outlives it. Later the SUPERVISOR dies of something real — an OOM, a crash — and
+ * the watchdog finds an intent saying the stop was deliberate. It stays down. An instance lost
+ * forever to a stale note written by the wrong process is the exact outcome the watchdog exists to
+ * prevent.
+ */
+describe("childEnv", () => {
+  test("removes the watchdog's state directory and nothing else", () => {
+    const env = { PATH: "/usr/bin", NOVACLAW_WATCHDOG_STATE: "/tmp/wd", HOME: "/home/nancy" }
+    expect(ExitIntent.childEnv(env)).toEqual({ PATH: "/usr/bin", HOME: "/home/nancy" })
+  })
+
+  test("an unsupervised environment passes through untouched", () => {
+    const env = { PATH: "/usr/bin", HOME: "/home/nancy" }
+    expect(ExitIntent.childEnv(env)).toEqual(env)
+  })
+
+  // ⚠️ `Bun.spawn` rejects an `undefined` value where a string is declared, and `process.env` on
+  // Windows readily contains holes. Dropping them is what makes this a drop-in for `process.env`.
+  test("drops undefined values rather than handing them to a spawn", () => {
+    expect(ExitIntent.childEnv({ A: "1", B: undefined })).toEqual({ A: "1" })
+  })
+
+  // 🔴 The round trip, stated as the property that actually matters: whatever `childEnv` returns,
+  // a process reading it must conclude nothing is supervising it.
+  test("a child reading the scrubbed environment sees no watchdog", () => {
+    expect(ExitIntent.stateDir(ExitIntent.childEnv({ NOVACLAW_WATCHDOG_STATE: "/tmp/wd" }))).toBeUndefined()
+  })
+})
+
+/**
+ * ── THE WIRING, WHICH THE TESTS ABOVE DO NOT TOUCH ───────────────────────────────────────────────
+ *
+ * Every test above passes with `serve.ts` still handing `process.env` straight to `Bun.spawn`. This
+ * session has already shipped that mistake twice — a helper proven in isolation and never actually
+ * called — so the call site is asserted directly. It reads source because the alternative is booting
+ * a real supervisor and inspecting a grandchild's environment on Windows, which is not a unit test.
+ *
+ * ⚠️ Being a text test, it asserts its ANCHOR was found before drawing any conclusion: a pattern
+ * that matches nothing must not read as a pattern that matched something correct.
+ */
+describe("the supervisor's spawn is wired to it", () => {
+  const serve = () =>
+    readFileSync(path.join(import.meta.dir, "cmd", "serve.ts"), "utf8")
+      .split("\n")
+      .filter((line) => !line.trimStart().startsWith("//") && !line.trimStart().startsWith("*"))
+      .join("\n")
+
+  test("serve.ts spawns its child through childEnv, never with a bare process.env", () => {
+    const source = serve()
+    expect(source, "the spawn moved — this test must be re-pointed, not deleted").toContain("Bun.spawn(cmd, {")
+    expect(source).toContain("env: ExitIntent.childEnv(process.env)")
+    expect(source).not.toContain("env: process.env as Record<string, string>")
+  })
+
+  // The other half of the pair. Landing intent-emission WITHOUT the scrub is what arms the trap, so
+  // the two are pinned together and a future edit cannot quietly keep one.
+  test("and the plain server emits a shutdown intent, which is only safe because of the scrub", () => {
+    expect(serve()).toContain('ExitIntent.settle({ kind: "shutdown" }, 0)')
+  })
+})
