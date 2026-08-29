@@ -234,8 +234,13 @@ describe("SessionRunnerLLM — overflow recovery", () => {
     // `UtilityCap.decide`; compaction simply never looked. `CalloutPolicy.summarizer` declares
     // `failureMode: "fail_open"` precisely so the deterministic packer can answer instead, which is
     // why DISCARDING is the right response and not a loss.
+    // ⚠️ BOTH events carry the cut, because a real provider stream sets them together — the fixture
+    // helper emits `stepFinish(reason)` and `finish(reason)` from one value. An earlier version of
+    // this test overrode only `finish`, which modelled a stream that cannot occur and then failed for
+    // the wrong reason under `ReasoningBudget` (which reads `stepFinish` and drops `finish`).
     const truncated = fragmentFixture("text", "text-cut", ["## Goal - Half a sum"]).completeEvents.map(
-      (event) => (event.type === "finish" ? { ...event, reason: "length" as const } : event),
+      (event) =>
+        event.type === "finish" || event.type === "step-finish" ? { ...event, reason: "length" as const } : event,
     )
     const harness = makeRunnerHarness({
       turns: [

@@ -212,3 +212,33 @@ test("the compaction trigger logs what it measured BEFORE it declines", () => {
   expect(source).toContain('"compaction.threshold": threshold')
   expect(source).toContain('"compaction.fires": estimated > threshold')
 })
+
+// ── The summary call goes through the thinking budget ────────────────────────────────────────────
+//
+// Owner, 2026-08-29: *"please ensure that we generate it the same way we generate task title …
+// otherwise we can't depend on it at all and it is like playing casino or making sports bets"*.
+//
+// 🔴 Compaction was the ONLY model call in the product with no thinking bound of either kind — not
+// the harness-side `ReasoningBudget`, not the provider-side `UtilityPass.NO_THINKING`. The inherited
+// summariser did nothing about thinking AND called `Effect.die` on the empty completion a reasoning
+// model returns when it burns its cap, so this was the one call that could neither bound the think
+// nor survive it.
+//
+// ⚠️ A behavioural test cannot see this. Every compaction claim in this suite passes with the wrapper
+// removed — the fixtures return canned events either way, and the budget only bites on a real long
+// think. So the wiring is asserted at the call site.
+test("the summary is generated through ReasoningBudget, with a declared budget", () => {
+  const source = readFileSync(path.join(import.meta.dir, "..", "src", "session", "compaction.ts"), "utf8")
+    .split("\n")
+    .filter((line) => {
+      const t = line.trimStart()
+      return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*")
+    })
+    .join("\n")
+
+  expect(source, "the summary call moved — re-point this test, do not delete it").toContain("summaryPrompt")
+  expect(source).toContain("ReasoningBudget.stream({")
+  expect(source).toContain("budget: COMPACTION_REASONING_BUDGET")
+  // 🔴 And NOT a bare provider call for the summary: that is the state this replaced.
+  expect(source).not.toContain("dependencies.llm\n      .stream(")
+})

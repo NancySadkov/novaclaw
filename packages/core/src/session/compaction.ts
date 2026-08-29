@@ -13,6 +13,7 @@ import { isSteerText, stripSteerProvenance } from "./steer-provenance"
 import { Token } from "../util/token"
 import { CalloutPolicy } from "../callout-policy"
 import { Log } from "@novaclaw/schema/log"
+import { ReasoningBudget } from "./runner/reasoning-budget"
 import { Flag } from "../flag/flag"
 
 const DEFAULT_BUFFER = 20_000
@@ -396,15 +397,16 @@ export const make = (dependencies: Dependencies) => {
     // exactly that (*"unless it is the compaction summary, which carries no agent system"*). Fixing
     // that discriminator cleared a first timeout in the interrupt test and did not clear this one.
     // **Start there, and start by root-causing rather than by adjusting the fixture again.**
-    const summarized = yield* dependencies.llm
-      .stream(
-        LLM.request({
-          model: input.model,
-          messages: [Message.user(summaryPrompt)],
-          tools: [],
-          generation: { maxTokens: summaryOutput },
-        }),
-      )
+    const summarized = yield* ReasoningBudget.stream({
+      request: LLM.request({
+        model: input.model,
+        messages: [Message.user(summaryPrompt)],
+        tools: [],
+        generation: { maxTokens: summaryOutput },
+      }),
+      stream: (request) => dependencies.llm.stream(request),
+      budget: COMPACTION_REASONING_BUDGET,
+    })
       .pipe(
         Stream.runForEach((event) => {
           if (LLMEvent.is.providerError(event)) failed = true
