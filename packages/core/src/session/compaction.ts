@@ -143,13 +143,40 @@ const MEDIA_PART_TOKENS = 1_500
  * whole point of this function and it cannot be asserted through `compactIfNeeded` without building
  * a model route, a request and a config just to read one number back out of a boolean.
  */
+/**
+ * Does this lowered part carry MEDIA BYTES the provider prices per-item rather than per-character?
+ *
+ * 🔴 **TWO shapes, and missing the second made the first fix inert for the workload that motivated
+ * it.** A user attachment lowers to `{type:"media", mediaType, data}`; a TOOL RESULT keeps
+ * `{type:"file", mime, data}` — `to-llm-message.ts` says so in as many words, and its own budget
+ * helper counts both for exactly this reason. Every image in the batch-file programme arrives through
+ * the `read` TOOL, so a rule matching only `media` would have left that workload counting base64 by
+ * the character.
+ *
+ * ⚠️ A `file` part is only media when its MIME says so. A text attachment lowered as `file` is
+ * content the model actually reads, and chars ÷ 4 is the right answer for it.
+ */
+const isMediaPart = (item: Record<string, unknown>): boolean => {
+  if (item["type"] === "media") return true
+  if (item["type"] !== "file") return false
+  const mime = item["mime"]
+  return (
+    typeof mime === "string" &&
+    (mime.startsWith("image/") || mime.startsWith("audio/") || mime.startsWith("video/") || mime === "application/pdf")
+  )
+}
+
 export const estimate = (value: unknown) => {
   let mediaParts = 0
   const json = JSON.stringify(value, (_key, item: unknown) => {
-    if (item !== null && typeof item === "object" && (item as { readonly type?: unknown }).type === "media") {
+    if (item !== null && typeof item === "object" && isMediaPart(item as Record<string, unknown>)) {
       mediaParts++
-      // The rest of the part still counts — `mediaType` and `filename` are real prompt content.
-      return { ...(item as Record<string, unknown>), data: "" }
+      // 🔴 BOTH payload fields. A user attachment carries its bytes in `data`; a lowered TOOL RESULT
+      // carries them in `uri` as a `data:` URL. Blanking only `data` left the tool-result case
+      // counting its base64 in full — which is every image in the batch-file programme, and the
+      // reason the wiring test below drives the real `toLLMMessages` instead of a hand-built part.
+      // The rest still counts: `mediaType`/`mime` and the filename are real prompt content.
+      return { ...(item as Record<string, unknown>), data: "", uri: "" }
     }
     return item
   })

@@ -1,4 +1,11 @@
 import { describe, expect, test } from "bun:test"
+import { DateTime } from "effect"
+import { Model } from "@novaclaw/llm"
+import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
+import { ModelV2 } from "@novaclaw/core/model"
+import { ProviderV2 } from "@novaclaw/core/provider"
+import { SessionMessage } from "@novaclaw/core/session/message"
+import { toLLMMessages } from "@novaclaw/core/session/runner/to-llm-message"
 import { estimate } from "@novaclaw/core/session/compaction"
 
 /**
@@ -62,5 +69,58 @@ describe("the compaction threshold prices a media part by COUNT, not by payload"
     const long = estimate(request({ type: "text", text: "x".repeat(4_040) }))
     expect(long - short).toBeGreaterThan(950)
     expect(long - short).toBeLessThan(1_050)
+  })
+})
+
+/**
+ * ── THE WIRING, ON A GENUINELY ASSEMBLED REQUEST ─────────────────────────────────────────────────
+ *
+ * 🔴 **The first version of this fix matched only `type: "media"` and was INERT for the workload that
+ * motivated it.** A user attachment lowers to `media`; a TOOL RESULT keeps `{type:"file", mime, data}`
+ * — and every image in the batch-file programme arrives through the `read` TOOL. The tests above all
+ * passed, because they hand-build the part they assert on. That is the fifth time this session a
+ * helper proved itself while the caller went unchecked.
+ *
+ * So this one builds a real tool-result message, lowers it with the REAL `toLLMMessages`, and
+ * estimates THAT. If the lowered shape ever changes, this fails; a hand-built part never would.
+ */
+describe("the wiring: a real lowered tool result", () => {
+  const created = DateTime.makeUnsafe(0)
+  const BIG = "A".repeat(47_000) // the base64 length of this programme's corpus icons
+
+  const readResultWithImage = () =>
+    SessionMessage.Assistant.make({
+      id: SessionMessage.ID.make("msg_wiring"),
+      type: "assistant",
+      agent: "build",
+      model: { id: ModelV2.ID.make("model"), providerID: ProviderV2.ID.make("provider") },
+      content: [
+        SessionMessage.AssistantTool.make({
+          type: "tool",
+          id: "call_1",
+          name: "read",
+          state: SessionMessage.ToolStateCompleted.make({
+            status: "completed",
+            input: {},
+            content: [
+              { type: "text", text: "Image read successfully" },
+              { type: "file", uri: `data:image/png;base64,${BIG}`, mime: "image/png", name: "icon_001.png" },
+            ],
+            structured: {},
+            result: undefined,
+          }),
+          time: { created, completed: created },
+        }),
+      ],
+      time: { created, completed: created },
+    })
+
+  test("an image returned by the READ TOOL is not counted by its base64", () => {
+    const model = Model.make({ id: "model", provider: "provider", route: OpenAIChat.route })
+    const lowered = toLLMMessages([readResultWithImage()], model, { input: ["text", "image"] })
+    // Sanity: the payload really is in there, so a small estimate means the RULE fired, not that the
+    // image was dropped somewhere upstream.
+    expect(JSON.stringify(lowered)).toContain(BIG.slice(0, 200))
+    expect(estimate({ system: [], messages: lowered, tools: [] })).toBeLessThan(3_000)
   })
 })
