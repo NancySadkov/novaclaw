@@ -435,3 +435,72 @@ describe("the cheap tier runs inside compactAfterOverflow, ahead of the summariz
     expect(on.prompt).not.toContain(CompactionPrune.ERASED_NOTICE)
   })
 })
+
+/**
+ * ── WHAT THE PRUNER DOES TO PICTURES ─────────────────────────────────────────────────────────────
+ *
+ * 🔴 The pruner ERASES tool outputs to reclaim context and ranks candidates by `outputTokens`. Until
+ * 2026-08-29 that weighed a base64 image by its CHARACTER LENGTH: one 35 KB corpus icon scored
+ * **11,772 tokens**, where the provider charges a measured **66**.
+ *
+ * So six images crossed `PROTECT_TOOL_OUTPUT_TOKENS` (40,000) and two more cleared
+ * `MIN_RECLAIM_TOKENS` (20,000) — the pruner committed, erased the pictures, and reported reclaiming
+ * ~23,000 tokens while freeing about 130. **It destroyed the one content the model cannot rebuild
+ * from text, for nothing.**
+ *
+ * ⚠️ This asserts `plan()`, not `outputTokens`. The estimate is pinned in
+ * `media-estimate-all-sites.test.ts`; what matters HERE is the decision that estimate drives, and a
+ * unit test of the number would not have shown the erasure.
+ */
+describe("images are not mistaken for reclaimable bulk", () => {
+  const IMAGE_B64 = "A".repeat(47_000) // a real corpus icon's base64 length
+
+  const imageTool = (): SessionMessage.AssistantTool =>
+    ({
+      type: "tool",
+      id: id("call"),
+      name: "read",
+      provider: { executed: false },
+      state: {
+        status: "completed",
+        input: { filePath: "/corpus/icon.png" },
+        content: [
+          { type: "text", text: "Image read successfully" },
+          { type: "file", uri: `data:image/png;base64,${IMAGE_B64}`, mime: "image/png", name: "icon.png" },
+        ],
+        structured: {},
+      },
+      time: { created: AT, completed: AT },
+    }) as unknown as SessionMessage.AssistantTool
+
+  /** Ten image reads, then two protected turns so the walk reaches them. */
+  const tenImages = () => [
+    user("describe every icon"),
+    ...Array.from({ length: 10 }, () => assistant("read one", [imageTool()])),
+    user("carry on"),
+    assistant("working"),
+    user("and again"),
+    assistant("still working"),
+  ]
+
+  test("🔴 ten images do NOT trigger a prune — they are ~660 provider tokens, not 117,000", () => {
+    const plan = CompactionPrune.plan(tenImages())
+    expect(plan.commit, "the old estimate committed here and erased the pictures").toBe(false)
+    expect(plan.targets, "nothing may be selected for erasure").toEqual([])
+  })
+
+  // ⚠️ THE CONTROL. Without it this passes just as well if the pruner stopped working entirely.
+  test("but genuinely bulky TEXT output still is", () => {
+    const messages = [
+      user("do the work"),
+      ...Array.from({ length: 10 }, () => assistant("read one", [tool({ tokens: 12_000 })])),
+      user("carry on"),
+      assistant("working"),
+      user("and again"),
+      assistant("still working"),
+    ]
+    const plan = CompactionPrune.plan(messages)
+    expect(plan.commit, "120,000 tokens of text is exactly what this exists to reclaim").toBe(true)
+    expect(plan.targets.length).toBeGreaterThan(0)
+  })
+})
