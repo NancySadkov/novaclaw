@@ -534,6 +534,19 @@ describe("SessionProjector", () => {
           estimatedTokens: 12_000,
           droppedMessages: 2,
           elidedOutputs: 1,
+          promptAnchor: {
+            sessionID,
+            contextEpoch: 7,
+            providerID: "provider",
+            modelID: "model",
+            deviceKey: "http://device",
+            routeID: "route",
+            protocolID: "protocol",
+            controllerKey: "plain",
+            shapeKey: "abc123",
+            heuristicTokens: 12_000,
+            reportedTokens: 13_000,
+          },
           findings: [
             {
               kind: "duplicate-tool-output",
@@ -569,6 +582,12 @@ describe("SessionProjector", () => {
         finish: "stop",
         context: {
           window: 32_000,
+          promptAnchor: {
+            sessionID,
+            contextEpoch: 7,
+            heuristicTokens: 12_000,
+            reportedTokens: 13_000,
+          },
           findings: [{ kind: "duplicate-tool-output", target: "src/a.ts" }],
         },
         timing: {

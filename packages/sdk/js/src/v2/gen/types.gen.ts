@@ -2688,6 +2688,21 @@ export type SessionMessageAssistantTool = {
   }
 }
 
+export type SessionMessagePromptAnchor = {
+  sessionID: string
+  contextEpoch: number
+  providerID: string
+  modelID: string
+  variant?: string
+  deviceKey: string
+  routeID: string
+  protocolID: string
+  controllerKey: string
+  shapeKey: string
+  heuristicTokens: number
+  reportedTokens: number
+}
+
 export type SessionMessageContext = {
   window: number
   estimatedTokens: number
@@ -2719,6 +2734,7 @@ export type SessionMessageContext = {
         protected: boolean
       }
   >
+  promptAnchor?: SessionMessagePromptAnchor
 }
 
 export type SessionMessageAssistant = {

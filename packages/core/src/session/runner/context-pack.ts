@@ -934,6 +934,8 @@ export const packRequest = (input: {
   readonly contextSize: number | undefined
   readonly profile?: ContextBudget.Profile
   readonly memoryRecall?: string
+  /** Signed request-level correction learned from the previous provider-reported prompt count. */
+  readonly promptCorrectionTokens?: number
 }): PackResult & { readonly contextSize: number; readonly system: ReadonlyArray<SystemPart> } => {
   const contextSize =
     input.contextSize !== undefined && input.contextSize > 0 ? input.contextSize : DEFAULT_CONTEXT_SIZE
@@ -955,14 +957,23 @@ export const packRequest = (input: {
           contextSize,
           profile: input.profile,
         })
+  const heuristicBudget = budget({
+    contextSize,
+    system: systemBudget.system,
+    tools: input.request.tools,
+    maxTokens: input.request.generation?.maxTokens,
+  })
+  const correction =
+    input.promptCorrectionTokens !== undefined && Number.isFinite(input.promptCorrectionTokens)
+      ? Math.trunc(input.promptCorrectionTokens)
+      : 0
+  // Apply feedback ONCE at the whole-request capacity boundary. Item estimates and category ranks
+  // stay ordinary heuristics; a positive correction leaves less room for history, a negative one
+  // restores room the provider proved the heuristic was wasting.
+  const correctedBudget = Math.max(0, Math.min(contextSize, heuristicBudget - correction))
   const result = pack(
     memoryBudget.messages,
-    budget({
-      contextSize,
-      system: systemBudget.system,
-      tools: input.request.tools,
-      maxTokens: input.request.generation?.maxTokens,
-    }),
+    correctedBudget,
     input.profile === undefined
       ? undefined
       : {

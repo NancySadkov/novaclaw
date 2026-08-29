@@ -117,7 +117,7 @@ interface State {
 
 export interface Input<E, R> {
   readonly request: LLMRequest
-  readonly stream: (request: LLMRequest) => Stream.Stream<LLMEvent, E, R>
+  readonly stream: (request: LLMRequest, observation: { readonly anchorable: boolean }) => Stream.Stream<LLMEvent, E, R>
   readonly budget: number
   readonly nudges?: Nudges
 }
@@ -314,7 +314,10 @@ export const stream = <E, R>(input: Input<E, R>): Stream.Stream<LLMEvent, E, R> 
             ? input.budget * END_RATIO
             : input.budget * HARD_RATIO
     state.checkpointHit = false
-    const source = input.stream(phaseRequest(phase)).pipe(
+    // Only the opening request has the same controller envelope as a future ordinary turn. A
+    // continuation carries an assistant prefill / template flags, so its provider usage remains
+    // valid drift evidence but must not become the next turn's durable anchor.
+    const source = input.stream(phaseRequest(phase), { anchorable: phase === "opening" }).pipe(
       Stream.flatMap((event) => Stream.fromIterable(transform(event))),
       // Stop consuming (tearing down the request) right after the reasoning delta that crosses the
       // phase ceiling. Gating on the delta (not any event) keeps the crossing delta from being

@@ -24,6 +24,7 @@ export interface PrepareInput {
   readonly contextSize: number | undefined
   readonly profile?: ContextBudget.Profile
   readonly memoryRecall?: string
+  readonly promptCorrectionTokens?: number
 }
 
 /** Attach the stable cache identity and pack the exact request that will reach the provider. */
@@ -42,6 +43,7 @@ export const prepare = (input: PrepareInput) => {
     contextSize: input.contextSize,
     profile: input.profile,
     memoryRecall: input.memoryRecall,
+    promptCorrectionTokens: input.promptCorrectionTokens,
   })
   const request = packed.changed
     ? LLM.request({ ...LLM.requestInput(cacheable), system: packed.system, messages: packed.messages })
@@ -60,15 +62,17 @@ export const stream = (input: {
   readonly onProviderStep?: (step: {
     readonly request: LLMRequest
     readonly usage: Usage | undefined
+    /** Base/opening requests share the next ordinary turn's controller envelope. */
+    readonly anchorable: boolean
   }) => Effect.Effect<void>
 }): Stream.Stream<import("@novaclaw/llm").LLMEvent, LLMError> => {
-  const source = (request: LLMRequest) => {
+  const source = (request: LLMRequest, observation: { readonly anchorable: boolean }) => {
     const stream = input.llm.stream(request)
     if (input.onProviderStep === undefined) return stream
     return stream.pipe(
       Stream.tap((event) =>
         LLMEvent.is.stepFinish(event)
-          ? input.onProviderStep!({ request, usage: event.usage })
+          ? input.onProviderStep!({ request, usage: event.usage, anchorable: observation.anchorable })
           : Effect.void,
       ),
     )
@@ -79,7 +83,7 @@ export const stream = (input: {
         stream: source,
         budget: input.budget,
       })
-    : source(input.request)
+    : source(input.request, { anchorable: true })
 }
 
 export interface Input<E, R> {

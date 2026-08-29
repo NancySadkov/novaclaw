@@ -209,6 +209,9 @@ test("the compaction trigger logs what it measured BEFORE it declines", () => {
   // And it must report BOTH sides plus the verdict: an estimate with no threshold beside it is a
   // number nobody can act on, which is the state this line exists to end.
   expect(source).toContain('"compaction.estimated": estimated')
+  expect(source).toContain('"compaction.estimate.mode":')
+  expect(source).toContain('"compaction.anchor.delta": promptEstimate.deltaTokens')
+  expect(source).toContain('"compaction.anchor.low-confidence": promptEstimate.confidence === "low"')
   expect(source).toContain('"compaction.threshold": threshold')
   expect(source).toContain('"compaction.fires": estimated > threshold')
 })
@@ -265,17 +268,14 @@ test("the estimate-vs-provider ratio compares one exact provider request with it
   )
 
   expect(dispatch).toContain("LLMEvent.is.stepFinish(event)")
-  expect(dispatch).toContain("input.onProviderStep!({ request, usage: event.usage })")
-  expect(runner).toContain("onProviderStep: ({ request: providerRequest, usage })")
-  expect(runner).toContain("SessionCompaction.estimate({")
-  expect(runner).toContain("system: providerRequest.system")
+  expect(dispatch).toContain("input.onProviderStep!({ request, usage: event.usage, anchorable:")
+  expect(runner).toContain("onProviderStep: ({ request: providerRequest, usage, anchorable })")
+  expect(runner).toContain("PromptEstimate.whole(providerRequest)")
   expect(runner).toContain('"session.prompt.reported": reportedPrompt !== undefined')
   expect(runner).toContain('Log.event("session.context.estimate.drift"')
-  const callbackAt = runner.indexOf("onProviderStep: ({ request: providerRequest, usage })")
+  const callbackAt = runner.indexOf("onProviderStep: ({ request: providerRequest, usage, anchorable })")
   const pressureAt = runner.indexOf('Log.event("session.context.pressure.high"', callbackAt)
   expect(callbackAt).toBeGreaterThan(-1)
   expect(pressureAt).toBeGreaterThan(callbackAt)
-  expect(runner.slice(callbackAt, pressureAt)).not.toContain(
-    '"session.estimated.tokens": packed.estimatedTokens',
-  )
+  expect(runner.slice(callbackAt, pressureAt)).not.toContain('"session.estimated.tokens": packed.estimatedTokens')
 })

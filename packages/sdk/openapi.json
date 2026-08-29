@@ -37445,6 +37445,65 @@
         "required": ["type", "id", "name", "state", "time"],
         "additionalProperties": false
       },
+      "SessionMessagePromptAnchor": {
+        "type": "object",
+        "properties": {
+          "sessionID": {
+            "type": "string",
+            "pattern": "^ses"
+          },
+          "contextEpoch": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "providerID": {
+            "type": "string"
+          },
+          "modelID": {
+            "type": "string"
+          },
+          "variant": {
+            "type": "string"
+          },
+          "deviceKey": {
+            "type": "string"
+          },
+          "routeID": {
+            "type": "string"
+          },
+          "protocolID": {
+            "type": "string"
+          },
+          "controllerKey": {
+            "type": "string"
+          },
+          "shapeKey": {
+            "type": "string"
+          },
+          "heuristicTokens": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "reportedTokens": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          }
+        },
+        "required": [
+          "sessionID",
+          "contextEpoch",
+          "providerID",
+          "modelID",
+          "deviceKey",
+          "routeID",
+          "protocolID",
+          "controllerKey",
+          "shapeKey",
+          "heuristicTokens",
+          "reportedTokens"
+        ],
+        "additionalProperties": false
+      },
       "SessionMessageContext": {
         "type": "object",
         "properties": {
@@ -37564,6 +37623,9 @@
                 }
               ]
             }
+          },
+          "promptAnchor": {
+            "$ref": "#/components/schemas/SessionMessagePromptAnchor"
           }
         },
         "required": ["window", "estimatedTokens", "droppedMessages", "elidedOutputs", "findings"],

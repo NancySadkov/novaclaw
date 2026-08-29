@@ -65,7 +65,7 @@ describe("ProviderDispatch", () => {
   test("routes an enabled completion through the reasoning controller", async () => {
     const model = Model.make({ id: "fake", provider: "fake", route: OpenAIChat.route })
     const requests: LLMRequest[] = []
-    const observed: Array<{ request: LLMRequest; usage: unknown }> = []
+    const observed: Array<{ request: LLMRequest; usage: unknown; anchorable: boolean }> = []
     const usage = {
       inputTokens: 42,
       outputTokens: 2,
@@ -100,12 +100,13 @@ describe("ProviderDispatch", () => {
     expect(observed).toHaveLength(1)
     expect(observed[0]!.request).toBe(requests[0])
     expect(observed[0]!.usage).toEqual(usage)
+    expect(observed[0]!.anchorable).toBe(true)
   })
 
   test("observes a settled response even when the provider reports no usage", async () => {
     const model = Model.make({ id: "fake", provider: "fake", route: OpenAIChat.route })
     const request = LLM.request({ model, messages: [Message.user("answer")] })
-    const observed: Array<{ request: LLMRequest; usage: unknown }> = []
+    const observed: Array<{ request: LLMRequest; usage: unknown; anchorable: boolean }> = []
     const llm = {
       stream: () => Stream.fromIterable([LLMEvent.stepFinish({ index: 0, reason: "stop" })]),
     } as never
@@ -123,13 +124,13 @@ describe("ProviderDispatch", () => {
       }).pipe(Stream.runDrain),
     )
 
-    expect(observed).toEqual([{ request, usage: undefined }])
+    expect(observed).toEqual([{ request, usage: undefined, anchorable: true }])
   })
 
   test("observes the exact settled continuation request below the reasoning controller", async () => {
     const model = Model.make({ id: "fake", provider: "fake", route: OpenAIChat.route })
     const requests: LLMRequest[] = []
-    const observed: Array<{ request: LLMRequest; usage: unknown }> = []
+    const observed: Array<{ request: LLMRequest; usage: unknown; anchorable: boolean }> = []
     const usage = { inputTokens: 50, outputTokens: 2, nonCachedInputTokens: 50 }
     const llm = {
       stream: (request: LLMRequest) => {
@@ -157,7 +158,7 @@ describe("ProviderDispatch", () => {
     )
 
     expect(requests).toHaveLength(2)
-    expect(observed).toEqual([{ request: requests[1], usage }])
+    expect(observed).toEqual([{ request: requests[1], usage, anchorable: false }])
     expect(requests[1]!.http?.body?.continue_final_message).toBe(true)
   })
 

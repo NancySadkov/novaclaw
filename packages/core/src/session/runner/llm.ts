@@ -90,6 +90,7 @@ import { FinishRecovery } from "./finish-recovery"
 import { UtilityCap } from "./utility-cap"
 import { UtilityPass } from "./utility-pass"
 import { ContextPack } from "./context-pack"
+import { PromptEstimate } from "./prompt-estimate"
 import { RequestFootprint } from "./footprint"
 import { ContextBudget } from "./context-budget"
 import { ShortChat } from "./short-chat"
@@ -1594,6 +1595,32 @@ export const layer = Layer.effect(
         toolChoice: isLastStep ? "none" : undefined,
         ...(affectiveGeneration === undefined ? {} : { generation: affectiveGeneration }),
       })
+      const attemptModelRef = {
+        id: ModelV2.ID.make(model.id),
+        providerID: ProviderV2.ID.make(model.provider),
+        ...(session.model?.variant === undefined ? {} : { variant: session.model.variant }),
+      }
+      // The controller envelope is part of tokenizer identity: a budgeted opening request carries a
+      // stable extra system part, while a plain request does not. A change falls back for one turn.
+      const thinkingBudget = model.route.defaults.limits?.thinkingBudget ?? 0
+      const budgetEnforced = !ShortChat.enabled(config.shortChat) && stanceOf("thinkingBudget", config.thinkingBudget)
+      const promptScope: PromptEstimate.Scope = {
+        sessionID: session.id,
+        contextEpoch: system.baselineSeq,
+        providerID: attemptModelRef.providerID,
+        modelID: attemptModelRef.id,
+        ...(attemptModelRef.variant === undefined ? {} : { variant: attemptModelRef.variant }),
+        deviceKey: scheduledDevice.key,
+        routeID: model.route.id,
+        protocolID: model.route.protocol,
+        controllerKey:
+          budgetEnforced && !isLastStep && thinkingBudget > 0 ? `reasoning-budget:${thinkingBudget}` : "plain",
+      }
+      const promptEstimate = PromptEstimate.resolve({
+        request: fullRequest,
+        messages: entries.map((entry) => entry.message),
+        scope: promptScope,
+      })
       yield* timingEnd("request-build")
       // ⚠️ `compactIfNeeded` is a CHECK that usually declines — window unknown, no summary model, or
       // simply under its threshold. Timing it is right; RECORDING it as a phase is not, because the
@@ -1607,6 +1634,7 @@ export const layer = Layer.effect(
         entries,
         model,
         request: fullRequest,
+        promptEstimate,
       })
       // The conversation that just got compressed away is written into this colleague's OWN memory
       // as passages, so `kb search` can find it later (`session/compaction-archive.ts` holds the
@@ -1637,6 +1665,7 @@ export const layer = Layer.effect(
           ? ContextBudget.resolve(harness.context, config.type)
           : undefined,
         memoryRecall: recallMessage,
+        promptCorrectionTokens: promptEstimate.correctionTokens,
       })
       yield* timingEnd("context-fit")
       const packed = preparedDispatch.packed
@@ -1670,11 +1699,6 @@ export const layer = Layer.effect(
           })
       yield* timingStart("provider-setup")
       const assistantMessageID = SessionMessage.ID.create()
-      const attemptModelRef = {
-        id: ModelV2.ID.make(model.id),
-        providerID: ProviderV2.ID.make(model.provider),
-        ...(session.model?.variant === undefined ? {} : { variant: session.model.variant }),
-      }
       const publisher = createLLMEventPublisher(events, {
         sessionID: session.id,
         assistantMessageID,
@@ -1698,35 +1722,27 @@ export const layer = Layer.effect(
       // is safe to discard, so failures before the assistant begins reconnect in-place below.
       let brokenResponse = false
       let handledResponseFailure = false
+      let providerPromptAnchor: SessionMessage.PromptAnchor | undefined
+      let latestProviderPrompt: { readonly reportedTokens: number; readonly heuristicTokens: number } | undefined
       // MindControl thinking budget (reasoning-budget.ts): when the model carries a budget and this
       // isn't the tool-less final step, run the turn through the budget controller — it monitors the
       // reasoning stream and, only if the model runs past the budget still thinking, stops and
       // continues with a nudge (and a forced `</think>` close at the end). A model that answers on
       // its own streams through untouched. Skipped when thinking is explicitly disabled for the turn.
-      const thinkingBudget = model.route.defaults.limits?.thinkingBudget ?? 0
-      // Per-chat override (the composer's Tuning control): `false` runs the turn with the controller OFF so
-      // the model reasons to its own stop, which is what makes a budget change A/B-able in one chat without
-      // editing the instance default. Absent = inherit the chain, then the model's own budget.
-      const budgetEnforced = !ShortChat.enabled(config.shortChat) && stanceOf("thinkingBudget", config.thinkingBudget)
       const budgetedSource = ProviderDispatch.stream({
         llm,
         request,
         enabled: budgetEnforced && !isLastStep,
         budget: thinkingBudget,
-        onProviderStep: ({ request: providerRequest, usage }) => {
-          const estimatedPrompt = SessionCompaction.estimate({
-            system: providerRequest.system,
-            messages: providerRequest.messages,
-            tools: providerRequest.tools,
-          })
-          const finite = (value: number | undefined) =>
-            Number.isFinite(value) ? Math.max(0, value ?? 0) : 0
-          const reportedPrompt =
-            usage === undefined
-              ? undefined
-              : finite(usage.nonCachedInputTokens) +
-                finite(usage.cacheReadInputTokens) +
-                finite(usage.cacheWriteInputTokens)
+        onProviderStep: ({ request: providerRequest, usage, anchorable }) => {
+          const estimatedPrompt = PromptEstimate.whole(providerRequest)
+          const reportedPrompt = PromptEstimate.reportedPromptTokens(usage)
+          if (reportedPrompt !== undefined)
+            latestProviderPrompt = { reportedTokens: reportedPrompt, heuristicTokens: estimatedPrompt }
+          if (anchorable) {
+            const observed = PromptEstimate.observe({ request, usage, scope: promptScope })
+            if (observed !== undefined) providerPromptAnchor = observed
+          }
           const comparable = reportedPrompt !== undefined && estimatedPrompt > 0
           return Log.event("session.context.estimate.drift", {
             "session.id": session.id,
@@ -1736,9 +1752,7 @@ export const layer = Layer.effect(
             "session.prompt.tokens": reportedPrompt ?? 0,
             "session.estimated.tokens": estimatedPrompt,
             "session.estimate.comparable": comparable,
-            "session.estimate.ratio": comparable
-              ? Math.round((reportedPrompt! / estimatedPrompt) * 100) / 100
-              : 0,
+            "session.estimate.ratio": comparable ? Math.round((reportedPrompt! / estimatedPrompt) * 100) / 100 : 0,
           })
         },
       })
@@ -2204,6 +2218,7 @@ export const layer = Layer.effect(
                   droppedMessages: packed.dropped,
                   elidedOutputs: packed.elided,
                   findings: [...packed.findings],
+                  ...(providerPromptAnchor === undefined ? {} : { promptAnchor: providerPromptAnchor }),
                 },
                 timing: timing.snapshot(),
                 snapshot: endSnapshot,
@@ -2220,12 +2235,13 @@ export const layer = Layer.effect(
             // At ≥95% the real prompt has outgrown the chars/4 estimate; the next request risks
             // silent server-side truncation. Logs actual-vs-estimate for calibration.
             const reportedPrompt =
+              latestProviderPrompt?.reportedTokens ??
               stepSettlement.tokens.input + stepSettlement.tokens.cache.read + stepSettlement.tokens.cache.write
             if (ContextPack.ctxPressure(reportedPrompt, packed.contextSize))
               yield* Log.event("session.context.pressure.high", {
                 "session.id": session.id,
                 "session.prompt.tokens": reportedPrompt,
-                "session.estimated.tokens": packed.estimatedTokens,
+                "session.estimated.tokens": latestProviderPrompt?.heuristicTokens ?? packed.estimatedTokens,
                 "session.context.size": packed.contextSize,
               })
           }

@@ -15,6 +15,7 @@ import { CalloutPolicy } from "../callout-policy"
 import { Log } from "@novaclaw/schema/log"
 import { ReasoningBudget } from "./runner/reasoning-budget"
 import { FinishRecovery } from "./runner/finish-recovery"
+import { PromptEstimate } from "./runner/prompt-estimate"
 import { Flag } from "../flag/flag"
 
 const DEFAULT_BUFFER = 20_000
@@ -137,6 +138,7 @@ type Input = {
   readonly entries: readonly Entry[]
   readonly model: Model
   readonly request: LLMRequest
+  readonly promptEstimate?: PromptEstimate.Result
 }
 
 /**
@@ -391,28 +393,27 @@ export const make = (dependencies: Dependencies) => {
       }),
       stream: (request) => dependencies.llm.stream(request),
       budget: COMPACTION_REASONING_BUDGET,
-    })
-      .pipe(
-        Stream.runForEach((event) => {
-          if (LLMEvent.is.providerError(event)) failed = true
-          if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
-          // 🔴 BOTH events, because the two supported call shapes emit DIFFERENT ones — and reading
-          // only `finish` is how this guard would have died the moment somebody wired the thinking
-          // budget above. A raw `llm.stream` forwards the provider's `finish`; `ReasoningBudget`
-          // SWALLOWS it and closes with `stepFinish({ index, reason, usage })` instead
-          // (`runner/reasoning-budget.ts`, the `out.push` at the end of its finaliser). Same reason,
-          // different envelope. `judgeCompletion` reads `finish` and is safe only because it calls
-          // the provider directly; the titler and `absorb` go through the wrapper and read neither.
-          if (event.type === "finish" || event.type === "step-finish") finish = event.reason
-          return Effect.void
-        }),
-        Effect.as(true),
-        Effect.catchTag("LLM.Error", () => Effect.succeed(false)),
-        Effect.timeoutOrElse({
-          duration: CalloutPolicy.summarizer.timeoutMs,
-          orElse: () => Effect.succeed(false),
-        }),
-      )
+    }).pipe(
+      Stream.runForEach((event) => {
+        if (LLMEvent.is.providerError(event)) failed = true
+        if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
+        // 🔴 BOTH events, because the two supported call shapes emit DIFFERENT ones — and reading
+        // only `finish` is how this guard would have died the moment somebody wired the thinking
+        // budget above. A raw `llm.stream` forwards the provider's `finish`; `ReasoningBudget`
+        // SWALLOWS it and closes with `stepFinish({ index, reason, usage })` instead
+        // (`runner/reasoning-budget.ts`, the `out.push` at the end of its finaliser). Same reason,
+        // different envelope. `judgeCompletion` reads `finish` and is safe only because it calls
+        // the provider directly; the titler and `absorb` go through the wrapper and read neither.
+        if (event.type === "finish" || event.type === "step-finish") finish = event.reason
+        return Effect.void
+      }),
+      Effect.as(true),
+      Effect.catchTag("LLM.Error", () => Effect.succeed(false)),
+      Effect.timeoutOrElse({
+        duration: CalloutPolicy.summarizer.timeoutMs,
+        orElse: () => Effect.succeed(false),
+      }),
+    )
     const summary = chunks.join("")
     if (!summarized || failed || !summary.trim()) return false
     // ⚠️ A non-clean summary is WORSE than none: it is stored as the session's memory and reads as
@@ -462,15 +463,20 @@ export const make = (dependencies: Dependencies) => {
      *
      * ⚠️ Logged BEFORE the early return, deliberately: the interesting case is the one that declines.
      */
-    const estimated = estimate({
-      system: input.request.system,
-      messages: input.request.messages,
-      tools: input.request.tools,
-    })
+    const promptEstimate = input.promptEstimate ?? PromptEstimate.unsupported(input.request)
+    const estimated = promptEstimate.estimatedTokens
     const threshold = context - Math.max(output, config.buffer)
     yield* Log.event("session.compaction.threshold", {
       "session.id": String(input.sessionID),
       "compaction.estimated": estimated,
+      "compaction.estimate.mode": promptEstimate.confidence === "whole" ? "full" : "anchored",
+      "compaction.heuristic": promptEstimate.heuristicTokens,
+      "compaction.anchor.reported": promptEstimate.anchorReportedTokens,
+      "compaction.anchor.heuristic": promptEstimate.anchorHeuristicTokens,
+      "compaction.anchor.delta": promptEstimate.deltaTokens,
+      "compaction.anchor.growth": Math.round(promptEstimate.growth * 10_000) / 10_000,
+      "compaction.anchor.low-confidence": promptEstimate.confidence === "low",
+      "compaction.anchor.fallback": promptEstimate.fallback,
       "compaction.threshold": threshold,
       "compaction.fires": estimated > threshold,
     })

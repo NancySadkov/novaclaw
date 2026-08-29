@@ -304,6 +304,30 @@ export const ContextFinding = Schema.Union([
 ]).pipe(Schema.toTaggedUnion("kind"))
 export type ContextFinding = typeof ContextFinding.Type
 
+/**
+ * A provider prompt count paired with the deterministic estimate of the request that produced it.
+ *
+ * The pair is deliberately compact and content-free: the next turn can correct its whole-request
+ * heuristic by the signed difference from this request without storing another copy of the prompt.
+ * Route and epoch identity make the optimization fail closed across forks, context replacement,
+ * model switches, server switches, and controller-envelope changes.
+ */
+export interface PromptAnchor extends Schema.Schema.Type<typeof PromptAnchor> {}
+export const PromptAnchor = Schema.Struct({
+  sessionID: SessionID,
+  contextEpoch: NonNegativeInt,
+  providerID: Schema.String,
+  modelID: Schema.String,
+  variant: Schema.String.pipe(optional),
+  deviceKey: Schema.String,
+  routeID: Schema.String,
+  protocolID: Schema.String,
+  controllerKey: Schema.String,
+  shapeKey: Schema.String,
+  heuristicTokens: PositiveInt,
+  reportedTokens: PositiveInt,
+}).annotate({ identifier: "Session.Message.PromptAnchor" })
+
 /** What the deterministic packer put on one provider turn's wire. Optional on old rows and on
  *  Strict turns, whose separate engine does not currently pass through the native packer. */
 export interface Context extends Schema.Schema.Type<typeof Context> {}
@@ -313,6 +337,7 @@ export const Context = Schema.Struct({
   droppedMessages: NonNegativeInt,
   elidedOutputs: NonNegativeInt,
   findings: Schema.Array(ContextFinding),
+  promptAnchor: PromptAnchor.pipe(optional),
 }).annotate({ identifier: "Session.Message.Context" })
 
 /**

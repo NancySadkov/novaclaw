@@ -382,6 +382,19 @@ describe("pack", () => {
 })
 
 describe("packRequest typed system shares", () => {
+  test("applies an anchored correction once at the overall history boundary", () => {
+    const request = LLM.request({
+      model: fakeModel,
+      messages: [assistantText("a".repeat(5_000)), assistantText("b".repeat(5_000)), user("c".repeat(5_000))],
+    })
+    const ordinary = packRequest({ request, contextSize: 12_000 })
+    const undercount = packRequest({ request, contextSize: 12_000, promptCorrectionTokens: 1_500 })
+    const overcount = packRequest({ request, contextSize: 12_000, promptCorrectionTokens: -1_500 })
+    expect(ordinary.dropped).toBe(1)
+    expect(undercount.dropped).toBe(2)
+    expect(overcount.dropped).toBe(0)
+  })
+
   // Auto-recall lives in the message TAIL since 2026-08-05 (system-compose.ts's ⚠️ header): in the
   // system array it was the one per-turn-volatile part and it invalidated the server-side prefix
   // cache for the whole request. The `memory` category budget followed it, so this asserts the

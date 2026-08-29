@@ -256,6 +256,26 @@ describe("redaction is in the record, and it cannot drift from the attributes", 
       )
     expect(leaks).toEqual([])
   })
+
+  test("compaction's anchored decision is numeric, closed-vocabulary, and local-only", () => {
+    const declaration = EVENTS["session.compaction.threshold"]
+    expect(declaration.attributes).toMatchObject({
+      "compaction.estimate.mode": "id",
+      "compaction.heuristic": "count",
+      "compaction.anchor.reported": "count",
+      "compaction.anchor.heuristic": "count",
+      "compaction.anchor.delta": "count",
+      "compaction.anchor.growth": "count",
+      "compaction.anchor.low-confidence": "flag",
+      "compaction.anchor.fallback": "id",
+    })
+    expect(derivedContent(declaration)).toBe("correlated")
+    expect(mayEgress("session.compaction.threshold")).toBe(false)
+    expect(Object.values(declaration.attributes)).not.toContain("text")
+    expect(Object.values(declaration.attributes)).not.toContain("path")
+    expect(Object.values(declaration.attributes)).not.toContain("fault")
+    expect(Object.values(declaration.attributes)).not.toContain("list")
+  })
 })
 
 describe("correlation ids are first-class, and their class is decided in ONE place", () => {
