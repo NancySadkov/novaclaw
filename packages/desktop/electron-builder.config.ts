@@ -138,6 +138,21 @@ const getBase = (appId: string): Configuration => ({
       from: "../dht/build/",
       to: "dht/",
     },
+    {
+      // The watchdog (`packages/watchdog`), built by `scripts/prebuild.ts`.
+      //
+      // ⚠️ A separate process by definition — it supervises the one this app runs in, so it can be
+      // neither in the asar nor inside the thing it restarts. 220 KB, `build/` rather than cargo's
+      // scratch tree, same as the two entries above.
+      //
+      // 🔴 **NOTHING LAUNCHES IT YET, and shipping it anyway is deliberate.** Adoption puts three
+      // supervision layers in a line (watchdog → `serve --supervise` → server) and that is a design
+      // decision to take on purpose, not to arrive at by packaging. But the binary must be PRESENT
+      // before it can be adopted, it costs a fifth of a megabyte, and a build step nobody has ever
+      // run is the one that fails on the day it is finally needed. See `todo/watchdog.md`.
+      from: "../watchdog/build/",
+      to: "watchdog/",
+    },
     ...(process.platform === "win32"
       ? [
           {

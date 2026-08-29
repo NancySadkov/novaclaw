@@ -83,6 +83,30 @@ test("🔴 ships the DHT sidecar, which the desktop package did not carry at all
   expect(config.extraResources).toContainEqual({ from: "../dht/build/", to: "dht/" })
 })
 
+test("ships the watchdog, which nothing launches yet — the binary must exist BEFORE it is adopted", async () => {
+  const module = await import(`./electron-builder.config.ts?watchdog=${Date.now()}`)
+  const config = module.default as Configuration
+
+  /**
+   * 🔴 **The same shape as the DHT finding above, caught one step earlier.** That sidecar existed in
+   * the dev tree and in the CLI build and was absent from the product's primary face for as long as
+   * nobody wrote this assertion. The watchdog is at the point the DHT was at then: built, tested,
+   * and packaged by nothing.
+   *
+   * ⚠️ **It degrades more quietly than the DHT does.** A missing DHT shows up the first time an
+   * instance discovers nobody. A missing watchdog shows up only when something crashes — which is
+   * precisely when nobody is watching the build log — and there is a user-visible auto-restart
+   * switch in Settings promising otherwise.
+   *
+   * ⚠️ Nothing SPAWNS it yet, on purpose: adoption puts three supervision layers in a line and is a
+   * decision to take deliberately (`todo/watchdog.md`). Packaging it is not that decision. It costs
+   * 220 KB, and a build step nobody has ever run is the one that fails on the day it is needed.
+   *
+   * ⚠️ `build/`, not `target/release/`: cargo's scratch tree is hundreds of megabytes.
+   */
+  expect(config.extraResources).toContainEqual({ from: "../watchdog/build/", to: "watchdog/" })
+})
+
 /**
  * 🔴 **NC-SEC-010 — a release build that could not sign must not package.**
  *

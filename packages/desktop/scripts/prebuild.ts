@@ -87,4 +87,22 @@ await $`bun ../dht/build.ts`.catch((error) => {
   console.warn(error?.stderr?.toString().trim() || error)
 })
 
+/**
+ * The watchdog (`packages/watchdog`), on the same terms as the two above: built here because
+ * `electron-builder.config.ts` copies `packages/watchdog/build/` into `resources/watchdog/`, and that
+ * directory has to EXIST before packaging.
+ *
+ * ⚠️ Not fatal, for the same reason — most machines have no cargo toolchain, and an instance without
+ * it still restarts a crashed sidecar through the in-process supervisor. What is lost is only the
+ * outermost layer: surviving the death of the supervisor itself.
+ *
+ * 🔴 This one degrades more quietly than the others. A missing DHT is visible the first time nobody
+ * is discovered; a missing watchdog is invisible until something crashes, which is exactly when
+ * nobody is looking. `build.ts` says so on stdout for that reason.
+ */
+await $`bun ../watchdog/build.ts`.catch((error) => {
+  console.warn(`WARNING: could not build the watchdog — a crashed instance will not be restarted automatically.`)
+  console.warn(error?.stderr?.toString().trim() || error)
+})
+
 await $`cd ../novaclaw && bun script/build-node.ts`
