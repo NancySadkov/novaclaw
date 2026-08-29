@@ -126,6 +126,17 @@ export const PACKAGES: Pkg[] = [
   // tsconfig. It is `@novaclaw/repo-script` now, so phase 1 below covers it as `typecheck:repo-script`
   // via the same discovery as every package. Two units, two questions, and this directory needed both.
   { name: "script", dir: "script", args: [] },
+  // ⚠️ `packages/script` is a DIFFERENT workspace from the `script/` directory above — `@novaclaw/script`
+  // (the shared supervise/channel policy the headless server and Electron main both import) versus
+  // `@novaclaw/repo-script` (this harness). Phase 1 has always typechecked it; nothing had ever RUN it,
+  // because it held no test until 2026-08-29. That is the `packages/host` shape recorded below —
+  // "typecheck unit and no execution unit" — caught this time on the first test rather than the
+  // eleventh, and the unit is added so the NEXT test here is not decoration either.
+  //
+  // 🔴 The name is `script-lib`, not `script`, on purpose. Reusing the key would silently re-point every
+  // `script` entry in `test-baseline.json` at a different directory — a rename that reads as a no-op in
+  // the diff and moves a pinned failure onto an unrelated unit.
+  { name: "script-lib", dir: "packages/script", args: [] },
   { name: "schema", dir: "packages/schema", args: [] },
   { name: "protocol", dir: "packages/protocol", args: [] },
   { name: "effect-drizzle-sqlite", dir: "packages/effect-drizzle-sqlite", args: [] },
