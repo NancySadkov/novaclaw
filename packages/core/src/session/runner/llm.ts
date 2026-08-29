@@ -2175,6 +2175,33 @@ export const layer = Layer.effect(
             // silent server-side truncation. Logs actual-vs-estimate for calibration.
             const reportedPrompt =
               stepSettlement.tokens.input + stepSettlement.tokens.cache.read + stepSettlement.tokens.cache.write
+            /**
+             * 🔴 **"A TOKEN" MEANS A DIFFERENT THING ON EVERY (MODEL x SERVER) PAIR, AND THIS IS THE
+             * ONLY PLACE THAT CAN SEE HOW WRONG WE WERE.**
+             *
+             * `Token.estimate` is chars/4 with a CJK split — a heuristic over somebody else's BPE.
+             * The harness covers the gap with ONE fixed margin, `BUDGET_KEEP_FRACTION = 0.9`, chosen
+             * because *"chars/4 UNDERcounts code/JSON-heavy history"*. That 10 % is a guess applied
+             * uniformly to every model and every server, and **nothing has ever checked it against a
+             * provider's own count.**
+             *
+             * The pair needed to check it arrives on EVERY response — `reportedPrompt` against
+             * `packed.estimatedTokens` — and until now it was thrown away below the 95 % tripwire,
+             * which is to say: recorded only once the margin had already failed.
+             *
+             * ⚠️ **Emitted for every step, at `debug`.** The value is the SERIES, not any one line: a
+             * ratio that sits at 1.05 on one endpoint and 1.4 on another is the number that should
+             * set the margin, per pair, the way `resolveImageLimit` already resolves an image cap
+             * from what the operator declared, what this process learned, and what a previous one did.
+             * You cannot heal what you do not measure, and the instance is supposed to heal itself.
+             */
+            if (reportedPrompt > 0 && packed.estimatedTokens > 0)
+              yield* Log.event("session.context.estimate.drift", {
+                "session.id": session.id,
+                "session.prompt.tokens": reportedPrompt,
+                "session.estimated.tokens": packed.estimatedTokens,
+                "session.estimate.ratio": Math.round((reportedPrompt / packed.estimatedTokens) * 100) / 100,
+              })
             if (ContextPack.ctxPressure(reportedPrompt, packed.contextSize))
               yield* Log.event("session.context.pressure.high", {
                 "session.id": session.id,

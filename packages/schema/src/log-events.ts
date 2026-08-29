@@ -2131,6 +2131,13 @@ export const EVENTS = {
     content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  "session.context.estimate.drift": {
+    level: "debug",
+    message: "context: the provider's own prompt count against ours, and the ratio between them",
+    attributes: { "session.id": "correlate", "session.prompt.tokens": "count", "session.estimated.tokens": "count", "session.estimate.ratio": "count" },
+    content: "correlated",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   "session.context.pressure.high": {
     level: "warn",
     message: "ctx_pressure: real prompt near the context window",

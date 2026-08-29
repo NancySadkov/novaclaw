@@ -242,3 +242,38 @@ test("the summary is generated through ReasoningBudget, with a declared budget",
   // 🔴 And NOT a bare provider call for the summary: that is the state this replaced.
   expect(source).not.toContain("dependencies.llm\n      .stream(")
 })
+
+// ── "A token" is not one thing, and the only honest number is the provider's own ─────────────────
+//
+// Owner, 2026-08-29: *"different models, providers and model servers [have] different definitions of
+// `token` … do we leave a bit of margin for the case when token is larger than our heuristics
+// predicts, while the provider's api offers no good feedback?"*
+//
+// We leave ONE fixed margin — `BUDGET_KEEP_FRACTION = 0.9` — applied uniformly to every model and
+// every server, and nothing had ever checked it against a provider's own count. The pair that would
+// check it arrives on every response, and was discarded below the 95 % pressure tripwire: recorded
+// only once the margin had already failed.
+//
+// ⚠️ Asserted at the source, because the drift line has no behaviour to observe — it is an
+// instrument, and the failure it guards against is somebody re-nesting it back under the tripwire
+// where it only fires after the fact. That is invisible to every behavioural test.
+test("the estimate-vs-provider ratio is recorded on EVERY response, not only under pressure", () => {
+  const source = readFileSync(path.join(import.meta.dir, "..", "src", "session", "runner", "llm.ts"), "utf8")
+    .split("\n")
+    .filter((line) => {
+      const t = line.trimStart()
+      return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*")
+    })
+    .join("\n")
+
+  const driftAt = source.indexOf('Log.event("session.context.estimate.drift"')
+  const pressureAt = source.indexOf("ContextPack.ctxPressure(reportedPrompt")
+  expect(driftAt, "the drift log moved — re-point this test, do not delete it").toBeGreaterThan(-1)
+  expect(pressureAt, "the pressure tripwire moved — re-point this test, do not delete it").toBeGreaterThan(-1)
+  // 🔴 BEFORE the tripwire, and therefore not inside it. Ordering IS the claim.
+  expect(driftAt).toBeLessThan(pressureAt)
+  expect(source).toContain('"session.estimate.ratio"')
+  // Both sides, or the ratio is a number nobody can check.
+  expect(source).toContain('"session.prompt.tokens": reportedPrompt')
+  expect(source).toContain('"session.estimated.tokens": packed.estimatedTokens')
+})
