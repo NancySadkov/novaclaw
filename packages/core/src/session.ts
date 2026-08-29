@@ -52,6 +52,7 @@ import { Revert } from "@novaclaw/schema/revert"
 import { FSUtil } from "./fs-util"
 import { SessionDurable } from "@novaclaw/schema/durable-event-manifest"
 import { Config } from "./config"
+import { ConfigHarnessDrives } from "./config/harness-drives"
 import { CommandV2 } from "./command"
 import { ExternalCommandSource } from "./command/external-command-source"
 import { SkillCommand } from "./command/skill-command"
@@ -811,7 +812,23 @@ export const layer = Layer.effect(
     // unfinished: abandoned execution leases, and queued prompts nothing in memory will promote.
     // Here rather than in an executor because there are two of them (worker in production, local
     // in core) and only one had ever swept — see `session/boot-recovery.ts`.
-    yield* SessionBootRecovery.start({ db, store, attempts, execution })
+    yield* SessionBootRecovery.start({
+      db,
+      store,
+      attempts,
+      execution,
+      /**
+       * `harness_drives.resumeInterrupted`, read THROUGH to the store each time a sweep recovers
+       * something (ruling 3). ⚠️ Fails OPEN — an unreadable config resumes, because the whole point
+       * of this switch is that work is not silently lost, and a config read that failed is exactly
+       * the moment to prefer the safe direction.
+       */
+      resumeInterrupted: () =>
+        Effect.gen(function* () {
+          const config = yield* Config.Service
+          return ConfigHarnessDrives.resolve(Config.latest(yield* config.entries(), "harness_drives")).resumeInterrupted
+        }).pipe(Effect.orElseSucceed(() => true)),
+    })
     const isDurableSessionEvent = Schema.is(SessionEvent.Durable)
     const decode = SessionMessageRead.decodeRow
 

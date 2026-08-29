@@ -73,6 +73,33 @@ export const Info = Schema.Struct({
       "Refuse a shell command that reads an image's BYTES (xxd/base64/cat on a PNG), which cannot " +
       "describe the picture, and name the read tool instead (default: true).",
   }),
+  /**
+   * 🔴 **RESUME A RUN THAT A CRASH INTERRUPTED** (owner, 2026-08-29: *"why are crashed runs lost
+   * forever and can't be recovered / restored? Please ensure Nova can auto-restart, and there is an
+   * option for that in Settings"*).
+   *
+   * Measured the same day: a serve carrying three sessions hung, the supervisor restarted it in one
+   * second, the new child recovered all three session ROWS — and not one drain resumed. The work was
+   * lost silently, and a client waiting on it could not tell "still working" from "recovered and
+   * abandoned".
+   *
+   * ⭐ **The policy for this already existed and was simply never acted on.**
+   * `SessionRecoveryDecision.decide` classifies every interrupted execution and sets `automatic` —
+   * false after `FAILURE_LIMIT` consecutive failures (the circuit breaker), false when a tool was
+   * dispatched with an unknown outcome (the side-effect hazard), true otherwise. The stale sweep
+   * stores the verdict as `interrupted` vs `paused`. **Nothing woke the `interrupted` ones.** This
+   * switch turns that verdict into an action; it does not add a policy.
+   *
+   * ⚠️ **So the crash-loop hazard is already bounded, and that is what makes ON safe.** A session
+   * that keeps killing the instance is precisely the one most likely to be interrupted again — and
+   * `FAILURE_LIMIT` pauses it on the third try rather than restarting it forever.
+   */
+  resumeInterrupted: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "After a crash or restart, resume runs that were interrupted mid-turn (default: true). Only runs " +
+      "the recovery policy already judged safe are resumed — one whose tool outcome is unknown, or " +
+      "that has failed repeatedly, stays paused for a human either way.",
+  }),
 })
 export type Info = typeof Info.Type
 
@@ -82,6 +109,7 @@ export interface Resolved {
   readonly set: boolean
   readonly children: boolean
   readonly imageShortcut: boolean
+  readonly resumeInterrupted: boolean
 }
 
 /**
@@ -95,4 +123,5 @@ export const resolve = (info: Info | undefined): Resolved => ({
   set: info?.set ?? true,
   children: info?.children ?? true,
   imageShortcut: info?.imageShortcut ?? true,
+  resumeInterrupted: info?.resumeInterrupted ?? true,
 })

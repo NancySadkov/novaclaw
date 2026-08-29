@@ -13,11 +13,11 @@ describe("resolve", () => {
   // ⭐ THE CRITICAL DIRECTION. An unset block must behave exactly as the harness did before this key
   // existed, or shipping the switch is itself the regression.
   test("an absent block leaves every drive ON", () => {
-    expect(ConfigHarnessDrives.resolve(undefined)).toEqual({ reground: true, set: true, children: true, imageShortcut: true })
+    expect(ConfigHarnessDrives.resolve(undefined)).toEqual({ reground: true, set: true, children: true, imageShortcut: true, resumeInterrupted: true })
   })
 
   test("an empty block leaves every drive ON", () => {
-    expect(ConfigHarnessDrives.resolve({})).toEqual({ reground: true, set: true, children: true, imageShortcut: true })
+    expect(ConfigHarnessDrives.resolve({})).toEqual({ reground: true, set: true, children: true, imageShortcut: true, resumeInterrupted: true })
   })
 
   test("an explicit false survives — it is not read as absent", () => {
@@ -26,6 +26,7 @@ describe("resolve", () => {
       set: true,
       children: true,
       imageShortcut: true,
+      resumeInterrupted: true,
     })
   })
 
@@ -35,6 +36,7 @@ describe("resolve", () => {
       set: true,
       children: true,
       imageShortcut: true,
+      resumeInterrupted: true,
     })
   })
 
@@ -46,17 +48,25 @@ describe("resolve", () => {
       set: true,
       children: false,
       imageShortcut: true,
+      resumeInterrupted: true,
     })
   })
 
   test("all four can be off at once — the fully unaided configuration", () => {
     expect(
-      ConfigHarnessDrives.resolve({ reground: false, set: false, children: false, imageShortcut: false }),
+      ConfigHarnessDrives.resolve({
+        reground: false,
+        set: false,
+        children: false,
+        imageShortcut: false,
+        resumeInterrupted: false,
+      }),
     ).toEqual({
       reground: false,
       set: false,
       children: false,
       imageShortcut: false,
+      resumeInterrupted: false,
     })
   })
 })

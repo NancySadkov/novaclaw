@@ -2257,6 +2257,17 @@ export const EVENTS = {
     content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  "session.interrupted.resumed": {
+    level: "info",
+    message: "resumed runs a crash interrupted",
+    // ⚠️ Two COUNTS and no session id, so the content class is "none" — this is a sweep-level
+    // aggregate over however many sessions the boot recovery found, not a line about one of them.
+    // The ratchet in `core/test/log-events.test.ts` derives the class from the fields and caught
+    // "correlated" here immediately.
+    attributes: { "session.resumed": "count", "session.paused": "count" },
+    content: "none",
+    file: "packages/core/src/session/boot-recovery.ts",
+  },
   "session.finish.children.considered": {
     level: "info",
     message: "fan-out supervisor ran",
