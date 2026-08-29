@@ -766,6 +766,22 @@ export const layer = Layer.effect(
      */
     const setOpened = new Map<string, Set<string>>()
     /**
+     * Every corpus path the session has ATTEMPTED to read, successful or not — per session.
+     *
+     * 🔴 **Separate from `setOpened` because the two answer different questions**, and conflating
+     * them was a defect in both directions. `setOpened` is *what is DONE*: it decides what the steer
+     * may not name, so a read that ERRORED must not be in it — the model demonstrably could not see
+     * that file, and counting it made the drive agree that undone work was finished. This map is
+     * *WHERE the set lives*: it feeds `setDirectory`, and a failed read is perfectly good evidence of
+     * which folder the model is working in.
+     *
+     * ⚠️ Narrowing the single shared list would have re-opened the bug report §11 closed. A turn
+     * whose reads all failed would derive an empty set, `setDirectory` would return `undefined`, and
+     * the drive would fall back to `location.directory` — enumerating the session root, which is how
+     * `set.available: 2` was reported for 40-, 100- and 400-file corpora alike.
+     */
+    const setAttempted = new Map<string, Set<string>>()
+    /**
      * Consecutive steer rounds that opened nothing new, per session.
      *
      * 🔴 The THIRD value in this drive to be found in a drain local, and it failed the same way: every
@@ -2929,7 +2945,7 @@ export const layer = Layer.effect(
               "session.set.asked": askedForSet,
               "session.set.calls": toolCallsSinceLastUser(context).length,
             })
-            const openedThisTurn = askedForSet
+            const readsThisTurn = askedForSet
               ? toolCallsSinceLastUser(context).flatMap((call) => {
                   // ⚠️ `input` is a STRING — `JSON.stringify` of the tool input, or whatever raw text
                   // the model sent. Treating it as an object is why the first version of this check
@@ -2941,13 +2957,23 @@ export const layer = Layer.effect(
                       typeof parsed === "object" && parsed !== null && "path" in parsed
                         ? String((parsed as { readonly path?: unknown }).path ?? "")
                         : ""
-                    return path.length > 0 ? [path] : []
+                    return path.length > 0 ? [{ path, failed: call.failed }] : []
                   } catch {
                     // A malformed argument is not a read we can attribute to a file.
                     return []
                   }
                 })
               : []
+            /**
+             * The reads that SUCCEEDED — what the session has actually seen.
+             *
+             * ⚠️ Both remaining consumers want this rather than every attempt. `describedWithoutOpening`
+             * asks whether the model wrote about a picture it never looked at, and a read that ERRORED
+             * returned no picture; counting it would make an invented description look honest. The
+             * `session.set.opened` log field is read as coverage in the reports, so it must mean the
+             * same thing there.
+             */
+            const openedThisTurn = readsThisTurn.filter((read) => !read.failed).map((read) => read.path)
             // 🔴 Was `openedThisTurn.length > 0`, which meant a turn that listed the folder and
             // opened nothing never even reached `shouldContinue` — measured twice on 2026-08-20,
             // `set.branch` fired and `set.considered` never did. The zero case is the one that most
@@ -2978,9 +3004,16 @@ export const layer = Layer.effect(
               // is derived from them. Compaction cannot take these back: they are what the session
               // has actually done.
               const opened = setOpened.get(input.sessionID) ?? new Set<string>()
+              // 🔴 SUCCESSFUL reads only. A file the model tried and failed to read has not been
+              // seen, and must stay in the set the steer names.
               for (const name of openedThisTurn) opened.add(name)
               setOpened.set(input.sessionID, opened)
-              const setDir = UnfinishedSet.setDirectory([...opened]) ?? location.directory
+              // ⚠️ EVERY read, failed or not — this derives the DIRECTORY, and a failed read still
+              // says where the model is working. See `setAttempted`.
+              const attempted = setAttempted.get(input.sessionID) ?? new Set<string>()
+              for (const read of readsThisTurn) attempted.add(read.path)
+              setAttempted.set(input.sessionID, attempted)
+              const setDir = UnfinishedSet.setDirectory([...attempted]) ?? location.directory
               const listing = yield* Effect.promise(() =>
                 ProjectGrounding.readListing(setDir, UnfinishedSet.MAX_ENUMERATED_SET),
               )

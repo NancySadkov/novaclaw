@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs"
 import { Effect, Layer, Schema, Stream } from "effect"
 import { LLMClient, LLMEvent, Model, type LLMClientShape, type LLMError, type LLMRequest } from "@novaclaw/llm"
 import { runBounded } from "./bounded"
@@ -105,6 +106,18 @@ export interface RunnerScript {
    * first, a marker filter alone leaves the second.
    */
   turns?: ScriptedTurn[]
+  /**
+   * Register a real `read` tool alongside `echo` and `defect`.
+   *
+   * 🔴 **Opt-in, because two suites assert the advertised list VERBATIM** as `["echo", "defect"]`
+   * (`session-runner-turn`, `session-runner-projection`). Registering a third tool unconditionally
+   * would break claims that are about the registry, not about reading files.
+   *
+   * ⚠️ Exists because a drive can only be driven by the tool it watches. `runner/llm.ts` derives the
+   * set from calls named `read`, so a suite with no such tool can only produce FAILING reads — which
+   * happen to count today, and will not once `openedThisTurn` stops ignoring `call.failed`.
+   */
+  withReadTool?: boolean
   /** Events the out-of-band auto-title probe gets. Default: an empty stream, i.e. no title. */
   titleTurns?: LLMEvent[][]
   /** Events the out-of-band post-drain maintenance probes get. Default: an empty stream. */
@@ -499,6 +512,29 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
           output: Schema.Struct({}),
           execute: () => Effect.die("unexpected tool defect"),
         }),
+        // ⚠️ Spread LAST so the two suites asserting `["echo", "defect"]` see exactly that when the
+        // opt-in is off — order is part of what those claims pin.
+        ...(script.withReadTool !== true
+          ? {}
+          : {
+              read: Tool.make({
+                description: "Read a file",
+                input: Schema.Struct({ path: Schema.String }),
+                output: Schema.Struct({ text: Schema.String }),
+                toModelOutput: ({ output }) => [{ type: "text", text: output.text }],
+                // Deliberately thin: this exists so a `read` call can SUCCEED, and a real read is the
+                // only way to distinguish that from one that failed. A missing file fails, which is
+                // exactly the case the set drive's accounting has to tell apart.
+                execute: ({ path: target }) =>
+                  // ⚠️ A `ToolFailure`, not a bare Error. That is what makes the projected part carry
+                  // `status: "error"` — and therefore what makes `call.failed` true for the drives
+                  // that read it. An `Effect.die` or a plain Error is a different outcome entirely.
+                  Effect.try({
+                    try: () => ({ text: readFileSync(target, "utf8") }),
+                    catch: (cause) => new Tool.Failure({ message: `read failed: ${String(cause)}` }),
+                  }),
+              }),
+            }),
       }),
     ),
   )
