@@ -1,7 +1,9 @@
 import { Component, createSignal, onCleanup } from "solid-js"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
+import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
+import { useServerSync } from "@/context/server-sync"
 import { removePersisted } from "@/utils/persist"
 import { HELP_SEEN_KEY } from "@/pages/home-screen/help-tour"
 import { NovaHealthBoard } from "./nova-health"
@@ -53,6 +55,26 @@ const UI_PREF_RAW_KEYS = [
 export const SettingsRecoveryV2: Component = () => {
   const language = useLanguage()
   const platform = usePlatform()
+  const serverSync = useServerSync()
+
+  /**
+   * `harness_drives.resumeInterrupted` — whether a run a crash interrupted is picked back up.
+   *
+   * ⚠️ **Absent means ON**, matching the config resolver. Reading a missing key as "off" here would
+   * show every existing instance a switch in the wrong position, and a user who then toggled it
+   * twice would have turned the feature OFF believing they had left it alone.
+   */
+  const drives = (): { resumeInterrupted?: boolean } =>
+    (serverSync().data.config as { harness_drives?: { resumeInterrupted?: boolean } }).harness_drives ?? {}
+  const resumeOn = () => drives().resumeInterrupted !== false
+
+  async function setResume(value: boolean) {
+    await serverSync()
+      .updateConfig({ harness_drives: { ...drives(), resumeInterrupted: value } } as never)
+      .catch(() => {
+        /* the row reflects the store on the next sync; a failed write simply does not move it */
+      })
+  }
 
   // Two-step confirm for the destructive-ish action: first click arms, second click fires.
   const [armed, setArmed] = createSignal(false)
@@ -83,6 +105,34 @@ export const SettingsRecoveryV2: Component = () => {
 
       <div class="settings-v2-tab-body">
         <NovaHealthBoard />
+
+        {/*
+          ⚠️ BEHAVIOUR before the undo ladder, which follows this tab's own stated order: diagnose,
+          then recover. This switch decides what Nova does WITHOUT being asked, so it belongs above
+          three buttons a worried person might otherwise reach for first.
+        */}
+        <div class="settings-v2-section">
+          <h3 class="settings-v2-section-title">{language.t("settings.recovery.section.afterCrash")}</h3>
+          <SettingsListV2>
+            <SettingsRowV2
+              title={language.t("settings.recovery.row.resumeInterrupted.title")}
+              description={
+                <>
+                  {language.t("settings.recovery.row.resumeInterrupted.description")}
+                  <SettingsExplainV2 label={language.t("settings.recovery.row.resumeInterrupted.title")}>
+                    {language.t("settings.recovery.row.resumeInterrupted.description.more")}
+                  </SettingsExplainV2>
+                </>
+              }
+            >
+              <Switch
+                checked={resumeOn()}
+                onChange={(value) => void setResume(value)}
+                data-action="settings-recovery-resume-interrupted"
+              />
+            </SettingsRowV2>
+          </SettingsListV2>
+        </div>
 
         <div class="settings-v2-section">
           <h3 class="settings-v2-section-title">{language.t("settings.recovery.section.restore")}</h3>

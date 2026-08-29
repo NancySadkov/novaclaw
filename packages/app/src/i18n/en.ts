@@ -1310,6 +1310,17 @@ export const dict = {
   // The heading over the three undo rungs. It exists because this tab now has TWO parts — the health
   // report first, then the ways back — and an unlabelled list under a report would read as more of
   // the report. ENGLISH-ONLY like its neighbours; translate properly or leave it out.
+  // The after-a-crash behaviour switch. Plain language and no jargon: a person opening this tab is
+  // worried, and "resumeInterrupted" / "execution lease" mean nothing to them (principle 12c).
+  "settings.recovery.section.afterCrash": "After a crash",
+  "settings.recovery.row.resumeInterrupted.title": "Pick work back up",
+  "settings.recovery.row.resumeInterrupted.description":
+    "If Nova is interrupted mid-task — a crash, a restart, a power cut — carry on where it left off.",
+  "settings.recovery.row.resumeInterrupted.description.more":
+    "Only work that is safe to repeat is resumed. If Nova was in the middle of something whose outcome it " +
+    "cannot be sure of — a file it may or may not have finished writing — that task waits for you " +
+    "instead, and so does anything that has already failed several times in a row. Turn this off if you would " +
+    "rather decide every restart yourself; nothing is lost either way, it simply waits.",
   "settings.recovery.section.restore": "Ways back",
   "settings.recovery.row.resetUi.title": "Reset appearance and layout",
   "settings.recovery.row.resetUi.description": "Reset how NovaClaw looks and is laid out back to the defaults.",
