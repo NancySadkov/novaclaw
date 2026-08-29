@@ -147,8 +147,9 @@ describe("SystemContextBuiltIns", () => {
 
       expect(refreshed).toMatchObject({ _tag: "Updated" })
       if (refreshed._tag !== "Updated") return
-      expect(refreshed.text).toContain("The environment you are running in is now:")
+      expect(refreshed.text).toContain("The environment you are running in has changed:")
       expect(refreshed.text).toContain("  Memory headroom is low. Use resource_status for live detail.")
+      expect(refreshed.text).not.toContain(`  Platform: ${process.platform}`)
       expect(refreshed.text).not.toContain("Resource pressure: ok")
     }),
   )
@@ -201,7 +202,9 @@ describe("SystemContextBuiltIns", () => {
       const recovered = yield* SystemContext.reconcile(yield* context.load(), broken.snapshot)
       expect(recovered).toMatchObject({ _tag: "Updated" })
       if (recovered._tag !== "Updated") return
-      expect(recovered.text).not.toContain("searxng")
+      expect(recovered.text).toContain(
+        '  No longer applies: MCP server "searxng" is configured but unavailable this session: spawn npx ENOENT.',
+      )
     }),
   )
 
@@ -228,7 +231,7 @@ describe("SystemContextBuiltIns", () => {
       const recovered = yield* SystemContext.reconcile(yield* contexts.load(), broken.snapshot)
       expect(recovered).toMatchObject({ _tag: "Updated" })
       if (recovered._tag !== "Updated") return
-      expect(recovered.text).not.toContain('Capability "memory"')
+      expect(recovered.text).toContain('  No longer applies: Capability "memory" is unavailable:')
       expect(memoryBuilds).toBe(2)
     }),
   )

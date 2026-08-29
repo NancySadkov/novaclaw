@@ -91,9 +91,8 @@ describe("InstructionContext", () => {
           expect(partial).toEqual({
             _tag: "Updated",
             text: [
-              "These instructions replace all previously loaded ambient instructions.",
-              `Instructions from: ${globalFile}\nglobal`,
-              `Instructions from: ${projectFile}\nproject`,
+              "These instructions have changed. Everything not mentioned here is unchanged and still applies.",
+              `No longer loaded: ${packageFile}`,
             ].join("\n\n"),
             snapshot: expect.any(Object),
           })
