@@ -49,3 +49,77 @@ export const estimateFromChars = (chars: number): number => Math.max(0, Math.rou
  * delivers one enormous delta (the reasoning-budget hard stop). Same ratio, one place.
  */
 export const charsFromTokens = (tokens: number): number => Math.max(0, Math.round(tokens * CHARS_PER_TOKEN))
+
+/**
+ * What ONE media part costs, instead of the character length of its base64.
+ *
+ * 🔴 **Measured 2026-08-29 against a live vision model**, two requests differing only by the image:
+ * a 256 px icon costs the provider **66 prompt tokens**, and it is CONSTANT — a 27 KB PNG and a 49 KB
+ * PNG both cost 66, because the model resizes to a fixed tile count. Two images cost exactly 132.
+ * `JSON.stringify` of one such part is 47,000 characters, which {@link estimate} prices at **11,772**:
+ * a 178x over-count, and 250x on a larger file.
+ *
+ * ⚠️ **The estimator had the wrong SHAPE, not merely the wrong scale.** The provider charges per
+ * IMAGE; the character count tracks base64 LENGTH, so the error grew with how badly the PNG
+ * compressed — 139x to 250x across four icons from one corpus. Dividing by a constant would not have
+ * fixed it.
+ *
+ * ⚠️ **1,500 rather than the measured 66, deliberately.** 66 is one model's price for a small icon; a
+ * large photograph tiles into many more. This module's contract is to err SAFE — *"a soft
+ * over-budget, never a hard overflow"* — so it keeps a ~23x margin over the measured icon while
+ * removing an error two orders of magnitude larger.
+ */
+export const MEDIA_PART_TOKENS = 1_500
+
+/**
+ * Does this object carry MEDIA BYTES a provider prices per-item rather than per-character?
+ *
+ * 🔴 **TWO shapes, and missing the second made the first version of this fix INERT for the workload
+ * that motivated it.** A user attachment lowers to `{type:"media", mediaType, data}`; a TOOL RESULT
+ * keeps `{type:"file", mime, uri}`. Every image in an agentic file-reading workload arrives through
+ * the read TOOL, so a rule matching only `media` misses all of them.
+ *
+ * ⚠️ A `file` part is media only when its MIME says so. A text attachment lowered as `file` is
+ * content the model actually reads, and characters ÷ 4 is the right answer for it.
+ */
+const isMediaPart = (item: Record<string, unknown>): boolean => {
+  if (item["type"] === "media") return true
+  if (item["type"] !== "file") return false
+  const mime = item["mime"] ?? item["mediaType"]
+  return (
+    typeof mime === "string" &&
+    (mime.startsWith("image/") || mime.startsWith("audio/") || mime.startsWith("video/") || mime === "application/pdf")
+  )
+}
+
+/**
+ * Approximate the token count of a STRUCTURE — the one answer for every caller that would otherwise
+ * write `estimate(JSON.stringify(value))`.
+ *
+ * 🔴 **Three call sites wrote that line independently** — `session/compaction.ts` (when to compact),
+ * `session/runner/context-pack.ts` (what fits the window) and `session/compaction-prune.ts` (which
+ * tool outputs to ERASE) — and all three inherited the same 178x image error. The pruner's was the
+ * worst: weighing an image at 11,772 reclaimable tokens when erasing it frees 66 makes it destroy the
+ * pictures, which are the one thing the model cannot reconstruct from text, for nothing.
+ *
+ * ⚠️ Both payload fields are dropped: a user attachment carries bytes in `data`, a lowered tool
+ * result in `uri`. Everything else in the part still counts — the mime and the filename are real
+ * prompt content.
+ */
+export const estimateStructured = (value: unknown): number => {
+  let mediaParts = 0
+  let json: string
+  try {
+    json =
+      JSON.stringify(value, (_key, item: unknown) => {
+        if (item !== null && typeof item === "object" && isMediaPart(item as Record<string, unknown>)) {
+          mediaParts++
+          return { ...(item as Record<string, unknown>), data: "", uri: "" }
+        }
+        return item
+      }) ?? ""
+  } catch {
+    return 0
+  }
+  return estimate(json) + mediaParts * MEDIA_PART_TOKENS
+}

@@ -108,80 +108,16 @@ type Input = {
 }
 
 /**
- * What ONE media part costs the threshold, instead of its base64 length.
- *
- * 🔴 **Measured 2026-08-29 against the Spark's own accounting**, two requests differing only by the
- * image part: a 256 px icon costs the provider **66 prompt tokens**, and it is CONSTANT — a 27 KB PNG
- * and a 49 KB PNG both cost 66, because the model resizes to a fixed tile count. Two images cost
- * exactly 132.
- *
- * `JSON.stringify` of the same part is 47,000 characters of base64, which `Token.estimate` prices at
- * **11,772** — a 178x over-count, and 250x for a larger file. The estimator was tracking base64
- * length, a quantity the model never sees, so the error grew with how badly the PNG compressed.
- *
- * ⚠️ **1,500 rather than 66, deliberately.** 66 is this model's price for a small icon; a large
- * photograph tiles into many more. The estimator's contract is to err SAFE (its own header:
- * *"a soft over-budget, never a hard overflow"*), so this keeps a ~23x margin over the measured icon
- * while removing an error two orders of magnitude larger. Under-estimating is also recoverable —
- * `compactAfterOverflow` exists for the case the provider rejects a request outright.
- *
- * ⚠️ **A constant is honest about what is known.** Pricing by decoded dimensions would be closer, but
- * the assembled part carries a `data:` URI, not a decoded bitmap, and inventing a tile count from a
- * compressed byte length would repeat the mistake this replaces.
- */
-const MEDIA_PART_TOKENS = 1_500
-
-/**
  * Token estimate for an assembled request.
  *
- * 🔴 Media parts are counted at {@link MEDIA_PART_TOKENS} each and their `data` excluded, because
- * weighing an image by the character length of its base64 made the harness compact an image session
- * when its images occupied **0.5 % of the model's window** (report §30).
- */
-/**
- * ⚠️ Exported as a SEAM, the same reason `serializeMessage` below is: the media-part rule is the
- * whole point of this function and it cannot be asserted through `compactIfNeeded` without building
- * a model route, a request and a config just to read one number back out of a boolean.
- */
-/**
- * Does this lowered part carry MEDIA BYTES the provider prices per-item rather than per-character?
+ * ⚠️ Exported as a SEAM, the same reason `serializeMessage` below is: the media rule is the whole
+ * point and cannot be asserted through `compactIfNeeded` without building a model route, a request
+ * and a config just to read one number back out of a boolean.
  *
- * 🔴 **TWO shapes, and missing the second made the first fix inert for the workload that motivated
- * it.** A user attachment lowers to `{type:"media", mediaType, data}`; a TOOL RESULT keeps
- * `{type:"file", mime, data}` — `to-llm-message.ts` says so in as many words, and its own budget
- * helper counts both for exactly this reason. Every image in the batch-file programme arrives through
- * the `read` TOOL, so a rule matching only `media` would have left that workload counting base64 by
- * the character.
- *
- * ⚠️ A `file` part is only media when its MIME says so. A text attachment lowered as `file` is
- * content the model actually reads, and chars ÷ 4 is the right answer for it.
+ * 🔴 The media-aware logic lives in `util/token.ts` because THREE call sites needed it and each had
+ * written `estimate(JSON.stringify(value))` independently — see `Token.estimateStructured`.
  */
-const isMediaPart = (item: Record<string, unknown>): boolean => {
-  if (item["type"] === "media") return true
-  if (item["type"] !== "file") return false
-  const mime = item["mime"]
-  return (
-    typeof mime === "string" &&
-    (mime.startsWith("image/") || mime.startsWith("audio/") || mime.startsWith("video/") || mime === "application/pdf")
-  )
-}
-
-export const estimate = (value: unknown) => {
-  let mediaParts = 0
-  const json = JSON.stringify(value, (_key, item: unknown) => {
-    if (item !== null && typeof item === "object" && isMediaPart(item as Record<string, unknown>)) {
-      mediaParts++
-      // 🔴 BOTH payload fields. A user attachment carries its bytes in `data`; a lowered TOOL RESULT
-      // carries them in `uri` as a `data:` URL. Blanking only `data` left the tool-result case
-      // counting its base64 in full — which is every image in the batch-file programme, and the
-      // reason the wiring test below drives the real `toLLMMessages` instead of a hand-built part.
-      // The rest still counts: `mediaType`/`mime` and the filename are real prompt content.
-      return { ...(item as Record<string, unknown>), data: "", uri: "" }
-    }
-    return item
-  })
-  return Token.estimate(json) + mediaParts * MEDIA_PART_TOKENS
-}
+export const estimate = (value: unknown) => Token.estimateStructured(value)
 
 const truncate = (value: string) =>
   value.length <= TOOL_OUTPUT_MAX_CHARS ? value : `${value.slice(0, TOOL_OUTPUT_MAX_CHARS)}\n[truncated]`

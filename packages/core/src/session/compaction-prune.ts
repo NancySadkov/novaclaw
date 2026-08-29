@@ -118,13 +118,15 @@ export const isExempt = (name: string): boolean => EXEMPT_TOOLS.includes(name)
 /** Already pruned — its output is the notice, and the timestamp says who did it. */
 export const isPruned = (tool: SessionMessage.AssistantTool): boolean => tool.time.pruned !== undefined
 
-const estimateJson = (value: unknown): number => {
-  try {
-    return Token.estimate(JSON.stringify(value) ?? "")
-  } catch {
-    return 0
-  }
-}
+/**
+ * 🔴 Media-aware, and this site had the worst version of the bug. The pruner ERASES tool outputs to
+ * reclaim context and weighs candidates by this number. An image looked like 11,772 reclaimable
+ * tokens and is worth 66 — so it destroyed the pictures, the one content the model cannot rebuild
+ * from text, for nothing, and reported a reclaim that never happened.
+ * ⚠️ `PROTECT_TOOL_OUTPUT_TOKENS` and `MIN_RECLAIM_TOKENS` are denominated in THIS unit, so they now
+ * mean what their names say. See `Token.estimateStructured`.
+ */
+const estimateJson = (value: unknown): number => Token.estimateStructured(value)
 
 /**
  * What a completed tool part costs the model, mirroring `runner/to-llm-message.ts`'s `toolResult`:
