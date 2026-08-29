@@ -464,6 +464,23 @@ describe("per-request image budget", () => {
     return json.split('"type":"file"').length - 1 + (json.split('"type":"media"').length - 1)
   }
 
+  /**
+   * 🔴 THE WIRING, not the function. Removing the cap from the eviction site left every direct test
+   * of `budgetedImageNotice` GREEN — they call it with a number I hand them, which proves nothing
+   * about whether the real path supplies one. This drives `toLLMMessages` with a real over-budget
+   * history and asserts the number reaches the model.
+   */
+  test("the eviction path SUPPLIES the cap — the notice a real over-budget turn produces names it", () => {
+    const lowered = JSON.stringify(toLLMMessages(sweep(6), model, VISION, 1))
+    expect(lowered).toContain("ONE image at a time")
+    expect(lowered).not.toContain("a limited number of images")
+  })
+
+  test("and it supplies a larger cap correctly, not just the one-image case", () => {
+    const lowered = JSON.stringify(toLLMMessages(sweep(6), model, VISION, 3))
+    expect(lowered).toContain("only 3 images at a time")
+  })
+
   test("keeps the NEWEST images and degrades the rest — the session survives image N+1", () => {
     const lowered = JSON.stringify(toLLMMessages(sweep(6), model, VISION, 3))
     expect(lowered.split('"type":"file"').length - 1).toBe(3)
@@ -653,5 +670,50 @@ describe("per-request image budget", () => {
     expect(lowered).toContain(noticeFor("a.png"))
     expect(lowered).toContain(noticeFor("b.png"))
     expect(lowered).not.toContain(noticeFor("c.png"))
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// 🔴 THE CAP, STATED AS A NUMBER — and why a vague plural cost fourteen minutes.
+//
+// Measured live 2026-08-29 against a 400-image corpus. The notice said "only a limited number of
+// images at once", and the model did what a careful reader does with a quantity it needs but is not
+// given: it MEASURED it. Read 20, saw only #20. Read 3, saw only #3. Concluded "only the most recent
+// image is retained. This means one image per turn", and re-planned to one read plus one append per
+// turn — the correct strategy, reached by experiment, at a cost of ~19 wasted image reads.
+//
+// The cap was in scope at the eviction site the whole time. These tests pin that it reaches the model.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("budgetedImageNotice states the cap", () => {
+  test("a cap of ONE names the batch size the model would otherwise derive", () => {
+    const notice = budgetedImageNotice("icon_001.png", undefined, undefined, 1)
+    expect(notice).toContain("ONE image at a time")
+    expect(notice).toContain("Open ONE image per turn")
+    // ⚠️ The vague wording must be GONE, not merely supplemented — it is what invited the experiment.
+    expect(notice).not.toContain("a limited number")
+  })
+
+  test("a larger cap names that number, and the batch size that follows from it", () => {
+    const notice = budgetedImageNotice("icon_001.png", undefined, undefined, 4)
+    expect(notice).toContain("only 4 images at a time")
+    expect(notice).toContain("at most 4 per turn")
+  })
+
+  // ⚠️ THE FALLBACK MUST SURVIVE. This notice is also produced where the cap is not known, and
+  // inventing a number there would be worse than being vague — the model would plan against a lie.
+  test("no cap keeps the original wording rather than guessing one", () => {
+    for (const absent of [undefined, 0, -1]) {
+      const notice = budgetedImageNotice("icon_001.png", undefined, undefined, absent)
+      expect(notice).toContain("a limited number of images")
+      expect(notice).not.toContain("at a time, so only the")
+    }
+  })
+
+  // The described-image branch is a different sentence and must carry the cap too — it is the branch
+  // a model hits when it DID speak after opening, which is the commoner case in a slow batch.
+  test("the described-image branch states the cap as well", () => {
+    const notice = budgetedImageNotice("icon_001.png", undefined, "a golden droplet", 1)
+    expect(notice).toContain("ONE image at a time")
+    expect(notice).toContain("a golden droplet")
   })
 })
