@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import { windowsSigning } from "./scripts/windows-signing"
+import { dhtArtifactRequired } from "./scripts/dht-packaging"
 import type { Configuration } from "electron-builder"
 
 const channels = [
@@ -81,6 +82,10 @@ test("🔴 ships the DHT sidecar, which the desktop package did not carry at all
    * ⚠️ `build/`, not `target/release/`: cargo's scratch tree is hundreds of megabytes.
    */
   expect(config.extraResources).toContainEqual({ from: "../dht/build/", to: "dht/" })
+  expect(typeof config.beforePack).toBe("function")
+  expect(dhtArtifactRequired("dev")).toBe(false)
+  expect(dhtArtifactRequired("beta")).toBe(true)
+  expect(dhtArtifactRequired("prod")).toBe(true)
 })
 
 /**

@@ -661,7 +661,7 @@ export const SettingsGeneralV2: Component<{
         <Show when={desktop()}>
           <SettingsRowV2
             title={language.t("settings.updates.row.check.title")}
-            description={language.t("settings.updates.row.check.description")}
+            description={language.t(updater.refusal() ?? "settings.updates.row.check.description")}
           >
             <ButtonV2 size="normal" variant="neutral" disabled={!updater.action().run} onClick={updater.run}>
               {language.t(updater.action().label)}
@@ -701,7 +701,7 @@ export const SettingsGeneralV2: Component<{
 
             ⚠️ WHAT DELIBERATELY STAYED, so the rule is not read as "move anything that shows a
             fact": Project and Policies are NOT status boards. Both carry real controls — Project
-            writes `novaclaw.json` (rules, the never-read list, the .gitignore import) and Policies
+            writes `novaclaw.json` (rules, the excluded-path list, the .gitignore import) and Policies
             is the other agent's live surface — and their fact rows are the context those controls
             need. A control with an explanation is a setting; an explanation with no control is a
             finding. Storage stays where it is for the same reason it always did: it has an unload
@@ -750,7 +750,10 @@ export const SettingsGeneralV2: Component<{
             "what boxes the agent in", but "what ELSE is deciding what it may do here". A folder's
             `novaclaw.json` can narrow this session's permissions, and until this section existed the
             only way to discover that was to be refused and go looking for the file. */}
-        <SettingsProjectSection />
+        <SettingsProjectSection
+          shellStatus={bundle.latest}
+          onOpenConfinement={props.onOpenTab ? () => props.onOpenTab?.("recovery") : undefined}
+        />
 
         {/* And directly after Project, because it is the THIRD answer to the same question those two
             raise — not "what boxes the agent in" or "what does this folder narrow", but "what looks

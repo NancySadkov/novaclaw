@@ -4,6 +4,13 @@ import { usePlatform } from "@/context/platform"
 import { useLanguage } from "@/context/language"
 import { showToast } from "@/utils/toast"
 
+export function updaterRefusal(state: UpdaterState | undefined) {
+  if (state?.status !== "blocked") return
+  return state.reason === "airgap"
+    ? ("settings.updates.refusal.airgap" as const)
+    : ("settings.updates.refusal.policyUnavailable" as const)
+}
+
 export function updaterAction(state: UpdaterState | undefined) {
   if (!state) return { label: "settings.updates.action.checkNow" as const }
   switch (state.status) {
@@ -17,6 +24,9 @@ export function updaterAction(state: UpdaterState | undefined) {
       return { label: "settings.updates.action.installing" as const }
     case "disabled":
       return { label: "settings.updates.action.checkNow" as const }
+    case "blocked":
+      // Keep retry available: turning offline mode off must not require restarting the desktop.
+      return { label: "settings.updates.action.checkNow" as const, run: "check" as const }
     default:
       return { label: "settings.updates.action.checkNow" as const, run: "check" as const }
   }
@@ -46,6 +56,11 @@ export function useUpdaterAction() {
       if (state?.status === "error") {
         showToast({ title: language.t("common.requestFailed"), description: state.message })
       }
+      const refusal = updaterRefusal(state)
+      if (refusal) {
+        showToast({ title: language.t("settings.updates.toast.blocked.title"), description: language.t(refusal) })
+      }
     },
+    refusal: createMemo(() => updaterRefusal(platform.updater?.state())),
   }
 }

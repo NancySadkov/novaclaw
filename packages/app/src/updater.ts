@@ -7,6 +7,7 @@ export type UpdaterState =
   | { status: "downloading"; version: string; percent?: number }
   | { status: "ready"; version: string }
   | { status: "up-to-date" }
+  | { status: "blocked"; reason: "airgap" | "policy-unavailable" }
   | { status: "installing"; version: string }
   | { status: "error"; message: string }
 

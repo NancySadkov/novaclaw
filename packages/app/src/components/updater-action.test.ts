@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { updaterAction } from "./updater-action"
+import { updaterAction, updaterRefusal } from "./updater-action"
 
 describe("updaterAction", () => {
   test("disables update actions when the platform has no updater", () => {
@@ -22,5 +22,17 @@ describe("updaterAction", () => {
     expect(updaterAction({ status: "installing", version: "2.0.0" })).toEqual({
       label: "settings.updates.action.installing",
     })
+    expect(updaterAction({ status: "blocked", reason: "airgap" })).toEqual({
+      label: "settings.updates.action.checkNow",
+      run: "check",
+    })
+  })
+
+  test("projects updater refusals into truthful copy", () => {
+    expect(updaterRefusal({ status: "blocked", reason: "airgap" })).toBe("settings.updates.refusal.airgap")
+    expect(updaterRefusal({ status: "blocked", reason: "policy-unavailable" })).toBe(
+      "settings.updates.refusal.policyUnavailable",
+    )
+    expect(updaterRefusal({ status: "idle" })).toBeUndefined()
   })
 })

@@ -1,12 +1,17 @@
 import { MainLogger } from "electron-log"
 import log from "electron-log/main.js"
 import { app, crashReporter, netLog, shell } from "electron"
-import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
-import { ZipWriter, BlobWriter, BlobReader } from "@zip.js/zip.js"
+import { mkdirSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { tmpdir } from "node:os"
 import { describeLogDirectory, resolveLogDirectory, type LogDirectory } from "./log-directory"
-import { collectRecentFiles, type DebugExportEntry } from "./debug-export"
+import {
+  collectRecentFiles,
+  DEFAULT_DEBUG_EXPORT_LIMITS,
+  serverDiagnosticEntry,
+  writeDebugZip,
+  type DebugExportEntry,
+} from "./debug-export"
 
 const MAX_LOG_AGE_DAYS = 7
 const TAIL_LINES = 1000
@@ -79,24 +84,50 @@ export async function startNetLog() {
   write("network", "net log started", { path: netLogPath })
 }
 
-export async function exportDebugLogs(serverLogDirectory?: string) {
+export async function exportDebugLogs(serverDiagnostics?: string) {
   const restartNetLog = netLog.currentlyLogging
   if (restartNetLog) {
     await netLog.stopLogging().catch((error) => write("network", "failed to stop net log", { error }))
   }
 
   const output = join(app.getPath("downloads"), `novaclaw-debug-${stamp()}.zip`)
+  const controller = new AbortController()
+  const deadlineAt = Date.now() + DEFAULT_DEBUG_EXPORT_LIMITS.timeoutMs
+  const timer = setTimeout(
+    () => controller.abort(new DOMException("Diagnostic export timed out", "TimeoutError")),
+    DEFAULT_DEBUG_EXPORT_LIMITS.timeoutMs,
+  )
   try {
     write("main", "exporting debug logs", { output })
-    await writeZip(output, [
-      { name: "manifest.json", data: Buffer.from(JSON.stringify(manifest(serverLogDirectory), null, 2)) },
-      ...collectRecentFiles(root, "desktop", EXPORT_WINDOW),
-      ...(serverLogDirectory ? collectRecentFiles(serverLogDirectory, "server", EXPORT_WINDOW) : []),
-      ...collectRecentFiles(app.getPath("crashDumps"), "crashpad", EXPORT_WINDOW),
-    ])
+    const budget = {
+      maxFiles: DEFAULT_DEBUG_EXPORT_LIMITS.maxFiles,
+      maxFileBytes: DEFAULT_DEBUG_EXPORT_LIMITS.maxFileBytes,
+      maxTotalBytes: DEFAULT_DEBUG_EXPORT_LIMITS.maxTotalBytes,
+      maxDepth: DEFAULT_DEBUG_EXPORT_LIMITS.maxDepth,
+      deadlineAt,
+      signal: controller.signal,
+    }
+    const desktop = await collectRecentFiles(root, "desktop", EXPORT_WINDOW, budget)
+    const remaining = {
+      ...budget,
+      maxFiles: budget.maxFiles - desktop.entries.length,
+      maxTotalBytes: budget.maxTotalBytes - desktop.bytes,
+    }
+    const crashpad = await collectRecentFiles(app.getPath("crashDumps"), "crashpad", EXPORT_WINDOW, remaining)
+    const entries: DebugExportEntry[] = [
+      {
+        name: "manifest.json",
+        data: JSON.stringify(manifest(serverDiagnostics, { desktop: desktop.omitted, crashpad: crashpad.omitted }), null, 2),
+      },
+      ...(serverDiagnostics ? [serverDiagnosticEntry(serverDiagnostics)] : []),
+      ...desktop.entries,
+      ...crashpad.entries,
+    ]
+    await writeDebugZip(output, entries, { signal: controller.signal, deadlineAt })
     shell.showItemInFolder(output)
     return output
   } finally {
+    clearTimeout(timer)
     if (restartNetLog) {
       await startNetLog().catch((error) => write("network", "failed to restart net log", { error }))
     }
@@ -186,7 +217,13 @@ function cleanup() {
   }
 }
 
-function manifest(serverLogDirectory?: string) {
+function manifest(
+  serverDiagnostics: string | undefined,
+  omitted: {
+    desktop: { symlinks: number; races: number; budget: number }
+    crashpad: { symlinks: number; races: number; budget: number }
+  },
+) {
   return {
     generated: new Date().toISOString(),
     version: app.getVersion(),
@@ -200,19 +237,10 @@ function manifest(serverLogDirectory?: string) {
     logs: root,
     currentRun: run,
     crashDumps: app.getPath("crashDumps"),
-    serverLog: serverLogDirectory,
+    serverLog: serverDiagnostics ? { included: true, bytes: Buffer.byteLength(serverDiagnostics) } : { included: false },
+    omitted,
     netLog: netLogPath,
   }
-}
-
-async function writeZip(output: string, entries: DebugExportEntry[]) {
-  const writer = new ZipWriter(new BlobWriter("application/zip"))
-  for (const entry of entries) {
-    const data = entry.data ?? readFileSync(entry.path!)
-    await writer.add(entry.name, new BlobReader(new Blob([new Uint8Array(data)])))
-  }
-  const zip = await writer.close()
-  writeFileSync(output, Buffer.from(await zip.arrayBuffer()))
 }
 
 function initConsoleTransport() {

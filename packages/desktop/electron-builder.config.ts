@@ -6,6 +6,7 @@ import { promisify } from "node:util"
 import type { Configuration } from "electron-builder"
 
 import { resolveChannel } from "@novaclaw/script/channel"
+import { verifyStagedDht } from "./scripts/dht-packaging"
 import { windowsSigning } from "./scripts/windows-signing"
 
 const execFileAsync = promisify(execFile)
@@ -64,6 +65,12 @@ async function signWindows(configuration: { path: string }) {
 // install location and the channel picks the DB filename, so the two halves of one build disagreed.
 const channel = resolveChannel()
 
+async function verifyDhtBeforePack() {
+  const result = await verifyStagedDht({ channel, appRoot: rootDir })
+  if (result === "absent")
+    console.warn("DEVELOPMENT ONLY: packaging without the DHT sidecar; beta/prod builds refuse this degradation.")
+}
+
 const APP_IDS = {
   dev: "app.novaclaw.desktop.dev",
   beta: "app.novaclaw.desktop.beta",
@@ -74,6 +81,10 @@ const APP_IDS = {
 const PACMAN_DEPENDS = ["gtk3", "libnotify", "nss", "libxss", "libxtst", "xdg-utils", "at-spi2-core", "libsecret"]
 
 const getBase = (appId: string): Configuration => ({
+  // `prebuild` normally creates this artifact. The hook is a second, independent boundary for a
+  // direct electron-builder invocation: a release cannot copy absence, an old source identity, a
+  // wrong target, or a binary that no longer speaks the protocol beside the current TypeScript.
+  beforePack: verifyDhtBeforePack,
   artifactName: "novaclaw-desktop-${os}-${arch}.${ext}",
   directories: {
     output: "dist",

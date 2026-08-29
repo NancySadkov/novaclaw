@@ -39,10 +39,10 @@ import { ProjectFileCache } from "./project-file-cache"
  *
  * ## READ eligibility, not a write policy
  *
- * The item says **model read eligibility** and the UI says **Never read**, so that is exactly what
+ * The item says **model read eligibility** and the UI says **Excluded paths**, so that is exactly what
  * this refuses: operations that would put the file's bytes in front of the model. A pure write
  * (`write`, `write-hex`, `trash`, a bash redirect target) passes `readsContent: false` and is NOT
- * refused — *"Nova may create this file but never read it"* is a coherent stance and the one the
+ * refused — *"Nova may create this file but its dedicated tools may not read it"* is a coherent stance and the one the
  * user asked for. `edit` and `apply_patch` READ before they write, so they take the default and are
  * refused.
  *
@@ -341,12 +341,12 @@ export class ExcludedError extends Schema.TaggedErrorClass<ExcludedError>()("Pro
 
 export function refusal(resource: string, pattern: string, file: string) {
   return (
-    `Refused by a project exclusion: \`${resource}\` is on this project's "Never read" list, so nothing was read. ` +
+    `Refused by a project exclusion: \`${resource}\` is on this project's Excluded paths list, so this operation did not read it. ` +
     `The rule is the pattern \`${pattern}\` in the \`exclude\` section of \`${toPosix(file)}\`. ` +
     `This is a deliberate privacy choice by the person who owns this folder, not a missing file and not a fault — ` +
-    `re-reading it, spelling the path differently, or reaching it through another tool will be refused the same way. ` +
+    `dedicated file and search tools enforce the same path list. ` +
     `Work with what you can see, and if this file is genuinely needed say so in your reply: the user can remove the ` +
-    `pattern in Settings → Project → Never read, or edit that \`exclude\` list directly.`
+    `pattern in Settings → Project → Excluded paths, or edit that \`exclude\` list directly.`
   )
 }
 

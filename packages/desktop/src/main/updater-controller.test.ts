@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import { createUpdaterController, type UpdaterBackend, type UpdaterReadyRecord } from "./updater-controller"
 
-function setup(input?: { currentVersion?: string; ready?: UpdaterReadyRecord }) {
+function setup(input?: {
+  currentVersion?: string
+  ready?: UpdaterReadyRecord
+  networkPolicy?: () => Promise<{ allowed: true } | { allowed: false; reason: "airgap" | "policy-unavailable" }>
+}) {
   const calls: string[] = []
   const backend: UpdaterBackend = {
     async checkForUpdates() {
@@ -29,6 +33,7 @@ function setup(input?: { currentVersion?: string; ready?: UpdaterReadyRecord }) 
         ready = undefined
       },
     },
+    networkPolicy: input?.networkPolicy ?? (async () => ({ allowed: true })),
     stop: async () => {
       calls.push("stop")
     },
@@ -76,6 +81,51 @@ describe("updater controller", () => {
     expect(app.calls).toEqual(["check", "download"])
   })
 
+  test("automatic startup refuses explicit airgap before check or download", async () => {
+    const app = setup({ networkPolicy: async () => ({ allowed: false, reason: "airgap" }) })
+
+    await app.controller.start()
+
+    expect(app.calls).toEqual([])
+    expect(app.controller.getState()).toEqual({ status: "blocked", reason: "airgap" })
+  })
+
+  test("manual checks refuse unknown policy before check or download", async () => {
+    const app = setup({ networkPolicy: async () => ({ allowed: false, reason: "policy-unavailable" }) })
+
+    await app.controller.check()
+
+    expect(app.calls).toEqual([])
+    expect(app.controller.getState()).toEqual({ status: "blocked", reason: "policy-unavailable" })
+  })
+
+  test("re-evaluates policy on every attempt so a refused check can recover", async () => {
+    let allowed = false
+    const app = setup({
+      networkPolicy: async () => (allowed ? { allowed: true } : { allowed: false, reason: "airgap" }),
+    })
+
+    await app.controller.check()
+    allowed = true
+    await app.controller.check()
+
+    expect(app.calls).toEqual(["check", "download"])
+    expect(app.controller.getState()).toEqual({ status: "ready", version: "2.0.0" })
+  })
+
+  test("re-checks the gate before download when policy changes during the update check", async () => {
+    let policyRead = 0
+    const app = setup({
+      networkPolicy: async () =>
+        ++policyRead === 1 ? { allowed: true } : { allowed: false, reason: "airgap" },
+    })
+
+    await app.controller.check()
+
+    expect(app.calls).toEqual(["check"])
+    expect(app.controller.getState()).toEqual({ status: "blocked", reason: "airgap" })
+  })
+
   test("returns to ready when quitAndInstall returns without exiting", async () => {
     const app = setup()
     await app.controller.start()
@@ -99,6 +149,7 @@ describe("updater controller", () => {
         quitAndInstall() {},
       },
       persistence: { get: () => undefined, set() {}, clear() {} },
+      networkPolicy: async () => ({ allowed: true }),
       stop: async () => {
         throw new Error("stop failed")
       },

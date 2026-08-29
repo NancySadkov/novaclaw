@@ -133,11 +133,6 @@ const LEDGER: readonly Entry[] = [
     why: "decides whether this build carries an updater manifest; the answer selects a code path, not a sentence.",
   },
   {
-    file: "desktop/src/main/debug-export.ts",
-    kind: "fallback",
-    why: "skips a log directory that is not there when assembling an export; an omission is a smaller bundle.",
-  },
-  {
     file: "desktop/src/main/wsl/runtime.ts",
     kind: "fallback",
     why: "resolves a command to an absolute path, falling back to the bare command name.",

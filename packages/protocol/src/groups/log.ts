@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
 import { InvalidRequestError } from "../errors"
 
 /**
@@ -180,6 +180,19 @@ export const LogGroup = HttpApiGroup.make("server.log")
           "server-side. The instance's own log directory is the only source; there is no path " +
           "parameter. The response carries the rendered text and nothing structured, so there is " +
           "exactly one renderer of a log line in the product.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("log.export", "/api/log/export", {
+      success: HttpApiSchema.StreamUint8Array({ contentType: "text/plain; charset=utf-8" }),
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.log.export",
+        summary: "Stream bounded diagnostics from this instance",
+        description:
+          "Streams this instance's own recent activity log through the maintenance-plane projection. " +
+          "The source is fixed server-side; the request accepts no filesystem path.",
       }),
     ),
   )

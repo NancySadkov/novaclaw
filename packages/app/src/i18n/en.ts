@@ -1537,17 +1537,22 @@ export const dict = {
   "settings.project.rulesLabel": "Permission rules",
   "settings.project.rulesValue": "From this folder. They can only narrow your settings, never widen them.",
   "settings.project.fileDetail": "The file that makes this folder a Project.",
-  // 576 characters inline until 2026-08-20 — the longest string in the product. The visible line is
-  // the FACT (refused, and said out loud); the why, the distinction from build-ignores, and the
-  // hardlink caveat are on demand. The caveat is kept word for word: principle 13 requires this
-  // surface to promise no more than the mechanism delivers.
-  "settings.project.excludeDetail": "Nova refuses to open these, and says so rather than pretending they are missing.",
+  // The visible line distinguishes the two mechanisms: dedicated file/search tools resolve paths
+  // and enforce this list; raw shell sees only tokens and therefore cannot make the same promise.
+  // The instance-reported confinement posture selects one of these three sentences.
+  "settings.project.excludeDetail.sandboxed":
+    "File and search tools block these paths; raw shell screening is only best effort, though Safe mode can sandbox it on this instance.",
+  "settings.project.excludeDetail.unavailable":
+    "File and search tools block these paths; raw shell screening is only best effort, with no working sandbox reported on this instance.",
+  "settings.project.excludeDetail.unknown":
+    "File and search tools block these paths; raw shell screening is only best effort, and this instance's sandbox status is unknown.",
   "settings.project.excludeDetail.more":
-    "Two reasons to use it: privacy — keys, credentials and personal files stay out of the model — and focus, since skipping bulky folders leaves more room in Nova's context and makes searches quicker. This is separate from what the file watcher and your build ignore; those are about speed, this is about permission. It matches on paths, so a file that is also reachable under a second name it does not list can still be opened; for a folder you do not trust, use a sandbox rather than this list.",
+    "Dedicated file and search tools enforce this path list. Raw shell screening checks direct path tokens only: it cannot see paths assembled with variables, globs, subshells, or find -exec, and hardlinks can give a file another name. Only an operating-system sandbox is a hard boundary. Turn on Safe mode in a chat's Tuning controls; it sandboxes shell commands where a backend is available and refuses them otherwise. Health & recovery shows what this instance can enforce.",
   "settings.project.rulesNone": "None — this file changes no permissions",
   "settings.project.excludeNone":
-    "Nothing — Nova may read any file in this folder. Add an `exclude` list to novaclaw.json to keep keys, credentials or bulky folders out of its reach.",
-  "settings.project.excludeLabel": "Never read",
+    "No paths are excluded from file and search tools; add patterns here when those tools should skip keys, credentials, personal files, or bulky folders.",
+  "settings.project.excludeLabel": "Excluded paths",
+  "settings.project.excludeSandboxAction": "Sandbox status",
   "settings.project.invalid": "The novaclaw.json in {{directory}} could not be used",
   "settings.project.invalidFuture":
     "It was written by a newer NovaClaw. Update NovaClaw to use it — the file itself is probably fine.",
@@ -1616,7 +1621,7 @@ export const dict = {
   "policies.folder.edit.narrowing":
     "A folder can only ever ADD a check. Nothing written here can stop a check this NovaClaw installed from running — that switch is yours, above.",
   "policies.folder.edit.elsewhere":
-    "The file governing this folder is {{file}}, which lives in a folder above it. Saving here would create a second file that takes over from it completely — its Tune, its permissions and its never-read list along with this — so the list is read-only here. Edit {{file}} instead.",
+    "The file governing this folder is {{file}}, which lives in a folder above it. Saving here would create a second file that takes over from it completely — its Tune, its permissions and its excluded-path list along with this — so the list is read-only here. Edit {{file}} instead.",
   "policies.folder.edit.empty": "This folder asks for nothing, so it runs whatever is installed and switched on.",
   "policies.folder.edit.remove": "Remove",
   "policies.folder.edit.add": "Ask for it",
@@ -1723,7 +1728,7 @@ export const dict = {
   "settings.permissions.project.receipt.updated": "Updated {{file}}",
   "settings.permissions.project.receipt.cleared": "The permissions section was removed.",
   // 🔴 NAMES the sections rather than saying "permissions", and the fix came from running it. One
-  // receipt is shared by every control that writes this file — permissions, the never-read list, the
+  // receipt is shared by every control that writes this file — permissions, the excluded-path list, the
   // .gitignore import and now the folder's checks — so a sentence naming ONE section told three of
   // them a falsehood about their own write ("Only the permissions section changed", after saving a
   // list of checks). Principle 12's own generalising lesson, one layer in: change the COPY with the
@@ -1740,12 +1745,12 @@ export const dict = {
   "settings.permissions.project.receipt.untouched": "Your file is exactly as you left it.",
   "settings.permissions.project.receipt.failed": "Could not save: {{detail}}",
 
-  // ── Settings → Project → editing the "Never read" list ──────────────────────────────────────
+  // ── Settings → Project → editing the excluded-path list ─────────────────────────────────────
   //
   // ⚠️ Removal exists as well as adding, on purpose. An import-only control is a one-way door: a
   // person who imported a .gitignore and found Nova unable to read something it should could only fix
   // it by hand-editing JSON, which is the c64-poke this product refuses (principle 12).
-  "settings.project.exclude.editTitle": "Edit what Nova must never read",
+  "settings.project.exclude.editTitle": "Edit paths excluded from file and search tools",
   "settings.project.exclude.editDescription":
     "One pattern per line, the same way .gitignore reads: a bare name matches anywhere (secrets), a slash anchors it to this folder (/build), a trailing slash means folders only (logs/), and a leading ! puts something back in reach. The last line that matches wins.",
   "settings.project.exclude.addPattern": "A file, folder or pattern",
@@ -1753,17 +1758,17 @@ export const dict = {
   "settings.project.exclude.remove": "Remove",
   "settings.project.exclude.preview": "Will be written: {{list}}",
   "settings.project.exclude.previewClear":
-    "Will be written: nothing — the exclude list is removed from the file, so Nova may read any file here again. Everything else in the file stays.",
+    "Will be written: nothing — the exclude list is removed, so file and search tools may read these paths again. Everything else in the file stays.",
   "settings.project.exclude.save": "Save the list",
   "settings.project.exclude.saving": "Saving…",
 
-  // ── Settings → Project → importing a .gitignore into the "Never read" list ───────────────────
+  // ── Settings → Project → importing a .gitignore into the excluded-path list ──────────────────
   //
   // 🔴 `todo/projects.md`: read eligibility stays DISTINCT from watcher/build ignores. The copy has
   // to say that out loud, because the two lists look interchangeable and are not.
   "settings.project.exclude.import.title": "Start from .gitignore",
   "settings.project.exclude.import.distinct":
-    "A .gitignore says what should not be committed. This list says what Nova must never open. They overlap — a .env belongs on both — but they are not the same: build output is fine to read, and a secret that IS committed will not be in .gitignore at all. So this copies nothing on its own; look at the list and decide.",
+    "A .gitignore says what should not be committed. This list tells Nova's file and search tools what to skip. They overlap — a .env belongs on both — but they are not the same: build output is fine to read, and a secret that IS committed will not be in .gitignore at all. So this copies nothing on its own; look at the list and decide.",
   "settings.project.exclude.import.noFile": "There is no .gitignore next to this project's novaclaw.json.",
   "settings.project.exclude.import.nothingNew":
     "Everything in {{file}} is already on this list ({{count}} patterns). Nothing to add.",
@@ -1772,9 +1777,9 @@ export const dict = {
   "settings.project.exclude.import.dropped": "Skipped, because NovaClaw cannot read them the way git does: {{list}}",
   "settings.project.exclude.import.reincludes":
     "Careful — these lines put files BACK in reach, and they are added at the end, so they win over anything above them: {{list}}",
-  "settings.project.exclude.import.action": "Add these to Never read",
+  "settings.project.exclude.import.action": "Add to Excluded paths",
   "settings.project.exclude.import.saving": "Adding…",
-  "settings.project.exclude.import.done": "Added {{count}} to Never read in {{file}}",
+  "settings.project.exclude.import.done": "Added {{count}} to Excluded paths in {{file}}",
 
   // ⚠️ `settings.confinement.section` ("Confinement") was DELETED on 2026-08-19, not orphaned: these
   // rows moved into the Nova Health report (owner: *"Confinement shouldn't really be a user
@@ -1887,6 +1892,11 @@ export const dict = {
   "settings.updates.action.installing": "Installing...",
   "settings.updates.toast.latest.title": "You're up to date",
   "settings.updates.toast.latest.description": "You're running the latest version of NovaClaw.",
+  "settings.updates.toast.blocked.title": "Update check blocked",
+  "settings.updates.refusal.airgap":
+    "Offline / airgap mode is on, so NovaClaw did not contact the update service.",
+  "settings.updates.refusal.policyUnavailable":
+    "NovaClaw could not confirm that offline / airgap mode is off, so it kept the update service blocked.",
   "sound.option.none": "None",
   "sound.option.alert01": "Alert 01",
   "sound.option.alert02": "Alert 02",
@@ -3115,7 +3125,7 @@ export const dict = {
   "skills.invocation.project.write.creates": "There is no novaclaw.json here yet. Saving creates one in this folder.",
   "skills.invocation.project.write.updates": "Saving edits {{file}}.",
   "skills.invocation.project.write.shadowed":
-    "This folder is governed by {{file}}, which sits above it. Writing a novaclaw.json here would take that whole file out of force — its permission rules, its Tune and its “Never read” list — so this switch is not offered here.",
+    "This folder is governed by {{file}}, which sits above it. Writing a novaclaw.json here would take that whole file out of force — its permission rules, its Tune and its excluded-path list — so this switch is not offered here.",
   "skills.invocation.project.write.invalid":
     "This folder's novaclaw.json ({{file}}) cannot be read, so nothing can be saved into it. Settings → Project says what is wrong with it.",
   "skills.invocation.project.write.unknown": "NovaClaw has not been told which folder this is yet.",

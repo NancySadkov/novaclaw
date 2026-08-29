@@ -19038,6 +19038,35 @@ export type V2LogReadResponses = {
 
 export type V2LogReadResponse = V2LogReadResponses[keyof V2LogReadResponses]
 
+export type V2LogExportData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/log/export"
+}
+
+export type V2LogExportErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2LogExportError = V2LogExportErrors[keyof V2LogExportErrors]
+
+export type V2LogExportResponses = {
+  /**
+   * Success
+   */
+  200: Blob | File
+}
+
+export type V2LogExportResponse = V2LogExportResponses[keyof V2LogExportResponses]
+
 export type V2TelemetryStatusData = {
   body?: never
   path?: never

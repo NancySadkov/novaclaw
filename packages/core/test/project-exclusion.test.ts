@@ -29,7 +29,7 @@ import { executeTool, toolIdentity } from "./lib/tool"
  * `novaclaw.json` = `{"version":1,"exclude":["secret.txt"]}` beside a `secret.txt`,
  * `LocationMutation.resolve({path:"secret.txt"})` returned a target and
  * `ReadToolFileSystem.read` returned `"SUPER SECRET"` — the exact scenario the Settings page
- * described as *"Never read"*. `exclude` was declared in the schema, displayed in the UI, and
+ * described as *"Excluded paths"*. `exclude` was declared in the schema, displayed in the UI, and
  * consulted by nothing.
  *
  * 🔴 **These tests are written to FAIL when the enforcement is removed, not to describe it.** The
@@ -462,7 +462,7 @@ describe("project exclusions — the refusal is legible", () => {
         expect(message.toLowerCase()).not.toContain("not found")
         expect(message.toLowerCase()).not.toContain("no such file")
         // It has to tell the reader the way out, or the agent retries forever.
-        expect(message).toContain("Never read")
+        expect(message).toContain("Excluded paths")
       }).pipe(provide(directory)),
     ),
   )

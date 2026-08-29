@@ -231,12 +231,14 @@ describe("the copy this surface renders", () => {
     }
   })
 
-  test("🔴 the exclusion import copy states that a .gitignore is not a never-read list", () => {
+  test("🔴 the exclusion import copy distinguishes a .gitignore from dedicated-tool exclusions", () => {
     // `todo/projects.md` requires read eligibility stay distinct from watcher/build ignores, and the
     // only place a user meets that distinction is this sentence. A rewrite that drops it turns a
     // confirmed suggestion back into "these look the same, click yes".
     const text = (en as unknown as Record<string, string>)["settings.project.exclude.import.distinct"]!
     expect(text).toContain(".gitignore")
     expect(text.toLowerCase()).toContain("committed")
+    expect(text).toContain("file and search tools")
+    expect(text.toLowerCase()).not.toContain("never")
   })
 })

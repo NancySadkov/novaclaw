@@ -131,7 +131,7 @@ const api: ElectronAPI = {
   },
   setTitlebar: (theme) => ipcRenderer.invoke("set-titlebar", theme),
   setBackgroundColor: (color: string) => ipcRenderer.invoke("set-background-color", color),
-  exportDebugLogs: (serverLogDirectory) => ipcRenderer.invoke("export-debug-logs", serverLogDirectory),
+  exportDebugLogs: (serverDiagnostics) => ipcRenderer.invoke("export-debug-logs", serverDiagnostics),
   recordFatalRendererError: (error) => ipcRenderer.invoke("record-fatal-renderer-error", error),
   // `send`, not `invoke`: nothing in the renderer should ever await its own instrumentation.
   markBootPhase: (phase) => ipcRenderer.send("mark-boot-phase", phase),

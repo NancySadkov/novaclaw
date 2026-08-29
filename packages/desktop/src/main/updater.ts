@@ -1,6 +1,7 @@
 import { app, dialog } from "electron"
 import pkg from "electron-updater"
 import { UPDATER_ENABLED } from "./constants"
+import type { UpdaterNetworkPolicy } from "./updater-airgap"
 import { createUpdaterController, type UpdaterReadyRecord } from "./updater-controller"
 import { getLogger } from "./logging"
 import { getStore } from "./store"
@@ -8,7 +9,7 @@ import { getStore } from "./store"
 const { autoUpdater } = pkg
 const key = "ready"
 
-export function setupAutoUpdater(stop: () => Promise<void>) {
+export function setupAutoUpdater(stop: () => Promise<void>, networkPolicy: () => Promise<UpdaterNetworkPolicy>) {
   const logger = getLogger()
   autoUpdater.logger = logger
   autoUpdater.channel = "latest"
@@ -37,6 +38,7 @@ export function setupAutoUpdater(stop: () => Promise<void>) {
       set: (value) => store.set(key, value),
       clear: () => store.delete(key),
     },
+    networkPolicy,
     stop,
     log: (message, data) => logger.log(message, data),
   })
@@ -44,6 +46,18 @@ export function setupAutoUpdater(stop: () => Promise<void>) {
 
 export async function showUpdaterDialog(controller: ReturnType<typeof setupAutoUpdater>, alertOnFail: boolean) {
   const state = await controller.check()
+  if (state.status === "blocked") {
+    if (!alertOnFail) return
+    await dialog.showMessageBox({
+      type: "info",
+      title: "Update Check Blocked",
+      message:
+        state.reason === "airgap"
+          ? "Offline / airgap mode is on, so NovaClaw did not contact the update service."
+          : "NovaClaw could not confirm that offline / airgap mode is off, so it kept the update service blocked.",
+    })
+    return
+  }
   if (state.status === "error") {
     if (!alertOnFail) return
     await dialog.showMessageBox({ type: "error", message: "Update check failed.", title: "Update Error" })

@@ -111,6 +111,16 @@ describe("offline layer manifest (N/9 indicator)", () => {
     expect(manifest.layers[8]!.name).toMatch(/process egress/i)
     expect(manifest.layers[8]!.active).toBe(true)
   })
+
+  test("the updater layer names the controller gate that consumes this manifest", () => {
+    const enabled = layerManifest({ enabled: true, allowedHosts: new Set() }).layers[5]!
+    const disabled = layerManifest(disabledPolicy).layers[5]!
+
+    expect(enabled).toMatchObject({ layer: 6, name: "auto-update", active: true })
+    expect(enabled.detail).toMatch(/updater controller refuses check\/download/i)
+    expect(disabled).toMatchObject({ layer: 6, name: "auto-update", active: false })
+    expect(disabled.detail).toMatch(/updater controller permits checks/i)
+  })
 })
 
 describe("checkUrl", () => {

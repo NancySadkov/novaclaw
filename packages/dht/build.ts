@@ -1,50 +1,141 @@
 #!/usr/bin/env bun
 /**
- * Build the DHT sidecar.
+ * Build and publish the DHT sidecar.
  *
- * ⚠️ **A missing cargo toolchain is NOT a failure.** The app must build on a machine that has never
- * heard of Rust, and an instance without this binary simply finds no peers through the DHT — which
- * the seam already treats as ordinary. Failing the build here would make a convenience into a
- * dependency, which is the shape the whole design refuses.
- *
- * 🔴 But it must SAY SO, loudly, on stdout. `packages/host`'s build records the reason in as many
- * words: the alternative is a release whose file watching is silently dead while every test on the
- * machine that built it was green. A release with no sidecar is silently undiscoverable in exactly
- * the same way, and the person who needs to know is the one running the build.
+ * Release mode is the default and is strict. `--development` is the one explicit degradation: it
+ * may finish without a sidecar when Rust is unavailable, but it still clears old staging first so
+ * a failed build can never borrow an executable from an earlier checkout.
  */
 import { existsSync } from "node:fs"
+import { chmod, copyFile, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises"
 import path from "node:path"
+import { fileURLToPath } from "node:url"
 
-const root = path.dirname(Bun.fileURLToPath(import.meta.url))
-const exe = process.platform === "win32" ? "novaclaw-dht.exe" : "novaclaw-dht"
-const built = path.join(root, "target", "release", exe)
+import {
+  DHT_ARTIFACT_SCHEMA,
+  dhtExecutableName,
+  expectedDhtIdentity,
+  probeDhtExecutable,
+  type DhtArtifactIdentity,
+  type DhtArtifactManifest,
+} from "./protocol"
+
+interface CargoResult {
+  readonly success: boolean
+  readonly exitCode: number | null
+}
+
+export interface DhtBuildOptions {
+  readonly root?: string
+  readonly development: boolean
+  readonly cargo?: string | null
+  readonly productVersion?: string
+  readonly runCargo?: (input: {
+    readonly cargo: string
+    readonly root: string
+    readonly env: NodeJS.ProcessEnv
+  }) => CargoResult
+  readonly verify?: (executable: string, expected: DhtArtifactIdentity) => void
+}
+
+export type DhtBuildResult = { readonly status: "published"; readonly path: string } | { readonly status: "absent" }
+
+const DEFAULT_ROOT = path.dirname(fileURLToPath(import.meta.url))
+
+function defaultCargoRunner(input: { cargo: string; root: string; env: NodeJS.ProcessEnv }): CargoResult {
+  return Bun.spawnSync([input.cargo, "build", "--release"], {
+    cwd: input.root,
+    env: input.env,
+    stdout: "inherit",
+    stderr: "inherit",
+  })
+}
+
+function absentOrThrow(development: boolean, message: string): DhtBuildResult {
+  if (!development) throw new Error(message)
+  console.warn(`DEVELOPMENT ONLY: ${message}`)
+  console.warn("The dev package will omit public DHT discovery; beta/prod builds refuse this degradation.")
+  return { status: "absent" }
+}
+
 /**
- * 🔴 A clean directory holding ONLY the binary, mirroring `packages/host/build/`.
+ * Clear, build, authenticate, then atomically publish one sidecar directory.
  *
- * Packaging copies a directory, and `target/release/` is a cargo scratch tree — hundreds of
- * megabytes of intermediate objects beside the 9 MB we want. Copying the tree would bloat the
- * installer; naming the file in two places would let them drift. So the build publishes its one
- * artifact here and every consumer reads THIS.
+ * The destination and Cargo's final executable are removed before Cargo runs. That order is the
+ * stale-artifact boundary: neither Cargo failure nor a missing toolchain can leave something that
+ * electron-builder mistakes for this build's output.
  */
-const shipped = path.join(root, "build", exe)
+export async function buildDht(options: DhtBuildOptions): Promise<DhtBuildResult> {
+  const root = options.root ?? DEFAULT_ROOT
+  const executableName = dhtExecutableName()
+  const built = path.join(root, "target", "release", executableName)
+  const shippedDirectory = path.join(root, "build")
+  const temporaryDirectory = path.join(root, "target", `.novaclaw-dht-package-${process.pid}-${Date.now()}`)
 
-const cargo = Bun.which("cargo")
-if (cargo === null) {
+  await rm(shippedDirectory, { recursive: true, force: true })
+  await rm(temporaryDirectory, { recursive: true, force: true })
+  await rm(built, { force: true })
+
+  const cargo = options.cargo === undefined ? Bun.which("cargo") : options.cargo
+  if (cargo === null)
+    return absentOrThrow(
+      options.development,
+      "the DHT sidecar requires Cargo, but Cargo is not on PATH; refusing to create a release without it.",
+    )
+
+  const expected = await expectedDhtIdentity(root, options.productVersion)
+  const runCargo = options.runCargo ?? defaultCargoRunner
+  const result = runCargo({
+    cargo,
+    root,
+    env: {
+      ...process.env,
+      NOVACLAW_DHT_PROTOCOL_VERSION: expected.protocol,
+      NOVACLAW_DHT_PRODUCT_VERSION: expected.version,
+      NOVACLAW_DHT_SOURCE_ID: expected.source,
+    },
+  })
+  if (!result.success || !existsSync(built))
+    return absentOrThrow(
+      options.development,
+      `the DHT sidecar failed to build (Cargo exit ${String(result.exitCode)}); no artifact was staged.`,
+    )
+
+  const verify = options.verify ?? probeDhtExecutable
+  verify(built, expected)
+
+  try {
+    await mkdir(temporaryDirectory, { recursive: true })
+    const temporaryExecutable = path.join(temporaryDirectory, executableName)
+    await copyFile(built, temporaryExecutable)
+    if (process.platform !== "win32") await chmod(temporaryExecutable, (await stat(built)).mode)
+    const manifest: DhtArtifactManifest = {
+      schema: DHT_ARTIFACT_SCHEMA,
+      executable: executableName,
+      ...expected,
+    }
+    await writeFile(path.join(temporaryDirectory, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8")
+
+    // Read the files back before publication. This catches a truncated/corrupt temporary write while
+    // the public staging path is still absent.
+    if ((await readFile(temporaryExecutable)).byteLength === 0) throw new Error("the built DHT executable is empty")
+    JSON.parse(await readFile(path.join(temporaryDirectory, "manifest.json"), "utf8"))
+    await rename(temporaryDirectory, shippedDirectory)
+  } catch (error) {
+    await rm(temporaryDirectory, { recursive: true, force: true })
+    throw error
+  }
+
+  const shipped = path.join(shippedDirectory, executableName)
   console.log(
-    "SKIPPED: the DHT sidecar needs cargo, which is not on PATH.\n" +
-      "         NovaClaw builds and runs without it — discovery falls back to the LAN, peer exchange\n" +
-      "         and addresses the user types. Install Rust to build it: https://rustup.rs",
+    `built ${path.relative(process.cwd(), shipped)} (${((await stat(shipped)).size / 1048576).toFixed(1)} MB)`,
   )
-  process.exit(0)
+  return { status: "published", path: shipped }
 }
 
-const result = Bun.spawnSync([cargo, "build", "--release"], { cwd: root, stdout: "inherit", stderr: "inherit" })
-if (!result.success || !existsSync(built)) {
-  // ⚠️ Still not fatal, and still named. A build that fails here leaves the same hole as one that was
-  // skipped, and the difference matters to whoever has to fix it.
-  console.log(`WARNING: the DHT sidecar did not build (exit ${result.exitCode}). Discovery will not use the DHT.`)
-  process.exit(0)
+if (import.meta.main) {
+  const allowed = new Set(["--development"])
+  const unknown = process.argv.slice(2).filter((arg) => !allowed.has(arg))
+  if (unknown.length > 0) throw new Error(`unknown DHT build argument(s): ${unknown.join(", ")}`)
+  await buildDht({ development: process.argv.includes("--development") })
 }
-
-await Bun.write(shipped, Bun.file(built))
-console.log(`built ${path.relative(process.cwd(), shipped)} (${(Bun.file(shipped).size / 1048576).toFixed(1)} MB)`)

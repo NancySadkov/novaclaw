@@ -749,7 +749,7 @@ test("keeps locked deferred parity TODOs visible", async () => {
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // `novaclaw.json` exclusions — the one tool that does not name its target.
 //
-// Every other file tool hands a PATH to `LocationMutation.resolve`, which is where the "Never read"
+// Every other file tool hands a PATH to `LocationMutation.resolve`, which is where Excluded paths
 // list is enforced, so they inherit the refusal. `bash` hands over a COMMAND, and `cat .env` reaches
 // an excluded file with no path resolved anywhere — the whole enforcement would be decorative if
 // the model could simply pick the tool that does not check. `tool/bash.ts` therefore screens the
@@ -782,6 +782,25 @@ describe("BashTool — project exclusions", () => {
       const result = yield* withProject(["*.env"], "cat prod.env")
       expect(JSON.stringify(result)).toContain("project exclusion")
       expect(runs).toEqual([])
+    }),
+  )
+
+  it.live("documents the expansion forms the token screen cannot resolve before the shell runs", () =>
+    Effect.gen(function* () {
+      const expansions = [
+        ["variable", 'p=prod.env; cat "$p"'],
+        ["glob", "cat *.env"],
+        ["subshell", 'cat "$(printf prod.env)"'],
+        ["find -exec", "find . -type f -exec cat {} \\;"],
+      ] as const
+
+      for (const [kind, command] of expansions) {
+        const result = yield* withProject(["prod.env"], command)
+        expect(JSON.stringify(result), `${kind} was unexpectedly represented as a resolved path`).not.toContain(
+          "project exclusion",
+        )
+        expect(runs, `${kind} did not reach the shell`).toHaveLength(1)
+      }
     }),
   )
 

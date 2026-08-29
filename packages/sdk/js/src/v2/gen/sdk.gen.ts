@@ -7207,6 +7207,18 @@ class ApiV2Log extends NovaClawApiClient {
       headers: { "Content-Type": "application/json", ...options?.headers },
     })
   }
+
+  /**
+   * Stream bounded diagnostics from this instance
+   *
+   * Streams this instance's own recent activity log through the maintenance-plane projection. The source is fixed server-side; the request accepts no filesystem path.
+   */
+  public export<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).post<T.V2LogExportResponses, T.V2LogExportErrors, ThrowOnError>({
+      url: "/api/log/export",
+      ...options,
+    })
+  }
 }
 
 class ApiV2Telemetry extends NovaClawApiClient {

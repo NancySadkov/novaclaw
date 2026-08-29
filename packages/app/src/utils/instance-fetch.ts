@@ -94,6 +94,13 @@ export class InstanceFetchError extends Error {
   }
 }
 
+/**
+ * The bare CALL SIGNATURE of `fetch`, not `typeof globalThis.fetch` itself. Runtimes decorate their
+ * `fetch` with static properties (Bun's `preconnect`, for example), and a plain test or platform
+ * adapter must not have to imitate those unrelated properties to make an HTTP call.
+ */
+export type InstanceSend = (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+
 export interface InstanceRequest {
   /** Defaults to `GET`, the only method used by more than half the call sites. */
   readonly method?: string
@@ -117,7 +124,7 @@ export interface InstanceRequest {
    * (Electron/WSL). That divergence predates this module and is preserved here rather than
    * silently changed — see the note in `instance-fetch.test.ts`.
    */
-  readonly fetch?: typeof globalThis.fetch
+  readonly fetch?: InstanceSend
   /**
    * Name the fault with a domain-specific subclass. The DECODING stays here (one answer); only the
    * class is the caller's, so `messenger-api.ts` can keep throwing a `MessengerApiError` that three
@@ -131,14 +138,6 @@ export interface InstanceRequest {
  * `message` is never truncated — that one is meant to be read.
  */
 const FAULT_TEXT_LIMIT = 500
-
-/**
- * The bare CALL SIGNATURE of `fetch`, not `typeof globalThis.fetch` itself. Runtimes decorate their
- * `fetch` with static properties (bun and recent Node both do), and a plain arrow function is not
- * assignable to a type that carries them — while the decorated `fetch` IS assignable to this. Using
- * the signature makes the default and the injected override interchangeable in both directions.
- */
-type Send = (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
 
 function requestAbort(request: InstanceRequest) {
   if (request.timeoutMs === undefined) return { signal: request.signal, clear: () => undefined }
@@ -243,18 +242,26 @@ export function decodeFault(input: { method: string; route: string; status: numb
 }
 
 /**
- * One instance call: base URL, auth, JSON body, JSON answer, decoded fault.
+ * One instance call with a caller-owned successful-response reader. This is the stream-capable
+ * form of the seam: the authentication, routing, timeout and non-2xx rules stay identical while a
+ * caller such as diagnostics export can consume a bounded stream instead of forcing JSON.
+ *
+ * The reader runs before the timeout is cleared, so `timeoutMs` covers the complete response body.
  *
  * ⚠️ `globalThis.fetch` is invoked through a wrapper rather than hoisted into a local. A detached
  * `const send = globalThis.fetch` throws `Illegal invocation` in Chromium (the packaged desktop
  * app's renderer) because `fetch` needs its global `this`; it happens to work under Bun and Node,
  * so a test suite would never see it.
  */
-export async function instanceFetch<T>(server: ServerConnection.HttpBase, request: InstanceRequest): Promise<T> {
+export async function instanceFetchResponse<T>(
+  server: ServerConnection.HttpBase,
+  request: InstanceRequest,
+  read: (response: Response) => Promise<T>,
+): Promise<T> {
   const method = request.method ?? "GET"
   const via = request.directoryVia ?? "query"
   const routed = request.directory !== undefined
-  const send: Send = request.fetch ?? ((...args) => globalThis.fetch(...args))
+  const send: InstanceSend = request.fetch ?? ((...args) => globalThis.fetch(...args))
   const abort = requestAbort(request)
 
   const url = instanceUrl(server, request.route, {
@@ -298,6 +305,16 @@ export async function instanceFetch<T>(server: ServerConnection.HttpBase, reques
       throw request.fault ? request.fault(fault) : new InstanceFetchError(fault)
     }
 
+    return await read(res)
+  } finally {
+    abort.clear()
+  }
+}
+
+/** One instance call: base URL, auth, JSON body, JSON answer, decoded fault. */
+export async function instanceFetch<T>(server: ServerConnection.HttpBase, request: InstanceRequest): Promise<T> {
+  const method = request.method ?? "GET"
+  return instanceFetchResponse(server, request, async (res) => {
     // 204/205 are DECLARED no-content by every void-returning route in the spec, so an absent body
     // there is the answer, not a fault.
     if (res.status === 204 || res.status === 205) return undefined as T
@@ -327,9 +344,7 @@ export async function instanceFetch<T>(server: ServerConnection.HttpBase, reques
         text,
       })
     }
-  } finally {
-    abort.clear()
-  }
+  })
 }
 
 /**

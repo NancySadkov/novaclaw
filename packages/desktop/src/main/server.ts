@@ -6,6 +6,7 @@ import { getLogger } from "./logging"
 import { getUserShell, loadShellEnv } from "./shell-env"
 import { getStore } from "./store"
 import { DEFAULT_SERVER_URL_KEY } from "./store-keys"
+import { updaterAirgapFromManifest } from "./updater-airgap"
 import {
   initialSuperviseState,
   livenessDecision,
@@ -455,11 +456,15 @@ export async function superviseLocalServer(
   }
 }
 
-// Dependability P6: is the machine airgapped? Asks the sidecar's offline-status route (the same
-// source the N/9 Settings indicator reads — never re-derive the policy here). Used to force the
-// updater's polling OFF on an airgapped machine; false on any failure (a dead sidecar must not
-// block updates for a machine that is actually online).
-export async function checkOfflineEnabled(url: string, password: string, directory: string): Promise<boolean> {
+// Is the updater's named airgap layer active? Asks the sidecar's offline-status route and reads
+// layer 6 rather than re-deriving policy in Electron. `undefined` means the answer is unavailable:
+// the controller treats that as a refusal, because a dead or older sidecar is not proof of consent
+// to contact the update host.
+export async function checkUpdaterAirgap(
+  url: string,
+  password: string,
+  directory: string,
+): Promise<boolean | undefined> {
   try {
     const target = new URL("/shell/offline", url)
     target.searchParams.set("directory", directory)
@@ -468,11 +473,10 @@ export async function checkOfflineEnabled(url: string, password: string, directo
       headers: { authorization: `Basic ${auth}` },
       signal: AbortSignal.timeout(3000),
     })
-    if (!res.ok) return false
-    const status = (await res.json()) as { enabled?: boolean }
-    return status.enabled === true
+    if (!res.ok) return undefined
+    return updaterAirgapFromManifest(await res.json())
   } catch {
-    return false
+    return undefined
   }
 }
 

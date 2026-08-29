@@ -1,4 +1,5 @@
 import { For, Show, Switch, Match, createMemo, createResource, type Component, type JSX } from "solid-js"
+import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
@@ -10,6 +11,8 @@ import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import { SettingsExplainV2 } from "./explain"
 import { projectSectionCopy } from "./project-copy"
+import { projectExclusionCopy } from "./project-exclusion-copy"
+import type { ShellStatusWithJail } from "./confinement-state"
 import { ProjectExcludeSection, ProjectGitignoreImport, ProjectPermissionsSection } from "./project-permissions-section"
 
 /**
@@ -43,7 +46,12 @@ const Value: Component<{ children: JSX.Element }> = (props) => (
   <span class="text-[13px] text-v2-text-text-muted">{props.children}</span>
 )
 
-export const SettingsProjectSection: Component = () => {
+export const SettingsProjectSection: Component<{
+  /** The instance's own posture, already fetched by General for its shell control. */
+  readonly shellStatus?: ShellStatusWithJail
+  /** Opens the health report at the confinement rows; absent outside the Settings dialog. */
+  readonly onOpenConfinement?: () => void
+}> = (props) => {
   const language = useLanguage()
   const server = useServer()
   const global = useGlobal()
@@ -123,6 +131,13 @@ export const SettingsProjectSection: Component = () => {
   const copy = createMemo(() =>
     projectSectionCopy({ state: state(), directory: directory(), home: home(), t: language.t }),
   )
+  const exclusionCopy = createMemo(() =>
+    projectExclusionCopy({
+      count: project()?.exclude.length ?? 0,
+      shellStatus: props.shellStatus,
+      t: language.t,
+    }),
+  )
 
   return (
     <Show when={state()}>
@@ -186,28 +201,30 @@ export const SettingsProjectSection: Component = () => {
                       <Value>{String(info().permissionRules)}</Value>
                     </SettingsRowV2>
                     {/* Shown even when the list is EMPTY, like the permission-rules row above it.
-                        A capability that only appears once you already use it teaches nobody it
-                        exists (AGENTS.md principle 12d — say what is in force right now), and this
-                        row is now the only place the product explains that "Never read" is
-                        enforced rather than advisory. */}
+                        The visible sentence distinguishes the dedicated path tools' enforcement
+                        from raw shell's best-effort screen, and derives the sandbox clause from the
+                        instance's own posture rather than the renderer's machine. */}
                     <SettingsRowV2
                       title={language.t("settings.project.excludeLabel")}
                       description={
-                        info().exclude.length === 0 ? (
-                          language.t("settings.project.excludeNone")
-                        ) : (
-                          <>
-                            {language.t("settings.project.excludeDetail")}
-                            <SettingsExplainV2 label={language.t("settings.project.excludeLabel")}>
-                              {language.t("settings.project.excludeDetail.more")}
-                            </SettingsExplainV2>
-                          </>
-                        )
+                        <>
+                          {exclusionCopy()}
+                          <SettingsExplainV2 label={language.t("settings.project.excludeLabel")}>
+                            {language.t("settings.project.excludeDetail.more")}
+                          </SettingsExplainV2>
+                        </>
                       }
                     >
-                      <Value>
-                        <For each={info().exclude}>{(pattern) => <div>{pattern}</div>}</For>
-                      </Value>
+                      <div class="flex flex-col items-end gap-2">
+                        <Value>
+                          <For each={info().exclude}>{(pattern) => <div>{pattern}</div>}</For>
+                        </Value>
+                        <Show when={props.onOpenConfinement}>
+                          <ButtonV2 size="normal" variant="neutral" onClick={() => props.onOpenConfinement?.()}>
+                            {language.t("settings.project.excludeSandboxAction")}
+                          </ButtonV2>
+                        </Show>
+                      </div>
                     </SettingsRowV2>
                   </>
                 )}

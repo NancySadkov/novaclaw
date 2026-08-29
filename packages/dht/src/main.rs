@@ -12,6 +12,7 @@
 //! convenience; the LAN and a typed doorman address are the guarantees.
 //!
 //! Protocol — one JSON object per line in, one per line out. Every request gets exactly one reply.
+//!   → {"op":"version"}                      ← {"protocol":"novaclaw-dht-jsonl/1",…}
 //!   → {"op":"status"}                       ← {"table":152,"mode":"client"}
 //!   → {"op":"announce","addr":"1.2.3.4:4096"} ← {"announced":true}
 //!   → {"op":"withdraw"}                     ← {"announced":false}
@@ -40,6 +41,22 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 /// secret schedule from nothing. The version gives a protocol change somewhere to move without
 /// stranding old instances silently: they keep meeting each other in the old room.
 const ROOM: &str = "novaclaw/community/1";
+
+/// Build identity supplied by `build.ts`. Direct `cargo test` remains useful without the packaging
+/// environment, but no packaged artifact may contain these development fallbacks: both the pre-pack
+/// guard and the artifact smoke compare every field against the current source tree.
+const BUILD_PROTOCOL: &str = match option_env!("NOVACLAW_DHT_PROTOCOL_VERSION") {
+    Some(value) => value,
+    None => "development",
+};
+const BUILD_VERSION: &str = match option_env!("NOVACLAW_DHT_PRODUCT_VERSION") {
+    Some(value) => value,
+    None => "development",
+};
+const BUILD_SOURCE: &str = match option_env!("NOVACLAW_DHT_SOURCE_ID") {
+    Some(value) => value,
+    None => "development",
+};
 
 /// The env var a parent process uses to REPLACE the compiled list, space or comma separated.
 ///
@@ -114,6 +131,7 @@ struct Behaviour {
 #[derive(Deserialize)]
 #[serde(tag = "op", rename_all = "lowercase")]
 enum Request {
+    Version,
     Find,
     Announce { addr: String },
     Withdraw,
@@ -130,6 +148,16 @@ struct Reply {
     table: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    protocol: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    platform: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    arch: Option<String>,
 }
 
 /// The room's DHT key: the **multihash** of [`ROOM`], not its bare digest.
@@ -248,6 +276,14 @@ async fn main() -> Result<()> {
                 Ok(None) | Err(_) => break,
                 Ok(Some(text)) => {
                     let reply = match serde_json::from_str::<Request>(&text) {
+                        Ok(Request::Version) => Reply {
+                            protocol: Some(BUILD_PROTOCOL.to_string()),
+                            version: Some(BUILD_VERSION.to_string()),
+                            source: Some(BUILD_SOURCE.to_string()),
+                            platform: Some(std::env::consts::OS.to_string()),
+                            arch: Some(std::env::consts::ARCH.to_string()),
+                            ..Default::default()
+                        },
                         Ok(Request::Status) => Reply {
                             table: Some(swarm.behaviour_mut().kad.kbuckets().map(|b| b.num_entries()).sum()),
                             mode: Some(format!("{:?}", swarm.behaviour().kad.mode()).to_lowercase()),
@@ -534,6 +570,15 @@ mod tests {
         assert!(http_multiaddr("host:not-a-port").is_none());
         assert!(http_multiaddr("").is_none());
         assert!(http_multiaddr("host:99999").is_none());
+    }
+
+    #[test]
+    fn build_identity_has_an_explicit_development_fallback() {
+        assert!(!BUILD_PROTOCOL.is_empty());
+        assert!(!BUILD_VERSION.is_empty());
+        assert!(!BUILD_SOURCE.is_empty());
+        assert!(!std::env::consts::OS.is_empty());
+        assert!(!std::env::consts::ARCH.is_empty());
     }
 
     /// The room key is derived, not configured — every instance computes the same one without

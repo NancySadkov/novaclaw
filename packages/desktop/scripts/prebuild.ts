@@ -6,6 +6,7 @@ import { sweepStrayServers } from "../../../script/lib/stray-servers"
 import { resolveChannel } from "./utils"
 import { prepareW64devkit } from "./prepare-w64devkit"
 import { prepareImageMagick } from "./prepare-imagemagick"
+import { dhtBuildArguments } from "./dht-packaging"
 
 // The guard has to bite from BOTH sides. prebuild is the first lifecycle step of every desktop build,
 // so refusing here stops a build from piling onto a suite already running. The desktop floor is
@@ -79,12 +80,10 @@ await $`bun ./scripts/copy-metainfo.ts ${channel}`
  * (review 1.7). Discovery fell back to the LAN and typed addresses for every desktop user, which
  * looks exactly like a public DHT with nobody in it.
  *
- * ⚠️ Not fatal, exactly like the host module: most machines have no cargo toolchain, and an
- * instance without the sidecar is a documented degradation. The build says so on stdout.
+ * 🔴 Missing is tolerated only for the explicit development channel. A beta/prod package without
+ * public discovery is an incomplete product, so `build.ts` is strict there and this call is not
+ * wrapped in a catch. The builder itself verifies the resulting staged executable again.
  */
-await $`bun ../dht/build.ts`.catch((error) => {
-  console.warn(`WARNING: could not build the DHT sidecar — this package will discover by LAN and typed addresses only.`)
-  console.warn(error?.stderr?.toString().trim() || error)
-})
+await $`bun ../dht/build.ts ${dhtBuildArguments(channel)}`
 
 await $`cd ../novaclaw && bun script/build-node.ts`

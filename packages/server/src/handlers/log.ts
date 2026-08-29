@@ -3,7 +3,7 @@ import { LogTool } from "@novaclaw/core/tool/log"
 import { InvalidRequestError } from "@novaclaw/protocol/errors"
 import { MAX_FILTER_CHARS } from "@novaclaw/protocol/groups/log"
 import { SUBSYSTEMS, type Subsystem } from "@novaclaw/schema/log-events"
-import { Effect } from "effect"
+import { Effect, Stream } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { LogApi, handlerLayer } from "../handler-api"
 
@@ -38,6 +38,28 @@ import { LogApi, handlerLayer } from "../handler-api"
 export const LOG_UNKNOWN_SUBSYSTEM_KIND = "log-unknown-subsystem"
 export const LOG_BAD_DURATION_KIND = "log-bad-duration"
 export const LOG_FILTER_TOO_LONG_KIND = "log-filter-too-long"
+
+const DIAGNOSTIC_CHUNK_BYTES = 64 * 1024
+
+/**
+ * The sendable projection used by the diagnostic export. It deliberately delegates the scan,
+ * line ceiling and class-table redaction to the same reader as the Debug panel.
+ */
+export function diagnosticArchive(source: LogTool.Source) {
+  const result = read({ plane: "maintenance", since: "1d", limit: LogTool.MAX_LIMIT }, source)
+  const bytes = new TextEncoder().encode(
+    [
+      "# NovaClaw instance diagnostics",
+      "# projection=maintenance source=instance-log window=1d",
+      `# lines=${result.lines} scanned=${result.scanned} truncated=${result.truncated}`,
+      result.text,
+    ].join("\n"),
+  )
+  const chunks: Uint8Array[] = []
+  for (let offset = 0; offset < bytes.length; offset += DIAGNOSTIC_CHUNK_BYTES)
+    chunks.push(bytes.subarray(offset, offset + DIAGNOSTIC_CHUNK_BYTES))
+  return Stream.fromIterable(chunks)
+}
 
 const subsystemNames = () => Object.keys(SUBSYSTEMS).sort().join(", ")
 
@@ -145,17 +167,19 @@ export function read(
 
 export const LogHandler = handlerLayer(
   HttpApiBuilder.group(LogApi, "server.log", (handlers) =>
-    handlers.handle(
-      "log.read",
-      Effect.fn(function* (ctx) {
-        const refusal = refuse(ctx.payload)
-        if (refusal !== undefined) return yield* refusal
-        // 🔴 **The source is DERIVED, never received.** `instanceSource()` reads `Global.Path.log`, and
-        // the request carries no field that could name another directory. Reusing the tool's own
-        // accessor rather than rebuilding the path keeps one answer to *"where does this instance's log
-        // live"* — the same reason §0.6 says to ask `GET /instance` instead of guessing it.
-        return read(ctx.payload, LogTool.instanceSource())
-      }),
-    ),
+    handlers
+      .handle(
+        "log.read",
+        Effect.fn(function* (ctx) {
+          const refusal = refuse(ctx.payload)
+          if (refusal !== undefined) return yield* refusal
+          // 🔴 **The source is DERIVED, never received.** `instanceSource()` reads `Global.Path.log`, and
+          // the request carries no field that could name another directory. Reusing the tool's own
+          // accessor rather than rebuilding the path keeps one answer to *"where does this instance's log
+          // live"*.
+          return read(ctx.payload, LogTool.instanceSource())
+        }),
+      )
+      .handle("log.export", () => Effect.succeed(diagnosticArchive(LogTool.instanceSource()))),
   ),
 )

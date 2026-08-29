@@ -8,12 +8,13 @@ import { LogTool } from "@novaclaw/core/tool/log"
 import { LogReadRequest, LogReadResult, MAX_FILTER_CHARS } from "@novaclaw/protocol/groups/log"
 import { EVENTS, SUBSYSTEMS } from "@novaclaw/schema/log-events"
 import { Log } from "@novaclaw/schema/log"
-import { Effect, Logger, References } from "effect"
+import { Effect, Logger, References, Stream } from "effect"
 import {
   LOG_BAD_DURATION_KIND,
   LOG_FILTER_TOO_LONG_KIND,
   LOG_UNKNOWN_SUBSYSTEM_KIND,
   clampLimit,
+  diagnosticArchive,
   read,
   refuse,
 } from "./log"
@@ -114,6 +115,19 @@ describe("refusal 1 — the source is derived, and the wire cannot name another 
     // passes `LogTool.instanceSource()` and the payload has nothing that reaches this seam.
     expect(LogTool.instanceSource().name).toBe("novaclaw")
     expect(typeof LogTool.instanceSource().directory).toBe("string")
+  })
+})
+
+describe("diagnostic export", () => {
+  test("streams only the bounded maintenance projection from the injected instance source", async () => {
+    const source = fixtureSource([fixtureLine()])
+    const chunks = await Effect.runPromise(diagnosticArchive(source).pipe(Stream.runCollect))
+    const text = new TextDecoder().decode(Buffer.concat(Array.from(chunks, (chunk) => Buffer.from(chunk))))
+
+    expect(text).toContain("projection=maintenance source=instance-log window=1d")
+    expect(text).toContain("skill.directory=‹user›")
+    expect(text).not.toContain(DIRECTORY)
+    expect(text).not.toContain(FAULT)
   })
 })
 

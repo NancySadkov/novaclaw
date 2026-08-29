@@ -321,7 +321,7 @@ describe("KbTool (memory)", () => {
       // The three things the shared refusal says, and the thing it must never do.
       expect(message).toContain("project exclusion")
       expect(message).toContain("`*.env`")
-      expect(message).toContain("Never read")
+      expect(message).toContain("Excluded paths")
       expect(message).not.toContain("ExcludedError")
       expect(message).not.toContain("super-secret")
     }),

@@ -9,10 +9,9 @@ import { Location } from "@novaclaw/core/location"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import * as InstanceState from "@/effect/instance-state"
 import { Effect, Layer, Schema } from "effect"
-import { InvalidRequestError } from "../errors"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
-import { CONFIG_WRITE_REFUSED_KIND, rejectNullConfigValues, rejectUnknownConfigKeys } from "../groups/config"
+import { mutateConfig } from "./config-mutation"
 
 export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (handlers) =>
   Effect.gen(function* () {
@@ -69,38 +68,7 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
     // schedules that loader for deletion rather than a hot-reload mechanism. `GET /config` always
     // answers directly from `ConfigStoreWrite.overlay` regardless.
     const update = Effect.fn("ConfigHttpApi.update")(function* (ctx) {
-      // Ruling 2, FIRST: an unknown top-level key never survives the payload decode
-      // (`onExcessProperty: "ignore"`), so it would answer 200 for a write that never happened.
-      // Refuse on the wire, by name, before anything is attempted. Reasoning — including why the
-      // FILE import path deliberately stays lenient, and the forward-compat cost — lives with the
-      // guard in `../groups/config`.
-      yield* rejectUnknownConfigKeys(ctx.request)
-      // And a `null` VALUE, which decodes to ABSENT on the wire and would answer 200 for a
-      // deletion that never happened. Deletion is POST /api/config/remove; see the guard's header.
-      yield* rejectNullConfigValues(ctx.request)
-      // A refused write is CALLER input — the governing agent's profile is fixed in code — so it is a
-      // 400 that names the offender, never a 500. Without this the sentence below ("a 200 here means
-      // every key in the patch either landed") was false: `agents.nova` answered 200 and was
-      // discarded at materialisation. Measured 2026-08-21.
-      const consumed = yield* ConfigStoreWrite.apply(ctx.payload).pipe(
-        Effect.catchTag(
-          "ConfigStoreWrite.ConfigWriteRefused",
-          (error) => new InvalidRequestError({ kind: CONFIG_WRITE_REFUSED_KIND, message: error.message }),
-        ),
-      )
-      if (consumed.size > 0) yield* configSvc.invalidate()
-      // Answer with what the STORES hold, never an echo of the request (ruling 2: a failed mutation
-      // never reports success). An echo claims success for a key that did not route — `models` was
-      // swallowed entirely until Wave 1 — and misreports a write whose stored shape differs from
-      // what was sent, since `models` normalizes into `providers`. The sibling global route already
-      // answers this way (handlers/global.ts:123-124); the two disagreed.
-      //
-      // The reply is now total as well as honest, in both directions: an entirely UNKNOWN key is
-      // refused above by `rejectUnknownConfigKeys` (400, named), and a DECLARED key no store routes
-      // faults inside `apply`'s transaction (`NOT_ROUTED_KEYS`). So a 200 here means every key in
-      // the patch either landed or is a ledgered no-op — nothing was accepted and discarded.
-      const base = (yield* configSvc.get()) as Record<string, unknown>
-      return Schema.decodeUnknownSync(ConfigV2.Info)(yield* ConfigStoreWrite.overlay(base))
+      return yield* mutateConfig({ request: ctx.request, payload: ctx.payload, readView: "instance" })
     })
 
     // Connected providers come from the V2 `Catalog` (available = has

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { updaterIsAirgapped } from "./updater-airgap"
+import { updaterNetworkPolicy } from "./updater-airgap"
 import { mkdirSync, rmSync } from "node:fs"
 import { rename } from "node:fs/promises"
 import * as http from "node:http"
@@ -36,7 +36,7 @@ import {
   getDefaultServerUrl,
   preferAppEnv,
   setDefaultServerUrl,
-  checkOfflineEnabled,
+  checkUpdaterAirgap,
   superviseLocalServer,
   type SidecarListener,
 } from "./server"
@@ -153,7 +153,7 @@ const setSupervisorState = (state: SuperviseStatus) => {
   }
 }
 // P6: set once the sidecar is up — lets the updater guard read the machine's offline status.
-let sidecarOfflineProbe: (() => Promise<boolean>) | undefined
+let sidecarOfflineProbe: (() => Promise<boolean | undefined>) | undefined
 
 const pendingDeepLinks: string[] = []
 
@@ -407,7 +407,9 @@ const main = Effect.gen(function* () {
   app.setAsDefaultProtocolClient("novaclaw")
   registerRendererProtocol()
   setDockIcon()
-  const updater = setupAutoUpdater(stopSidecars)
+  const updater = setupAutoUpdater(stopSidecars, () =>
+    updaterNetworkPolicy({ env: process.env.NOVACLAW_OFFLINE, probe: sidecarOfflineProbe }),
+  )
   registerIpcHandlers({
     killSidecar: () => killSidecar(),
     supervisorState: () => supervisorState,
@@ -435,7 +437,7 @@ const main = Effect.gen(function* () {
     resolveAppPath: async (appName) => resolveAppPath(appName),
     updater,
     setBackgroundColor: (color) => setBackgroundColor(color),
-    exportDebugLogs: (serverLogDirectory) => exportDebugLogs(serverLogDirectory),
+    exportDebugLogs: (serverDiagnostics) => exportDebugLogs(serverDiagnostics),
     recordFatalRendererError: (error) => writeLog("renderer", "fatal renderer error", { ...error }, "error"),
     // ⚠️ VALIDATED against the vocabulary, not trusted. This arrives over IPC from the renderer, and
     // an unrecognised phase would otherwise enter the timeline and be compared against runs that
@@ -445,27 +447,12 @@ const main = Effect.gen(function* () {
     },
   })
   registerWslIpcHandlers(wslServers)
-  // Dependability P6: airgap force-off — updater POLLING never runs when offline mode is on
-  // (NOVACLAW_OFFLINE, or the sidecar's offline status once it is up — the N/9 source of truth).
-  // Manual menu checks stay real attempts. The skip is logged so the gate is provable.
-  const pollUpdater = async (kind: "start" | "poll") => {
-    // ⚠️ NC-SEC-001: `updaterIsAirgapped` treats an UNAVAILABLE probe as airgapped. The startup poll
-    // fires before the sidecar assigns it, and the old inline check read that as "not airgapped" —
-    // so every launch made one unguarded check-and-download before policy could be consulted.
-    const airgapped = await updaterIsAirgapped({ env: process.env.NOVACLAW_OFFLINE, probe: sidecarOfflineProbe })
-    if (airgapped) {
-      // Says WHICH it was, because "skipped" for an unknown policy and "skipped" for a configured
-      // airgap look identical in a log and mean different things to whoever is debugging.
-      logger.log("updater check skipped — offline/airgap mode is on (or not yet knowable)", { kind })
-      return
-    }
-    await (kind === "start" ? updater.start() : updater.check())
-  }
-  // ⚠️ `updater.start()`'s persistence awaits sit outside `check()`'s own `.catch`, and neither
-  // call site below had one — an unhandled rejection whose fate under Electron 42's default
-  // `--unhandled-rejections` mode is not measured. One catch at the source covers both.
+  // The controller owns the final policy decision. Startup, polling, IPC, the native menu and every
+  // future caller all cross it; this timer only owns cadence.
   const pollUpdaterSafely = (kind: "start" | "poll") =>
-    void pollUpdater(kind).catch((error: unknown) => logger.warn("updater poll failed", error))
+    void (kind === "start" ? updater.start() : updater.check()).catch((error: unknown) =>
+      logger.warn("updater poll failed", error),
+    )
   pollUpdaterSafely("start")
   const updateTimer = setInterval(() => pollUpdaterSafely("poll"), 10 * 60 * 1000)
   updateTimer.unref()
@@ -602,7 +589,7 @@ const main = Effect.gen(function* () {
       Effect.catch((cause) => Effect.die(cause)),
     )
     server = listener
-    sidecarOfflineProbe = () => checkOfflineEnabled(url, password, app.getPath("home"))
+    sidecarOfflineProbe = () => checkUpdaterAirgap(url, password, app.getPath("home"))
     yield* Deferred.succeed(serverReady, {
       url,
       username: "novaclaw",

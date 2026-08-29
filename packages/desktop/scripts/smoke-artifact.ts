@@ -43,12 +43,14 @@ import os from "node:os"
 import path from "node:path"
 
 import { canonicalVersion, type Channel } from "./utils"
+import { verifyPackagedDht } from "./dht-packaging"
 import { channelConfigured, resolveChannel } from "@novaclaw/script/channel"
 
 /** How long the app gets to boot, open a window and answer /global/health. */
 const READY_TIMEOUT_MS = 90_000
 /** Per-HTTP-request budget once the server is up. */
 const REQUEST_TIMEOUT_MS = 20_000
+const APP_ROOT = path.resolve(import.meta.dir, "../../..")
 
 // ── failures ────────────────────────────────────────────────────────────────────────────────────
 
@@ -562,6 +564,16 @@ async function run() {
   tempHome = await mkdtemp(path.join(os.tmpdir(), "novaclaw-smoke-"))
   const exe = await stageArtifact(sourceExe, tempHome)
   console.log(`staged   : ${exe} (isolated from workspace dependencies)`)
+  try {
+    const dht = await verifyPackagedDht({ channel, executable: exe, appRoot: APP_ROOT })
+    check(
+      dht === "verified" || channel === "dev",
+      dht === "verified" ? "dht-sidecar-protocol" : "dht-sidecar-development-absence",
+      `the packaged ${channel} artifact has no compatible DHT sidecar`,
+    )
+  } catch (error) {
+    check(false, "dht-sidecar-protocol", String(error))
+  }
   if (process.platform === "win32") {
     const kit = path.join(path.dirname(exe), "resources", "third-party", "w64devkit")
     const bin = path.join(kit, "bin")

@@ -1,4 +1,5 @@
 import type { UpdaterState } from "@novaclaw/app/updater"
+import type { UpdaterNetworkPolicy } from "./updater-airgap"
 
 export type { UpdaterState } from "@novaclaw/app/updater"
 
@@ -21,6 +22,8 @@ export function createUpdaterController(input: {
   currentVersion: string
   backend: UpdaterBackend
   persistence: UpdaterPersistence
+  /** Read immediately before the network-capable backend. Unknown policy must refuse. */
+  networkPolicy: () => Promise<UpdaterNetworkPolicy>
   stop: () => Promise<void>
   log?: (message: string, data?: object) => void
 }) {
@@ -35,12 +38,22 @@ export function createUpdaterController(input: {
     return state
   }
 
+  const authorizeNetwork = async () => {
+    const policy = await input
+      .networkPolicy()
+      .catch(() => ({ allowed: false, reason: "policy-unavailable" }) as const)
+    return policy.allowed ? undefined : transition({ status: "blocked", reason: policy.reason })
+  }
+
   const check = () => {
     if (!input.enabled) return Promise.resolve(state)
     if (state.status === "ready") return Promise.resolve(state)
     if (pending) return pending
 
     pending = (async () => {
+      const checkRefusal = await authorizeNetwork()
+      if (checkRefusal) return checkRefusal
+
       transition({ status: "checking" })
       const result = await input.backend.checkForUpdates()
       const version = result?.updateInfo?.version
@@ -49,6 +62,8 @@ export function createUpdaterController(input: {
         return transition({ status: "up-to-date" })
       }
 
+      const downloadRefusal = await authorizeNetwork()
+      if (downloadRefusal) return downloadRefusal
       transition({ status: "downloading", version })
       await input.backend.downloadUpdate()
       await input.persistence.set({ version })

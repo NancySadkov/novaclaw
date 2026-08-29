@@ -1,6 +1,7 @@
 import { afterEach, describe, expect } from "bun:test"
 import { Effect } from "effect"
 import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
+import { createNovaclawClient } from "@novaclaw/sdk/v2"
 import { GlobalBus, type GlobalEvent } from "@/bus/global"
 import { Server } from "../../src/server/server"
 import { resetDatabase } from "../fixture/db"
@@ -10,7 +11,7 @@ import { it } from "../lib/effect"
 /**
  * ─── v0.2.0-prep B7, FINAL STEP: a settings change is not a reboot (ruling 3) ────────────────────
  *
- * `PATCH /config` used to end in `markInstanceForDisposal`, so **saving a preference tore the
+ * Config updates used to end in an instance disposal, so **saving a preference tore the
  * instance down**: every `InstanceState` cache invalidated, the whole per-location layer graph
  * released, and with it the user's terminals, every pending permission ask and every MCP child —
  * then a ~1 s location boot on the next request. That teardown was also the ONLY reason an edited
@@ -37,6 +38,13 @@ import { it } from "../lib/effect"
 
 function app() {
   return Server.Default().app
+}
+
+function globalClient() {
+  return createNovaclawClient({
+    baseUrl: "http://test",
+    fetch: ((request: Request) => app().fetch(request)) as unknown as typeof fetch,
+  })
 }
 
 const AGENT = "b7-live-agent"
@@ -87,7 +95,7 @@ afterEach(async () => {
   await resetDatabase()
 })
 
-describe("PATCH /config no longer tears the instance down", () => {
+describe("config mutations no longer tear the instance down", () => {
   it.live(
     "the write applies through the live location graph and NOTHING is disposed",
     Effect.gen(function* () {
@@ -110,8 +118,22 @@ describe("PATCH /config no longer tears the instance down", () => {
       // ── …and the edit is LIVE anyway, on the location graph that was never rebuilt ───────────
       expect(describedAs(yield* listAgents(tmp.path))).toBe("after")
 
-      // A SECOND edit must also land: a reload that only ever runs once passes the assertion above.
-      expect((yield* patchConfig(tmp.path, { agents: { [AGENT]: { description: "again" } } })).status).toBe(200)
+      // Exercise the exact generated SDK operation used by Settings. Two consecutive edits must
+      // both land: a reload registration that only ever runs once passes the first assertion.
+      const sdk = globalClient()
+      const global = yield* Effect.promise(() =>
+        sdk.global.config.update({ configInfo: { agents: { [AGENT]: { description: "global" } } } }),
+      )
+      expect(global.response.status).toBe(200)
+      expect(global.data?.agents?.[AGENT]?.description).toBe("global")
+      expect(describedAs(yield* listAgents(tmp.path))).toBe("global")
+      expect(disposals).toEqual([])
+
+      const again = yield* Effect.promise(() =>
+        sdk.global.config.update({ configInfo: { agents: { [AGENT]: { description: "again" } } } }),
+      )
+      expect(again.response.status).toBe(200)
+      expect(again.data?.agents?.[AGENT]?.description).toBe("again")
       expect(describedAs(yield* listAgents(tmp.path))).toBe("again")
       expect(disposals).toEqual([])
 

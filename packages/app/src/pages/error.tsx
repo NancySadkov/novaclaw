@@ -8,6 +8,7 @@ import { useLanguage } from "@/context/language"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { errorDescriptionKey } from "./error-description"
 import { DISCORD_INVITE_URL } from "@/constants/links"
+import { updaterRefusal } from "@/components/updater-action"
 
 export type InitError = {
   name: string
@@ -245,7 +246,11 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
 
   async function checkForUpdates() {
     const state = await platform.updater?.check()
-    setStore("actionError", state?.status === "error" ? state.message : undefined)
+    const refusal = updaterRefusal(state)
+    setStore(
+      "actionError",
+      state?.status === "error" ? state.message : refusal ? language.t(refusal) : undefined,
+    )
   }
 
   async function installUpdate() {

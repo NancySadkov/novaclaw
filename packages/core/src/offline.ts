@@ -356,7 +356,14 @@ export function layerManifest(policy: Policy): {
       detail: "the closed crash sender applies the live airgap gate before every report",
     },
     { layer: 5, name: "share/sync egress", active: on, detail: "share URLs ride the chokepoint" },
-    { layer: 6, name: "auto-update", active: on, detail: "update fetches ride the chokepoint" },
+    {
+      layer: 6,
+      name: "auto-update",
+      active: policy.enabled,
+      detail: policy.enabled
+        ? "the desktop updater controller refuses check/download from this named live gate"
+        : "the desktop updater controller permits checks while this named live gate is inactive",
+    },
     { layer: 7, name: "LAN services", active: on, detail: "SearXNG/KB allowed as loopback/LAN hosts" },
     { layer: 8, name: "npm installs", active: on, detail: "package fetches fail closed (pre-provision or mirror)" },
     {
@@ -368,7 +375,7 @@ export function layerManifest(policy: Policy): {
         : "OFF-C",
     },
   ]
-  return { enabled: on, active: on ? layers.length : 0, total: layers.length, layers }
+  return { enabled: on, active: layers.filter((layer) => layer.active).length, total: layers.length, layers }
 }
 
 export interface Interface {

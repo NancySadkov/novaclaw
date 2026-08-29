@@ -2,7 +2,6 @@ import { Config } from "@/config/config"
 import { Config as ConfigV2 } from "@novaclaw/core/config"
 import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
 import { GlobalBus, type GlobalEvent as GlobalBusEvent } from "@/bus/global"
-import { EffectBridge } from "@/effect/bridge"
 import { EventV2 } from "@novaclaw/core/event"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { InvalidRequestError } from "../errors"
@@ -19,8 +18,8 @@ import { HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import * as Sse from "effect/unstable/encoding/Sse"
 import { RootHttpApi } from "../api"
-import { CONFIG_WRITE_REFUSED_KIND, rejectNullConfigValues, rejectUnknownConfigKeys } from "../groups/config"
 import { Log } from "@novaclaw/schema/log"
+import { mutateConfig } from "./config-mutation"
 
 function eventData(data: unknown): Sse.Event {
   return {
@@ -105,7 +104,6 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     const identity = yield* InstanceIdentityStore.Service
     const localModels = yield* LocalModelManager.Service
     const storage = yield* Storage.Service
-    const bridge = yield* EffectBridge.make()
 
     const health = Effect.fn("GlobalHttpApi.health")(function* () {
       // `identity()` rather than `get()`: both read the same row, so reporting the network identity
@@ -194,42 +192,8 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       return Schema.decodeUnknownSync(ConfigV2.Info)(yield* ConfigStoreWrite.overlay(base))
     })
 
-    // Config→SQLite step 7→9: `updateConfig` patches route ENTIRELY into the per-subsystem
-    // SQLite stores (settings values merge in place; providers/agents/commands/references
-    // append a layer; skills/plugins replace). Step 9 routed the last three keys
-    // (instructions + disabled/enabled_providers), so the legacy jsonc patch path is gone —
-    // and a `Config.Info` key that routes nowhere is now REFUSED BY NAME (rolled back) rather
-    // than ignored; the only key excused is `$schema`, which describes the file rather than the
-    // instance (`ConfigStoreWrite.NOT_ROUTED_KEYS`). A change
-    // invalidates the service's cached store view and disposes instances: locations snapshot
-    // config (and rebuild the catalog + the settings synthetic document) at boot.
     const configUpdate = Effect.fn("GlobalHttpApi.configUpdate")(function* (ctx) {
-      // Ruling 2, FIRST — and this is the route the UI actually uses (`serverSync().updateConfig`
-      // and Settings → Import both call `global.config.update`). An unknown top-level key is erased
-      // by the payload decode (`onExcessProperty: "ignore"`) and would answer 200 for a write that
-      // never happened; refuse it on the wire, by name, before anything is attempted. The full
-      // reasoning — the deliberate divergence from the FILE import path, and the forward-compat
-      // cost of 400ing a newer client's key — lives with the guard in `../groups/config`.
-      yield* rejectUnknownConfigKeys(ctx.request)
-      // And a `null` VALUE, which decodes to ABSENT on the wire and would answer 200 for a
-      // deletion that never happened. Deletion is POST /api/config/remove; see the guard's header.
-      yield* rejectNullConfigValues(ctx.request)
-      // A write naming the governing agent is refused by the store (AGENTS.md — the structural
-      // metaphor). It is CALLER input, so it answers 400 with the offender named, never a 500 — and
-      // never the 200-then-discard this route used to give, which made its own honesty claim false.
-      // This is the route the roster's Save button takes, so the dialog gets a real error to show.
-      const consumed = yield* ConfigStoreWrite.apply(ctx.payload).pipe(
-        Effect.catchTag(
-          "ConfigStoreWrite.ConfigWriteRefused",
-          (error) => new InvalidRequestError({ kind: CONFIG_WRITE_REFUSED_KIND, message: error.message }),
-        ),
-      )
-      if (consumed.size > 0) {
-        yield* config.invalidate()
-        bridge.fork(disposeAllInstancesAndEmitGlobalDisposed({ swallowErrors: true }))
-      }
-      const base = (yield* config.getGlobal()) as Record<string, unknown>
-      return Schema.decodeUnknownSync(ConfigV2.Info)(yield* ConfigStoreWrite.overlay(base))
+      return yield* mutateConfig({ request: ctx.request, payload: ctx.payload, readView: "global" })
     })
 
     const dispose = Effect.fn("GlobalHttpApi.dispose")(function* () {

@@ -28494,6 +28494,58 @@
         ]
       }
     },
+    "/api/log/export": {
+      "post": {
+        "tags": ["log"],
+        "operationId": "v2.log.export",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain; charset=utf-8": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                },
+                "x-effect-stream": {
+                  "encoding": "uint8array"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Streams this instance's own recent activity log through the maintenance-plane projection. The source is fixed server-side; the request accepts no filesystem path.",
+        "summary": "Stream bounded diagnostics from this instance",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.log.export({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/telemetry/status": {
       "get": {
         "tags": ["novaclaw HttpApi"],

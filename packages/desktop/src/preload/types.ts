@@ -113,7 +113,7 @@ export type ElectronAPI = {
   onZoomFactorChanged: (cb: (factor: number) => void) => () => void
   setTitlebar: (theme: TitlebarTheme) => Promise<void>
   setBackgroundColor: (color: string) => Promise<void>
-  exportDebugLogs: (serverLogDirectory?: string) => Promise<string>
+  exportDebugLogs: (serverDiagnostics?: string) => Promise<string>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void>
   /** Report a boot phase the main process cannot observe. Fire-and-forget; never awaited. */
   markBootPhase: (phase: "renderer-interactive" | "first-chat-token") => void

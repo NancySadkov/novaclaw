@@ -306,7 +306,7 @@ declare global {
     }
     api?: {
       setTitlebar?: (theme: { mode: "light" | "dark" }) => Promise<void>
-      exportDebugLogs?: (serverLogDirectory?: string) => Promise<string>
+      exportDebugLogs?: (serverDiagnostics?: string) => Promise<string>
     }
   }
 }

@@ -10,10 +10,10 @@ import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
 import { useServer } from "@/context/server"
-import { useServerSync } from "@/context/server-sync"
 import { useTabs } from "@/context/tabs"
 import { setNavigate } from "@/utils/notification-click"
 import { ToastRegion } from "@/utils/toast"
+import { fetchInstanceDiagnostics } from "@/utils/diagnostic-export"
 import {
   collectNewSessionDeepLinks,
   collectOpenProjectDeepLinks,
@@ -29,7 +29,6 @@ export default function NewLayout(props: ParentProps) {
   const location = useLocation()
   const navigate = useNavigate()
   const server = useServer()
-  const sync = useServerSync()
   const tabs = useTabs()
   setNavigate(navigate)
 
@@ -86,10 +85,18 @@ export default function NewLayout(props: ParentProps) {
             title: "Export logs",
             category: language.t("command.category.settings"),
             onSelect: () => {
-              // The active instance already answered GET /instance during sync. Carry its declared
-              // log directory across IPC; the desktop must never guess XDG/AppData roots because a
-              // remote or explicitly homed instance may live somewhere entirely different.
-              void platform.exportDebugLogs?.(sync().data.path?.log)
+              const active = server.current
+              if (!active) return
+              // Filesystem authority stays on the host that owns it. The authenticated instance
+              // streams a bounded maintenance-plane projection; Electron receives those bytes and
+              // adds only its own local records.
+              void fetchInstanceDiagnostics(active.http)
+                .then((diagnostics) => platform.exportDebugLogs?.(diagnostics))
+                .catch((error) => {
+                  // A down instance must not take the desktop's own recovery evidence with it.
+                  console.error("instance diagnostics unavailable; exporting desktop records only", error)
+                  return platform.exportDebugLogs?.()
+                })
             },
           },
         ]
