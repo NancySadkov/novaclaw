@@ -307,30 +307,27 @@ export const overflowRecentBudget = (input: {
 }
 
 /**
- * 🔴 **The wording is fixed; the ORDER is deliberately unchanged.**
+ * Stable-first on purpose. `SUMMARY_TEMPLATE` is invariant across compactions, so it precedes the
+ * volatile instruction, previous summary, and transcript and can remain a reusable provider prefix.
+ * The transcript is last and explicitly named by `<history>`; the delimiter is framing, not a trust
+ * boundary, but it avoids directional prose whose meaning silently changes when the order changes.
  *
- * It used to say "the conversation history above" while `...input.context` is appended BELOW it.
- * This call carries no system prompt, so that sentence is the whole framing and a bad summary is
- * durable — it replaces the transcript it summarises (NC-PROMPT-LANG-002).
- *
- * ⚠️ **CACHE-009's reorder was tried and REVERTED.** Putting `SUMMARY_TEMPLATE` first would make the
- * constant a reusable prefix, but the first 100-file run after that change recorded **0 compactions
- * against 8** in the run before it, and went 2x slower past 20 files — the signature of a context that
- * never shrinks. Causation is UNPROVEN; what is certain is that this builder has no test, so a
- * structural change to it is unobservable until a long run behaves badly. Reorder it only behind a
- * test that pins a compaction actually committing.
+ * The committing compaction test pins both this order and the actual request sent to the model. Keep
+ * the two together: a direct builder assertion alone would not prove that the runtime uses it.
  */
 export const buildPrompt = (input: { readonly previousSummary?: string; readonly context: readonly string[] }) =>
   [
+    SUMMARY_TEMPLATE,
     input.previousSummary
-      ? `Update the anchored summary in <previous-summary> using the conversation history that follows it.
+      ? `Update the anchored summary in <previous-summary> using the conversation history in <history>.
 Preserve still-true details, remove stale details, and merge in the new facts.
 <previous-summary>
 ${input.previousSummary}
 </previous-summary>`
-      : "Create a new anchored summary from the conversation history that follows.",
-    SUMMARY_TEMPLATE,
-    ...input.context,
+      : "Create a new anchored summary from the conversation history in <history>.",
+    `<history>
+${input.context.join("\n\n")}
+</history>`,
   ].join("\n\n")
 
 /**

@@ -158,6 +158,11 @@ export const layer = Layer.effect(
      * harness's job, not a reason to keep the pass on the reply path.
      */
     const forkMemory = yield* FiberSet.makeRuntime<never, void, never>()
+    // Early-title timers must outlive the turn that scheduled them, but never the location service
+    // whose database and model graph they close over. `forkDetach` made them process-global: tests
+    // closed their in-memory databases while hundreds of 30 s timers remained alive, and the core
+    // process could no longer exit. A scoped FiberSet gives the timer the exact owner it needs.
+    const forkTitle = yield* FiberSet.makeRuntime<never, void, never>()
     const outstanding = new Set<Fiber.Fiber<void, never>>()
 
     const generateTitle = Effect.fn("SessionMaintenance.generateTitle")(function* (sessionID: SessionSchema.ID) {
@@ -554,17 +559,19 @@ export const layer = Layer.effect(
        * Detached, because it must outlive neither the turn's failure nor its interruption.
        */
       scheduleEarlyTitle: (sessionID) =>
-        Effect.forkDetach(
-          Effect.sleep(Duration.seconds(30)).pipe(
-            Effect.andThen(generateTitleOnce(sessionID)),
-            Effect.catchCause((cause) =>
-              Log.event("session.title.early.failed", {
-                "session.id": sessionID,
-                "session.cause": Log.fault(cause),
-              }),
+        Effect.sync(() => {
+          forkTitle(
+            Effect.sleep(Duration.seconds(30)).pipe(
+              Effect.andThen(generateTitleOnce(sessionID)),
+              Effect.catchCause((cause) =>
+                Log.event("session.title.early.failed", {
+                  "session.id": sessionID,
+                  "session.cause": Log.fault(cause),
+                }),
+              ),
             ),
-          ),
-        ).pipe(Effect.asVoid),
+          )
+        }),
       markChangesIncomplete: (sessionID) =>
         bestEffort("session.changes.refresh.failed", sessionID, markChangesIncompleteAttempt(sessionID)),
       // Joins whatever is in flight NOW. `bestEffort` already swallowed any failure, so awaiting

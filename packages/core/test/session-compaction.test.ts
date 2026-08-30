@@ -449,6 +449,40 @@ const driveSummary = (attempts: readonly SummaryAttempt[]) => {
   return { compacted, requests, ended, userPrompt }
 }
 
+describe("stable compaction prompt", () => {
+  test("keeps the invariant template before volatile instructions and explicitly delimits history", () => {
+    const context = ["[User]: alpha", "[Assistant]: beta"]
+    const fresh = SessionCompaction.buildPrompt({ context })
+    const updated = SessionCompaction.buildPrompt({ previousSummary: "## Goal\n- existing", context })
+    const freshInstruction = "Create a new anchored summary"
+    const updateInstruction = "Update the anchored summary"
+
+    expect(fresh).toStartWith("Output exactly the Markdown structure")
+    expect(updated).toStartWith("Output exactly the Markdown structure")
+    expect(fresh.slice(0, fresh.indexOf(freshInstruction))).toBe(updated.slice(0, updated.indexOf(updateInstruction)))
+    expect(fresh.indexOf("</template>")).toBeLessThan(fresh.indexOf(freshInstruction))
+    expect(fresh.indexOf(freshInstruction)).toBeLessThan(fresh.indexOf("<history>"))
+    expect(updated.indexOf("</template>")).toBeLessThan(updated.indexOf(updateInstruction))
+    expect(updated.indexOf("<previous-summary>")).toBeLessThan(updated.indexOf("<history>"))
+    expect(fresh).toEndWith(`<history>\n${context.join("\n\n")}\n</history>`)
+  })
+
+  test("a committing compaction sends the stable-first, history-delimited prompt", () => {
+    const summary = "## Goal\n- done"
+    const run = driveSummary([{ text: summary, reason: "stop", outputTokens: 8 }])
+
+    expect(run.compacted).toBe(true)
+    expect(run.requests).toHaveLength(1)
+    expect(run.ended?.text).toBe(summary)
+    const prompt = run.userPrompt(run.requests[0]!)
+    expect(prompt).toStartWith("Output exactly the Markdown structure")
+    expect(prompt.indexOf("</template>")).toBeLessThan(prompt.indexOf("Create a new anchored summary"))
+    expect(prompt.indexOf("Create a new anchored summary")).toBeLessThan(prompt.indexOf("<history>"))
+    expect(prompt).toContain("[User]: old question")
+    expect(prompt).toEndWith("</history>")
+  })
+})
+
 describe("bounded compaction summaries", () => {
   test("mechanical head removal preserves complete Unicode scalars in the newest tail", () => {
     const rocket = String.fromCodePoint(0x1f680)
