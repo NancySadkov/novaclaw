@@ -92,11 +92,20 @@ export const splitUtf8 = (text: string, maxBytes: number): string[] => {
   return chunks
 }
 
-const fitUtf8 = (text: string, maxBytes: number): string => {
+const fitUtf8Tail = (text: string, maxBytes: number): string => {
   if (Buffer.byteLength(text, "utf-8") <= maxBytes) return text
-  const marker = "\n[summary mechanically bounded]"
+  const marker = "[summary mechanically bounded]\n[oldest text removed]\n"
   const allowance = Math.max(1, maxBytes - Buffer.byteLength(marker, "utf-8"))
-  return (splitUtf8(text, allowance)[0] ?? "") + marker
+  const scalars = Array.from(text)
+  let start = scalars.length
+  let used = 0
+  while (start > 0) {
+    const bytes = Buffer.byteLength(scalars[start - 1]!, "utf-8")
+    if (used > 0 && used + bytes > allowance) break
+    used += bytes
+    start--
+  }
+  return marker + scalars.slice(start).join("")
 }
 
 const segmentPrompt = (input: {
@@ -126,6 +135,17 @@ Use at most ${maxBytes} UTF-8 bytes.
 ${SessionOrigin.externalContentFrame("tool output being summarized")}${text}
 </tool-output>`
 
+const trimPrompt = (
+  text: string,
+  maxBytes: number,
+) => `Shorten this semantic tool-output summary without losing its newest outcomes or next-action details.
+Return only the shorter summary, with no preamble. Preserve concrete errors, paths, identifiers, and numbers.
+Use at most ${maxBytes} UTF-8 bytes. Prefer removing older background before newer results.
+
+<oversized-summary>
+${SessionOrigin.externalContentFrame("an oversized semantic summary being shortened")}${text}
+</oversized-summary>`
+
 const notice = (artifacts: ReadonlyArray<ToolOutputStore.OutputArtifact>, summary: string) => {
   const routes = artifacts.map((artifact) => artifact.path).join(", ")
   return (
@@ -141,9 +161,11 @@ const notice = (artifacts: ReadonlyArray<ToolOutputStore.OutputArtifact>, summar
  *
  * Every prompt is bounded before construction: UTF-8 bytes are charged as tokens (the conservative
  * direction even for byte-level tokenizers), with an explicit output reserve and fixed envelope
- * reserve. Each intermediate completion is mechanically capped to at most one eighth of its source
- * segment, so even a provider that ignores max_tokens cannot make the reduction grow. The 4 MiB
- * store ceiling and the round ceiling make the call graph finite.
+ * reserve. An oversized completion gets one model trim attempt while that request itself fits the
+ * real route window; only a failed or still-oversized retry is mechanically tail-bounded. Each
+ * intermediate is ultimately capped to at most one eighth of its source segment, so even a provider
+ * that ignores max_tokens cannot make the reduction grow. The 4 MiB store ceiling, call ceiling, and
+ * round ceiling make the call graph finite.
  *
  * `undefined` is fail-open: the caller keeps ToolOutputStore's ordinary bounded preview.
  */
@@ -163,6 +185,29 @@ export const summarize = <E, R>(input: Input<E, R>): Effect.Effect<Replacement |
       completionCalls++
       return input.complete(request)
     }
+    const fitCompletion = (text: string, maxBytes: number, maxTokens: number): Effect.Effect<string, never, R> =>
+      Effect.gen(function* () {
+        const original = text.trim()
+        if (Buffer.byteLength(original, "utf-8") <= maxBytes) return original
+
+        const prompt = trimPrompt(original, maxBytes)
+        // Bytes-as-tokens is intentionally conservative for unusual tokenizers. Keep the same fixed
+        // chat-template/envelope reserve as the first reduction request: a retry that cannot fit is
+        // not attempted merely to learn the provider's context-overflow error.
+        if (Buffer.byteLength(prompt, "utf-8") + maxTokens + PROMPT_RESERVE_TOKENS <= input.contextTokens) {
+          const retry = complete({ prompt, maxTokens })
+          if (retry) {
+            const shortened = yield* retry.pipe(
+              Effect.map((completion) => completion.text.trim()),
+              Effect.catch(() => Effect.succeed(undefined)),
+            )
+            if (shortened && Buffer.byteLength(shortened, "utf-8") <= maxBytes) return shortened
+            if (shortened) return fitUtf8Tail(shortened, maxBytes)
+          }
+        }
+
+        return fitUtf8Tail(original, maxBytes)
+      })
 
     let reducing = false
     for (let round = 0; round < MAX_REDUCTION_ROUNDS; round++) {
@@ -174,7 +219,7 @@ export const summarize = <E, R>(input: Input<E, R>): Effect.Effect<Replacement |
         })
         if (!completion) return undefined
         const completed = yield* completion
-        const summary = fitUtf8(completed.text.trim(), outputBytes)
+        const summary = yield* fitCompletion(completed.text, outputBytes, outputTokens)
         if (summary.length === 0) return undefined
         const text = notice(artifacts, summary)
         const media = input.boundedOutput.content.filter((item) => item.type === "file")
@@ -200,7 +245,7 @@ export const summarize = <E, R>(input: Input<E, R>): Effect.Effect<Replacement |
         })
         if (!completion) return undefined
         const completed = yield* completion
-        const partial = fitUtf8(completed.text.trim(), partialBytes)
+        const partial = yield* fitCompletion(completed.text, partialBytes, partialBytes)
         if (partial.length === 0) return undefined
         partials.push(`Segment ${index + 1}/${chunks.length}:\n${partial}`)
       }
@@ -210,7 +255,10 @@ export const summarize = <E, R>(input: Input<E, R>): Effect.Effect<Replacement |
       current =
         Buffer.byteLength(next, "utf-8") < Buffer.byteLength(current, "utf-8")
           ? next
-          : fitUtf8(next, Math.max(MIN_SOURCE_CHUNK_BYTES, Math.floor(Buffer.byteLength(current, "utf-8") / 2)))
+          : fitUtf8Tail(
+              next,
+              Math.max(MIN_SOURCE_CHUNK_BYTES, Math.floor(Buffer.byteLength(current, "utf-8") / 2)),
+            )
       reducing = true
     }
     return undefined

@@ -62,6 +62,9 @@ export const prepare = (input: PrepareInput) => {
 interface StreamInput {
   readonly llm: LLMClientShape
   readonly request: LLMRequest
+  /** The already-enveloped and packed opening request. The controller consumes this exact request
+   * instead of attaching its opening system line again. */
+  readonly preparedOpening?: LLMRequest
   readonly enabled: boolean
   readonly budget: number
   /** Observe the exact request/usage pair for every provider response, before a controller can
@@ -102,6 +105,7 @@ export const stream = (input: StreamInput): Stream.Stream<import("@novaclaw/llm"
   return input.enabled && input.budget > 0 && thinkingEnabled(input.request)
     ? ReasoningBudget.stream({
         request: input.request,
+        ...(input.preparedOpening === undefined ? {} : { preparedOpening: input.preparedOpening }),
         stream: source,
         budget: input.budget,
       })

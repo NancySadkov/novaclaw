@@ -9,12 +9,18 @@ import {
   Message,
   Model,
   RateLimitReason,
+  SystemPart,
   TransportReason,
+  Usage,
   type LLMRequest,
 } from "@novaclaw/llm"
 import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
 import { SessionSchema } from "../schema"
 import type { SessionMessage } from "@novaclaw/schema/session-message"
+import { Token } from "../../util/token"
+import { ProviderCapability } from "../../provider-capability"
+import { ContextPack } from "./context-pack"
+import { PromptEstimate } from "./prompt-estimate"
 import { ProviderDispatch } from "./provider-dispatch"
 
 const events = {
@@ -82,6 +88,122 @@ describe("ProviderDispatch", () => {
     expect(retained.request.messages.at(-1)).toEqual(Message.user("new task"))
   })
 
+  test("a budgeted second turn reuses its opening anchor and packs the controller line before dispatch", async () => {
+    const model = Model.make({ id: "fake", provider: "fake", route: OpenAIChat.route })
+    const budget = 64
+    const contextSize = 10_000
+    const scope: PromptEstimate.Scope = {
+      sessionID: "ses_budgeted_anchor" as SessionSchema.ID,
+      contextEpoch: 1,
+      providerID: "fake",
+      modelID: "fake",
+      serverKey: "http://fake.test/v1",
+      routeID: "openai-chat",
+      protocolID: "openai-chat",
+      controllerKey: `reasoning-budget:${budget}`,
+    }
+    const firstBase = LLM.request({
+      model,
+      system: [SystemPart.make("stable controller test rules")],
+      messages: [Message.user("first")],
+    })
+    const firstOpening = ProviderDispatch.openingRequest({ request: firstBase, enabled: true, budget })
+    const firstEstimate = PromptEstimate.resolve({ request: firstOpening, messages: [], scope })
+    const firstPrepared = ProviderDispatch.prepare({
+      request: firstOpening,
+      promptCacheKey: "stable-session",
+      contextSize,
+      promptCorrectionTokens: firstEstimate.correctionTokens,
+      promptMarginTokens: firstEstimate.marginTokens,
+    })
+    expect(firstPrepared.packed.changed).toBe(false)
+    const anchor = PromptEstimate.observe({
+      request: firstPrepared.request,
+      usage: new Usage({
+        inputTokens: PromptEstimate.whole(firstPrepared.request),
+        outputTokens: 1,
+        nonCachedInputTokens: PromptEstimate.whole(firstPrepared.request),
+      }),
+      scope,
+    })!
+
+    const anchoredTranscript = [
+      { type: "assistant", context: { promptAnchor: anchor } },
+    ] as unknown as readonly SessionMessage.Message[]
+    const controllerLine = firstOpening.system.at(-1)!
+    const plainSystem = firstBase.system
+    const openingSystem = firstOpening.system
+    const controllerTokens = Token.estimate(controllerLine.text)
+    const packingInput = {
+      contextSize,
+      tools: firstBase.tools,
+      promptMarginTokens: firstEstimate.marginTokens,
+    }
+    const plainHistoryBudget = ContextPack.budget({ ...packingInput, system: plainSystem })
+    const openingHistoryBudget = ContextPack.budget({ ...packingInput, system: openingSystem })
+    expect(plainHistoryBudget - openingHistoryBudget).toBe(controllerTokens)
+
+    let filler = ""
+    let secondMessages = [Message.user("first"), Message.assistant(filler), Message.user("second")]
+    while (ContextPack.estimateMessages(secondMessages) <= openingHistoryBudget) {
+      filler += "x"
+      secondMessages = [Message.user("first"), Message.assistant(filler), Message.user("second")]
+    }
+    expect(ContextPack.estimateMessages(secondMessages)).toBeLessThanOrEqual(plainHistoryBudget)
+
+    const secondBase = LLM.request({ model, system: plainSystem, messages: secondMessages })
+    const secondOpening = ProviderDispatch.openingRequest({ request: secondBase, enabled: true, budget })
+    const secondEstimate = PromptEstimate.resolve({
+      request: secondOpening,
+      messages: anchoredTranscript,
+      scope,
+    })
+    expect(secondEstimate.fallback).toBe("none")
+    expect(secondEstimate.confidence).not.toBe("whole")
+    expect(secondEstimate.anchorHeuristicTokens).toBe(anchor.heuristicTokens)
+
+    const plainPacked = ProviderDispatch.prepare({
+      request: secondBase,
+      promptCacheKey: "stable-session",
+      contextSize,
+      promptCorrectionTokens: secondEstimate.correctionTokens,
+      promptMarginTokens: secondEstimate.marginTokens,
+    })
+    const openingPacked = ProviderDispatch.prepare({
+      request: secondOpening,
+      promptCacheKey: "stable-session",
+      contextSize,
+      promptCorrectionTokens: secondEstimate.correctionTokens,
+      promptMarginTokens: secondEstimate.marginTokens,
+    })
+    expect(plainPacked.packed.dropped).toBe(0)
+    expect(openingPacked.packed.dropped).toBe(1)
+
+    const dispatched: LLMRequest[] = []
+    const llm = {
+      stream: (request: LLMRequest) => {
+        dispatched.push(request)
+        return Stream.fromIterable([
+          LLMEvent.textDelta({ id: "text-0", text: "OK" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+        ])
+      },
+    } as never
+    await Effect.runPromise(
+      ProviderDispatch.stream({
+        llm,
+        request: openingPacked.request,
+        preparedOpening: openingPacked.request,
+        enabled: true,
+        budget,
+      }).pipe(Stream.runDrain),
+    )
+    expect(dispatched).toEqual([openingPacked.request])
+    expect(
+      dispatched[0]!.system.filter((part) => part.text.includes(`reasoning budget of about ${budget} tokens`)),
+    ).toHaveLength(1)
+  })
+
   test("routes an enabled completion through the reasoning controller", async () => {
     const model = Model.make({ id: "fake", provider: "fake", route: OpenAIChat.route })
     const requests: LLMRequest[] = []
@@ -124,6 +246,90 @@ describe("ProviderDispatch", () => {
     expect(observed[0]!.request).toBe(requests[0])
     expect(observed[0]!.usage).toEqual(usage)
     expect(observed[0]!.anchorable).toBe(true)
+  })
+
+  test("keeps per-phase observations while the controller emits honest aggregate usage and servedBy", async () => {
+    const model = Model.make({ id: "fake", provider: "fake", route: OpenAIChat.route })
+    const requests: LLMRequest[] = []
+    const output: LLMEvent[] = []
+    const observed: Array<{ usage: Usage | undefined; providerMetadata: Readonly<Record<string, unknown>> | undefined }> =
+      []
+    const firstUsage = new Usage({
+      inputTokens: 120,
+      outputTokens: 20,
+      nonCachedInputTokens: 30,
+      cacheReadInputTokens: 80,
+      cacheWriteInputTokens: 10,
+      reasoningTokens: 5,
+      totalTokens: 140,
+    })
+    const finalUsage = new Usage({
+      inputTokens: 180,
+      outputTokens: 40,
+      nonCachedInputTokens: 40,
+      cacheReadInputTokens: 120,
+      cacheWriteInputTokens: 20,
+      reasoningTokens: 15,
+      totalTokens: 220,
+    })
+    const firstMetadata = { openai: { system_fingerprint: "served-first" } }
+    const finalMetadata = { openai: { system_fingerprint: "served-final" } }
+    const llm = {
+      stream: (request: LLMRequest) => {
+        requests.push(request)
+        const usage = requests.length === 1 ? firstUsage : finalUsage
+        const providerMetadata = requests.length === 1 ? firstMetadata : finalMetadata
+        return Stream.fromIterable([
+          ...(requests.length === 1
+            ? [LLMEvent.reasoningDelta({ id: "reasoning-0", text: "brief thought" })]
+            : [LLMEvent.textDelta({ id: "text-0", text: "answer" })]),
+          LLMEvent.stepFinish({ index: 0, reason: "stop", usage, providerMetadata }),
+          LLMEvent.finish({ reason: "stop", usage, providerMetadata }),
+        ])
+      },
+    } as never
+
+    await Effect.runPromise(
+      ProviderDispatch.stream({
+        llm,
+        request: LLM.request({ model, messages: [Message.user("answer")] }),
+        enabled: true,
+        budget: 1_000,
+        onProviderStep: (step) =>
+          Effect.sync(() => {
+            observed.push({ usage: step.usage, providerMetadata: step.providerMetadata })
+          }),
+      }).pipe(
+        Stream.runForEach((event) =>
+          Effect.sync(() => {
+            output.push(event)
+          }),
+        ),
+      ),
+    )
+
+    expect(requests).toHaveLength(2)
+    expect(observed).toEqual([
+      { usage: firstUsage, providerMetadata: firstMetadata },
+      { usage: finalUsage, providerMetadata: finalMetadata },
+    ])
+    const terminals = output.filter((event) => LLMEvent.is.stepFinish(event) || LLMEvent.is.finish(event))
+    expect(terminals.map((event) => event.type)).toEqual(["step-finish", "finish"])
+    expect(terminals.map((event) => ProviderCapability.servingIdentityOf(event.providerMetadata))).toEqual([
+      "served-final",
+      "served-final",
+    ])
+    for (const terminal of terminals) {
+      expect(terminal.usage).toMatchObject({
+        inputTokens: 300,
+        outputTokens: 60,
+        nonCachedInputTokens: 70,
+        cacheReadInputTokens: 200,
+        cacheWriteInputTokens: 30,
+        reasoningTokens: 20,
+        totalTokens: 360,
+      })
+    }
   })
 
   test("observes a settled response even when the provider reports no usage", async () => {

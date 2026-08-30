@@ -464,6 +464,27 @@ describe("per-request image budget", () => {
     return json.split('"type":"file"').length - 1 + (json.split('"type":"media"').length - 1)
   }
 
+  /** Names of occurrences that still ride as pixels, in request order. Notices are text instead. */
+  const pixelNamesIn = (messages: readonly SessionMessage.Message[], max: number) =>
+    toLLMMessages(messages, model, VISION, max).flatMap((message) => {
+      if (!Array.isArray(message.content)) return []
+      return (message.content as ReadonlyArray<{ readonly type: string; readonly result?: unknown }>).flatMap(
+        (part) => {
+          if (part.type === "media")
+            return [(part as { readonly filename?: string }).filename].filter(
+              (name): name is string => name !== undefined,
+            )
+          if (part.type !== "tool-result") return []
+          const result = part.result as { readonly type?: string; readonly value?: unknown } | undefined
+          if (result?.type !== "content" || !Array.isArray(result.value)) return []
+          return (result.value as ReadonlyArray<ToolContent>)
+            .filter((item) => item.type === "file" && item.mime.startsWith("image/"))
+            .map((item) => (item as { readonly name?: string }).name)
+            .filter((name): name is string => name !== undefined)
+        },
+      )
+    })
+
   /**
    * 🔴 THE WIRING, not the function. Removing the cap from the eviction site left every direct test
    * of `budgetedImageNotice` GREEN — they call it with a number I hand them, which proves nothing
@@ -652,6 +673,45 @@ describe("per-request image budget", () => {
     // The silent ones survive as PIXELS — including the OLDEST, which oldest-first would have taken.
     expect(lowered).not.toContain(noticeFor("a.png"))
     expect(lowered).not.toContain(noticeFor("c.png"))
+  })
+
+  test("elision is monotonic across A/B -> describe B -> append C requests", () => {
+    const ab = [readOf("a.png"), readOf("b.png")]
+    const describedB = [...ab, described("B is a golden broken heart.")]
+    const abc = [...describedB, readOf("c.png")]
+    const requests = [ab, describedB, abc]
+
+    // Request 1 must sacrifice silent A. Once that happened, B becoming described may make B the
+    // best NEW victim, but it must never swap A back into pixels. Request 3 then takes B and keeps C.
+    expect(requests.map((history) => pixelNamesIn(history, 1))).toEqual([["b.png"], ["b.png"], ["c.png"]])
+    expect(
+      requests.map((history) => JSON.stringify(toLLMMessages(history, model, VISION, 1)).includes(noticeFor("a.png"))),
+    ).toEqual([true, true, true])
+  })
+
+  test("an explicit re-read is a new tail occurrence, not a resurrection", () => {
+    const history = [
+      readOf("a.png"),
+      readOf("b.png"),
+      described("B is a golden broken heart."),
+      readOf("c.png"),
+      readOf("a.png"),
+    ]
+    const lowered = JSON.stringify(toLLMMessages(history, model, VISION, 1))
+
+    // The old occurrence stays a notice while the explicit tail occurrence rides as the one pixel.
+    expect(pixelNamesIn(history, 1)).toEqual(["a.png"])
+    expect(lowered).toContain(noticeFor("a.png"))
+  })
+
+  test("assistant prose cannot describe a zero-cap image that rode only as a notice", () => {
+    const opened = [readOf("a.png")]
+    const followedByProse = [...opened, described("A is a golden broken heart.")]
+    const firstRequestPart = toLLMMessages(opened, model, VISION, 0)[0]
+    const grownRequestPart = toLLMMessages(followedByProse, model, VISION, 0)[0]
+
+    expect(grownRequestPart).toEqual(firstRequestPart)
+    expect(JSON.stringify(grownRequestPart)).not.toContain("golden broken heart")
   })
 
   // ⚠️ When NOTHING has been described the preference cannot help: the cap is hard and something has

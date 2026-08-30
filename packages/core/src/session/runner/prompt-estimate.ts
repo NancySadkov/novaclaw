@@ -1,12 +1,12 @@
 export * as PromptEstimate from "./prompt-estimate"
 
-import type { LLMRequest, Usage } from "@novaclaw/llm"
+import { mergeHttpOptions, type LLMRequest, type Usage } from "@novaclaw/llm"
 import type { SessionMessage } from "@novaclaw/schema/session-message"
 import { Hash } from "../../util/hash"
 import { Token } from "../../util/token"
 import { PromptCalibration } from "./prompt-calibration"
 
-type RequestShape = Pick<LLMRequest, "system" | "messages" | "tools">
+type RequestShape = Pick<LLMRequest, "model" | "system" | "messages" | "tools" | "toolChannel" | "http">
 
 export interface Scope {
   readonly sessionID: SessionMessage.PromptAnchor["sessionID"]
@@ -142,14 +142,83 @@ export const reportedPromptTokens = (usage: Usage | undefined): number | undefin
   return positiveInt(sum) ? sum : undefined
 }
 
-/** Stable identity for the governing prompt, tool catalogue, and image grid; never sent off-box. */
-export const shapeKey = (request: Pick<RequestShape, "system" | "tools">, imagePatchPixels?: number): string => {
+/**
+ * Body fields that change how a server renders or tokenizes the prompt.
+ *
+ * 🔴 **AN ALLOWLIST, NOT THE WHOLE REQUEST BODY.** `http.body` is an open provider-extension
+ * surface and can carry credentials (`apiKey`) as well as sampling, scheduling, and output-only
+ * controls. Hashing the record wholesale would persist a secret-derived value and invalidate the
+ * anchor for `temperature` or `top_p`, neither of which changes the prompt prefix. These are the
+ * request fields supported by local OpenAI-compatible servers that actually alter chat-template or
+ * tokenizer input. Add a field here only when its wire semantics change prompt bytes/tokenization.
+ */
+const TEMPLATE_BODY_FIELDS = [
+  "chat_template",
+  "chat_template_kwargs",
+  "chat_template_content_format",
+  "continue_final_message",
+  "add_generation_prompt",
+  "documents",
+  "mm_processor_kwargs",
+  "truncate_prompt_tokens",
+] as const
+
+/** JSON's semantic value with every object key in stable order. */
+const canonicalJson = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map((item) => (item === undefined ? null : canonicalJson(item)))
+  if (value !== null && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter((entry) => entry[1] !== undefined)
+        // Code-unit order is host/locale independent; an identity cannot depend on ICU settings.
+        .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+        .map(([key, item]) => [key, canonicalJson(item)]),
+    )
+  if (typeof value === "number") return Number.isFinite(value) ? (value === 0 ? 0 : value) : null
+  return value
+}
+
+/**
+ * Template identity after applying the same route < model < request HTTP precedence as LLM prepare.
+ * Only the allowlisted body fields survive; headers, query credentials, and unrelated extras do not.
+ */
+const templateOptions = (
+  request: Pick<RequestShape, "model" | "tools" | "toolChannel" | "http">,
+): Readonly<Record<string, unknown>> => {
+  const body = mergeHttpOptions(request.model.route.defaults.http, request.model.defaults?.http, request.http)?.body
+  const fields = Object.fromEntries(
+    TEMPLATE_BODY_FIELDS.flatMap((field) => {
+      const value = body?.[field]
+      return value === undefined ? [] : [[field, canonicalJson(value)] as const]
+    }),
+  )
+  return {
+    // Prompted tools are rendered into the prompt; native tools remain a provider-side catalogue.
+    // With no tools, the two channels render identically, so normalize the inert switch to native.
+    toolChannel:
+      request.tools.length === 0
+        ? "native"
+        : (request.toolChannel ?? request.model.compatibility?.toolChannel ?? "native"),
+    body: fields,
+  }
+}
+
+/** Stable identity for the governing prompt, tool catalogue, template options, and image grid. */
+export const shapeKey = (
+  request: Pick<RequestShape, "model" | "system" | "tools" | "toolChannel" | "http">,
+  imagePatchPixels?: number,
+): string => {
   const resolvedImagePatchPixels =
     imagePatchPixels !== undefined && Number.isSafeInteger(imagePatchPixels) && imagePatchPixels > 0
       ? imagePatchPixels
       : Token.DEFAULT_IMAGE_PATCH_PIXELS
   return Hash.sha256(
-    JSON.stringify({ system: request.system, tools: request.tools, imagePatchPixels: resolvedImagePatchPixels }),
+    JSON.stringify({
+      system: request.system,
+      tools: request.tools,
+      templateOptions: templateOptions(request),
+      imagePatchPixels: resolvedImagePatchPixels,
+    }),
   )
 }
 

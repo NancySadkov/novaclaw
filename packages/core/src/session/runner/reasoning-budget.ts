@@ -1,8 +1,8 @@
 export * as ReasoningBudget from "./reasoning-budget"
 
 import { Stream, Effect } from "effect"
-import { LLM, LLMEvent, Message, SystemPart } from "@novaclaw/llm"
-import type { FinishReason, LLMRequest, StepFinish } from "@novaclaw/llm"
+import { LLM, LLMEvent, Message, SystemPart, Usage } from "@novaclaw/llm"
+import type { Finish, FinishReason, LLMRequest, ProviderMetadata, StepFinish } from "@novaclaw/llm"
 import { Token } from "../../util/token"
 
 /**
@@ -111,12 +111,65 @@ interface State {
   /** Reasoning ended via a non-text action (tool call) — finalize without a text block. */
   done: boolean
   finish: FinishReason
-  usage: StepFinish["usage"]
+  /** Usage is reported per provider request. A controller turn may contain several of them. */
+  reportedUsage: Usage[]
+  /** The current phase's last reported usage; step-finish and finish normally repeat one value. */
+  phaseUsage: Usage | undefined
+  /** Exact terminal event shape from the current provider phase. */
+  phaseTerminals: Array<StepFinish | Finish>
+  /** Requests deliberately torn down at a checkpoint have consumption but no provider terminal. */
+  unreportedPhases: number
   stop: boolean
+}
+
+const sumComplete = (usage: readonly Usage[], select: (value: Usage) => number | undefined) => {
+  if (usage.length === 0) return undefined
+  const values = usage.map(select)
+  if (values.some((value) => value === undefined)) return undefined
+  return values.reduce<number>((total, value) => total + value!, 0)
+}
+
+/**
+ * Aggregate only fields every reported phase actually supplied. Missing is unknown, never zero.
+ * When a checkpoint aborted a request, attach a controller fact to the usage escape hatch so the
+ * reported subtotal cannot masquerade as the whole turn's cost.
+ */
+const aggregateUsage = (reported: readonly Usage[], unreportedPhases: number): Usage | undefined => {
+  if (reported.length === 0 && unreportedPhases === 0) return undefined
+  if (reported.length === 1 && unreportedPhases === 0) return reported[0]
+  const lastMetadata = reported.at(-1)?.providerMetadata
+  const phaseMetadata = reported.flatMap((usage) =>
+    usage.providerMetadata === undefined ? [] : [usage.providerMetadata],
+  )
+  const providerMetadata: ProviderMetadata = {
+    ...(lastMetadata ?? {}),
+    novaclaw: {
+      ...(lastMetadata?.["novaclaw"] ?? {}),
+      reasoningBudget: {
+        reportedPhases: reported.length,
+        unreportedPhases,
+        ...(phaseMetadata.length === 0 ? {} : { phaseUsageProviderMetadata: phaseMetadata }),
+      },
+    },
+  }
+  return new Usage({
+    inputTokens: sumComplete(reported, (usage) => usage.inputTokens),
+    outputTokens: sumComplete(reported, (usage) => usage.outputTokens),
+    nonCachedInputTokens: sumComplete(reported, (usage) => usage.nonCachedInputTokens),
+    cacheReadInputTokens: sumComplete(reported, (usage) => usage.cacheReadInputTokens),
+    cacheWriteInputTokens: sumComplete(reported, (usage) => usage.cacheWriteInputTokens),
+    reasoningTokens: sumComplete(reported, (usage) => usage.reasoningTokens),
+    totalTokens: sumComplete(reported, (usage) => usage.totalTokens),
+    providerMetadata,
+  })
 }
 
 export interface Input<E, R> {
   readonly request: LLMRequest
+  /** Exact opening request when the caller already attached and packed the controller envelope.
+   * Supplying it prevents the opening system line from being appended a second time while retaining
+   * `request` as the base for continuation phases. */
+  readonly preparedOpening?: LLMRequest
   readonly stream: (request: LLMRequest, observation: { readonly anchorable: boolean }) => Stream.Stream<LLMEvent, E, R>
   readonly budget: number
   readonly nudges?: Nudges
@@ -142,7 +195,7 @@ export const openingRequest = (input: {
  */
 export const stream = <E, R>(input: Input<E, R>): Stream.Stream<LLMEvent, E, R> => {
   const nudges = input.nudges ?? defaultNudges
-  const opening = openingRequest({ request: input.request, budget: input.budget, nudges })
+  const opening = input.preparedOpening ?? openingRequest({ request: input.request, budget: input.budget, nudges })
   const system = opening.system
   const state: State = {
     think: "",
@@ -152,7 +205,10 @@ export const stream = <E, R>(input: Input<E, R>): Stream.Stream<LLMEvent, E, R> 
     checkpointHit: false,
     done: false,
     finish: "stop",
-    usage: undefined,
+    reportedUsage: [],
+    phaseUsage: undefined,
+    phaseTerminals: [],
+    unreportedPhases: 0,
     stop: false,
   }
   // Cumulative reasoning-token ceiling for the CURRENT phase (opening ~0.7·budget, mid = full budget,
@@ -185,8 +241,9 @@ export const stream = <E, R>(input: Input<E, R>): Stream.Stream<LLMEvent, E, R> 
     state.inAnswer = true
   }
 
-  // Relabel each phase's raw events onto the single shared reasoning/text blocks, and swallow the
-  // per-phase lifecycle (start/end/step-finish) — the controller emits its own overarching one.
+  // Relabel each phase's raw events onto the single shared reasoning/text blocks. Intermediate
+  // lifecycle events are swallowed; the final phase's terminal shape and provenance are replayed
+  // after the controller closes its shared blocks.
   const transform = (event: LLMEvent): LLMEvent[] => {
     if (LLMEvent.is.reasoningDelta(event)) {
       // Cut the crossing delta at the ceiling rather than swallowing it whole: a provider that batches
@@ -216,13 +273,13 @@ export const stream = <E, R>(input: Input<E, R>): Stream.Stream<LLMEvent, E, R> 
       out.push(LLMEvent.textDelta({ id: TEXT_ID, text: event.text }))
       return out
     }
-    if (LLMEvent.is.stepFinish(event)) {
+    if (LLMEvent.is.stepFinish(event) || LLMEvent.is.finish(event)) {
       state.finish = event.reason
-      if (event.usage) state.usage = event.usage
+      if (event.usage !== undefined) state.phaseUsage = event.usage
+      state.phaseTerminals.push(event)
       return []
     }
     if (
-      LLMEvent.is.finish(event) ||
       LLMEvent.is.stepStart(event) ||
       LLMEvent.is.reasoningStart(event) ||
       LLMEvent.is.reasoningEnd(event) ||
@@ -253,8 +310,33 @@ export const stream = <E, R>(input: Input<E, R>): Stream.Stream<LLMEvent, E, R> 
       state.reasoningEnded = true
     }
     if (state.inAnswer) out.push(LLMEvent.textEnd({ id: TEXT_ID }))
-    out.push(LLMEvent.stepFinish({ index: 0, reason: state.finish, usage: state.usage }))
+    const usage = aggregateUsage(state.reportedUsage, state.unreportedPhases)
+    if (state.phaseTerminals.length === 0) {
+      out.push(LLMEvent.stepFinish({ index: 0, reason: state.finish, usage }))
+    } else {
+      for (const terminal of state.phaseTerminals) {
+        out.push(
+          LLMEvent.is.stepFinish(terminal)
+            ? LLMEvent.stepFinish({
+                index: terminal.index,
+                reason: terminal.reason,
+                usage,
+                providerMetadata: terminal.providerMetadata,
+              })
+            : LLMEvent.finish({
+                reason: terminal.reason,
+                usage,
+                providerMetadata: terminal.providerMetadata,
+              }),
+        )
+      }
+    }
     return Stream.fromIterable(out)
+  }
+
+  const settlePhase = (): void => {
+    if (state.phaseUsage !== undefined) state.reportedUsage.push(state.phaseUsage)
+    if (state.checkpointHit) state.unreportedPhases++
   }
 
   const phaseRequest = (phase: Phase): LLMRequest => {
@@ -328,6 +410,8 @@ export const stream = <E, R>(input: Input<E, R>): Stream.Stream<LLMEvent, E, R> 
             ? input.budget * END_RATIO
             : input.budget * HARD_RATIO
     state.checkpointHit = false
+    state.phaseUsage = undefined
+    state.phaseTerminals = []
     // Only the opening request has the same controller envelope as a future ordinary turn. A
     // continuation carries an assistant prefill / template flags, so its provider usage remains
     // valid drift evidence but must not become the next turn's durable anchor.
@@ -352,13 +436,16 @@ export const stream = <E, R>(input: Input<E, R>): Stream.Stream<LLMEvent, E, R> 
             // text is still useful to an interactive caller, but it is not a completed answer and
             // must never masquerade as one (especially when this controller wraps a compaction
             // summary). Preserve the graceful stream close while making the terminal fact explicit.
+            settlePhase()
             state.finish = "error"
+            state.phaseTerminals = []
             return finalize()
           }),
         )
   }
 
   const decide = (phase: Phase): Stream.Stream<LLMEvent, E, R> => {
+    settlePhase()
     if (state.stop || state.done) return finalize()
     // The model produced an answer (which completed under the generous cap) → done.
     if (state.inAnswer) return finalize()

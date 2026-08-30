@@ -42,6 +42,7 @@ const PROTOCOL_BODY_OVERLAY_DENYLIST = new Set([
   "model",
   "presencePenalty",
   "presence_penalty",
+  "prompt_cache_key",
   "responseFormat",
   "response_format",
   "seed",

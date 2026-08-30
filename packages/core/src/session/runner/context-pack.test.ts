@@ -13,6 +13,7 @@ import {
   isRealUserMessage,
   pack,
   packRequest,
+  CATEGORY_RECLAMATION_BAND_TOKENS,
   DEFAULT_CONTEXT_SIZE,
   MIN_RESPONSE_RESERVE,
 } from "./context-pack"
@@ -342,6 +343,149 @@ describe("pack", () => {
       affectedMessages: 2,
       protected: false,
     })
+  })
+
+  test.each([
+    ["tool_output", "read"],
+    ["retrieval", "kb"],
+  ] as const)("%s eviction keeps the packed old prefix byte-identical within one band", (category, name) => {
+    const huge = "stable category evidence ".repeat(1_200)
+    const initial = [
+      user("original task"),
+      assistantCall("old", name),
+      toolResult("old", name, huge),
+      assistantCall("current", name),
+      toolResult("current", name, huge),
+    ]
+    const categoryUsage = initial
+      .filter((message) => message.role === "tool")
+      .reduce((sum, message) => sum + estimateMessage(message), 0)
+    const caps = {
+      messages: 100_000,
+      retrieval: category === "retrieval" ? categoryUsage - 1 : 100_000,
+      tool_output: category === "tool_output" ? categoryUsage - 1 : 100_000,
+    }
+    const first = pack(initial, 100_000, { historyCaps: caps })
+    const growth = [
+      assistantCall("next-1", name),
+      toolResult("next-1", name, "small one"),
+      assistantCall("next-2", name),
+      toolResult("next-2", name, "small two"),
+    ]
+    const grown = pack([...initial, ...growth], 100_000, { historyCaps: caps })
+
+    expect(JSON.stringify(grown.messages.slice(0, first.messages.length))).toBe(JSON.stringify(first.messages))
+    const afterUsage = grown.messages
+      .filter((message) => message.role === "tool")
+      .reduce((sum, message) => sum + estimateMessage(message), 0)
+    expect(afterUsage).toBeLessThanOrEqual(caps[category])
+    const calls = grown.messages.flatMap((message) =>
+      message.content.flatMap((part) => (part.type === "tool-call" ? [part.id] : [])),
+    )
+    const results = grown.messages.flatMap((message) =>
+      message.content.flatMap((part) => (part.type === "tool-result" ? [part.id] : [])),
+    )
+    expect(results).toEqual(calls)
+    expect(results).toContain("next-2")
+  })
+
+  test("message eviction keeps the packed old prefix byte-identical within one band", () => {
+    const huge = assistantText("stable conversation ".repeat(1_500))
+    const initial = [user("original task"), huge, user("prior detail"), assistantText("current answer")]
+    const rawUsage = initial.reduce((sum, message) => sum + estimateMessage(message), 0)
+    const caps = { messages: rawUsage - 1, retrieval: 100_000, tool_output: 100_000 }
+    const first = pack(initial, 100_000, { historyCaps: caps })
+    const grown = pack([...initial, assistantText("small growth one"), assistantText("small growth two")], 100_000, {
+      historyCaps: caps,
+    })
+
+    expect(JSON.stringify(grown.messages.slice(0, first.messages.length))).toBe(JSON.stringify(first.messages))
+    expect(grown.messages.reduce((sum, message) => sum + estimateMessage(message), 0)).toBeLessThanOrEqual(caps.messages)
+    expect(grown.messages[0]!.content).toEqual(user("original task").content)
+    expect(grown.messages.at(-1)!.content).toEqual(assistantText("small growth two").content)
+  })
+
+  test("a category frontier advances once when required reclamation crosses one band", () => {
+    const huge = "frontier evidence ".repeat(1_200)
+    const initial = [
+      user("original task"),
+      assistantCall("old-1"),
+      toolResult("old-1", "read", huge),
+      assistantCall("old-2"),
+      toolResult("old-2", "read", huge),
+      assistantCall("current"),
+      toolResult("current", "read", huge),
+    ]
+    const usage = initial
+      .filter((message) => message.role === "tool")
+      .reduce((sum, message) => sum + estimateMessage(message), 0)
+    const caps = {
+      messages: 100_000,
+      retrieval: 100_000,
+      tool_output: usage - (CATEGORY_RECLAMATION_BAND_TOKENS - 1),
+    }
+    const before = pack(initial, 100_000, { historyCaps: caps })
+    const after = pack([...initial, assistantCall("next"), toolResult("next", "read", "cross")], 100_000, {
+      historyCaps: caps,
+    })
+    const omitted = (messages: ReadonlyArray<Message>) =>
+      messages.filter((message) =>
+        message.content.some(
+          (part) =>
+            part.type === "tool-result" &&
+            part.result.type === "text" &&
+            String(part.result.value).includes("tool output omitted"),
+        ),
+      ).length
+
+    expect(omitted(before.messages)).toBe(1)
+    expect(omitted(after.messages)).toBe(2)
+    expect(after.messages.at(-1)!.content).toEqual(toolResult("next", "read", "cross").content)
+    expect(
+      after.messages
+        .filter((message) => message.role === "tool")
+        .reduce((sum, message) => sum + estimateMessage(message), 0),
+    ).toBeLessThanOrEqual(caps.tool_output)
+  })
+
+  test("zero and tiny category caps are pure and deterministic while protected anchors survive", () => {
+    const messages = [
+      user("original task"),
+      assistantCall("read-old"),
+      toolResult("read-old", "read", "old tool output".repeat(400)),
+      assistantCall("kb-old", "kb"),
+      toolResult("kb-old", "kb", "old retrieval".repeat(400)),
+      assistantCall("read-new"),
+      toolResult("read-new", "read", "new tool output"),
+      assistantCall("kb-new", "kb"),
+      toolResult("kb-new", "kb", "new retrieval"),
+      assistantText("newest message"),
+    ]
+    const raw = JSON.stringify(messages)
+
+    for (const cap of [0, 1]) {
+      const historyCaps = { messages: cap, retrieval: cap, tool_output: cap }
+      const first = pack(messages, 100_000, { historyCaps })
+      const second = pack(messages, 100_000, { historyCaps })
+      expect(JSON.stringify(first)).toBe(JSON.stringify(second))
+      expect(JSON.stringify(messages)).toBe(raw)
+      expect(first.messages[0]!.content).toEqual(user("original task").content)
+      expect(first.messages.at(-1)!.content).toEqual(assistantText("newest message").content)
+      const calls = first.messages.flatMap((message) =>
+        message.content.flatMap((part) => (part.type === "tool-call" ? [part.id] : [])),
+      )
+      const results = first.messages.flatMap((message) =>
+        message.content.flatMap((part) => (part.type === "tool-result" ? [part.id] : [])),
+      )
+      expect(results).toEqual(calls)
+      expect(results).toContain("read-new")
+      expect(results).toContain("kb-new")
+      expect(
+        first.findings
+          .filter((finding) => finding.kind === "category-budget")
+          .every((finding) => finding.protected),
+      ).toBe(true)
+    }
   })
 
   test("over budget: evicts oldest whole messages, keeps chronology", () => {

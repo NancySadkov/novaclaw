@@ -156,6 +156,33 @@ describe("request option precedence", () => {
     }),
   )
 
+  it.effect("does not let a raw body overlay replace the runner-owned prompt cache key", () =>
+    Effect.gen(function* () {
+      const model = OpenAIChat.route
+        .with({ endpoint: { baseURL: "https://api.openai.test/v1/" }, auth: Auth.bearer("test") })
+        .model({ id: "gpt-4o-mini" })
+      const owned = {
+        model,
+        prompt: "Say hello.",
+        providerOptions: { openai: { promptCacheKey: "session-stable-key" } },
+      } as const
+      const prepared = yield* LLMClient.prepare<OpenAIChat.OpenAIChatBody>(LLM.request(owned))
+      expect(prepared.body.prompt_cache_key).toBe("session-stable-key")
+
+      const error = yield* LLMClient.prepare(
+        LLM.request({
+          ...owned,
+          http: { body: { prompt_cache_key: "static-cross-session-key" } },
+        }),
+      ).pipe(Effect.flip)
+
+      expect(error.reason).toMatchObject({
+        _tag: "InvalidRequest",
+        message: "http.body cannot overlay protocol-owned field(s): prompt_cache_key",
+      })
+    }),
+  )
+
   it.effect("uses model output limits after route limits and before call maxTokens", () =>
     Effect.gen(function* () {
       const route = AnthropicMessages.route.with({

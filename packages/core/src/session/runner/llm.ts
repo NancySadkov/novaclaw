@@ -1649,7 +1649,7 @@ export const layer = Layer.effect(
       const projectGrounding = groundingDecision.due
         ? SessionInput.applySteerProvenance(ProjectGrounding.render(location, groundingListing))
         : undefined
-      const fullRequest = LLM.request({
+      const baseRequest = LLM.request({
         model,
         // Order + placement of the per-model pre-prompt live in system-compose.ts (a pure, tested
         // unit): the pre-prompt sits directly after the persona baseline; every other part keeps its
@@ -1689,6 +1689,14 @@ export const layer = Layer.effect(
       // stable extra system part, while a plain request does not. A change falls back for one turn.
       const thinkingBudget = model.route.defaults.limits?.thinkingBudget ?? 0
       const budgetEnforced = !ShortChat.enabled(config.shortChat) && stanceOf("thinkingBudget", config.thinkingBudget)
+      // Build checkpoint 1 ONCE, before any consumer measures capacity. Prompt estimation,
+      // compaction, packing and provider dispatch must all see the same controller system part;
+      // otherwise the final append can overflow a pack that was correct for a smaller request.
+      const openingRequest = ProviderDispatch.openingRequest({
+        request: baseRequest,
+        enabled: budgetEnforced && !isLastStep,
+        budget: thinkingBudget,
+      })
       const promptScopeBase = {
         sessionID: session.id,
         contextEpoch: system.baselineSeq,
@@ -1724,7 +1732,7 @@ export const layer = Layer.effect(
         ...(routeProfile.servedBy === undefined ? {} : { servedBy: routeProfile.servedBy }),
       }
       const promptEstimate = PromptEstimate.resolve({
-        request: fullRequest,
+        request: openingRequest,
         messages: entries.map((entry) => entry.message),
         scope: promptScope,
         calibrationFactor: routeProfile.promptFactor,
@@ -1743,7 +1751,7 @@ export const layer = Layer.effect(
         sessionID: session.id,
         entries,
         model,
-        request: fullRequest,
+        request: openingRequest,
         promptEstimate,
         imagePatchPixels: routeProfile.imagePatchPixels,
         prefixCacheRetentionTokens: routeProfile.prefixCacheRetentionTokens,
@@ -1770,7 +1778,7 @@ export const layer = Layer.effect(
       // The deterministic packer: what had to be dropped for the request to fit the window.
       yield* timingStart("context-fit")
       const preparedDispatch = ProviderDispatch.prepare({
-        request: fullRequest,
+        request: openingRequest,
         promptCacheKey,
         contextSize: model.route.defaults.limits?.context,
         prefixCacheRetentionTokens: routeProfile.prefixCacheRetentionTokens,
@@ -1792,13 +1800,8 @@ export const layer = Layer.effect(
           "session.context.size": packed.contextSize,
         })
       const request = preparedDispatch.request
-      const providerRequest = ProviderDispatch.openingRequest({
-        request,
-        enabled: budgetEnforced && !isLastStep,
-        budget: thinkingBudget,
-      })
       const outboundPromptTokens = Math.ceil(
-        PromptEstimate.whole(providerRequest, routeProfile.imagePatchPixels) * routeProfile.promptFactor,
+        PromptEstimate.whole(request, routeProfile.imagePatchPixels) * routeProfile.promptFactor,
       )
       const retryAuthorization =
         overflowRecovery === undefined
@@ -1809,7 +1812,7 @@ export const layer = Layer.effect(
               failedRoute: overflowRecovery.failedRoute,
               retryRoute: routeProfileScope,
             })
-      // Measured AFTER packing, because packing is what actually goes out — reading `fullRequest`
+      // Measured AFTER packing, because packing is what actually goes out — reading `openingRequest`
       // would report a request that was never sent and hide eviction entirely. Numbers only, at
       // `debug`: this fires every turn, and the value is the series rather than any one line.
       yield* Log.event("session.request.footprint", {
@@ -1866,6 +1869,7 @@ export const layer = Layer.effect(
           : ProviderDispatch.stream({
               llm,
               request,
+              preparedOpening: request,
               enabled: budgetEnforced && !isLastStep,
               budget: thinkingBudget,
               onProviderStep: ({ request: providerRequest, usage, providerMetadata, anchorable }) => {
@@ -1877,7 +1881,7 @@ export const layer = Layer.effect(
                   ...(servedBy === undefined ? {} : { servedBy }),
                 }
                 // Re-resolve the exact outbound request: packing and the reasoning envelope can make
-                // it differ from `fullRequest`. Only a compatible durable anchor is eligible for the
+                // it differ from the pre-pack opening request. Only a compatible durable anchor is eligible for the
                 // residual series; whole-request fallbacks continue feeding the separate bias ratio.
                 const providerEstimate = PromptEstimate.resolve({
                   request: providerRequest,

@@ -255,6 +255,30 @@ const soleToolResult = (message: Message): ToolResultPart | undefined => {
   return part.type === "tool-result" ? part : undefined
 }
 
+/** Owning assistant index for each positionally settled lone result. Unlike redundancy analysis,
+ * this only needs wire ownership, so unstringifiable inputs and provider-owned calls still occupy
+ * their queue slot. */
+const toolResultOwners = (messages: ReadonlyArray<Message>): Array<number | undefined> => {
+  const pending = new Map<string, number[]>()
+  const owners: Array<number | undefined> = new Array(messages.length).fill(undefined)
+  for (let index = 0; index < messages.length; index++) {
+    const message = messages[index]!
+    for (const part of message.content) {
+      if (part.type !== "tool-call") continue
+      const queue = pending.get(part.id)
+      if (queue === undefined) pending.set(part.id, [index])
+      else queue.push(index)
+    }
+    let owner: number | undefined
+    for (const part of message.content) {
+      if (part.type !== "tool-result") continue
+      owner = pending.get(part.id)?.shift()
+    }
+    if (soleToolResult(message) !== undefined) owners[index] = owner
+  }
+  return owners
+}
+
 /**
  * The comparable text of a settled tool result — what it actually SAYS.
  *
@@ -630,6 +654,19 @@ export const elideRedundant = (
 
 type HistoryCategory = "messages" | "retrieval" | "tool_output"
 
+/**
+ * Category eviction advances in coarse, deterministic steps so append-only transcript growth does
+ * not rewrite the oldest packed prefix on every request. A raw overflow anywhere inside one band
+ * selects the same reclamation target; only crossing a band boundary can advance the frontier.
+ */
+export const CATEGORY_RECLAMATION_BAND_TOKENS = 4_096
+
+const reclamationFrontier = (used: number, cap: number): number => {
+  const required = Math.max(0, used - Math.max(0, cap))
+  if (required === 0) return 0
+  return Math.ceil(required / CATEGORY_RECLAMATION_BAND_TOKENS) * CATEGORY_RECLAMATION_BAND_TOKENS
+}
+
 const historyCategory = (message: Message): HistoryCategory => {
   const result = soleToolResult(message)
   if (result === undefined) return "messages"
@@ -658,7 +695,8 @@ interface CategoryBudgetResult {
 
 /** Enforce the three history shares before ordinary recency packing. Tool results are rewritten in
  * place so call/result wire shape survives; conversation messages are removed oldest-first, with
- * both the original task anchor and newest message protected. The legality passes get the last word. */
+ * the original task, newest message, and owners of both newest result categories protected. The
+ * legality passes get the last word. */
 const enforceHistoryBudgets = (
   messages: Message[],
   estimates: ReadonlyArray<number>,
@@ -673,9 +711,12 @@ const enforceHistoryBudgets = (
   for (const category of ["retrieval", "tool_output"] as const) {
     const indexes = working.flatMap((message, index) => (historyCategory(message) === category ? [index] : []))
     let used = indexes.reduce((sum, index) => sum + workingEstimates[index]!, 0)
+    const reclaimTo = reclamationFrontier(used, caps[category])
+    let reclaimed = 0
     const newest = indexes.at(-1)
     for (const index of indexes) {
-      if (used <= caps[category] || index === newest) break
+      if (reclaimed >= reclaimTo) break
+      if (index === newest) continue
       const message = working[index]!
       const part = soleToolResult(message)
       if (part === undefined) continue
@@ -694,18 +735,29 @@ const enforceHistoryBudgets = (
       working[index] = replacement
       workingEstimates[index] = next
       used -= saved
+      reclaimed += saved
       affected[category]++
     }
   }
 
   let messageUsed = historyUsage(working, workingEstimates, imagePatchPixels).messages
+  const reclaimMessagesTo = reclamationFrontier(messageUsed, caps.messages)
+  let reclaimedMessages = 0
   const anchor = working.findIndex(isRealUserMessage)
   const newest = working.length - 1
+  const protectedMessages = new Set([anchor, newest])
+  const owners = toolResultOwners(working)
+  for (const category of ["retrieval", "tool_output"] as const) {
+    const newestResult = working.findLastIndex((message) => historyCategory(message) === category)
+    const owner = owners[newestResult]
+    if (owner !== undefined) protectedMessages.add(owner)
+  }
   const removed = new Set<number>()
-  for (let index = 0; index < working.length && messageUsed > caps.messages; index++) {
-    if (historyCategory(working[index]!) !== "messages" || index === anchor || index === newest) continue
+  for (let index = 0; index < working.length && reclaimedMessages < reclaimMessagesTo; index++) {
+    if (historyCategory(working[index]!) !== "messages" || protectedMessages.has(index)) continue
     removed.add(index)
     messageUsed -= workingEstimates[index]!
+    reclaimedMessages += workingEstimates[index]!
     affected.messages++
   }
   if (removed.size > 0) {

@@ -4,7 +4,7 @@
 // and the common "model finishes on its own" path fires no continuation.
 import { describe, expect, test } from "bun:test"
 import { Effect, Stream } from "effect"
-import { LLM, LLMEvent, Message, Model, type LLMRequest } from "@novaclaw/llm"
+import { LLM, LLMEvent, Message, Model, Usage, type LLMRequest, type ProviderMetadata } from "@novaclaw/llm"
 import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
 import { ReasoningBudget } from "@novaclaw/core/session/runner/reasoning-budget"
 
@@ -15,6 +15,10 @@ const base = LLM.request({ model, messages: [Message.user("solve it")] })
 const rDelta = (chars: number) => LLMEvent.reasoningDelta({ id: "reasoning-0", text: "r".repeat(chars) })
 const tDelta = (text: string) => LLMEvent.textDelta({ id: "text-0", text })
 const finish = (reason: "stop" | "length") => LLMEvent.stepFinish({ index: 0, reason })
+const terminals = (usage: Usage, providerMetadata: ProviderMetadata) => [
+  LLMEvent.stepFinish({ index: 0, reason: "stop", usage, providerMetadata }),
+  LLMEvent.finish({ reason: "stop", usage, providerMetadata }),
+]
 
 /** A per-phase script: canned events, an immediate failure, or events followed by a failure. */
 type PhaseScript = LLMEvent[] | "ERROR" | { readonly events: LLMEvent[]; readonly error: Error }
@@ -75,6 +79,86 @@ describe("ReasoningBudget", () => {
     expect(prefillOf(requests[0]!)).toBe("") // no forced <think>
     expect(JSON.stringify(requests[0]!.system)).toContain("reasoning budget")
     expect((events[4] as { text: string }).text).toBe("The ball costs $0.05.")
+  })
+
+  test("preserves final terminal provenance and aggregates every reported phase usage", () => {
+    const firstUsage = new Usage({
+      inputTokens: 100,
+      outputTokens: 20,
+      nonCachedInputTokens: 20,
+      cacheReadInputTokens: 70,
+      cacheWriteInputTokens: 10,
+      reasoningTokens: 5,
+      totalTokens: 120,
+      providerMetadata: { openai: { prompt_tokens: 100 } },
+    })
+    const finalUsage = new Usage({
+      inputTokens: 150,
+      outputTokens: 30,
+      nonCachedInputTokens: 30,
+      cacheReadInputTokens: 100,
+      cacheWriteInputTokens: 20,
+      reasoningTokens: 10,
+      totalTokens: 180,
+      providerMetadata: { openai: { prompt_tokens: 150 } },
+    })
+    const firstMetadata = { openai: { system_fingerprint: "served-a" } }
+    const finalMetadata = { openai: { system_fingerprint: "served-b" } }
+    const { events } = run([
+      [rDelta(40), ...terminals(firstUsage, firstMetadata)],
+      [tDelta("answer"), ...terminals(finalUsage, finalMetadata)],
+    ])
+
+    const terminalEvents = events.filter((event) => LLMEvent.is.stepFinish(event) || LLMEvent.is.finish(event))
+    expect(terminalEvents.map((event) => event.type)).toEqual(["step-finish", "finish"])
+    expect(terminalEvents.map((event) => event.providerMetadata)).toEqual([finalMetadata, finalMetadata])
+    for (const terminal of terminalEvents) {
+      expect(terminal.usage).toMatchObject({
+        inputTokens: 250,
+        outputTokens: 50,
+        nonCachedInputTokens: 50,
+        cacheReadInputTokens: 170,
+        cacheWriteInputTokens: 30,
+        reasoningTokens: 15,
+        totalTokens: 300,
+      })
+      expect(terminal.usage?.providerMetadata?.["novaclaw"]?.["reasoningBudget"]).toMatchObject({
+        reportedPhases: 2,
+        unreportedPhases: 0,
+      })
+    }
+  })
+
+  test("marks checkpoint-aborted consumption unreported without fabricating zero usage", () => {
+    const reported = new Usage({
+      inputTokens: 80,
+      outputTokens: 12,
+      nonCachedInputTokens: 20,
+      cacheReadInputTokens: 60,
+      totalTokens: 92,
+    })
+    const { events } = run(
+      [
+        [rDelta(300)],
+        [tDelta("answer"), ...terminals(reported, { openai: { system_fingerprint: "served-final" } })],
+      ],
+      { budget: 100 },
+    )
+    const terminal = events.find(LLMEvent.is.stepFinish)!
+
+    expect(terminal.usage).toMatchObject({
+      inputTokens: 80,
+      outputTokens: 12,
+      nonCachedInputTokens: 20,
+      cacheReadInputTokens: 60,
+      totalTokens: 92,
+    })
+    expect(terminal.usage?.cacheWriteInputTokens).toBeUndefined()
+    expect(terminal.usage?.reasoningTokens).toBeUndefined()
+    expect(terminal.usage?.providerMetadata?.["novaclaw"]?.["reasoningBudget"]).toMatchObject({
+      reportedPhases: 1,
+      unreportedPhases: 1,
+    })
   })
 
   test("full budget path — reasoning crosses opening then mid checkpoints, forced close", () => {

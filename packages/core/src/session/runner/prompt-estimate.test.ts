@@ -292,6 +292,103 @@ describe("PromptEstimate", () => {
     })
   })
 
+  test("invalidates an anchor when effective chat-template options change", () => {
+    const cases = [
+      [
+        { chat_template_kwargs: { enable_thinking: false } },
+        { chat_template_kwargs: { enable_thinking: true } },
+      ],
+      [{ continue_final_message: false }, { continue_final_message: true }],
+      [{ add_generation_prompt: true }, { add_generation_prompt: false }],
+    ] as const
+
+    for (const [before, after] of cases) {
+      const previous = LLM.request({
+        model,
+        system: [SystemPart.make("rules")],
+        messages: [Message.user("same prompt")],
+        http: { body: before },
+      })
+      const anchor = PromptEstimate.observe({
+        request: previous,
+        usage: new Usage({ inputTokens: 100, outputTokens: 1, nonCachedInputTokens: 100 }),
+        scope: scope(),
+      })!
+      const current = LLM.request({
+        model,
+        system: previous.system,
+        messages: previous.messages,
+        http: { body: after },
+      })
+
+      expect(PromptEstimate.resolve({ request: current, messages: [assistant(anchor)], scope: scope() })).toMatchObject({
+        confidence: "whole",
+        fallback: "shape-changed",
+      })
+    }
+  })
+
+  test("normalizes template options across HTTP precedence and object key order", () => {
+    const inheritedModel = Model.make({
+      id: "wire-model",
+      provider: "wire-provider",
+      route: OpenAIChat.route.with({
+        http: {
+          body: {
+            add_generation_prompt: true,
+            chat_template_kwargs: { format: "jinja", enable_thinking: true },
+          },
+        },
+      }),
+      defaults: { http: { body: { chat_template_kwargs: { enable_thinking: false } } } },
+    })
+    const inherited = LLM.request({
+      model: inheritedModel,
+      system: [SystemPart.make("rules")],
+      messages: [Message.user("same prompt")],
+    })
+    const explicit = LLM.request({
+      model,
+      system: inherited.system,
+      messages: inherited.messages,
+      http: {
+        body: {
+          chat_template_kwargs: { enable_thinking: false, format: "jinja" },
+          add_generation_prompt: true,
+        },
+      },
+    })
+
+    expect(PromptEstimate.shapeKey(inherited)).toBe(PromptEstimate.shapeKey(explicit))
+  })
+
+  test("retains an anchor across sampling-only changes and excludes credentials from identity", () => {
+    const previous = LLM.request({
+      model,
+      system: [SystemPart.make("rules")],
+      messages: [Message.user("same prompt")],
+      generation: { temperature: 0.2, topP: 0.8 },
+      http: { headers: { Authorization: "Bearer secret-a" }, body: { apiKey: "secret-a", min_p: 0.1 } },
+    })
+    const anchor = PromptEstimate.observe({
+      request: previous,
+      usage: new Usage({ inputTokens: 100, outputTokens: 1, nonCachedInputTokens: 100 }),
+      scope: scope(),
+    })!
+    const current = LLM.request({
+      model,
+      system: previous.system,
+      messages: previous.messages,
+      generation: { temperature: 1.1, topP: 0.95 },
+      http: { headers: { Authorization: "Bearer secret-b" }, body: { apiKey: "secret-b", min_p: 0.7 } },
+    })
+    const result = PromptEstimate.resolve({ request: current, messages: [assistant(anchor)], scope: scope() })
+
+    expect(PromptEstimate.shapeKey(previous)).toBe(PromptEstimate.shapeKey(current))
+    expect(result.fallback).toBe("none")
+    expect(result.confidence).not.toBe("whole")
+  })
+
   test("does not reuse an anchor from a previous serving process behind the same URL", () => {
     const current = request("same endpoint, replacement process")
     const anchor = PromptEstimate.observe({

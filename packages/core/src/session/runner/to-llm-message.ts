@@ -728,7 +728,7 @@ export const budgetedImageNotice = (
    * invalidates every cached token after it. The budget elides, the notice says re-read, the re-read
    * adds an image, the budget elides again.
    *
-   * ⚠️ **ATTRIBUTED, never asserted as a caption.** `describedImageIndices` can prove only that the
+   * ⚠️ **ATTRIBUTED, never asserted as a caption.** `replayImageBudget` can prove only that the
    * model spoke between this image and the next one — not that the sentence is ABOUT it. So the text
    * is quoted as *what you said after opening it*, which is true by construction, and the model is
    * left to judge. Claiming it as the description would put a wrong caption on a file permanently,
@@ -782,18 +782,8 @@ const isImageContent = (item: ToolContent): item is ToolFileContent =>
  */
 export const budgetImages = (messages: readonly Message[], max: number | undefined): readonly Message[] => {
   if (max === undefined || !Number.isFinite(max) || max < 0) return messages
-  let total = 0
-  for (const message of messages) {
-    if (!Array.isArray(message.content)) continue
-    for (const part of message.content as readonly ContentPart[]) {
-      if (isImagePart(part)) total++
-      else if (part.type === "tool-result") {
-        const value = contentEntries((part as ToolResultPart).result)
-        if (value) total += value.filter(isImageContent).length
-      }
-    }
-  }
-  if (total <= max) return messages
+  const replay = replayImageBudget(messages, max)
+  if (replay.victims.size === 0) return messages
   // ─────────────────────────────────────────────────────────────────────────────
   // WHICH images go, and it is not simply the oldest.
   //
@@ -819,20 +809,14 @@ export const budgetImages = (messages: readonly Message[], max: number | undefin
   // must go. Oldest-first then applies unchanged, and `budgetedImageNotice` is what keeps that
   // honest by forbidding the model to name it from memory.
   // ─────────────────────────────────────────────────────────────────────────────
-  const describedBefore = describedImageIndices(messages)
+  const describedBefore = replay.described
   // ⚠️ Choose the victims UP FRONT, then walk once.
   //
   // The first draft did two walks — described images, then the rest — and it was wrong in a way that
   // passed three of its four tests: the second walk re-indexes over an array the first walk already
   // rewrote, so once an image has become a notice every later index refers to a different picture.
   // A victim SET is computed against one fixed ordering and cannot drift.
-  const victims = new Set<number>()
-  const needed = total - max
-  for (const described of [true, false]) {
-    for (let index = 0; index < total && victims.size < needed; index++)
-      if (describedBefore.has(index) === described) victims.add(index)
-    if (victims.size >= needed) break
-  }
+  const victims = replay.victims
   let imageIndex = -1
   return evictImages(messages, () => {
     const at = ++imageIndex
@@ -844,30 +828,65 @@ export const budgetImages = (messages: readonly Message[], max: number | undefin
 }
 
 /**
- * The positions — in forward image order — of images the model actually said something after.
+ * Replay the image budget at every persisted message boundary.
  *
- * ⚠️ **The rule is text BETWEEN this image and the next one**, not "any assistant text later in the
- * request". The first draft used the latter and it marked every image described the moment the model
- * spoke once: with `read(a) read(b) "a golden heart" read(c)`, `a` counted as described on the
- * strength of a sentence that followed `b`. That is the exact confusion the whole feature exists to
- * prevent, reproduced inside the fix — and it evicted the silent oldest image while keeping the
- * described one.
+ * 🔴 **AN ELISION IS A RATCHET.** Recomputing one preferred victim set from the latest transcript
+ * made an old image reappear. With a one-image cap, request 1 over `[a, b]` elided silent `a`; after
+ * the assistant described `b`, a fresh global described-first choice elided `b` instead and request
+ * 2 silently restored `a`'s pixels. Appending `c` elided `a` again: notice → pixels → notice.
  *
- * ⚠️ Still an approximation, stated rather than hidden: the harness cannot verify a sentence is
- * ABOUT the image it follows. What it can verify is that the model was given the chance and took it
- * before moving on. Silence is unambiguous, and silence is the case that produced the defect —
- * over-counting a description costs an eviction we would likely have made anyway, while
- * under-counting silence costs correctness.
+ * The transcript already persists the only ordering needed to recover the earlier decision. Each
+ * image enters a request at a lowered-message boundary (user input or tool result), so replay the cap
+ * in that order and never remove an index from `victims`. No process-local cache and no filename
+ * identity is involved: re-lowering the same transcript makes the same decision after a restart,
+ * while an explicit re-read is a NEW tail occurrence and can ride as pixels normally.
  *
- * ⚠️ The last image has no "next", so its window runs to the end of the request. An image the model
- * opened and has not yet spoken after is undescribed, which is the correct reading: the turn that
- * would describe it has not happened.
+ * Described-first still decides every NEW victim. Candidate queues are lazy and monotonic too:
+ * assistant text moves the latest image from silent to described, and stale queue entries are
+ * skipped. Thus the replay is linear rather than rescanning a 400-image history at every boundary.
  */
-const describedImageIndices = (messages: readonly Message[]): ReadonlyMap<number, string> => {
-  // One forward pass emitting a flat event stream: each image position, and each point where the
-  // assistant produced non-empty text. An image is described when text appears before the next image.
-  const events: Array<{ readonly kind: "image" | "text"; readonly index: number; readonly text?: string }> = []
+const replayImageBudget = (
+  messages: readonly Message[],
+  max: number,
+): {
+  readonly victims: ReadonlySet<number>
+  readonly described: ReadonlyMap<number, string>
+} => {
+  type CandidateState = "silent" | "described" | "victim"
+
+  const victims = new Set<number>()
+  const described = new Map<number, string>()
+  const states: CandidateState[] = []
+  const silentCandidates: number[] = []
+  const describedCandidates: number[] = []
+  let silentHead = 0
+  let describedHead = 0
   let imageIndex = 0
+
+  const nextCandidate = (candidates: readonly number[], state: CandidateState, head: number) => {
+    while (head < candidates.length && states[candidates[head]!] !== state) head++
+    // An empty queue may gain a later candidate (the tail image becomes described on the next
+    // assistant turn). Do not advance beyond `length`, or that future entry is skipped forever.
+    return head < candidates.length ? { index: candidates[head], head: head + 1 } : { index: undefined, head }
+  }
+
+  const evict = (state: CandidateState): boolean => {
+    const candidates = state === "described" ? describedCandidates : silentCandidates
+    const head = state === "described" ? describedHead : silentHead
+    const next = nextCandidate(candidates, state, head)
+    if (state === "described") describedHead = next.head
+    else silentHead = next.head
+    if (next.index === undefined) return false
+    states[next.index] = "victim"
+    victims.add(next.index)
+    return true
+  }
+
+  const appendImage = () => {
+    states[imageIndex] = "silent"
+    silentCandidates.push(imageIndex++)
+  }
+
   for (const message of messages) {
     const parts: readonly ContentPart[] = Array.isArray(message.content)
       ? (message.content as readonly ContentPart[])
@@ -881,27 +900,39 @@ const describedImageIndices = (messages: readonly Message[]): ReadonlyMap<number
             .filter((part) => part.type === "text")
             .map((part) => (part as { readonly text?: string }).text ?? "")
             .join("")
-    if (message.role === "assistant" && text.trim().length > 0)
-      events.push({ kind: "text", index: -1, text: text.trim() })
-    for (const part of parts) {
-      if (isImagePart(part)) events.push({ kind: "image", index: imageIndex++ })
-      else if (part.type === "tool-result") {
-        const value = contentEntries((part as ToolResultPart).result)
-        if (value)
-          for (const item of value) if (isImageContent(item)) events.push({ kind: "image", index: imageIndex++ })
+    const latest = imageIndex - 1
+    // A prior victim was a NOTICE in the request, not pixels. Later prose cannot truthfully become
+    // “what you said after opening it”, and changing that notice would also move an old cache byte.
+    if (
+      message.role === "assistant" &&
+      text.trim().length > 0 &&
+      latest >= 0 &&
+      states[latest] !== "victim" &&
+      !described.has(latest)
+    ) {
+      described.set(latest, text.trim())
+      if (states[latest] === "silent") {
+        states[latest] = "described"
+        describedCandidates.push(latest)
       }
     }
-  }
-  const described = new Map<number, string>()
-  for (let at = 0; at < events.length; at++) {
-    if (events[at]!.kind !== "image") continue
-    for (let ahead = at + 1; ahead < events.length; ahead++) {
-      if (events[ahead]!.kind === "image") break
-      described.set(events[at]!.index, events[ahead]!.text ?? "")
-      break
+    for (const part of parts) {
+      if (isImagePart(part)) appendImage()
+      else if (part.type === "tool-result") {
+        const value = contentEntries((part as ToolResultPart).result)
+        if (value) for (const item of value) if (isImageContent(item)) appendImage()
+      }
+    }
+
+    // Preserve every earlier victim, and choose only the additional victims this grown request
+    // needs. Described-first remains the preference; oldest-first remains each queue's order.
+    let needed = imageIndex - max - victims.size
+    while (needed > 0) {
+      if (!evict("described") && !evict("silent")) break
+      needed--
     }
   }
-  return described
+  return { victims, described }
 }
 
 /**
