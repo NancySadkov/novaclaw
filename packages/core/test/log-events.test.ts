@@ -276,6 +276,21 @@ describe("redaction is in the record, and it cannot drift from the attributes", 
     expect(Object.values(declaration.attributes)).not.toContain("fault")
     expect(Object.values(declaration.attributes)).not.toContain("list")
   })
+
+  test("silent-truncation suspicion exposes only the pin and numeric evidence", () => {
+    const declaration = EVENTS["session.context.truncation.suspected"]
+    expect(declaration.attributes).toMatchObject({
+      "session.id": "correlate",
+      "provider.id": "correlate",
+      "model.id": "correlate",
+      "session.prompt.tokens": "count",
+      "session.estimated.tokens": "count",
+      "session.context.size": "count",
+      "session.truncation.pin": "id",
+    })
+    expect(derivedContent(declaration)).toBe("correlated")
+    expect(mayEgress("session.context.truncation.suspected")).toBe(false)
+  })
 })
 
 describe("correlation ids are first-class, and their class is decided in ONE place", () => {

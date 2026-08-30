@@ -37,8 +37,6 @@ export const MIN_RESPONSE_RESERVE = 8_192
 export const TOOL_CALL_OVERHEAD = 8
 /** Heuristics remain approximate across model tokenizers — keep 10% headroom (pack to 90% of available). */
 export const BUDGET_KEEP_FRACTION = 0.9
-/** ctx_pressure tripwire: reported prompt tokens at ≥95% of the window flags the estimator. */
-export const PRESSURE_THRESHOLD = 0.95
 
 const toolCallCount = (message: Message) =>
   message.content.filter((part) => part.type === "tool-call" || part.type === "tool-result").length
@@ -1011,12 +1009,3 @@ export const packRequest = (input: {
     system: systemBudget.system,
   }
 }
-
-/**
- * A6(7) — the ctx_pressure tripwire: every response, compare the server-REPORTED prompt tokens
- * against the window; at ≥95% the real prompt has outgrown the packer's estimate and the next
- * request risks silent server-side truncation. Instruments the estimator's blind spot instead of
- * trusting it.
- */
-export const ctxPressure = (reportedPromptTokens: number, contextSize: number): boolean =>
-  contextSize > 0 && reportedPromptTokens >= contextSize * PRESSURE_THRESHOLD

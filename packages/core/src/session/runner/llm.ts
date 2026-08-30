@@ -92,6 +92,8 @@ import { UtilityPass } from "./utility-pass"
 import { ContextPack } from "./context-pack"
 import { PromptEstimate } from "./prompt-estimate"
 import { ModelRouteProfileStore } from "./model-route-profile-store"
+import { TruncationDetection } from "./truncation-detection"
+import { OverflowRecoveryPolicy } from "./overflow-recovery-policy"
 import { Token } from "../../util/token"
 import { RequestFootprint } from "./footprint"
 import { ContextBudget } from "./context-budget"
@@ -897,7 +899,11 @@ export const layer = Layer.effect(
       // Automatic compaction completed; rebuild the request from compacted history.
       | { readonly _tag: "ContinueAfterCompaction"; readonly step: number }
       // Overflow compaction completed; rebuild once through the path without overflow recovery.
-      | { readonly _tag: "ContinueAfterOverflowCompaction"; readonly step: number }
+      | {
+          readonly _tag: "ContinueAfterOverflowCompaction"
+          readonly step: number
+          readonly recovery: OverflowRecovery
+        }
       // The endpoint named its image cap; re-lower this same turn under it. Distinct from the
       // overflow arm because the recovery differs: compaction summarises TEXT and removes no image.
       | { readonly _tag: "RetryUnderImageBudget"; readonly step: number }
@@ -910,8 +916,25 @@ export const layer = Layer.effect(
 
     const continueAfterCompaction = (step: number) => new TurnTransitionError({ _tag: "ContinueAfterCompaction", step })
     const retryUnderImageBudget = (step: number) => new TurnTransitionError({ _tag: "RetryUnderImageBudget", step })
-    const continueAfterOverflowCompaction = (step: number) =>
-      new TurnTransitionError({ _tag: "ContinueAfterOverflowCompaction", step })
+    type OverflowRecovery = {
+      readonly plan: OverflowRecoveryPolicy.Compress
+      readonly failure: ProviderErrorEvent
+      readonly failedRoute: OverflowRecoveryPolicy.CalibrationRoute
+    }
+
+    const overflowProviderError = (failure: unknown): ProviderErrorEvent | undefined => {
+      if (failure !== undefined && LLMEvent.is.providerError(failure)) return failure
+      if (!(failure instanceof LLMError) || failure.reason._tag !== "InvalidRequest") return undefined
+      return LLMEvent.providerError({
+        message: failure.reason.message,
+        ...(failure.reason.classification === undefined ? {} : { classification: failure.reason.classification }),
+        retryable: false,
+        ...(failure.reason.providerMetadata === undefined ? {} : { providerMetadata: failure.reason.providerMetadata }),
+      })
+    }
+
+    const continueAfterOverflowCompaction = (step: number, recovery: OverflowRecovery) =>
+      new TurnTransitionError({ _tag: "ContinueAfterOverflowCompaction", step, recovery })
 
     const loadSystemContext = (agent: AgentV2.Selection, sessionID: SessionSchema.ID, shortChat = false) =>
       shortChat
@@ -1060,6 +1083,7 @@ export const layer = Layer.effect(
       promotion: SessionInput.Delivery | undefined,
       step: number,
       recoverOverflow?: Harness["compaction"]["compactAfterOverflow"],
+      overflowRecovery?: OverflowRecovery,
       timing: TurnTiming.Recorder = TurnTiming.make(),
     ) {
       const publishLiveTiming = () =>
@@ -1665,7 +1689,7 @@ export const layer = Layer.effect(
       // stable extra system part, while a plain request does not. A change falls back for one turn.
       const thinkingBudget = model.route.defaults.limits?.thinkingBudget ?? 0
       const budgetEnforced = !ShortChat.enabled(config.shortChat) && stanceOf("thinkingBudget", config.thinkingBudget)
-      const promptScope: PromptEstimate.Scope = {
+      const promptScopeBase = {
         sessionID: session.id,
         contextEpoch: system.baselineSeq,
         providerID: attemptModelRef.providerID,
@@ -1680,9 +1704,9 @@ export const layer = Layer.effect(
       const routeProfileScope: ModelRouteProfileStore.Scope = {
         providerID: attemptModelRef.providerID,
         wireModelID: attemptModelRef.id,
-        serverKey: promptScope.serverKey,
-        routeID: promptScope.routeID,
-        protocolID: promptScope.protocolID,
+        serverKey: promptScopeBase.serverKey,
+        routeID: promptScopeBase.routeID,
+        protocolID: promptScopeBase.protocolID,
       }
       const routeProfile = yield* routeProfiles
         .resolve(routeProfileScope, { safeDefault: { imagePatchPixels: Token.DEFAULT_IMAGE_PATCH_PIXELS } })
@@ -1690,8 +1714,13 @@ export const layer = Layer.effect(
           Effect.orElseSucceed(() => ({
             promptFactor: 1,
             imagePatchPixels: Token.DEFAULT_IMAGE_PATCH_PIXELS,
+            servedBy: undefined,
           })),
         )
+      const promptScope: PromptEstimate.Scope = {
+        ...promptScopeBase,
+        ...(routeProfile.servedBy === undefined ? {} : { servedBy: routeProfile.servedBy }),
+      }
       const promptEstimate = PromptEstimate.resolve({
         request: fullRequest,
         messages: entries.map((entry) => entry.message),
@@ -1757,6 +1786,23 @@ export const layer = Layer.effect(
           "session.context.size": packed.contextSize,
         })
       const request = preparedDispatch.request
+      const providerRequest = ProviderDispatch.openingRequest({
+        request,
+        enabled: budgetEnforced && !isLastStep,
+        budget: thinkingBudget,
+      })
+      const outboundPromptTokens = Math.ceil(
+        PromptEstimate.whole(providerRequest, routeProfile.imagePatchPixels) * routeProfile.promptFactor,
+      )
+      const retryAuthorization =
+        overflowRecovery === undefined
+          ? undefined
+          : OverflowRecoveryPolicy.authorizeRetry({
+              plan: overflowRecovery.plan,
+              compressedPromptTokens: outboundPromptTokens,
+              failedRoute: overflowRecovery.failedRoute,
+              retryRoute: routeProfileScope,
+            })
       // Measured AFTER packing, because packing is what actually goes out — reading `fullRequest`
       // would report a request that was never sent and hide eviction entirely. Numbers only, at
       // `debug`: this fires every turn, and the value is the series rather than any one line.
@@ -1803,57 +1849,85 @@ export const layer = Layer.effect(
       let brokenResponse = false
       let handledResponseFailure = false
       let providerPromptAnchor: SessionMessage.PromptAnchor | undefined
-      let latestProviderPrompt: { readonly reportedTokens: number; readonly heuristicTokens: number } | undefined
       // MindControl thinking budget (reasoning-budget.ts): when the model carries a budget and this
       // isn't the tool-less final step, run the turn through the budget controller — it monitors the
       // reasoning stream and, only if the model runs past the budget still thinking, stops and
       // continues with a nudge (and a forced `</think>` close at the end). A model that answers on
       // its own streams through untouched. Skipped when thinking is explicitly disabled for the turn.
-      const budgetedSource = ProviderDispatch.stream({
-        llm,
-        request,
-        enabled: budgetEnforced && !isLastStep,
-        budget: thinkingBudget,
-        onProviderStep: ({ request: providerRequest, usage, providerMetadata, anchorable }) => {
-          const estimatedPrompt = PromptEstimate.whole(providerRequest, routeProfile.imagePatchPixels)
-          const reportedPrompt = PromptEstimate.reportedPromptTokens(usage)
-          if (reportedPrompt !== undefined)
-            latestProviderPrompt = { reportedTokens: reportedPrompt, heuristicTokens: estimatedPrompt }
-          if (anchorable) {
-            const observed = PromptEstimate.observe({
+      const budgetedSource =
+        retryAuthorization?.action === "stop"
+          ? Stream.succeed(overflowRecovery!.failure)
+          : ProviderDispatch.stream({
+              llm,
               request,
-              usage,
-              scope: promptScope,
-              imagePatchPixels: routeProfile.imagePatchPixels,
-            })
-            if (observed !== undefined) providerPromptAnchor = observed
-          }
-          const comparable = reportedPrompt !== undefined && estimatedPrompt > 0
-          const remember = comparable
-            ? routeProfiles
-                .observe(
-                  routeProfileScope,
-                  { estimatedTokens: estimatedPrompt, reportedTokens: reportedPrompt! },
-                  ProviderCapability.servingIdentityOf(providerMetadata),
+              enabled: budgetEnforced && !isLastStep,
+              budget: thinkingBudget,
+              onProviderStep: ({ request: providerRequest, usage, providerMetadata, anchorable }) => {
+                const estimatedPrompt = PromptEstimate.whole(providerRequest, routeProfile.imagePatchPixels)
+                const reportedPrompt = PromptEstimate.reportedPromptTokens(usage)
+                const calibratedEstimate = Math.ceil(estimatedPrompt * routeProfile.promptFactor)
+                const truncation =
+                  reportedPrompt === undefined
+                    ? undefined
+                    : TruncationDetection.classify({
+                        reportedPromptTokens: reportedPrompt,
+                        calibratedEstimateTokens: calibratedEstimate,
+                        serverContextWindow: packed.contextSize,
+                      })
+                if (anchorable) {
+                  const servedBy = ProviderCapability.servingIdentityOf(providerMetadata)
+                  const observed = PromptEstimate.observe({
+                    request: providerRequest,
+                    usage,
+                    scope: {
+                      ...promptScope,
+                      ...(servedBy === undefined ? {} : { servedBy }),
+                    },
+                    imagePatchPixels: routeProfile.imagePatchPixels,
+                  })
+                  if (observed !== undefined) providerPromptAnchor = observed
+                }
+                const comparable = reportedPrompt !== undefined && estimatedPrompt > 0
+                const remember = comparable
+                  ? routeProfiles
+                      .observe(
+                        routeProfileScope,
+                        { estimatedTokens: estimatedPrompt, reportedTokens: reportedPrompt! },
+                        ProviderCapability.servingIdentityOf(providerMetadata),
+                      )
+                      .pipe(Effect.ignore)
+                  : Effect.void
+                return remember.pipe(
+                  Effect.andThen(
+                    Log.event("session.context.estimate.drift", {
+                      "session.id": session.id,
+                      "provider.id": attemptModelRef.providerID,
+                      "model.id": attemptModelRef.id,
+                      "session.prompt.reported": reportedPrompt !== undefined,
+                      "session.prompt.tokens": reportedPrompt ?? 0,
+                      "session.estimated.tokens": estimatedPrompt,
+                      "session.estimate.comparable": comparable,
+                      "session.estimate.ratio": comparable
+                        ? Math.round((reportedPrompt! / estimatedPrompt) * 100) / 100
+                        : 0,
+                    }),
+                  ),
+                  Effect.andThen(
+                    truncation?.status === "suspected" && truncation.pin !== undefined
+                      ? Log.event("session.context.truncation.suspected", {
+                          "session.id": session.id,
+                          "provider.id": attemptModelRef.providerID,
+                          "model.id": attemptModelRef.id,
+                          "session.prompt.tokens": reportedPrompt!,
+                          "session.estimated.tokens": calibratedEstimate,
+                          "session.context.size": packed.contextSize,
+                          "session.truncation.pin": truncation.pin,
+                        })
+                      : Effect.void,
+                  ),
                 )
-                .pipe(Effect.ignore)
-            : Effect.void
-          return remember.pipe(
-            Effect.andThen(
-              Log.event("session.context.estimate.drift", {
-                "session.id": session.id,
-                "provider.id": attemptModelRef.providerID,
-                "model.id": attemptModelRef.id,
-                "session.prompt.reported": reportedPrompt !== undefined,
-                "session.prompt.tokens": reportedPrompt ?? 0,
-                "session.estimated.tokens": estimatedPrompt,
-                "session.estimate.comparable": comparable,
-                "session.estimate.ratio": comparable ? Math.round((reportedPrompt! / estimatedPrompt) * 100) / 100 : 0,
-              }),
-            ),
-          )
-        },
-      })
+              },
+            })
       // STEER INTERRUPT (owner 2026-07-26). Reasoning and the answer can be cut safely — the only thing that
       // must not be interrupted is a TOOL, because a half-written file or a half-sent message is real damage.
       // So a durable steer arriving mid-generation stops the stream at the next event and the following step
@@ -2102,10 +2176,20 @@ export const layer = Layer.effect(
             }
             if (mediaLimitFailureEvent) yield* publish(mediaLimitFailureEvent)
           }
+          const recoveryFailure = overflowProviderError(overflowFailure ?? failure)
+          const recoveryPlan =
+            recoveryFailure === undefined
+              ? undefined
+              : OverflowRecoveryPolicy.plan({
+                  failure: recoveryFailure,
+                  originalPromptTokens: outboundPromptTokens,
+                  recoveryAttempts: 0,
+                })
           if (
             recoverOverflow &&
             !publisher.hasAssistantStarted() &&
-            isContextOverflowFailure(overflowFailure ?? failure) &&
+            recoveryFailure !== undefined &&
+            recoveryPlan?.action === "compress" &&
             (yield* restore(
               recoverOverflow({
                 sessionID: session.id,
@@ -2113,10 +2197,18 @@ export const layer = Layer.effect(
                 model,
                 request,
                 imagePatchPixels: routeProfile.imagePatchPixels,
+                overflowPromptTokens: recoveryPlan.originalPromptTokens,
+                overflowTargetTokens: recoveryPlan.targetPromptTokens,
               }),
             ))
           )
-            return yield* Effect.die(continueAfterOverflowCompaction(currentStep))
+            return yield* Effect.die(
+              continueAfterOverflowCompaction(currentStep, {
+                plan: recoveryPlan,
+                failure: recoveryFailure,
+                failedRoute: routeProfileScope,
+              }),
+            )
           if (overflowFailure) yield* publish(overflowFailure)
           const llmFailure = failure instanceof LLMError ? failure : undefined
           if (
@@ -2343,19 +2435,6 @@ export const layer = Layer.effect(
             // per-step totals tick live everywhere; the within-step estimate rides the delta
             // stream client-side. Identity merge = "publish the row as it now stands".
             yield* SessionPatch.patchSessionRecord({ db, events }, session.id, (info) => info).pipe(Effect.ignore)
-            // 1M/A6(7) — ctx_pressure tripwire: the server-REPORTED prompt size vs the window.
-            // At ≥95% the real prompt has outgrown the chars/4 estimate; the next request risks
-            // silent server-side truncation. Logs actual-vs-estimate for calibration.
-            const reportedPrompt =
-              latestProviderPrompt?.reportedTokens ??
-              stepSettlement.tokens.input + stepSettlement.tokens.cache.read + stepSettlement.tokens.cache.write
-            if (ContextPack.ctxPressure(reportedPrompt, packed.contextSize))
-              yield* Log.event("session.context.pressure.high", {
-                "session.id": session.id,
-                "session.prompt.tokens": reportedPrompt,
-                "session.estimated.tokens": latestProviderPrompt?.heuristicTokens ?? packed.estimatedTokens,
-                "session.context.size": packed.contextSize,
-              })
           }
           if (publisher.hasProviderError())
             yield* withPublication(
@@ -2472,24 +2551,47 @@ export const layer = Layer.effect(
     // and is retried over compacted history is still ONE turn — re-deriving mid-retry would let the
     // second attempt compose a different system prompt than the first, which is the within-turn
     // incoherence B7 is trying not to introduce. The next turn re-derives (see `run`).
-    const runAfterOverflowCompaction: RunTurn = Effect.fnUntraced(function* (
+    type RunTurnEffect = ReturnType<RunTurn>
+    const runAfterOverflowCompaction: (
+      sessionID: SessionSchema.ID,
+      harness: Harness,
+      promotion: SessionInput.Delivery | undefined,
+      step: number,
+      recovery: OverflowRecovery,
+      timing?: TurnTiming.Recorder,
+    ) => RunTurnEffect = Effect.fnUntraced(function* (
       sessionID,
       harness,
       promotion,
       step,
+      recovery,
       timing = TurnTiming.make(),
     ) {
-      return yield* runTurnAttempt(sessionID, harness, promotion, step, undefined, timing).pipe(
+      return yield* runTurnAttempt(sessionID, harness, promotion, step, undefined, recovery, timing).pipe(
         Effect.catchDefect(
           Effect.fnUntraced(function* (defect) {
             if (!(defect instanceof TurnTransitionError)) return yield* Effect.die(defect)
             // A learned cap is applied by REBUILDING the request, which the ordinary re-entry does.
             if (defect.transition._tag === "RetryUnderImageBudget")
-              return yield* runAfterOverflowCompaction(sessionID, harness, undefined, defect.transition.step, timing)
+              return yield* runAfterOverflowCompaction(
+                sessionID,
+                harness,
+                undefined,
+                defect.transition.step,
+                recovery,
+                timing,
+              )
             if (defect.transition._tag === "ContinueAfterOverflowCompaction")
               return yield* Effect.die("Post-compaction provider attempt cannot recover another overflow")
             yield* Effect.yieldNow
-            return yield* runAfterOverflowCompaction(sessionID, harness, undefined, defect.transition.step, timing)
+            return yield* runAfterOverflowCompaction(
+              sessionID,
+              harness,
+              undefined,
+              defect.transition.step,
+              recovery,
+              timing,
+            )
           }),
         ),
       )
@@ -2508,6 +2610,7 @@ export const layer = Layer.effect(
         promotion,
         step,
         harness.compaction.compactAfterOverflow,
+        undefined,
         timing,
       ).pipe(
         Effect.catchDefect(
@@ -2515,7 +2618,14 @@ export const layer = Layer.effect(
             if (!(defect instanceof TurnTransitionError)) return yield* Effect.die(defect)
             yield* Effect.yieldNow
             if (defect.transition._tag === "ContinueAfterOverflowCompaction")
-              return yield* runAfterOverflowCompaction(sessionID, harness, undefined, defect.transition.step, timing)
+              return yield* runAfterOverflowCompaction(
+                sessionID,
+                harness,
+                undefined,
+                defect.transition.step,
+                defect.transition.recovery,
+                timing,
+              )
             return yield* runTurn(sessionID, harness, undefined, defect.transition.step, timing)
           }),
         ),

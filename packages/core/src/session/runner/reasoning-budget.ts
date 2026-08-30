@@ -122,6 +122,19 @@ export interface Input<E, R> {
   readonly nudges?: Nudges
 }
 
+/** The exact first request emitted by the controller, exposed for pre-dispatch capacity guards. */
+export const openingRequest = (input: {
+  readonly request: LLMRequest
+  readonly budget: number
+  readonly nudges?: Nudges
+}): LLMRequest => {
+  const nudges = input.nudges ?? defaultNudges
+  return LLM.request({
+    ...LLM.requestInput(input.request),
+    system: [...input.request.system, SystemPart.make(nudges.opening(input.budget))],
+  })
+}
+
 /**
  * Wrap a provider turn in the thinking-budget controller. Drop-in for `llm.stream(request)`:
  * yields the same `LLMEvent` stream (one reasoning block, one text block) so the runner's publisher
@@ -129,7 +142,8 @@ export interface Input<E, R> {
  */
 export const stream = <E, R>(input: Input<E, R>): Stream.Stream<LLMEvent, E, R> => {
   const nudges = input.nudges ?? defaultNudges
-  const system = [...input.request.system, SystemPart.make(nudges.opening(input.budget))]
+  const opening = openingRequest({ request: input.request, budget: input.budget, nudges })
+  const system = opening.system
   const state: State = {
     think: "",
     reasoningStarted: false,
@@ -256,7 +270,7 @@ export const stream = <E, R>(input: Input<E, R>): Stream.Stream<LLMEvent, E, R> 
       system,
     }
     // Phase 1 runs the model normally (no forced `<think>`) so non-thinking models simply answer.
-    if (phase === "opening") return LLM.request(base)
+    if (phase === "opening") return opening
     // Checkpoint 4 — the MECHANICAL hard stop. Both nudges were ignored (a degenerate loop reasons
     // right through informational text), so stop asking and remove the capability: re-issue the turn
     // with the thinking template switched OFF. No prefill — a closed-`</think>` continuation returns an

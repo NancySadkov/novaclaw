@@ -37474,6 +37474,9 @@
           "protocolID": {
             "type": "string"
           },
+          "servedBy": {
+            "type": "string"
+          },
           "controllerKey": {
             "type": "string"
           },

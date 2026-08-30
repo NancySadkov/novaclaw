@@ -2697,6 +2697,7 @@ export type SessionMessagePromptAnchor = {
   serverKey: string
   routeID: string
   protocolID: string
+  servedBy?: string
   controllerKey: string
   shapeKey: string
   heuristicTokens: number

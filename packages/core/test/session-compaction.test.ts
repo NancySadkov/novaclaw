@@ -43,6 +43,23 @@ test("compaction describes tool media without embedding base64", () => {
 // it — under a speaker label that is unmistakably not the user.
 
 const user = (text: string): SessionMessage.Message => ({ type: "user", text }) as unknown as SessionMessage.Message
+
+test("overflow recovery translates the fixed whole-request cut into a smaller recent tail", () => {
+  expect(
+    SessionCompaction.overflowRecentBudget({
+      configuredRecentTokens: 8_000,
+      originalPromptTokens: 32_000,
+      targetPromptTokens: 24_000,
+    }),
+  ).toBe(0)
+  expect(
+    SessionCompaction.overflowRecentBudget({
+      configuredRecentTokens: 8_000,
+      originalPromptTokens: 20_000,
+      targetPromptTokens: 15_000,
+    }),
+  ).toBe(3_000)
+})
 const steer = (text: string): SessionMessage.Message => user(applySteerProvenance(text))
 const assistant = (text: string): SessionMessage.Message =>
   ({ type: "assistant", content: [{ type: "text", text }] }) as unknown as SessionMessage.Message
@@ -279,16 +296,52 @@ test("the estimate-vs-provider ratio compares one exact provider request with it
   const callback = "onProviderStep: ({ request: providerRequest, usage, providerMetadata, anchorable })"
   expect(runner).toContain(callback)
   expect(runner).toContain("PromptEstimate.whole(providerRequest, routeProfile.imagePatchPixels)")
-  expect(runner).toContain("routeProfileScope,\n                  { estimatedTokens: estimatedPrompt")
-  expect(runner).toContain(".observe(")
   expect(runner).toContain("ProviderCapability.servingIdentityOf(providerMetadata)")
   expect(runner).toContain('"session.prompt.reported": reportedPrompt !== undefined')
   expect(runner).toContain('Log.event("session.context.estimate.drift"')
   const callbackAt = runner.indexOf(callback)
-  const pressureAt = runner.indexOf('Log.event("session.context.pressure.high"', callbackAt)
+  const classifierAt = runner.indexOf("TruncationDetection.classify({", callbackAt)
+  const suspicionAt = runner.indexOf('Log.event("session.context.truncation.suspected"', callbackAt)
   expect(callbackAt).toBeGreaterThan(-1)
-  expect(pressureAt).toBeGreaterThan(callbackAt)
-  expect(runner.slice(callbackAt, pressureAt)).not.toContain('"session.estimated.tokens": packed.estimatedTokens')
+  expect(classifierAt).toBeGreaterThan(callbackAt)
+  expect(suspicionAt).toBeGreaterThan(classifierAt)
+  const observation = runner.slice(callbackAt, suspicionAt)
+  const routeObservationAt = observation.indexOf("const remember = comparable")
+  expect(routeObservationAt).toBeGreaterThan(-1)
+  expect(observation.slice(routeObservationAt)).toContain("routeProfileScope")
+  expect(observation.slice(routeObservationAt)).toContain("{ estimatedTokens: estimatedPrompt")
+  expect(observation).toContain("reportedPromptTokens: reportedPrompt")
+  expect(observation).toContain("calibratedEstimateTokens: calibratedEstimate")
+  expect(observation).toContain("serverContextWindow: packed.contextSize")
+  expect(observation).not.toContain('"session.estimated.tokens": packed.estimatedTokens')
+})
+
+test("overflow recovery measures the exact packed requests and resends at most once after a fixed cut", () => {
+  const runner = readFileSync(path.join(import.meta.dir, "..", "src", "session", "runner", "llm.ts"), "utf8")
+  const packedAt = runner.indexOf("const request = preparedDispatch.request")
+  const measuredAt = runner.indexOf("const outboundPromptTokens = Math.ceil(", packedAt)
+  const authorizeAt = runner.indexOf("OverflowRecoveryPolicy.authorizeRetry({", measuredAt)
+  const providerAt = runner.indexOf("ProviderDispatch.stream({", authorizeAt)
+  expect(packedAt).toBeGreaterThan(-1)
+  expect(measuredAt).toBeGreaterThan(packedAt)
+  expect(authorizeAt).toBeGreaterThan(measuredAt)
+  expect(providerAt).toBeGreaterThan(authorizeAt)
+  expect(runner.slice(packedAt, measuredAt)).toContain("ProviderDispatch.openingRequest({")
+  expect(runner.slice(measuredAt, authorizeAt)).toContain("PromptEstimate.whole(providerRequest")
+  expect(runner.slice(authorizeAt, providerAt)).toContain("compressedPromptTokens: outboundPromptTokens")
+  expect(runner.slice(authorizeAt, providerAt)).toContain("Stream.succeed(overflowRecovery!.failure)")
+
+  const planAt = runner.indexOf("OverflowRecoveryPolicy.plan({")
+  const compactAt = runner.indexOf("recoverOverflow({", planAt)
+  const transitionAt = runner.indexOf("continueAfterOverflowCompaction(", compactAt)
+  expect(planAt).toBeGreaterThan(providerAt)
+  expect(compactAt).toBeGreaterThan(planAt)
+  expect(transitionAt).toBeGreaterThan(compactAt)
+  const recovery = runner.slice(planAt, transitionAt)
+  expect(recovery).toContain("originalPromptTokens: outboundPromptTokens")
+  expect(recovery).toContain("overflowPromptTokens: recoveryPlan.originalPromptTokens")
+  expect(recovery).toContain("overflowTargetTokens: recoveryPlan.targetPromptTokens")
+  expect(runner).toContain("runTurnAttempt(sessionID, harness, promotion, step, undefined, recovery, timing)")
 })
 
 // ── A summary has a finite, hard output chain ─────────────────────────────────────────────────────────────────────

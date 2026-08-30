@@ -16,6 +16,7 @@ export interface Scope {
   readonly serverKey: string
   readonly routeID: string
   readonly protocolID: string
+  readonly servedBy?: string
   readonly controllerKey: string
 }
 
@@ -29,6 +30,7 @@ export type Fallback =
   | "server-changed"
   | "route-changed"
   | "protocol-changed"
+  | "serving-process-changed"
   | "controller-changed"
   | "shape-changed"
   | "invalid"
@@ -114,6 +116,7 @@ const mismatch = (anchor: SessionMessage.PromptAnchor, scope: Scope, currentShap
   if (anchor.serverKey !== scope.serverKey) return "server-changed"
   if (anchor.routeID !== scope.routeID) return "route-changed"
   if (anchor.protocolID !== scope.protocolID) return "protocol-changed"
+  if (anchor.servedBy !== scope.servedBy) return "serving-process-changed"
   if (anchor.controllerKey !== scope.controllerKey) return "controller-changed"
   if (anchor.shapeKey !== currentShapeKey) return "shape-changed"
   return "none"

@@ -142,6 +142,10 @@ type Input = {
   readonly promptEstimate?: PromptEstimate.Result
   /** Resolved patch side for this exact model/server route; absent keeps the measured default. */
   readonly imagePatchPixels?: number
+  /** Exact calibrated prompt size that the provider rejected. Present only for overflow recovery. */
+  readonly overflowPromptTokens?: number
+  /** One fixed post-compaction target derived from that rejected prompt. */
+  readonly overflowTargetTokens?: number
 }
 
 /**
@@ -275,6 +279,31 @@ export const selectContext = (
       .map((entry) => entry.text)
       .join("\n\n"),
   }
+}
+
+/**
+ * Translate the recovery policy's whole-request cut into the compactor's verbatim-tail budget.
+ * Static system/tool framing and the replacement summary are measured again by the runner before
+ * any resend, so this is intentionally one-sided: reclaim at least the requested delta from the
+ * configurable recent tail, then let the exact assembled-request guard decide whether it is enough.
+ */
+export const overflowRecentBudget = (input: {
+  readonly configuredRecentTokens: number
+  readonly originalPromptTokens?: number
+  readonly targetPromptTokens?: number
+}): number => {
+  if (
+    !Number.isSafeInteger(input.configuredRecentTokens) ||
+    input.configuredRecentTokens < 0 ||
+    !Number.isSafeInteger(input.originalPromptTokens) ||
+    input.originalPromptTokens! <= 0 ||
+    !Number.isSafeInteger(input.targetPromptTokens) ||
+    input.targetPromptTokens! <= 0 ||
+    input.targetPromptTokens! >= input.originalPromptTokens!
+  )
+    return Math.max(0, input.configuredRecentTokens)
+  const requiredReclaim = input.originalPromptTokens! - input.targetPromptTokens!
+  return Math.max(0, input.configuredRecentTokens - requiredReclaim)
 }
 
 /**
@@ -457,7 +486,14 @@ export const make = (dependencies: Dependencies) => {
       yield* Log.event("session.compaction.prune.only", { "session.id": input.sessionID })
       return false
     }
-    const selected = selectContext(entries, config.tokens)
+    const selected = selectContext(
+      entries,
+      overflowRecentBudget({
+        configuredRecentTokens: config.tokens,
+        originalPromptTokens: input.overflowPromptTokens,
+        targetPromptTokens: input.overflowTargetTokens,
+      }),
+    )
     const previousSummary = entries.find((entry) => entry.message.type === "compaction")?.message
     if (!selected || (selected.head.length === 0 && previousSummary?.type !== "compaction")) return false
     const summaryPrompt = buildPrompt({

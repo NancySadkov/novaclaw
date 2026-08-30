@@ -212,6 +212,23 @@ describe("PromptEstimate", () => {
     })
   })
 
+  test("does not reuse an anchor from a previous serving process behind the same URL", () => {
+    const current = request("same endpoint, replacement process")
+    const anchor = PromptEstimate.observe({
+      request: current,
+      usage: new Usage({ inputTokens: 500, outputTokens: 1, nonCachedInputTokens: 500 }),
+      scope: scope({ servedBy: "process-a" }),
+    })!
+
+    expect(
+      PromptEstimate.resolve({
+        request: current,
+        messages: [assistant(anchor)],
+        scope: scope({ servedBy: "process-b" }),
+      }).fallback,
+    ).toBe("serving-process-changed")
+  })
+
   test("retains the last valid anchor across a settled response with no usage", () => {
     const previous = request("old")
     const anchor = PromptEstimate.observe({
@@ -326,6 +343,7 @@ describe("PromptEstimate", () => {
       [{ serverKey: "other" }, "rules", "server-changed"],
       [{ routeID: "other" }, "rules", "route-changed"],
       [{ protocolID: "other" }, "rules", "protocol-changed"],
+      [{ servedBy: "other" }, "rules", "serving-process-changed"],
       [{ controllerKey: "other" }, "rules", "controller-changed"],
       [{ contextEpoch: 8 }, "rules", "epoch-changed"],
       [{ sessionID: SessionSchema.ID.make("ses_other") }, "rules", "session-changed"],

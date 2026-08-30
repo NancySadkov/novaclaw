@@ -55,7 +55,7 @@ export const prepare = (input: PrepareInput) => {
 }
 
 /** The provider-neutral reasoning controller used by every dispatched completion. */
-export const stream = (input: {
+interface StreamInput {
   readonly llm: LLMClientShape
   readonly request: LLMRequest
   readonly enabled: boolean
@@ -70,7 +70,15 @@ export const stream = (input: {
     /** Base/opening requests share the next ordinary turn's controller envelope. */
     readonly anchorable: boolean
   }) => Effect.Effect<void>
-}): Stream.Stream<import("@novaclaw/llm").LLMEvent, LLMError> => {
+}
+
+/** Exact first provider request, including the optional reasoning-controller envelope. */
+export const openingRequest = (input: Pick<StreamInput, "request" | "enabled" | "budget">): LLMRequest =>
+  input.enabled && input.budget > 0 && thinkingEnabled(input.request)
+    ? ReasoningBudget.openingRequest({ request: input.request, budget: input.budget })
+    : input.request
+
+export const stream = (input: StreamInput): Stream.Stream<import("@novaclaw/llm").LLMEvent, LLMError> => {
   const source = (request: LLMRequest, observation: { readonly anchorable: boolean }) => {
     const stream = input.llm.stream(request)
     if (input.onProviderStep === undefined) return stream

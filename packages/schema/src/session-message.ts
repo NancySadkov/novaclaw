@@ -322,6 +322,8 @@ export const PromptAnchor = Schema.Struct({
   serverKey: Schema.String,
   routeID: Schema.String,
   protocolID: Schema.String,
+  /** Provider-reported serving-process identity; absent when the wire cannot expose one. */
+  servedBy: Schema.String.pipe(optional),
   controllerKey: Schema.String,
   shapeKey: Schema.String,
   heuristicTokens: PositiveInt,

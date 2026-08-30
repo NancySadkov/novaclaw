@@ -83,10 +83,12 @@ describe("ProviderDispatch", () => {
         ])
       },
     } as never
+    const baseRequest = LLM.request({ model, messages: [Message.user("answer")] })
+    const opening = ProviderDispatch.openingRequest({ request: baseRequest, enabled: true, budget: 64 })
     await Effect.runPromise(
       ProviderDispatch.stream({
         llm,
-        request: LLM.request({ model, messages: [Message.user("answer")] }),
+        request: baseRequest,
         enabled: true,
         budget: 64,
         onProviderStep: (step) =>
@@ -96,6 +98,7 @@ describe("ProviderDispatch", () => {
       }).pipe(Stream.runDrain),
     )
     expect(requests).toHaveLength(1)
+    expect(requests[0]).toEqual(opening)
     expect(requests[0]!.system.at(-1)?.text).toContain("reasoning budget of about 64 tokens")
     expect(observed).toHaveLength(1)
     expect(observed[0]!.request).toBe(requests[0])

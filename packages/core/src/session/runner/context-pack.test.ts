@@ -6,7 +6,6 @@ import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
 import { SessionInput } from "../input"
 import {
   budget,
-  ctxPressure,
   demoteSystemMessages,
   dropDanglingToolCalls,
   dropOrphanTools,
@@ -17,7 +16,6 @@ import {
   BUDGET_KEEP_FRACTION,
   DEFAULT_CONTEXT_SIZE,
   MIN_RESPONSE_RESERVE,
-  PRESSURE_THRESHOLD,
 } from "./context-pack"
 
 const user = (text: string) => Message.user(text)
@@ -475,14 +473,6 @@ describe("packRequest typed system shares", () => {
     // …and the real turn still anchors.
     const messages = [user("the real task"), user(recall)]
     expect(messages.findIndex(isRealUserMessage)).toBe(0)
-  })
-})
-
-describe("ctxPressure", () => {
-  test("flags at >=95% of the window", () => {
-    expect(ctxPressure(Math.ceil(32_000 * PRESSURE_THRESHOLD), 32_000)).toBe(true)
-    expect(ctxPressure(20_000, 32_000)).toBe(false)
-    expect(ctxPressure(100, 0)).toBe(false)
   })
 })
 

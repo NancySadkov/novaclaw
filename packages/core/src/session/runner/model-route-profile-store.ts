@@ -35,6 +35,8 @@ export interface ProfileUpdate extends Tunables {
 
 export interface Resolved extends Tunables {
   readonly promptFactor: number
+  /** Current provider-reported serving process, when known. */
+  readonly servedBy?: string
 }
 
 export interface ResolveInput {
@@ -122,6 +124,7 @@ const firstPositive = (...values: readonly (number | undefined)[]): number | und
 
 export const resolveProfile = (persisted: Profile | undefined, input: ResolveInput): Resolved => ({
   promptFactor: PromptCalibration.factorOf(persisted?.promptRatios ?? []),
+  ...(persisted?.servedBy === undefined ? {} : { servedBy: persisted.servedBy }),
   ...(() => {
     const imagePatchPixels = firstPositive(
       input.declared?.imagePatchPixels,

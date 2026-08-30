@@ -169,6 +169,7 @@ describe("profile precedence", () => {
       promptRatios: [1.1],
       imagePatchPixels: 900,
       prefixCacheRetentionTokens: 3_000,
+      servedBy: "process-a",
     }
     expect(
       resolveProfile(persisted, {
@@ -176,7 +177,12 @@ describe("profile precedence", () => {
         discovered: { imagePatchPixels: 500, prefixCacheRetentionTokens: 2_000 },
         safeDefault: { imagePatchPixels: 1024, prefixCacheRetentionTokens: 1_000 },
       }),
-    ).toEqual({ promptFactor: 1.1, imagePatchPixels: 400, prefixCacheRetentionTokens: 2_000 })
+    ).toEqual({
+      promptFactor: 1.1,
+      imagePatchPixels: 400,
+      prefixCacheRetentionTokens: 2_000,
+      servedBy: "process-a",
+    })
     expect(resolveProfile(persisted, { safeDefault: { imagePatchPixels: 1024 } }).imagePatchPixels).toBe(900)
     expect(resolveProfile(undefined, { safeDefault: { imagePatchPixels: 1024 } }).imagePatchPixels).toBe(1024)
   })
