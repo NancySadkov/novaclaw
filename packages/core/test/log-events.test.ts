@@ -268,6 +268,7 @@ describe("redaction is in the record, and it cannot drift from the attributes", 
       "compaction.anchor.growth": "count",
       "compaction.anchor.low-confidence": "flag",
       "compaction.anchor.fallback": "id",
+      "compaction.prefix-cache.retention": "count",
     })
     expect(derivedContent(declaration)).toBe("correlated")
     expect(mayEgress("session.compaction.threshold")).toBe(false)

@@ -59,6 +59,8 @@ export const MIN_RESPONSE_RESERVE = 8_192
 export interface Capacity {
   readonly contextTokens: number
   readonly responseReserveTokens: number
+  /** Exact-route prompt prefix known to remain reusable; absent means no cache-derived ceiling. */
+  readonly prefixCacheRetentionTokens?: number
   readonly promptCeilingTokens: number
 }
 
@@ -84,6 +86,7 @@ export const capacity = (input: {
   readonly contextTokens: number
   readonly outputTokens?: number
   readonly minimumResponseReserveTokens?: number
+  readonly prefixCacheRetentionTokens?: number
 }): Capacity => {
   const contextTokens = tokenCount(input.contextTokens)
   const responseReserveTokens = Math.max(
@@ -92,10 +95,18 @@ export const capacity = (input: {
     tokenCount(input.outputTokens),
     tokenCount(input.minimumResponseReserveTokens),
   )
+  const contextPromptCeiling = Math.max(0, contextTokens - responseReserveTokens)
+  const prefixCacheRetentionTokens = positiveInt(input.prefixCacheRetentionTokens)
+    ? input.prefixCacheRetentionTokens
+    : undefined
   return {
     contextTokens,
     responseReserveTokens,
-    promptCeilingTokens: Math.max(0, contextTokens - responseReserveTokens),
+    ...(prefixCacheRetentionTokens === undefined ? {} : { prefixCacheRetentionTokens }),
+    promptCeilingTokens:
+      prefixCacheRetentionTokens === undefined
+        ? contextPromptCeiling
+        : Math.min(contextPromptCeiling, prefixCacheRetentionTokens),
   }
 }
 

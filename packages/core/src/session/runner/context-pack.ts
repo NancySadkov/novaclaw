@@ -68,6 +68,7 @@ export const budget = (input: {
   readonly system: ReadonlyArray<SystemPart>
   readonly tools: ReadonlyArray<ToolDefinition>
   readonly maxTokens?: number | undefined
+  readonly prefixCacheRetentionTokens?: number
   readonly imagePatchPixels?: number
   readonly promptCorrectionTokens?: number
   readonly promptMarginTokens?: number
@@ -83,7 +84,11 @@ export const budget = (input: {
       ? Math.max(0, Math.trunc(input.promptMarginTokens))
       : 0
   const available =
-    PromptEstimate.capacity({ contextTokens: input.contextSize, outputTokens: input.maxTokens }).promptCeilingTokens -
+    PromptEstimate.capacity({
+      contextTokens: input.contextSize,
+      outputTokens: input.maxTokens,
+      prefixCacheRetentionTokens: input.prefixCacheRetentionTokens,
+    }).promptCeilingTokens -
     systemTokens -
     toolTokens -
     correction -
@@ -962,6 +967,8 @@ const enforceMemoryBudget = (input: {
 export const packRequest = (input: {
   readonly request: LLMRequest
   readonly contextSize: number | undefined
+  /** Optional exact-route prompt ceiling learned or declared from prefix-cache evidence. */
+  readonly prefixCacheRetentionTokens?: number
   readonly profile?: ContextBudget.Profile
   readonly memoryRecall?: string
   readonly imagePatchPixels?: number
@@ -999,6 +1006,7 @@ export const packRequest = (input: {
     system: systemBudget.system,
     tools: input.request.tools,
     maxTokens: input.request.generation?.maxTokens,
+    prefixCacheRetentionTokens: input.prefixCacheRetentionTokens,
     imagePatchPixels: input.imagePatchPixels,
     promptCorrectionTokens: input.promptCorrectionTokens,
     promptMarginTokens,

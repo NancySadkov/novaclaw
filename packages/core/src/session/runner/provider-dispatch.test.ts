@@ -62,6 +62,26 @@ describe("ProviderDispatch", () => {
     expect(prepared.request.messages.at(-1)).toEqual(Message.user("new task"))
   })
 
+  test("packs to a tighter exact-route prefix-retention ceiling", () => {
+    const model = Model.make({ id: "fake", provider: "fake", route: OpenAIChat.route })
+    const request = LLM.request({
+      model,
+      messages: [Message.user("old".repeat(20_000)), Message.user("new task")],
+    })
+    const ordinary = ProviderDispatch.prepare({ request, promptCacheKey: "stable-session", contextSize: 64_000 })
+    const retained = ProviderDispatch.prepare({
+      request,
+      promptCacheKey: "stable-session",
+      contextSize: 64_000,
+      prefixCacheRetentionTokens: 1_000,
+    })
+
+    expect(ordinary.packed.dropped).toBe(0)
+    expect(retained.packed.dropped).toBe(1)
+    expect(retained.packed.contextSize).toBe(64_000)
+    expect(retained.request.messages.at(-1)).toEqual(Message.user("new task"))
+  })
+
   test("routes an enabled completion through the reasoning controller", async () => {
     const model = Model.make({ id: "fake", provider: "fake", route: OpenAIChat.route })
     const requests: LLMRequest[] = []

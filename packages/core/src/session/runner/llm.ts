@@ -1715,6 +1715,7 @@ export const layer = Layer.effect(
             promptFactor: 1,
             promptResidualRatios: [],
             imagePatchPixels: Token.DEFAULT_IMAGE_PATCH_PIXELS,
+            prefixCacheRetentionTokens: undefined,
             servedBy: undefined,
           })),
         )
@@ -1745,6 +1746,7 @@ export const layer = Layer.effect(
         request: fullRequest,
         promptEstimate,
         imagePatchPixels: routeProfile.imagePatchPixels,
+        prefixCacheRetentionTokens: routeProfile.prefixCacheRetentionTokens,
       })
       // The conversation that just got compressed away is written into this colleague's OWN memory
       // as passages, so `kb search` can find it later (`session/compaction-archive.ts` holds the
@@ -1771,6 +1773,7 @@ export const layer = Layer.effect(
         request: fullRequest,
         promptCacheKey,
         contextSize: model.route.defaults.limits?.context,
+        prefixCacheRetentionTokens: routeProfile.prefixCacheRetentionTokens,
         profile: ContextBudget.enabled(harness.context, config.contextBudget)
           ? ContextBudget.resolve(harness.context, config.type)
           : undefined,

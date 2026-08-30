@@ -247,6 +247,24 @@ describe("profile precedence", () => {
     })
     expect(resolveProfile(persisted, { safeDefault: { imagePatchPixels: 1024 } }).imagePatchPixels).toBe(900)
     expect(resolveProfile(undefined, { safeDefault: { imagePatchPixels: 1024 } }).imagePatchPixels).toBe(1024)
+    expect(
+      resolveProfile(persisted, {
+        declared: { prefixCacheRetentionTokens: 4_000 },
+        discovered: { prefixCacheRetentionTokens: 2_000 },
+        safeDefault: { prefixCacheRetentionTokens: 1_000 },
+      }).prefixCacheRetentionTokens,
+    ).toBe(4_000)
+    expect(
+      resolveProfile(persisted, {
+        discovered: { prefixCacheRetentionTokens: 2_000 },
+        safeDefault: { prefixCacheRetentionTokens: 1_000 },
+      }).prefixCacheRetentionTokens,
+    ).toBe(2_000)
+    expect(resolveProfile(persisted, {}).prefixCacheRetentionTokens).toBe(3_000)
+    expect(
+      resolveProfile(undefined, { safeDefault: { prefixCacheRetentionTokens: 1_000 } })
+        .prefixCacheRetentionTokens,
+    ).toBe(1_000)
   })
 
   test("invalid higher-precedence values cannot mask a usable lower-precedence source", () => {
@@ -256,5 +274,14 @@ describe("profile precedence", () => {
         { declared: { imagePatchPixels: Number.NaN }, discovered: { imagePatchPixels: -1 } },
       ).imagePatchPixels,
     ).toBe(768)
+    expect(
+      resolveProfile(
+        { promptRatios: [], promptResidualRatios: [], prefixCacheRetentionTokens: 3_000 },
+        {
+          declared: { prefixCacheRetentionTokens: 0 },
+          discovered: { prefixCacheRetentionTokens: Number.NaN },
+        },
+      ).prefixCacheRetentionTokens,
+    ).toBe(3_000)
   })
 })

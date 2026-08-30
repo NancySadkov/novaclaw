@@ -22,6 +22,7 @@ export interface PrepareInput {
   readonly request: LLMRequest
   readonly promptCacheKey: string
   readonly contextSize: number | undefined
+  readonly prefixCacheRetentionTokens?: number
   /** Flattened exact-route vision patch size; the token leaf never reads config or services. */
   readonly imagePatchPixels?: number
   readonly profile?: ContextBudget.Profile
@@ -44,6 +45,7 @@ export const prepare = (input: PrepareInput) => {
   const packed = ContextPack.packRequest({
     request: cacheable,
     contextSize: input.contextSize,
+    prefixCacheRetentionTokens: input.prefixCacheRetentionTokens,
     imagePatchPixels: input.imagePatchPixels,
     profile: input.profile,
     memoryRecall: input.memoryRecall,

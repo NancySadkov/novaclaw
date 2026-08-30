@@ -147,6 +147,7 @@ export const make = (dependencies: Dependencies) => {
         Effect.orElseSucceed(() => ({
           promptFactor: 1,
           imagePatchPixels: Token.DEFAULT_IMAGE_PATCH_PIXELS,
+          prefixCacheRetentionTokens: undefined,
         })),
       )
     const dispatchSlot = {
@@ -180,6 +181,7 @@ export const make = (dependencies: Dependencies) => {
           }),
           promptCacheKey,
           contextSize: model.route.defaults.limits?.context,
+          prefixCacheRetentionTokens: routeProfile.prefixCacheRetentionTokens,
           imagePatchPixels: routeProfile.imagePatchPixels,
           profile: ContextBudget.enabled(harness.context, resolved.contextBudget)
             ? ContextBudget.resolve(harness.context, resolved.type)
@@ -583,6 +585,7 @@ export const make = (dependencies: Dependencies) => {
             }),
             promptCacheKey,
             contextSize: model.route.defaults.limits?.context,
+            prefixCacheRetentionTokens: routeProfile.prefixCacheRetentionTokens,
             imagePatchPixels: routeProfile.imagePatchPixels,
             profile: ContextBudget.enabled(harness.context, resolved.contextBudget)
               ? ContextBudget.resolve(harness.context, resolved.type)

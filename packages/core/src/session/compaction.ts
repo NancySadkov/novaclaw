@@ -142,6 +142,8 @@ type Input = {
   readonly promptEstimate?: PromptEstimate.Result
   /** Resolved patch side for this exact model/server route; absent keeps the measured default. */
   readonly imagePatchPixels?: number
+  /** Exact-route prompt prefix known to remain reusable; absent keeps the context-only guard. */
+  readonly prefixCacheRetentionTokens?: number
   /** Exact calibrated prompt size that the provider rejected. Present only for overflow recovery. */
   readonly overflowPromptTokens?: number
   /** One fixed post-compaction target derived from that rejected prompt. */
@@ -596,6 +598,7 @@ export const make = (dependencies: Dependencies) => {
       contextTokens: context,
       outputTokens: output,
       minimumResponseReserveTokens: config.buffer,
+      prefixCacheRetentionTokens: input.prefixCacheRetentionTokens,
     })
     const threshold = promptCapacity.promptCeilingTokens
     yield* Log.event("session.compaction.threshold", {
@@ -612,6 +615,7 @@ export const make = (dependencies: Dependencies) => {
       "compaction.anchor.low-confidence": promptEstimate.confidence === "low",
       "compaction.anchor.fallback": promptEstimate.fallback,
       "compaction.response.reserve": promptCapacity.responseReserveTokens,
+      "compaction.prefix-cache.retention": promptCapacity.prefixCacheRetentionTokens ?? 0,
       "compaction.threshold": threshold,
       "compaction.fires": estimatedWithMargin > threshold,
     })

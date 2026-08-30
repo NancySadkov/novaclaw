@@ -2649,6 +2649,7 @@ export const EVENTS = {
       "compaction.anchor.low-confidence": "flag",
       "compaction.anchor.fallback": "id",
       "compaction.response.reserve": "count",
+      "compaction.prefix-cache.retention": "count",
       "compaction.threshold": "count",
       "compaction.fires": "flag",
     },

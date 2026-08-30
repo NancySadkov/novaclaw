@@ -69,6 +69,25 @@ describe("budget", () => {
     expect(value).toBe(expectedBudget(64_000, 20_000))
   })
 
+  test("an exact-route prefix-retention ceiling narrows history without changing the context window", () => {
+    expect(
+      budget({
+        contextSize: 64_000,
+        system: noSystem,
+        tools: noTools,
+        prefixCacheRetentionTokens: 12_000,
+      }),
+    ).toBe(12_000 - 1) // empty tools still consume their one-token JSON envelope
+    expect(
+      budget({
+        contextSize: 64_000,
+        system: noSystem,
+        tools: noTools,
+        prefixCacheRetentionTokens: 100_000,
+      }),
+    ).toBe(expectedBudget(64_000, 8_192))
+  })
+
   test("keeps estimation margin separate from response reserve", () => {
     const value = budget({
       contextSize: 64_000,
