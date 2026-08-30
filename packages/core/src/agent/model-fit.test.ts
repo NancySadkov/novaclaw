@@ -59,7 +59,7 @@ describe("what the colleague is told", () => {
   test("a notice about a DIFFERENT model does not suppress this one", () => {
     // Re-binding to another weak model is a new fact and gets said again; the warning's identity is
     // the binding it is about.
-    expect(AgentModelFit.alreadyTold({ transcript: [spoken], model: "ollama/qwen-0.5b" })).toBe(false)
+    expect(AgentModelFit.alreadyTold({ transcript: [spoken], model: "endpoint-a/qwen-0.5b" })).toBe(false)
   })
 
   test("an empty transcript has told nobody anything", () => {

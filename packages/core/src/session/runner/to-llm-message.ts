@@ -89,7 +89,7 @@ export const attachmentModality = (mime: string): AttachmentModality | undefined
  * §Config — a *supported* first-run state), a hand-added local endpoint usually has no models.dev
  * entry, and `ModelV2.Info.empty` seeds `capabilities: {tools:false, input:[], output:[]}`. So an
  * absent or empty `input` array means *nobody ever told us*, and reading that as "text-only" would
- * refuse every image on every local vLLM/llama.cpp/Ollama model on day one — including our own
+ * refuse every image on every local vLLM/SGLang/llama.cpp model on day one — including our own
  * test model. No evidence ⇒ send it and let the provider be the authority, which is exactly
  * today's behaviour. The `Hostility = boolean | "unknown"` and `RootType = SessionType | "unknown"`
  * tri-states elsewhere in this kernel are the local precedent for naming the third state.

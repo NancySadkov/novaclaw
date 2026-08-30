@@ -13,8 +13,8 @@ terminal.
 ## Three things to do first
 
 1. **Connect a model.** Open Settings and add the address of an AI model. Any server that
-   speaks the common OpenAI-compatible API works — vLLM, llama.cpp, LM Studio, Ollama, or
-   a hosted service if you have a key. See the `models` topic.
+   speaks the common OpenAI-compatible API works — for example vLLM, SGLang, or NovaClaw's
+   bundled llama.cpp server. See the `models` topic.
 2. **Open Chats** — the large gold tile on the home screen — and say hello. If the reply
    comes back, you are set up.
 3. **Look at the home screen.** Every tile is an app: Chats, Notes, Files, Recipes,

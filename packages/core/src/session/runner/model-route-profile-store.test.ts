@@ -58,7 +58,7 @@ describe("model route profile decoding", () => {
       scope({ wireModelID: "other" }),
       scope({ serverKey: "http://other/v1" }),
       scope({ routeID: "responses" }),
-      scope({ protocolID: "ollama" }),
+      scope({ protocolID: "alternate-chat" }),
     ]) {
       expect(key(changed)).not.toBe(key(scope()))
     }

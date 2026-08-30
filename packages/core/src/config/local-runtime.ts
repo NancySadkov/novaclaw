@@ -3,25 +3,24 @@ export * as ConfigLocalRuntime from "./local-runtime"
 // S0 — "you may not need the sidecar": find the model server the user ALREADY runs.
 //
 // A fresh install has NO providers and that is CORRECT (AGENTS.md → Config) — but the designed path
-// through it currently asks a normal person what a base URL is. If Ollama or LM Studio is already
-// running on this machine, the honest answer is that NovaClaw should find it and say so. That is
-// *fire handed over warm* instead of homework, and it costs one loopback sweep instead of a
+// through it currently asks a normal person what a base URL is. If a compatible model server is
+// already running on this machine, the honest answer is that NovaClaw should find it and say so.
+// That is *fire handed over warm* instead of homework, and it costs one loopback sweep instead of a
 // multi-GB download.
 //
 // WHAT THIS MODULE IS: pure data + pure classification. It performs no I/O of its own — the caller
 // injects a `probe` function. Two reasons, both load-bearing:
 //   · the probe that actually opens the socket is the SERVER-side `POST /provider/:id/probe`
 //     handler, and it must stay server-side: the UI and the runtime need never share a machine
-//     (AGENTS.md → P2P instances), so a browser-side fetch to `localhost:11434` would probe the
+//     (AGENTS.md → P2P instances), so a browser-side fetch to `localhost:1234` would probe the
 //     WRONG BOX — the user's laptop instead of the instance that will serve the turn;
 //   · a pure classifier is testable without a network, and a test suite that probes real ports is
 //     a flaky suite and possibly an egress one.
 //
 // ⚠️ NOT a provider preset, and deliberately not in `provider-preset.ts`. A preset is a branded
-// catalogue entry with a key URL and a vendor behind it; the roadmap rules one out explicitly
-// (`todo/sidecar-inference.md` → *Explicitly NOT adopted*: "A branded 'Ollama' preset in the
-// kernel"). What is below is a list of PORT NUMBERS plus the generic OpenAI-compatible shape check
-// we already ship. No vendor enters the kernel, no key is requested, nothing is hosted.
+// catalogue entry with a key URL and a vendor behind it. What is below is a list of PORT NUMBERS
+// plus the generic OpenAI-compatible shape check we already ship. No key is requested and nothing
+// is hosted.
 
 /** A loopback endpoint worth asking whether anything model-shaped is listening on it. */
 export interface Candidate {
@@ -32,8 +31,8 @@ export interface Candidate {
   /**
    * The runtime that CONVENTIONALLY listens on this port — a hint for the user, never a claim.
    * Ruling 2 (*a fault is never described falsely*) cuts here: we verify a `/v1/models` answer at a
-   * port, which is not the same as verifying that Ollama is the program that answered. The UI says
-   * "usually Ollama", and what it asserts is the endpoint.
+   * port, which is not the same as verifying which program answered. The UI presents this as a
+   * convention, and what it asserts is the endpoint.
    */
   readonly usually: string
   readonly port: number
@@ -50,13 +49,12 @@ export interface Candidate {
  * discovery already has an owner (the shipped R-series remote-access work).
  *
  * The self-healing law (AGENTS.md) wants operational facts in a runtime-editable store. These are
- * not vendor endpoints that can move under a user — they are the published default ports of four
+ * not vendor endpoints that can move under a user — they are the published default ports of these
  * programs — and the runtime-editable path for anything else is the one already shipped: type it
  * into *Custom endpoint*. `sweep` still takes a `candidates` override so a store can feed it later
  * without reshaping the seam.
  */
 export const CANDIDATES: readonly Candidate[] = [
-  { id: "ollama", label: "Ollama", usually: "Ollama", port: 11434, baseURL: "http://localhost:11434/v1" },
   { id: "lmstudio", label: "LM Studio", usually: "LM Studio", port: 1234, baseURL: "http://localhost:1234/v1" },
   { id: "vllm", label: "vLLM", usually: "vLLM", port: 8000, baseURL: "http://localhost:8000/v1" },
   {
@@ -242,9 +240,9 @@ export function sameEndpoint(a: string, b: string): boolean {
 }
 
 /**
- * Drop candidates the instance has already got. Reopening *Add models* after adopting Ollama should
- * not keep offering Ollama — an offer the user has already accepted reads as the product not
- * knowing what it did.
+ * Drop candidates the instance has already got. Reopening *Add models* after adopting a local
+ * endpoint should not keep offering it — an offer the user has already accepted reads as the
+ * product not knowing what it did.
  */
 export function excludeConfigured(outcomes: readonly Outcome[], configuredURLs: readonly string[]): readonly Outcome[] {
   return outcomes.filter((outcome) => !configuredURLs.some((url) => sameEndpoint(url, outcome.candidate.baseURL)))
@@ -252,8 +250,8 @@ export function excludeConfigured(outcomes: readonly Outcome[], configuredURLs: 
 
 /**
  * A provider id that is free. The suggested id is a convenience, not a claim on the namespace: if
- * `ollama` is taken by a provider pointing somewhere else, silently overwriting its endpoint would
- * break a working setup to install a new one.
+ * `local-models` is taken by a provider pointing somewhere else, silently overwriting its endpoint
+ * would break a working setup to install a new one.
  */
 export function uniqueProviderID(base: string, taken: readonly string[]): string {
   if (!taken.includes(base)) return base

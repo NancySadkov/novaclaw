@@ -35,8 +35,8 @@ source as described below.
 ## Highlights
 
 - **Private / local-LLM first.** The data plane (chats, code, knowledge) never egresses; fully
-  airgappable. Any OpenAI-compatible `/v1` endpoint works — vLLM, llama.cpp, LM Studio, Ollama, or a
-  hosted key if you bring one.
+  airgappable. Any OpenAI-compatible `/v1` endpoint works — vLLM, SGLang, or NovaClaw's bundled
+  llama.cpp server.
 - **Built for small models.** A deterministic harness wraps the model: task decomposition, per-step
   verification, and tolerance for imperfect tool calls — so local open-weight models finish jobs
   that usually get thrown at frontier APIs.

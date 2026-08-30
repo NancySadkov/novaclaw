@@ -10,11 +10,11 @@ Settings has a Models section. A provider needs, at minimum, a base URL: the add
 an OpenAI-compatible API, ending in `/v1`. NovaClaw uses two endpoints on it —
 `/v1/chat/completions` to talk, and `/v1/models` to see what is available.
 
-That covers almost everything people run locally:
+That covers the model servers NovaClaw supports:
 
-- **vLLM** — fast, good for a machine with a real GPU.
-- **llama.cpp** / **LM Studio** / **Ollama** — good on a laptop.
-- A hosted service, if you have an API key and want to use one. Nothing forces you to.
+- **vLLM** or **SGLang** — fast, good for a machine with a real GPU.
+- The bundled **llama.cpp** server — a friendly default for a laptop.
+- Any other server that exposes the same OpenAI-compatible endpoints.
 
 An API key is optional. Local servers usually need none.
 

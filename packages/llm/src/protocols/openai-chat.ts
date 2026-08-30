@@ -148,7 +148,7 @@ export const bodyFields = {
   temperature: Schema.optional(Schema.Number),
   top_p: Schema.optional(Schema.Number),
   // 1C: not in the official OpenAI API, but every local OpenAI-compatible server that matters
-  // here (vLLM, llama.cpp, ollama) accepts it. Encoded only when a config actually sets it,
+  // here (vLLM, SGLang, llama.cpp) accepts it. Encoded only when a config actually sets it,
   // so requests to api.openai.com are unchanged. Without this, `generation.topK` (routed by
   // the V2 sampling-split, and denylisted from the http.body overlay as protocol-owned) was
   // silently dropped — the ONE sampling param that could not reach a local model.

@@ -204,7 +204,7 @@ describe("a tool-returned image is gated by the resolved model's capabilities", 
 
   test("⚠️ UNKNOWN IS NOT TEXT-ONLY — no evidence still sends, exactly as before the gate", () => {
     // Reading absent/empty capabilities as "text-only" would refuse every image on every hand-added
-    // local endpoint (vLLM, llama.cpp, Ollama) — which is all of ours. The negative control is the
+    // local endpoint (vLLM, SGLang, llama.cpp) — which is all of ours. The negative control is the
     // TEXT_ONLY test above: same fixture, same function, opposite verdict.
     for (const capabilities of [undefined, NO_EVIDENCE]) {
       const parts = contentParts(loweredResult(capabilities, completed(READ_CONTENT)))

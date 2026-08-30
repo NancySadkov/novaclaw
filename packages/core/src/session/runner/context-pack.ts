@@ -1,9 +1,9 @@
 // 1M (codehamr A6) — context-window discipline: the deterministic fail-safe packing layer.
 //
-// THE local-model killer: Ollama-class /v1 servers report no window and on overflow silently
-// FRONT-truncate — the agent loses its system prompt and earlier tool results mid-task with no
-// error. Compaction (the semantic first line) needs a working summary model call; this layer is
-// the zero-cost guarantee underneath it: pack every outgoing request to the server's HONORED
+// THE local-model killer: an OpenAI-compatible server can report no window and silently
+// FRONT-truncate on overflow — the agent loses its system prompt and earlier tool results mid-task
+// with no error. Compaction (the semantic first line) needs a working summary model call; this layer
+// is the zero-cost guarantee underneath it: pack every outgoing request to the server's HONORED
 // window so the server never truncates for us.
 //
 // Pure and unit-testable (config-resolve style); the runner calls `packRequest` from request
@@ -15,9 +15,10 @@
 // (`context-redundancy.ts`, A2.1 ①), so a page fetched three times cannot cost the original task.
 //
 // The window packed to is the server's HONORED window (`model.limit.context` from config /
-// catalog), NOT the model's theoretical max — qwen does 256k only if vLLM `--max-model-len` /
-// OLLAMA_CONTEXT_LENGTH says so. When no window is configured we assume a conservative default:
-// silently losing the system prompt is strictly worse than evicting old turns early.
+// catalog), NOT the model's theoretical max — qwen does 256k only if the serving process was
+// launched and configured to honor that window. When no window is configured we assume a
+// conservative default: silently losing the system prompt is strictly worse than evicting old
+// turns early.
 
 import { Message } from "@novaclaw/llm"
 import type { LLMRequest, SystemPart, ToolDefinition, ToolResultPart, ToolResultValue } from "@novaclaw/llm"
@@ -29,7 +30,7 @@ import { ContextBudget } from "./context-budget"
 
 export * as ContextPack from "./context-pack"
 
-/** Safe default when the model config reports no honored window (the Ollama-class case). */
+/** Safe default when the model config reports no honored window. */
 export const DEFAULT_CONTEXT_SIZE = 32_000
 /** Reasoning models need room to answer: reserve max(contextSize/8, this). */
 export const MIN_RESPONSE_RESERVE = 8_192

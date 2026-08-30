@@ -65,7 +65,7 @@ export class Info extends Schema.Class<Info>("ConfigV2.ProviderPreset")({
  *
  * ⚠️ **What was NOT deleted, and why the distinction matters.** The three `ApiChannel` protocol
  * implementations stay. They are transport, and the endpoints a user actually points them at —
- * vLLM, llama.cpp, LM Studio, Ollama, a Spark on the LAN — speak them. Deleting a wire format
+ * vLLM, llama.cpp, LM Studio, or another compatible local server — speak them. Deleting a wire format
  * because a cloud vendor also speaks it would remove local capability to make a point.
  *
  * ⚠️ **And this is not by itself an egress boundary.** `effective()` below still merges runtime

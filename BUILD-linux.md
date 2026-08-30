@@ -228,8 +228,7 @@ or delete, and several instances can share a machine. The desktop app accepts th
 ## 7. Point it at a model
 
 Nothing at build time. Start the app, open **Settings**, and add any OpenAI-compatible endpoint
-(`/v1/chat/completions` + `/v1/models`) — vLLM, llama.cpp, LM Studio, Ollama, or a hosted key if
-you bring one.
+(`/v1/chat/completions` + `/v1/models`) — vLLM, SGLang, or the bundled llama.cpp server.
 
 ## 8. Bubblewrap: the sandbox for unattended sessions
 

@@ -1760,7 +1760,7 @@ export const layer = Layer.effect(
       else yield* Effect.sync(() => timing.discard("compaction")).pipe(Effect.andThen(publishLiveTiming()))
       if (compacted) return yield* Effect.die(continueAfterCompaction(currentStep))
       // 1M — the deterministic fail-safe under compaction: pack the outgoing request to the
-      // server's HONORED window so an Ollama-class server never silently front-truncates the
+      // server's HONORED window so an OpenAI-compatible server never silently front-truncates the
       // system prompt away. Reached when compaction declined (window unknown, summary model
       // unavailable, or simply under ITS threshold) — history in the DB stays intact.
       // The deterministic packer: what had to be dropped for the request to fit the window.

@@ -30,9 +30,8 @@ describe("the colleague's model", () => {
   })
 
   test("a model id containing a slash keeps it — only the FIRST segment is the provider", () => {
-    // `spark-ollama/hf.co/unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_XL` is a real entry on this instance.
-    const folded = AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, agent({ model: "spark-ollama/hf.co/unsloth/Qwen3.6" }))
-    expect(folded.model).toEqual({ providerID: "spark-ollama", id: "hf.co/unsloth/Qwen3.6" })
+    const folded = AgentDefaults.fold(EFFECTIVE_CONFIG_DEFAULTS, agent({ model: "endpoint-a/hf.co/unsloth/Qwen3.6" }))
+    expect(folded.model).toEqual({ providerID: "endpoint-a", id: "hf.co/unsloth/Qwen3.6" })
   })
 
   test("a declared variant rides with it", () => {

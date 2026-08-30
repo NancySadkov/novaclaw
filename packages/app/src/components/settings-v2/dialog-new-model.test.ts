@@ -22,7 +22,7 @@ import { providerIDFromEndpoint } from "./dialog-new-model"
 //     so it is asserted here too rather than assumed.
 //
 // Asserted against the SOURCE, following `dialog-select-model.test.ts`: these are all decisions that
-// a DOM render would only reveal against a live instance with a live Ollama, which is exactly the
+// a DOM render would only reveal against a live instance with a model server, which is exactly the
 // setup no CI machine has.
 
 const HERE = import.meta.dir
@@ -31,7 +31,7 @@ const dialog = fs.readFileSync(path.join(HERE, "dialog-new-model.tsx"), "utf8")
 /**
  * The same file with comments removed. Every NEGATIVE assertion below runs against this: the
  * comments in that dialog explain S0 and therefore quote the very things the negatives forbid — the
- * first draft of this test failed on its own explanation of why `localhost:11434` must not be
+ * first draft of this test failed on its own explanation of why a literal loopback endpoint must not be
  * fetched from the browser. A negative check that a doc comment can trip is a check that gets
  * deleted the first time someone writes a good comment.
  */
@@ -60,7 +60,7 @@ describe("Add-models — the local-runtime probe wiring", () => {
     expect(dialog).toMatch(/probe: \(localCandidate\) =>\s*\n?\s*providerProbe\(props\.http, \{/)
     expect(code).not.toMatch(/fetch\(/)
     // And no candidate URL is authored here — the port list lives in core, behind the loopback guard.
-    expect(code).not.toMatch(/11434|:1234|:8080|http:\/\/localhost/)
+    expect(code).not.toMatch(/localhost:\d{2,5}|127\.0\.0\.1|\[::1\]|http:\/\/localhost/)
   })
 
   test("only ADOPTABLE outcomes reach the screen — an unidentified port is never offered", () => {
@@ -86,9 +86,9 @@ describe("Add-models — the local-runtime probe wiring", () => {
 
   test("the sweep probes under a FREE provider id — probing under a taken one leaks its API key", () => {
     // 🔴 `POST /provider/:providerID/probe` falls back to the saved provider's
-    // `request.body.apiKey` when the payload has none. Probing as a bare `"ollama"` on an instance
-    // that already has a provider called `ollama` (holding a paid API's key) would Bearer that key
-    // to whatever program is listening on loopback :11434. This is the check that it cannot happen.
+    // `request.body.apiKey` when the payload has none. Probing as a bare `"local-runtime"` on an
+    // instance that already has a provider by that name (holding a keyed endpoint's secret) would
+    // Bearer that key to whatever program is listening on the candidate port. This check prevents it.
     expect(dialog).toContain("providerID: freeProviderID(localCandidate.id)")
     expect(code).not.toMatch(/providerID: localCandidate\.id/)
     expect(dialog).toContain("ConfigLocalRuntime.uniqueProviderID(base, Object.keys(config().providers ?? {}))")

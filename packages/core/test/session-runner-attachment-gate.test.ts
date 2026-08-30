@@ -113,7 +113,7 @@ describe("attachmentSupport — the tri-state, and the third state is load-beari
 
   test("⚠️ UNKNOWN IS NOT TEXT-ONLY — absent or empty capability data passes through", () => {
     // Getting this backwards refuses every image on every hand-added local endpoint (vLLM,
-    // llama.cpp, Ollama) on day one, including our own test model. The negative control is the
+    // SGLang, llama.cpp) on day one, including our own test model. The negative control is the
     // TEXT_ONLY assertion above: the same attachment, the same function, an opposite verdict —
     // so these three are not passing merely because nothing is ever refused.
     expect(attachmentSupport(undefined, png)).toBe("unknown")

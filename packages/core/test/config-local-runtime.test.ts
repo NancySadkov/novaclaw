@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { ConfigLocalRuntime } from "@novaclaw/core/config/local-runtime"
 import { Offline } from "@novaclaw/core/offline"
 
-// S0 — the local-runtime probe (`todo/sidecar-inference.md` → *Slice 0*). Ruling 1: every invariant
+// S0 — the local-runtime probe. Ruling 1: every invariant
 // below ships a mechanical check, and each one is negative-controllable by hand (flip the assertion's
 // subject in `local-runtime.ts` and exactly one test here goes red).
 //
@@ -43,8 +43,8 @@ const candidate = (over: Partial<ConfigLocalRuntime.Candidate> = {}): ConfigLoca
 })
 
 describe("ConfigLocalRuntime — the candidate list", () => {
-  it("covers exactly the four roadmap ports, each a parseable loopback /v1 URL", () => {
-    expect(CANDIDATES.map((c) => c.port).sort((a, b) => a - b)).toEqual([1234, 8000, 8080, 11434])
+  it("covers exactly the supported generic-compatible ports, each a parseable loopback /v1 URL", () => {
+    expect(CANDIDATES.map((c) => c.port).sort((a, b) => a - b)).toEqual([1234, 8000, 8080])
     for (const c of CANDIDATES) {
       const url = new URL(c.baseURL)
       expect(url.pathname).toBe("/v1")
@@ -160,7 +160,6 @@ describe("ConfigLocalRuntime — sweep", () => {
 
   it("classifies every candidate and puts the found ones first", async () => {
     const answers: Record<number, ConfigLocalRuntime.ProbeLike> = {
-      11434: { status: "unreachable" },
       1234: { status: "auth", detail: "HTTP 401" },
       8000: { status: "ok", models: [] },
       8080: { status: "ok", models: ["gemma-4-e4b"] },
@@ -172,16 +171,15 @@ describe("ConfigLocalRuntime — sweep", () => {
         return answers[c.port]!
       },
     })
-    expect(seen.sort((a, b) => a - b)).toEqual([1234, 8000, 8080, 11434])
+    expect(seen.sort((a, b) => a - b)).toEqual([1234, 8000, 8080])
     expect(result.outcomes.map((o) => `${o.candidate.port}:${o.kind}`).sort()).toEqual([
-      "11434:absent",
       "1234:needs-key",
       "8000:unidentified",
       "8080:found",
     ])
     // `found` outranks `needs-key`: one click versus one click plus a key.
     expect(result.adoptable.map((o) => o.kind)).toEqual(["found", "needs-key"])
-    expect(result.answered).toBe(4)
+    expect(result.answered).toBe(3)
     expect(result.ran).toBe(true)
   })
 
@@ -214,42 +212,47 @@ describe("ConfigLocalRuntime — sweep", () => {
   it("one broken probe does not sink the sweep", async () => {
     const result = await sweep({
       probe: async (c) => {
-        if (c.port === 11434) throw new Error("boom")
+        if (c.port === 1234) throw new Error("boom")
         return { status: "ok", models: [`m-${c.port}`] }
       },
     })
-    expect(result.answered).toBe(3)
+    expect(result.answered).toBe(2)
     expect(result.ran).toBe(true)
-    expect(result.adoptable.length).toBe(3)
+    expect(result.adoptable.length).toBe(2)
   })
 })
 
 describe("ConfigLocalRuntime — adoption helpers", () => {
   it("hides a candidate the instance already points at, trailing slash and case included", () => {
     const outcomes = CANDIDATES.map((c) => classify(c, { status: "ok", models: ["m"] }))
-    const left = excludeConfigured(outcomes, ["HTTP://LOCALHOST:11434/v1/", "http://localhost:8080/v1"])
-    expect(left.map((o) => o.candidate.port).sort((a, b) => a - b)).toEqual([1234, 8000])
+    const left = excludeConfigured(outcomes, ["HTTP://LOCALHOST:1234/v1/", "http://localhost:8080/v1"])
+    expect(left.map((o) => o.candidate.port).sort((a, b) => a - b)).toEqual([8000])
     expect(sameEndpoint("http://localhost:1234/v1", "http://localhost:1234/v1/")).toBe(true)
     expect(sameEndpoint("http://localhost:1234/v1", "http://localhost:1235/v1")).toBe(false)
   })
 
   it("never silently repoints an existing provider id", () => {
-    expect(uniqueProviderID("ollama", [])).toBe("ollama")
-    expect(uniqueProviderID("ollama", ["ollama"])).toBe("ollama-2")
-    expect(uniqueProviderID("ollama", ["ollama", "ollama-2"])).toBe("ollama-3")
+    expect(uniqueProviderID("local-models", [])).toBe("local-models")
+    expect(uniqueProviderID("local-models", ["local-models"])).toBe("local-models-2")
+    expect(uniqueProviderID("local-models", ["local-models", "local-models-2"])).toBe("local-models-3")
   })
 
   it("the id it returns is NEVER one of the taken ones — a taken id would leak that provider's key", () => {
     // 🔴 This is a credential invariant, not a cosmetic one. The Add-models dialog probes UNDER the
     // id this returns, and `POST /provider/:providerID/probe` falls back to the saved provider's
     // `request.body.apiKey` when the payload has none — so returning a taken id would Bearer a paid
-    // API's key at whatever program is listening on loopback :11434.
-    const taken = ["ollama", ...Array.from({ length: 40 }, (_, n) => `ollama-${n + 2}`), "vllm", "llamacpp"]
+    // API's key at whatever program is listening on the probed loopback port.
+    const taken = [
+      "local-models",
+      ...Array.from({ length: 40 }, (_, n) => `local-models-${n + 2}`),
+      "vllm",
+      "llamacpp",
+    ]
     for (const base of CANDIDATES.map((c) => c.id)) {
       for (let depth = 0; depth <= taken.length; depth++)
         expect(taken.slice(0, depth)).not.toContain(uniqueProviderID(base, taken.slice(0, depth)))
     }
     // The result also has to survive the dialog's own PROVIDER_ID gate, or adoption fails at save.
-    expect(uniqueProviderID("ollama", taken)).toMatch(/^[a-z0-9][a-z0-9-_]*$/)
+    expect(uniqueProviderID("local-models", taken)).toMatch(/^[a-z0-9][a-z0-9-_]*$/)
   })
 })

@@ -117,18 +117,18 @@ export const DialogNewModel: Component<{
   //
   // A fresh install has no providers BY DESIGN (AGENTS.md → Config) and this dialog is where that
   // state is resolved — a model-less instance is routed straight here (dialog-select-model.tsx).
-  // What it asked of a normal person, though, was to know what a base URL is. If Ollama or LM Studio
-  // is already running, the honest answer is to find it and offer it, which is the whole of slice S0.
+  // What it asked of a normal person, though, was to know what a base URL is. If a compatible model
+  // server is already running, the honest answer is to find it and offer it, which is the whole of S0.
   //
-  // ⚠️ WHEN, and why not at boot. Four TCP connects on every launch is a startup cost paid by every
+  // ⚠️ WHEN, and why not at boot. Three TCP connects on every launch is a startup cost paid by every
   // machine that has none of them, and startup speed is first-class here. Opening THIS dialog is the
   // moment the user has asked the question, and it still covers first run for free because the
   // no-models path lands here anyway. Nothing probes until this dialog is opened.
   //
   // ⚠️ The probe runs SERVER-SIDE, through the shipped `POST /provider/:id/probe`. That is not an
   // implementation convenience: the UI and the runtime need never share a machine (AGENTS.md → P2P
-  // instances), so a browser-side fetch to `localhost:11434` would probe the user's laptop instead of
-  // the instance that will actually serve the turn. It also means no new route — the sweep is four
+  // instances), so a browser-side fetch to a loopback model port would probe the user's laptop instead of
+  // the instance that will actually serve the turn. It also means no new route — the sweep is three
   // calls to an endpoint that already exists.
   //
   // ⚠️ Airgap: NOT suppressed, deliberately. `offline.ts`'s checkUrl allows loopback unconditionally
@@ -143,10 +143,10 @@ export const DialogNewModel: Component<{
    *
    * 🔴 Probing under a taken id LEAKS A CREDENTIAL. `POST /provider/:providerID/probe` falls back to
    * the saved provider's `request.body.apiKey` whenever the payload carries no key of its own, so a
-   * bare `providerID: "ollama"` on an instance that already has a provider called `ollama` (pointed
-   * at a paid API, holding that API's key) would send that key as a Bearer token to whatever program
-   * happens to be listening on loopback :11434. Resolving to a free id first means the handler finds
-   * no entry, and the probe goes out with no `Authorization` header at all.
+   * bare `providerID: "local-runtime"` on an instance that already has a provider by that name
+   * (pointed at a keyed endpoint) would send its key as a Bearer token to whatever program happens
+   * to be listening on the candidate loopback port. Resolving to a free id first means the handler
+   * finds no entry, and the probe goes out with no `Authorization` header at all.
    */
   const freeProviderID = (base: string) =>
     ConfigLocalRuntime.uniqueProviderID(base, Object.keys(config().providers ?? {}))
@@ -299,8 +299,8 @@ export const DialogNewModel: Component<{
     setPresetID("custom")
     setForm({
       baseURL: found.baseURL,
-      // Never silently repoint an existing id: if `ollama` is taken by a provider aimed elsewhere,
-      // overwriting its endpoint would break a working setup in order to install a new one. Same
+      // Never silently repoint an existing id: if the suggested id belongs to a provider aimed
+      // elsewhere, overwriting its endpoint would break a working setup to install a new one. Same
       // resolution the probe used, so the id on screen is the id that was tested.
       providerID: freeProviderID(found.id),
       apiKey: "",
@@ -573,8 +573,8 @@ export const DialogNewModel: Component<{
                         <span class="flex items-center gap-2">
                           <Icon name="server" size="normal" class="shrink-0 text-v2-icon-icon-accent" />
                           {/* The ADDRESS is what we verified, so the address is what the card claims.
-                              Ruling 2: a `/v1/models` answer on :11434 does not prove that the program
-                              answering is Ollama — that is a hint, and it reads as one. */}
+                              Ruling 2: a `/v1/models` answer on a conventional port does not prove
+                              which program answered — the runtime name is a hint, and reads as one. */}
                           <span class="text-[13px] font-semibold text-v2-text-text-base">
                             {`localhost:${outcome.candidate.port}`}
                           </span>
@@ -620,7 +620,7 @@ export const DialogNewModel: Component<{
               </button>
               {/* Custom endpoint FIRST (owner, 2026-07-27). It used to trail every branded preset, which
                   had the priority backwards: NovaClaw's own story is "point it at your own model" — a local
-                  vLLM / llama.cpp / LM Studio / Ollama endpoint — and that is also the path a user with no
+                  vLLM / SGLang endpoint or the bundled llama.cpp — and that is also the path a user with no
                   models at all is most likely arriving on, since the picker now sends them straight here.
                   ⚠️ S0 sits ABOVE this, not in place of it: a found runtime is the same story with the
                   typing already done, and when nothing is found this is still the first card.

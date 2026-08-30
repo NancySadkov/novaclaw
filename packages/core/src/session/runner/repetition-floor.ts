@@ -5,8 +5,8 @@ import type { ModelV2 } from "../../model"
 // small models LOOP, which is fatal for unattended runs — so default `repetition_penalty` to a
 // light 1.05 (owner 2026-07-24: "the safest bet if we want everything to work unattended").
 //
-// Applied ONLY to the `@ai-sdk/openai-compatible` route (vLLM / Ollama / LM Studio / llama.cpp /
-// local endpoints — see model.ts `fromCatalogModel`). The OpenAI (Responses) and Anthropic
+// Applied ONLY to the `@ai-sdk/openai-compatible` route (vLLM / SGLang / LM Studio / llama.cpp /
+// other compatible endpoints — see model.ts `fromCatalogModel`). The OpenAI (Responses) and Anthropic
 // channels use frequency/presence penalties instead and REJECT `repetition_penalty`, so the floor
 // must never reach them.
 //

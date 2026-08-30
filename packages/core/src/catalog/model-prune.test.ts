@@ -68,8 +68,8 @@ describe("refNamesModel splits on the FIRST slash only", () => {
   test("matches a ref whose MODEL id contains slashes", () => {
     // The trap: a naive split("/") destructure yields modelID "hf.co" here and would both fail to
     // match and, on a different pair, match the wrong model.
-    const ref = "spark-ollama/hf.co/unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_XL"
-    expect(ModelPrune.refNamesModel(ref, "spark-ollama", "hf.co/unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_XL")).toBe(true)
+    const ref = "endpoint-a/hf.co/unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_XL"
+    expect(ModelPrune.refNamesModel(ref, "endpoint-a", "hf.co/unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_XL")).toBe(true)
   })
 
   test("does not confuse two models that share a first segment", () => {
