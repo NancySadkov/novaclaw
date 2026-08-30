@@ -138,6 +138,7 @@ import { ProjectGrounding } from "./project-grounding"
 import { UnfinishedSet } from "./unfinished-set"
 import { UnjoinedChildren } from "./unjoined-children"
 import { SessionTitle } from "../title"
+import { SessionMapRetention } from "./session-map-retention"
 import { lastRealUserText } from "../steer-provenance"
 import { ColleagueHop } from "../colleague-hop"
 import { ColleagueTool } from "../../tool/colleague"
@@ -880,6 +881,14 @@ export const layer = Layer.effect(
      * before it can ever reach its bound.
      */
     const childRestartRounds = new Map<string, number>()
+    const sessionMapRetention = SessionMapRetention.make([
+      setRequests,
+      setOpened,
+      setAttempted,
+      setBarrenBySession,
+      childrenJoined,
+      childRestartRounds,
+    ])
     /**
      * ⚠️ **`models.ref` is declared `… | undefined` and really is undefined in practice**, so this
      * takes an optional and answers `undefined` rather than dereferencing.
@@ -2755,7 +2764,7 @@ export const layer = Layer.effect(
       routeProfiles,
     })
 
-    const run = Effect.fn("SessionRunner.run")(function* (input: {
+    const runBody = Effect.fn("SessionRunner.run.body")(function* (input: {
       readonly sessionID: SessionSchema.ID
       readonly force: boolean
     }) {
@@ -3680,6 +3689,11 @@ export const layer = Layer.effect(
           .pipe(Effect.ignore)
       yield* maintenance.postRun(input.sessionID)
     })
+
+    const run = Effect.fn("SessionRunner.run")(
+      (input: { readonly sessionID: SessionSchema.ID; readonly force: boolean }) =>
+        sessionMapRetention.withSession(input.sessionID, runBody(input)),
+    )
 
     return Service.of({
       run,
