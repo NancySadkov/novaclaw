@@ -44,21 +44,22 @@ const toolCallCount = (message: Message) =>
   message.content.filter((part) => part.type === "tool-call" || part.type === "tool-result").length
 
 /** Tokenizer-free content-shape estimate (+8 per tool call/result). */
-export const estimateMessage = (message: Message): number => {
+export const estimateMessage = (message: Message, imagePatchPixels?: number): number => {
   // 🔴 Media-aware: a message's content carries tool results, and a read-tool image lowers to a
   // `file` part whose base64 was being counted by the character. See `Token.estimateStructured`.
-  return Token.estimateStructured(message.content) + toolCallCount(message) * TOOL_CALL_OVERHEAD
+  return Token.estimateStructured(message.content, imagePatchPixels) + toolCallCount(message) * TOOL_CALL_OVERHEAD
 }
 
-export const estimateMessages = (messages: ReadonlyArray<Message>): number =>
-  messages.reduce((total, message) => total + estimateMessage(message), 0)
+export const estimateMessages = (messages: ReadonlyArray<Message>, imagePatchPixels?: number): number =>
+  messages.reduce((total, message) => total + estimateMessage(message, imagePatchPixels), 0)
 
 /**
  * 🔴 Media-aware. This was `Token.estimate(JSON.stringify(value))`, which prices one base64 image at
  * ~11,772 tokens against a provider's measured 66 — so the packer dropped history it had room for.
  * See `Token.estimateStructured`.
  */
-const estimateJson = (value: unknown): number => Token.estimateStructured(value)
+const estimateJson = (value: unknown, imagePatchPixels?: number): number =>
+  Token.estimateStructured(value, imagePatchPixels)
 
 /**
  * Budget = contextSize − system − tools − responseReserve − headroom.
@@ -69,9 +70,10 @@ export const budget = (input: {
   readonly system: ReadonlyArray<SystemPart>
   readonly tools: ReadonlyArray<ToolDefinition>
   readonly maxTokens?: number | undefined
+  readonly imagePatchPixels?: number
 }): number => {
   const systemTokens = input.system.reduce((total, part) => total + Token.estimate(part.text), 0)
-  const toolTokens = estimateJson(input.tools)
+  const toolTokens = estimateJson(input.tools, input.imagePatchPixels)
   const reserve = Math.max(Math.floor(input.contextSize / 8), MIN_RESPONSE_RESERVE, input.maxTokens ?? 0)
   const available = input.contextSize - systemTokens - toolTokens - reserve
   return Math.max(0, Math.floor(available * BUDGET_KEEP_FRACTION))
@@ -433,6 +435,7 @@ interface RedundancyMatch {
 const analyzeRedundancy = (
   messages: Message[],
   estimates: ReadonlyArray<number>,
+  imagePatchPixels?: number,
 ): {
   readonly matches: ReadonlyArray<RedundancyMatch>
   readonly exchanges: ReadonlyArray<ToolExchange | undefined>
@@ -449,7 +452,7 @@ const analyzeRedundancy = (
     const exchange = exchanges[index]
     if (exchange === undefined) continue
     const message = messages[index]!
-    if ((estimates[index] ?? estimateMessage(message)) < MIN_ELIDABLE_TOKENS) continue
+    if ((estimates[index] ?? estimateMessage(message, imagePatchPixels)) < MIN_ELIDABLE_TOKENS) continue
     const part = soleToolResult(message)
     if (part === undefined) continue
     collapsible[index] = part
@@ -476,7 +479,9 @@ const analyzeRedundancy = (
       ...message,
       content: [{ ...part, result: { type: "text" as const, value: elisionNotice(part.name) } }],
     })
-    const saved = (estimates[redundancy.index] ?? estimateMessage(message)) - estimateMessage(notice)
+    const saved =
+      (estimates[redundancy.index] ?? estimateMessage(message, imagePatchPixels)) -
+      estimateMessage(notice, imagePatchPixels)
     return saved > 0
       ? [
           {
@@ -598,8 +603,12 @@ const applyRedundancy = (messages: Message[], matches: ReadonlyArray<RedundancyM
  * A message that is none of those is still only collapsed when `context-redundancy.ts` says a
  * strictly newer sibling already carries its content, under a hard cap on unique content lost.
  */
-export const elideRedundant = (messages: Message[], estimates: ReadonlyArray<number>): ElisionResult => {
-  return applyRedundancy(messages, analyzeRedundancy(messages, estimates).matches)
+export const elideRedundant = (
+  messages: Message[],
+  estimates: ReadonlyArray<number>,
+  imagePatchPixels?: number,
+): ElisionResult => {
+  return applyRedundancy(messages, analyzeRedundancy(messages, estimates, imagePatchPixels).matches)
 }
 
 type HistoryCategory = "messages" | "retrieval" | "tool_output"
@@ -610,10 +619,14 @@ const historyCategory = (message: Message): HistoryCategory => {
   return result.name === "kb" ? "retrieval" : "tool_output"
 }
 
-const historyUsage = (messages: ReadonlyArray<Message>, estimates: ReadonlyArray<number>) => {
+const historyUsage = (
+  messages: ReadonlyArray<Message>,
+  estimates: ReadonlyArray<number>,
+  imagePatchPixels?: number,
+) => {
   const usage: Record<HistoryCategory, number> = { messages: 0, retrieval: 0, tool_output: 0 }
   messages.forEach((message, index) => {
-    usage[historyCategory(message)] += estimates[index] ?? estimateMessage(message)
+    usage[historyCategory(message)] += estimates[index] ?? estimateMessage(message, imagePatchPixels)
   })
   return usage
 }
@@ -633,8 +646,9 @@ const enforceHistoryBudgets = (
   messages: Message[],
   estimates: ReadonlyArray<number>,
   caps: Readonly<Record<HistoryCategory, number>>,
+  imagePatchPixels?: number,
 ): CategoryBudgetResult => {
-  const before = historyUsage(messages, estimates)
+  const before = historyUsage(messages, estimates, imagePatchPixels)
   let working = [...messages]
   let workingEstimates = [...estimates]
   const affected: Record<HistoryCategory, number> = { messages: 0, retrieval: 0, tool_output: 0 }
@@ -657,7 +671,7 @@ const enforceHistoryBudgets = (
           },
         ],
       })
-      const next = estimateMessage(replacement)
+      const next = estimateMessage(replacement, imagePatchPixels)
       const saved = workingEstimates[index]! - next
       if (saved <= 0) continue
       working[index] = replacement
@@ -667,7 +681,7 @@ const enforceHistoryBudgets = (
     }
   }
 
-  let messageUsed = historyUsage(working, workingEstimates).messages
+  let messageUsed = historyUsage(working, workingEstimates, imagePatchPixels).messages
   const anchor = working.findIndex(isRealUserMessage)
   const newest = working.length - 1
   const removed = new Set<number>()
@@ -680,10 +694,10 @@ const enforceHistoryBudgets = (
   if (removed.size > 0) {
     working = working.filter((_, index) => !removed.has(index))
     working = dropOrphanTools(dropDanglingToolCalls(working))
-    workingEstimates = working.map(estimateMessage)
+    workingEstimates = working.map((message) => estimateMessage(message, imagePatchPixels))
   }
 
-  const after = historyUsage(working, workingEstimates)
+  const after = historyUsage(working, workingEstimates, imagePatchPixels)
   const findings = (["messages", "retrieval", "tool_output"] as const).flatMap(
     (category): SessionMessage.ContextFinding[] =>
       before[category] <= caps[category]
@@ -735,21 +749,25 @@ export interface PackResult {
 export const pack = (
   messages: ReadonlyArray<Message>,
   budgetTokens: number,
-  options: { readonly historyCaps?: Readonly<Record<HistoryCategory, number>> } = {},
+  options: {
+    readonly historyCaps?: Readonly<Record<HistoryCategory, number>>
+    readonly imagePatchPixels?: number
+  } = {},
 ): PackResult => {
+  const imagePatchPixels = options.imagePatchPixels
   const repaired = dropDanglingToolCalls(messages)
   let working = repaired
-  let estimates = repaired.map(estimateMessage)
+  let estimates = repaired.map((message) => estimateMessage(message, imagePatchPixels))
   let total = estimates.reduce((sum, tokens) => sum + tokens, 0)
   let elided = 0
   let elidedIndexes = new Set<number>()
   const analysisEstimates = estimates
-  const analysis = analyzeRedundancy(repaired, analysisEstimates)
+  const analysis = analyzeRedundancy(repaired, analysisEstimates, imagePatchPixels)
   let budgetFindings: SessionMessage.ContextFinding[] = []
   const categoryOverflow =
     options.historyCaps === undefined
       ? false
-      : Object.entries(historyUsage(repaired, estimates)).some(
+      : Object.entries(historyUsage(repaired, estimates, imagePatchPixels)).some(
           ([category, used]) => used > options.historyCaps![category as HistoryCategory],
         )
 
@@ -766,16 +784,16 @@ export const pack = (
       working = reclaimed.messages
       elided = reclaimed.elisions.length
       elidedIndexes = new Set(reclaimed.elisions.map((item) => item.index))
-      estimates = working.map(estimateMessage)
+      estimates = working.map((message) => estimateMessage(message, imagePatchPixels))
       total = estimates.reduce((sum, tokens) => sum + tokens, 0)
     }
   }
 
   if (options.historyCaps !== undefined) {
-    const budgeted = enforceHistoryBudgets(working, estimates, options.historyCaps)
+    const budgeted = enforceHistoryBudgets(working, estimates, options.historyCaps, imagePatchPixels)
     if (budgeted.messages.length !== working.length || budgeted.messages.some((message, i) => message !== working[i])) {
       working = budgeted.messages
-      estimates = working.map(estimateMessage)
+      estimates = working.map((message) => estimateMessage(message, imagePatchPixels))
       total = estimates.reduce((sum, tokens) => sum + tokens, 0)
     }
     budgetFindings = budgeted.findings
@@ -833,7 +851,7 @@ export const pack = (
     messages: kept,
     changed: true,
     dropped: messages.length - kept.length,
-    estimatedTokens: estimateMessages(kept),
+    estimatedTokens: estimateMessages(kept, imagePatchPixels),
     elided,
     findings: [
       ...contextFindings(repaired, analysisEstimates, analysis.exchanges, analysis.matches, elidedIndexes),
@@ -934,6 +952,7 @@ export const packRequest = (input: {
   readonly contextSize: number | undefined
   readonly profile?: ContextBudget.Profile
   readonly memoryRecall?: string
+  readonly imagePatchPixels?: number
   /** Signed request-level correction learned from the previous provider-reported prompt count. */
   readonly promptCorrectionTokens?: number
 }): PackResult & { readonly contextSize: number; readonly system: ReadonlyArray<SystemPart> } => {
@@ -962,6 +981,7 @@ export const packRequest = (input: {
     system: systemBudget.system,
     tools: input.request.tools,
     maxTokens: input.request.generation?.maxTokens,
+    imagePatchPixels: input.imagePatchPixels,
   })
   const correction =
     input.promptCorrectionTokens !== undefined && Number.isFinite(input.promptCorrectionTokens)
@@ -971,19 +991,18 @@ export const packRequest = (input: {
   // stay ordinary heuristics; a positive correction leaves less room for history, a negative one
   // restores room the provider proved the heuristic was wasting.
   const correctedBudget = Math.max(0, Math.min(contextSize, heuristicBudget - correction))
-  const result = pack(
-    memoryBudget.messages,
-    correctedBudget,
-    input.profile === undefined
-      ? undefined
+  const result = pack(memoryBudget.messages, correctedBudget, {
+    imagePatchPixels: input.imagePatchPixels,
+    ...(input.profile === undefined
+      ? {}
       : {
           historyCaps: {
             messages: ContextBudget.cap(contextSize, input.profile.messages),
             retrieval: ContextBudget.cap(contextSize, input.profile.retrieval),
             tool_output: ContextBudget.cap(contextSize, input.profile.tool_output),
           },
-        },
-  )
+        }),
+  })
   return {
     ...result,
     changed: result.changed || systemBudget.changed || memoryBudget.changed,

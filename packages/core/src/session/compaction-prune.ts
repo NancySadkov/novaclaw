@@ -126,7 +126,8 @@ export const isPruned = (tool: SessionMessage.AssistantTool): boolean => tool.ti
  * ⚠️ `PROTECT_TOOL_OUTPUT_TOKENS` and `MIN_RECLAIM_TOKENS` are denominated in THIS unit, so they now
  * mean what their names say. See `Token.estimateStructured`.
  */
-const estimateJson = (value: unknown): number => Token.estimateStructured(value)
+const estimateJson = (value: unknown, imagePatchPixels?: number): number =>
+  Token.estimateStructured(value, imagePatchPixels)
 
 /**
  * What a completed tool part costs the model, mirroring `runner/to-llm-message.ts`'s `toolResult`:
@@ -134,10 +135,11 @@ const estimateJson = (value: unknown): number => Token.estimateStructured(value)
  * `{structured, content}`. Exported as a test seam so the estimate can be asserted directly rather
  * than inferred from a plan (the same reason `compaction.ts` exports `serializeToolContent`).
  */
-export const outputTokens = (tool: SessionMessage.AssistantTool): number => {
+export const outputTokens = (tool: SessionMessage.AssistantTool, imagePatchPixels?: number): number => {
   if (tool.state.status !== "completed") return 0
-  if (tool.provider?.executed === true && tool.state.result !== undefined) return estimateJson(tool.state.result)
-  return estimateJson({ structured: tool.state.structured, content: tool.state.content })
+  if (tool.provider?.executed === true && tool.state.result !== undefined)
+    return estimateJson(tool.state.result, imagePatchPixels)
+  return estimateJson({ structured: tool.state.structured, content: tool.state.content }, imagePatchPixels)
 }
 
 /**
@@ -148,7 +150,7 @@ export const outputTokens = (tool: SessionMessage.AssistantTool): number => {
  * result, because prune runs oldest-last, so anything beyond it was erased by a previous pass.
  * That second stop is what makes repeated prunes idempotent and O(new work).
  */
-export const plan = (messages: readonly SessionMessage.Message[]): Plan => {
+export const plan = (messages: readonly SessionMessage.Message[], imagePatchPixels?: number): Plan => {
   const targets: Target[] = []
   let scanned = 0
   let reclaim = 0
@@ -167,7 +169,7 @@ export const plan = (messages: readonly SessionMessage.Message[]): Plan => {
       if (part.state.status !== "completed") continue
       if (isExempt(part.name)) continue
       if (isPruned(part)) break walk
-      const tokens = outputTokens(part)
+      const tokens = outputTokens(part, imagePatchPixels)
       scanned += tokens
       if (scanned <= PROTECT_TOOL_OUTPUT_TOKENS) continue
       reclaim += tokens

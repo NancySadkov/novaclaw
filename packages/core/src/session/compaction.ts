@@ -140,6 +140,8 @@ type Input = {
   readonly model: Model
   readonly request: LLMRequest
   readonly promptEstimate?: PromptEstimate.Result
+  /** Resolved patch side for this exact model/server route; absent keeps the measured default. */
+  readonly imagePatchPixels?: number
 }
 
 /**
@@ -152,7 +154,7 @@ type Input = {
  * 🔴 The media-aware logic lives in `util/token.ts` because THREE call sites needed it and each had
  * written `estimate(JSON.stringify(value))` independently — see `Token.estimateStructured`.
  */
-export const estimate = (value: unknown) => Token.estimateStructured(value)
+export const estimate = (value: unknown, imagePatchPixels?: number) => Token.estimateStructured(value, imagePatchPixels)
 
 const truncate = (value: string) =>
   value.length <= TOOL_OUTPUT_MAX_CHARS ? value : `${value.slice(0, TOOL_OUTPUT_MAX_CHARS)}\n[truncated]`
@@ -410,9 +412,15 @@ export const make = (dependencies: Dependencies) => {
    * the manual `/compact` cycle enters the same function. A second copy of the tier would be the
    * duplication that produced the COMSPEC divergence (ruling 6) in miniature.
    */
-  const pruneCheapTier = Effect.fn("SessionCompaction.prune")(function* (entries: readonly Entry[]) {
+  const pruneCheapTier = Effect.fn("SessionCompaction.prune")(function* (
+    entries: readonly Entry[],
+    imagePatchPixels?: number,
+  ) {
     if (!config.prune) return entries
-    const planned = CompactionPrune.plan(entries.map((entry) => entry.message))
+    const planned = CompactionPrune.plan(
+      entries.map((entry) => entry.message),
+      imagePatchPixels,
+    )
     yield* Log.event("session.compaction.prune.planned", {
       "session.commit": planned.commit,
       "session.targets": planned.targets.length,
@@ -437,7 +445,7 @@ export const make = (dependencies: Dependencies) => {
     const context = input.model.route.defaults.limits?.context
     if (context === undefined || context <= 0) return false
     const output = input.request.generation?.maxTokens ?? input.model.route.defaults.limits?.output ?? 0
-    const entries = yield* pruneCheapTier(input.entries)
+    const entries = yield* pruneCheapTier(input.entries, input.imagePatchPixels)
     // PRUNE ONLY (`compaction.summarize: false`). The cheap tier has already run and its reclaim is
     // durable for this cycle; stopping here is the whole point of the setting. Returning `false`
     // means "no compaction message was written", which is exactly true — and the caller's contract
@@ -548,7 +556,7 @@ export const make = (dependencies: Dependencies) => {
      *
      * ⚠️ Logged BEFORE the early return, deliberately: the interesting case is the one that declines.
      */
-    const promptEstimate = input.promptEstimate ?? PromptEstimate.unsupported(input.request)
+    const promptEstimate = input.promptEstimate ?? PromptEstimate.unsupported(input.request, input.imagePatchPixels)
     const estimated = promptEstimate.estimatedTokens
     const threshold = context - Math.max(output, config.buffer)
     yield* Log.event("session.compaction.threshold", {

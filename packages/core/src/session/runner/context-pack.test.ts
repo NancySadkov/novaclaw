@@ -77,6 +77,29 @@ describe("budget", () => {
     const bigSystem = [SystemPart.make("x".repeat(400_000))]
     expect(budget({ contextSize: 32_000, system: bigSystem, tools: noTools })).toBe(0)
   })
+
+  test("one image divisor prices nested tool media while text-only system accounting is unchanged", () => {
+    const image = {
+      type: "media",
+      mediaType: "image/png",
+      data: readFileSync(
+        path.join(import.meta.dir, "..", "..", "..", "..", "app", "public", "assets", "skin", "glyphs", "calendar.png"),
+      ).toString("base64"),
+    }
+    const tools = [
+      ToolDefinition.make({
+        name: "vision",
+        description: "inspect",
+        inputSchema: { type: "object" },
+        metadata: { example: image },
+      }),
+    ]
+    const base = { contextSize: 64_000, system: [SystemPart.make("same text")], tools }
+    expect(budget({ ...base, imagePatchPixels: 16 })).toBeLessThan(budget(base))
+    expect(budget({ contextSize: 64_000, system: base.system, tools: noTools, imagePatchPixels: 16 })).toBe(
+      budget({ contextSize: 64_000, system: base.system, tools: noTools }),
+    )
+  })
 })
 
 describe("estimateMessage", () => {
@@ -500,7 +523,7 @@ describe("image history is not evicted for space it never used", () => {
   const sixImages = () => {
     const messages = [user("describe every icon")]
     for (let index = 0; index < 6; index++) {
-      messages.push(assistantCall(`c${index}`))
+      messages.push(assistantCall(`c${index}`, "read", { path: `icon-${index}.png` }))
       messages.push(imageResult(`c${index}`))
     }
     return messages
@@ -521,5 +544,28 @@ describe("image history is not evicted for space it never used", () => {
     }
     const result = pack(messages, 20_000)
     expect(result.changed, "70,000 tokens of real text must still be packed down").toBe(true)
+  })
+
+  test("a smaller route patch changes media estimates and eviction, while text-only packing is identical", () => {
+    const images = sixImages()
+    const ordinaryTokens = images.reduce((sum, message) => sum + estimateMessage(message), 0)
+    const denseTokens = images.reduce((sum, message) => sum + estimateMessage(message, 16), 0)
+    const boundary = Math.floor((ordinaryTokens + denseTokens) / 2)
+
+    expect(denseTokens).toBeGreaterThan(ordinaryTokens)
+    expect(pack(images, boundary).dropped).toBe(0)
+    expect(pack(images, boundary, { imagePatchPixels: 16 }).dropped).toBeGreaterThan(0)
+
+    const text = [user("task"), assistantText("x".repeat(4_000)), assistantText("done")]
+    expect(pack(text, 1_000, { imagePatchPixels: 16 })).toEqual(pack(text, 1_000))
+  })
+
+  test("packRequest applies the same image divisor used by direct message estimates", () => {
+    const request = LLM.request({ model: fakeModel, messages: sixImages() })
+    const ordinary = packRequest({ request, contextSize: 10_000 })
+    const dense = packRequest({ request, contextSize: 10_000, imagePatchPixels: 16 })
+    expect(dense.dropped).toBeGreaterThan(ordinary.dropped)
+    expect(ordinary.estimatedTokens).toBe(ordinary.messages.reduce((sum, message) => sum + estimateMessage(message), 0))
+    expect(dense.estimatedTokens).toBe(dense.messages.reduce((sum, message) => sum + estimateMessage(message, 16), 0))
   })
 })

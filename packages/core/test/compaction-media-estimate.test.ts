@@ -74,6 +74,14 @@ describe("the compaction threshold prices media by measured dimensions, not payl
     expect(perImage).toBeLessThan(240)
   })
 
+  test("a route-specific patch side changes the compaction threshold by that image's exact grid delta", () => {
+    const value = request(media())
+    const defaultEstimate = estimate(value)
+    const fineGridEstimate = estimate(value, 16)
+
+    expect(fineGridEstimate - defaultEstimate).toBe(258 - 66)
+  })
+
   // ⚠️ Text must be untouched: chars/4 is close for prose and this fix must not disturb it.
   test("text is still counted by its characters", () => {
     const short = estimate(request({ type: "text", text: "x".repeat(40) }))

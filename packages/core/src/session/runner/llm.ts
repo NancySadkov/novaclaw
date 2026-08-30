@@ -92,6 +92,7 @@ import { UtilityPass } from "./utility-pass"
 import { ContextPack } from "./context-pack"
 import { PromptEstimate } from "./prompt-estimate"
 import { ModelRouteProfileStore } from "./model-route-profile-store"
+import { Token } from "../../util/token"
 import { RequestFootprint } from "./footprint"
 import { ContextBudget } from "./context-budget"
 import { ShortChat } from "./short-chat"
@@ -1683,12 +1684,20 @@ export const layer = Layer.effect(
         routeID: promptScope.routeID,
         protocolID: promptScope.protocolID,
       }
-      const promptCalibrationFactor = yield* routeProfiles.factor(routeProfileScope).pipe(Effect.orElseSucceed(() => 1))
+      const routeProfile = yield* routeProfiles
+        .resolve(routeProfileScope, { safeDefault: { imagePatchPixels: Token.DEFAULT_IMAGE_PATCH_PIXELS } })
+        .pipe(
+          Effect.orElseSucceed(() => ({
+            promptFactor: 1,
+            imagePatchPixels: Token.DEFAULT_IMAGE_PATCH_PIXELS,
+          })),
+        )
       const promptEstimate = PromptEstimate.resolve({
         request: fullRequest,
         messages: entries.map((entry) => entry.message),
         scope: promptScope,
-        calibrationFactor: promptCalibrationFactor,
+        calibrationFactor: routeProfile.promptFactor,
+        imagePatchPixels: routeProfile.imagePatchPixels,
       })
       yield* timingEnd("request-build")
       // ⚠️ `compactIfNeeded` is a CHECK that usually declines — window unknown, no summary model, or
@@ -1704,6 +1713,7 @@ export const layer = Layer.effect(
         model,
         request: fullRequest,
         promptEstimate,
+        imagePatchPixels: routeProfile.imagePatchPixels,
       })
       // The conversation that just got compressed away is written into this colleague's OWN memory
       // as passages, so `kb search` can find it later (`session/compaction-archive.ts` holds the
@@ -1735,6 +1745,7 @@ export const layer = Layer.effect(
           : undefined,
         memoryRecall: recallMessage,
         promptCorrectionTokens: promptEstimate.correctionTokens,
+        imagePatchPixels: routeProfile.imagePatchPixels,
       })
       yield* timingEnd("context-fit")
       const packed = preparedDispatch.packed
@@ -1804,12 +1815,17 @@ export const layer = Layer.effect(
         enabled: budgetEnforced && !isLastStep,
         budget: thinkingBudget,
         onProviderStep: ({ request: providerRequest, usage, providerMetadata, anchorable }) => {
-          const estimatedPrompt = PromptEstimate.whole(providerRequest)
+          const estimatedPrompt = PromptEstimate.whole(providerRequest, routeProfile.imagePatchPixels)
           const reportedPrompt = PromptEstimate.reportedPromptTokens(usage)
           if (reportedPrompt !== undefined)
             latestProviderPrompt = { reportedTokens: reportedPrompt, heuristicTokens: estimatedPrompt }
           if (anchorable) {
-            const observed = PromptEstimate.observe({ request, usage, scope: promptScope })
+            const observed = PromptEstimate.observe({
+              request,
+              usage,
+              scope: promptScope,
+              imagePatchPixels: routeProfile.imagePatchPixels,
+            })
             if (observed !== undefined) providerPromptAnchor = observed
           }
           const comparable = reportedPrompt !== undefined && estimatedPrompt > 0
@@ -2090,7 +2106,15 @@ export const layer = Layer.effect(
             recoverOverflow &&
             !publisher.hasAssistantStarted() &&
             isContextOverflowFailure(overflowFailure ?? failure) &&
-            (yield* restore(recoverOverflow({ sessionID: session.id, entries, model, request })))
+            (yield* restore(
+              recoverOverflow({
+                sessionID: session.id,
+                entries,
+                model,
+                request,
+                imagePatchPixels: routeProfile.imagePatchPixels,
+              }),
+            ))
           )
             return yield* Effect.die(continueAfterOverflowCompaction(currentStep))
           if (overflowFailure) yield* publish(overflowFailure)
@@ -2527,12 +2551,29 @@ export const layer = Layer.effect(
         })
         return
       }
-      const { session, model, entries } = prepared
+      const { session, model, scheduledDevice, entries } = prepared
+      const routeProfile = yield* routeProfiles
+        .resolve(
+          {
+            providerID: model.provider,
+            wireModelID: model.id,
+            serverKey: PromptEstimate.serverKey(model.route.endpoint?.baseURL, scheduledDevice.key),
+            routeID: model.route.id,
+            protocolID: model.route.protocol,
+          },
+          { safeDefault: { imagePatchPixels: Token.DEFAULT_IMAGE_PATCH_PIXELS } },
+        )
+        .pipe(
+          Effect.orElseSucceed(() => ({
+            promptFactor: 1,
+            imagePatchPixels: Token.DEFAULT_IMAGE_PATCH_PIXELS,
+          })),
+        )
       // The compactor reads only `generation?.maxTokens` (else the model's own output limit)
       // from the request — a minimal envelope is enough.
       const request = LLM.request({ model, messages: [], tools: [] })
       const compacted = yield* compaction.compactAfterOverflow(
-        { sessionID: session.id, entries, model, request },
+        { sessionID: session.id, entries, model, request, imagePatchPixels: routeProfile.imagePatchPixels },
         "manual",
       )
       // The archive runs on BOTH compaction paths, and it did not until now — the automatic branch
@@ -2569,6 +2610,7 @@ export const layer = Layer.effect(
       maintenance,
       scheduler,
       db,
+      routeProfiles,
     })
 
     const run = Effect.fn("SessionRunner.run")(function* (input: {

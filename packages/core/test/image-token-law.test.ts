@@ -49,6 +49,27 @@ describe("the law reproduces its own published measurements", () => {
   })
 })
 
+describe("a route-specific image patch side", () => {
+  test("moves at the exact custom patch boundary and retains the 64-patch floor", () => {
+    expect(Token.imageTokens(128, 128, 16)).toBe(66)
+    expect(Token.imageTokens(255, 255, 16)).toBe(227)
+    expect(Token.imageTokens(256, 256, 16)).toBe(258)
+    expect(Token.imageTokens(575, 575, 64)).toBe(66)
+    expect(Token.imageTokens(576, 576, 64)).toBe(83)
+  })
+
+  test("one-pixel patches and very large valid patches remain finite and deterministic", () => {
+    expect(Token.imageTokens(100, 100, 1)).toBe(10_002)
+    expect(Token.imageTokens(100, 100, Number.MAX_SAFE_INTEGER)).toBe(66)
+  })
+
+  test("invalid patch parameters fall back to the safe 32-pixel default", () => {
+    const expected = Token.imageTokens(4_000, 3_000)
+    for (const invalid of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1])
+      expect(Token.imageTokens(4_000, 3_000, invalid)).toBe(expected)
+  })
+})
+
 // A media part reaches the estimator in TWO shapes, and pricing only one is how the FIRST version of
 // the media fix shipped inert: a user attachment lowers to {type:"media", mediaType, data}, while a
 // tool result keeps {type:"file", mime, uri}. Every image in a file-reading workload takes the second.
@@ -78,6 +99,25 @@ describe("estimateStructured prices a REAL image by the law", () => {
   // tokens for a picture worth 66 - the defect this whole line of work began from.
   test("and it does not fall back to counting the base64", () => {
     expect(Token.estimateStructured([media("image/png", glyphB64())])).toBeLessThan(200)
+  })
+
+  test("threads a custom patch side through ordinary JSON media pricing", () => {
+    const value = [media("image/png", glyphB64())]
+    expect(Token.estimateStructured(value, 16) - Token.estimateStructured(value)).toBe(258 - 66)
+  })
+
+  test("threads the same custom patch side through the circular fallback walker", () => {
+    const value: Record<string, unknown> = {}
+    value["self"] = value
+    value["part"] = media("image/png", glyphB64())
+    expect(Token.estimateStructured(value, 16) - Token.estimateStructured(value)).toBe(258 - 66)
+  })
+
+  test("invalid structured-estimator patch parameters use the safe default", () => {
+    const value = [media("image/png", glyphB64())]
+    const expected = Token.estimateStructured(value)
+    for (const invalid of [0, -32, 1.25, Number.NaN, Number.NEGATIVE_INFINITY])
+      expect(Token.estimateStructured(value, invalid)).toBe(expected)
   })
 })
 

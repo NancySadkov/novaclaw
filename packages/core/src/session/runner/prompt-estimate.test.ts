@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { Buffer } from "node:buffer"
 import { DateTime } from "effect"
 import { LLM, Message, Model, SystemPart, Usage } from "@novaclaw/llm"
 import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
@@ -15,6 +16,46 @@ let messageIndex = 0
 
 const request = (text: string, system = "rules") =>
   LLM.request({ model, system: [SystemPart.make(system)], messages: [Message.user(text)] })
+
+const imageRequest = (text: string) => {
+  const header = Uint8Array.from([
+    0x89,
+    0x50,
+    0x4e,
+    0x47,
+    0x0d,
+    0x0a,
+    0x1a,
+    0x0a,
+    0,
+    0,
+    0,
+    13,
+    0x49,
+    0x48,
+    0x44,
+    0x52,
+    0,
+    0,
+    0x04,
+    0, // width = 1024
+    0,
+    0,
+    0x03,
+    0, // height = 768
+    ...Array(40).fill(0),
+  ])
+  return LLM.request({
+    model,
+    system: [SystemPart.make("rules")],
+    messages: [
+      Message.user([
+        { type: "text", text },
+        { type: "media", mediaType: "image/png", data: Buffer.from(header).toString("base64") },
+      ]),
+    ],
+  })
+}
 
 const scope = (over: Partial<PromptEstimate.Scope> = {}): PromptEstimate.Scope => ({
   sessionID,
@@ -110,6 +151,65 @@ describe("PromptEstimate", () => {
 
     expect(result.estimatedTokens).toBe(120 + Math.ceil(delta * 1.2))
     expect(result.correctionTokens).toBe(result.estimatedTokens - result.heuristicTokens)
+  })
+
+  test("uses one resolved non-default image grid for the whole estimate, anchor, and positive delta", () => {
+    const imagePatchPixels = 64
+    const previous = imageRequest("old")
+    const current = imageRequest("old plus new material".repeat(40))
+    const previousHeuristic = PromptEstimate.whole(previous, imagePatchPixels)
+    const currentHeuristic = PromptEstimate.whole(current, imagePatchPixels)
+
+    expect(previousHeuristic).toBeLessThan(PromptEstimate.whole(previous))
+    expect(PromptEstimate.unsupported(previous, imagePatchPixels).heuristicTokens).toBe(previousHeuristic)
+    const anchor = PromptEstimate.observe({
+      request: previous,
+      usage: new Usage({ inputTokens: 500, outputTokens: 1, nonCachedInputTokens: 500 }),
+      scope: scope(),
+      imagePatchPixels,
+    })!
+    expect(anchor.heuristicTokens).toBe(previousHeuristic)
+
+    const delta = currentHeuristic - previousHeuristic
+    expect(delta).toBeGreaterThan(0)
+    const result = PromptEstimate.resolve({
+      request: current,
+      messages: [assistant(anchor)],
+      scope: scope(),
+      imagePatchPixels,
+    })
+    expect(result.heuristicTokens).toBe(currentHeuristic)
+    expect(result.anchorHeuristicTokens).toBe(previousHeuristic)
+    expect(result.deltaTokens).toBe(delta)
+    expect(result.estimatedTokens).toBe(500 + delta)
+    expect(result.correctionTokens).toBe(result.estimatedTokens - currentHeuristic)
+  })
+
+  test("falls back to the whole request when the image grid changes on the same route", () => {
+    const current = imageRequest("same request")
+    const anchor = PromptEstimate.observe({
+      request: current,
+      usage: new Usage({ inputTokens: 500, outputTokens: 1, nonCachedInputTokens: 500 }),
+      scope: scope(),
+      imagePatchPixels: 64,
+    })!
+    const heuristicTokens = PromptEstimate.whole(current, 32)
+
+    expect(anchor.heuristicTokens).not.toBe(heuristicTokens)
+    const result = PromptEstimate.resolve({
+      request: current,
+      messages: [assistant(anchor)],
+      scope: scope(),
+      imagePatchPixels: 32,
+    })
+    expect(result).toMatchObject({
+      heuristicTokens,
+      estimatedTokens: heuristicTokens,
+      fallback: "shape-changed",
+      confidence: "whole",
+      anchorReportedTokens: 0,
+      anchorHeuristicTokens: 0,
+    })
   })
 
   test("retains the last valid anchor across a settled response with no usage", () => {

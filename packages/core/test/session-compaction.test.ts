@@ -278,8 +278,8 @@ test("the estimate-vs-provider ratio compares one exact provider request with it
   expect(dispatch).toContain("providerMetadata: event.providerMetadata")
   const callback = "onProviderStep: ({ request: providerRequest, usage, providerMetadata, anchorable })"
   expect(runner).toContain(callback)
-  expect(runner).toContain("PromptEstimate.whole(providerRequest)")
-  expect(runner).toContain(".factor(routeProfileScope)")
+  expect(runner).toContain("PromptEstimate.whole(providerRequest, routeProfile.imagePatchPixels)")
+  expect(runner).toContain("routeProfileScope,\n                  { estimatedTokens: estimatedPrompt")
   expect(runner).toContain(".observe(")
   expect(runner).toContain("ProviderCapability.servingIdentityOf(providerMetadata)")
   expect(runner).toContain('"session.prompt.reported": reportedPrompt !== undefined')
@@ -292,6 +292,32 @@ test("the estimate-vs-provider ratio compares one exact provider request with it
 })
 
 // ── A summary has a finite, hard output chain ─────────────────────────────────────────────────────────────────────
+
+test("one resolved route image grid reaches every compaction and packing consumer", () => {
+  const runner = readFileSync(path.join(import.meta.dir, "..", "src", "session", "runner", "llm.ts"), "utf8")
+  const strictDrain = readFileSync(
+    path.join(import.meta.dir, "..", "src", "session", "runner", "strict-drain.ts"),
+    "utf8",
+  )
+  const expectProfileNear = (source: string, marker: string, width: number) => {
+    const at = source.indexOf(marker)
+    expect(at, `missing call-site marker: ${marker}`).toBeGreaterThan(-1)
+    expect(source.slice(at, at + width), `${marker} lost the resolved route image grid`).toContain(
+      "imagePatchPixels: routeProfile.imagePatchPixels",
+    )
+  }
+
+  expectProfileNear(runner, "const promptEstimate = PromptEstimate.resolve({", 500)
+  expectProfileNear(runner, "harness.compaction.compactIfNeeded({", 450)
+  expectProfileNear(runner, "const preparedDispatch = ProviderDispatch.prepare({", 800)
+  expectProfileNear(runner, "recoverOverflow({", 300)
+  expectProfileNear(runner, "const compacted = yield* compaction.compactAfterOverflow(", 450)
+
+  // Strict mode builds two independently dispatched requests: each engine call, and the final
+  // user-facing run summary. Both must use the same route fact resolved once above them.
+  expect(strictDrain.match(/ProviderDispatch\.prepare\(\{/g)).toHaveLength(2)
+  expect(strictDrain.match(/imagePatchPixels: routeProfile\.imagePatchPixels/g)).toHaveLength(2)
+})
 
 type SummaryAttempt = {
   readonly text: string

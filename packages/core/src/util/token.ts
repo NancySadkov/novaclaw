@@ -71,8 +71,7 @@ const estimateAsciiRun = (value: string): number => {
   if (value.length >= 24 && base64Alphabet && distinctAscii(value) >= 8)
     return value.length / HIGH_ENTROPY_CHARS_PER_TOKEN
   if (path || value.includes("://")) return value.length / PATH_CHARS_PER_TOKEN
-  if (structured >= 2 && structured / value.length >= 0.08)
-    return value.length / STRUCTURED_CHARS_PER_TOKEN
+  if (structured >= 2 && structured / value.length >= 0.08) return value.length / STRUCTURED_CHARS_PER_TOKEN
   // Digits embedded in an otherwise ordinary span still need their one-token floor.
   return (value.length - digits) / CHARS_PER_TOKEN + digits
 }
@@ -108,9 +107,7 @@ export const estimate = (input: string): number => {
       ascii += input[index]
     } else {
       flushAscii()
-      total += isCjk(codePoint)
-        ? 1 / CJK_CHARS_PER_TOKEN
-        : utf8Bytes(codePoint) / OTHER_UNICODE_BYTES_PER_TOKEN
+      total += isCjk(codePoint) ? 1 / CJK_CHARS_PER_TOKEN : utf8Bytes(codePoint) / OTHER_UNICODE_BYTES_PER_TOKEN
     }
     index += width
   }
@@ -182,17 +179,28 @@ export const MEDIA_PART_TOKENS = 1_500
  * true price.
  *
  * ⚠️ **This is a property of the (MODEL x SERVER) pair, not of "images"** — a different patch size or
- * a different server-side preprocessor changes it. It is measured for the floor model. When a second
- * pair is measured, this becomes a per-pair lookup; until then a wrong patch size is still far closer
- * than a constant, because any patch-grid law puts a photograph in the thousands.
+ * a different server-side preprocessor changes it. It is measured for the floor model, so 32 remains
+ * the safe cold-start default; a caller holding an exact-route measurement supplies that divisor to
+ * `imageTokens`/`estimateStructured` without importing runtime state into this browser-safe leaf.
  */
-const IMAGE_PATCH_PX = 32
+/** Safe floor-model patch side. A route profile may supply a measured model/server-specific side. */
+export const DEFAULT_IMAGE_PATCH_PIXELS = 32
 const IMAGE_MIN_PATCHES = 64
 const IMAGE_DELIMITER_TOKENS = 2
 
-export const imageTokens = (width: number, height: number): number =>
-  IMAGE_DELIMITER_TOKENS +
-  Math.max(IMAGE_MIN_PATCHES, Math.floor(width / IMAGE_PATCH_PX) * Math.floor(height / IMAGE_PATCH_PX))
+const resolveImagePatchPixels = (value: number | undefined): number =>
+  value !== undefined && Number.isSafeInteger(value) && value > 0 ? value : DEFAULT_IMAGE_PATCH_PIXELS
+
+export const imageTokens = (
+  width: number,
+  height: number,
+  imagePatchPixels: number = DEFAULT_IMAGE_PATCH_PIXELS,
+): number => {
+  const divisor = resolveImagePatchPixels(imagePatchPixels)
+  return (
+    IMAGE_DELIMITER_TOKENS + Math.max(IMAGE_MIN_PATCHES, Math.floor(width / divisor) * Math.floor(height / divisor))
+  )
+}
 
 /** A dimension large enough for ordinary source images while rejecting header-spoofed u32 values. */
 const MAX_IMAGE_DIMENSION = 100_000
@@ -341,14 +349,14 @@ export const imageDimensionsFromData = (
  * ⚠️ Audio, video and PDF have no pixel grid, so they keep the constant. It is wrong for them too,
  * but it is wrong in a way nobody has measured, and inventing a second unmeasured law would be worse.
  */
-const mediaTokens = (item: Record<string, unknown>): number => {
+const mediaTokens = (item: Record<string, unknown>, imagePatchPixels: number): number => {
   const mime = item["mime"] ?? item["mediaType"]
   if (typeof mime === "string" && !mime.startsWith("image/")) return MEDIA_PART_TOKENS
   const data = item["data"] ?? item["uri"]
   if (typeof data !== "string" || data.length === 0) return MEDIA_PART_TOKENS
   const dim = imageDimensionsFromData(data)
   if (dim === undefined) return MEDIA_PART_TOKENS
-  return imageTokens(dim.width, dim.height)
+  return imageTokens(dim.width, dim.height, imagePatchPixels)
 }
 
 const isMediaPart = (item: Record<string, unknown>): boolean => {
@@ -375,7 +383,8 @@ const isMediaPart = (item: Record<string, unknown>): boolean => {
  * result in `uri`. Everything else in the part still counts — the mime and the filename are real
  * prompt content.
  */
-export const estimateStructured = (value: unknown): number => {
+export const estimateStructured = (value: unknown, imagePatchPixels: number = DEFAULT_IMAGE_PATCH_PIXELS): number => {
+  imagePatchPixels = resolveImagePatchPixels(imagePatchPixels)
   let mediaTokenTotal = 0
   let json: string
   try {
@@ -384,7 +393,7 @@ export const estimateStructured = (value: unknown): number => {
         if (item !== null && typeof item === "object" && isMediaPart(item as Record<string, unknown>)) {
           // Priced from the header BEFORE the payload is dropped - this is the only point where
           // the bytes are still in hand.
-          mediaTokenTotal += mediaTokens(item as Record<string, unknown>)
+          mediaTokenTotal += mediaTokens(item as Record<string, unknown>, imagePatchPixels)
           return { ...(item as Record<string, unknown>), data: "", uri: "" }
         }
         return item
@@ -395,7 +404,7 @@ export const estimateStructured = (value: unknown): number => {
     // over-packs a window it believes is empty. The two `estimateJson` callers did return 0, so this
     // raises their floor as well; over-estimating is this module's stated contract ("a soft
     // over-budget, never a hard overflow"), and an unstringifiable value is exactly when to take it.
-    return estimateUnstringifiable(value)
+    return estimateUnstringifiable(value, imagePatchPixels)
   }
   return estimate(json) + mediaTokenTotal
 }
@@ -408,7 +417,7 @@ const FALLBACK_SATURATION_TOKENS = Number.MAX_SAFE_INTEGER
  * their real charge; cycles are visited once; a hostile graph/getter saturates at a finite value that
  * cannot be mistaken for spare context.
  */
-const estimateUnstringifiable = (value: unknown): number => {
+const estimateUnstringifiable = (value: unknown, imagePatchPixels: number): number => {
   const stack: unknown[] = [value]
   const seen = new WeakSet<object>()
   let nodes = 0
@@ -436,7 +445,7 @@ const estimateUnstringifiable = (value: unknown): number => {
       seen.add(item)
       const record = item as Record<string, unknown>
       const media = isMediaPart(record)
-      if (media) add(mediaTokens(record))
+      if (media) add(mediaTokens(record, imagePatchPixels))
       for (const [key, child] of Object.entries(record)) {
         add(estimate(key) + 1)
         if (!media || (key !== "data" && key !== "uri")) stack.push(child)

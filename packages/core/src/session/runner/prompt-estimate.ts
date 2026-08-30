@@ -56,8 +56,11 @@ const nonNegativeInt = (value: number | undefined): value is number =>
   value !== undefined && Number.isSafeInteger(value) && value >= 0
 
 /** The one request-level heuristic. Item ranking remains in ContextPack. */
-export const whole = (request: RequestShape): number =>
-  Token.estimateStructured({ system: request.system, messages: request.messages, tools: request.tools })
+export const whole = (request: RequestShape, imagePatchPixels?: number): number =>
+  Token.estimateStructured(
+    { system: request.system, messages: request.messages, tools: request.tools },
+    imagePatchPixels,
+  )
 
 /**
  * Read the normalized inclusive prompt count exactly once.
@@ -79,9 +82,16 @@ export const reportedPromptTokens = (usage: Usage | undefined): number | undefin
   return positiveInt(sum) ? sum : undefined
 }
 
-/** Stable identity for the governing prompt and tool catalogue; never logged or sent off-box. */
-export const shapeKey = (request: Pick<RequestShape, "system" | "tools">): string =>
-  Hash.sha256(JSON.stringify({ system: request.system, tools: request.tools }))
+/** Stable identity for the governing prompt, tool catalogue, and image grid; never sent off-box. */
+export const shapeKey = (request: Pick<RequestShape, "system" | "tools">, imagePatchPixels?: number): string => {
+  const resolvedImagePatchPixels =
+    imagePatchPixels !== undefined && Number.isSafeInteger(imagePatchPixels) && imagePatchPixels > 0
+      ? imagePatchPixels
+      : Token.DEFAULT_IMAGE_PATCH_PIXELS
+  return Hash.sha256(
+    JSON.stringify({ system: request.system, tools: request.tools, imagePatchPixels: resolvedImagePatchPixels }),
+  )
+}
 
 /**
  * Stable identity of the server route that tokenized this prompt.
@@ -132,13 +142,14 @@ export const observe = (input: {
   readonly request: RequestShape
   readonly usage: Usage | undefined
   readonly scope: Scope
+  readonly imagePatchPixels?: number
 }): SessionMessage.PromptAnchor | undefined => {
   const reportedTokens = reportedPromptTokens(input.usage)
-  const heuristicTokens = whole(input.request)
+  const heuristicTokens = whole(input.request, input.imagePatchPixels)
   if (!positiveInt(reportedTokens) || !positiveInt(heuristicTokens)) return undefined
   return {
     ...input.scope,
-    shapeKey: shapeKey(input.request),
+    shapeKey: shapeKey(input.request, input.imagePatchPixels),
     heuristicTokens,
     reportedTokens,
   }
@@ -157,11 +168,13 @@ export const resolve = (input: {
   readonly scope: Scope
   /** Median provider/heuristic ratio for this exact route; one-sided and capped defensively. */
   readonly calibrationFactor?: number
+  /** The same resolved image grid used to create durable anchor heuristics for this route. */
+  readonly imagePatchPixels?: number
 }): Result => {
-  const heuristicTokens = whole(input.request)
+  const heuristicTokens = whole(input.request, input.imagePatchPixels)
   const factor = calibrationFactor(input.calibrationFactor)
   if (!positiveInt(heuristicTokens)) return full(heuristicTokens, "invalid", factor)
-  const currentShapeKey = shapeKey(input.request)
+  const currentShapeKey = shapeKey(input.request, input.imagePatchPixels)
   let fallback: Fallback = "unavailable"
   let anchor: SessionMessage.PromptAnchor | undefined
   for (let index = input.messages.length - 1; index >= 0; index--) {
@@ -201,4 +214,5 @@ export const resolve = (input: {
   }
 }
 
-export const unsupported = (request: RequestShape): Result => full(whole(request), "unsupported")
+export const unsupported = (request: RequestShape, imagePatchPixels?: number): Result =>
+  full(whole(request, imagePatchPixels), "unsupported")

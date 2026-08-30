@@ -478,9 +478,9 @@ describe("images are not mistaken for reclaimable bulk", () => {
     }) as unknown as SessionMessage.AssistantTool
 
   /** Ten image reads, then two protected turns so the walk reaches them. */
-  const tenImages = () => [
+  const imageHistory = (count = 10) => [
     user("describe every icon"),
-    ...Array.from({ length: 10 }, () => assistant("read one", [imageTool()])),
+    ...Array.from({ length: count }, () => assistant("read one", [imageTool()])),
     user("carry on"),
     assistant("working"),
     user("and again"),
@@ -488,9 +488,26 @@ describe("images are not mistaken for reclaimable bulk", () => {
   ]
 
   test("🔴 ten real images do NOT trigger a prune — they are ~660 provider tokens, not over 70,000", () => {
-    const plan = CompactionPrune.plan(tenImages())
+    const plan = CompactionPrune.plan(imageHistory())
     expect(plan.commit, "the old estimate committed here and erased the pictures").toBe(false)
     expect(plan.targets, "nothing may be selected for erasure").toEqual([])
+  })
+
+  test("a non-default route grid changes image-tool pruning by the same exact media delta", () => {
+    const image = imageTool()
+    const defaultTokens = CompactionPrune.outputTokens(image)
+    const fineGridTokens = CompactionPrune.outputTokens(image, 16)
+    expect(fineGridTokens - defaultTokens).toBe(258 - 66)
+
+    // At the measured 32-pixel default this history stays below the 40k protection ceiling. The
+    // same pictures on a 16-pixel-grid route cross that ceiling and clear the 20k commit floor.
+    const messages = imageHistory(300)
+    const defaultPlan = CompactionPrune.plan(messages)
+    const fineGridPlan = CompactionPrune.plan(messages, 16)
+    expect(defaultPlan.commit).toBe(false)
+    expect(defaultPlan.targets).toEqual([])
+    expect(fineGridPlan.commit).toBe(true)
+    expect(fineGridPlan.targets.length).toBeGreaterThan(0)
   })
 
   // ⚠️ THE CONTROL. Without it this passes just as well if the pruner stopped working entirely.

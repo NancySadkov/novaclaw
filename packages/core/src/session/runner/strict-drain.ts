@@ -33,6 +33,9 @@ import { createLLMEventPublisher } from "./publish-llm-event"
 import { ProviderDispatch } from "./provider-dispatch"
 import { ProviderRetry } from "./provider-retry"
 import { SessionStrict } from "./strict"
+import { ModelRouteProfileStore } from "./model-route-profile-store"
+import { PromptEstimate } from "./prompt-estimate"
+import { Token } from "../../util/token"
 
 type Harness = Pick<HarnessConfig.Derived, "configuredShell" | "context" | "quality" | "strict">
 
@@ -48,6 +51,7 @@ export interface Dependencies {
   readonly maintenance: SessionMaintenance.Interface
   readonly scheduler: SessionScheduler.Interface
   readonly db: Database.Interface["db"]
+  readonly routeProfiles: ModelRouteProfileStore.Interface
 }
 
 /**
@@ -58,8 +62,20 @@ export interface Dependencies {
  * behind the runner seam instead of a second engine hidden in llm.ts's closure.
  */
 export const make = (dependencies: Dependencies) => {
-  const { events, llm, models, store, location, snapshots, messengerStore, offline, maintenance, scheduler, db } =
-    dependencies
+  const {
+    events,
+    llm,
+    models,
+    store,
+    location,
+    snapshots,
+    messengerStore,
+    offline,
+    maintenance,
+    scheduler,
+    db,
+    routeProfiles,
+  } = dependencies
   const getSession = Effect.fn("StrictDrain.getSession")(function* (sessionID: SessionSchema.ID) {
     const session = yield* store.get(sessionID)
     if (!session) return yield* Effect.die(`Session not found: ${sessionID}`)
@@ -116,6 +132,23 @@ export const make = (dependencies: Dependencies) => {
     const model = selected.model
     const maxProviderAttempts = ProviderRetry.maxAttempts(yield* models.retryAttempts(modelSession))
     const scheduledDevice = selected.device
+    const routeProfile = yield* routeProfiles
+      .resolve(
+        {
+          providerID: model.provider,
+          wireModelID: model.id,
+          serverKey: PromptEstimate.serverKey(model.route.endpoint?.baseURL, scheduledDevice.key),
+          routeID: model.route.id,
+          protocolID: model.route.protocol,
+        },
+        { safeDefault: { imagePatchPixels: Token.DEFAULT_IMAGE_PATCH_PIXELS } },
+      )
+      .pipe(
+        Effect.orElseSucceed(() => ({
+          promptFactor: 1,
+          imagePatchPixels: Token.DEFAULT_IMAGE_PATCH_PIXELS,
+        })),
+      )
     const dispatchSlot = {
       sessionID: session.id as string,
       deviceKey: scheduledDevice.key,
@@ -147,6 +180,7 @@ export const make = (dependencies: Dependencies) => {
           }),
           promptCacheKey,
           contextSize: model.route.defaults.limits?.context,
+          imagePatchPixels: routeProfile.imagePatchPixels,
           profile: ContextBudget.enabled(harness.context, resolved.contextBudget)
             ? ContextBudget.resolve(harness.context, resolved.type)
             : undefined,
@@ -549,6 +583,7 @@ export const make = (dependencies: Dependencies) => {
             }),
             promptCacheKey,
             contextSize: model.route.defaults.limits?.context,
+            imagePatchPixels: routeProfile.imagePatchPixels,
             profile: ContextBudget.enabled(harness.context, resolved.contextBudget)
               ? ContextBudget.resolve(harness.context, resolved.type)
               : undefined,
