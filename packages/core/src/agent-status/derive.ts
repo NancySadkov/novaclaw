@@ -5,6 +5,7 @@ import { LLM, LLMClient, LLMEvent, Message, SystemPart } from "@novaclaw/llm"
 import { LocationServiceMap } from "../location-service-map"
 import { ShortAnswer } from "../session/runner/short-answer"
 import { SessionRunnerModel } from "../session/runner/model"
+import { SessionScheduler } from "../session/scheduler"
 import { SessionStore } from "../session/store"
 import { SYSTEM, clean } from "./label"
 import { recentText } from "./recent"
@@ -50,6 +51,7 @@ export const makeLabeller = Effect.fn("AgentStatus.makeLabeller")(function* () {
    * location left `LLMClient.Service` undischarged and the compiler said so.
    */
   const llm = yield* LLMClient.Service
+  const scheduler = yield* SessionScheduler.Service
 
   /** The colleague's recent conversation as text, read in its own location. */
   const recent = (sessionID: string) =>
@@ -69,7 +71,7 @@ export const makeLabeller = Effect.fn("AgentStatus.makeLabeller")(function* () {
       const located = locations.get(session.location)
       return yield* Effect.gen(function* () {
         const models = yield* SessionRunnerModel.Service
-        const model = yield* models.resolve(session)
+        const { model, device } = yield* models.resolveWithDevice(session)
         // ⚠️ The SAME call the chat titler makes — `ShortAnswer` exists because this sweep wrote its
         // own and got it wrong. A reasoning model with no guard returns an empty completion, which
         // the titler had already solved.
@@ -80,6 +82,14 @@ export const makeLabeller = Effect.fn("AgentStatus.makeLabeller")(function* () {
           text,
           reasoningBudget: LABEL_REASONING_BUDGET,
           maxTokens: LABEL_MAX_TOKENS,
+          scheduler,
+          maintenance: {
+            ownerID: sessionID,
+            task: "agent-status",
+            deviceKey: device.key,
+            ...(device.concurrency === undefined ? {} : { concurrency: device.concurrency }),
+            ...(device.locality === undefined ? {} : { locality: device.locality }),
+          },
         })
         // ⚠️ `clean` decides whether anything usable came back; the sweep treats `undefined` as
         // "leave the previous line alone". An empty completion is a broken call, not a colleague

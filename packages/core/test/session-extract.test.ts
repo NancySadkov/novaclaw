@@ -95,6 +95,24 @@ describe("SessionExtract durable-memory origin policy", () => {
     expect(body).toContain("effective.resolve(session.id)")
   })
 
+  test("both decode stages enter the interactive-idle scheduler tier", () => {
+    const source = readFileSync(path.join(import.meta.dir, "../src/session/runner/maintenance.ts"), "utf8")
+    const start = source.indexOf('const extractMemory = Effect.fn("SessionMaintenance.extractMemory")')
+    const end = source.indexOf("const refreshChangesSummary", start)
+    expect(start).toBeGreaterThan(0)
+    expect(end).toBeGreaterThan(start)
+    const body = source
+      .slice(start, end)
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/.*$/gm, "$1")
+    // Stage 1 extracts facts; stage 2 links them. Embedding and database writes stay outside the
+    // lease because they are not decode-shaped and should not occupy scarce generation capacity.
+    expect(body.match(/SessionScheduler\.runMaintenance\(/g)).toHaveLength(2)
+    expect(body).toContain('maintenanceInput(sessionID, "memory-extract", device)')
+    expect(body).toContain('maintenanceInput(sessionID, "memory-link", device)')
+    expect(body.match(/\bllm\s*\.stream\(/g)).toHaveLength(2)
+  })
+
   test("the provider runner gates recall before embedding, search, or reranking", () => {
     const source = readFileSync(path.join(import.meta.dir, "../src/session/runner/llm.ts"), "utf8")
     const gate = source.indexOf("recallQuery !== undefined &&")

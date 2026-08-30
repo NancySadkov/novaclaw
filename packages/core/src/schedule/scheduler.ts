@@ -17,6 +17,7 @@ import { Database } from "../database/database"
 import { makeGlobalNode, tags } from "../effect/app-node"
 import { AgentStatus } from "../agent-status"
 import { SessionStore } from "../session/store"
+import { SessionScheduler } from "../session/scheduler"
 import { LocationServiceMap } from "../location-service-map"
 import { llmClient } from "../effect/app-node-platform"
 import { LLMClient } from "@novaclaw/llm"
@@ -326,6 +327,7 @@ export const node = makeGlobalNode({
     // entered per colleague inside `derive.ts`.
     AgentStatus.node,
     SessionStore.node,
+    SessionScheduler.node,
     LocationServiceMap.node,
     llmClient,
   ],
@@ -344,6 +346,7 @@ export const sharedServiceNode = makeGlobalNode({
     // graph that already provides them — the same reason its five siblings are external.
     LayerNode.external(AgentStatus.Service, tags.values.global),
     LayerNode.external(SessionStore.Service, tags.values.global),
+    LayerNode.external(SessionScheduler.Service, tags.values.global),
     LayerNode.external(LocationServiceMap.Service, tags.values.global),
     LayerNode.external(LLMClient.Service, tags.values.global),
   ],

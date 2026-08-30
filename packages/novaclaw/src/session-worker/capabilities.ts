@@ -22,6 +22,11 @@ export interface Capabilities {
     signal?: AbortSignal,
   ) => Promise<void>
   readonly reportDevice: (input: Omit<SessionScheduler.ReportInput, "sessionID">, signal?: AbortSignal) => Promise<void>
+  readonly admitMaintenance: (
+    input: Omit<SessionScheduler.MaintenanceInput, "ownerID">,
+    signal?: AbortSignal,
+  ) => Promise<SessionScheduler.MaintenanceLease>
+  readonly releaseMaintenance: (input: SessionScheduler.MaintenanceLease, signal?: AbortSignal) => Promise<void>
   readonly assertPermission: (
     input: PermissionV2.AssertInput,
     signal?: AbortSignal,
@@ -153,6 +158,45 @@ export function make(input: { readonly lease: SessionExecutionAttempt.Lease; rea
         ),
       )
       if (reply.type !== "device-reported") throw new Error(`unexpected ${reply.type} reply to device report`)
+    },
+    admitMaintenance: async (request, signal) => {
+      const reply = rejected(
+        await input.client.request(
+          {
+            ...identity,
+            type: "device-maintenance-admit",
+            requestID: requestID(),
+            deviceKey: request.deviceKey,
+            task: request.task,
+            ...(request.concurrency === undefined ? {} : { concurrency: request.concurrency }),
+            ...(request.locality === undefined ? {} : { locality: request.locality }),
+          },
+          signal,
+        ),
+      )
+      if (reply.type !== "device-maintenance-admitted")
+        throw new Error(`unexpected ${reply.type} reply to maintenance admission`)
+      return {
+        maintenanceID: reply.maintenanceID,
+        sessionID: reply.maintenanceID,
+        deviceKey: request.deviceKey,
+      }
+    },
+    releaseMaintenance: async (request, signal) => {
+      const reply = rejected(
+        await input.client.request(
+          {
+            ...identity,
+            type: "device-maintenance-release",
+            requestID: requestID(),
+            deviceKey: request.deviceKey,
+            maintenanceID: request.maintenanceID,
+          },
+          signal,
+        ),
+      )
+      if (reply.type !== "device-maintenance-released")
+        throw new Error(`unexpected ${reply.type} reply to maintenance release`)
     },
     assertPermission: async (request, signal) => {
       const reply = await input.client.request(

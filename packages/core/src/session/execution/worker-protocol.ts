@@ -63,6 +63,15 @@ export const DeviceReported = Schema.Struct({
   ...DeviceReplyBase,
   type: Schema.Literal("device-reported"),
 }).annotate({ identifier: "SessionWorker.DeviceReported" })
+export const DeviceMaintenanceAdmitted = Schema.Struct({
+  ...DeviceReplyBase,
+  type: Schema.Literal("device-maintenance-admitted"),
+  maintenanceID: Schema.String,
+}).annotate({ identifier: "SessionWorker.DeviceMaintenanceAdmitted" })
+export const DeviceMaintenanceReleased = Schema.Struct({
+  ...DeviceReplyBase,
+  type: Schema.Literal("device-maintenance-released"),
+}).annotate({ identifier: "SessionWorker.DeviceMaintenanceReleased" })
 export const DeviceRejected = Schema.Struct({
   ...DeviceReplyBase,
   type: Schema.Literal("device-rejected"),
@@ -115,15 +124,7 @@ export const ColleagueResultMessage = Schema.Struct({
   ...Identity,
   type: Schema.Literal("colleague-result"),
   requestID: Schema.String,
-  outcome: Schema.Literals([
-    "delivered",
-    "group-delivered",
-    "no-chat",
-    "refused",
-    "hired",
-    "retired",
-    "rejected",
-  ]),
+  outcome: Schema.Literals(["delivered", "group-delivered", "no-chat", "refused", "hired", "retired", "rejected"]),
   /** Why the loop bound refused; present only when `outcome` is "refused". Read by the sender. */
   reason: Schema.String.pipe(Schema.optional),
   /** Whether anything is actually running their chat — `false` means durable but dormant. */
@@ -219,6 +220,8 @@ export const HostMessage = Schema.Union([
   DeviceAdmitted,
   DeviceReleased,
   DeviceReported,
+  DeviceMaintenanceAdmitted,
+  DeviceMaintenanceReleased,
   DeviceRejected,
   PermissionResult,
   QuestionResult,
@@ -294,6 +297,18 @@ export const DeviceReport = Schema.Struct({
   type: Schema.Literal("device-report"),
   costTokens: Schema.Finite,
 }).annotate({ identifier: "SessionWorker.DeviceReport" })
+export const DeviceMaintenanceAdmit = Schema.Struct({
+  ...DeviceRequestBase,
+  type: Schema.Literal("device-maintenance-admit"),
+  task: Schema.String,
+  concurrency: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)).pipe(Schema.optional),
+  locality: Schema.Literals(["local", "lan", "remote"]).pipe(Schema.optional),
+}).annotate({ identifier: "SessionWorker.DeviceMaintenanceAdmit" })
+export const DeviceMaintenanceRelease = Schema.Struct({
+  ...DeviceRequestBase,
+  type: Schema.Literal("device-maintenance-release"),
+  maintenanceID: Schema.String,
+}).annotate({ identifier: "SessionWorker.DeviceMaintenanceRelease" })
 
 /**
  * 🔴 **Spawn is a worker→host OPERATION, not an event the worker publishes.**
@@ -571,6 +586,8 @@ export const WorkerMessage = Schema.Union([
   DeviceAdmit,
   DeviceRelease,
   DeviceReport,
+  DeviceMaintenanceAdmit,
+  DeviceMaintenanceRelease,
   PermissionAssert,
   MemoryRequest,
   SpawnChild,

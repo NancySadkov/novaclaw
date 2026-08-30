@@ -43,13 +43,28 @@ export interface Input {
   readonly onDeviceRequest?: (
     message: Extract<
       SessionWorkerProtocol.WorkerMessage,
-      { readonly type: "device-admit" | "device-release" | "device-report" }
+      {
+        readonly type:
+          | "device-admit"
+          | "device-release"
+          | "device-report"
+          | "device-maintenance-admit"
+          | "device-maintenance-release"
+      }
     >,
     signal: AbortSignal,
   ) => Promise<
     Extract<
       SessionWorkerProtocol.HostMessage,
-      { readonly type: "device-admitted" | "device-released" | "device-reported" | "device-rejected" }
+      {
+        readonly type:
+          | "device-admitted"
+          | "device-released"
+          | "device-reported"
+          | "device-maintenance-admitted"
+          | "device-maintenance-released"
+          | "device-rejected"
+      }
     >
   >
   readonly onInteractionRequest?: (
@@ -287,7 +302,9 @@ export function spawn(input: Input): Handle {
       }
       case "device-admit":
       case "device-release":
-      case "device-report": {
+      case "device-report":
+      case "device-maintenance-admit":
+      case "device-maintenance-release": {
         if (!ready) {
           finish({ type: "protocol-error", detail: "device request arrived before ready" })
           return
@@ -336,44 +353,44 @@ export function spawn(input: Input): Handle {
                   outcome: "rejected",
                 }
               : message.type === "await-child"
-              ? {
-                  version: SessionWorkerProtocol.VERSION,
-                  type: "await-child-result",
-                  sessionID: input.lease.sessionID,
-                  attemptID: input.lease.attemptID,
-                  generation: input.lease.generation,
-                  requestID: message.requestID,
-                  outcome: "rejected",
-                }
-              : message.type === "spawn-child"
                 ? {
                     version: SessionWorkerProtocol.VERSION,
-                    type: "spawn-result",
+                    type: "await-child-result",
                     sessionID: input.lease.sessionID,
                     attemptID: input.lease.attemptID,
                     generation: input.lease.generation,
                     requestID: message.requestID,
                     outcome: "rejected",
                   }
-                : message.type === "permission-assert"
+                : message.type === "spawn-child"
                   ? {
                       version: SessionWorkerProtocol.VERSION,
-                      type: "permission-result",
+                      type: "spawn-result",
                       sessionID: input.lease.sessionID,
                       attemptID: input.lease.attemptID,
                       generation: input.lease.generation,
                       requestID: message.requestID,
                       outcome: "rejected",
                     }
-                  : {
-                      version: SessionWorkerProtocol.VERSION,
-                      type: "question-result",
-                      sessionID: input.lease.sessionID,
-                      attemptID: input.lease.attemptID,
-                      generation: input.lease.generation,
-                      requestID: message.requestID,
-                      outcome: "rejected",
-                    },
+                  : message.type === "permission-assert"
+                    ? {
+                        version: SessionWorkerProtocol.VERSION,
+                        type: "permission-result",
+                        sessionID: input.lease.sessionID,
+                        attemptID: input.lease.attemptID,
+                        generation: input.lease.generation,
+                        requestID: message.requestID,
+                        outcome: "rejected",
+                      }
+                    : {
+                        version: SessionWorkerProtocol.VERSION,
+                        type: "question-result",
+                        sessionID: input.lease.sessionID,
+                        attemptID: input.lease.attemptID,
+                        generation: input.lease.generation,
+                        requestID: message.requestID,
+                        outcome: "rejected",
+                      },
           )
           return
         }

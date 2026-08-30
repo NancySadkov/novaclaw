@@ -10,7 +10,10 @@ const lease = {
   generation: 3,
   ownerID: "host",
 }
-const request = (type: "device-admit" | "device-release" | "device-report", extra: Record<string, unknown> = {}) =>
+const request = (
+  type: "device-admit" | "device-release" | "device-report" | "device-maintenance-admit" | "device-maintenance-release",
+  extra: Record<string, unknown> = {},
+) =>
   ({
     version: 1,
     type,
@@ -51,6 +54,56 @@ test("host scheduler receives the device's declared capacity and locality", asyn
     }),
   )
   expect((await Effect.runPromise(scheduler.snapshot()))[0]).toMatchObject({ concurrency: 5, locality: "local" })
+})
+
+test("maintenance admission crosses the worker boundary as a host-owned unique lease", async () => {
+  const scheduler = SessionScheduler.make()
+  const admitted = await Effect.runPromise(
+    SessionWorkerDeviceBridge.handle({
+      scheduler,
+      lease,
+      message: request("device-maintenance-admit", {
+        task: "session-title",
+        concurrency: 3,
+        locality: "lan",
+      }),
+    }),
+  )
+  expect(admitted.type).toBe("device-maintenance-admitted")
+  if (admitted.type !== "device-maintenance-admitted") throw new Error("maintenance admission failed")
+  expect(admitted.maintenanceID).toContain("session-title")
+  expect(admitted.maintenanceID).toContain(lease.sessionID)
+  expect((await Effect.runPromise(scheduler.snapshot()))[0]).toMatchObject({
+    concurrency: 3,
+    locality: "lan",
+    inFlightMaintenance: [admitted.maintenanceID],
+  })
+
+  const released = await Effect.runPromise(
+    SessionWorkerDeviceBridge.handle({
+      scheduler,
+      lease,
+      message: request("device-maintenance-release", { maintenanceID: admitted.maintenanceID }),
+    }),
+  )
+  expect(released.type).toBe("device-maintenance-released")
+  expect((await Effect.runPromise(scheduler.snapshot()))[0]?.inFlightMaintenance).toEqual([])
+})
+
+test("worker-exit reclaim releases an acquired maintenance lease", async () => {
+  const scheduler = SessionScheduler.make()
+  const admitted = await Effect.runPromise(
+    SessionWorkerDeviceBridge.handle({
+      scheduler,
+      lease,
+      message: request("device-maintenance-admit", { task: "memory-extract" }),
+    }),
+  )
+  expect(admitted.type).toBe("device-maintenance-admitted")
+  expect((await Effect.runPromise(scheduler.snapshot()))[0]!.inFlightMaintenance).toHaveLength(1)
+
+  await Effect.runPromise(SessionWorkerDeviceBridge.reclaim(scheduler, lease))
+  expect((await Effect.runPromise(scheduler.snapshot()))[0]!.inFlightMaintenance).toEqual([])
 })
 
 test("release/report are host-owned and invalid or stale requests fail closed", async () => {

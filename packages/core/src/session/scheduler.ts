@@ -78,13 +78,39 @@ export interface ReportInput extends ReleaseInput {
   readonly costTokens: number
 }
 
+/**
+ * Decode-shaped housekeeping is not a session turn, but it consumes the same device bus.
+ * `ownerID` keeps diagnostics and queued-work eviction tied to the session whose maintenance
+ * produced the call; `task` is a short human-readable discriminator for snapshots.
+ */
+export interface MaintenanceInput {
+  readonly ownerID: string
+  readonly task: string
+  readonly deviceKey: string
+  /** Shares the device's background-generation ceiling with batch session turns. */
+  readonly concurrency?: number
+  readonly locality?: ConfigDevice.Locality
+}
+
+/** Opaque scheduler-owned identity returned after maintenance admission succeeds. */
+export interface MaintenanceLease extends ReleaseInput {
+  readonly maintenanceID: string
+}
+
+export interface MaintenanceReleaseInput {
+  readonly ownerID: string
+  readonly lease: MaintenanceLease
+}
+
 export interface DeviceSnapshot {
   readonly deviceKey: string
   readonly concurrency: number
   readonly locality?: ConfigDevice.Locality
   readonly inFlightInteractive: readonly string[]
   readonly inFlightBatch: readonly string[]
+  readonly inFlightMaintenance: readonly string[]
   readonly waiting: readonly string[]
+  readonly waitingMaintenance: readonly string[]
   readonly ledger: ReturnType<KernelEevdf.Ledger["snapshot"]>
 }
 
@@ -95,6 +121,10 @@ export interface Interface {
   readonly release: (input: ReleaseInput) => Effect.Effect<void>
   /** Charge the finished turn's measured cost to the fairness ledger. */
   readonly report: (input: ReportInput) => Effect.Effect<void>
+  /** Acquire one unique interactive-idle maintenance lease. */
+  readonly admitMaintenance: (input: MaintenanceInput) => Effect.Effect<MaintenanceLease>
+  /** Release only a lease that belongs to the stated owner (worker RPCs cannot forge one). */
+  readonly releaseMaintenance: (input: MaintenanceReleaseInput) => Effect.Effect<void>
   /** Session ended: drop it from ledgers/queues. */
   readonly evict: (sessionID: string) => Effect.Effect<void>
   /** Introspection (the ps-app story): one query surface for humans, agents, tests. */
@@ -105,13 +135,16 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2
 
 interface Waiter {
   readonly deferred: Deferred.Deferred<void>
+  readonly kind: "batch" | "maintenance"
 }
 
 interface DeviceState {
   readonly ledger: KernelEevdf.Ledger
   readonly inFlightInteractive: Set<string>
   readonly inFlightBatch: Set<string>
+  readonly inFlightMaintenance: Set<string>
   readonly waiters: Map<string, Waiter>
+  readonly maintenanceOwners: Map<string, string>
   concurrency: number
   locality?: ConfigDevice.Locality
   lastDispatched?: string
@@ -133,6 +166,7 @@ export const make = (options?: Options): Interface => {
   const devices = new Map<string, DeviceState>()
   const now = options?.now ?? (() => Date.now())
   const forgivenessMs = options?.forgivenessMs
+  let maintenanceSequence = 0
 
   const deviceFor = (key: string): DeviceState => {
     let device = devices.get(key)
@@ -143,7 +177,9 @@ export const make = (options?: Options): Interface => {
           ledger: new KernelEevdf.Ledger(forgivenessMs === undefined ? undefined : { forgivenessMs }),
           inFlightInteractive: new Set(),
           inFlightBatch: new Set(),
+          inFlightMaintenance: new Set(),
           waiters: new Map(),
+          maintenanceOwners: new Map(),
           concurrency: MAX_BATCH,
         }),
       )
@@ -160,11 +196,16 @@ export const make = (options?: Options): Interface => {
   const sweep = (device: DeviceState) =>
     device.ledger.sweepForgiven(
       now(),
-      (id) => device.inFlightInteractive.has(id) || device.inFlightBatch.has(id) || device.waiters.has(id),
+      (id) =>
+        device.inFlightInteractive.has(id) ||
+        device.inFlightBatch.has(id) ||
+        device.inFlightMaintenance.has(id) ||
+        device.waiters.has(id),
     )
 
   const batchCapacity = (device: DeviceState) =>
-    device.inFlightInteractive.size === 0 && device.inFlightBatch.size < device.concurrency
+    device.inFlightInteractive.size === 0 &&
+    device.inFlightBatch.size + device.inFlightMaintenance.size < device.concurrency
 
   const drain = (device: DeviceState) => {
     while (batchCapacity(device) && device.waiters.size > 0) {
@@ -176,16 +217,22 @@ export const make = (options?: Options): Interface => {
       if (!pick) return
       const waiter = device.waiters.get(pick)!
       device.waiters.delete(pick)
-      device.inFlightBatch.add(pick)
+      if (waiter.kind === "maintenance") device.inFlightMaintenance.add(pick)
+      else device.inFlightBatch.add(pick)
       device.lastDispatched = pick
       Deferred.doneUnsafe(waiter.deferred, Effect.void)
     }
   }
 
-  const admit = (input: AdmitInput): Effect.Effect<void> =>
+  const admitKind = (
+    input: AdmitInput,
+    kind: "batch" | "maintenance",
+    maintenanceOwner?: string,
+  ): Effect.Effect<void> =>
     Effect.suspend(() => {
       if (disabled()) return Effect.void
       const device = deviceFor(input.deviceKey)
+      if (maintenanceOwner !== undefined) device.maintenanceOwners.set(input.sessionID, maintenanceOwner)
       // Config is runtime-editable: the newest admission refreshes policy for the whole device.
       // Lowering the cap never preempts an in-flight generation; it simply closes admission until
       // the live count falls below the new ceiling.
@@ -205,7 +252,9 @@ export const make = (options?: Options): Interface => {
       // this session is the ONLY traffic, no sweep ever runs, and the policy must still hold.
       device.ledger.onWake(input.sessionID, now())
       const alreadyInFlight =
-        device.inFlightInteractive.has(input.sessionID) || device.inFlightBatch.has(input.sessionID)
+        device.inFlightInteractive.has(input.sessionID) ||
+        device.inFlightBatch.has(input.sessionID) ||
+        device.inFlightMaintenance.has(input.sessionID)
       if (alreadyInFlight) return Effect.void
       if (isInteractive(input.sessionClass)) {
         device.inFlightInteractive.add(input.sessionID)
@@ -213,16 +262,18 @@ export const make = (options?: Options): Interface => {
         return Effect.void
       }
       if (batchCapacity(device)) {
-        device.inFlightBatch.add(input.sessionID)
+        if (kind === "maintenance") device.inFlightMaintenance.add(input.sessionID)
+        else device.inFlightBatch.add(input.sessionID)
         device.lastDispatched = input.sessionID
         return Effect.void
       }
       const deferred = Deferred.makeUnsafe<void>()
-      device.waiters.set(input.sessionID, { deferred })
+      device.waiters.set(input.sessionID, { deferred, kind })
       return Deferred.await(deferred).pipe(
         Effect.onInterrupt(() =>
           Effect.sync(() => {
             device.waiters.delete(input.sessionID)
+            device.maintenanceOwners.delete(input.sessionID)
             // A cancelled queued turn never reaches `release`, so stamp the block here too —
             // otherwise its entry sits unblocked forever and no sweep can ever see it.
             device.ledger.onBlock(input.sessionID, now())
@@ -231,12 +282,18 @@ export const make = (options?: Options): Interface => {
       )
     })
 
+  const admit = (input: AdmitInput): Effect.Effect<void> => admitKind(input, "batch")
+
   const release = (input: ReleaseInput): Effect.Effect<void> =>
     Effect.sync(() => {
       const device = devices.get(input.deviceKey)
       if (!device) return
-      const held = device.inFlightInteractive.delete(input.sessionID) || device.inFlightBatch.delete(input.sessionID)
+      const held =
+        device.inFlightInteractive.delete(input.sessionID) ||
+        device.inFlightBatch.delete(input.sessionID) ||
+        device.inFlightMaintenance.delete(input.sessionID)
       if (!held) return
+      device.maintenanceOwners.delete(input.sessionID)
       // The session has stopped holding the device: start its block clock, so its debt is kept
       // for the forgiveness window and its entry is swept once that window closes. Gated on
       // `held` because `release` runs twice per turn (in-band, then the `ensuring` net) and the
@@ -249,6 +306,31 @@ export const make = (options?: Options): Interface => {
   const report = (input: ReportInput): Effect.Effect<void> =>
     Effect.sync(() => {
       devices.get(input.deviceKey)?.ledger.charge(input.sessionID, input.costTokens)
+    })
+
+  const admitMaintenance: Interface["admitMaintenance"] = (input) =>
+    Effect.suspend(() => {
+      // A session may have title, extraction and status work overlapping. A fresh identity per
+      // invocation prevents the scheduler's idempotent re-admit rule from turning that overlap into
+      // uncounted device concurrency.
+      const taskID = `maintenance:${++maintenanceSequence}:${input.task}:${input.ownerID}`
+      const slot: AdmitInput = {
+        sessionID: taskID,
+        deviceKey: input.deviceKey,
+        sessionClass: "cron",
+        ...(input.concurrency === undefined ? {} : { concurrency: input.concurrency }),
+        ...(input.locality === undefined ? {} : { locality: input.locality }),
+      }
+      return admitKind(slot, "maintenance", input.ownerID).pipe(
+        Effect.as({ maintenanceID: taskID, sessionID: taskID, deviceKey: input.deviceKey }),
+      )
+    })
+
+  const releaseMaintenance = (input: MaintenanceReleaseInput): Effect.Effect<void> =>
+    Effect.suspend(() => {
+      const device = devices.get(input.lease.deviceKey)
+      if (device?.maintenanceOwners.get(input.lease.maintenanceID) !== input.ownerID) return Effect.void
+      return release({ sessionID: input.lease.maintenanceID, deviceKey: input.lease.deviceKey })
     })
 
   const evict = (sessionID: string): Effect.Effect<void> =>
@@ -264,6 +346,20 @@ export const make = (options?: Options): Interface => {
           // admission successfully; otherwise deletion can wake its own worker into dispatch.
           Deferred.doneUnsafe(waiter.deferred, Effect.interrupt)
         }
+        // Maintenance has its own unique task ids. Once the owner is evicted, neither a queued pass
+        // nor an acquired lease may survive: worker-exit reclaim reaches this path after the worker
+        // (and therefore its provider fiber) is gone, so leaving an acquired id here would consume
+        // background capacity forever. Session removal interrupts execution before eviction too.
+        for (const [taskID, ownerID] of device.maintenanceOwners) {
+          if (ownerID !== sessionID) continue
+          const maintenanceWaiter = device.waiters.get(taskID)
+          device.maintenanceOwners.delete(taskID)
+          device.inFlightMaintenance.delete(taskID)
+          device.ledger.remove(taskID)
+          if (!maintenanceWaiter) continue
+          device.waiters.delete(taskID)
+          Deferred.doneUnsafe(maintenanceWaiter.deferred, Effect.interrupt)
+        }
         drain(device)
       }
     })
@@ -278,13 +374,30 @@ export const make = (options?: Options): Interface => {
         ...(device.locality === undefined ? {} : { locality: device.locality }),
         inFlightInteractive: [...device.inFlightInteractive],
         inFlightBatch: [...device.inFlightBatch],
+        inFlightMaintenance: [...device.inFlightMaintenance],
         waiting: [...device.waiters.keys()],
+        waitingMaintenance: [...device.waiters].filter(([, waiter]) => waiter.kind === "maintenance").map(([id]) => id),
         ledger: device.ledger.snapshot(),
       })),
     )
 
-  return { admit, release, report, evict, snapshot }
+  return { admit, release, report, admitMaintenance, releaseMaintenance, evict, snapshot }
 }
+
+/**
+ * Bracket a local provider effect with a scheduler-owned maintenance lease. Only the lease crosses
+ * a session-worker boundary; the provider effect remains in the process that owns its stream.
+ */
+export const runMaintenance = <A, E, R>(
+  scheduler: Interface,
+  input: MaintenanceInput,
+  effect: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, R> =>
+  Effect.acquireUseRelease(
+    scheduler.admitMaintenance(input),
+    () => effect,
+    (lease) => scheduler.releaseMaintenance({ ownerID: input.ownerID, lease }),
+  )
 
 export const layer = Layer.effect(
   Service,

@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import fs from "fs"
 import path from "path"
-import { Duration, Effect, Exit, Fiber } from "effect"
-import { MAX_BATCH, make } from "./scheduler"
+import { Deferred, Duration, Effect, Exit, Fiber } from "effect"
+import { MAX_BATCH, make, runMaintenance } from "./scheduler"
 
 const run = <A>(effect: Effect.Effect<A>) => Effect.runPromise(effect)
 
@@ -215,6 +215,143 @@ describe("session scheduler admission gate", () => {
     await run(gate.admit({ sessionID: "bg", deviceKey: "other", sessionClass: "auto-prompting" }))
     const devices = await run(gate.snapshot())
     expect(devices.length).toBe(2)
+  })
+})
+
+describe("interactive-idle maintenance", () => {
+  const maintenance = (ownerID: string, task: string, concurrency?: number) => ({
+    ownerID,
+    task,
+    deviceKey: "d",
+    ...(concurrency === undefined ? {} : { concurrency }),
+  })
+
+  test("decode maintenance waits for interactive generation and is visible as maintenance", async () => {
+    const gate = make()
+    await run(gate.admit({ sessionID: "ui", deviceKey: "d", sessionClass: "interactive" }))
+    const hold = Deferred.makeUnsafe<void>()
+    let started = false
+    const fiber = Effect.runFork(
+      runMaintenance(
+        gate,
+        maintenance("owner", "title"),
+        Effect.sync(() => {
+          started = true
+        }).pipe(Effect.andThen(Deferred.await(hold))),
+      ),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    let [device] = await run(gate.snapshot())
+    expect(started).toBe(false)
+    expect(device!.inFlightMaintenance).toEqual([])
+    expect(device!.waitingMaintenance).toHaveLength(1)
+
+    await run(gate.release({ sessionID: "ui", deviceKey: "d" }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    ;[device] = await run(gate.snapshot())
+    expect(started).toBe(true)
+    expect(device!.inFlightBatch).toEqual([])
+    expect(device!.inFlightMaintenance).toHaveLength(1)
+
+    Deferred.doneUnsafe(hold, Effect.void)
+    await run(Fiber.await(fiber))
+    expect((await run(gate.snapshot()))[0]!.inFlightMaintenance).toEqual([])
+  })
+
+  test("maintenance shares background capacity and overlapping calls get distinct leases", async () => {
+    const gate = make()
+    await run(gate.admit({ sessionID: "batch", deviceKey: "d", sessionClass: "sub-agent", concurrency: 1 }))
+    const firstHold = Deferred.makeUnsafe<void>()
+    const secondHold = Deferred.makeUnsafe<void>()
+    const first = Effect.runFork(
+      runMaintenance(gate, maintenance("same-owner", "extract", 2), Deferred.await(firstHold)),
+    )
+    const second = Effect.runFork(
+      runMaintenance(gate, maintenance("same-owner", "extract", 2), Deferred.await(secondHold)),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    let [device] = await run(gate.snapshot())
+    expect(device!.inFlightBatch).toEqual(["batch"])
+    expect(device!.inFlightMaintenance).toHaveLength(1)
+    expect(device!.waitingMaintenance).toHaveLength(1)
+    expect(device!.waitingMaintenance[0]).not.toBe(device!.inFlightMaintenance[0])
+
+    // Interactive work is never queued behind already-running background work. It cannot preempt
+    // the provider request already in flight, but it closes every further maintenance admission.
+    await run(gate.admit({ sessionID: "ui", deviceKey: "d", sessionClass: "interactive", concurrency: 2 }))
+    await run(gate.release({ sessionID: "batch", deviceKey: "d" }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    ;[device] = await run(gate.snapshot())
+    expect(device!.inFlightInteractive).toEqual(["ui"])
+    expect(device!.waitingMaintenance).toHaveLength(1)
+
+    await run(gate.release({ sessionID: "ui", deviceKey: "d" }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    ;[device] = await run(gate.snapshot())
+    expect(device!.inFlightMaintenance).toHaveLength(2)
+    expect(new Set(device!.inFlightMaintenance).size).toBe(2)
+
+    Deferred.doneUnsafe(firstHold, Effect.void)
+    Deferred.doneUnsafe(secondHold, Effect.void)
+    await run(Fiber.await(first))
+    await run(Fiber.await(second))
+    expect((await run(gate.snapshot()))[0]!.inFlightMaintenance).toEqual([])
+  })
+
+  test("evicting an owner interrupts its queued maintenance lease", async () => {
+    const gate = make()
+    await run(gate.admit({ sessionID: "ui", deviceKey: "d", sessionClass: "interactive" }))
+    const queued = Effect.runFork(runMaintenance(gate, maintenance("gone", "status"), Effect.never))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect((await run(gate.snapshot()))[0]!.waitingMaintenance).toHaveLength(1)
+
+    await run(gate.evict("gone"))
+    const exit = await run(Fiber.await(queued))
+    expect(Exit.isFailure(exit)).toBe(true)
+    expect(Exit.hasInterrupts(exit)).toBe(true)
+    const [device] = await run(gate.snapshot())
+    expect(device!.waitingMaintenance).toEqual([])
+    expect(device!.ledger.some((entry) => entry.id.includes(":gone"))).toBe(false)
+  })
+
+  test("evicting an owner reclaims an acquired maintenance lease", async () => {
+    const gate = make()
+    const lease = await run(gate.admitMaintenance(maintenance("gone", "status")))
+    expect((await run(gate.snapshot()))[0]!.inFlightMaintenance).toEqual([lease.maintenanceID])
+
+    // Worker-exit reclaim calls `evict(ownerID)`. The provider fiber died with that worker, so the
+    // host must release its scheduler capacity even though no release RPC can arrive afterward.
+    await run(gate.evict("gone"))
+    const [device] = await run(gate.snapshot())
+    expect(device!.inFlightMaintenance).toEqual([])
+    expect(device!.ledger.some((entry) => entry.id === lease.maintenanceID)).toBe(false)
+  })
+
+  test("a different owner cannot release another session's maintenance lease", async () => {
+    const gate = make()
+    const lease = await run(gate.admitMaintenance(maintenance("owner", "title")))
+    await run(gate.releaseMaintenance({ ownerID: "forged", lease }))
+    expect((await run(gate.snapshot()))[0]!.inFlightMaintenance).toEqual([lease.maintenanceID])
+
+    await run(gate.releaseMaintenance({ ownerID: "owner", lease }))
+    expect((await run(gate.snapshot()))[0]!.inFlightMaintenance).toEqual([])
+  })
+
+  test("provider failure and interruption both release the acquired maintenance slot", async () => {
+    const gate = make()
+    const failed = await run(Effect.exit(runMaintenance(gate, maintenance("owner", "extract"), Effect.fail("boom"))))
+    expect(Exit.isFailure(failed)).toBe(true)
+    expect((await run(gate.snapshot()))[0]!.inFlightMaintenance).toEqual([])
+
+    const hold = Deferred.makeUnsafe<void>()
+    const interrupted = Effect.runFork(runMaintenance(gate, maintenance("owner", "link"), Deferred.await(hold)))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect((await run(gate.snapshot()))[0]!.inFlightMaintenance).toHaveLength(1)
+
+    await run(Fiber.interrupt(interrupted))
+    expect((await run(gate.snapshot()))[0]!.inFlightMaintenance).toEqual([])
   })
 })
 

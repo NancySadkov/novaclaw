@@ -11,6 +11,8 @@ export type Request = Extract<
       | "device-admit"
       | "device-release"
       | "device-report"
+      | "device-maintenance-admit"
+      | "device-maintenance-release"
       | "permission-assert"
       | "question-ask"
       | "spawn-child"
@@ -38,6 +40,8 @@ export type Reply = Extract<
       | "device-admitted"
       | "device-released"
       | "device-reported"
+      | "device-maintenance-admitted"
+      | "device-maintenance-released"
       | "device-rejected"
       | "permission-result"
       | "question-result"
@@ -54,6 +58,8 @@ const replyTypes: Record<Request["type"], ReadonlySet<Reply["type"]>> = {
   "device-admit": new Set(["device-admitted", "device-rejected"]),
   "device-release": new Set(["device-released", "device-rejected"]),
   "device-report": new Set(["device-reported", "device-rejected"]),
+  "device-maintenance-admit": new Set(["device-maintenance-admitted", "device-rejected"]),
+  "device-maintenance-release": new Set(["device-maintenance-released", "device-rejected"]),
   "permission-assert": new Set(["permission-result"]),
   "question-ask": new Set(["question-result"]),
   "spawn-child": new Set(["spawn-result"]),

@@ -96,8 +96,12 @@ describe("novaclaw run (non-interactive subprocess)", () => {
           }),
         )
         yield* llm.fail("upstream provider exploded mid-stream")
-        const result = yield* novaclaw.run("trigger midstream error", { timeoutMs: 30_000 })
-        expect(result.exitCode).toBe(0)
+        // This path boots a host, observes the broken stream, then boots its recovery worker. On a
+        // loaded full gate it has crossed the fixture's 30 s default even though the same path settles
+        // in ~22 s alone. Keep the child deadline inside the test's 60 s wall while leaving enough
+        // headroom for normal gate contention; a product timeout is not what this test is exercising.
+        const result = yield* novaclaw.run("trigger midstream error", { timeoutMs: 50_000 })
+        novaclaw.expectExit(result, 0, "unknown-finish recovery")
         expect(result.stdout).toBe("partial response\nok\n")
         expect(result.stderr).not.toContain("upstream provider exploded mid-stream")
       }),

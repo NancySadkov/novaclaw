@@ -7,11 +7,26 @@ import type { SessionScheduler } from "@novaclaw/core/session/scheduler"
 
 export type Request = Extract<
   SessionWorkerProtocol.WorkerMessage,
-  { readonly type: "device-admit" | "device-release" | "device-report" }
+  {
+    readonly type:
+      | "device-admit"
+      | "device-release"
+      | "device-report"
+      | "device-maintenance-admit"
+      | "device-maintenance-release"
+  }
 >
 export type Reply = Extract<
   SessionWorkerProtocol.HostMessage,
-  { readonly type: "device-admitted" | "device-released" | "device-reported" | "device-rejected" }
+  {
+    readonly type:
+      | "device-admitted"
+      | "device-released"
+      | "device-reported"
+      | "device-maintenance-admitted"
+      | "device-maintenance-released"
+      | "device-rejected"
+  }
 >
 
 const identity = (message: Request) => ({
@@ -57,6 +72,30 @@ export const handle = Effect.fn("SessionWorkerDeviceBridge.handle")(function* (i
         costTokens: input.message.costTokens,
       })
       return { ...identity(input.message), type: "device-reported" as const }
+    case "device-maintenance-admit": {
+      const lease = yield* input.scheduler.admitMaintenance({
+        ownerID: input.lease.sessionID,
+        task: input.message.task,
+        deviceKey: input.message.deviceKey,
+        ...(input.message.concurrency === undefined ? {} : { concurrency: input.message.concurrency }),
+        ...(input.message.locality === undefined ? {} : { locality: input.message.locality }),
+      })
+      return {
+        ...identity(input.message),
+        type: "device-maintenance-admitted" as const,
+        maintenanceID: lease.maintenanceID,
+      }
+    }
+    case "device-maintenance-release":
+      yield* input.scheduler.releaseMaintenance({
+        ownerID: input.lease.sessionID,
+        lease: {
+          maintenanceID: input.message.maintenanceID,
+          sessionID: input.message.maintenanceID,
+          deviceKey: input.message.deviceKey,
+        },
+      })
+      return { ...identity(input.message), type: "device-maintenance-released" as const }
   }
 })
 

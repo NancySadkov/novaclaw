@@ -3,6 +3,7 @@ export * as ShortAnswer from "./short-answer"
 import { Effect, Stream } from "effect"
 import { LLM, LLMEvent, Message, SystemPart } from "@novaclaw/llm"
 import { ReasoningBudget } from "./reasoning-budget"
+import { SessionScheduler } from "../scheduler"
 
 /**
  * ONE short line from a model, with thinking bounded — the shape both the chat titler and the
@@ -46,32 +47,39 @@ export const generate = <E, R>(input: {
   readonly reasoningBudget: number
   /** Answer ceiling. Kept well above the hard stop's measured landing point. */
   readonly maxTokens: number
+  /** Decode-shaped utility work always enters through the device's interactive-idle tier. */
+  readonly scheduler: SessionScheduler.Interface
+  readonly maintenance: SessionScheduler.MaintenanceInput
 }) =>
   // ⚠️ The return type is INFERRED, deliberately. Annotating it `Effect<string>` claimed the call
   // needs nothing; annotating it `unknown` made it undischargeable by any caller. What it actually
   // requires is whatever `ReasoningBudget` requires — a location's services — which the status
   // sweep discharges with `Effect.provide(located)` and the titler already has in scope.
-  Effect.gen(function* () {
-    const chunks: string[] = []
-    yield* ReasoningBudget.stream({
-      request: LLM.request({
-        model: input.model,
-        system: [SystemPart.make(input.system)],
-        messages: [Message.user(input.text)],
-        tools: [],
-        generation: { maxTokens: input.maxTokens },
-      }),
-      stream: (next) => input.llm.stream(next),
-      budget: input.reasoningBudget,
-    }).pipe(
-      Stream.runForEach((event) => {
-        if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
-        return Effect.void
-      }),
-    )
-    // ⚠️ Raw. Every caller has its own idea of what "usable" means — a title tolerates 100
-    // characters, a contacts row 60 — so the cleaning stays with the caller and this returns exactly
-    // what the model said, empty string included. An empty completion is a broken call, and a caller
-    // that cannot tell it from a blank answer cannot say so.
-    return chunks.join("")
-  })
+  SessionScheduler.runMaintenance(
+    input.scheduler,
+    input.maintenance,
+    Effect.gen(function* () {
+      const chunks: string[] = []
+      yield* ReasoningBudget.stream({
+        request: LLM.request({
+          model: input.model,
+          system: [SystemPart.make(input.system)],
+          messages: [Message.user(input.text)],
+          tools: [],
+          generation: { maxTokens: input.maxTokens },
+        }),
+        stream: (next) => input.llm.stream(next),
+        budget: input.reasoningBudget,
+      }).pipe(
+        Stream.runForEach((event) => {
+          if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
+          return Effect.void
+        }),
+      )
+      // ⚠️ Raw. Every caller has its own idea of what "usable" means — a title tolerates 100
+      // characters, a contacts row 60 — so the cleaning stays with the caller and this returns exactly
+      // what the model said, empty string included. An empty completion is a broken call, and a caller
+      // that cannot tell it from a blank answer cannot say so.
+      return chunks.join("")
+    }),
+  )

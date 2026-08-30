@@ -94,3 +94,56 @@ test("device scheduling facts cross the worker protocol intact", async () => {
   })
   expect(sent).toMatchObject({ type: "device-admit", deviceKey: "spark", concurrency: 7, locality: "lan" })
 })
+
+test("maintenance leases cross as opaque host-owned ids and release through their own RPC", async () => {
+  const sent: SessionWorkerClient.Request[] = []
+  const client = SessionWorkerClient.make({
+    lease,
+    send: (message) => {
+      sent.push(message)
+      queueMicrotask(() => {
+        if (message.type === "device-maintenance-admit")
+          client.accept({
+            ...identity,
+            type: "device-maintenance-admitted",
+            requestID: message.requestID,
+            maintenanceID: "maintenance:host-owned",
+          })
+        else if (message.type === "device-maintenance-release")
+          client.accept({
+            ...identity,
+            type: "device-maintenance-released",
+            requestID: message.requestID,
+          })
+      })
+    },
+  })
+  const capabilities = SessionWorkerCapabilities.make({ lease, client })
+  const admitted = await capabilities.admitMaintenance({
+    task: "memory-extract",
+    deviceKey: "spark",
+    concurrency: 4,
+    locality: "lan",
+  })
+  expect(admitted).toEqual({
+    maintenanceID: "maintenance:host-owned",
+    sessionID: "maintenance:host-owned",
+    deviceKey: "spark",
+  })
+  await capabilities.releaseMaintenance(admitted)
+
+  expect(sent[0]).toMatchObject({
+    type: "device-maintenance-admit",
+    sessionID: lease.sessionID,
+    task: "memory-extract",
+    deviceKey: "spark",
+    concurrency: 4,
+    locality: "lan",
+  })
+  expect(sent[1]).toMatchObject({
+    type: "device-maintenance-release",
+    sessionID: lease.sessionID,
+    maintenanceID: "maintenance:host-owned",
+    deviceKey: "spark",
+  })
+})

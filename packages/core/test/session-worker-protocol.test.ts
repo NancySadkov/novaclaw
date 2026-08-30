@@ -85,6 +85,40 @@ describe("SessionWorkerProtocol", () => {
       ok: true,
       message: cron,
     })
+
+    const maintenance = {
+      ...identity,
+      type: "device-maintenance-admit" as const,
+      requestID: "rpc_maintenance",
+      deviceKey: "provider/model",
+      task: "session-title",
+      concurrency: 4,
+      locality: "lan" as const,
+    }
+    expect(SessionWorkerProtocol.decodeWorkerLine(SessionWorkerProtocol.encodeLine(maintenance).trimEnd())).toEqual({
+      ok: true,
+      message: maintenance,
+    })
+    const maintenanceAdmitted = {
+      ...identity,
+      type: "device-maintenance-admitted" as const,
+      requestID: maintenance.requestID,
+      maintenanceID: "maintenance:1:session-title:ses_worker_protocol",
+    }
+    expect(
+      SessionWorkerProtocol.decodeHostLine(SessionWorkerProtocol.encodeLine(maintenanceAdmitted).trimEnd()),
+    ).toEqual({ ok: true, message: maintenanceAdmitted })
+
+    const maintenanceRelease = {
+      ...identity,
+      type: "device-maintenance-release" as const,
+      requestID: "rpc_maintenance_release",
+      deviceKey: maintenance.deviceKey,
+      maintenanceID: maintenanceAdmitted.maintenanceID,
+    }
+    expect(
+      SessionWorkerProtocol.decodeWorkerLine(SessionWorkerProtocol.encodeLine(maintenanceRelease).trimEnd()),
+    ).toEqual({ ok: true, message: maintenanceRelease })
   })
 
   test("round-trips host-owned permission and question waits", () => {

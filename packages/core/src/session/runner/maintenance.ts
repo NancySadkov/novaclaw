@@ -25,6 +25,7 @@ import { SessionTitle } from "../title"
 import { LLMClient } from "@novaclaw/llm"
 import { SessionExtract } from "./extract"
 import { SessionRunnerModel } from "./model"
+import { SessionScheduler } from "../scheduler"
 import { ReasoningBudget } from "./reasoning-budget"
 import { ShortAnswer } from "./short-answer"
 import { UtilityCap } from "./utility-cap"
@@ -122,9 +123,22 @@ export const layer = Layer.effect(
     const store = yield* SessionStore.Service
     const effective = yield* SessionEffectiveConfig.Service
     const models = yield* SessionRunnerModel.Service
+    const scheduler = yield* SessionScheduler.Service
     const llm = yield* LLMClient.Service
     const snapshots = yield* Snapshot.Service
     const memory = Memory.client(yield* Memory.node.service)
+
+    const maintenanceInput = (
+      ownerID: SessionSchema.ID,
+      task: string,
+      device: SessionRunnerModel.ScheduledDevice,
+    ): SessionScheduler.MaintenanceInput => ({
+      ownerID,
+      task,
+      deviceKey: device.key,
+      ...(device.concurrency === undefined ? {} : { concurrency: device.concurrency }),
+      ...(device.locality === undefined ? {} : { locality: device.locality }),
+    })
 
     const getSession = Effect.fn("SessionMaintenance.getSession")(function* (sessionID: SessionSchema.ID) {
       const session = yield* store.get(sessionID)
@@ -171,7 +185,7 @@ export const layer = Layer.effect(
       if (!SessionTitle.isDefault(session.title)) return
       const text = SessionTitle.firstRealUserText(yield* getContext(sessionID))
       if (!text) return
-      const model = yield* models.resolve(session)
+      const { model, device } = yield* models.resolveWithDevice(session)
       // ⚠️ **This pass deliberately does NOT take the `UtilityCap` ladder the two extraction passes
       // and the introspection pass use, and the reason is worth keeping.** `ReasoningBudget` already
       // owns a bounded multi-phase recovery for exactly this failure: it counts reasoning tokens
@@ -198,6 +212,8 @@ export const layer = Layer.effect(
         text,
         reasoningBudget: TITLE_REASONING_BUDGET,
         maxTokens: 512,
+        scheduler,
+        maintenance: maintenanceInput(sessionID, "session-title", device),
       })
       // An EMPTY completion is a broken call, not "no title worth writing" — say so. Silence here is
       // exactly how this stayed dead across three shipped phases.
@@ -232,7 +248,10 @@ export const layer = Layer.effect(
       if (!(yield* memory.health())) return
       const exchange = SessionExtract.buildExchange(yield* getContext(sessionID))
       if (!exchange) return
-      const model = yield* models.resolve({ ...session, model: config.model as typeof session.model })
+      const { model, device } = yield* models.resolveWithDevice({
+        ...session,
+        model: config.model as typeof session.model,
+      })
       // ONE re-ask with a doubled budget when the pass spends everything and answers nothing.
       //
       // Measured 2026-08-06: a reasoning model cut off mid-think returns ZERO content chars, not a
@@ -251,24 +270,28 @@ export const layer = Layer.effect(
         chunks.length = 0
         let finish: FinishReason | undefined
         const attemptCap = cap
-        yield* llm
-          .stream(
-            LLM.request({
-              model,
-              system: [SystemPart.make(SessionExtract.SYSTEM)],
-              messages: [Message.user(exchange)],
-              tools: [],
-              generation: { maxTokens: attemptCap },
-              http: { body: NO_THINKING }, // else the budget goes to reasoning and the reply is EMPTY
-            }),
-          )
-          .pipe(
-            Stream.runForEach((event) => {
-              if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
-              else if (event.type === "finish") finish = event.reason
-              return Effect.void
-            }),
-          )
+        yield* SessionScheduler.runMaintenance(
+          scheduler,
+          maintenanceInput(sessionID, "memory-extract", device),
+          llm
+            .stream(
+              LLM.request({
+                model,
+                system: [SystemPart.make(SessionExtract.SYSTEM)],
+                messages: [Message.user(exchange)],
+                tools: [],
+                generation: { maxTokens: attemptCap },
+                http: { body: NO_THINKING }, // else the budget goes to reasoning and the reply is EMPTY
+              }),
+            )
+            .pipe(
+              Stream.runForEach((event) => {
+                if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
+                else if (event.type === "finish") finish = event.reason
+                return Effect.void
+              }),
+            ),
+        )
         const verdict = UtilityCap.decide({ finish, text: chunks.join(""), attempt, cap: attemptCap })
         if (!verdict.retry) {
           // Ruling 2: an empty result that was a BUDGET reading must not look like an honest "[]".
@@ -398,24 +421,28 @@ export const layer = Layer.effect(
                 linkChunks.length = 0
                 let finish: FinishReason | undefined
                 const attemptCap = linkCap
-                yield* llm
-                  .stream(
-                    LLM.request({
-                      model,
-                      system: [SystemPart.make(SessionExtract.LINK_SYSTEM)],
-                      messages: [Message.user(SessionExtract.buildLinkPrompt(exchange, names))],
-                      tools: [],
-                      generation: { maxTokens: attemptCap },
-                      http: { body: NO_THINKING }, // else the budget goes to reasoning and the reply is EMPTY
-                    }),
-                  )
-                  .pipe(
-                    Stream.runForEach((event) => {
-                      if (LLMEvent.is.textDelta(event)) linkChunks.push(event.text)
-                      else if (event.type === "finish") finish = event.reason
-                      return Effect.void
-                    }),
-                  )
+                yield* SessionScheduler.runMaintenance(
+                  scheduler,
+                  maintenanceInput(sessionID, "memory-link", device),
+                  llm
+                    .stream(
+                      LLM.request({
+                        model,
+                        system: [SystemPart.make(SessionExtract.LINK_SYSTEM)],
+                        messages: [Message.user(SessionExtract.buildLinkPrompt(exchange, names))],
+                        tools: [],
+                        generation: { maxTokens: attemptCap },
+                        http: { body: NO_THINKING }, // else the budget goes to reasoning and the reply is EMPTY
+                      }),
+                    )
+                    .pipe(
+                      Stream.runForEach((event) => {
+                        if (LLMEvent.is.textDelta(event)) linkChunks.push(event.text)
+                        else if (event.type === "finish") finish = event.reason
+                        return Effect.void
+                      }),
+                    ),
+                )
                 const verdict = UtilityCap.decide({ finish, text: linkChunks.join(""), attempt, cap: attemptCap })
                 if (!verdict.retry) break
                 yield* Log.event("session.memory.extract.retry", {
@@ -592,6 +619,7 @@ export const node = makeLocationNode({
     SessionStore.node,
     SessionEffectiveConfig.node,
     SessionRunnerModel.node,
+    SessionScheduler.node,
     Snapshot.node,
     Memory.node,
     llmClient,
