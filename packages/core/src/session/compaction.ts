@@ -89,7 +89,7 @@ const SUMMARY_TEMPLATE = `Output exactly the Markdown structure shown inside <te
 - [ordered next actions or "(none)"]
 
 ## Critical Context
-- [important technical facts, errors, open questions, or "(none)"]
+- [exact later-needed facts, values, errors, open questions, or "(none)"]
 
 ## Relevant Files
 - [file or directory path: why it matters, or "(none)"]
@@ -99,6 +99,8 @@ Rules:
 - Keep every section, even when empty.
 - Use terse bullets, not prose paragraphs.
 - Preserve exact file paths, commands, error strings, and identifiers when known.
+- Preserve exact numbers, thresholds, exception conditions, and lookup facts the user explicitly says will be checked later.
+- Put the actual later-checked fact and its values in Critical Context. Saying a fact was stored, exists, or should be preserved is not the fact and is invalid.
 - Do not mention the summary process or that context was compacted.`
 
 export type Entry = {
