@@ -27,17 +27,16 @@ import { Token } from "../../util/token"
 import { applySteerProvenance, isSteerText } from "../steer-provenance"
 import { ContextRedundancy } from "./context-redundancy"
 import { ContextBudget } from "./context-budget"
+import { PromptEstimate } from "./prompt-estimate"
 
 export * as ContextPack from "./context-pack"
 
 /** Safe default when the model config reports no honored window. */
 export const DEFAULT_CONTEXT_SIZE = 32_000
-/** Reasoning models need room to answer: reserve max(contextSize/8, this). */
-export const MIN_RESPONSE_RESERVE = 8_192
+/** Backward-compatible name for the shared response floor; estimation uncertainty is separate. */
+export const MIN_RESPONSE_RESERVE = PromptEstimate.MIN_RESPONSE_RESERVE
 /** Flat per-tool-call token overhead the chars/4 estimate can't see (ids, wire framing). */
 export const TOOL_CALL_OVERHEAD = 8
-/** Heuristics remain approximate across model tokenizers — keep 10% headroom (pack to 90% of available). */
-export const BUDGET_KEEP_FRACTION = 0.9
 
 const toolCallCount = (message: Message) =>
   message.content.filter((part) => part.type === "tool-call" || part.type === "tool-result").length
@@ -61,7 +60,7 @@ const estimateJson = (value: unknown, imagePatchPixels?: number): number =>
   Token.estimateStructured(value, imagePatchPixels)
 
 /**
- * Budget = contextSize − system − tools − responseReserve − headroom.
+ * Budget = promptCeiling − system − tools − requestCorrection − estimationMargin.
  * Never negative — a degenerate window still packs the newest message (always kept).
  */
 export const budget = (input: {
@@ -70,12 +69,26 @@ export const budget = (input: {
   readonly tools: ReadonlyArray<ToolDefinition>
   readonly maxTokens?: number | undefined
   readonly imagePatchPixels?: number
+  readonly promptCorrectionTokens?: number
+  readonly promptMarginTokens?: number
 }): number => {
   const systemTokens = input.system.reduce((total, part) => total + Token.estimate(part.text), 0)
   const toolTokens = estimateJson(input.tools, input.imagePatchPixels)
-  const reserve = Math.max(Math.floor(input.contextSize / 8), MIN_RESPONSE_RESERVE, input.maxTokens ?? 0)
-  const available = input.contextSize - systemTokens - toolTokens - reserve
-  return Math.max(0, Math.floor(available * BUDGET_KEEP_FRACTION))
+  const correction =
+    input.promptCorrectionTokens !== undefined && Number.isFinite(input.promptCorrectionTokens)
+      ? Math.trunc(input.promptCorrectionTokens)
+      : 0
+  const margin =
+    input.promptMarginTokens !== undefined && Number.isFinite(input.promptMarginTokens)
+      ? Math.max(0, Math.trunc(input.promptMarginTokens))
+      : 0
+  const available =
+    PromptEstimate.capacity({ contextTokens: input.contextSize, outputTokens: input.maxTokens }).promptCeilingTokens -
+    systemTokens -
+    toolTokens -
+    correction -
+    margin
+  return Math.max(0, Math.floor(available))
 }
 
 const firstTextPart = (message: Message): string | undefined => {
@@ -954,6 +967,8 @@ export const packRequest = (input: {
   readonly imagePatchPixels?: number
   /** Signed request-level correction learned from the previous provider-reported prompt count. */
   readonly promptCorrectionTokens?: number
+  /** Request-level uncertainty; response generation capacity is reserved independently. */
+  readonly promptMarginTokens?: number
 }): PackResult & { readonly contextSize: number; readonly system: ReadonlyArray<SystemPart> } => {
   const contextSize =
     input.contextSize !== undefined && input.contextSize > 0 ? input.contextSize : DEFAULT_CONTEXT_SIZE
@@ -975,21 +990,22 @@ export const packRequest = (input: {
           contextSize,
           profile: input.profile,
         })
-  const heuristicBudget = budget({
+  const promptMarginTokens =
+    input.promptMarginTokens !== undefined && Number.isFinite(input.promptMarginTokens)
+      ? Math.max(0, Math.trunc(input.promptMarginTokens))
+      : PromptEstimate.unsupported(input.request, input.imagePatchPixels).marginTokens
+  const correctedBudget = budget({
     contextSize,
     system: systemBudget.system,
     tools: input.request.tools,
     maxTokens: input.request.generation?.maxTokens,
     imagePatchPixels: input.imagePatchPixels,
+    promptCorrectionTokens: input.promptCorrectionTokens,
+    promptMarginTokens,
   })
-  const correction =
-    input.promptCorrectionTokens !== undefined && Number.isFinite(input.promptCorrectionTokens)
-      ? Math.trunc(input.promptCorrectionTokens)
-      : 0
-  // Apply feedback ONCE at the whole-request capacity boundary. Item estimates and category ranks
-  // stay ordinary heuristics; a positive correction leaves less room for history, a negative one
-  // restores room the provider proved the heuristic was wasting.
-  const correctedBudget = Math.max(0, Math.min(contextSize, heuristicBudget - correction))
+  // Feedback and uncertainty apply ONCE at the whole-request capacity boundary. Item estimates and
+  // category ranks stay ordinary heuristics; a positive correction leaves less room for history, a
+  // negative one restores room the provider proved the heuristic was wasting.
   const result = pack(memoryBudget.messages, correctedBudget, {
     imagePatchPixels: input.imagePatchPixels,
     ...(input.profile === undefined

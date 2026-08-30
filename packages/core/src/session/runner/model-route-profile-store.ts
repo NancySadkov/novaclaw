@@ -24,17 +24,21 @@ export interface Tunables {
 
 export interface Profile extends Tunables {
   readonly promptRatios: readonly number[]
+  /** `reported / anchored-estimate` residuals; never substitute whole-request heuristic ratios. */
+  readonly promptResidualRatios: readonly number[]
   /** Serving-process identity reported by the provider, when the wire exposes one. */
   readonly servedBy?: string
 }
 
 export interface ProfileUpdate extends Tunables {
   readonly promptRatios?: readonly number[]
+  readonly promptResidualRatios?: readonly number[]
   readonly servedBy?: string
 }
 
 export interface Resolved extends Tunables {
   readonly promptFactor: number
+  readonly promptResidualRatios: readonly number[]
   /** Current provider-reported serving process, when known. */
   readonly servedBy?: string
 }
@@ -50,7 +54,7 @@ export interface Interface {
   readonly factor: (scope: Scope) => Effect.Effect<number>
   readonly observe: (
     scope: Scope,
-    observation: PromptCalibration.Observation,
+    observation: PromptCalibration.Observation & { readonly anchoredEstimatedTokens?: number },
     servedBy?: string,
   ) => Effect.Effect<boolean>
   readonly put: (scope: Scope, profile: ProfileUpdate) => Effect.Effect<void>
@@ -84,12 +88,18 @@ const decode = (value: unknown): Profile | undefined => {
   const promptRatios = Array.isArray(row["promptRatios"])
     ? PromptCalibration.retainNewest(row["promptRatios"].filter((value): value is number => typeof value === "number"))
     : []
+  const promptResidualRatios = Array.isArray(row["promptResidualRatios"])
+    ? PromptCalibration.retainNewest(
+        row["promptResidualRatios"].filter((value): value is number => typeof value === "number"),
+      )
+    : []
   const imagePatchPixels = positive(row["imagePatchPixels"])
   const prefixCacheRetentionTokens = positive(row["prefixCacheRetentionTokens"])
   const servedBy =
     typeof row["servedBy"] === "string" && row["servedBy"].trim().length > 0 ? row["servedBy"] : undefined
   if (
     promptRatios.length === 0 &&
+    promptResidualRatios.length === 0 &&
     imagePatchPixels === undefined &&
     prefixCacheRetentionTokens === undefined &&
     servedBy === undefined
@@ -97,6 +107,7 @@ const decode = (value: unknown): Profile | undefined => {
     return undefined
   return {
     promptRatios,
+    promptResidualRatios,
     ...(imagePatchPixels === undefined ? {} : { imagePatchPixels }),
     ...(prefixCacheRetentionTokens === undefined ? {} : { prefixCacheRetentionTokens }),
     ...(servedBy === undefined ? {} : { servedBy }),
@@ -124,6 +135,7 @@ const firstPositive = (...values: readonly (number | undefined)[]): number | und
 
 export const resolveProfile = (persisted: Profile | undefined, input: ResolveInput): Resolved => ({
   promptFactor: PromptCalibration.factorOf(persisted?.promptRatios ?? []),
+  promptResidualRatios: persisted?.promptResidualRatios ?? [],
   ...(persisted?.servedBy === undefined ? {} : { servedBy: persisted.servedBy }),
   ...(() => {
     const imagePatchPixels = firstPositive(
@@ -171,10 +183,21 @@ export const layer = Layer.effect(
         return PromptCalibration.factorOf((yield* read(scope))?.promptRatios ?? [])
       }),
       observe: Effect.fn("ModelRouteProfileStore.observe")(
-        (scope: Scope, observation: PromptCalibration.Observation, servedBy?: string) =>
+        (
+          scope: Scope,
+          observation: PromptCalibration.Observation & { readonly anchoredEstimatedTokens?: number },
+          servedBy?: string,
+        ) =>
           gate.withPermit(
             Effect.gen(function* () {
               const ratio = PromptCalibration.observationRatio(observation)
+              const residualRatio =
+                observation.anchoredEstimatedTokens === undefined
+                  ? undefined
+                  : PromptCalibration.observationRatio({
+                      estimatedTokens: observation.anchoredEstimatedTokens,
+                      reportedTokens: observation.reportedTokens,
+                    })
               if (ratio === undefined) return false
               const current = yield* read(scope)
               const liveServedBy = servedBy !== undefined && servedBy.trim().length > 0 ? servedBy : undefined
@@ -184,6 +207,10 @@ export const layer = Layer.effect(
               yield* replace(scope, {
                 ...base,
                 promptRatios: PromptCalibration.retainNewest([...(base?.promptRatios ?? []), ratio]),
+                promptResidualRatios:
+                  residualRatio === undefined
+                    ? (base?.promptResidualRatios ?? [])
+                    : PromptCalibration.retainNewest([...(base?.promptResidualRatios ?? []), residualRatio]),
                 ...(liveServedBy === undefined ? {} : { servedBy: liveServedBy }),
               })
               return true
@@ -194,19 +221,30 @@ export const layer = Layer.effect(
         gate.withPermit(
           Effect.gen(function* () {
             const current = yield* read(scope)
+            const liveServedBy =
+              update.servedBy !== undefined && update.servedBy.trim().length > 0 ? update.servedBy : undefined
+            const moved =
+              current?.servedBy !== undefined && liveServedBy !== undefined && current.servedBy !== liveServedBy
+            // A route key identifies the address and wire, not the process currently behind it. A
+            // discovery made after a same-URL restart must not preserve the predecessor's tokenizer,
+            // image, or prefix-retention measurements. `observe` applies the same boundary to prompt
+            // ratios; `put` is the path used by non-prompt discoveries.
+            const base = moved ? undefined : current
             yield* replace(scope, {
-              ...current,
+              ...base,
               ...(positive(update.imagePatchPixels) === undefined ? {} : { imagePatchPixels: update.imagePatchPixels }),
               ...(positive(update.prefixCacheRetentionTokens) === undefined
                 ? {}
                 : { prefixCacheRetentionTokens: update.prefixCacheRetentionTokens }),
-              ...(update.servedBy === undefined || update.servedBy.trim().length === 0
-                ? {}
-                : { servedBy: update.servedBy }),
+              ...(liveServedBy === undefined ? {} : { servedBy: liveServedBy }),
               promptRatios:
                 update.promptRatios === undefined
-                  ? (current?.promptRatios ?? [])
+                  ? (base?.promptRatios ?? [])
                   : PromptCalibration.retainNewest(update.promptRatios),
+              promptResidualRatios:
+                update.promptResidualRatios === undefined
+                  ? (base?.promptResidualRatios ?? [])
+                  : PromptCalibration.retainNewest(update.promptResidualRatios),
             })
           }),
         ),

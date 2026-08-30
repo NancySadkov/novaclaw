@@ -226,18 +226,21 @@ test("the compaction trigger logs what it measured BEFORE it declines", () => {
     .join("\n")
 
   const logAt = source.indexOf('Log.event("session.compaction.threshold"')
-  const returnAt = source.indexOf("if (estimated <= threshold) return false")
+  const returnAt = source.indexOf("if (estimatedWithMargin <= threshold) return false")
   expect(logAt, "the threshold log moved — re-point this test, do not delete it").toBeGreaterThan(-1)
   expect(returnAt, "the early return moved — re-point this test, do not delete it").toBeGreaterThan(-1)
   expect(logAt).toBeLessThan(returnAt)
   // And it must report BOTH sides plus the verdict: an estimate with no threshold beside it is a
   // number nobody can act on, which is the state this line exists to end.
   expect(source).toContain('"compaction.estimated": estimated')
+  expect(source).toContain('"compaction.estimation.margin": promptEstimate.marginTokens')
+  expect(source).toContain('"compaction.estimated-with-margin": estimatedWithMargin')
   expect(source).toContain('"compaction.estimate.mode":')
   expect(source).toContain('"compaction.anchor.delta": promptEstimate.deltaTokens')
   expect(source).toContain('"compaction.anchor.low-confidence": promptEstimate.confidence === "low"')
+  expect(source).toContain('"compaction.response.reserve": promptCapacity.responseReserveTokens')
   expect(source).toContain('"compaction.threshold": threshold')
-  expect(source).toContain('"compaction.fires": estimated > threshold')
+  expect(source).toContain('"compaction.fires": estimatedWithMargin > threshold')
 })
 
 // ── The summary call goes through the thinking budget ────────────────────────────────────────────
@@ -276,10 +279,10 @@ test("the summary is generated through ReasoningBudget, with a declared budget",
 // `token` … do we leave a bit of margin for the case when token is larger than our heuristics
 // predicts, while the provider's api offers no good feedback?"*
 //
-// We leave ONE fixed margin — `BUDGET_KEEP_FRACTION = 0.9` — applied uniformly to every model and
-// every server, and nothing had ever checked it against a provider's own count. The pair that would
-// check it arrives on every response, and was discarded below the 95 % pressure tripwire: recorded
-// only once the margin had already failed.
+// Estimation uncertainty now has its own adaptive margin, independent of the response reserve, but
+// it can adapt only from exact-route provider feedback. The pair that feeds that calibration arrives
+// on every response; it used to be discarded below the 95 % pressure tripwire, once safety had
+// already failed.
 //
 // The provider-dispatch suite drives the callback with and without usage. This wiring ratchet keeps
 // the runner on the exact request seen by that callback: using `packed.estimatedTokens` here compares
@@ -296,6 +299,7 @@ test("the estimate-vs-provider ratio compares one exact provider request with it
   const callback = "onProviderStep: ({ request: providerRequest, usage, providerMetadata, anchorable })"
   expect(runner).toContain(callback)
   expect(runner).toContain("PromptEstimate.whole(providerRequest, routeProfile.imagePatchPixels)")
+  expect(runner).toContain("anchoredResidualRatios: routeProfile.promptResidualRatios")
   expect(runner).toContain("ProviderCapability.servingIdentityOf(providerMetadata)")
   expect(runner).toContain('"session.prompt.reported": reportedPrompt !== undefined')
   expect(runner).toContain('Log.event("session.context.estimate.drift"')
@@ -309,7 +313,9 @@ test("the estimate-vs-provider ratio compares one exact provider request with it
   const routeObservationAt = observation.indexOf("const remember = comparable")
   expect(routeObservationAt).toBeGreaterThan(-1)
   expect(observation.slice(routeObservationAt)).toContain("routeProfileScope")
-  expect(observation.slice(routeObservationAt)).toContain("{ estimatedTokens: estimatedPrompt")
+  expect(observation.slice(routeObservationAt)).toContain("estimatedTokens: estimatedPrompt")
+  expect(observation).toContain('anchorable && providerEstimate.confidence !== "whole"')
+  expect(observation).toContain("anchoredEstimatedTokens: anchoredEstimatedPrompt")
   expect(observation).toContain("reportedPromptTokens: reportedPrompt")
   expect(observation).toContain("calibratedEstimateTokens: calibratedEstimate")
   expect(observation).toContain("serverContextWindow: packed.contextSize")

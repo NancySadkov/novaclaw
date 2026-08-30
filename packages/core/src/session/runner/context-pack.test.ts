@@ -13,7 +13,6 @@ import {
   isRealUserMessage,
   pack,
   packRequest,
-  BUDGET_KEEP_FRACTION,
   DEFAULT_CONTEXT_SIZE,
   MIN_RESPONSE_RESERVE,
 } from "./context-pack"
@@ -51,11 +50,10 @@ const noTools: ToolDefinition[] = []
 const fakeModel = Model.make({ id: "fake", provider: "fake", route: OpenAIChat.route })
 
 // Empty tools still stringify to "[]" (~1 token); mirror the impl formula exactly.
-const expectedBudget = (contextSize: number, reserve: number) =>
-  Math.floor((contextSize - reserve - 1) * BUDGET_KEEP_FRACTION)
+const expectedBudget = (contextSize: number, reserve: number, margin = 0) => contextSize - reserve - 1 - margin
 
 describe("budget", () => {
-  test("subtracts system, tools, reserve, and headroom", () => {
+  test("subtracts system, tools, and the shared response reserve", () => {
     const value = budget({ contextSize: 64_000, system: noSystem, tools: noTools })
     // reserve = max(64000/8, 8192) = 8192
     expect(value).toBe(expectedBudget(64_000, MIN_RESPONSE_RESERVE))
@@ -69,6 +67,22 @@ describe("budget", () => {
   test("an explicit maxTokens raises the reserve", () => {
     const value = budget({ contextSize: 64_000, system: noSystem, tools: noTools, maxTokens: 20_000 })
     expect(value).toBe(expectedBudget(64_000, 20_000))
+  })
+
+  test("keeps estimation margin separate from response reserve", () => {
+    const value = budget({
+      contextSize: 64_000,
+      system: noSystem,
+      tools: noTools,
+      maxTokens: 20_000,
+      promptMarginTokens: 3_000,
+    })
+    expect(value).toBe(expectedBudget(64_000, 20_000, 3_000))
+  })
+
+  test("a response reserve at least as large as the context leaves no history budget", () => {
+    expect(budget({ contextSize: 32_000, system: noSystem, tools: noTools, maxTokens: 32_000 })).toBe(0)
+    expect(budget({ contextSize: 32_000, system: noSystem, tools: noTools, maxTokens: 64_000 })).toBe(0)
   })
 
   test("system and tool text eat the budget, never below zero", () => {

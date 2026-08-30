@@ -95,9 +95,55 @@ describe("PromptEstimate", () => {
       heuristicTokens: PromptEstimate.whole(current),
       estimatedTokens: PromptEstimate.whole(current),
       correctionTokens: 0,
+      marginTokens: 1_000,
       confidence: "whole",
       fallback: "unavailable",
     })
+  })
+
+  test("keeps response reserve and adaptive estimation margin as separate quantities", () => {
+    const previous = request("old")
+    const anchor = PromptEstimate.observe({
+      request: previous,
+      usage: new Usage({ inputTokens: 120, outputTokens: 1, nonCachedInputTokens: 120 }),
+      scope: scope(),
+    })!
+    const current = request("x".repeat(400_000))
+    const result = PromptEstimate.resolve({
+      request: current,
+      messages: [assistant(anchor)],
+      scope: scope(),
+      anchoredResidualRatios: [0.8, 1.2, 0.8, 1.2, 0.8, 1.2, 0.8, 1.2],
+    })
+    const available = PromptEstimate.capacity({ contextTokens: 256_000, outputTokens: 32_000 })
+
+    expect(result.marginTokens / result.estimatedTokens).toBeCloseTo(0.3, 4)
+    expect(available).toEqual({
+      contextTokens: 256_000,
+      responseReserveTokens: 32_000,
+      promptCeilingTokens: 224_000,
+    })
+    expect(PromptEstimate.withMargin(result)).toBe(result.estimatedTokens + result.marginTokens)
+  })
+
+  test("a declared response at least as large as the context leaves a zero prompt ceiling", () => {
+    expect(PromptEstimate.capacity({ contextTokens: 32_000, outputTokens: 32_000 }).promptCeilingTokens).toBe(0)
+    expect(PromptEstimate.capacity({ contextTokens: 32_000, outputTokens: 64_000 })).toMatchObject({
+      responseReserveTokens: 64_000,
+      promptCeilingTokens: 0,
+    })
+  })
+
+  test("does not mistake anchored residual spread for cold-start coverage", () => {
+    const current = request("x".repeat(400_000))
+    const result = PromptEstimate.resolve({
+      request: current,
+      messages: [],
+      scope: scope(),
+      anchoredResidualRatios: [0.8, 1.2, 0.8, 1.2],
+    })
+    expect(result.confidence).toBe("whole")
+    expect(result.marginTokens).toBe(Math.ceil(result.estimatedTokens * 0.02))
   })
 
   test("applies route calibration one-sided to a whole request and caps hostile factors", () => {

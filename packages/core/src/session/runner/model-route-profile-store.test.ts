@@ -34,6 +34,7 @@ describe("model route profile decoding", () => {
     const decoded = decodeAll({
       valid: {
         promptRatios: ratios,
+        promptResidualRatios: [0.99, 1.01],
         imagePatchPixels: 1024,
         prefixCacheRetentionTokens: -1,
       },
@@ -44,6 +45,7 @@ describe("model route profile decoding", () => {
     expect(decoded).toEqual({
       valid: {
         promptRatios: [1.02, 1.03, 1.04, 1.05, 1.06, 1.07, 1.08, 1.09],
+        promptResidualRatios: [0.99, 1.01],
         imagePatchPixels: 1024,
       },
     })
@@ -88,6 +90,7 @@ describe("model route profile persistence", () => {
     const persisted = (values[SETTINGS_KEY] as Record<string, unknown>)[key(route)]
     expect(persisted).toEqual({
       promptRatios: [1.02, 1.03, 1.04, 1.05, 1.06, 1.07, 1.08, 1.09],
+      promptResidualRatios: [],
       imagePatchPixels: 1024,
       prefixCacheRetentionTokens: 4096,
     })
@@ -133,6 +136,29 @@ describe("model route profile persistence", () => {
     )
   })
 
+  test("persists anchored residual ratios separately from whole-request calibration", async () => {
+    const values: Record<string, unknown> = {}
+    await run(
+      values,
+      Effect.gen(function* () {
+        const store = yield* Service
+        yield* store.observe(scope(), {
+          estimatedTokens: 100,
+          anchoredEstimatedTokens: 110,
+          reportedTokens: 121,
+        })
+        expect(yield* store.read(scope())).toEqual({
+          promptRatios: [1.21],
+          promptResidualRatios: [1.1],
+        })
+        expect(yield* store.resolve(scope(), {})).toMatchObject({
+          promptFactor: 1.21,
+          promptResidualRatios: [1.1],
+        })
+      }),
+    )
+  })
+
   test("same-URL serving-process changes discard the stale profile before learning again", async () => {
     const values: Record<string, unknown> = {}
     await run(
@@ -141,6 +167,7 @@ describe("model route profile persistence", () => {
         const store = yield* Service
         yield* store.put(scope(), {
           promptRatios: [1.2, 1.2],
+          promptResidualRatios: [0.99, 1.01],
           imagePatchPixels: 1024,
           prefixCacheRetentionTokens: 4096,
           servedBy: "process-a",
@@ -157,7 +184,40 @@ describe("model route profile persistence", () => {
         expect((yield* store.read(scope()))?.promptRatios).toEqual([1.2, 1.2, 1.1, 1.05])
 
         yield* store.observe(scope(), { estimatedTokens: 100, reportedTokens: 115 }, "process-b")
-        expect(yield* store.read(scope())).toEqual({ promptRatios: [1.15], servedBy: "process-b" })
+        expect(yield* store.read(scope())).toEqual({
+          promptRatios: [1.15],
+          promptResidualRatios: [],
+          servedBy: "process-b",
+        })
+      }),
+    )
+  })
+
+  test("non-prompt discovery also discards predecessor measurements after a same-URL restart", async () => {
+    const values: Record<string, unknown> = {}
+    await run(
+      values,
+      Effect.gen(function* () {
+        const store = yield* Service
+        yield* store.put(scope(), {
+          promptRatios: [1.2],
+          promptResidualRatios: [1.01],
+          imagePatchPixels: 1024,
+          prefixCacheRetentionTokens: 4096,
+          servedBy: "process-a",
+        })
+
+        yield* store.put(scope({ serverKey: "http://127.0.0.1:8000/v1/" }), {
+          prefixCacheRetentionTokens: 8192,
+          servedBy: "process-b",
+        })
+
+        expect(yield* store.read(scope())).toEqual({
+          promptRatios: [],
+          promptResidualRatios: [],
+          prefixCacheRetentionTokens: 8192,
+          servedBy: "process-b",
+        })
       }),
     )
   })
@@ -167,6 +227,7 @@ describe("profile precedence", () => {
   test("resolves each property as declared, discovered, persisted, then safe default", () => {
     const persisted = {
       promptRatios: [1.1],
+      promptResidualRatios: [0.99, 1.01],
       imagePatchPixels: 900,
       prefixCacheRetentionTokens: 3_000,
       servedBy: "process-a",
@@ -179,6 +240,7 @@ describe("profile precedence", () => {
       }),
     ).toEqual({
       promptFactor: 1.1,
+      promptResidualRatios: [0.99, 1.01],
       imagePatchPixels: 400,
       prefixCacheRetentionTokens: 2_000,
       servedBy: "process-a",
@@ -190,7 +252,7 @@ describe("profile precedence", () => {
   test("invalid higher-precedence values cannot mask a usable lower-precedence source", () => {
     expect(
       resolveProfile(
-        { promptRatios: [], imagePatchPixels: 768 },
+        { promptRatios: [], promptResidualRatios: [], imagePatchPixels: 768 },
         { declared: { imagePatchPixels: Number.NaN }, discovered: { imagePatchPixels: -1 } },
       ).imagePatchPixels,
     ).toBe(768)

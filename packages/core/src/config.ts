@@ -680,6 +680,7 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     Schema.String,
     Schema.Struct({
       promptRatios: Schema.Array(Schema.Finite),
+      promptResidualRatios: Schema.Array(Schema.Finite).pipe(Schema.optional),
       imagePatchPixels: Schema.Finite.pipe(Schema.optional),
       prefixCacheRetentionTokens: Schema.Finite.pipe(Schema.optional),
       servedBy: Schema.String.pipe(Schema.optional),

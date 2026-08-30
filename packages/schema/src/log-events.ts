@@ -2638,6 +2638,8 @@ export const EVENTS = {
     attributes: {
       "session.id": "correlate",
       "compaction.estimated": "count",
+      "compaction.estimation.margin": "count",
+      "compaction.estimated-with-margin": "count",
       "compaction.estimate.mode": "id",
       "compaction.heuristic": "count",
       "compaction.anchor.reported": "count",
@@ -2646,6 +2648,7 @@ export const EVENTS = {
       "compaction.anchor.growth": "count",
       "compaction.anchor.low-confidence": "flag",
       "compaction.anchor.fallback": "id",
+      "compaction.response.reserve": "count",
       "compaction.threshold": "count",
       "compaction.fires": "flag",
     },

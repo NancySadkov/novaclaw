@@ -76,6 +76,7 @@ const VALID: Record<string, unknown> = {
   provider_route_profile: {
     '["spark-holo","holo3.1","http://127.0.0.1:8010/v1","openai-chat","openai-chat"]': {
       promptRatios: [1.02, 1.08],
+      promptResidualRatios: [0.99, 1.01],
       imagePatchPixels: 32,
       prefixCacheRetentionTokens: 130_000,
       servedBy: "process-a",

@@ -594,10 +594,18 @@ export const make = (dependencies: Dependencies) => {
      */
     const promptEstimate = input.promptEstimate ?? PromptEstimate.unsupported(input.request, input.imagePatchPixels)
     const estimated = promptEstimate.estimatedTokens
-    const threshold = context - Math.max(output, config.buffer)
+    const estimatedWithMargin = PromptEstimate.withMargin(promptEstimate)
+    const promptCapacity = PromptEstimate.capacity({
+      contextTokens: context,
+      outputTokens: output,
+      minimumResponseReserveTokens: config.buffer,
+    })
+    const threshold = promptCapacity.promptCeilingTokens
     yield* Log.event("session.compaction.threshold", {
       "session.id": String(input.sessionID),
       "compaction.estimated": estimated,
+      "compaction.estimation.margin": promptEstimate.marginTokens,
+      "compaction.estimated-with-margin": estimatedWithMargin,
       "compaction.estimate.mode": promptEstimate.confidence === "whole" ? "full" : "anchored",
       "compaction.heuristic": promptEstimate.heuristicTokens,
       "compaction.anchor.reported": promptEstimate.anchorReportedTokens,
@@ -606,10 +614,11 @@ export const make = (dependencies: Dependencies) => {
       "compaction.anchor.growth": Math.round(promptEstimate.growth * 10_000) / 10_000,
       "compaction.anchor.low-confidence": promptEstimate.confidence === "low",
       "compaction.anchor.fallback": promptEstimate.fallback,
+      "compaction.response.reserve": promptCapacity.responseReserveTokens,
       "compaction.threshold": threshold,
-      "compaction.fires": estimated > threshold,
+      "compaction.fires": estimatedWithMargin > threshold,
     })
-    if (estimated <= threshold) return false
+    if (estimatedWithMargin <= threshold) return false
     // The cheap tier runs inside `compactAfterOverflow`, ahead of the summary prompt — the
     // threshold test above reads the ALREADY-ASSEMBLED request, which prune cannot shrink.
     return yield* compactAfterOverflow(input)

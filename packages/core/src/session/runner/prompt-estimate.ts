@@ -4,6 +4,7 @@ import type { LLMRequest, Usage } from "@novaclaw/llm"
 import type { SessionMessage } from "@novaclaw/schema/session-message"
 import { Hash } from "../../util/hash"
 import { Token } from "../../util/token"
+import { PromptCalibration } from "./prompt-calibration"
 
 type RequestShape = Pick<LLMRequest, "system" | "messages" | "tools">
 
@@ -43,6 +44,8 @@ export interface Result {
   readonly estimatedTokens: number
   /** `estimatedTokens - heuristicTokens`; apply once at an overall request boundary. */
   readonly correctionTokens: number
+  /** Estimation uncertainty only. Output capacity is reserved separately by `capacity`. */
+  readonly marginTokens: number
   readonly deltaTokens: number
   readonly growth: number
   readonly confidence: "whole" | "anchored" | "low"
@@ -51,11 +54,55 @@ export interface Result {
   readonly anchorHeuristicTokens: number
 }
 
+export const MIN_RESPONSE_RESERVE = 8_192
+
+export interface Capacity {
+  readonly contextTokens: number
+  readonly responseReserveTokens: number
+  readonly promptCeilingTokens: number
+}
+
 const positiveInt = (value: number | undefined): value is number =>
   value !== undefined && Number.isSafeInteger(value) && value > 0
 
 const nonNegativeInt = (value: number | undefined): value is number =>
   value !== undefined && Number.isSafeInteger(value) && value >= 0
+
+const tokenCount = (value: number | undefined): number => {
+  if (value === Number.POSITIVE_INFINITY) return Number.MAX_SAFE_INTEGER
+  if (value === undefined || !Number.isFinite(value) || value <= 0) return 0
+  return Math.min(Number.MAX_SAFE_INTEGER, Math.floor(value))
+}
+
+/**
+ * One prompt-capacity algebra shared by semantic compaction and deterministic packing.
+ *
+ * The response reserve is intentionally independent of estimation uncertainty. A caller may raise
+ * the minimum (the compaction setting does); it cannot erase the base 1/8 or 8,192-token reserve.
+ */
+export const capacity = (input: {
+  readonly contextTokens: number
+  readonly outputTokens?: number
+  readonly minimumResponseReserveTokens?: number
+}): Capacity => {
+  const contextTokens = tokenCount(input.contextTokens)
+  const responseReserveTokens = Math.max(
+    Math.floor(contextTokens / 8),
+    MIN_RESPONSE_RESERVE,
+    tokenCount(input.outputTokens),
+    tokenCount(input.minimumResponseReserveTokens),
+  )
+  return {
+    contextTokens,
+    responseReserveTokens,
+    promptCeilingTokens: Math.max(0, contextTokens - responseReserveTokens),
+  }
+}
+
+export const withMargin = (estimate: Pick<Result, "estimatedTokens" | "marginTokens">): number => {
+  const total = tokenCount(estimate.estimatedTokens) + tokenCount(estimate.marginTokens)
+  return Math.min(Number.MAX_SAFE_INTEGER, total)
+}
 
 /** The one request-level heuristic. Item ranking remains in ContextPack. */
 export const whole = (request: RequestShape, imagePatchPixels?: number): number =>
@@ -128,17 +175,27 @@ const calibrationFactor = (value: number | undefined): number =>
 const inflate = (tokens: number, factor: number): number =>
   Math.min(Number.MAX_SAFE_INTEGER, Math.ceil(tokens * factor))
 
-const full = (heuristicTokens: number, fallback: Fallback, factor: number = 1): Result => ({
-  heuristicTokens,
-  estimatedTokens: inflate(heuristicTokens, factor),
-  correctionTokens: inflate(heuristicTokens, factor) - heuristicTokens,
-  deltaTokens: 0,
-  growth: 0,
-  confidence: "whole",
-  fallback,
-  anchorReportedTokens: 0,
-  anchorHeuristicTokens: 0,
-})
+const full = (
+  heuristicTokens: number,
+  fallback: Fallback,
+  factor: number = 1,
+): Result => {
+  const estimatedTokens = inflate(heuristicTokens, factor)
+  return {
+    heuristicTokens,
+    estimatedTokens,
+    correctionTokens: estimatedTokens - heuristicTokens,
+    // Anchored residuals describe anchored predictions only. A whole-request fallback has no
+    // comparable residual series, so it receives the conservative fixed floor.
+    marginTokens: PromptCalibration.marginTokens(estimatedTokens),
+    deltaTokens: 0,
+    growth: 0,
+    confidence: "whole",
+    fallback,
+    anchorReportedTokens: 0,
+    anchorHeuristicTokens: 0,
+  }
+}
 
 /** A durable anchor from one exact settled base/opening provider request. */
 export const observe = (input: {
@@ -171,11 +228,14 @@ export const resolve = (input: {
   readonly scope: Scope
   /** Median provider/heuristic ratio for this exact route; one-sided and capped defensively. */
   readonly calibrationFactor?: number
+  /** Recent `reported / anchored-estimate` residual ratios for this exact route and serving process. */
+  readonly anchoredResidualRatios?: readonly number[]
   /** The same resolved image grid used to create durable anchor heuristics for this route. */
   readonly imagePatchPixels?: number
 }): Result => {
   const heuristicTokens = whole(input.request, input.imagePatchPixels)
   const factor = calibrationFactor(input.calibrationFactor)
+  const residuals = input.anchoredResidualRatios ?? []
   if (!positiveInt(heuristicTokens)) return full(heuristicTokens, "invalid", factor)
   const currentShapeKey = shapeKey(input.request, input.imagePatchPixels)
   let fallback: Fallback = "unavailable"
@@ -208,6 +268,7 @@ export const resolve = (input: {
     heuristicTokens,
     estimatedTokens,
     correctionTokens: estimatedTokens - heuristicTokens,
+    marginTokens: PromptCalibration.marginTokens(estimatedTokens, residuals),
     deltaTokens,
     growth,
     confidence: growth > 0.15 ? "low" : "anchored",

@@ -1713,6 +1713,7 @@ export const layer = Layer.effect(
         .pipe(
           Effect.orElseSucceed(() => ({
             promptFactor: 1,
+            promptResidualRatios: [],
             imagePatchPixels: Token.DEFAULT_IMAGE_PATCH_PIXELS,
             servedBy: undefined,
           })),
@@ -1726,6 +1727,7 @@ export const layer = Layer.effect(
         messages: entries.map((entry) => entry.message),
         scope: promptScope,
         calibrationFactor: routeProfile.promptFactor,
+        anchoredResidualRatios: routeProfile.promptResidualRatios,
         imagePatchPixels: routeProfile.imagePatchPixels,
       })
       yield* timingEnd("request-build")
@@ -1774,6 +1776,7 @@ export const layer = Layer.effect(
           : undefined,
         memoryRecall: recallMessage,
         promptCorrectionTokens: promptEstimate.correctionTokens,
+        promptMarginTokens: promptEstimate.marginTokens,
         imagePatchPixels: routeProfile.imagePatchPixels,
       })
       yield* timingEnd("context-fit")
@@ -1865,7 +1868,27 @@ export const layer = Layer.effect(
               onProviderStep: ({ request: providerRequest, usage, providerMetadata, anchorable }) => {
                 const estimatedPrompt = PromptEstimate.whole(providerRequest, routeProfile.imagePatchPixels)
                 const reportedPrompt = PromptEstimate.reportedPromptTokens(usage)
-                const calibratedEstimate = Math.ceil(estimatedPrompt * routeProfile.promptFactor)
+                const servedBy = ProviderCapability.servingIdentityOf(providerMetadata)
+                const observationScope: PromptEstimate.Scope = {
+                  ...promptScope,
+                  ...(servedBy === undefined ? {} : { servedBy }),
+                }
+                // Re-resolve the exact outbound request: packing and the reasoning envelope can make
+                // it differ from `fullRequest`. Only a compatible durable anchor is eligible for the
+                // residual series; whole-request fallbacks continue feeding the separate bias ratio.
+                const providerEstimate = PromptEstimate.resolve({
+                  request: providerRequest,
+                  messages: entries.map((entry) => entry.message),
+                  scope: observationScope,
+                  calibrationFactor: routeProfile.promptFactor,
+                  anchoredResidualRatios: routeProfile.promptResidualRatios,
+                  imagePatchPixels: routeProfile.imagePatchPixels,
+                })
+                const anchoredEstimatedPrompt =
+                  anchorable && providerEstimate.confidence !== "whole"
+                    ? providerEstimate.estimatedTokens
+                    : undefined
+                const calibratedEstimate = providerEstimate.estimatedTokens
                 const truncation =
                   reportedPrompt === undefined
                     ? undefined
@@ -1875,14 +1898,10 @@ export const layer = Layer.effect(
                         serverContextWindow: packed.contextSize,
                       })
                 if (anchorable) {
-                  const servedBy = ProviderCapability.servingIdentityOf(providerMetadata)
                   const observed = PromptEstimate.observe({
                     request: providerRequest,
                     usage,
-                    scope: {
-                      ...promptScope,
-                      ...(servedBy === undefined ? {} : { servedBy }),
-                    },
+                    scope: observationScope,
                     imagePatchPixels: routeProfile.imagePatchPixels,
                   })
                   if (observed !== undefined) providerPromptAnchor = observed
@@ -1892,8 +1911,14 @@ export const layer = Layer.effect(
                   ? routeProfiles
                       .observe(
                         routeProfileScope,
-                        { estimatedTokens: estimatedPrompt, reportedTokens: reportedPrompt! },
-                        ProviderCapability.servingIdentityOf(providerMetadata),
+                        {
+                          estimatedTokens: estimatedPrompt,
+                          reportedTokens: reportedPrompt!,
+                          ...(anchoredEstimatedPrompt === undefined
+                            ? {}
+                            : { anchoredEstimatedTokens: anchoredEstimatedPrompt }),
+                        },
+                        servedBy,
                       )
                       .pipe(Effect.ignore)
                   : Effect.void

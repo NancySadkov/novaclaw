@@ -43557,6 +43557,12 @@
                     "type": "number"
                   }
                 },
+                "promptResidualRatios": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  }
+                },
                 "imagePatchPixels": {
                   "type": "number"
                 },

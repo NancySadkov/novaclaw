@@ -4566,6 +4566,7 @@ export type ConfigInfo = {
   provider_route_profile?: {
     [key: string]: {
       promptRatios: Array<number>
+      promptResidualRatios?: Array<number>
       imagePatchPixels?: number
       prefixCacheRetentionTokens?: number
       servedBy?: string

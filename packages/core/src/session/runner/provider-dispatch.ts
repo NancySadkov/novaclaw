@@ -27,6 +27,7 @@ export interface PrepareInput {
   readonly profile?: ContextBudget.Profile
   readonly memoryRecall?: string
   readonly promptCorrectionTokens?: number
+  readonly promptMarginTokens?: number
 }
 
 /** Attach the stable cache identity and pack the exact request that will reach the provider. */
@@ -47,6 +48,7 @@ export const prepare = (input: PrepareInput) => {
     profile: input.profile,
     memoryRecall: input.memoryRecall,
     promptCorrectionTokens: input.promptCorrectionTokens,
+    promptMarginTokens: input.promptMarginTokens,
   })
   const request = packed.changed
     ? LLM.request({ ...LLM.requestInput(cacheable), system: packed.system, messages: packed.messages })
