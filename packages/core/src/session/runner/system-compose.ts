@@ -399,12 +399,15 @@ export const delegationSection = (input: {
   const lines: string[] = []
   if (input.canSpawn)
     lines.push(
-      "You can put WORK IN PARALLEL by spawning sub-agents. `spawn` creates a nameless helper that " +
-        "runs with your own authority, does one piece of work, and ends — it has no name, no chat of " +
-        "its own and no memory, and nobody but you is waiting on it. Use it whenever a task splits " +
-        "into independent parts: call `spawn` once per part, in the same turn, then collect what they " +
-        "return. Do not do the parts yourself when you have been asked to delegate them, and do not " +
-        "go looking for this tool — it is already in your tool list.",
+      "You can put SIZEABLE, INDEPENDENT work in parallel with sub-agents. `spawn` creates a nameless " +
+        "helper in a fresh context with your own authority; it does one piece of work and ends, with " +
+        "no chat or memory of its own. Use it only when the parallel payoff exceeds that startup and " +
+        "reread cost; keep a bounded task you can finish in a few tool calls in this session. For a " +
+        "real split, call `spawn` once per part in the same turn, continue other independent work, then " +
+        "collect the results. Do not redo " +
+        "a child's part while it runs, and verify its evidence or changed state before reporting it " +
+        "complete. When explicitly asked to delegate, do not do the parts yourself. Do not look for " +
+        "`spawn` — it is already in your tool list.",
     )
   if (input.canAddressColleagues)
     lines.push(

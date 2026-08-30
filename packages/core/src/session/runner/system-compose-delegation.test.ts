@@ -24,6 +24,25 @@ describe("the delegation section", () => {
     expect(section!.toLowerCase()).toContain("already in your tool list")
   })
 
+  test("pays for a fresh context only with sizeable independent work", () => {
+    const section = SystemCompose.delegationSection({ canSpawn: true, canAddressColleagues: false })!
+    expect(section).toContain("SIZEABLE, INDEPENDENT")
+    expect(section).toContain("startup and reread cost")
+    expect(section).toContain("few tool calls")
+  })
+
+  test("does not duplicate delegated work and verifies the result", () => {
+    const section = SystemCompose.delegationSection({ canSpawn: true, canAddressColleagues: false })!
+    expect(section).toContain("continue other independent work")
+    expect(section).toContain("Do not redo")
+    expect(section).toContain("verify its evidence or changed state")
+  })
+
+  test("size pin: conditional delegation guidance stays compact", () => {
+    const section = SystemCompose.delegationSection({ canSpawn: true, canAddressColleagues: true })!
+    expect(section.length).toBeLessThan(1_500)
+  })
+
   test("a colleague grant is described as somebody ELSE's work, and forbids self-address", () => {
     const section = SystemCompose.delegationSection({ canSpawn: false, canAddressColleagues: true })
     expect(section).toBeDefined()

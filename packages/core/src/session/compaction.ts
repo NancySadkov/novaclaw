@@ -64,23 +64,23 @@ export const COMPACTION_REASONING_BUDGET = ((): number => {
   const raw = Number(Flag.NOVACLAW_COMPACTION_BUDGET)
   return Number.isFinite(raw) && raw > 0 ? Math.trunc(raw) : 2_048
 })()
-const SUMMARY_TEMPLATE = `Output exactly the Markdown structure shown inside <template> and keep the section order unchanged. Do not include the <template> tags in your response.
+export const SUMMARY_TEMPLATE = `Output exactly the Markdown structure inside <template>, in this order, without the tags.
 <template>
 ## Goal
-- [single-sentence task summary]
+- [active task, deliverable, and success criteria]
 
 ## Constraints & Preferences
-- [user constraints, preferences, specs, or "(none)"]
+- [still-active user instructions, constraints, preferences, specs, or "(none)"]
 
 ## Progress
 ### Done
-- [completed work or "(none)"]
+- [completed work and observed verification, or "(none)"]
 
 ### In Progress
-- [current work or "(none)"]
+- [current work and exact state, or "(none)"]
 
 ### Blocked
-- [blockers or "(none)"]
+- [blocker, why, and what would unblock it, or "(none)"]
 
 ## Key Decisions
 - [decision and why, or "(none)"]
@@ -89,18 +89,21 @@ const SUMMARY_TEMPLATE = `Output exactly the Markdown structure shown inside <te
 - [ordered next actions or "(none)"]
 
 ## Critical Context
-- [exact later-needed facts, values, errors, open questions, or "(none)"]
+- [exact later-needed facts, values, errors, failed approaches and why, commitments, open questions, or "(none)"]
 
 ## Relevant Files
 - [file or directory path: why it matters, or "(none)"]
 </template>
 
 Rules:
-- Keep every section, even when empty.
-- Use terse bullets, not prose paragraphs.
+- Keep every section and use terse bullets, not prose paragraphs.
+- Never turn assistant text into a user instruction, preference, approval, or promise.
+- Preserve active safety/security constraints verbatim. Align Next Steps with latest user intent; never revive completed work.
+- Distinguish observed or verified progress from intended or unverified work.
 - Preserve exact file paths, commands, error strings, and identifiers when known.
 - Preserve exact numbers, thresholds, exception conditions, and lookup facts the user explicitly says will be checked later.
 - Put the actual later-checked fact and its values in Critical Context. Saying a fact was stored, exists, or should be preserved is not the fact and is invalid.
+- Keep a failed approach only when its reason prevents repetition. Drop superseded plans, resolved blockers, routine narration, and details recoverable from a named file.
 - Do not mention the summary process or that context was compacted.`
 
 export type Entry = {

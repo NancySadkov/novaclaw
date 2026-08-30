@@ -38,6 +38,21 @@ describe("Persona.resolve", () => {
     expect(Persona.resolve({ prompt: "   " })).toContain("pragmatic")
   })
 
+  test("routine ambiguity proceeds while materially different outcomes still ask", () => {
+    const prompt = Persona.resolve(undefined)!
+    expect(prompt).toContain("Make routine judgment calls yourself")
+    expect(prompt).toContain("plausible interpretations would materially change the result")
+    expect(prompt).toContain("finish everything that does not depend on the answer")
+    expect(prompt).not.toContain("If a prompt is ambiguous, ask for clarification")
+  })
+
+  test("completion claims are tied to observed evidence", () => {
+    const prompt = Persona.resolve(undefined)!
+    expect(prompt).toContain("Report only what you observed")
+    expect(prompt).toContain("lead with failures, skipped checks, or incomplete work")
+    expect(prompt).toContain("unverified")
+  })
+
   test("notes line rides along when a notes dir is known — even with a custom prompt", () => {
     const custom = Persona.resolve({ prompt: "Custom." }, { notesDir: "D:\\data\\notes" })!
     expect(custom).toContain("Custom.")
@@ -50,11 +65,11 @@ describe("Persona.resolve", () => {
     expect(Persona.resolve(undefined)).not.toContain("notes folder")
   })
 
-  // 1M/A6(2) — size pin (codehamr discipline: "bump when it fails, never relax the assertion").
-  // The persona baseline is charged against EVERY turn's context on the qwen floor; growth must be
-  // a deliberate decision, not drift. Currently ~1.4k chars (~350 tokens).
-  test("size pin: the composed baseline stays under 2000 chars", () => {
+  // The persona baseline is charged against EVERY turn's context on the floor model. The behavior
+  // contract above replaced a longer baseline; pin the smaller budget rather than spending the
+  // reclaimed context on new prose later.
+  test("size pin: the composed baseline stays under 1200 chars", () => {
     const composed = Persona.resolve(undefined, { notesDir: "C:\\Users\\example\\data\\notes" })!
-    expect(composed.length).toBeLessThan(2000)
+    expect(composed.length).toBeLessThan(1200)
   })
 })

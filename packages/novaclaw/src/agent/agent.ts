@@ -10,9 +10,9 @@ import { Integration } from "@novaclaw/core/integration"
 import { SessionRunnerModel } from "@novaclaw/core/session/runner/model"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { llmClient } from "@novaclaw/core/effect/app-node-platform"
+import { COMPACTION_SYSTEM } from "@novaclaw/core/compaction-system-prompt"
 
 import PROMPT_GENERATE from "./generate.txt"
-import PROMPT_COMPACTION from "./prompt/compaction.txt"
 import PROMPT_EXPLORE from "./prompt/explore.txt"
 import PROMPT_SUMMARY from "./prompt/summary.txt"
 import PROMPT_TITLE from "./prompt/title.txt"
@@ -316,7 +316,7 @@ export const layer = Layer.effect(
             mode: "primary",
             native: true,
             hidden: true,
-            prompt: PROMPT_COMPACTION,
+            prompt: COMPACTION_SYSTEM,
             permission: Permission.merge(
               defaults,
               Permission.fromConfig({
