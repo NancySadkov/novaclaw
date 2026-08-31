@@ -30,12 +30,11 @@ import { tmpdir } from "./fixture/tmpdir"
 // The `spawn` TOOL surface (v0.2.0 PREP Wave 2, 2026-07-28). Two separate claims live here, and
 // they are separate on purpose:
 //
-//   1. WIDENING. The kernel's `SpawnInput` has always accepted model / type / permissionMode and
-//      `createSessionRecord` has always persisted them; the tool exposed only prompt / agent /
-//      systemPromptOverride, so a supervisor could not put a sub-task on a cheaper model or hand a
-//      child a tighter posture. An Effect `Schema.Struct` STRIPS unknown keys rather than rejecting
-//      them, so before the widening a model that sent `permissionMode` got silence and a default
-//      child — the failure mode this file's first test exists to keep out.
+//   1. SURFACE MINIMALISM. `SessionSpawner` accepts the operator-side session configuration, but the
+//      model tool is a fork rather than a session-creation form: prompt plus optional permission
+//      narrowing. Agent/model/control/prompt/type inherit mechanically instead of becoming more JSON
+//      the model can repeat incorrectly. Effect strips unknown keys, so the test drives that boundary
+//      through the real decoder and proves the child row stayed sparse.
 //
 //   2. NARROWING — the invariant the widening is allowed to rest on. architecture.md calls a fork
 //      that comes back LESS restricted than its source a defect, not a preference, and the clamp is
@@ -172,8 +171,8 @@ const enumOf = (schema: unknown, property: string): string[] => {
   return collect((schema as { properties?: Record<string, unknown> } | undefined)?.properties?.[property])
 }
 
-describe("the spawn tool carries the kernel's whole child-config surface", () => {
-  it.live("model, type and permissionMode reach the child's session record", () =>
+describe("the spawn tool keeps the model surface fork-shaped", () => {
+  it.live("the model surface strips operator-only session fields and carries only permission narrowing", () =>
     Effect.gen(function* () {
       const { location, parent } = yield* parentSession()
 
@@ -188,19 +187,12 @@ describe("the spawn tool carries the kernel's whole child-config surface", () =>
       })
 
       const child = yield* childOf(parent.id)
-      expect(child).toBeDefined()
-      // The three fields that were unreachable before the widening…
-      // ⚠️ `String(...)` because these are BRANDED ids (`Provider.ID`, `Model.ID`) and bun's `toBe`
-      // infers its parameter from the receiver, so a raw literal is TS2769. Comparing the string
-      // value is what this test means anyway — it is asserting the value arrived, not its brand.
-      expect(String(child?.model?.providerID)).toBe("dgx-spark")
-      expect(String(child?.model?.id)).toBe("qwen3.6-35b")
-      expect(child?.type).toBe("auto-prompting")
+      expect(child?.agent).toBeUndefined()
+      expect(child?.model).toBeUndefined()
+      expect(child?.controlBinding).toBeUndefined()
+      expect(child?.systemPromptOverride).toBeUndefined()
+      expect(child?.type).toBe("sub-agent")
       expect(child?.permissionMode).toBe("plan")
-      expect(child?.controlBinding).toBe(":100")
-      // …and the two that already were, so a regression that drops the OLD forwarding also bites.
-      expect(String(child?.agent)).toBe("plan")
-      expect(child?.systemPromptOverride).toBe("answer in one line")
     }),
   )
 
@@ -236,25 +228,7 @@ describe("the spawn tool carries the kernel's whole child-config surface", () =>
       // compiles green the day a sixth mode is added. `MODE_RULES` is `Record<PermissionMode, …>`,
       // so the compiler forces a new mode to appear there — which makes this comparison the ratchet.
       expect(enumOf(spawn?.inputSchema, "permissionMode").sort()).toEqual(Object.keys(MODE_RULES).sort())
-      // Same shape for the thread type, which the tool imports from `@novaclaw/schema/session-type`
-      // rather than retyping — so this one can only fail if the import stops being used.
-      expect(enumOf(spawn?.inputSchema, "type").sort()).toEqual(
-        ["auto-prompting", "goal-oriented", "interactive", "sub-agent"].sort(),
-      )
-    }),
-  )
-
-  it.live("a model id without its provider is refused BEFORE a child exists", () =>
-    Effect.gen(function* () {
-      const { location, parent } = yield* parentSession()
-
-      const settlement = yield* settleSpawn(location, parent.id, { prompt: PROMPT, model: "qwen3.6-35b" })
-
-      // `ModelV2.parse` would happily yield a ref with an EMPTY model id, and the fault would then
-      // surface inside the CHILD's first turn, reading as the child's failure (ruling 2).
-      expect(settlement.result.type).toBe("error")
-      expect(JSON.stringify(settlement.result)).toContain("provider/model-id")
-      expect(yield* childOf(parent.id)).toBeUndefined()
+      expect(Object.keys((spawn?.inputSchema as any)?.properties ?? {}).sort()).toEqual(["permissionMode", "prompt"])
     }),
   )
 })
@@ -314,7 +288,7 @@ describe("the may-spawn gate", () => {
       // exact hang the deny-fast stance exists to describe. The full-stack half is the two tests
       // below (a real deny reaches the model; the permissive fixture still spawns).
       expect(
-        PermissionV2.evaluate("spawn", "general", [
+        PermissionV2.evaluate("spawn", "inherit", [
           ...PermissionV2.AMBIENT_SAFE_BASELINE,
           ...MODE_RULES[EFFECTIVE_CONFIG_DEFAULTS.permissionMode],
         ]).effect,
@@ -322,7 +296,7 @@ describe("the may-spawn gate", () => {
       // NEGATIVE CONTROL: the one line B4c removed, put back — the gate grants itself again, which
       // is what "INERT" meant and why the inversion was the prerequisite rather than the polish.
       expect(
-        PermissionV2.evaluate("spawn", "general", [
+        PermissionV2.evaluate("spawn", "inherit", [
           { action: "*", resource: "*", effect: "allow" },
           ...PermissionV2.AMBIENT_SAFE_BASELINE,
         ]).effect,

@@ -62,9 +62,8 @@ export const stripModel = (
  *
  * ⚠️ **Split on the FIRST slash only.** Model ids routinely contain slashes — `openai/gpt-oss-120b`,
  * `hf.co/unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_XL` — so a naive `split("/")` destructure both mangles
- * the id and, worse, can make two different models compare equal. `tool/spawn.ts` records the same
- * trap from the other direction: `ModelV2.parse("qwen3.6-35b")` yields an EMPTY model id and the
- * spawn then succeeds.
+ * the id and, worse, can make two different models compare equal. Validate the stored reference as
+ * one provider prefix plus the remaining model id; a bare model id is not a provider-qualified ref.
  */
 export const refNamesModel = (ref: string | undefined, providerID: string, modelID: string): boolean => {
   if (ref === undefined) return false
