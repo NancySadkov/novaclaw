@@ -26,4 +26,24 @@ describe("provider stream liveness", () => {
       expect(Array.from(values)).toEqual([1, 2, 3])
     }),
   )
+
+  it.effect("classifies a stall after partial output as an incomplete reply so the runner can continue", () =>
+    Effect.gen(function* () {
+      let hasOutput = false
+      const source = Stream.make("partial").pipe(
+        Stream.tap(() => Effect.sync(() => (hasOutput = true))),
+        Stream.concat(Stream.never),
+      )
+      const fiber = yield* withStallTimeout(source, 5_000, () => hasOutput).pipe(Stream.runDrain, Effect.forkScoped)
+      yield* Effect.yieldNow
+      yield* TestClock.adjust(Duration.seconds(5))
+      const exit = yield* Fiber.await(fiber)
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isSuccess(exit)) return
+      const error = Option.getOrUndefined(Cause.findErrorOption(exit.cause))
+      expect(error).toBeInstanceOf(LLMError)
+      expect((error as LLMError).reason).toMatchObject({ _tag: "InvalidProviderOutput" })
+      expect((error as LLMError).reason.message).toContain("continue safely")
+    }),
+  )
 })

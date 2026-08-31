@@ -1984,6 +1984,7 @@ export const layer = Layer.effect(
       const providerStream = ProviderStreamLiveness.withStallTimeout(
         budgetedSource,
         harness.providerStallTimeoutMs,
+        publisher.hasAssistantStarted,
       ).pipe(
         Stream.takeUntil(() => steerInterrupt),
         Stream.runForEach((event) =>
