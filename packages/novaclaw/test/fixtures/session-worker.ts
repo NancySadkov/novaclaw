@@ -16,6 +16,9 @@ let identity:
 let acknowledgements = 0
 let deviceStage = 0
 let joinedChildren = 0
+let generationReleased = false
+let maintenanceReleased = false
+let maintenanceID: string | undefined
 
 const emit = (message: SessionWorkerProtocol.WorkerMessage) =>
   process.stdout.write(SessionWorkerProtocol.encodeLine(message))
@@ -88,13 +91,14 @@ input.on("line", (line) => {
         })
       return
     }
-    if (mode === "device" || mode === "device-batch") {
+    if (mode === "device" || mode === "device-batch" || mode === "device-maintenance-overlap") {
       emit({
         ...identity,
         type: "device-admit",
         requestID: "rpc_admit",
         deviceKey: "provider/model",
         sessionClass: mode === "device" ? "interactive" : "auto-prompting",
+        ...(mode === "device-maintenance-overlap" ? { concurrency: 1 } : {}),
       })
       return
     }
@@ -132,6 +136,25 @@ input.on("line", (line) => {
   }
   if (message.type === "device-admitted" && deviceStage === 0) {
     deviceStage = 1
+    if (mode === "device-maintenance-overlap") {
+      // Deliberately ask for maintenance before returning the generation lease. With a one-slot
+      // scheduler the admission must wait, while the independent release must still reach the host.
+      emit({
+        ...identity,
+        type: "device-maintenance-admit",
+        requestID: "rpc_maintenance_admit",
+        deviceKey: "provider/model",
+        task: "session-title",
+        concurrency: 1,
+      })
+      emit({
+        ...identity,
+        type: "device-release",
+        requestID: "rpc_release",
+        deviceKey: "provider/model",
+      })
+      return
+    }
     emit({
       ...identity,
       type: "device-report",
@@ -149,6 +172,21 @@ input.on("line", (line) => {
     })
   } else if (message.type === "device-released" && deviceStage === 2) {
     emit({ ...identity, type: "settled" })
+  } else if (mode === "device-maintenance-overlap" && message.type === "device-released") {
+    generationReleased = true
+    if (maintenanceReleased) emit({ ...identity, type: "settled" })
+  } else if (mode === "device-maintenance-overlap" && message.type === "device-maintenance-admitted") {
+    maintenanceID = message.maintenanceID
+    emit({
+      ...identity,
+      type: "device-maintenance-release",
+      requestID: "rpc_maintenance_release",
+      deviceKey: "provider/model",
+      maintenanceID,
+    })
+  } else if (mode === "device-maintenance-overlap" && message.type === "device-maintenance-released") {
+    maintenanceReleased = true
+    if (generationReleased) emit({ ...identity, type: "settled" })
   }
   if (message.type === "permission-result" && message.outcome === "allowed") {
     emit({

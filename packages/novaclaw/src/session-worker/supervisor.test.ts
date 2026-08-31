@@ -145,6 +145,38 @@ test("device admission/report/release stay host-owned and exit reclaims the sess
   expect((await Effect.runPromise(scheduler.snapshot()))[0]?.inFlightInteractive).toEqual([])
 })
 
+test("a waiting maintenance admission cannot block the generation release it needs", async () => {
+  const scheduler = SessionScheduler.make()
+  const handled: string[] = []
+  const worker = spawn({
+    command: [process.execPath, fixture, "device-maintenance-overlap"],
+    lease,
+    directory: process.cwd(),
+    force: false,
+    startupTimeoutMs: 8_000,
+    heartbeatTimeoutMs: 2_000,
+    onDeviceRequest: (message, signal) => {
+      handled.push(message.type)
+      return Effect.runPromise(SessionWorkerDeviceBridge.handle({ scheduler, lease, message }), { signal })
+    },
+    onExit: () => Effect.runPromise(SessionWorkerDeviceBridge.reclaim(scheduler, lease)),
+  })
+
+  expect(await worker.result).toEqual({ type: "settled" })
+  expect(handled).toEqual([
+    "device-admit",
+    "device-maintenance-admit",
+    "device-release",
+    "device-maintenance-release",
+  ])
+  expect((await Effect.runPromise(scheduler.snapshot()))[0]).toMatchObject({
+    inFlightBatch: [],
+    inFlightMaintenance: [],
+    waiting: [],
+    waitingMaintenance: [],
+  })
+})
+
 test("worker cleanup has a deadline", async () => {
   const worker = spawn({
     command: [process.execPath, fixture, "settle"],

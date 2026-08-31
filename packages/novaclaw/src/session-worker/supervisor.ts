@@ -214,15 +214,17 @@ export function spawn(input: Input): Handle {
    *
    * `queueRPC` runs worker requests through one serial chain. `await-child` can wait out its whole
    * timeout. A second join behind it would therefore wait for the FIRST CHILD before it even began
-   * observing the second — turning a model's parallel `wait` calls into serial joins. A memory op
-   * behind a permission assertion has the same shape, so both stores of independent work bypass the
-   * transcript-order chain.
+   * observing the second — turning a model's parallel `wait` calls into serial joins. Device
+   * admissions have the same shape: maintenance may wait for a generation lease which this worker
+   * is concurrently trying to release. Serializing those two requests makes the release wait behind
+   * the admission that needs it. Memory operations are independent store calls too, so all three
+   * bypass the transcript-order chain.
    *
    * Nothing about correctness needs the ordering: the worker correlates replies by `requestID`
    * (`client.ts`), not by arrival order, and each fiber awaits its own op before issuing the next, so
-   * per-caller ordering is preserved by the caller. What the serial chain buys the other RPCs is that
-   * they mutate host state the worker also observes; a memory op is a call into a store that
-   * serializes itself.
+   * per-caller ordering is preserved by the caller. Only transcript publication needs the serial
+   * chain: durable event sequences must not overtake one another. The scheduler and memory store own
+   * their own serialization.
    */
   const dispatchRPC = (requestID: string, run: () => Promise<SessionWorkerProtocol.HostMessage>) => {
     void run()
@@ -322,7 +324,7 @@ export function spawn(input: Input): Handle {
           })
           return
         }
-        queueRPC(message.requestID, () => request(message, lifetime.signal))
+        dispatchRPC(message.requestID, () => request(message, lifetime.signal))
         return
       }
       case "permission-assert":
