@@ -323,6 +323,10 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     summaryGate: undefined as Latch | undefined,
     /** Opened when the summary request begins. Pair with `summaryGate` to hold recovery open. */
     summaryStarted: undefined as Latch | undefined,
+    /** When set, the out-of-band title request blocks until this latch opens. */
+    titleGate: undefined as Latch | undefined,
+    /** Opened when an out-of-band title request begins. Pair with `titleGate` for overlap claims. */
+    titleStarted: undefined as Latch | undefined,
     /**
      * Run during every system-context LOAD. The agent-sampling claims need to change the world inside
      * that window — the point being that a switch landing mid-load must not retroactively change the
@@ -459,7 +463,17 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
         const channel = OUT_OF_BAND.find((entry) => system.includes(entry.marker))?.channel
         if (channel === "title") {
           titleRequests.push(request)
-          return Stream.fromIterable(titleTurns.shift() ?? [])
+          const body = Stream.fromIterable(titleTurns.shift() ?? [])
+          const started = controls.titleStarted
+          const gate = controls.titleGate
+          if (!started && !gate) return body
+          return Stream.unwrap(
+            Effect.gen(function* () {
+              if (started) started.open()
+              if (gate) yield* Effect.promise(() => gate.promise)
+              return body
+            }),
+          )
         }
         if (channel === "maintenance") {
           maintenanceRequests.push(request)
