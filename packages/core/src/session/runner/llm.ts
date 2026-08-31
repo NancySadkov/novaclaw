@@ -1981,13 +1981,11 @@ export const layer = Layer.effect(
       let steerInterrupt = false
       let sawToolCall = false
       let lastSteerCheck = Date.now()
-      const providerStream = ProviderStreamLiveness.withStallTimeout(
-        budgetedSource,
+      const providerStream = ProviderStreamLiveness.runForEach(
+        budgetedSource.pipe(Stream.takeUntil(() => steerInterrupt)),
         harness.providerStallTimeoutMs,
         publisher.hasAssistantStarted,
-      ).pipe(
-        Stream.takeUntil(() => steerInterrupt),
-        Stream.runForEach((event) =>
+        (event) =>
           Effect.gen(function* () {
             if (event.type === "tool-call") sawToolCall = true
             // WHICH process served this turn. A server restarted behind the same URL keeps its
@@ -2164,9 +2162,7 @@ export const layer = Layer.effect(
               ),
             ).pipe(FiberSet.run(toolFibers))
           }),
-        ),
-        Effect.ensuring(withPublication(publisher.flush())),
-      )
+      ).pipe(Effect.ensuring(withPublication(publisher.flush())))
 
       // `ProviderDispatch.run` owns scheduler admission, bounded pre-output retry, fairness
       // accounting and unconditional release for BOTH engines. Its slot covers generation only;
