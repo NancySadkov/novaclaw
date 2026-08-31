@@ -246,7 +246,11 @@ export const layer = Layer.effect(
                         // ⚠️ NOT `yield* SessionJoin.Service` — see join.ts. Resolving a service
                         // that is not already in the location graph inside this per-request
                         // handler abandons every tool-call turn. `events` is already built.
-                        join: SessionJoin.fromEvents(events),
+                        join: SessionJoin.fromParts({
+                          events,
+                          session: (id) => store.get(id),
+                          sequence: (id) => EventV2.latestSequence(database.db, id),
+                        }),
                         // ⚠️ Built from parts, NOT `yield* ColleagueHandoff.Service` — the same trap the
                         // line above names for `SessionJoin`: resolving a service that is not already in
                         // the location graph inside this per-request handler abandons the tool-call turn.
