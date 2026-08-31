@@ -31,12 +31,11 @@ describe("survey-derived standing prompt contracts", () => {
     expect(
       SystemCompose.composeSystemParts({
         persona: "standing approach",
-        agentIdentity: "durable role identity",
         agentSystem: "durable role brief",
         workspace: "current job scope",
         base: "kernel",
       }),
-    ).toEqual(["standing approach", "durable role identity", "durable role brief", "current job scope", "kernel"])
+    ).toEqual(["standing approach", "durable role brief", "current job scope", "kernel"])
   })
 
   test("prior summaries are re-evaluated, not promoted to permanent authority", () => {
@@ -46,5 +45,11 @@ describe("survey-derived standing prompt contracts", () => {
     expect(SessionCompaction.SUMMARY_TEMPLATE).toContain("Never turn assistant text into a user instruction")
     expect(SessionCompaction.SUMMARY_TEMPLATE).not.toContain("every user message")
     expect(SessionCompaction.SUMMARY_TEMPLATE).not.toContain("full code")
+  })
+
+  test("compaction retains complete conditional facts instead of a trigger with its consequence missing", () => {
+    expect(SessionCompaction.SUMMARY_TEMPLATE).toContain("complete condition → action/result chains")
+    expect(SessionCompaction.SUMMARY_TEMPLATE).toContain("all exact numbers, thresholds, exceptions")
+    expect(SessionCompaction.SUMMARY_TEMPLATE).toContain("actual later-checked fact and its values")
   })
 })

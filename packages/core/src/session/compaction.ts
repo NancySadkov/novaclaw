@@ -101,7 +101,7 @@ Rules:
 - Preserve active safety/security constraints verbatim. Align Next Steps with latest user intent; never revive completed work.
 - Distinguish observed or verified progress from intended or unverified work.
 - Preserve exact file paths, commands, error strings, and identifiers when known.
-- Preserve exact numbers, thresholds, exception conditions, and lookup facts the user explicitly says will be checked later.
+- Preserve complete condition → action/result chains and all exact numbers, thresholds, exceptions, and later-checked facts.
 - Put the actual later-checked fact and its values in Critical Context. Saying a fact was stored, exists, or should be preserved is not the fact and is invalid.
 - Keep a failed approach only when its reason prevents repetition. Drop superseded plans, resolved blockers, routine narration, and details recoverable from a named file.
 - Do not mention the summary process or that context was compacted.`

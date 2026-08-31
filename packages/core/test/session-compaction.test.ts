@@ -480,7 +480,7 @@ describe("stable compaction prompt", () => {
     expect(fresh.indexOf("</template>")).toBeLessThan(fresh.indexOf(freshInstruction))
     expect(fresh.indexOf(freshInstruction)).toBeLessThan(fresh.indexOf("<history>"))
     expect(fresh).toContain(
-      "Preserve exact numbers, thresholds, exception conditions, and lookup facts the user explicitly says will be checked later.",
+      "Preserve complete condition → action/result chains and all exact numbers, thresholds, exceptions, and later-checked facts.",
     )
     expect(fresh).toContain(
       "Put the actual later-checked fact and its values in Critical Context. Saying a fact was stored, exists, or should be preserved is not the fact and is invalid.",
