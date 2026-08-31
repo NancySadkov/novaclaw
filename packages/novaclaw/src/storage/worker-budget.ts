@@ -1,6 +1,17 @@
 export * as WorkerBudget from "./worker-budget"
 
 import type { Reading } from "./worker-commit"
+import os from "node:os"
+
+const GIB = 1024 * 1024 * 1024
+
+/**
+ * The one fleet ceiling shared by observation and process admission.
+ *
+ * A third of host memory leaves the server, desktop, filesystem cache and ordinary user work outside
+ * the worker fleet. The 2 GiB floor keeps nested parent/child progress possible on small hosts.
+ */
+export const fleetLimitBytes = (totalBytes = os.totalmem()): number => Math.max(2 * GIB, Math.floor(totalBytes / 3))
 
 /**
  * WHO, IF ANYONE, SHOULD BE SHED — the whole decision, as one pure function.
@@ -57,7 +68,10 @@ const mib = (bytes: number) => Math.round(bytes / (1024 * 1024))
 
 /** The heaviest worker — the one shedding actually buys room from. */
 const heaviest = (readings: ReadonlyArray<Reading>): Reading | undefined =>
-  readings.reduce<Reading | undefined>((worst, r) => (worst === undefined || r.bytes > worst.bytes ? r : worst), undefined)
+  readings.reduce<Reading | undefined>(
+    (worst, r) => (worst === undefined || r.bytes > worst.bytes ? r : worst),
+    undefined,
+  )
 
 /**
  * @param streak how many consecutive samples have ALREADY breached, before this one.

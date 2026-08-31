@@ -1,3 +1,5 @@
+import { readdirSync } from "node:fs"
+
 /**
  * The RUN-UNIT table — which directories `bun run test` actually executes, and with what arguments.
  *
@@ -35,6 +37,52 @@
  * numbers were 11.6 s and 5.4 s; quote the warm ones, they are what every subsequent run costs.)
  */
 export const PROMOTED_NOVACLAW_SUBDIRS = ["server", "v2", "config", "tool", "control-plane", "fixture"] as const
+
+/**
+ * Full-tier NovaClaw files that require their own process window.
+ *
+ * Keep this list surgical. A solo file pays for another Bun process and loses the cross-file
+ * composition signal, so a file joins only after the combined unit has demonstrated a concrete
+ * incompatibility. `run-process.test.ts` starts nested CLI/server/session-worker processes and opens
+ * the Ladybug WASM knowledge graph. In the 2026-08-31 milestone gate it shared a 69-file process that
+ * peaked at 9.76 GB and Ladybug crashed with an out-of-bounds table access; the exact file then passed
+ * 14/14 alone. Isolation gives the subprocess smoke a host-safe admission boundary instead of asking
+ * an in-process WASM engine to survive unrelated test fan-out.
+ */
+export const SOLO_NOVACLAW_TEST_FILES = [
+  "test/cli/lazy-command.test.ts",
+  "test/cli/run/run-process.test.ts",
+  "test/mcp/config-reload.test.ts",
+] as const
+
+/**
+ * The `--full` tier's run units for NovaClaw: one bulk unit plus explicitly isolated files.
+ *
+ * This is pure gate configuration kept outside `script/test.ts` so tests can prove that an isolated
+ * file is absent from bulk and still runs exactly once. Importing `test.ts` would execute the gate as
+ * a side effect, which is the same unobservable-configuration hole `PACKAGES` was moved here to close.
+ */
+export function novaclawSubUnits(dir: string, promoted: ReadonlySet<string>): { unit: string; args: string[] }[] {
+  const root = `${dir}/test`
+  const paths: string[] = []
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      if (promoted.has(entry.name)) continue
+      for (const found of readdirSync(`${root}/${entry.name}`, { recursive: true })) {
+        const name = String(found).replaceAll("\\", "/")
+        if (name.endsWith(".test.ts")) paths.push(`test/${entry.name}/${name}`)
+      }
+    } else if (entry.name.endsWith(".test.ts")) {
+      paths.push(`test/${entry.name}`)
+    }
+  }
+  const solo = SOLO_NOVACLAW_TEST_FILES.filter((file) => paths.includes(file))
+  const bulk = paths.filter((file) => !solo.includes(file as (typeof SOLO_NOVACLAW_TEST_FILES)[number]))
+  return [
+    ...(bulk.length > 0 ? [{ unit: "test/*", args: bulk }] : []),
+    ...solo.map((file) => ({ unit: file, args: [file] })),
+  ]
+}
 
 /**
  * Hang backstops for the promoted subdirs whose HONEST runtime is near the default.
@@ -224,6 +272,14 @@ export const PACKAGES: Pkg[] = [
     // a real hang bounded (a hang runs forever; this does not) with honest margin over the slowest
     // honest run — the same reasoning `server` above carries, and the same lesson: an under-set
     // backstop turns a slow machine into a fake red.
-    subdirWallclockMs: { "test/*": 900_000 },
+    //
+    // `run-process.test.ts` measured 187.75 s when run alone on 2026-08-31. Its first isolated gate
+    // then inherited the 150 s default and was killed after 10/14 passing cases, with host commit at
+    // only 68%. The process boundary fixed a real memory-composition crash; this measured backstop
+    // keeps that fix from manufacturing a different red while still bounding an actual hang.
+    subdirWallclockMs: {
+      "test/*": 900_000,
+      "test/cli/run/run-process.test.ts": 300_000,
+    },
   },
 ]

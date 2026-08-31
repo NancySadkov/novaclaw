@@ -13,6 +13,11 @@ import { WorkerCommit } from "@/storage/worker-commit"
 const MIB = 1024 * 1024
 const limits = { perWorkerBytes: 2048 * MIB, fleetBytes: 6144 * MIB, consecutiveSamples: 3 }
 
+test("the fleet ceiling leaves two thirds of host memory outside session workers", () => {
+  expect(WorkerBudget.fleetLimitBytes(12 * 1024 * MIB)).toBe(4 * 1024 * MIB)
+  expect(WorkerBudget.fleetLimitBytes(3 * 1024 * MIB)).toBe(2 * 1024 * MIB)
+})
+
 describe("who gets shed", () => {
   test("a healthy fleet is left alone", () => {
     const readings = [

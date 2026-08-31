@@ -29,6 +29,7 @@ import { SessionInterruptNotice } from "@novaclaw/core/session/interrupt-notice"
 import { SessionStore } from "@novaclaw/core/session/store"
 import os from "node:os"
 import { SessionWorkerCommand } from "./command"
+import { SessionWorkerAdmission } from "./admission"
 import { SessionWorkerDeviceBridge } from "./device-bridge"
 import { SessionWorkerEventBridge } from "./event-bridge"
 import { SessionWorkerExecutionBridge } from "./execution-bridge"
@@ -114,6 +115,10 @@ export const layer = Layer.effect(
     const memory = Memory.client(yield* Memory.node.service)
     const ownerID = `server_${crypto.randomUUID()}`
     const command = SessionWorkerCommand.current()
+    // Process admission is deliberately OUTSIDE the worker. A child queued here consumes durable
+    // session state and no resident process; once admitted, the permit covers the worker's complete
+    // drain and is released on success, failure, or interruption by `workerAdmission.run`.
+    const workerAdmission = yield* SessionWorkerAdmission.make()
 
     const coordinator = yield* SessionRunCoordinator.make<SessionSchema.ID, SessionRunner.RunError>({
       drain: Effect.fnUntraced(function* (sessionID: SessionSchema.ID, force) {
@@ -169,216 +174,232 @@ export const layer = Layer.effect(
         }
         const session = effective === stored.location.directory ? stored : ((yield* store.get(sessionID)) ?? stored)
 
-        const located = locations.get(session.location)
-        // Location identity is DERIVED substrate state, including for the scratch fallback. Do not
-        // fabricate a second identity here: a non-repository scratch folder resolves to origin
-        // `global` and the path-root fallback, exactly like every other location. The old literal
-        // (`origin: "server"`, `root: directory`) disagreed with Location.layer and made the same
-        // session appear under two permission/event scopes depending on which side of the worker
-        // boundary observed it.
-        const location = yield* SessionWorkerLocation.resolve(located)
-        const publishStatus = (status: SessionStatusEvent.Info) =>
-          events.publish(SessionStatusEvent.Status, { sessionID, status }, { location }).pipe(Effect.ignore)
-        yield* publishStatus({ type: "busy" })
+        return yield* workerAdmission.run(
+          {
+            sessionID: String(sessionID),
+            priority: SessionScheduler.isInteractive(SessionScheduler.classForSessionType(session.type))
+              ? "interactive"
+              : "batch",
+          },
+          Effect.gen(function* () {
+            const located = locations.get(session.location)
+            // Location identity is DERIVED substrate state, including for the scratch fallback. Do not
+            // fabricate a second identity here: a non-repository scratch folder resolves to origin
+            // `global` and the path-root fallback, exactly like every other location. The old literal
+            // (`origin: "server"`, `root: directory`) disagreed with Location.layer and made the same
+            // session appear under two permission/event scopes depending on which side of the worker
+            // boundary observed it.
+            const location = yield* SessionWorkerLocation.resolve(located)
+            const publishStatus = (status: SessionStatusEvent.Info) =>
+              events.publish(SessionStatusEvent.Status, { sessionID, status }, { location }).pipe(Effect.ignore)
+            yield* publishStatus({ type: "busy" })
 
-        const runLocated = <A, E, R>(effect: Effect.Effect<A, E, R>, signal: AbortSignal) =>
-          Effect.runPromise(effect.pipe(Effect.provide(located)) as Effect.Effect<A, E>, { signal })
-        // The transcript's half of an interruption. The ledger records the interrupt either way;
-        // a ledger row is not a message, so without this a turn stopped before it replied left the
-        // prompt with nothing after it. Shared with the in-process executor because THIS is the
-        // layer the server binds — a fix that lives only in `execution/local.ts` never runs.
-        const noteInterrupted = SessionInterruptNotice.publish({ events, store, sessionID, located })
-        // `idle` is the scheduler axis only: it means this session is no longer consuming a worker.
-        // The attempt row is updated BEFORE every call below and owns whether the stop was settled,
-        // interrupted, failed or paused. UI attention must join both facts; treating idle alone as
-        // success is how an exhausted recovery used to disappear behind a healthy-looking roster.
-        const publishIdle = Effect.gen(function* () {
-          const latest = yield* store.get(sessionID).pipe(Effect.orElseSucceed(() => undefined))
-          if (latest?.result === undefined) yield* publishStatus({ type: "idle" })
-        })
-
-        for (;;) {
-          const lease = yield* attempts.start(sessionID, ownerID)
-          const workerInput: SessionWorkerSupervisor.Input = {
-            command: command.command,
-            env: command.env,
-            lease,
-            directory: session.location.directory,
-            workspaceID: session.location.workspaceID,
-            force,
-            memoryLimitBytes: workerMemoryLimitBytes(command.workerPath),
-            // Every host Effect is tied to this worker's lifetime. Once supervision stops the
-            // child, an outstanding admission or publication must unwind before deletion can
-            // continue; it may never finish later against state the worker no longer owns.
-            onHeartbeat: (message, signal) =>
-              Effect.runPromise(SessionWorkerExecutionBridge.heartbeat({ attempts, lease, message }), { signal }),
-            onPublishEvent: (message, signal) =>
-              Effect.runPromise(SessionWorkerEventBridge.publish({ events, lease, location, message }), { signal }),
-            onDeviceRequest: (message, signal) =>
-              Effect.runPromise(SessionWorkerDeviceBridge.handle({ scheduler, lease, message }), { signal }),
-            onInteractionRequest: (message, signal) =>
-              runLocated(
-                Effect.gen(function* () {
-                  // ⚠️ Resolved HERE, like `spawner` below and unlike `join`: `AgentV2` IS a
-                  // location node, so this is the ordinary path rather than the per-request trap.
-                  // The distinction the warning draws is "already in the location graph", not
-                  // "resolved inside the handler".
-                  const roster = yield* AgentV2.Service
-                  return yield* SessionWorkerInteractionBridge.handle({
-                    permission: yield* PermissionV2.Service,
-                    question: yield* QuestionV2.Service,
-                    // Location-scoped, exactly like the two above — which is why spawn rides this
-                    // channel rather than getting one of its own.
-                    spawner: yield* SessionSpawner.Service,
-                    // ⚠️ NOT `yield* SessionJoin.Service` — see join.ts. Resolving a service
-                    // that is not already in the location graph inside this per-request
-                    // handler abandons every tool-call turn. `events` is already built.
-                    join: SessionJoin.fromEvents(events),
-                    // ⚠️ Built from parts, NOT `yield* ColleagueHandoff.Service` — the same trap the
-                    // line above names for `SessionJoin`: resolving a service that is not already in
-                    // the location graph inside this per-request handler abandons the tool-call turn.
-                    // Measured: the first live hand-off left the sender's call `running` forever with
-                    // nothing in the log.
-                    colleague: ColleagueHandoff.fromParts({
-                      db: database.db,
-                      events,
-                      session: (id) => store.get(id),
-                      // Staffing runs here too, and must: a hire written from inside the worker
-                      // reloads the WORKER's roster, leaving the colleague durable and invisible to
-                      // the instance — measured 2026-08-21, `Procius` was in the store and absent
-                      // from `GET /api/agent`.
-                      store: agentConfig,
-                      refresh: roster.reload(),
-                      takenNames: roster
-                        .all()
-                        .pipe(Effect.map((all) => all.flatMap((one) => [String(one.id), one.name ?? ""]))),
-                      // `true` is honest on THIS path and is not a guess: the coordinator either
-                      // starts a drain for that session or marks a pending wake on the one already
-                      // running, so the receiver's turn happens either way. The relay's own `wake`
-                      // returns false only when no executor is attached at all, which cannot be the
-                      // case inside a live worker host.
-                      wake: (id) => coordinator.wake(id).pipe(Effect.as(true)),
-                      forget: (colleague) =>
-                        AgentRetire.everything({ db: database.db, events, memory, agent: colleague, at: Date.now() }),
-                    }),
-                    lease,
-                    message,
-                  })
-                }),
-                signal,
-              ),
-            /**
-             * 🔴 The host's engine is THE engine. `memory` above is the client this layer resolved
-             * once at build; the worker's `Memory.node` replacement turns every op inside the turn
-             * into one of these, so there is exactly one WASM store on the graph directory.
-             *
-             * ⚠️ NOT inside `runLocated`, unlike the interaction bridge — `MemoryClient` is a GLOBAL
-             * node, and resolving it per request would be the trap `SessionJoin` names above. It is
-             * also why this needs no location: the graph is one per instance, never one per folder.
-             */
-            onMemoryRequest: (message, signal) =>
-              Effect.runPromise(SessionWorkerMemoryBridge.handle({ memory, lease, message }), { signal }),
-            onExecutionRequest: (message, signal) =>
-              Effect.runPromise(
-                SessionWorkerExecutionBridge.handle({
-                  attempts,
-                  lease,
-                  message,
-                  contextUpdated: (update) =>
-                    SessionContextEpoch.publishUpdate(
-                      database.db,
-                      events,
-                      { sessionID, messageID: update.messageID, timestamp: update.timestamp, text: update.text },
-                      update.snapshot,
-                    ),
-                }),
-                { signal },
-              ),
-            onExit: () => Effect.runPromise(SessionWorkerDeviceBridge.reclaim(scheduler, lease)),
-          }
-          const spawned = yield* Effect.try({
-            try: () => SessionWorkerSupervisor.spawn(workerInput),
-            catch: (error) => (error instanceof Error ? error : new Error(String(error))),
-          }).pipe(Effect.exit)
-          let outcome: SessionWorkerSupervisor.Outcome
-          if (Exit.isFailure(spawned)) {
-            const error = Cause.squash(spawned.cause)
-            outcome = {
-              type: "failed",
-              classification: "worker-start",
-              detail: error instanceof Error ? error.message : String(error),
-            }
-          } else {
-            // 🔴 The instance's ONLY fleet view. Without it every memory bound stays per-worker, and
-            // N workers each within their own limit can exhaust the host with nobody able to see it.
-            // Released on EVERY exit — success, failure and interrupt — via `ensuring` below, because
-            // a registry that leaks entries names pids the OS may have handed to somebody else.
-            const releaseWorker = WorkerRegistry.register({
-              pid: spawned.value.pid,
-              sessionID: String(sessionID),
-              at: Date.now(),
+            const runLocated = <A, E, R>(effect: Effect.Effect<A, E, R>, signal: AbortSignal) =>
+              Effect.runPromise(effect.pipe(Effect.provide(located)) as Effect.Effect<A, E>, { signal })
+            // The transcript's half of an interruption. The ledger records the interrupt either way;
+            // a ledger row is not a message, so without this a turn stopped before it replied left the
+            // prompt with nothing after it. Shared with the in-process executor because THIS is the
+            // layer the server binds — a fix that lives only in `execution/local.ts` never runs.
+            const noteInterrupted = SessionInterruptNotice.publish({ events, store, sessionID, located })
+            // `idle` is the scheduler axis only: it means this session is no longer consuming a worker.
+            // The attempt row is updated BEFORE every call below and owns whether the stop was settled,
+            // interrupted, failed or paused. UI attention must join both facts; treating idle alone as
+            // success is how an exhausted recovery used to disappear behind a healthy-looking roster.
+            const publishIdle = Effect.gen(function* () {
+              const latest = yield* store.get(sessionID).pipe(Effect.orElseSucceed(() => undefined))
+              if (latest?.result === undefined) yield* publishStatus({ type: "idle" })
             })
-            outcome = yield* Effect.promise(() => spawned.value.result).pipe(
-              Effect.ensuring(Effect.sync(releaseWorker)),
-              Effect.onInterrupt(() =>
-                Effect.promise(() => spawned.value.interrupt()).pipe(
-                  Effect.flatMap(() => attempts.settle(lease, "interrupted", { classification: "interrupt" })),
-                  Effect.andThen(noteInterrupted),
-                  Effect.andThen(publishIdle),
-                ),
-              ),
-            )
-          }
 
-          if (outcome.type === "settled") {
-            yield* attempts.settle(lease, "settled")
-            yield* publishIdle
-            return
-          }
-          if (outcome.type === "interrupted") {
-            yield* attempts.settle(lease, "interrupted", { classification: "interrupt" })
-            yield* noteInterrupted
-            yield* publishIdle
-            return
-          }
-
-          const detail = failure(outcome)
-          const decision = yield* attempts.recoverFailure(lease, {
-            classification: outcome.type === "failed" ? outcome.classification : outcome.type,
-            detail,
-          })
-          if (!decision?.automatic) {
-            yield* events
-              .publish(
-                SessionEvent.Synthetic,
-                {
-                  sessionID,
-                  messageID: SessionMessage.ID.create(),
-                  timestamp: yield* DateTime.now,
-                  text: pausedNotice(
-                    decision?.reason === "outcome-unknown" ? "outcome-unknown" : "repeated-failure",
-                    detail,
+            for (;;) {
+              const lease = yield* attempts.start(sessionID, ownerID)
+              const workerInput: SessionWorkerSupervisor.Input = {
+                command: command.command,
+                env: command.env,
+                lease,
+                directory: session.location.directory,
+                workspaceID: session.location.workspaceID,
+                force,
+                memoryLimitBytes: workerMemoryLimitBytes(command.workerPath),
+                // Every host Effect is tied to this worker's lifetime. Once supervision stops the
+                // child, an outstanding admission or publication must unwind before deletion can
+                // continue; it may never finish later against state the worker no longer owns.
+                onHeartbeat: (message, signal) =>
+                  Effect.runPromise(SessionWorkerExecutionBridge.heartbeat({ attempts, lease, message }), { signal }),
+                onPublishEvent: (message, signal) =>
+                  Effect.runPromise(SessionWorkerEventBridge.publish({ events, lease, location, message }), { signal }),
+                onDeviceRequest: (message, signal) =>
+                  Effect.runPromise(SessionWorkerDeviceBridge.handle({ scheduler, lease, message }), { signal }),
+                onInteractionRequest: (message, signal) =>
+                  runLocated(
+                    Effect.gen(function* () {
+                      // ⚠️ Resolved HERE, like `spawner` below and unlike `join`: `AgentV2` IS a
+                      // location node, so this is the ordinary path rather than the per-request trap.
+                      // The distinction the warning draws is "already in the location graph", not
+                      // "resolved inside the handler".
+                      const roster = yield* AgentV2.Service
+                      return yield* SessionWorkerInteractionBridge.handle({
+                        permission: yield* PermissionV2.Service,
+                        question: yield* QuestionV2.Service,
+                        // Location-scoped, exactly like the two above — which is why spawn rides this
+                        // channel rather than getting one of its own.
+                        spawner: yield* SessionSpawner.Service,
+                        // ⚠️ NOT `yield* SessionJoin.Service` — see join.ts. Resolving a service
+                        // that is not already in the location graph inside this per-request
+                        // handler abandons every tool-call turn. `events` is already built.
+                        join: SessionJoin.fromEvents(events),
+                        // ⚠️ Built from parts, NOT `yield* ColleagueHandoff.Service` — the same trap the
+                        // line above names for `SessionJoin`: resolving a service that is not already in
+                        // the location graph inside this per-request handler abandons the tool-call turn.
+                        // Measured: the first live hand-off left the sender's call `running` forever with
+                        // nothing in the log.
+                        colleague: ColleagueHandoff.fromParts({
+                          db: database.db,
+                          events,
+                          session: (id) => store.get(id),
+                          // Staffing runs here too, and must: a hire written from inside the worker
+                          // reloads the WORKER's roster, leaving the colleague durable and invisible to
+                          // the instance — measured 2026-08-21, `Procius` was in the store and absent
+                          // from `GET /api/agent`.
+                          store: agentConfig,
+                          refresh: roster.reload(),
+                          takenNames: roster
+                            .all()
+                            .pipe(Effect.map((all) => all.flatMap((one) => [String(one.id), one.name ?? ""]))),
+                          // `true` is honest on THIS path and is not a guess: the coordinator either
+                          // starts a drain for that session or marks a pending wake on the one already
+                          // running, so the receiver's turn happens either way. The relay's own `wake`
+                          // returns false only when no executor is attached at all, which cannot be the
+                          // case inside a live worker host.
+                          wake: (id) => coordinator.wake(id).pipe(Effect.as(true)),
+                          forget: (colleague) =>
+                            AgentRetire.everything({
+                              db: database.db,
+                              events,
+                              memory,
+                              agent: colleague,
+                              at: Date.now(),
+                            }),
+                        }),
+                        lease,
+                        message,
+                      })
+                    }),
+                    signal,
                   ),
-                },
-                { location },
-              )
-              .pipe(Effect.ignore)
-            yield* publishIdle
-            return yield* Effect.die(new Error(detail))
-          }
-          const info = yield* attempts.get(sessionID)
-          yield* publishStatus({
-            type: "retry",
-            attempt: info?.failureCount ?? 1,
-            next: 0,
-            message:
-              decision.action === "continue"
-                ? "The session worker stopped after a safe checkpoint. Continuing in a fresh worker…"
-                : decision.reason === "replay-safe-tool"
-                  ? "The session worker stopped during a read-only tool. Retrying safely in a fresh worker…"
-                  : "The session worker stopped before a side effect. Retrying in a fresh worker…",
-          })
-        }
+                /**
+                 * 🔴 The host's engine is THE engine. `memory` above is the client this layer resolved
+                 * once at build; the worker's `Memory.node` replacement turns every op inside the turn
+                 * into one of these, so there is exactly one WASM store on the graph directory.
+                 *
+                 * ⚠️ NOT inside `runLocated`, unlike the interaction bridge — `MemoryClient` is a GLOBAL
+                 * node, and resolving it per request would be the trap `SessionJoin` names above. It is
+                 * also why this needs no location: the graph is one per instance, never one per folder.
+                 */
+                onMemoryRequest: (message, signal) =>
+                  Effect.runPromise(SessionWorkerMemoryBridge.handle({ memory, lease, message }), { signal }),
+                onExecutionRequest: (message, signal) =>
+                  Effect.runPromise(
+                    SessionWorkerExecutionBridge.handle({
+                      attempts,
+                      lease,
+                      message,
+                      contextUpdated: (update) =>
+                        SessionContextEpoch.publishUpdate(
+                          database.db,
+                          events,
+                          { sessionID, messageID: update.messageID, timestamp: update.timestamp, text: update.text },
+                          update.snapshot,
+                        ),
+                    }),
+                    { signal },
+                  ),
+                onExit: () => Effect.runPromise(SessionWorkerDeviceBridge.reclaim(scheduler, lease)),
+              }
+              const spawned = yield* Effect.try({
+                try: () => SessionWorkerSupervisor.spawn(workerInput),
+                catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+              }).pipe(Effect.exit)
+              let outcome: SessionWorkerSupervisor.Outcome
+              if (Exit.isFailure(spawned)) {
+                const error = Cause.squash(spawned.cause)
+                outcome = {
+                  type: "failed",
+                  classification: "worker-start",
+                  detail: error instanceof Error ? error.message : String(error),
+                }
+              } else {
+                // 🔴 The instance's ONLY fleet view. Without it every memory bound stays per-worker, and
+                // N workers each within their own limit can exhaust the host with nobody able to see it.
+                // Released on EVERY exit — success, failure and interrupt — via `ensuring` below, because
+                // a registry that leaks entries names pids the OS may have handed to somebody else.
+                const releaseWorker = WorkerRegistry.register({
+                  pid: spawned.value.pid,
+                  sessionID: String(sessionID),
+                  at: Date.now(),
+                })
+                outcome = yield* Effect.promise(() => spawned.value.result).pipe(
+                  Effect.ensuring(Effect.sync(releaseWorker)),
+                  Effect.onInterrupt(() =>
+                    Effect.promise(() => spawned.value.interrupt()).pipe(
+                      Effect.flatMap(() => attempts.settle(lease, "interrupted", { classification: "interrupt" })),
+                      Effect.andThen(noteInterrupted),
+                      Effect.andThen(publishIdle),
+                    ),
+                  ),
+                )
+              }
+
+              if (outcome.type === "settled") {
+                yield* attempts.settle(lease, "settled")
+                yield* publishIdle
+                return
+              }
+              if (outcome.type === "interrupted") {
+                yield* attempts.settle(lease, "interrupted", { classification: "interrupt" })
+                yield* noteInterrupted
+                yield* publishIdle
+                return
+              }
+
+              const detail = failure(outcome)
+              const decision = yield* attempts.recoverFailure(lease, {
+                classification: outcome.type === "failed" ? outcome.classification : outcome.type,
+                detail,
+              })
+              if (!decision?.automatic) {
+                yield* events
+                  .publish(
+                    SessionEvent.Synthetic,
+                    {
+                      sessionID,
+                      messageID: SessionMessage.ID.create(),
+                      timestamp: yield* DateTime.now,
+                      text: pausedNotice(
+                        decision?.reason === "outcome-unknown" ? "outcome-unknown" : "repeated-failure",
+                        detail,
+                      ),
+                    },
+                    { location },
+                  )
+                  .pipe(Effect.ignore)
+                yield* publishIdle
+                return yield* Effect.die(new Error(detail))
+              }
+              const info = yield* attempts.get(sessionID)
+              yield* publishStatus({
+                type: "retry",
+                attempt: info?.failureCount ?? 1,
+                next: 0,
+                message:
+                  decision.action === "continue"
+                    ? "The session worker stopped after a safe checkpoint. Continuing in a fresh worker…"
+                    : decision.reason === "replay-safe-tool"
+                      ? "The session worker stopped during a read-only tool. Retrying safely in a fresh worker…"
+                      : "The session worker stopped before a side effect. Retrying in a fresh worker…",
+              })
+            }
+          }),
+        )
       }),
     })
 
