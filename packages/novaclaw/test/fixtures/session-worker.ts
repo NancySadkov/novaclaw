@@ -1,7 +1,7 @@
 import { createInterface } from "node:readline"
 import childProcess from "node:child_process"
 import { SessionWorkerProtocol } from "@novaclaw/core/session/execution/worker-protocol"
-import type { SessionSchema } from "@novaclaw/core/session/schema"
+import { SessionSchema } from "@novaclaw/core/session/schema"
 
 const mode = process.argv[2] ?? "settle"
 const input = createInterface({ input: process.stdin })
@@ -15,6 +15,7 @@ let identity:
   | undefined
 let acknowledgements = 0
 let deviceStage = 0
+let joinedChildren = 0
 
 const emit = (message: SessionWorkerProtocol.WorkerMessage) =>
   process.stdout.write(SessionWorkerProtocol.encodeLine(message))
@@ -106,6 +107,19 @@ input.on("line", (line) => {
       })
       return
     }
+    if (mode === "await-parallel") {
+      for (const [requestID, childID] of [
+        ["rpc_wait_1", SessionSchema.ID.make("ses_worker_child_one")],
+        ["rpc_wait_2", SessionSchema.ID.make("ses_worker_child_two")],
+      ] as const)
+        emit({
+          ...identity,
+          type: "await-child",
+          requestID,
+          input: { childID, timeoutMs: 1_000 },
+        })
+      return
+    }
     // `silent` stays alive but sends no heartbeat. This is a non-blocking hang fixture: it exercises
     // liveness without burning CPU or allocating memory in the test environment.
     setInterval(() => undefined, 1_000)
@@ -148,5 +162,9 @@ input.on("line", (line) => {
     })
   } else if (message.type === "question-result" && message.outcome === "answered") {
     emit({ ...identity, type: "settled" })
+  }
+  if (message.type === "await-child-result") {
+    joinedChildren++
+    if (joinedChildren === 2) emit({ ...identity, type: "settled" })
   }
 })

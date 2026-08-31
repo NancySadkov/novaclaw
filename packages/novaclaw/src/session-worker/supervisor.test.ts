@@ -309,25 +309,61 @@ test("permission and question waits execute in host-owned services", async () =>
     heartbeatTimeoutMs: 2_000,
     onInteractionRequest: (message) => {
       handled.push(message.type)
-      return Effect.runPromise(SessionWorkerInteractionBridge.handle({
-        permission,
-        question,
-        spawner: spawnerStub,
-        join: joinStub,
-        // Host-side hand-off is not what this case exercises — it must never run here.
-        colleague: {
-          deliver: () => Effect.die("unused"),
-          deliverGroup: () => Effect.die("unused"),
-          hire: () => Effect.die("unused"),
-          retire: () => Effect.die("unused"),
-        },
-        lease,
-        message,
-      }))
+      return Effect.runPromise(
+        SessionWorkerInteractionBridge.handle({
+          permission,
+          question,
+          spawner: spawnerStub,
+          join: joinStub,
+          // Host-side hand-off is not what this case exercises — it must never run here.
+          colleague: {
+            deliver: () => Effect.die("unused"),
+            deliverGroup: () => Effect.die("unused"),
+            hire: () => Effect.die("unused"),
+            retire: () => Effect.die("unused"),
+          },
+          lease,
+          message,
+        }),
+      )
     },
   })
   expect(await worker.result).toEqual({ type: "settled" })
   expect(handled).toEqual(["permission-assert", "question-ask"])
+})
+
+test("parallel child joins begin independently instead of serializing behind the first wait", async () => {
+  let releaseFirst!: () => void
+  const secondStarted = new Promise<void>((resolve) => {
+    releaseFirst = resolve
+  })
+  const started: string[] = []
+  const worker = spawn({
+    command: [process.execPath, fixture, "await-parallel"],
+    lease,
+    directory: process.cwd(),
+    force: false,
+    startupTimeoutMs: 8_000,
+    heartbeatTimeoutMs: 2_000,
+    onInteractionRequest: async (message) => {
+      if (message.type !== "await-child") throw new Error(`unexpected interaction ${message.type}`)
+      started.push(message.requestID)
+      if (message.requestID === "rpc_wait_1") await secondStarted
+      else releaseFirst()
+      return {
+        version: 1,
+        type: "await-child-result",
+        sessionID: message.sessionID,
+        attemptID: message.attemptID,
+        generation: message.generation,
+        requestID: message.requestID,
+        outcome: "completed",
+        result: message.input.childID,
+      }
+    },
+  })
+  expect(await worker.result).toEqual({ type: "settled" })
+  expect(started).toEqual(["rpc_wait_1", "rpc_wait_2"])
 })
 
 test("the standard worker entrypoint publishes through the host and settles", async () => {

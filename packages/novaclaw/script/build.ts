@@ -156,7 +156,7 @@ const waitForServer = async (url: string, attempts = 100): Promise<void> => {
   return waitForServer(url, attempts - 1)
 }
 
-async function smokeServer(binaryPath: string) {
+async function smokeServer(binaryPath: string, expectEmbeddedUI: boolean) {
   const probe = Bun.serve({ port: 0, fetch: () => new Response() })
   const port = probe.port
   probe.stop(true)
@@ -171,7 +171,13 @@ async function smokeServer(binaryPath: string) {
   try {
     await waitForServer(url)
     const html = await fetchSmoke(url).then((response) => response.text())
-    if (!html.includes("<title>NovaClaw</title>")) throw new Error("Compiled server did not serve the embedded UI")
+    const title = expectEmbeddedUI ? "<title>NovaClaw</title>" : "<title>NovaClaw API</title>"
+    if (!html.includes(title))
+      throw new Error(
+        expectEmbeddedUI
+          ? "Compiled server did not serve the embedded UI"
+          : "Compiled server did not serve the API landing page",
+      )
     const memory = await fetchSmoke(`${url}/memory/stats`).then((response) => response.json())
     if (memory.total !== 0 || memory.valid !== 0)
       throw new Error("Compiled server memory smoke returned unexpected data")
@@ -272,13 +278,14 @@ for (const item of targets) {
       execArgv: [`--user-agent=novaclaw/${Script.version}`, "--use-system-ca", "--"],
       // Left empty, a compiled binary ships with BUN's icon and Bun's version metadata — so the
       // CLI showed up in Explorer and Task Manager as something the user never installed. Point it
-      // at the canonical generated icon (scripts/generate-brand.ts owns it; referenced rather than
-      // copied so a rebrand cannot leave a second stale copy behind) and stamp our own identity.
+      // at the canonical tracked channel icon and stamp our own identity. Do not read the desktop
+      // packager's `resources/icons` staging directory here: a headless/server build does not run
+      // desktop predev, so that generated copy legitimately does not exist.
       // Only meaningful for win32 targets; Bun ignores it elsewhere, but keep it explicit.
       windows:
         item.os === "win32"
           ? {
-              icon: path.resolve(dir, "../desktop/resources/icons/icon.ico"),
+              icon: path.resolve(dir, `../desktop/icons/${Script.channel}/icon.ico`),
               title: "NovaClaw",
               publisher: "Nancy Sadkov",
               version: Script.version,
@@ -319,19 +326,17 @@ for (const item of targets) {
     console.warn(`WARNING: ${name} ships NO DHT sidecar (${dhtBinary}) — it discovers by LAN and typed addresses only.`)
   }
 
-  // Smoke test: only run if binary is for current platform — and only when the UI is actually
-  // embedded. A `--skip-embed-web-ui` (server-only) binary bundles no UI, so smokeServer's
-  // `<title>NovaClaw</title>` assertion would always throw → process.exit(1) on a perfectly good
-  // build (the standalone server serves `<title>NovaClaw API</title>`). Its HTTP serving is smoked
-  // separately by build-linux.sh (--version + /api/health). See todo/linux-build.md (server-only).
-  if (item.os === process.platform && item.arch === process.arch && !item.abi && !skipEmbedWebUi) {
+  // Smoke every native artifact, including the server-only build. The latter has an API landing page
+  // instead of the embedded HTML shell, but it still owes the same real boot + HTTP proof. Skipping
+  // it here left long-run rigs able to spend hours on an artifact that had only answered `--version`.
+  if (item.os === process.platform && item.arch === process.arch && !item.abi) {
     const binaryPath = `dist/${name}/bin/novaclaw`
     console.log(`Running smoke test: ${binaryPath} --version`)
     try {
       const versionOutput = await $`${binaryPath} --version`.text()
       console.log(`Smoke test passed: ${versionOutput.trim()}`)
       console.log(`Running server smoke test: ${binaryPath} serve`)
-      await smokeServer(binaryPath)
+      await smokeServer(binaryPath, !skipEmbedWebUi)
       console.log(`Server smoke test passed`)
     } catch (e) {
       console.error(`Smoke test failed for ${name}:`, e)

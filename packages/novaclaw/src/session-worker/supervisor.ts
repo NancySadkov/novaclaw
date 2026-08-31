@@ -210,13 +210,13 @@ export function spawn(input: Input): Handle {
   }
 
   /**
-   * 🔴 **The one RPC class that does NOT join `rpcTail`, and the reason is a deadline nobody owns.**
+   * 🔴 **RPCs that do NOT join `rpcTail`, and the reason is a deadline nobody owns.**
    *
-   * `queueRPC` runs every worker request through one serial chain. Two of them block for as long as a
-   * human takes: `permission-assert` waits on the user's answer, and `await-child` waits out its whole
-   * timeout. A memory op behind either would stall for minutes — so the `kb` tool of a PARALLEL tool
-   * call would hang while an unrelated permission dialog sat open, and auto-extraction at end of turn
-   * would queue behind whatever was still pending.
+   * `queueRPC` runs worker requests through one serial chain. `await-child` can wait out its whole
+   * timeout. A second join behind it would therefore wait for the FIRST CHILD before it even began
+   * observing the second — turning a model's parallel `wait` calls into serial joins. A memory op
+   * behind a permission assertion has the same shape, so both stores of independent work bypass the
+   * transcript-order chain.
    *
    * Nothing about correctness needs the ordering: the worker correlates replies by `requestID`
    * (`client.ts`), not by arrival order, and each fiber awaits its own op before issuing the next, so
@@ -330,7 +330,6 @@ export function spawn(input: Input): Handle {
       // Spawn rides the INTERACTION channel because it needs the same thing those two do:
       // the host's LOCATION services. `SessionSpawner` is a location node, and this is the
       // only worker->host path already resolved inside `runLocated`.
-      case "await-child":
       // A colleague hand-off rides this channel for the same reason spawn does: it needs the host's
       // LOCATION services, and this is the one worker→host path already resolved inside `runLocated`.
       case "colleague-request":
@@ -352,49 +351,60 @@ export function spawn(input: Input): Handle {
                   requestID: message.requestID,
                   outcome: "rejected",
                 }
-              : message.type === "await-child"
+              : message.type === "spawn-child"
                 ? {
                     version: SessionWorkerProtocol.VERSION,
-                    type: "await-child-result",
+                    type: "spawn-result",
                     sessionID: input.lease.sessionID,
                     attemptID: input.lease.attemptID,
                     generation: input.lease.generation,
                     requestID: message.requestID,
                     outcome: "rejected",
                   }
-                : message.type === "spawn-child"
+                : message.type === "permission-assert"
                   ? {
                       version: SessionWorkerProtocol.VERSION,
-                      type: "spawn-result",
+                      type: "permission-result",
                       sessionID: input.lease.sessionID,
                       attemptID: input.lease.attemptID,
                       generation: input.lease.generation,
                       requestID: message.requestID,
                       outcome: "rejected",
                     }
-                  : message.type === "permission-assert"
-                    ? {
-                        version: SessionWorkerProtocol.VERSION,
-                        type: "permission-result",
-                        sessionID: input.lease.sessionID,
-                        attemptID: input.lease.attemptID,
-                        generation: input.lease.generation,
-                        requestID: message.requestID,
-                        outcome: "rejected",
-                      }
-                    : {
-                        version: SessionWorkerProtocol.VERSION,
-                        type: "question-result",
-                        sessionID: input.lease.sessionID,
-                        attemptID: input.lease.attemptID,
-                        generation: input.lease.generation,
-                        requestID: message.requestID,
-                        outcome: "rejected",
-                      },
+                  : {
+                      version: SessionWorkerProtocol.VERSION,
+                      type: "question-result",
+                      sessionID: input.lease.sessionID,
+                      attemptID: input.lease.attemptID,
+                      generation: input.lease.generation,
+                      requestID: message.requestID,
+                      outcome: "rejected",
+                    },
           )
           return
         }
         queueRPC(message.requestID, () => request(message, lifetime.signal))
+        return
+      }
+      case "await-child": {
+        if (!ready) {
+          finish({ type: "protocol-error", detail: "interaction request arrived before ready" })
+          return
+        }
+        const request = input.onInteractionRequest
+        if (!request) {
+          send({
+            version: SessionWorkerProtocol.VERSION,
+            type: "await-child-result",
+            sessionID: input.lease.sessionID,
+            attemptID: input.lease.attemptID,
+            generation: input.lease.generation,
+            requestID: message.requestID,
+            outcome: "rejected",
+          })
+          return
+        }
+        dispatchRPC(message.requestID, () => request(message, lifetime.signal))
         return
       }
       case "memory-request": {
