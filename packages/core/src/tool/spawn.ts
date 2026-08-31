@@ -24,21 +24,16 @@ import { Tools } from "./tools"
 // Ruling 2 pointed at the model instead of the user. Say what is actually true, including the
 // `started: false` case: a spawn with no executor attached is a real, durable, NOT-running child.
 //
-// THE MODEL SURFACE IS A FORK, NOT A SESSION-CREATION FORM. The ordinary call is exactly
-// `spawn({ prompt })`: agent, model, control binding and system prompt inherit; the seam supplies
-// `sub-agent` as the thread type. Those fields remain available to operator-side session APIs, but
-// advertising them here made a model repeat defaults and manufacture configuration it did not need
-// to understand. Every extra argument is another malformed-call frontier.
+// THE MODEL SURFACE IS A FORK, NOT A SESSION-CREATION FORM. The call is exactly
+// `spawn({ prompt })`: agent, model, control binding, system prompt and permission mode inherit; the
+// seam supplies `sub-agent` as the thread type. Those fields remain available to operator-side
+// session APIs, but advertising them here made a model repeat defaults and manufacture configuration
+// it did not need to understand. Every extra argument is another malformed-call frontier.
 //
-// ⚠️ `permissionMode` IS A REQUEST, NEVER A GRANT — and that is what makes widening safe. The
-// resolve fold clamps every non-root layer with `moreRestrictive` (`session/config-resolve.ts`), so
-// a child can only come back the same or MORE restricted than the chain above it: architecture.md's
-// narrowing keystone, and a fork returning LESS restricted than its source is called a defect there,
-// not a preference. The row still stores what was asked for — the ECS sparse-override discipline —
-// and every consumer (the permission evaluator included) reads it through `resolveSessionConfig`,
-// which is where the clamp lives. **Do not re-implement the clamp here**: two seams answering one
-// question is ruling 6's forbidden shape, and a second copy is what drifts. Pinned END TO END
-// through this tool — real DB, real spawner, real resolve — by `test/spawn-tool-input.test.ts`.
+// Permission narrowing remains an OPERATOR concern through `SessionSpawner.SpawnInput`. A model
+// spawning a helper expresses only the helper's task. If the parent was explicitly narrowed, the
+// child inherits that narrower posture through the parent chain; the model never has to understand
+// mode ordering or reproduce a security configuration inside a tool call.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // THE MAY-SPAWN GATE — what it buys (gate decided 2026-07-28; the baseline it rests on inverted by
@@ -84,18 +79,8 @@ import { Tools } from "./tools"
 
 export const name = "spawn"
 
-// Field naming follows the sibling `wait.ts`: camelCase (`permissionMode`, `sessionID`).
 export const Input = Schema.Struct({
   prompt: Schema.String.annotate({ description: "The task / opening message for the new child agent session." }),
-  permissionMode: Schema.Literals(["plan", "ask", "surgical", "bypass", "yolo"])
-    .pipe(Schema.optional)
-    .annotate({
-      description:
-        "Optional permission mode for the child, from least to most capable: plan (read only), ask " +
-        "(confirm every change), surgical, bypass (act freely inside its folder), yolo. It can only " +
-        "RESTRICT the child: a mode more capable than this session's is silently clamped down to this " +
-        "session's, never granted. Omit to inherit.",
-    }),
 })
 
 const StructuredOutput = Schema.Struct({
@@ -119,8 +104,8 @@ export const layer = Layer.effectDiscard(
         [name]: Tool.make({
           description:
             "Spawn a child agent session (a fork) with its own context that runs the given prompt. The child " +
-            "inherits this session's agent, model, system prompt and permission mode, unless permissionMode " +
-            "explicitly narrows it. Returns the child session id. Use it to delegate an independent sub-task.",
+            "inherits this session's agent, model, system prompt and permission mode. Returns the child session " +
+            "id. Use it to delegate an independent sub-task.",
           input: Input,
           output: Output,
           structured: StructuredOutput,
@@ -149,7 +134,6 @@ export const layer = Layer.effectDiscard(
                 .spawn({
                   parentID: context.sessionID,
                   text: input.prompt,
-                  permissionMode: input.permissionMode,
                 })
                 .pipe(
                   Effect.map(

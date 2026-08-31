@@ -13,7 +13,7 @@ import { PermissionV2 } from "@novaclaw/core/permission"
 import { ProjectV2 } from "@novaclaw/core/project"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
-import { EFFECTIVE_CONFIG_DEFAULTS, MODE_RULES, resolveSessionConfig } from "@novaclaw/core/session/config-resolve"
+import { EFFECTIVE_CONFIG_DEFAULTS, MODE_RULES } from "@novaclaw/core/session/config-resolve"
 import { SessionExecution } from "@novaclaw/core/session/execution"
 import { SessionExecutionLocal } from "@novaclaw/core/session/execution/local"
 import { SessionProjector } from "@novaclaw/core/session/projector"
@@ -27,22 +27,13 @@ import { testEffect } from "./lib/effect"
 import { settleTool, toolDefinitions, toolIdentity } from "./lib/tool"
 import { tmpdir } from "./fixture/tmpdir"
 
-// The `spawn` TOOL surface (v0.2.0 PREP Wave 2, 2026-07-28). Two separate claims live here, and
-// they are separate on purpose:
+// The `spawn` TOOL surface (v0.2.0 PREP Wave 2, 2026-07-28).
 //
-//   1. SURFACE MINIMALISM. `SessionSpawner` accepts the operator-side session configuration, but the
-//      model tool is a fork rather than a session-creation form: prompt plus optional permission
-//      narrowing. Agent/model/control/prompt/type inherit mechanically instead of becoming more JSON
-//      the model can repeat incorrectly. Effect strips unknown keys, so the test drives that boundary
-//      through the real decoder and proves the child row stayed sparse.
-//
-//   2. NARROWING — the invariant the widening is allowed to rest on. architecture.md calls a fork
-//      that comes back LESS restricted than its source a defect, not a preference, and the clamp is
-//      `moreRestrictive` inside `resolveConfig`'s fold (session/config-resolve.ts). That algebra is
-//      already unit-tested there; what is NOT tested there is the path this change opens — a MODEL
-//      choosing its child's mode, through the real tool, the real spawner and the real database. So
-//      the assertions below run end to end and finish at `resolveSessionConfig`, which is the exact
-//      call the permission evaluator itself makes (`permission.ts` → `sessionConfig`).
+// SURFACE MINIMALISM. `SessionSpawner` accepts the operator-side session configuration, but the model
+// tool is a fork rather than a session-creation form: exactly one prompt. Agent/model/control/system
+// prompt/type/permission inherit mechanically instead of becoming more JSON the model can repeat
+// incorrectly. Effect strips unknown keys, so the test drives that boundary through the real decoder
+// and proves the child row stayed sparse.
 
 /**
  * 🔴 NC-SEC-020 — a ROOT names the agent it runs as; there is no anonymous chat. `build` records the
@@ -146,33 +137,17 @@ const childOf = (parentID: SessionV2.ID) =>
   })
 
 /** A parent session in a real directory (the Location graph does config discovery on boot). */
-const parentSession = (permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo") =>
+const parentSession = () =>
   Effect.gen(function* () {
     const location = yield* workspace
     const session = yield* SessionV2.Service
-    const parent = yield* session.create({ location, agent: rootAgent, ...(permissionMode ? { permissionMode } : {}) })
+    const parent = yield* session.create({ location, agent: rootAgent })
     yield* setAgentRules(location, ALLOW_ALL)
     return { location, parent }
   })
 
-/** Pull the string constants a JSON-Schema node admits, whichever shape the encoder chose. */
-const enumOf = (schema: unknown, property: string): string[] => {
-  const collect = (value: unknown): string[] => {
-    if (value === null || typeof value !== "object") return []
-    const record = value as Record<string, unknown>
-    if (Array.isArray(record["enum"])) return record["enum"].filter((item): item is string => typeof item === "string")
-    if (typeof record["const"] === "string") return [record["const"]]
-    for (const key of ["anyOf", "oneOf", "allOf"]) {
-      const branch = record[key]
-      if (Array.isArray(branch)) return branch.flatMap(collect)
-    }
-    return []
-  }
-  return collect((schema as { properties?: Record<string, unknown> } | undefined)?.properties?.[property])
-}
-
 describe("the spawn tool keeps the model surface fork-shaped", () => {
-  it.live("the model surface strips operator-only session fields and carries only permission narrowing", () =>
+  it.live("the model surface strips every operator-only session field", () =>
     Effect.gen(function* () {
       const { location, parent } = yield* parentSession()
 
@@ -192,7 +167,7 @@ describe("the spawn tool keeps the model surface fork-shaped", () => {
       expect(child?.controlBinding).toBeUndefined()
       expect(child?.systemPromptOverride).toBeUndefined()
       expect(child?.type).toBe("sub-agent")
-      expect(child?.permissionMode).toBe("plan")
+      expect(child?.permissionMode).toBeUndefined()
     }),
   )
 
@@ -215,7 +190,7 @@ describe("the spawn tool keeps the model surface fork-shaped", () => {
     }),
   )
 
-  it.live("the advertised permissionMode set is exactly the kernel's mode set", () =>
+  it.live("advertises exactly one model argument", () =>
     Effect.gen(function* () {
       const location = yield* workspace
       const definitions = yield* LocationServiceMap.Service.use((locations) =>
@@ -224,51 +199,7 @@ describe("the spawn tool keeps the model surface fork-shaped", () => {
       const spawn = definitions.find((definition) => definition.name === "spawn")
       expect(spawn).toBeDefined()
 
-      // Ruling 1: the tool's literal list is a claim about a type declared in ANOTHER file, and it
-      // compiles green the day a sixth mode is added. `MODE_RULES` is `Record<PermissionMode, …>`,
-      // so the compiler forces a new mode to appear there — which makes this comparison the ratchet.
-      expect(enumOf(spawn?.inputSchema, "permissionMode").sort()).toEqual(Object.keys(MODE_RULES).sort())
-      expect(Object.keys((spawn?.inputSchema as any)?.properties ?? {}).sort()).toEqual(["permissionMode", "prompt"])
-    }),
-  )
-})
-
-describe("a spawned child can never come back LESS restricted than its parent", () => {
-  it.live("a yolo request under a plan parent resolves to plan", () =>
-    Effect.gen(function* () {
-      const { location, parent } = yield* parentSession("plan")
-      const store = yield* SessionStore.Service
-
-      yield* settleSpawn(location, parent.id, { prompt: PROMPT, permissionMode: "yolo" })
-
-      const child = yield* childOf(parent.id)
-      // THE NEGATIVE CONTROL, and it is the row itself: the child's stored request really IS `yolo`,
-      // so a resolver that simply read the row — the naive implementation, and the one a reader
-      // assumes — answers "yolo" here. The assertion below is therefore measuring the clamp and
-      // nothing else.
-      expect(child?.permissionMode).toBe("yolo")
-
-      const resolved = yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, child!.id, (id) =>
-        store.get(id as SessionV2.ID),
-      )
-      expect(resolved.permissionMode).toBe("plan")
-    }),
-  )
-
-  it.live("the clamp is one-directional — a child asking for LESS capability gets it", () =>
-    Effect.gen(function* () {
-      const { location, parent } = yield* parentSession("bypass")
-      const store = yield* SessionStore.Service
-
-      yield* settleSpawn(location, parent.id, { prompt: PROMPT, permissionMode: "plan" })
-
-      const child = yield* childOf(parent.id)
-      const resolved = yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, child!.id, (id) =>
-        store.get(id as SessionV2.ID),
-      )
-      // Without this, "the resolved mode is always the parent's" would pass the test above just as
-      // well as a real clamp does — and privilege self-revocation (Vision) would be dead.
-      expect(resolved.permissionMode).toBe("plan")
+      expect(Object.keys((spawn?.inputSchema as any)?.properties ?? {}).sort()).toEqual(["prompt"])
     }),
   )
 })
