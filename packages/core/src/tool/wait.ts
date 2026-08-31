@@ -44,6 +44,49 @@ export const deadChildMessage = (childID: string, state: string | undefined): st
   )
 }
 
+/**
+ * Opaque session ids are copy-hostile model input. A one-character transcription error must not
+ * strand an otherwise unambiguous join, but authority may never widen: candidates come exclusively
+ * from this parent's direct-child set, and ambiguity still refuses.
+ */
+const withinOneEdit = (left: string, right: string): boolean => {
+  if (left === right) return true
+  if (Math.abs(left.length - right.length) > 1) return false
+  if (left.length === right.length) {
+    let differences = 0
+    for (let index = 0; index < left.length; index++) {
+      if (left[index] !== right[index] && ++differences > 1) return false
+    }
+    return differences === 1
+  }
+  const shorter = left.length < right.length ? left : right
+  const longer = left.length < right.length ? right : left
+  let shortIndex = 0
+  let longIndex = 0
+  let skipped = false
+  while (shortIndex < shorter.length && longIndex < longer.length) {
+    if (shorter[shortIndex] === longer[longIndex]) {
+      shortIndex++
+      longIndex++
+      continue
+    }
+    if (skipped) return false
+    skipped = true
+    longIndex++
+  }
+  return true
+}
+
+export const resolveDirectChildID = (
+  requested: SessionSchema.ID,
+  directChildren: ReadonlyArray<SessionSchema.ID>,
+): SessionSchema.ID | undefined => {
+  const exact = directChildren.find((candidate) => candidate === requested)
+  if (exact) return exact
+  const nearby = directChildren.filter((candidate) => withinOneEdit(requested, candidate))
+  return nearby.length === 1 ? nearby[0] : undefined
+}
+
 export const name = "wait"
 /**
  * Milliseconds, because `SessionJoin` crosses the worker protocol and a Duration does not.
@@ -89,11 +132,16 @@ export const layer = Layer.effectDiscard(
           toModelOutput: ({ output }) => [{ type: "text", text: output.message }],
           execute: (input, context) =>
             Effect.gen(function* () {
-              const childID = SessionSchema.ID.make(input.sessionID)
-              const child: SessionSchema.Info | undefined = yield* store.get(childID)
-              if (!child || child.parentID !== context.sessionID) {
+              const requestedChildID = SessionSchema.ID.make(input.sessionID)
+              const directChildren = yield* store.children(context.sessionID)
+              const childID = resolveDirectChildID(requestedChildID, directChildren)
+              if (!childID) {
                 return yield* Effect.fail(
-                  new ToolFailure({ message: `Session ${childID} is not a direct child of this session.` }),
+                  new ToolFailure({
+                    message:
+                      `Session ${requestedChildID} is not a direct child of this session.` +
+                      (directChildren.length === 0 ? "" : ` Direct children: ${directChildren.join(", ")}.`),
+                  }),
                 )
               }
 

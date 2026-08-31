@@ -202,15 +202,14 @@ describe("only a DIRECT child may be waited on", () => {
     "utf8",
   )
 
-  test("the guard refuses a session that is not this session's child", () => {
-    // `!child` covers a name that resolves to nothing; the parent comparison covers everything else,
-    // including waiting on YOURSELF — a session is never its own parent.
-    expect(source).toMatch(/!child \|\| child\.parentID !== context\.sessionID/)
+  test("the guard derives candidates only from this session's direct children", () => {
+    expect(source).toMatch(/store\.children\(context\.sessionID\)/)
+    expect(source).toMatch(/resolveDirectChildID\(requestedChildID, directChildren\)/)
   })
 
   test("it fails as a ToolFailure the model reads, not a silent false", () => {
     // A refusal the model cannot see would leave it believing it had joined something.
-    const guard = source.slice(source.indexOf("!child ||"))
+    const guard = source.slice(source.indexOf("if (!childID)"))
     expect(guard.slice(0, 400)).toContain("ToolFailure")
     expect(guard.slice(0, 400)).toMatch(/not a direct child/)
   })

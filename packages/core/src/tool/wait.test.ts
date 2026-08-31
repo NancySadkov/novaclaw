@@ -1,5 +1,36 @@
 import { describe, expect, test } from "bun:test"
-import { deadChildMessage } from "./wait"
+import { SessionSchema } from "../session/schema"
+import { deadChildMessage, resolveDirectChildID } from "./wait"
+
+const id = (value: string) => SessionSchema.ID.make(value)
+
+describe("resolveDirectChildID — tolerate one unambiguous opaque-id typo", () => {
+  test("keeps an exact direct child authoritative", () => {
+    const exact = id("ses_fa721b947ffe3Y6fwGD9siiTiI")
+    expect(resolveDirectChildID(exact, [id("ses_other"), exact])).toBe(exact)
+  })
+
+  test.each([
+    "ses_fa721b947ffe3Y6fwGD9ciiTiI",
+    "ses_fa721b947ffe3Y6fwGD9siiTi",
+    "ses_fa721b947ffe3Y6fwGD9xsiiTiI",
+  ])("repairs one substitution, deletion, or insertion inside a direct child id", (mistyped) => {
+    const child = id("ses_fa721b947ffe3Y6fwGD9siiTiI")
+    expect(resolveDirectChildID(id(mistyped), [child])).toBe(child)
+  })
+
+  test("refuses two edits instead of guessing", () => {
+    expect(resolveDirectChildID(id("ses_child_zz"), [id("ses_child_ab")])).toBeUndefined()
+  })
+
+  test("refuses an ambiguous one-edit match", () => {
+    expect(resolveDirectChildID(id("ses_child_ax"), [id("ses_child_ab"), id("ses_child_ac")])).toBeUndefined()
+  })
+
+  test("never resolves outside the supplied direct-child authority", () => {
+    expect(resolveDirectChildID(id("ses_sibling"), [])).toBeUndefined()
+  })
+})
 
 /**
  * 🔴 **The defect this exists for, measured 2026-08-27 on a delegated 100-file run:** `spawn:10`

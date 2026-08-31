@@ -255,6 +255,31 @@ describe("wait — a durable, owned join", () => {
     }),
   )
 
+  it.live("repairs one unambiguous copied-id typo without widening beyond direct children", () =>
+    Effect.gen(function* () {
+      const location = yield* workspace
+      const session = yield* SessionV2.Service
+      const events = yield* EventV2.Service
+      const parent = yield* session.create({ location, agent: rootAgent })
+      const child = yield* session.create({ location, agent: rootAgent, parentID: parent.id })
+      const original = String(child.id)
+      const index = original.length - 3
+      const replacement = original[index] === "a" ? "b" : "a"
+      const mistyped = SessionV2.ID.make(original.slice(0, index) + replacement + original.slice(index + 1))
+
+      yield* events.publish(SessionEvent.Completed, {
+        sessionID: child.id,
+        timestamp: yield* DateTime.now,
+        result: "joined after one copied-id typo",
+      })
+
+      const settlement = yield* settleWait(location, parent.id, mistyped)
+      expect(settlement.result.type).not.toBe("error")
+      expect(JSON.stringify(settlement.result)).toContain("joined after one copied-id typo")
+      expect(JSON.stringify(settlement.result)).toContain(String(child.id))
+    }),
+  )
+
   it.live("refuses a grandchild instead of allowing arbitrary session observation", () =>
     Effect.gen(function* () {
       const location = yield* workspace
