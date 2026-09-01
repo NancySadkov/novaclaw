@@ -1,7 +1,7 @@
 export * as ProjectV2 from "./project"
 export * as Project from "./project"
 
-// T3 (notes/entities.md): the project ENTITY is gone — this module is only the derivation of a
+// T3 (notes/reports/entities-review-2026-07-06.md): the project ENTITY is gone — this module is only the derivation of a
 // location's two substrate attributes: the VCS root directory and the rename-stable `origin`
 // hash (git remote URL hash → repo-local cached id → root-commit hash → "global"). Nothing is
 // persisted here; identity is recomputed from the repo itself.

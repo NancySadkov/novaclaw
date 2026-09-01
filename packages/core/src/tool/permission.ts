@@ -1,7 +1,7 @@
 /**
  * `permission` — Auto mode: the agent sets its own permission level, in writing, and OWNS it.
  *
- * todo/permissions.md, in the owner's framing: *a mode where the model itself raises and lowers its
+ * In the owner's framing: *a mode where the model itself raises and lowers its
  * permissions explicitly, acknowledging that it now owns them — so it is grounded to be extra
  * careful, because the commitment is on a page it wrote itself.*
  *
@@ -109,15 +109,15 @@ export const ASSERT_ABOVE: PermissionMode = "bypass"
 export const MIN_JUSTIFICATION_CHARS = 12
 
 /** What the user sees in the composer for each rung. Kept beside the internal value in every message
- *  this tool emits, because the transcript is read by the USER, for whom `bypass` is called "Build"
+ *  this tool emits, because the transcript is read by the USER, for whom `bypass` is called "Modify"
  *  (`app/src/i18n/en.ts` — the mapping lives there and nowhere else, so this quotes it rather than
  *  importing across the package boundary). */
 export const MODE_LABEL: Readonly<Record<PermissionMode, string>> = {
   plan: "Analyze",
   ask: "Ask",
   surgical: "Surgical",
-  bypass: "Build",
-  yolo: "YOLO",
+  bypass: "Modify",
+  yolo: "Admin",
 }
 
 /** One line per rung, in the model's own operational terms. */
@@ -269,7 +269,10 @@ export const grantedMessage = (input: {
 
 // ── the tool ──────────────────────────────────────────────────────────────────────────────────
 
-const Mode = Schema.Literals(["plan", "ask", "surgical", "bypass", "yolo"])
+// The canonical set, not a fourth spelling of it. `SessionMessage.PermissionMode` is what the
+// permission-changed audit card is typed against, so a literal added there and re-typed here would
+// compile on both sides and disagree at runtime.
+const Mode = SessionMessage.PermissionMode
 
 export const Input = Schema.Struct({
   op: Schema.Literals(["raise", "lower"]).annotate({

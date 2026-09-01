@@ -18,7 +18,7 @@ import { testEffect } from "./lib/effect"
 import { cosignedRotation } from "./lib/community"
 
 /**
- * Community P4 — the channel log (`todo/community-p2p.md`).
+ * Community P4 — the channel log (`notes/spec/community-p2p.md`).
  *
  * Gossip reaches whoever is online, so this is the half that makes a channel readable by someone who
  * was away. What these pin is the ingress door: everything a hostile peer can send has to be refused

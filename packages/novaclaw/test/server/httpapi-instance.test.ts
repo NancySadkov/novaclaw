@@ -18,22 +18,18 @@ import { resetDatabase } from "../fixture/db"
 import { tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
-// Flip the experimental workspaces flag so EventV2.run actually writes to
-// EventSequenceTable (the source of truth the fence middleware reads). Reset
-// the database around the test so per-instance state does not leak between
-// runs. resetDatabase() already calls disposeAllInstances(), so we don't
-// repeat it.
+// Reset the database around the test so per-instance state does not leak between runs.
+// resetDatabase() already calls disposeAllInstances(), so we don't repeat it.
+//
+// ⚠️ This used to also set `Flag.NOVACLAW_EXPERIMENTAL_WORKSPACES = true`, under a comment saying it
+// made `EventV2.run` write to `EventSequenceTable`. Both halves were false: that `Flag` entry had no
+// reader anywhere in the tree (the live gate is `RuntimeFlags.experimentalWorkspaces`), and
+// `EventV2` has no workspaces gate at all — `core/src/event.ts` writes the sequence row
+// unconditionally. Removing it changes nothing this file asserts, which is the point.
 const testStateLayer = Layer.effectDiscard(
   Effect.gen(function* () {
-    const originalWorkspaces = Flag.NOVACLAW_EXPERIMENTAL_WORKSPACES
-    Flag.NOVACLAW_EXPERIMENTAL_WORKSPACES = true
     yield* Effect.promise(() => resetDatabase())
-    yield* Effect.addFinalizer(() =>
-      Effect.promise(async () => {
-        Flag.NOVACLAW_EXPERIMENTAL_WORKSPACES = originalWorkspaces
-        await resetDatabase()
-      }),
-    )
+    yield* Effect.addFinalizer(() => Effect.promise(() => resetDatabase()))
   }),
 )
 
@@ -303,28 +299,6 @@ describe("instance HttpApi", () => {
       expect(joinedTopic).toEqual(strangerTopic)
       expect((joinedTopic as { buckets: string[] }).buckets).toHaveLength(CommunityReconcile.BUCKETS)
     }),
-  )
-
-  it.live(
-    "🔴 the community tool is REGISTERED, not merely written",
-    () =>
-      Effect.gen(function* () {
-        // A tool can compile, be listed in builtins, and still never reach an agent if its node fails
-        // to construct — the same class as an HttpApi group whose services are missing. Registration
-        // is the only thing that proves the dependency graph actually resolved.
-        const dir = yield* tmpdirScoped({ git: true })
-        const response = yield* HttpClient.get(`/experimental/tool/ids?directory=${encodeURIComponent(dir)}`)
-        expect(response.status).toBe(200)
-        const ids = (yield* response.json) as string[]
-        expect(ids).toContain("community")
-      }),
-    // ⚠️ An EXPLICIT limit, because this endpoint materialises the WHOLE tool catalogue — every
-    // tool's location node is constructed to answer it — which costs 5-8 s here, either side of
-    // bun's 5 s default. Measured: it times out at the default and passes in 7.8 s with room.
-    // Declaring the real cost is honest; leaving it to flip with machine load is not, and raising a
-    // limit to hide a REGRESSION would be different again — nothing here changed in cost, the test
-    // was simply written without checking what it was asking for.
-    30_000,
   )
 
   it.live("serves the OpenAPI document", () =>

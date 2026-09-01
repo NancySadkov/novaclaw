@@ -3,8 +3,8 @@ import { AgentJail } from "./agent-jail"
 import type { SessionType } from "./session/config-resolve"
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// The confinement POSTURE — the evidence half of the jail seam (todo/jail.md → "A capability probe +
-// an honest posture surface").
+// The confinement POSTURE — the evidence half of the jail seam: "a capability probe + an honest
+// posture surface".
 //
 // Ruling 2 is the whole unit: *an unavailable subsystem names itself instead of rendering empty · a
 // fault is never described falsely.* `detectBackend` answers with one bit, and three unrelated

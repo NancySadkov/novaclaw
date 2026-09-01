@@ -77,7 +77,7 @@ test("the four registration siblings are present by name, so the requirement rea
   expect(names).toContain("plugin-internal")
   expect(names).toContain("system-context-builtins")
   expect(names).toContain("built-in-tools")
-  // The one that was missing. `todo/projects.md` → typed pre-action policies: a policy that is not
+  // The one that was missing. Typed pre-action policies: a policy that is not
   // installed in the process doing the screening cannot refuse, patch or hold anything.
   expect(names).toContain("tool-policy/builtin")
 })

@@ -11,7 +11,7 @@ import { LogRead } from "../observability/log-read"
 import { LogTool } from "./log"
 
 /**
- * `todo/logging.md` 3g. Two things are actually at stake here and the second one is why the file is
+ * Two things are actually at stake here and the second one is why the file is
  * long: that the reader ANSWERS (it finds lines across an active segment and a gzipped one, filters
  * them, and bounds itself), and that the maintenance-plane projection **withholds what it claims
  * to withhold**.
@@ -95,7 +95,7 @@ describe("logfmt is parsed the way this product writes it", () => {
     const line = LogRead.parse('timestamp=t level=INFO run=r message="two words" level=error')
     expect(line.columns.map(([key]) => key)).toEqual(["timestamp", "level", "run", "message", "level"])
     expect(line.columns[3]![1]).toBe("two words")
-    // The duplicate-`level=` defect is real (todo/logging.md §0.4 item 2). A reader that folded
+    // The duplicate-`level=` defect is real — this product shipped it once. A reader that folded
     // columns into a Record would report one `level` and silently lose the evidence of the other.
     expect(line.columns.filter(([key]) => key === "level")).toHaveLength(2)
     // …and the FIRST one is the line's own, which is what a severity filter must read.

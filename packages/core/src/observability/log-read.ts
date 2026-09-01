@@ -18,7 +18,7 @@ import { LogFile } from "./log-file"
  * **The READER half of the log — the counterpart to `log-file.ts`, and the thing that makes the
  * self-healing law reach the logs.**
  *
- * `todo/logging.md` 3g. The writer (`log-file.ts`) already exports `segmentsIn` and calls itself
+ * The writer (`log-file.ts`) already exports `segmentsIn` and calls itself
  * *"the READER's half of the filename grammar"*; this module is the reader that grammar was for. It
  * is deliberately a separate file and not a method on `Writer`: reading must work when nothing is
  * writing — a crashed instance, a `serve` that died at boot, a segment written by yesterday's run —
@@ -103,14 +103,14 @@ export function readSegment(file: string, budget: number): string {
   }
 }
 
-// ── how fast the log actually grows (todo/logging.md Phase 2 → Phase 3) ─────────────────────────
+// ── how fast the log actually grows ─────────────────────────────────────────────────────────────
 
 /**
  * **The measurement the defaults table was missing.**
  *
- * `log-file.ts`'s `SEGMENT_BYTES` / `TOTAL_BYTES` / `MAX_AGE_MS` (8 MB · 256 MB · 30 d) are filed
- * in `todo/logging.md` with an explicit confession: *"Every one of these is a guess dressed in a
- * measurement… Phase 2 must emit bytes-written-per-hour as an event and re-derive them."* The
+ * `log-file.ts`'s `SEGMENT_BYTES` / `TOTAL_BYTES` / `MAX_AGE_MS` (8 MB · 256 MB · 30 d) shipped
+ * with an explicit confession: *"every one of these is a guess dressed in a
+ * measurement"*, to be re-derived once bytes-written-per-hour was emitted as an event. The
  * measurement it names is **27 days of one developer's usage on one machine at INFO** — and it moved
  * 2× (69.5 → 134 KB/day) within nine days of being taken, which is the whole argument for making the
  * instance measure itself instead of inheriting a number.
@@ -202,8 +202,7 @@ export interface Line {
  * ⚠️ **Duplicates are kept, not collapsed into an object.** A duplicate column is a real defect this
  * subsystem has already shipped once (`level=INFO … level=error` from the MCP relay), and a reader
  * that folds columns into a `Record` makes it invisible — the second value silently wins and the
- * evidence is gone. `todo/logging.md` §0.4 item 2 is that bug; this shape is what lets a reader see
- * it rather than inherit it.
+ * evidence is gone. This shape is what lets a reader see that bug rather than inherit it.
  */
 export function parse(raw: string): Line {
   const columns: Array<readonly [string, string]> = []

@@ -13,8 +13,7 @@ const emptyUserMessages: SessionMessageUser[] = []
  * (`serverSync().nativeMessages`), not the retired V1 `data.message` store. The
  * `resource` load is what flips `ready` true so the timeline mounts; the native
  * timeline then reconciles via its own idempotent `.load()`. History pagination is
- * deferred (native long-session hardening) — `history.loadOlder` is a no-op and
- * `loadOlderTimeline` below stays for when cursor pagination is wired.
+ * deferred (native long-session hardening) — `history.loadOlder` is a no-op.
  */
 export function createTimelineModel(input: {
   sessionID: Accessor<string | undefined>
@@ -79,22 +78,3 @@ export function selectVisibleUserMessages(messages: readonly SessionMessageUser[
   return selectVisibleMessages(messages, revertMessageID)
 }
 
-export async function loadOlderTimeline(input: {
-  sessionID: Accessor<string | undefined>
-  more: Accessor<boolean>
-  loading: Accessor<boolean>
-  loadMore: (sessionID: string) => Promise<void>
-  before?: () => void
-  after?: (done: boolean) => void
-}) {
-  const id = input.sessionID()
-  if (!id || !input.more() || input.loading()) return
-
-  input.before?.()
-  await input.loadMore(id).catch((error) => {
-    if (input.sessionID() === id) input.after?.(true)
-    throw error
-  })
-  if (input.sessionID() !== id) return
-  input.after?.(true)
-}

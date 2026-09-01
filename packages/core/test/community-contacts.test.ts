@@ -8,7 +8,7 @@ import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { testEffect } from "./lib/effect"
 
 /**
- * Community P3 — the contact list (`todo/community-p2p.md`).
+ * Community P3 — the contact list (`notes/spec/community-p2p.md`).
  *
  * The list is the bootstrap set, so these pin the two properties that make the network survive
  * without us: an entry carries ROUTES (a bare key is unroutable — learned by hanging the P0 spike),

@@ -1,21 +1,13 @@
 import { Config } from "@/config/config"
 import { Config as ConfigV2 } from "@novaclaw/core/config"
 import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
-import { ProviderCatalogResult } from "@/provider/catalog-result"
-import { Catalog } from "@novaclaw/core/catalog"
-import { LocationServiceMap } from "@novaclaw/core/location-services"
-import { ServerLocationServiceMap } from "@/location-service-map"
-import { Location } from "@novaclaw/core/location"
-import { AbsolutePath } from "@novaclaw/core/schema"
-import * as InstanceState from "@/effect/instance-state"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { mutateConfig } from "./config-mutation"
 
 export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (handlers) =>
   Effect.gen(function* () {
-    const locations = yield* LocationServiceMap.Service
     const configSvc = yield* Config.Service
 
     const get = Effect.fn("ConfigHttpApi.get")(function* () {
@@ -71,23 +63,6 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
       return yield* mutateConfig({ request: ctx.request, payload: ctx.payload, readView: "instance" })
     })
 
-    // Connected providers come from the V2 `Catalog` (available = has
-    // credentials/integration), served as native catalog shapes. Catalog is
-    // location-scoped — resolve it through the shared location-service map.
-    const providers = Effect.fn("ConfigHttpApi.providers")(function* () {
-      const directory = (yield* InstanceState.context).directory
-      return yield* Effect.gen(function* () {
-        const catalog = yield* Catalog.Service
-        const available = yield* catalog.provider.available()
-        const models = yield* catalog.model.all()
-        return ProviderCatalogResult.listResult({
-          providers: available,
-          models,
-          connected: available.map((p) => p.id),
-        })
-      }).pipe(Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))))
-    })
-
-    return handlers.handle("get", get).handle("update", update).handle("providers", providers)
+    return handlers.handle("get", get).handle("update", update)
   }),
-).pipe(Layer.provide(ServerLocationServiceMap.layer))
+)

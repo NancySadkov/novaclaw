@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import type { DatabaseMigration } from "../migration"
 
-// Tags component on the session entity (notes/entities.md T0): a sparse (session_id, tag) store —
+// Tags component on the session entity (notes/reports/entities-review-2026-07-06.md T0): a sparse (session_id, tag) store —
 // the ECS tag component that replaces project-grouping as the organization system over chats.
 // Mirrors `session/sql.ts` SessionTagTable — keep the two in sync.
 export default {

@@ -4,8 +4,8 @@ import { Effect, Schema } from "effect"
 
 import { InstallationVersion } from "../installation/version"
 
-// Web search, built in (todo.md → "Web search — a built-in fallback so it just works for lay
-// users"). A normal person cannot stand up a SearXNG, so an instance with nothing configured must
+// Web search, built in. The standing requirement: *"a built-in fallback so it just works for lay
+// users."* A normal person cannot stand up a SearXNG, so an instance with nothing configured must
 // still be able to search; a power user's own SearXNG must still win when they have one.
 //
 // WHAT the built-in IS — the open design question, settled by the vision rather than escalated

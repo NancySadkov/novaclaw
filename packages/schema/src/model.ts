@@ -18,6 +18,26 @@ export const Ref = Schema.Struct({
 }).annotate({ identifier: "Model.Ref" })
 export interface Ref extends Schema.Schema.Type<typeof Ref> {}
 
+/**
+ * How a model is written in config and in a URL: `providerID/id`.
+ *
+ * 🔴 The id itself MAY contain slashes (`dgx-spark/openai/gpt-oss-120b`), so this splits on the FIRST
+ * one only, and refuses a ref with nothing on either side of it. Two hand-written copies of exactly this
+ * existed — one in the app, one in the runner — differing only in whether the key was called `id` or
+ * `modelID`, which meant neither could be handed to the other's consumers. The key is `id`, because that
+ * is what `Model.Ref` above calls it.
+ */
+export const parseRef = (value: string | undefined): { providerID: string; id: string } | undefined => {
+  if (!value) return undefined
+  const slash = value.indexOf("/")
+  if (slash <= 0 || slash === value.length - 1) return undefined
+  return { providerID: value.slice(0, slash), id: value.slice(slash + 1) }
+}
+
+/** The inverse of {@link parseRef}. */
+export const formatRef = (input: { readonly providerID: string; readonly id: string }): string =>
+  `${input.providerID}/${input.id}`
+
 export const Family = Schema.String.pipe(Schema.brand("Family"))
 export type Family = typeof Family.Type
 
@@ -40,7 +60,7 @@ export const DEFAULT_LIMIT = { context: 65_536, output: 16_384 } as const
 // lifting this floor.
 export const DEFAULT_IMAGE_LIMIT = 1
 
-// Models-primary capability tier (notes/models-primary-plan.md): scaffolds the harness harder for
+// Models-primary capability tier: scaffolds the harness harder for
 // weaker models (Micro..Frontier). Distinct from the COST context-tier on `Cost.tier`. "guess"
 // stays a CLIENT-only sentinel (app context/models.tsx), never on the wire.
 export const Tier = Schema.Literals(["micro", "tiny", "small", "medium", "large", "frontier"])
@@ -87,7 +107,7 @@ export const Info = Schema.Struct({
   providerID: Provider.ID,
   family: Family.pipe(optional),
   tier: Tier.pipe(optional),
-  // Optional user-authored per-model PRE-PROMPT (owner 2026-07-29, todo/assorted.md): a correction
+  // Optional user-authored per-model PRE-PROMPT (owner ruling, 2026-07-29): a correction
   // for THIS model's known behaviour, prepended to the system context for every session that
   // resolves to it. It rides here — beside `tier`, which the property mirrors — because the defect
   // being corrected belongs to the weights, so it travels with the model, not the agent. Absent =

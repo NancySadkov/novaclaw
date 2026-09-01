@@ -4,7 +4,7 @@ import { createHash } from "node:crypto"
 import type { CommunityMessage } from "./message"
 
 /**
- * Community P5 — proof-of-work per message (`todo/community-p2p.md`).
+ * Community P5 — proof-of-work per message (`notes/spec/community-p2p.md`).
  *
  * 🔴 Built because the measurement demanded it. GossipSub's peer scoring, switched on, scored a
  * flooder at the CAP (1000) and the honest peer NEGATIVE, because `first_message_deliveries` rewards

@@ -80,13 +80,9 @@ const recording = (into: Asserted[]) =>
       }),
   })
 
-/**
- * ⚠️ Fails SYNCHRONOUSLY with the module's own `RejectedError` rather than answering `ask`. An `ask`
- * with nobody to answer it parks on a `Deferred` forever and no test timeout reaps it — the trap
- * recorded in todo.md against the `rootSessionType` work.
- */
+/** Fails synchronously with the permission service's policy-denial type. */
 const denying = Layer.mock(PermissionV2.Service, {
-  assert: () => Effect.fail(new PermissionV2.RejectedError()),
+  assert: () => Effect.fail(new PermissionV2.DeniedError({ rules: [] })),
 })
 
 /**
@@ -234,7 +230,6 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
     expect(of("privileged")).toEqual([
       "adhoc_tools",
       "agents",
-      "autoupdate",
       "capability_services",
       "commands",
       // Community participation. PRIVILEGED beside `offline` and `telemetry` and for the same
@@ -574,7 +569,7 @@ describe("ruling 2: a write that did not happen never reports success", () => {
         expect(textOf(result)).toContain("Nothing was written")
         // The PRODUCT's wording, not the mock's — asserting a string the mock invented would prove
         // only that some error propagated.
-        expect(textOf(result)).toContain("The user declined permission for this action")
+        expect(textOf(result)).toContain("Permission denied by policy")
 
         expect((yield* settings.all()).shell).toBe("before-the-refused-write")
       }),
@@ -806,7 +801,7 @@ describe("read: no consent card, and no credentials", () => {
             files: {
               type: "local",
               command: ["node", "server.js"],
-              environment: { PATH: "/usr/bin", GITHUB_TOKEN: "ghp-local-mcp-env" },
+              environment: { PATH: "/usr/bin", SERVICE_TOKEN: "ghp-local-mcp-env" },
             },
           },
         })
@@ -839,7 +834,7 @@ describe("read: no consent card, and no credentials", () => {
         // Both VALUES are therefore blanked, `PATH` included; both KEYS survive, so "which variables
         // are set" stays answerable. Asserting `/usr/bin` reads back would have been asserting the
         // opposite of the design.
-        expect(text).toContain("GITHUB_TOKEN")
+        expect(text).toContain("SERVICE_TOKEN")
         expect(text).toContain("PATH")
         expect(text).not.toContain("/usr/bin")
       }),

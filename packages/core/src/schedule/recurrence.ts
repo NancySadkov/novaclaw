@@ -1,4 +1,4 @@
-// P0 of the Calendar / cron-session creator (notes/calendar-cron-plan.md).
+// P0 of the Calendar / cron-session creator.
 //
 // Pure recurrence engine: `nextFire` returns the next fire instant STRICTLY AFTER `after`, computed in a
 // fixed UTC offset (minutes) — wall-clock = UTC(after + offset). This is deterministic and unit-testable:

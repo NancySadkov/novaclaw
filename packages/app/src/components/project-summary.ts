@@ -4,7 +4,7 @@ import type { ProjectState } from "@/utils/project-api"
 /**
  * **What a folder's `novaclaw.json` says, in words a person can read.**
  *
- * `todo/projects.md`: *"Never make a person infer project state from a hidden dotfile."* A project
+ * The rule: *"never make a person infer project state from a hidden dotfile."* A project
  * file can NARROW a session's permissions, so a user whose tool call was refused needs somewhere to
  * see which file did it. Settings → General and the composer's Tune panel already say it; Chats and
  * Files are the two surfaces that did not.

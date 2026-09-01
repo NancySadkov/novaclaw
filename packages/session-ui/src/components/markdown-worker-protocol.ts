@@ -1,4 +1,4 @@
-import type { ThemeRegistrationResolved } from "shiki"
+import type { ThemeRegistrationResolved } from "shiki/core"
 
 export type MarkdownToken = [content: string, style: string]
 

@@ -129,7 +129,7 @@ describe("the egress-safe class set is derived, and pinned", () => {
     expect(egressSafe("text")).toBe(false)
     expect(egressSafe("fault")).toBe(false)
     expect(egressSafe("list")).toBe(false)
-    // ⚠️ **`correlate` is the class `todo/logging.md` 1e added, and it is the reason the pin above
+    // ⚠️ **`correlate` is the class that split correlation ids out of `id`, and it is the reason the pin above
     // still reads `["count","flag","id"]`.** A session id used to be class `id` and therefore
     // egress-safe; it is now its own class, content-free but never sent. Asserted here rather than
     // only in the pin, because the pin would also stay green if the class had simply never been
@@ -322,7 +322,7 @@ describe("a content-bearing event is refused outright", () => {
     // input returned `ok: true` with `attributes: { "session.id": "ses_…" }` in the envelope and
     // `dropped: []`, while the module doc above says in as many words *"No … session id"*. The
     // cause was in the type, not here: a session id was class `id`, `id` is egress-safe, and 38
-    // keys carrying one were declared `content: "none"`. `todo/logging.md` 1e made it class
+    // keys carrying one were declared `content: "none"`. A session id is now class
     // `correlate`, so the refusal happens at gate 4 — one rung EARLIER than the attribute filter.
     const built = build({
       report: {

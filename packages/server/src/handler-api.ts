@@ -1,5 +1,5 @@
 import { AgentGroup } from "@novaclaw/protocol/groups/agent"
-import { CalendarGroup } from "@novaclaw/protocol/groups/calendar"
+import { makeCalendarGroup } from "@novaclaw/protocol/groups/calendar"
 import { CommandGroup } from "@novaclaw/protocol/groups/command"
 import { ConfigGroup } from "@novaclaw/protocol/groups/config"
 import { CredentialGroup } from "@novaclaw/protocol/groups/credential"
@@ -40,7 +40,7 @@ const fragment = <Group extends HttpApiGroup.Any>(group: Group): ApiFragment<Gro
   HttpApi.make("server").add(group).middleware(Authorization).middleware(SchemaErrorMiddleware)
 
 export const AgentApi = fragment(AgentGroup.middleware(LocationMiddleware))
-export const CalendarApi = fragment(CalendarGroup)
+export const CalendarApi = fragment(makeCalendarGroup(LocationMiddleware))
 export const CommandApi = fragment(CommandGroup.middleware(LocationMiddleware))
 export const ConfigApi = fragment(ConfigGroup)
 export const CredentialApi = fragment(CredentialGroup.middleware(LocationMiddleware))

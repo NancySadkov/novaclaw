@@ -1,4 +1,4 @@
-import type { PermissionV2Request, SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
+import type { SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 import { cmp } from "./utils"
 import { SESSION_RECENT_LIMIT, SESSION_RECENT_WINDOW } from "./types"
 
@@ -30,10 +30,7 @@ export function takeRecentSessions(sessions: Session[], limit: number, cutoff: n
   return selected
 }
 
-export function trimSessions(
-  input: Session[],
-  options: { limit: number; permission: Record<string, PermissionV2Request[]>; now?: number },
-) {
+export function trimSessions(input: Session[], options: { limit: number; now?: number }) {
   const limit = Math.max(0, options.limit)
   const cutoff = (options.now ?? Date.now()) - SESSION_RECENT_WINDOW
   const all = input
@@ -49,8 +46,6 @@ export function trimSessions(
   const keepRootIds = new Set(keepRoots.map((s) => s.id))
   const keepChildren = children.filter((s) => {
     if (s.parentID && keepRootIds.has(s.parentID)) return true
-    const perms = options.permission[s.id] ?? []
-    if (perms.length > 0) return true
     return sessionUpdatedAt(s) > cutoff
   })
   return [...keepRoots, ...keepChildren].sort((a, b) => cmp(a.id, b.id))

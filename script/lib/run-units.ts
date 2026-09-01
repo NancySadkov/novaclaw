@@ -61,12 +61,15 @@ const PROMOTED_WALLCLOCK_MS: Partial<Record<(typeof PROMOTED_NOVACLAW_SUBDIRS)[n
 /**
  * Flags that take their value as the NEXT argument rather than after an `=`.
  *
- * Only `--preload` is used today. It is listed rather than inferred because the consequence of
- * getting it wrong is silent: `./happydom.ts` read as a scan root would mark every `packages/app`
- * test "covered" by a path that runs no tests at all, and `run-units.test.ts` would go green on a
- * tree whose app suites never execute.
+ * Only `--preload` is used by a unit today. It is listed rather than inferred because the
+ * consequence of getting it wrong is silent: `./happydom.ts` read as a scan root would mark every
+ * `packages/app` test "covered" by a path that runs no tests at all, and `run-units.test.ts` would go
+ * green on a tree whose app suites never execute.
+ *
+ * ⚠️ `--timeout` is here because `scanRoots` also parses PACKAGE `test` scripts (four of them pass
+ * `--timeout 30000`), and reading `30000` as a directory is the same silent mis-measurement.
  */
-const VALUE_FLAGS: ReadonlySet<string> = new Set(["--preload"])
+const VALUE_FLAGS: ReadonlySet<string> = new Set(["--preload", "--timeout"])
 
 /**
  * The directories a unit's `bun test` invocation actually scans, POSIX-relative to the unit's `dir`.
@@ -147,13 +150,19 @@ export const PACKAGES: Pkg[] = [
   // silent mistake produces WRONG PATHS instead of an error) and `host.node.test.ts` exercises the
   // NODE twin against a real filesystem, which is the runtime the desktop sidecar actually ships on —
   // an Electron `utilityProcess`, where `bun:ffi` does not exist. So the two suites that cover the
-  // file-watching library were the two the gate could not see, while the packager warned that a build
+  // file-watching package were the two the gate could not see, while the packager warned that a build
   // without it "ships NO host library — file watching is off in it".
   //
-  // It depends on a BUILT artifact (`packages/host/build/host.dll`, from `bun run build.ts`). That is
-  // deliberate rather than a fragility to hide: `Host.available()` returning false is the exact
-  // condition that silently disables file watching, so a tree with no library should fail here and say
-  // so, not report green about a capability it does not have.
+  // 🔴 **This unit does NOT depend on the built library, and saying it did was the bug.** Neither
+  // suite loads it: `wire.test.ts` is pure by design and `host.node.test.ts` imports `./host.node`,
+  // which uses `fs.watch`. Nothing here imports `host.bun.ts`, so `dlopen` is never called. Measured
+  // 2026-09-01: 11/11 green with `NOVACLAW_HOST_LIB` pointed at a path that does not exist.
+  //
+  // What that leaves uncovered is the half whose failure mode is SILENT ABSENCE: `host.bun.ts`'s
+  // candidate ladder (`execPath` → `process.resourcesPath/host` → source tree), its ABI-version
+  // refusal, and its poll/decode loop. `Host.available()` returning false is what quietly turns file
+  // watching off, and no test in the tree asserts it is true on a built tree. `NOVACLAW_HOST_LIB` is
+  // the seam a `host.bun.test.ts` would use.
   { name: "host", dir: "packages/host", args: ["src"] },
   { name: "sdk-js", dir: "packages/sdk/js", args: [] },
   { name: "session-ui", dir: "packages/session-ui", args: ["src"] },

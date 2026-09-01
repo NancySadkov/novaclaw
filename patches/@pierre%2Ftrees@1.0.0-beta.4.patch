@@ -1,3 +1,11 @@
+# PATCH PROVENANCE
+# WHAT: ADDS a public `onExpansionChange` option — threads an `event` argument through `#emit`, adds a
+#       subscription and its teardown, and widens two `.d.ts` types. `dist/` only.
+# WHY: we need expand/collapse notifications.
+# CLASS: permanent private fork — this is an API ADDITION on a `1.0.0-beta.4` dependency, so `bun
+#        install` will fail outright the day the version moves and the patch must be re-derived by hand.
+# UPSTREAM: not filed.
+# REMOVE WHEN: `@pierre/trees` ships expansion notifications, or we stop using its file tree.
 diff --git a/dist/model/FileTreeController.js b/dist/model/FileTreeController.js
 index 37c5d1ffedd5aff0258dec41b1b5cedb240aa3a6..365c42ef4c824bfd13d14f0d09226929af625c73 100644
 --- a/dist/model/FileTreeController.js

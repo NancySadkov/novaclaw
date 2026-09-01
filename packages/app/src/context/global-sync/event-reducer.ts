@@ -1,13 +1,6 @@
 import { Binary } from "@novaclaw/core/util/binary"
 import { produce, reconcile, type SetStoreFunction, type Store } from "solid-js/store"
-import type {
-  PermissionV2Request,
-  QuestionRequest,
-  SessionV2Info as Session,
-  SessionStatus,
-  SessionChangeDiff,
-  Todo,
-} from "@novaclaw/sdk/v2/client"
+import type { QuestionRequest, SessionV2Info as Session, SessionStatus, SessionChangeDiff, Todo } from "@novaclaw/sdk/v2/client"
 import type { State, VcsCache } from "./types"
 import { trimSessions } from "./session-trim"
 import { dropSessionCaches } from "./session-cache"
@@ -18,8 +11,6 @@ const SESSION_CONTENT_EVENTS = new Set([
   "session.diff",
   "todo.updated",
   "session.status",
-  "permission.v2.asked",
-  "permission.v2.replied",
   "question.asked",
   "question.replied",
   "question.rejected",
@@ -55,7 +46,6 @@ export function cleanupDroppedSessionCaches(
   const stale = [
     ...Object.keys(store.session_diff),
     ...Object.keys(store.todo),
-    ...Object.keys(store.permission),
     ...Object.keys(store.question),
     ...Object.keys(store.session_status),
   ].filter((sessionID, index, list) => !keep.has(sessionID) && list.indexOf(sessionID) === index)
@@ -80,7 +70,6 @@ export function applyDirectoryEvent(input: {
   setSessionTodo?: (sessionID: string, todos: Todo[] | undefined) => void
   retainedLimit?: number
   sessionContent?: boolean
-  permission?: State["permission"]
 }) {
   const event = input.event
   if (input.sessionContent === false && SESSION_CONTENT_EVENTS.has(event.type)) return
@@ -101,7 +90,7 @@ export function applyDirectoryEvent(input: {
       }
       const next = input.store.session.slice()
       next.splice(result.index, 0, info)
-      const trimmed = trimSessions(next, { limit, permission: input.permission ?? input.store.permission })
+      const trimmed = trimSessions(next, { limit })
       input.setStore("session", reconcile(trimmed, { key: "id" }))
       cleanupDroppedSessionCaches(input.store, input.setStore, trimmed, input.setSessionTodo)
       if (!info.parentID) input.setStore("sessionTotal", (value) => value + 1)
@@ -131,7 +120,7 @@ export function applyDirectoryEvent(input: {
       }
       const next = input.store.session.slice()
       next.splice(result.index, 0, info)
-      const trimmed = trimSessions(next, { limit, permission: input.permission ?? input.store.permission })
+      const trimmed = trimSessions(next, { limit })
       input.setStore("session", reconcile(trimmed, { key: "id" }))
       cleanupDroppedSessionCaches(input.store, input.setStore, trimmed, input.setSessionTodo)
       break
@@ -204,44 +193,6 @@ export function applyDirectoryEvent(input: {
       const next = { ...input.store.vcs, branch: props.branch }
       input.setStore("vcs", next)
       if (input.vcsCache) input.vcsCache.setStore("value", next)
-      break
-    }
-    // F1e S6: the app folds the native `permission.v2.*` vocab (raw EventV2 stream); the
-    // V1 `permission.asked/replied` projection is ignored here and retires in S7.
-    case "permission.v2.asked": {
-      const permission = event.properties as PermissionV2Request
-      const permissions = input.store.permission[permission.sessionID]
-      if (!permissions) {
-        input.setStore("permission", permission.sessionID, [permission])
-        break
-      }
-      const result = Binary.search(permissions, permission.id, (p) => p.id)
-      if (result.found) {
-        input.setStore("permission", permission.sessionID, result.index, reconcile(permission))
-        break
-      }
-      input.setStore(
-        "permission",
-        permission.sessionID,
-        produce((draft) => {
-          draft.splice(result.index, 0, permission)
-        }),
-      )
-      break
-    }
-    case "permission.v2.replied": {
-      const props = event.properties as { sessionID: string; requestID: string }
-      const permissions = input.store.permission[props.sessionID]
-      if (!permissions) break
-      const result = Binary.search(permissions, props.requestID, (p) => p.id)
-      if (!result.found) break
-      input.setStore(
-        "permission",
-        props.sessionID,
-        produce((draft) => {
-          draft.splice(result.index, 1)
-        }),
-      )
       break
     }
     case "question.asked": {

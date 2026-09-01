@@ -1,7 +1,6 @@
 import { createMemo, createResource, createSignal, For, Show } from "solid-js"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
-import { GoldGlyph } from "@/components/gold-glyph"
 import { useLanguage, type TranslationKey, type Translator } from "@/context/language"
 import { useServer } from "@/context/server"
 import { useServerSDK } from "@/context/server-sdk"
@@ -14,7 +13,7 @@ import {
   WRITABILITY_KEY,
   type FolderWritability,
 } from "@/apps/project-skills"
-import { AppPage } from "@/components/app-page"
+import { AppPage, AppPageHeader } from "@/components/app-page"
 import { SettingsExplainV2 } from "@/components/settings-v2/explain"
 import {
   authorText,
@@ -39,8 +38,9 @@ import {
   type InvocationView,
 } from "@/apps/skill-invocation"
 import { SkillInvocation } from "@novaclaw/core/skill/invocation"
+import { scopedDirectory } from "@/utils/routing-directory"
 
-// The Skills app — the browsable half of the Skills programme (`todo/skills.md`).
+// The Skills app — the browsable half of the Skills programme.
 //
 // A skill is code-shaped input from somewhere else that changes what your agent will do, so the
 // question this page has to answer for a NON-EXPERT, before anything technical, is the one they
@@ -165,16 +165,16 @@ export function SkillDetail(props: {
             {t(ORIGIN_BADGE[view().origin.kind])}
           </span>
           <Show when={view().slash}>
-            <span class={`${CHIP} bg-v2-background-bg-layer-02 text-v2-text-text-muted`}>{t("skills.badge.slash")}</span>
+            <span class={`${CHIP} bg-v2-background-bg-layer-02 text-v2-text-text-muted`}>
+              {t("skills.badge.slash")}
+            </span>
           </Show>
         </div>
       </div>
 
       {/* ── 1. Our voice, first and in plain words. The one paragraph a non-expert must read. ── */}
       <section class="rounded-lg border border-v2-border-border-focus bg-v2-background-bg-layer-02 p-3">
-        <h2 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-accent">
-          {t("skills.what.title")}
-        </h2>
+        <h2 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-accent">{t("skills.what.title")}</h2>
         <p class="mt-1.5 text-sm text-v2-text-text-base">{t("skills.what.mechanism")}</p>
         <p class="mt-1.5 text-sm text-v2-text-text-base">{t("skills.what.powers")}</p>
         <p class="mt-1.5 text-sm text-v2-text-text-muted" data-slot="skill-authorship-warning">
@@ -184,7 +184,9 @@ export function SkillDetail(props: {
 
       {/* ── 2. Where it came from — the ONLY section that is our observation. ── */}
       <section class={CARD} data-slot="skill-origin">
-        <h2 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-faint">{t("skills.origin.title")}</h2>
+        <h2 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-faint">
+          {t("skills.origin.title")}
+        </h2>
         <p class="mt-1.5 text-sm text-v2-text-text-base">{t(ORIGIN_TEXT[view().origin.kind])}</p>
         <Show when={view().origin.kind === "configured" && view().origin}>
           {(origin) => (
@@ -197,7 +199,9 @@ export function SkillDetail(props: {
           {(origin) => (
             <Show
               when={origin().candidates.length > 0}
-              fallback={<p class="mt-1 text-xs text-v2-text-text-muted">{t("skills.origin.downloaded.noCandidates")}</p>}
+              fallback={
+                <p class="mt-1 text-xs text-v2-text-text-muted">{t("skills.origin.downloaded.noCandidates")}</p>
+              }
             >
               <p class="mt-1 text-xs text-v2-text-text-muted">{t("skills.origin.downloaded.candidates")}</p>
               <ul class="mt-0.5 list-disc pl-4 text-xs break-all text-v2-text-text-muted">
@@ -354,7 +358,10 @@ export function SkillDetail(props: {
             <Show
               when={invocation().locked === undefined}
               fallback={
-                <div class="mt-2 rounded-md border border-v2-border-border-base p-2" data-slot="skill-invocation-locked">
+                <div
+                  class="mt-2 rounded-md border border-v2-border-border-base p-2"
+                  data-slot="skill-invocation-locked"
+                >
                   <p class="text-xs font-semibold text-v2-text-text-base">{t("skills.invocation.locked.title")}</p>
                   <p class="mt-1 text-sm text-v2-text-text-muted" data-slot="skill-invocation-locked-reason">
                     {t(LOCKED_TEXT[invocation().locked!], { max: SkillInvocation.MAX_ID_LENGTH })}
@@ -521,7 +528,9 @@ export function SkillsPage() {
   // `/path` carries `cache` and `config`; the generated `Path` type lags the fields the server
   // actually sends, so the same cast Settings → Storage uses applies here.
   const paths = createMemo(() => (sync().data.path ?? {}) as { cache?: string; config?: string })
-  const sources = createMemo(() => ((sync().data.config as { skills?: string[] } | undefined)?.skills ?? []) as string[])
+  const sources = createMemo(
+    () => ((sync().data.config as { skills?: string[] } | undefined)?.skills ?? []) as string[],
+  )
   const context = createMemo<SkillContext>(() => ({ paths: paths(), sources: sources() }))
 
   const [skills, { refetch }] = createResource(
@@ -580,7 +589,7 @@ export function SkillsPage() {
   const server = useServer()
   const projectSource = createMemo(() => {
     const http = server.current?.http
-    const dir = sync().data.path.directory || sync().data.path.home || ""
+    const dir = scopedDirectory(sync().data.path)
     return http && dir ? { http, dir } : undefined
   })
   const [project, { refetch: refetchProject }] = createResource(projectSource, async (value) => {
@@ -637,7 +646,12 @@ export function SkillsPage() {
 
   // Saved choices naming a skill this instance no longer has. Computed over the RAW names, because
   // that is what an id is — see `@novaclaw/core/skill/invocation`.
-  const orphans = createMemo(() => orphanedChoices(choices(), views().map((view) => view.rawName)))
+  const orphans = createMemo(() =>
+    orphanedChoices(
+      choices(),
+      views().map((view) => view.rawName),
+    ),
+  )
 
   // `POST /api/config/remove` — the deletion verb. `PATCH /config` merges and can never delete
   // (v0.2.0 item 4.3), so clearing a saved choice cannot ride the patch.
@@ -738,17 +752,14 @@ export function SkillsPage() {
 
   return (
     <AppPage class="flex flex-col overflow-hidden">
-      <div class="flex items-center gap-3 border-b border-v2-border-border-base px-4 py-2.5">
-        <GoldGlyph name="generic_app" class="size-6" />
-        <span class="text-[15px] font-semibold">{t("skills.title")}</span>
-        <span class="min-w-0 flex-1 truncate text-xs text-v2-text-text-faint">{t("skills.tagline")}</span>
+      <AppPageHeader glyph="generic_app" title={t("skills.title")} hint={t("skills.tagline")}>
         <button
           class="rounded-md border border-v2-border-border-strong bg-v2-background-bg-layer-02 px-3 py-1.5 text-sm font-medium hover:bg-v2-background-bg-layer-03"
           onClick={() => void refetch()}
         >
           {t("skills.action.refresh")}
         </button>
-      </div>
+      </AppPageHeader>
 
       <div class="flex min-h-0 flex-1 overflow-hidden">
         <div class="flex w-80 shrink-0 flex-col border-r border-v2-border-border-base">

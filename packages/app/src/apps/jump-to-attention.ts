@@ -1,6 +1,6 @@
 // The global "take me to the chat that needs me" affordance (uix-improvement slice 3): one command +
 // keybind that works from ANYWHERE in the shell. Target priority: the most recently updated chat
-// WAITING on the user (pending permission/question) → the most recent chat with unseen output → the
+// WAITING on the user (pending question) → the most recent chat with unseen output → the
 // latest chat the client knows → the Chats list. Registered from NewLayout so it is always live.
 import { useNavigate } from "@solidjs/router"
 import { base64Encode } from "@novaclaw/core/util/encode"

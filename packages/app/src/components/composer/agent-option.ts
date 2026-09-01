@@ -57,6 +57,13 @@ export type ComposerAgentControlState = {
   readonly unattended?: (() => boolean) | undefined
 }
 
-/** The colleague currently selected, or undefined while the roster is still loading. */
+/**
+ * The colleague currently selected — **or the first one**, never nothing while a roster exists.
+ *
+ * ⚠️ It returns `undefined` only when `options` is EMPTY, not "while the roster is loading". An
+ * unmatched `selectedID` falls back to `options[0]`, deliberately: a stale id (a retired colleague,
+ * a restored session) must not leave the composer with no agent, which is the shape that renders a
+ * disabled control the user cannot explain.
+ */
 export const selectedOption = (state: ComposerAgentControlState): ComposerAgentOption | undefined =>
   state.options.find((option) => option.id === state.selectedID) ?? state.options[0]

@@ -2,7 +2,7 @@ import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "driz
 import { Timestamps } from "../database/schema.sql"
 import type { Messenger } from "@novaclaw/schema/messenger"
 
-// The Messenger module's tables (notes/messenger-plan.md §3.1). Secrets NEVER live here:
+// The Messenger module's tables. Secrets NEVER live here:
 // an account row points at the credential store via credential_id. Tables must live in sql.ts
 // files (the drizzle config globs `src/**/sql.ts`) or the migration machinery misses them.
 
@@ -119,20 +119,18 @@ export const MessengerInboundTable = sqliteTable(
  * **and its own stricter rate limit*). **ONE ROW**, keyed by `scope`, always `"global"` —
  * `MessengerStore.INITIATION_SCOPE`.
  *
- * ⚠️ **Why a table at all.** This bucket lived in the gateway's heap (`const initiations = {day,
- * count}`) until 2026-07-31, which made it *per gateway instance*: a restart reset the day's count to
- * zero. NovaClaw's supervisor **deliberately auto-restarts a crashed server** (AGENTS.md → *It never
- * breaks in your hands*), so restarts are a designed, routine event — and a rate limit that a routine
- * event resets is not a rate limit. A crash-loop or a restart-happy day could spray well past the cap
- * on the owner's real account, which is the exact outcome principle 9 exists to prevent.
+ * 🔴 **Why a table and not a counter in the gateway's heap.** NovaClaw's supervisor
+ * **deliberately auto-restarts a crashed server** (AGENTS.md → *It never breaks in your hands*), so
+ * a restart is a designed, routine event — and a rate limit that a routine event resets is not a
+ * rate limit. An in-memory bucket would let a crash-loop or a restart-happy day spray well past the
+ * cap on the owner's real account, which is the exact outcome principle 9 exists to prevent.
  *
  * ⚠️ **Why ONE row and not one per account.** Two reasons, and the second is the one that decides it.
  * (a) Principle 9(a) makes the outbound governor *"one hand"* — global across every chat and every
  * account, because what a provider (and a recipient) sees is one person's behaviour, not one
- * connection's. (b) The in-memory bucket it replaces was already global, so keying by account would
- * quietly MULTIPLY the shipped cap by the number of configured accounts — a durability change that
- * loosens the limit is not the change that was asked for. Per-account is a strictly looser policy and
- * has to be argued for on its own evidence; it is not a default to drift into.
+ * connection's. (b) Keying by account would quietly MULTIPLY the shipped cap by the number of
+ * configured accounts. Per-account is a strictly looser policy and has to be argued for on its own
+ * evidence; it is not a default to drift into.
  *
  * `day` is an **ISO-8601 UTC calendar date** (`YYYY-MM-DD`) — see `MessengerStore.initiationDay` for
  * why UTC, and `chargeInitiation` for the one atomic statement that rolls it over.

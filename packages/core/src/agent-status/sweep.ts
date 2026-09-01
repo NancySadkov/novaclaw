@@ -1,7 +1,6 @@
 export * as AgentStatusSweep from "./sweep"
 
 import { Effect } from "effect"
-import { AgentStatus } from "../agent-status"
 import { REFRESH_INTERVAL_MS } from "./refresh"
 import { runPass, type PassDeps } from "./pass"
 
@@ -44,12 +43,3 @@ export const sweep = (state: SweepState, deps: Omit<PassDeps, "now">, now: numbe
     state.lastLooked = now
     return yield* runPass({ ...deps, now: () => now })
   })
-
-/** The deps a real instance supplies, minus the model half the caller injects. */
-export const storeDeps = Effect.fn("AgentStatus.storeDeps")(function* () {
-  const status = yield* AgentStatus.Service
-  return {
-    candidates: () => status.candidates(),
-    write: (info: { agent: string; task: string; observed: number }) => status.set(info),
-  }
-})

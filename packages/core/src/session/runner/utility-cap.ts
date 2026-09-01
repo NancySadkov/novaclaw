@@ -22,8 +22,8 @@ import { FinishRecovery } from "./finish-recovery"
  * ⚠️ **And this is NOT the retired "bigger is worse" inversion.** `runner/llm.ts` used to conclude
  * from a 2026-07-20 table that raising `max_tokens` made things worse — a runaway thinking loop.
  * That did not reproduce on the current test model: above the cliff a bigger cap is *neutral*, and
- * the model stops by itself. Doubling is therefore safe here in a way it was believed not to be;
- * see the corrected table in `runner/llm.ts`.
+ * the model stops by itself. Doubling is therefore safe here in a way it was believed not to be.
+ * Both tables and the ruling are in `notes/reports/utility-pass-token-cliff-2026-08-06.md`.
  *
  * **Bounded, per the thinking-budget lesson (`memory: thinking-budget-mindcontrol`): every phase gets
  * a finite ceiling and a MECHANICAL stop.** One doubling, then the pass reports honestly. An

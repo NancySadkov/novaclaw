@@ -108,6 +108,8 @@ export interface InstanceRequest {
   readonly route: string
   /** JSON-encoded when present. `undefined` sends no body at all (not `"undefined"`). */
   readonly body?: unknown
+  /** A non-JSON HTTP body (for example a ZIP upload). Mutually exclusive with `body`. */
+  readonly rawBody?: BodyInit
   readonly directory?: string
   /** Defaults to `"query"` — the spelling 4 of the 5 directory-carrying clients use. */
   readonly directoryVia?: DirectoryChannel
@@ -263,6 +265,8 @@ export async function instanceFetchResponse<T>(
   const routed = request.directory !== undefined
   const send: InstanceSend = request.fetch ?? ((...args) => globalThis.fetch(...args))
   const abort = requestAbort(request)
+  if (request.body !== undefined && request.rawBody !== undefined)
+    throw new Error("An instance request cannot carry both JSON and raw bodies")
 
   const url = instanceUrl(server, request.route, {
     ...(routed && via === "query" ? { directory: request.directory } : {}),
@@ -279,7 +283,7 @@ export async function instanceFetchResponse<T>(
     // ⚠️ Encoding is the contract, NOT raw — an earlier note of mine recommended the opposite before
     // checking the ISO-8859-1 constraint. For an ASCII path encode→decode is the identity, so this
     // changes nothing today; it fixes non-ASCII paths and removes the ambiguity for a path containing
-    // a literal `%`. See `todo/assorted.md`.
+    // a literal `%`.
     ...(routed && via === "header"
       ? { "x-novaclaw-directory": encodeURIComponent(request.directory as string) }
       : {}),
@@ -292,7 +296,11 @@ export async function instanceFetchResponse<T>(
       method,
       headers,
       ...(abort.signal === undefined ? {} : { signal: abort.signal }),
-      ...(request.body === undefined ? {} : { body: JSON.stringify(request.body) }),
+      ...(request.rawBody !== undefined
+        ? { body: request.rawBody }
+        : request.body === undefined
+          ? {}
+          : { body: JSON.stringify(request.body) }),
     })
 
     if (!res.ok) {

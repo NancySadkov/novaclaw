@@ -8,7 +8,8 @@ import { FSUtil } from "@novaclaw/core/fs-util"
 import { CrossSpawnSpawner } from "@novaclaw/core/cross-spawn-spawner"
 import { Flag } from "@novaclaw/core/flag/flag"
 import { createNovaclawClient } from "@novaclaw/sdk/v2"
-import { validateSession } from "../../src/cli/validate-session"
+import { SessionID } from "../../src/session/schema"
+import { Schema } from "effect"
 import { InstanceBootstrap } from "../../src/project/bootstrap-service"
 import { InstanceStore } from "../../src/project/instance-store"
 
@@ -20,6 +21,41 @@ import { disposeAllInstances, TestInstance, tmpdirScoped } from "../fixture/fixt
 import { awaitWithTimeout, pollWithTimeout, testEffectShared } from "../lib/effect"
 import { Database } from "@novaclaw/core/database/database"
 import { httpApiLayer } from "./httpapi-layer"
+
+/**
+ * Decode a `-s <session>` id and fetch it, so the assertions below can pin the SDK-visible shape of
+ * both failures: a malformed id (thrown locally) and a well-formed id the server does not have.
+ *
+ * ⚠️ This lived at `src/cli/validate-session.ts` until 2026-09-01 (RF-14-13), where its own header
+ * claimed it was *"used by the headless CLI path and the server SDK tests"*. The first half was
+ * false — `cmd/run.ts` has its own `--session` option and does its own check (`:480`, `:715`), so
+ * nothing in `src/` ever called this. It was test scaffolding shelved in production code; re-homed
+ * here rather than deleted, so the server-contract assertions it carries survive it.
+ */
+const decodeSessionID = Schema.decodeUnknownSync(SessionID)
+async function validateSession(input: {
+  url: string
+  sessionID?: string
+  directory?: string
+  fetch?: typeof fetch
+  headers?: RequestInit["headers"]
+}) {
+  if (!input.sessionID) return
+
+  let sessionID: SessionID
+  try {
+    sessionID = decodeSessionID(input.sessionID)
+  } catch (error) {
+    throw new Error(`Invalid session ID: ${error instanceof Error ? error.message : "unknown error"}`, { cause: error })
+  }
+
+  await createNovaclawClient({
+    baseUrl: input.url,
+    directory: input.directory,
+    fetch: input.fetch,
+    headers: input.headers,
+  }).v2.session.get({ sessionID }, { throwOnError: true })
+}
 
 const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
 const it = testEffectShared(
@@ -289,7 +325,6 @@ describe("HttpApi SDK", () => {
 
         yield* Effect.all([
           expectStatus(() => sdk.config.get(), 200),
-          expectStatus(() => sdk.config.providers(), 200),
           expectStatus(() => sdk.find.files({ query: "hello", limit: 10 }), 200),
         ])
       }),
@@ -441,7 +476,6 @@ describe("HttpApi SDK", () => {
       Effect.gen(function* () {
         const paths = yield* capture(() => sdk.path.get())
         const config = yield* capture(() => sdk.config.get())
-        const providers = yield* capture(() => sdk.config.providers())
         const file = yield* capture(() => sdk.file.read({ path: "hello.txt" }))
         const files = yield* capture(() => sdk.file.list({ path: "." }))
         const fileStatus = yield* capture(() => sdk.file.status())
@@ -452,24 +486,19 @@ describe("HttpApi SDK", () => {
         // `InstanceState.make` and registers for no reload domain, so it served a stale list after
         // any config write. Skills are read through core's `SkillV2` at `/api/skill`, which is
         // registered for the `skills` reload domain — covered by the core config-plugin suite.
-        const tools = yield* capture(() => sdk.tool.ids())
         const vcs = yield* capture(() => sdk.vcs.get())
-        const formatter = yield* capture(() => sdk.formatter.status())
 
         return {
           statuses: statuses({
             paths,
             config,
-            providers,
             file,
             files,
             fileStatus,
             findFiles,
             findText,
             agents,
-            tools,
             vcs,
-            formatter,
           }),
           paths: { directorySelected: record(paths.data).directory === directory },
           file: record(file.data).content,

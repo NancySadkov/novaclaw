@@ -3,7 +3,7 @@ import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
 import { InvalidRequestError } from "../errors"
 
-// The Messenger module's HTTP surface (notes/messenger-plan.md §5), P0 slice: driver discovery +
+// The Messenger module's HTTP surface, P0 slice: driver discovery +
 // account CRUD. INSTANCE-GLOBAL routes (no location middleware — accounts span locations, like
 // health). Secrets ride the `secret` payload field into the credential store and NEVER come back
 // out: every response carries `credentialID` references only. P3 adds the picker's data (an

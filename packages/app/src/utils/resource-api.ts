@@ -39,8 +39,7 @@ export function instanceResources(server: ServerConnection.HttpBase, signal?: Ab
  * Nova Health — one composed answer to *"is anything wrong?"*.
  *
  * ⚠️ `unknown` is a real verdict, not a missing value, and the UI must never render it as a tick.
- * Some rows can legitimately answer "cannot tell" (the updater flag is unreadable outside the
- * desktop shell), and dressing an unread probe as healthy is a false report on the one screen a
+ * Some rows can legitimately answer "cannot tell", and dressing an unread probe as healthy is a false report on the one screen a
  * person opens when they already suspect something is broken.
  *
  * ⚠️ `label`/`detail`/`action` arrive as ENGLISH from the server, so this board is not localized the

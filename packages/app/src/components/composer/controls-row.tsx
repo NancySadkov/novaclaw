@@ -76,26 +76,6 @@ export function ComposerControlsRow(props: { state: ComposerControlsRowState }) 
   }
   return (
     <>
-      {/* 🔴 The model chip LEFT this row on 2026-08-21 (owner: *"move model picker into the agents
-          configuration, where by default all agents use Default model"*). A colleague has one mind:
-          picking a model per chat made the same colleague clever in one conversation and poor in the
-          next, for reasons the user could not see. It is chosen in the colleague's configuration and
-          defaults to the instance model set in Settings → Models. */}
-      {/* 1K: the permission-mode droplist shows on the new-session composer AND
-          mid-session (an active session id) — mid-session selection calls switchMode. */}
-      {/* 🔴 Posture, permission mode and Strict LEFT this row on 2026-08-21 (owner: they "should be
-          part of the agent too"). They are standing choices about how a colleague works, so they live
-          in its configuration — re-choosing them per chat asked the user again for a decision that
-          never changes. What stays here is per-CHAT: the model this turn uses, and Tune. */}
-      {/* 🔴 **The "Tune" button is GONE and the colleague chip opens its panel instead** (owner,
-          2026-08-27). Two controls stood side by side: one named WHO the chat was for and did
-          nothing when pressed, the other was a verb with no visible subject. One chip answers both —
-          it says whose desk this is, and pressing it opens that colleague's configuration, with this
-          chat's own controls as the section inside it they already were.
-          ⚠️ The tuning panel itself is unchanged; only its trigger moved. T1's ruling still holds
-          (owner 2026-07-14: per-chat helpers stay discoverable rather than behind an expertise
-          level) — the door is now labelled with a name instead of a verb, which is more
-          discoverable, not less. */}
       {/* ⚠️ Gated on `sessionControls` ALONE, not on `agentVisible`. The two differ on the
           NEW-SESSION composer — `agentVisible` is `!!sessionID()` while `sessionControls` is
           "new-session OR active session" — so requiring both would have removed the tuning panel from

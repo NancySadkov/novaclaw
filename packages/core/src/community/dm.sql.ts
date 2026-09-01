@@ -2,7 +2,7 @@ import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core"
 import { Timestamps } from "../database/schema.sql"
 
 /**
- * Community P3 — direct messages (`todo/community-p2p.md`).
+ * Community P3 — direct messages (`notes/spec/community-p2p.md`).
  *
  * 🔴 **Stored as PLAINTEXT, and that is not an oversight.** The seal uses an ephemeral sender key per
  * message and discards it, which is the forward secrecy — so an instance CANNOT reopen a message it

@@ -86,9 +86,13 @@ console.log(`                        and the migration baseline when a *sql.ts i
 console.log(`  ${HOOKS_DIR}/pre-push    mode-120000 files anywhere in the tree being pushed`)
 console.log("Bypass either with --no-verify.")
 
-// CRLF in a hook is a `bad interpreter` failure under Git Bash and a hard stop on Linux/macOS. The
-// repo has no `.githooks/** text eol=lf` attribute yet, so a clone with core.autocrlf=true would
-// convert them on checkout — worth saying out loud rather than debugging later.
+// CRLF in a hook is a `bad interpreter` failure under Git Bash and a hard stop on Linux/macOS, and
+// the hook then SILENTLY never runs — the exact failure `.githooks/` exists to remove.
+//
+// ⚠️ `.gitattributes` already pins `.githooks/** text eol=lf`, so a fresh clone cannot land here
+// however `core.autocrlf` is set. This check is the backstop for what the attribute cannot reach: a
+// working copy that predates the attribute, and a hook edited in place by an editor that writes
+// CRLF. Keep it — it costs one read per hook and the failure it catches is invisible.
 const crlf: string[] = []
 for (const hook of HOOKS) {
   const text = await Bun.file(path.join(repo, HOOKS_DIR, hook)).text()

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { KbAbsorbEval } from "@novaclaw/core/kb-graph/absorb-eval"
+import { KbAbsorbEval } from "../script/absorb-eval"
 
 /**
  * 🔴 The defect this instrument replaces: a HAND-LISTED scaffolding set reported "99% concrete", and a

@@ -72,8 +72,6 @@ export type Event =
   | EventMemoryRecalled
   | EventFileEdited
   | EventReferenceUpdated
-  | EventPermissionV2Asked
-  | EventPermissionV2Replied
   | EventPluginAdded
   | EventFileWatcherUpdated
   | EventPtyCreated
@@ -179,11 +177,11 @@ export type Todo = {
    */
   content: string
   /**
-   * Current status of the task: pending, in_progress, completed, cancelled
+   * Current status of the task. Any string is accepted; the canonical values are pending, in_progress, completed and cancelled, and anything else is passed through unchanged.
    */
   status: string
   /**
-   * Priority level of the task: high, medium, low
+   * Priority level of the task. Any string is accepted; the canonical values are high, medium and low, and anything else is passed through unchanged.
    */
   priority: string
 }
@@ -1077,30 +1075,6 @@ export type GlobalEvent = {
       }
     | {
         id: string
-        type: "permission.v2.asked"
-        properties: {
-          id: string
-          sessionID: string
-          action: string
-          resources: Array<string>
-          save?: Array<string>
-          metadata?: {
-            [key: string]: unknown
-          }
-          source?: PermissionV2Source
-        }
-      }
-    | {
-        id: string
-        type: "permission.v2.replied"
-        properties: {
-          sessionID: string
-          requestID: string
-          reply: PermissionV2Reply
-        }
-      }
-    | {
-        id: string
         type: "plugin.added"
         properties: {
           id: string
@@ -1446,15 +1420,6 @@ export type NotFoundError = {
   }
 }
 
-export type ProviderCatalog = {
-  providers: Array<ProviderV2Info>
-  models: Array<ModelV2Info>
-  connected: Array<string>
-  default: {
-    [key: string]: string
-  }
-}
-
 export type ProjectState =
   | {
       kind: "project"
@@ -1524,30 +1489,6 @@ export type ProjectWriteResult =
       detail: string
     }
 
-export type ToolListItem = {
-  id: string
-  description: string
-  parameters: unknown
-}
-
-export type ToolList = Array<ToolListItem>
-
-export type ToolIds = Array<string>
-
-export type WorktreeError = {
-  name:
-    | "WorktreeNotGitError"
-    | "WorktreeNameGenerationFailedError"
-    | "WorktreeCreateFailedError"
-    | "WorktreeStartCommandFailedError"
-    | "WorktreeRemoveFailedError"
-    | "WorktreeResetFailedError"
-    | "WorktreeListFailedError"
-  data: {
-    message: string
-  }
-}
-
 export type WorktreeCreateInput = {
   name?: string
   /**
@@ -1562,30 +1503,18 @@ export type Worktree = {
   directory: string
 }
 
-export type WorktreeRemoveInput = {
-  directory: string
-  force?: boolean
-}
-
-export type WorktreeDirtyError = {
-  name: "WorktreeDirtyError"
+export type WorktreeError = {
+  name:
+    | "WorktreeNotGitError"
+    | "WorktreeNameGenerationFailedError"
+    | "WorktreeCreateFailedError"
+    | "WorktreeStartCommandFailedError"
+    | "WorktreeRemoveFailedError"
+    | "WorktreeResetFailedError"
+    | "WorktreeListFailedError"
   data: {
-    directory: string
     message: string
-    forceRequired: true
   }
-}
-
-export type WorktreeResetInput = {
-  directory: string
-}
-
-export type McpResource = {
-  name: string
-  uri: string
-  description?: string
-  mimeType?: string
-  client: string
 }
 
 export type FileNode = {
@@ -1726,12 +1655,6 @@ export type Agent = {
   steps?: number
 }
 
-export type FormatterStatus = {
-  name: string
-  extensions: Array<string>
-  enabled: boolean
-}
-
 export type AppManifest = {
   id: string
   title: string
@@ -1824,28 +1747,12 @@ export type QuestionNotFoundError = {
   message: string
 }
 
-export type Workspace = {
-  id: string
-  type: string
-  name: string
-  branch?: string | null
-  directory?: string | null
-  extra?: unknown | null
-  origin: string
-  timeUsed: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-}
-
-export type WorkspaceCreateError = {
-  name: "WorkspaceCreateError"
-  data: {
-    message: string
-  }
-}
-
-export type WorkspaceWarpError = {
-  name: "WorkspaceWarpError"
-  data: {
-    message: string
+export type ProviderCatalog = {
+  providers: Array<ProviderV2Info>
+  models: Array<ModelV2Info>
+  connected: Array<string>
+  default: {
+    [key: string]: string
   }
 }
 
@@ -2033,12 +1940,6 @@ export type ProviderNotFoundError = {
 
 export type UnknownReason = "not-applicable" | "not-measured" | "measurement-failed" | "incomplete"
 
-export type PermissionNotFoundError = {
-  _tag: "PermissionNotFoundError"
-  requestID: string
-  message: string
-}
-
 export type MessengerAccountStatus = {
   id: string
   metadata?: {
@@ -2180,8 +2081,6 @@ export type V2Event =
   | MemoryRecalled
   | FileEdited
   | ReferenceUpdated
-  | PermissionV2Asked
-  | PermissionV2Replied
   | PluginAdded
   | FileWatcherUpdated
   | PtyCreated
@@ -2836,23 +2735,6 @@ export type SessionMessage =
   | SessionMessageShell
   | SessionMessageAssistant
   | SessionMessageCompaction
-
-export type PermissionV2Source = {
-  type: "tool"
-  messageID: string
-  callID: string
-}
-
-export type PermissionV2Reply =
-  | "once"
-  | "always"
-  | "reject"
-  | "allow-once"
-  | "allow-file"
-  | "allow-always"
-  | "deny-once"
-  | "deny-file"
-  | "deny-always"
 
 export type QuestionV2Option = {
   /**
@@ -3951,7 +3833,6 @@ export type ConfigV2Log = {
     messenger?: "debug" | "info" | "warn" | "error"
     mcp?: "debug" | "info" | "warn" | "error"
     offline?: "debug" | "info" | "warn" | "error"
-    patch?: "debug" | "info" | "warn" | "error"
     plugin?: "debug" | "info" | "warn" | "error"
     pty?: "debug" | "info" | "warn" | "error"
     question?: "debug" | "info" | "warn" | "error"
@@ -4356,10 +4237,6 @@ export type ConfigInfo = {
   shell?: string
   model?: string
   default_agent?: string
-  /**
-   * Automatically update or notify when a new version is available
-   */
-  autoupdate?: boolean | "notify"
   username?: string
   expertise?: "normal" | "advanced" | "developer"
   server?: ConfigV2Server
@@ -4389,7 +4266,6 @@ export type ConfigInfo = {
   provider_connection?: ConfigV2ProviderConnection
   persona?: {
     enabled?: boolean
-    name?: string
     prompt?: string
   }
   user_profile?: {
@@ -4457,7 +4333,7 @@ export type ConfigInfo = {
      */
     executionTokens?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     /**
-     * Token budget for the REASONING stage that plans a step before it runs — 0 disables the stage (notes/jh-think-stage.md). MEASURED on qwen3.6-35b: a reasoning model cut off mid-thought returns EMPTY, because the close of its <think> block never arrives and the parser has nothing to extract — 3072 and 8192 both yield nothing, 24576 completes (18974 tokens used). Budget it generously or not at all: an empty finish=length reply is a BUDGET reading, never a capability reading (default: 0 = off)
+     * Token budget for the REASONING stage that plans a step before it runs — 0 disables the stage (notes/jh/think-stage.md). MEASURED on qwen3.6-35b: a reasoning model cut off mid-thought returns EMPTY, because the close of its <think> block never arrives and the parser has nothing to extract — 3072 and 8192 both yield nothing, 24576 completes (18974 tokens used). Budget it generously or not at all: an empty finish=length reply is a BUDGET reading, never a capability reading (default: 0 = off)
      */
     reasoningTokens?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   }
@@ -4598,6 +4474,49 @@ export type ConfigInfo = {
   enabled_providers?: Array<string>
 }
 
+export type ProjectTune = {
+  mode?: "interactive"
+  features?: {
+    safeMode?: boolean
+    askBeforeChanges?: boolean
+    surgicalEdits?: boolean
+    contextBudget?: boolean
+    memory?: boolean
+    introspection?: boolean
+    quality?: boolean
+    affective?: boolean
+  }
+}
+
+export type ProjectSkillChoice = {
+  show?: boolean
+}
+
+export type ProjectSkills = {
+  [key: string]: ProjectSkillChoice
+}
+
+export type ProjectSection = "name" | "permissions" | "tune" | "exclude" | "policies" | "skills"
+
+export type DbRegistryTableSummary = {
+  name: string
+  rowCount: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type DbRegistryTableRow = {
+  rowid: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  values: {
+    [key: string]: unknown
+  }
+}
+
+export type DbRegistryTablePage = {
+  table: string
+  columns: Array<string>
+  rowCount: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  rows: Array<DbRegistryTableRow>
+}
+
 export type ProviderRequest = {
   headers: {
     [key: string]: string
@@ -4690,54 +4609,6 @@ export type ModelV2Info = {
     output: number
     images?: number
   }
-}
-
-export type ProjectTune = {
-  mode?: "interactive"
-  features?: {
-    safeMode?: boolean
-    askBeforeChanges?: boolean
-    surgicalEdits?: boolean
-    contextBudget?: boolean
-    memory?: boolean
-    introspection?: boolean
-    quality?: boolean
-    affective?: boolean
-  }
-}
-
-export type ProjectSkillChoice = {
-  show?: boolean
-}
-
-export type ProjectSkills = {
-  [key: string]: ProjectSkillChoice
-}
-
-export type ProjectSection = "name" | "permissions" | "tune" | "exclude" | "policies" | "skills"
-
-export type DbRegistryTableSummary = {
-  name: string
-  rowCount: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-}
-
-export type DbRegistryTableRow = {
-  rowid: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  values: {
-    [key: string]: unknown
-  }
-}
-
-export type DbRegistryTablePage = {
-  table: string
-  columns: Array<string>
-  rowCount: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  rows: Array<DbRegistryTableRow>
-}
-
-export type WorkspaceEventConnectionStatus = {
-  workspaceID: string
-  status: "connected" | "connecting" | "disconnected" | "error"
 }
 
 export type LocationInfo = {
@@ -5999,7 +5870,6 @@ export type MessengerCapabilities = {
     maxBytes?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   }
   edits: boolean
-  typing: boolean
   threads: boolean
   moderation: {
     delete: boolean
@@ -6265,24 +6135,18 @@ export type RecipeVerifyResult = {
   cookState?: "ran" | "blocked" | "stopped"
 }
 
-export type PermissionV2Request = {
-  id: string
-  sessionID: string
-  action: string
-  resources: Array<string>
-  save?: Array<string>
-  metadata?: {
-    [key: string]: unknown
-  }
-  source?: PermissionV2Source
-}
-
 export type PermissionSavedInfo = {
   id: string
   origin: string
   action: string
   resource: string
   effect?: "allow" | "deny"
+}
+
+export type PermissionV2Source = {
+  type: "tool"
+  messageID: string
+  callID: string
 }
 
 export type FileSystemSnapshotContent = {
@@ -6731,50 +6595,6 @@ export type ReferenceUpdated = {
   location?: LocationRef
   data: {
     [key: string]: unknown
-  }
-}
-
-export type PermissionV2Asked = {
-  id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  type: "permission.v2.asked"
-  durable?: {
-    aggregateID: string
-    seq: number
-    version: number
-  }
-  location?: LocationRef
-  data: {
-    id: string
-    sessionID: string
-    action: string
-    resources: Array<string>
-    save?: Array<string>
-    metadata?: {
-      [key: string]: unknown
-    }
-    source?: PermissionV2Source
-  }
-}
-
-export type PermissionV2Replied = {
-  id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  type: "permission.v2.replied"
-  durable?: {
-    aggregateID: string
-    seq: number
-    version: number
-  }
-  location?: LocationRef
-  data: {
-    sessionID: string
-    requestID: string
-    reply: PermissionV2Reply
   }
 }
 
@@ -8198,32 +8018,6 @@ export type EventReferenceUpdated = {
   type: "reference.updated"
   properties: {
     [key: string]: unknown
-  }
-}
-
-export type EventPermissionV2Asked = {
-  id: string
-  type: "permission.v2.asked"
-  properties: {
-    id: string
-    sessionID: string
-    action: string
-    resources: Array<string>
-    save?: Array<string>
-    metadata?: {
-      [key: string]: unknown
-    }
-    source?: PermissionV2Source
-  }
-}
-
-export type EventPermissionV2Replied = {
-  id: string
-  type: "permission.v2.replied"
-  properties: {
-    sessionID: string
-    requestID: string
-    reply: PermissionV2Reply
   }
 }
 
@@ -10871,34 +10665,6 @@ export type ConfigUpdateResponses = {
 
 export type ConfigUpdateResponse = ConfigUpdateResponses[keyof ConfigUpdateResponses]
 
-export type ConfigProvidersData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/config/providers"
-}
-
-export type ConfigProvidersErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type ConfigProvidersError = ConfigProvidersErrors[keyof ConfigProvidersErrors]
-
-export type ConfigProvidersResponses = {
-  /**
-   * List of providers
-   */
-  200: ProviderCatalog
-}
-
-export type ConfigProvidersResponse = ConfigProvidersResponses[keyof ConfigProvidersResponses]
-
 export type ProjectStateData = {
   body?: never
   path?: never
@@ -10963,92 +10729,6 @@ export type ProjectWriteResponses = {
 
 export type ProjectWriteResponse = ProjectWriteResponses[keyof ProjectWriteResponses]
 
-export type ToolListData = {
-  body?: never
-  path?: never
-  query: {
-    directory?: string
-    workspace?: string
-    provider: string
-    model: string
-  }
-  url: "/experimental/tool"
-}
-
-export type ToolListErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-}
-
-export type ToolListError = ToolListErrors[keyof ToolListErrors]
-
-export type ToolListResponses = {
-  /**
-   * Tools
-   */
-  200: ToolList
-}
-
-export type ToolListResponse = ToolListResponses[keyof ToolListResponses]
-
-export type ToolIdsData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/experimental/tool/ids"
-}
-
-export type ToolIdsErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-}
-
-export type ToolIdsError = ToolIdsErrors[keyof ToolIdsErrors]
-
-export type ToolIdsResponses = {
-  /**
-   * Tool IDs
-   */
-  200: ToolIds
-}
-
-export type ToolIdsResponse = ToolIdsResponses[keyof ToolIdsResponses]
-
-export type WorktreeListData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/experimental/worktree"
-}
-
-export type WorktreeListErrors = {
-  /**
-   * WorktreeError | InvalidRequestError
-   */
-  400: WorktreeError | InvalidRequestError
-}
-
-export type WorktreeListError = WorktreeListErrors[keyof WorktreeListErrors]
-
-export type WorktreeListResponses = {
-  /**
-   * List of worktree directories
-   */
-  200: Array<string>
-}
-
-export type WorktreeListResponse = WorktreeListResponses[keyof WorktreeListResponses]
-
 export type WorktreeCreateData = {
   body?: WorktreeCreateInput
   path?: never
@@ -11076,97 +10756,6 @@ export type WorktreeCreateResponses = {
 }
 
 export type WorktreeCreateResponse = WorktreeCreateResponses[keyof WorktreeCreateResponses]
-
-export type WorktreeRemoveData = {
-  body?: WorktreeRemoveInput
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/experimental/worktree"
-}
-
-export type WorktreeRemoveErrors = {
-  /**
-   * WorktreeError | InvalidRequestError
-   */
-  400: WorktreeError | InvalidRequestError
-  /**
-   * WorktreeDirtyError
-   */
-  409: WorktreeDirtyError
-}
-
-export type WorktreeRemoveError = WorktreeRemoveErrors[keyof WorktreeRemoveErrors]
-
-export type WorktreeRemoveResponses = {
-  /**
-   * Worktree removed
-   */
-  200: boolean
-}
-
-export type WorktreeRemoveResponse = WorktreeRemoveResponses[keyof WorktreeRemoveResponses]
-
-export type WorktreeResetData = {
-  body?: WorktreeResetInput
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/experimental/worktree/reset"
-}
-
-export type WorktreeResetErrors = {
-  /**
-   * WorktreeError | InvalidRequestError
-   */
-  400: WorktreeError | InvalidRequestError
-}
-
-export type WorktreeResetError = WorktreeResetErrors[keyof WorktreeResetErrors]
-
-export type WorktreeResetResponses = {
-  /**
-   * Worktree reset
-   */
-  200: boolean
-}
-
-export type WorktreeResetResponse = WorktreeResetResponses[keyof WorktreeResetResponses]
-
-export type ExperimentalResourceListData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/experimental/resource"
-}
-
-export type ExperimentalResourceListErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type ExperimentalResourceListError = ExperimentalResourceListErrors[keyof ExperimentalResourceListErrors]
-
-export type ExperimentalResourceListResponses = {
-  /**
-   * MCP resources
-   */
-  200: {
-    [key: string]: McpResource
-  }
-}
-
-export type ExperimentalResourceListResponse =
-  ExperimentalResourceListResponses[keyof ExperimentalResourceListResponses]
 
 export type FindTextData = {
   body?: never
@@ -11778,34 +11367,6 @@ export type AppAgentsResponses = {
 
 export type AppAgentsResponse = AppAgentsResponses[keyof AppAgentsResponses]
 
-export type FormatterStatusData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/formatter"
-}
-
-export type FormatterStatusErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type FormatterStatusError = FormatterStatusErrors[keyof FormatterStatusErrors]
-
-export type FormatterStatusResponses = {
-  /**
-   * Formatter status
-   */
-  200: Array<FormatterStatus>
-}
-
-export type FormatterStatusResponse = FormatterStatusResponses[keyof FormatterStatusResponses]
-
 export type InstanceDiagnosisData = {
   body?: never
   path?: never
@@ -12272,7 +11833,7 @@ export type MemoryListData = {
     kinds?: string
     statuses?: string
     includeInvalid?: string
-    limit?: string
+    limit?: number
     offset?: string
   }
   url: "/memory/list"
@@ -12319,7 +11880,7 @@ export type MemoryGraphData = {
     directory?: string
     workspace?: string
     scopes?: string
-    limit?: string
+    limit?: number
   }
   url: "/memory/graph"
 }
@@ -12822,7 +12383,7 @@ export type RegistryRowsData = {
     directory?: string
     workspace?: string
     table: string
-    limit?: string
+    limit?: number
     offset?: string
   }
   url: "/registry/rows"
@@ -13147,7 +12708,7 @@ export type ShellOfflineError = ShellOfflineErrors[keyof ShellOfflineErrors]
 
 export type ShellOfflineResponses = {
   /**
-   * The N/9 offline-layer posture
+   * The N/8 offline-layer posture
    */
   200: {
     enabled: boolean
@@ -13224,34 +12785,6 @@ export type ShellProvisionResponses = {
 }
 
 export type ShellProvisionResponse = ShellProvisionResponses[keyof ShellProvisionResponses]
-
-export type SyncStartData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/sync/start"
-}
-
-export type SyncStartErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type SyncStartError = SyncStartErrors[keyof SyncStartErrors]
-
-export type SyncStartResponses = {
-  /**
-   * Workspace sync started
-   */
-  200: boolean
-}
-
-export type SyncStartResponse = SyncStartResponses[keyof SyncStartResponses]
 
 export type SyncReplayData = {
   body?: {
@@ -13363,233 +12896,6 @@ export type SyncHistoryListResponses = {
 }
 
 export type SyncHistoryListResponse = SyncHistoryListResponses[keyof SyncHistoryListResponses]
-
-export type ExperimentalWorkspaceAdapterListData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/experimental/workspace/adapter"
-}
-
-export type ExperimentalWorkspaceAdapterListErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type ExperimentalWorkspaceAdapterListError =
-  ExperimentalWorkspaceAdapterListErrors[keyof ExperimentalWorkspaceAdapterListErrors]
-
-export type ExperimentalWorkspaceAdapterListResponses = {
-  /**
-   * Workspace adapters
-   */
-  200: Array<{
-    type: string
-    name: string
-    description: string
-  }>
-}
-
-export type ExperimentalWorkspaceAdapterListResponse =
-  ExperimentalWorkspaceAdapterListResponses[keyof ExperimentalWorkspaceAdapterListResponses]
-
-export type ExperimentalWorkspaceListData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/experimental/workspace"
-}
-
-export type ExperimentalWorkspaceListErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type ExperimentalWorkspaceListError = ExperimentalWorkspaceListErrors[keyof ExperimentalWorkspaceListErrors]
-
-export type ExperimentalWorkspaceListResponses = {
-  /**
-   * Workspaces
-   */
-  200: Array<Workspace>
-}
-
-export type ExperimentalWorkspaceListResponse =
-  ExperimentalWorkspaceListResponses[keyof ExperimentalWorkspaceListResponses]
-
-export type ExperimentalWorkspaceCreateData = {
-  body?: {
-    id?: string
-    type: string
-    branch?: string | null
-    extra?: unknown | null
-  }
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/experimental/workspace"
-}
-
-export type ExperimentalWorkspaceCreateErrors = {
-  /**
-   * WorkspaceCreateError | BadRequest | InvalidRequestError
-   */
-  400: WorkspaceCreateError | EffectHttpApiErrorBadRequest | InvalidRequestError
-}
-
-export type ExperimentalWorkspaceCreateError =
-  ExperimentalWorkspaceCreateErrors[keyof ExperimentalWorkspaceCreateErrors]
-
-export type ExperimentalWorkspaceCreateResponses = {
-  /**
-   * Workspace created
-   */
-  200: Workspace
-}
-
-export type ExperimentalWorkspaceCreateResponse =
-  ExperimentalWorkspaceCreateResponses[keyof ExperimentalWorkspaceCreateResponses]
-
-export type ExperimentalWorkspaceSyncListData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/experimental/workspace/sync-list"
-}
-
-export type ExperimentalWorkspaceSyncListErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type ExperimentalWorkspaceSyncListError =
-  ExperimentalWorkspaceSyncListErrors[keyof ExperimentalWorkspaceSyncListErrors]
-
-export type ExperimentalWorkspaceSyncListResponses = {
-  /**
-   * Workspace list synced
-   */
-  204: void
-}
-
-export type ExperimentalWorkspaceSyncListResponse =
-  ExperimentalWorkspaceSyncListResponses[keyof ExperimentalWorkspaceSyncListResponses]
-
-export type ExperimentalWorkspaceStatusData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/experimental/workspace/status"
-}
-
-export type ExperimentalWorkspaceStatusErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type ExperimentalWorkspaceStatusError =
-  ExperimentalWorkspaceStatusErrors[keyof ExperimentalWorkspaceStatusErrors]
-
-export type ExperimentalWorkspaceStatusResponses = {
-  /**
-   * Workspace status
-   */
-  200: Array<WorkspaceEventConnectionStatus>
-}
-
-export type ExperimentalWorkspaceStatusResponse =
-  ExperimentalWorkspaceStatusResponses[keyof ExperimentalWorkspaceStatusResponses]
-
-export type ExperimentalWorkspaceRemoveData = {
-  body?: never
-  path: {
-    id: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/experimental/workspace/{id}"
-}
-
-export type ExperimentalWorkspaceRemoveErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-}
-
-export type ExperimentalWorkspaceRemoveError =
-  ExperimentalWorkspaceRemoveErrors[keyof ExperimentalWorkspaceRemoveErrors]
-
-export type ExperimentalWorkspaceRemoveResponses = {
-  /**
-   * Workspace removed
-   */
-  200: Workspace | null
-}
-
-export type ExperimentalWorkspaceRemoveResponse =
-  ExperimentalWorkspaceRemoveResponses[keyof ExperimentalWorkspaceRemoveResponses]
-
-export type ExperimentalWorkspaceWarpData = {
-  body?: {
-    id: string | null
-    sessionID: string
-    copyChanges?: boolean
-  }
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/experimental/workspace/warp"
-}
-
-export type ExperimentalWorkspaceWarpErrors = {
-  /**
-   * WorkspaceWarpError | VcsApplyError | InvalidRequestError
-   */
-  400: WorkspaceWarpError | VcsApplyError | InvalidRequestError
-  /**
-   * NotFoundError
-   */
-  404: NotFoundError
-}
-
-export type ExperimentalWorkspaceWarpError = ExperimentalWorkspaceWarpErrors[keyof ExperimentalWorkspaceWarpErrors]
-
-export type ExperimentalWorkspaceWarpResponses = {
-  /**
-   * Session warped
-   */
-  204: void
-}
-
-export type ExperimentalWorkspaceWarpResponse =
-  ExperimentalWorkspaceWarpResponses[keyof ExperimentalWorkspaceWarpResponses]
 
 export type V2HealthGetData = {
   body?: never
@@ -15662,7 +14968,7 @@ export type V2SessionEventsData = {
     sessionID: string
   }
   query?: {
-    after?: string
+    after?: number
   }
   url: "/api/session/{sessionID}/event"
 }
@@ -17594,6 +16900,68 @@ export type V2RecipeImportResponses = {
 
 export type V2RecipeImportResponse = V2RecipeImportResponses[keyof V2RecipeImportResponses]
 
+export type V2RecipeArchiveData = {
+  body?: never
+  path: {
+    slug: string
+  }
+  query?: never
+  url: "/api/recipe/{slug}/archive"
+}
+
+export type V2RecipeArchiveErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError | InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2RecipeArchiveError = V2RecipeArchiveErrors[keyof V2RecipeArchiveErrors]
+
+export type V2RecipeArchiveResponses = {
+  /**
+   * Success
+   */
+  200: Blob | File
+}
+
+export type V2RecipeArchiveResponse = V2RecipeArchiveResponses[keyof V2RecipeArchiveResponses]
+
+export type V2RecipeArchiveImportData = {
+  body: Blob | File
+  path?: never
+  query?: {
+    slug?: string
+  }
+  url: "/api/recipe/archive"
+}
+
+export type V2RecipeArchiveImportErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError | InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2RecipeArchiveImportError = V2RecipeArchiveImportErrors[keyof V2RecipeArchiveImportErrors]
+
+export type V2RecipeArchiveImportResponses = {
+  /**
+   * Recipe.Info
+   */
+  200: RecipeInfo
+}
+
+export type V2RecipeArchiveImportResponse = V2RecipeArchiveImportResponses[keyof V2RecipeArchiveImportResponses]
+
 export type V2RecipeDuplicateData = {
   body: {
     [key: string]: unknown
@@ -17729,43 +17097,6 @@ export type V2AppRemoveResponses = {
 
 export type V2AppRemoveResponse = V2AppRemoveResponses[keyof V2AppRemoveResponses]
 
-export type V2PermissionRequestListData = {
-  body?: never
-  path?: never
-  query?: {
-    location?: {
-      directory?: string
-      workspace?: string
-    }
-  }
-  url: "/api/permission/request"
-}
-
-export type V2PermissionRequestListErrors = {
-  /**
-   * InvalidRequestError
-   */
-  400: InvalidRequestError
-  /**
-   * UnauthorizedError
-   */
-  401: UnauthorizedError
-}
-
-export type V2PermissionRequestListError = V2PermissionRequestListErrors[keyof V2PermissionRequestListErrors]
-
-export type V2PermissionRequestListResponses = {
-  /**
-   * Success
-   */
-  200: {
-    location: LocationInfo
-    data: Array<PermissionV2Request>
-  }
-}
-
-export type V2PermissionRequestListResponse = V2PermissionRequestListResponses[keyof V2PermissionRequestListResponses]
-
 export type V2PermissionSavedListData = {
   body?: never
   path?: never
@@ -17880,121 +17211,6 @@ export type V2SessionPermissionCreateResponses = {
 
 export type V2SessionPermissionCreateResponse =
   V2SessionPermissionCreateResponses[keyof V2SessionPermissionCreateResponses]
-
-export type V2SessionPermissionListData = {
-  body?: never
-  path: {
-    sessionID: string
-  }
-  query?: never
-  url: "/api/session/{sessionID}/permission"
-}
-
-export type V2SessionPermissionListErrors = {
-  /**
-   * InvalidRequestError
-   */
-  400: InvalidRequestError
-  /**
-   * UnauthorizedError
-   */
-  401: UnauthorizedError
-  /**
-   * SessionNotFoundError
-   */
-  404: SessionNotFoundError | SessionNotFoundError
-}
-
-export type V2SessionPermissionListError = V2SessionPermissionListErrors[keyof V2SessionPermissionListErrors]
-
-export type V2SessionPermissionListResponses = {
-  /**
-   * Success
-   */
-  200: {
-    data: Array<PermissionV2Request>
-  }
-}
-
-export type V2SessionPermissionListResponse = V2SessionPermissionListResponses[keyof V2SessionPermissionListResponses]
-
-export type V2SessionPermissionGetData = {
-  body?: never
-  path: {
-    sessionID: string
-    requestID: string
-  }
-  query?: never
-  url: "/api/session/{sessionID}/permission/{requestID}"
-}
-
-export type V2SessionPermissionGetErrors = {
-  /**
-   * InvalidRequestError
-   */
-  400: InvalidRequestError
-  /**
-   * UnauthorizedError
-   */
-  401: UnauthorizedError
-  /**
-   * SessionNotFoundError | PermissionNotFoundError
-   */
-  404: PermissionNotFoundError | SessionNotFoundError | SessionNotFoundError
-}
-
-export type V2SessionPermissionGetError = V2SessionPermissionGetErrors[keyof V2SessionPermissionGetErrors]
-
-export type V2SessionPermissionGetResponses = {
-  /**
-   * Success
-   */
-  200: {
-    data: PermissionV2Request
-  }
-}
-
-export type V2SessionPermissionGetResponse = V2SessionPermissionGetResponses[keyof V2SessionPermissionGetResponses]
-
-export type V2SessionPermissionReplyData = {
-  body: {
-    reply: PermissionV2Reply
-    message?: string
-  }
-  path: {
-    sessionID: string
-    requestID: string
-  }
-  query?: never
-  url: "/api/session/{sessionID}/permission/{requestID}/reply"
-}
-
-export type V2SessionPermissionReplyErrors = {
-  /**
-   * InvalidRequestError
-   */
-  400: InvalidRequestError
-  /**
-   * UnauthorizedError
-   */
-  401: UnauthorizedError
-  /**
-   * SessionNotFoundError | PermissionNotFoundError
-   */
-  404: PermissionNotFoundError | SessionNotFoundError | SessionNotFoundError
-}
-
-export type V2SessionPermissionReplyError = V2SessionPermissionReplyErrors[keyof V2SessionPermissionReplyErrors]
-
-export type V2SessionPermissionReplyResponses = {
-  /**
-   * <No Content>
-   */
-  204: void
-}
-
-export type V2SessionPermissionReplyResponse =
-  V2SessionPermissionReplyResponses[keyof V2SessionPermissionReplyResponses]
 
 export type V2FsReadData = {
   body?: never
@@ -18117,7 +17333,7 @@ export type V2FsFindData = {
     }
     query: string
     type?: "file" | "directory"
-    limit?: string
+    limit?: number
   }
   url: "/api/fs/find"
 }

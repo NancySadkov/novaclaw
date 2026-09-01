@@ -2,8 +2,8 @@
  * Every path in this repo that installs dependencies, and whether it installs FROM the lockfile.
  *
  * ─── why this exists ───────────────────────────────────────────────────────────────────────────────
- * On 2026-08-04 the `keyv`/`cacheable` maintainer's GitHub account was taken over and poisoned releases
- * went out carrying VALID npm provenance (GitHub Actions signed them); a worm reached ~444 packages. We
+ * On 2026-08-04 the `keyv`/`cacheable` maintainer's package-registry account was taken over and
+ * poisoned releases went out carrying VALID npm provenance; a worm reached ~444 packages. We
  * were not hit, and the reason is precise and worth stating exactly: **we survived on the lockfile, not
  * on our version ranges.** Three of the poisoned versions were INSIDE our declared `^` ranges
  * (`@cacheable/utils ^2.5.0` → 2.5.1, `@cacheable/memory ^2.2.0` → 2.2.1, `cacheable ^2.3.1` → 2.5.1),

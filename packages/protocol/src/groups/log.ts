@@ -5,9 +5,9 @@ import { InvalidRequestError } from "../errors"
 /**
  * ─── reading the instance's OWN log over HTTP ───────────────────────────────────────────────────
  *
- * `todo/logging.md` 3f. The Debug app's Error-log panel shows the RENDERER's ring buffer; the
+ * The Debug app's Error-log panel shows the RENDERER's ring buffer; the
  * instance writes a separate, keyed, rotated `novaclaw.log` that nothing in the UI could reach.
- * 3f recorded why, and the reason was structural rather than effort:
+ * The reason it stayed unreachable was structural rather than effort:
  *
  *   · ruling 11 pins the legacy httpapi surface **shrink-only** (`legacy-path-ledger.test.ts`), so a
  *     read route's only legal home is `/api/*` — this file plus `packages/server/src/handlers/log.ts`.

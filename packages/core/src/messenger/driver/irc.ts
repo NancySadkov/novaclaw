@@ -34,7 +34,6 @@ const CAPS: Messenger.Capabilities = {
   listChats: "none", // join-by-name; seen chats accumulate from traffic
   files: { up: false, down: false },
   edits: false,
-  typing: false,
   threads: false,
   moderation: { delete: false, ban: false, kick: false, mute: false, pin: false },
   format: "plain",

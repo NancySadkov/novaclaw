@@ -18,18 +18,13 @@ export const dict = {
   "theme.scheme.light": "浅色",
   "theme.scheme.dark": "深色",
 
-
   "command.project.open": "打开项目",
 
   "command.provider.connect": "连接提供商",
 
-
   "command.settings.open": "打开设置",
 
-
   "command.palette": "命令面板",
-
-
 
   "command.session.new": "新建会话",
 
@@ -51,7 +46,6 @@ export const dict = {
   "command.terminal.new": "新建终端",
   "command.terminal.new.description": "创建新的终端标签页",
 
-
   "command.message.previous": "上一条消息",
   "command.message.previous.description": "跳转到上一条用户消息",
   "command.message.next": "下一条消息",
@@ -72,7 +66,6 @@ export const dict = {
   "command.permissions.autoaccept.enable": "自动接受权限",
   "command.permissions.autoaccept.disable": "停止自动接受权限",
 
-
   "command.session.undo": "撤销",
   "command.session.undo.description": "撤销上一条消息",
   "command.session.redo": "重做",
@@ -87,15 +80,10 @@ export const dict = {
   "palette.group.commands": "命令",
   "palette.group.files": "文件",
 
-
   "dialog.model.select.title": "选择模型",
   "dialog.model.search.placeholder": "搜索模型",
   "dialog.model.empty": "未找到模型",
   "dialog.model.manage": "管理模型",
-
-
-
-
 
   "model.tag.free": "免费",
   "model.tag.latest": "最新",
@@ -188,7 +176,6 @@ export const dict = {
   "dialog.mcp.title": "MCPs",
   "dialog.mcp.description": "已启用 {{enabled}} / {{total}}",
   "dialog.mcp.empty": "未配置 MCPs",
-
 
   "mcp.status.connected": "已连接",
   "mcp.status.failed": "失败",
@@ -295,15 +282,11 @@ export const dict = {
   "toast.context.noLineSelection.title": "未选择行",
   "toast.context.noLineSelection.description": "请先在文件标签中选择行范围。",
   "toast.session.listFailed.title": "无法加载 {{project}} 的会话",
-  "toast.update.action.installRestart": "安装并重启",
 
   "error.page.title": "出了点问题",
   "error.page.description": "加载应用程序时发生错误。",
   "error.page.details.label": "错误详情",
   "error.page.action.restart": "重启",
-  "error.page.action.checking": "检查中...",
-  "error.page.action.checkUpdates": "检查更新",
-  "error.page.action.updateTo": "更新到 {{version}}",
   "error.page.report.prefix": "请将此错误报告给 NovaClaw 团队",
   "error.page.report.discord": "在 Discord 上",
   "error.page.version": "版本：{{version}}",
@@ -335,9 +318,6 @@ export const dict = {
   "notification.session.error.title": "会话错误",
   "notification.session.error.fallbackDescription": "发生错误",
 
-  "home.recentProjects": "最近项目",
-  "home.empty.title": "没有最近项目",
-  "home.empty.description": "通过打开本地项目开始使用",
   "home.title": "主页",
 
   "session.tab.session": "会话",
@@ -373,7 +353,6 @@ export const dict = {
   "session.new.title": "构建任何东西",
   "session.new.worktree.main": "主分支",
   "session.new.worktree.mainWithBranch": "主分支（{{branch}}）",
-  "session.new.worktree.create": "创建新的 worktree",
   "session.new.lastModified": "最后修改",
   "session.header.search.placeholder": "搜索 {{project}}",
   "session.header.searchFiles": "搜索文件",
@@ -416,21 +395,16 @@ export const dict = {
   "common.moreOptions": "更多选项",
   "common.learnMore": "了解更多",
   "common.rename": "重命名",
-  "common.archive": "归档",
   "common.delete": "删除",
   "common.close": "关闭",
   "common.edit": "编辑",
   "common.key.esc": "ESC",
-
-  "sidebar.project.recentSessions": "最近会话",
-
 
   "settings.section.desktop": "桌面",
   "settings.section.server": "服务器",
 
   "settings.tab.general": "通用",
   "settings.tab.shortcuts": "快捷键",
-
 
   "settings.general.section.notifications": "系统通知",
   "settings.general.section.updates": "更新",
@@ -449,13 +423,6 @@ export const dict = {
   "settings.general.row.uiFont.description": "自定义整个界面使用的字体",
   "settings.general.row.releaseNotes.title": "发行说明",
   "settings.general.row.releaseNotes.description": "更新后显示“新功能”弹窗",
-
-  "settings.updates.row.check.title": "检查更新",
-  "settings.updates.row.check.description": "手动检查更新并在有更新时安装",
-  "settings.updates.action.checkNow": "立即检查",
-  "settings.updates.action.checking": "正在检查...",
-  "settings.updates.toast.latest.title": "已是最新版本",
-  "settings.updates.toast.latest.description": "你正在使用最新版本的 NovaClaw。",
 
   "sound.option.none": "无",
   "sound.option.alert01": "警报 01",
@@ -534,11 +501,7 @@ export const dict = {
   "settings.shortcuts.group.terminal": "终端",
   "settings.shortcuts.group.prompt": "提示",
 
-
   "settings.models.title": "模型",
-
-
-
 
   "settings.permissions.tool.read.title": "读取",
   "settings.permissions.tool.read.description": "读取文件（匹配文件路径）",

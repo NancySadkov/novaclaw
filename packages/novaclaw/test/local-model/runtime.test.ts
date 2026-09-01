@@ -32,7 +32,7 @@ describe("managed local-model catalog", () => {
 
   test("pins the tested Windows llama.cpp Vulkan package", () => {
     expect(RUNTIME_ARTIFACT.version).toBe("b10240")
-    expect(RUNTIME_ARTIFACT.url).toContain(`/download/${RUNTIME_ARTIFACT.version}/`)
+    expect("url" in RUNTIME_ARTIFACT).toBe(false)
     expect(RUNTIME_ARTIFACT.sha256).toMatch(/^[0-9a-f]{64}$/)
   })
 
@@ -179,7 +179,12 @@ describe("managed local-model preflight", () => {
       physicalMemoryBytes: 16 * GIB,
     })
     expect(result.ok).toBe(false)
-    expect(result.issues.join(" ")).toContain("12 GB")
+    // 🔴 GiB, not GB. This assertion said "12 GB" and the code printed it, but the gate it describes is
+    // `capacity < 15 * 1024 ** 3` — binary. A machine sold and reported as "12 GB" is 11.2 GiB, so the
+    // old sentence named a requirement the user appears to meet and is then refused by. The number is
+    // unchanged; only the unit the number was always in is now stated.
+    expect(result.issues.join(" ")).toContain("12 GiB")
+    expect(result.issues.join(" ")).not.toContain(" GB")
   })
 
   test("refuses before a download when memory or disk cannot safely fit", () => {
@@ -192,7 +197,8 @@ describe("managed local-model preflight", () => {
       physicalMemoryBytes: 6 * GIB,
     })
     expect(tooSmall.ok).toBe(false)
-    expect(tooSmall.issues.join(" ")).toContain("8.0 GB")
+    expect(tooSmall.issues.join(" ")).toContain("8.0 GiB")
+    expect(tooSmall.issues.join(" ")).not.toContain(" GB")
     expect(tooSmall.issues.join(" ")).toContain("disk space")
   })
 

@@ -1,7 +1,7 @@
 import { LocalContext } from "@/util/local-context"
 import { FSUtil } from "@novaclaw/core/fs-util"
 
-// T3 (notes/entities.md): the instance carries derived substrate attributes, not an entity —
+// T3 (notes/reports/entities-review-2026-07-06.md): the instance carries derived substrate attributes, not an entity —
 // worktree (the VCS root; "/" outside any repo, preserving the containsPath guard), the
 // rename-stable origin hash, and the vcs kind.
 export interface InstanceContext {

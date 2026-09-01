@@ -1,7 +1,6 @@
 import { afterEach, describe, expect } from "bun:test"
 import { Effect, Schema } from "effect"
 import { OpenApi } from "effect/unstable/httpapi"
-import { Flag } from "@novaclaw/core/flag/flag"
 import { Server } from "../../src/server/server"
 import { SessionID } from "../../src/session/schema"
 import { PublicApi } from "../../src/server/routes/instance/httpapi/public"
@@ -11,17 +10,13 @@ import {
   FindFileQuery,
   FindTextQuery,
 } from "../../src/server/routes/instance/httpapi/groups/file"
-import { ExperimentalPaths, ToolListQuery } from "../../src/server/routes/instance/httpapi/groups/experimental"
 import { InstancePaths, VcsDiffQuery } from "../../src/server/routes/instance/httpapi/groups/instance"
-import { WorkspacePaths } from "../../src/server/routes/instance/httpapi/groups/workspace"
 import { PtyPaths } from "@novaclaw/protocol/groups/pty"
 import { SessionMessagesQuery } from "@novaclaw/protocol/groups/message"
 import { QueryBoolean, QueryBooleanOpenApi } from "../../src/server/routes/instance/httpapi/groups/query"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, tmpdir } from "../fixture/fixture"
 import { it } from "../lib/effect"
-
-const originalWorkspaces = Flag.NOVACLAW_EXPERIMENTAL_WORKSPACES
 
 type Method = "get" | "post" | "put" | "delete" | "patch"
 type QuerySchema = { readonly fields: Record<string, unknown> }
@@ -40,7 +35,6 @@ const openApiDriftRoutes = [
   { method: "get", path: FilePaths.findFile, query: FindFileQuery },
   { method: "get", path: FilePaths.findText, query: FindTextQuery },
   { method: "get", path: FilePaths.list, query: FileQuery },
-  { method: "get", path: ExperimentalPaths.tool, query: ToolListQuery },
   { method: "get", path: InstancePaths.vcsDiff, query: VcsDiffQuery },
   { method: "get", path: "/api/session/:sessionID/message", query: SessionMessagesQuery },
 ] satisfies Array<{ method: Method; path: string; query: QuerySchema }>
@@ -56,25 +50,34 @@ const booleanSdkQueryParams: Array<{ method: Method; path: string; name: string 
 const queryParamPatterns: Array<{ method: Method; path: string; name: string; pattern: string }> = []
 
 // The V1 `POST /permission/:requestID/reply` row was RE-POINTED, not dropped, when the V1
-// permission routes went (v0.2.0-prep Wave 4 §5): the native route carries the same `^per`
+// permission routes went (v0.2.0-prep Wave 4 §5): the native route carried the same `^per`
 // id-prefix guard on `requestID` (`@novaclaw/schema/permission`'s branded `ID`), plus `^ses` on
-// `sessionID`, so the invariant survives the deletion instead of leaving with it.
+// `sessionID`, so the invariant survived the deletion instead of leaving with it.
+//
+// RE-POINTED A SECOND TIME 2026-09-01, for the same reason. The refactor sweep's RF-12-2 deleted the
+// consent-card island WHOLE — kernel, table, protocol group, handler and UI dock — so there is no
+// permission reply route left to carry the guard, and both `^per` rows resolved to `undefined`. The
+// surviving sibling on the same shape is the session-scoped QUESTION reply
+// (`protocol/src/groups/question.ts:52`), whose `requestID` is `Question.ID` (`^que`,
+// `schema/src/question-request.ts:11`) and whose `sessionID` is still `^ses`.
+// 🔴 What is pinned here is the INVARIANT — a session-scoped reply route brands both path params —
+// not the permission route specifically. Move it again when this route moves; deleting the rows
+// retires the invariant silently, which is what this comment has now twice existed to prevent.
 const pathParamPatterns = [
   {
     method: "post",
-    path: "/api/session/:sessionID/permission/:requestID/reply",
+    path: "/api/session/:sessionID/question/:requestID/reply",
     name: "requestID",
-    pattern: "^per",
+    pattern: "^que",
   },
   {
     method: "post",
-    path: "/api/session/:sessionID/permission/:requestID/reply",
+    path: "/api/session/:sessionID/question/:requestID/reply",
     name: "sessionID",
     pattern: "^ses",
   },
   { method: "post", path: "/question/:requestID/reply", name: "requestID", pattern: "^que" },
   { method: "put", path: PtyPaths.update, name: "ptyID", pattern: "^pty" },
-  { method: "delete", path: WorkspacePaths.remove, name: "id", pattern: "^wrk" },
 ] satisfies Array<{ method: Method; path: string; name: string; pattern: string }>
 
 function app() {
@@ -127,7 +130,6 @@ function assertAdvertisedQueryParamsAreRuntimeFields(input: {
 }
 
 afterEach(async () => {
-  Flag.NOVACLAW_EXPERIMENTAL_WORKSPACES = originalWorkspaces
   await disposeAllInstances()
   await resetDatabase()
 })
@@ -272,17 +274,6 @@ describe("httpapi query schema drift", () => {
     withTmp({ config: { formatter: false } }, (tmp) =>
       Effect.gen(function* () {
         const url = `/experimental/session?${routingParams(tmp.path)}`
-        const response = yield* request(url)
-        expectNotSchemaRejection(response.status, url)
-      }),
-    ),
-  )
-
-  it.live(
-    "experimental tool list accepts directory and workspace",
-    withTmp({ config: { formatter: false } }, (tmp) =>
-      Effect.gen(function* () {
-        const url = `/experimental/tool?provider=anthropic&model=claude&${routingParams(tmp.path)}`
         const response = yield* request(url)
         expectNotSchemaRejection(response.status, url)
       }),

@@ -141,7 +141,7 @@ const externalCommandDirectories = (command: string, cwd: string) => {
  * ⚠️ It is BEST-EFFORT and is documented as such rather than sold as a boundary. A shell can build a
  * path from a variable, a glob, a subshell or a here-doc, and none of those are visible to a token
  * scan — the same limitation the external-directory advisory above already carries, and the reason
- * confinement is the OPERATOR's boundary (AGENTS.md, `todo/jail.md`) rather than ours. What it does
+ * confinement is the OPERATOR's boundary (Agent Jail; AGENTS.md design principle 13) rather than ours. What it does
  * buy is that the OBVIOUS reach is refused, loudly and with the reason, instead of quietly working.
  */
 const commandPathTokens = (command: string, cwd: string) => {
@@ -277,7 +277,7 @@ export const layer = Layer.effectDiscard(
                 readsContent: false,
               })
 
-              // Agent Jail P0b/P1 (notes/agent-jail-plan.md §2.3): in an UNATTENDED chain (root
+              // Agent Jail P0b/P1: in an UNATTENDED chain (root
               // type auto-prompting / goal-oriented) raw host execution additionally requires a
               // sandbox. With a backend (Linux namespaces, P1) the command runs CONFINED —
               // worktree-only FS, deny-all egress.

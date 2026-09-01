@@ -3,7 +3,7 @@ export * as LogBounds from "./log-bounds"
 /**
  * **The three log bounds a PRODUCT SURFACE is allowed to name — and nothing else.**
  *
- * `todo/logging.md` 3a/3c draw a line this module makes structural. Retention is a **preference**:
+ * There is a line here that this module makes structural. Retention is a **preference**:
  * how much history an instance keeps is a thing a user may reasonably want to know and, eventually,
  * to set. Segment size, the flush window, the compression level and the filename grammar are
  * **correctness parameters** — *"they are correctness parameters, not preferences… a knob whose

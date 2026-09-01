@@ -93,22 +93,22 @@ export const Input = Schema.Struct({
   submit: Schema.Boolean.pipe(Schema.optional).annotate({
     description: "Compatibility flag: type text, then press Enter; prefer action type_submit.",
   }),
-  keys: Schema.Union([Schema.String, Schema.Array(Schema.String)]).pipe(Schema.optional).annotate({
-    description: 'Key combination for `key`: preferably "ctrl+s"; ["CTRL","S"] is also accepted.',
-  }),
+  keys: Schema.Union([Schema.String, Schema.Array(Schema.String)])
+    .pipe(Schema.optional)
+    .annotate({
+      description: 'Key combination for `key`: preferably "ctrl+s"; ["CTRL","S"] is also accepted.',
+    }),
   buttons: Schema.Array(Schema.String).pipe(Schema.optional).annotate({
     description: "Compatibility alias for a keyboard key array; prefer `keys`.",
   }),
   key: Schema.String.pipe(Schema.optional).annotate({
     description: "Compatibility alias for one keyboard key; prefer `keys`.",
   }),
-  direction: Schema.Union([
-    Schema.Literals(["up", "down", "left", "right"]),
-    Schema.Finite,
-    Schema.FiniteFromString,
-  ]).pipe(Schema.optional).annotate({
-    description: "Scroll direction.",
-  }),
+  direction: Schema.Union([Schema.Literals(["up", "down", "left", "right"]), Schema.Finite, Schema.FiniteFromString])
+    .pipe(Schema.optional)
+    .annotate({
+      description: "Scroll direction.",
+    }),
   amount: Schema.Union([Schema.Finite, Schema.FiniteFromString]).pipe(Schema.optional).annotate({
     description: "Scroll clicks (1-25); larger pixel-style values are normalized safely.",
   }),
@@ -216,7 +216,7 @@ export const toStructured = (output: OutputEncoded): (typeof StructuredOutput)["
  * is durable — an N-step loop re-sends N screenshots on step N+1, so the context grows
  * quadratically in steps while each individual result looks cheap. Lowering cannot fix that (by the
  * time bytes arrive here the tool has already run); the loop must prune or compact its own stale
- * observations, or run in a narrow session as `todo/computer-use.md` already warns.
+ * observations, or run in a narrow session.
  *
  * The file part is the shape `gateToolMedia` consumes (`session/runner/to-llm-message.ts`), which is
  * what makes this honest on a model without vision: the bytes are REPLACED by a notice naming the
@@ -335,8 +335,7 @@ export const toAction = (input: Input): ComputerActions.Action | { readonly erro
     }
     case "scroll":
     case "scroll_down": {
-      const delta =
-        typeof input.direction === "number" ? input.direction : (input.delta_y ?? input.speed)
+      const delta = typeof input.direction === "number" ? input.direction : (input.delta_y ?? input.speed)
       const direction =
         input.action === "scroll_down"
           ? "down"
@@ -615,7 +614,8 @@ export const layer = Layer.effectDiscard(
                     if (!executable || !/^[^\\/:*?"<>|]+\.exe$/i.test(executable))
                       return yield* Effect.fail(
                         new ToolFailure({
-                          message: 'computer: Windows bind needs an executable basename in `app`, for example "dosbox-x.exe"',
+                          message:
+                            'computer: Windows bind needs an executable basename in `app`, for example "dosbox-x.exe"',
                         }),
                       )
                     const resource = `bind-windows-app/${encodeURIComponent(executable.toLowerCase())}`
@@ -885,9 +885,12 @@ export const layer = Layer.effectDiscard(
                 // The tool's contract is ToolFailure only. Config reads and the process runner have
                 // their own error types; a leaked one becomes a defect at settlement rather than an
                 // observation the model can act on.
-                Effect.mapError((error) =>
-                  error instanceof ToolFailure ? error : new ToolFailure({ message: `computer: ${String(error)}` }),
-                ),
+                //
+                // 🔴 1J. The fallback used to run for EVERY error, so a permission refusal reached
+                // the model as `"computer: PermissionV2.DeniedError"` — the tag, not the crafted
+                // deny-fast paragraph (measured 2026-09-01). `Tool.absorb` puts `denialMessage`
+                // ahead of it; the `computer:` prefix still labels everything else.
+                Effect.mapError(Tool.absorb((error) => `computer: ${String(error)}`)),
               ),
           }),
         ),

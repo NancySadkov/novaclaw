@@ -461,6 +461,10 @@ describe("finding the sidecar binary", () => {
    */
   test("🔴 a packaged desktop's resources are searched", () => {
     const original = (process as { resourcesPath?: string }).resourcesPath
+    // ⚠️ Spelled out rather than imported from `CommunityDht.dhtExecutableName`, ON PURPOSE. This
+    // test CONSTRUCTS a file with this name and then asserts `binaryPath()` finds it — so importing
+    // the production helper would make it build and then find whatever the code currently says, and
+    // a rename would sail through green. An independent spelling is the assertion.
     const exe = process.platform === "win32" ? "novaclaw-dht.exe" : "novaclaw-dht"
     /**
      * ⚠️ A REAL directory in the packaged layout, not the repo — the first version of this test

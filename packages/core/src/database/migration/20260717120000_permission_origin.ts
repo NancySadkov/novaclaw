@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import type { DatabaseMigration } from "../migration"
 
-// T2 (notes/entities.md): saved permissions re-key from the project entity onto the derived
+// T2 (notes/reports/entities-review-2026-07-06.md): saved permissions re-key from the project entity onto the derived
 // `origin` hash. Values are IDENTICAL (origin := the old project id string), so this is a
 // straight column rename — but SQLite can't drop the project FK in place, so the table rebuilds.
 export default {

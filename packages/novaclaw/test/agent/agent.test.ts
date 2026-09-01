@@ -143,9 +143,9 @@ it.instance(
   {
     config: {
       references: {
-        effect: "github.com/effect/effect-smol",
+        effect: "git.example.test/effect/effect-smol",
         effectFull: {
-          repository: "Effect-TS/effect",
+          repository: "git.example.test/Effect-TS/effect",
           branch: "main",
         },
         localdocs: "../docs",

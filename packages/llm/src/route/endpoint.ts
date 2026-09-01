@@ -16,8 +16,7 @@ export type EndpointPart<Body> = string | ((input: EndpointInput<Body>) => strin
  * route before selecting a model.
  *
  * `path` may be a string or a function of `EndpointInput`, for routes whose
- * URL embeds the model id, region, or another body field (e.g. Bedrock,
- * Gemini).
+ * URL embeds the model id, region, or another body field (e.g. Gemini).
  */
 export interface Endpoint<Body> {
   readonly baseURL?: string

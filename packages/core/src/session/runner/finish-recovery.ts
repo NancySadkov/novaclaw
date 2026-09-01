@@ -5,9 +5,9 @@ import type { FinishReason } from "@novaclaw/llm"
 /**
  * F2 — output-token TRUNCATION recovery.
  *
- * Ported from the outside GitHub PR https://github.com/NancySadkov/novaclaw/pull/4 by
+ * Ported from the outside contribution #4 by
  * @DassaultFalconKing (written against the v0.1.0 release snapshot, which shares no ancestor with
- * this tree — see AGENTS.md *GitHub is a RELEASE SURFACE*). Their diagnosis and their two-strike
+ * this tree — see the release policy in AGENTS.md). Their diagnosis and their two-strike
  * shape are kept; the counter, the bounds and the wiring are ours.
  *
  * **The failure.** A provider that stops at its own output-token limit reports

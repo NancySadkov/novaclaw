@@ -10,6 +10,7 @@ import { SessionMessage } from "@novaclaw/core/session/message"
 import { Database } from "@novaclaw/core/database/database"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
+import { ShortChat } from "@novaclaw/core/session/runner/short-chat"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { LLMEvent } from "@novaclaw/llm"
 import { HARNESS_SESSION, completeTurn, drive, makeLatch, makeRunnerHarness } from "./fixture/runner-harness"
@@ -27,10 +28,11 @@ import { HARNESS_SESSION, completeTurn, drive, makeLatch, makeRunnerHarness } fr
  * context follows them. **That ordering is the claim**; the agent identity is what varies.
  *
  * 🔴 **These do NOT assert the old `["<agent>", "Initial context"]` pair, and the reason is the third
- * instance of one pattern.** Measured: the request now carries **four** system parts, not two —
+ * instance of one pattern.** Measured: the request now carries **five** system parts, not two —
  *
- *   [0] the base Nova persona            [1] the agent's own system
- *   [2] the project-scope guidance       [3] the durable context + ad-hoc-tool guidance
+ *   [0] the role-neutral harness         [1] the resolved officer identity
+ *   [2] the agent's own system           [3] the project-scope guidance
+ *   [4] the durable context + ad-hoc-tool guidance
  *
  * — because the **non-YOLO filesystem instruction** (the unattended-bash ruling) and the
  * **`<tool_catalogue>` manifest** (Tool Scale T1/T2) were both added *after* these tests were written,
@@ -55,6 +57,93 @@ const expectAgentSystemBeforeContext = (parts: readonly string[] | undefined, ag
 }
 
 describe("SessionRunnerLLM — agent system prompt", () => {
+  test("projects live officer identity and job brief through ordinary and Short Chat turns", async () => {
+    const harness = makeRunnerHarness({
+      turns: [
+        completeTurn("ordinary", "First"),
+        completeTurn("personality-only", "Second"),
+        completeTurn("short", "Third"),
+      ],
+    })
+
+    await drive(
+      harness,
+      Effect.gen(function* () {
+        const { db } = yield* Database.Service
+        const agents = yield* AgentV2.Service
+        yield* agents.transform((editor) =>
+          editor.update(AgentV2.ID.make("reviewer"), (agent) => {
+            agent.name = "Iris"
+            agent.title = "Reviewer"
+            agent.personality = "Calm identity marker."
+            agent.system = "Review standing job brief."
+            agent.mode = "primary"
+            agent.shortChat = false
+          }),
+        )
+        yield* db
+          .update(SessionTable)
+          .set({ agent: "reviewer" })
+          .where(eq(SessionTable.id, HARNESS_SESSION))
+          .run()
+          .pipe(Effect.orDie)
+        const session = yield* SessionV2.Service
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "First" }), resume: false })
+        yield* session.resume(HARNESS_SESSION)
+
+        yield* agents.transform((editor) =>
+          editor.update(AgentV2.ID.make("reviewer"), (agent) => {
+            agent.personality = "Brisk identity marker."
+          }),
+        )
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Second" }), resume: false })
+        yield* session.resume(HARNESS_SESSION)
+
+        yield* agents.transform((editor) =>
+          editor.update(AgentV2.ID.make("reviewer"), (agent) => {
+            agent.name = "Aster"
+          }),
+        )
+        yield* db
+          .update(SessionTable)
+          .set({ short_chat: true })
+          .where(eq(SessionTable.id, HARNESS_SESSION))
+          .run()
+          .pipe(Effect.orDie)
+        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Third" }), resume: false })
+        yield* session.resume(HARNESS_SESSION)
+      }),
+      "claim — current officer identity survives the Short Chat posture",
+    )
+
+    const systems = harness.requests.map((request) => (request.system ?? []).map((part) => part.text))
+    expect(systems).toHaveLength(3)
+    const ordinary = systems[0]!
+    const ordinaryText = ordinary.join("\n")
+    expect(ordinaryText.split("Iris")).toHaveLength(2)
+    expect(ordinaryText.split("Calm identity marker.")).toHaveLength(2)
+    expect(ordinary.indexOf("Review standing job brief.")).toBeGreaterThan(
+      ordinary.findIndex((part) => part.includes("<agent_identity>")),
+    )
+    expect(ordinaryText).not.toContain("Nova")
+
+    const personalityOnly = systems[1]!
+    const personalityOnlyText = personalityOnly.join("\n")
+    expect(personalityOnlyText.split("Iris")).toHaveLength(2)
+    expect(personalityOnlyText.split("Brisk identity marker.")).toHaveLength(2)
+    expect(personalityOnlyText).not.toContain("Calm identity marker.")
+    expect(personalityOnly).toContain("Review standing job brief.")
+
+    const short = systems[2]!
+    const shortText = short.join("\n")
+    expect(shortText.split("Aster")).toHaveLength(2)
+    expect(shortText.split("Brisk identity marker.")).toHaveLength(2)
+    expect(shortText).not.toContain("Iris")
+    expect(shortText).not.toContain("Calm identity marker.")
+    expect(short).toContain("Review standing job brief.")
+    expect(short).toContain(ShortChat.GUIDANCE)
+  })
+
   test("includes the effective default agent system before durable context", async () => {
     const harness = makeRunnerHarness({ turns: [completeTurn("text-build", "Done")] })
 

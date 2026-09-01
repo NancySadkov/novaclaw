@@ -6,6 +6,7 @@ import { sweepStrayServers } from "../../../script/lib/stray-servers"
 import { resolveChannel } from "./utils"
 import { prepareW64devkit } from "./prepare-w64devkit"
 import { prepareImageMagick } from "./prepare-imagemagick"
+import { prepareRipgrep } from "./prepare-ripgrep"
 import { dhtBuildArguments } from "./dht-packaging"
 
 // The guard has to bite from BOTH sides. prebuild is the first lifecycle step of every desktop build,
@@ -31,6 +32,7 @@ enforce("a desktop build", process.argv, { minimumFreeBytes: 2.5 * 1024 ** 3 })
 sweepStrayServers({ reason: "a desktop build" })
 
 const channel = resolveChannel()
+await prepareRipgrep()
 await prepareW64devkit()
 // ⚠️ NOT wrapped in a soft catch, and that is deliberate — the same lesson `prepareW64devkit` above
 // carries. A tolerated failure here ships a build whose agents believe they can edit images and

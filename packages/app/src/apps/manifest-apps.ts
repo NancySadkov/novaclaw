@@ -10,6 +10,7 @@ import { useTabs } from "@/context/tabs"
 import { appName, appSubtitle, type Translate } from "./app-label"
 import { loadPersistedApps, persistedManifests, type AppManifest } from "./persisted"
 import type { HomeApp } from "./registry"
+import { scopedDirectory } from "@/utils/routing-directory"
 
 // Lives apart from persisted.ts so server-sync can import the DATA module (loadPersistedApps)
 // without pulling the context hooks in — that would be an import cycle.
@@ -58,7 +59,7 @@ export function useManifestApps(): () => HomeApp[] {
     const c = conn()
     if (!c) return
     const ctx = global.ensureServerCtx(c)
-    const directory = ctx.sync.data.path.directory || ctx.sync.data.path.home
+    const directory = scopedDirectory(ctx.sync.data.path)
     if (!directory) return
     tabs.newDraft({ server: ServerConnection.key(c), directory }, manifest.open.value)
   }

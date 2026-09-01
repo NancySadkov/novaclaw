@@ -1,8 +1,10 @@
 import type { ServerConnection } from "@/context/server"
 import { instanceFetch } from "@/utils/instance-fetch"
 
-// Raw-fetch client for /api/calendar/schedule. Schedules are instance-global, so `server` (base URL
-// + creds) is the only routing needed — no `directory`.
+// Raw-fetch client for /api/calendar/schedule. Schedules, removal and fire history are
+// instance-global. Create/update additionally carry the current server-side directory as request
+// routing: it lets the server validate an unpinned task against the ambient roster/catalog without
+// turning that routing directory into the schedule's own pinned `location`.
 //
 // ⚠️ Base URL, auth, and fault decoding all live in `utils/instance-fetch.ts`; nothing HTTP-shaped
 // belongs in this file. It used to say these routes are "NOT in the generated SDK" — measured false
@@ -65,8 +67,14 @@ const call = <T>(server: ServerConnection.HttpBase, method: string, route: strin
 export const listSchedules = (server: ServerConnection.HttpBase) =>
   call<Schedule[]>(server, "GET", "api/calendar/schedule")
 
-export const createSchedule = (server: ServerConnection.HttpBase, input: CreateScheduleInput) =>
-  call<Schedule>(server, "POST", "api/calendar/schedule", input)
+export const createSchedule = (server: ServerConnection.HttpBase, directory: string, input: CreateScheduleInput) =>
+  instanceFetch<Schedule>(server, {
+    method: "POST",
+    route: "api/calendar/schedule",
+    directory,
+    directoryVia: "header",
+    body: input,
+  })
 
 export interface UpdateScheduleInput {
   readonly title?: string
@@ -80,8 +88,19 @@ export interface UpdateScheduleInput {
   readonly enabled?: boolean
 }
 
-export const updateSchedule = (server: ServerConnection.HttpBase, id: string, patch: UpdateScheduleInput) =>
-  call<Schedule>(server, "PATCH", `api/calendar/schedule/${encodeURIComponent(id)}`, patch)
+export const updateSchedule = (
+  server: ServerConnection.HttpBase,
+  directory: string,
+  id: string,
+  patch: UpdateScheduleInput,
+) =>
+  instanceFetch<Schedule>(server, {
+    method: "PATCH",
+    route: `api/calendar/schedule/${encodeURIComponent(id)}`,
+    directory,
+    directoryVia: "header",
+    body: patch,
+  })
 
 export const removeSchedule = (server: ServerConnection.HttpBase, id: string) =>
   call<void>(server, "DELETE", `api/calendar/schedule/${encodeURIComponent(id)}`)

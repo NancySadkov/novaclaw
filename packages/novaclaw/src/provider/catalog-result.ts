@@ -4,8 +4,9 @@ export * as ProviderCatalogResult from "./catalog-result"
 // (ProviderV2.Info / ModelV2.Info) verbatim, plus the derived connected set and
 // per-provider default model. No projection layer — clients consume catalog truth.
 
-import { Schema, Types } from "effect"
+import { Effect, Schema, Types } from "effect"
 import { sortBy } from "remeda"
+import { Catalog } from "@novaclaw/core/catalog"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { ModelV2 } from "@novaclaw/core/model"
 
@@ -26,6 +27,29 @@ export function sort<T extends { id: string }>(models: T[]) {
     [(model) => model.id, "desc"],
   )
 }
+
+/**
+ * **The ONE read that produces a provider catalog.** Four calls in a fixed order — `provider.all`,
+ * `model.all`, `provider.available`, then `listResult` — written out twice: once in
+ * `cli/cmd/models.ts` and once in `httpapi/handlers/provider.ts`. The two bodies were identical
+ * (RF-14-8), so a change to what "the catalog" means had to be made in two places, and the CLI
+ * silently answering a different question from the HTTP route is a failure nothing would report.
+ *
+ * ⚠️ **The PROVISION deliberately stays at the call sites, because it is the one thing that
+ * genuinely differs.** This is an `Effect` requiring `Catalog.Service`, i.e. the location-scoped
+ * graph; the CLI resolves that for `process.cwd()` and the handler for
+ * `InstanceState.context.directory`. Folding the directory in here would mean this module choosing
+ * between them, which is exactly the decision that must stay visible at each caller. The CLI's
+ * `PluginV2.ready` await stays there too — it is a bare-process concern (a fast CLI can otherwise
+ * read the store before the plugin batch lands) and the server has already done it.
+ */
+export const listCatalog = Effect.gen(function* () {
+  const catalog = yield* Catalog.Service
+  const providers = yield* catalog.provider.all()
+  const models = yield* catalog.model.all()
+  const available = yield* catalog.provider.available()
+  return listResult({ providers, models, connected: available.map((provider) => provider.id) })
+})
 
 /** Every non-disabled provider that owns at least one model; `connected` = available ids. */
 export function listResult(input: {

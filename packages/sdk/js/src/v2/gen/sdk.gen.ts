@@ -204,248 +204,10 @@ class ApiExperimentalControlPlane extends NovaClawApiClient {
   }
 }
 
-class ApiExperimentalResource extends NovaClawApiClient {
-  /**
-   * Get MCP resources
-   *
-   * Get all available MCP resources from connected servers. Optionally filter by name.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
-    return (options?.client ?? this.client).get<
-      T.ExperimentalResourceListResponses,
-      T.ExperimentalResourceListErrors,
-      ThrowOnError
-    >({
-      url: "/experimental/resource",
-      ...options,
-      query,
-    })
-  }
-}
-
-class ApiExperimentalWorkspaceAdapter extends NovaClawApiClient {
-  /**
-   * List workspace adapters
-   *
-   * List all available workspace adapters for the current project.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
-    return (options?.client ?? this.client).get<
-      T.ExperimentalWorkspaceAdapterListResponses,
-      T.ExperimentalWorkspaceAdapterListErrors,
-      ThrowOnError
-    >({
-      url: "/experimental/workspace/adapter",
-      ...options,
-      query,
-    })
-  }
-}
-
-class ApiExperimentalWorkspace extends NovaClawApiClient {
-  /**
-   * List workspaces
-   *
-   * List all workspaces.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
-    return (options?.client ?? this.client).get<
-      T.ExperimentalWorkspaceListResponses,
-      T.ExperimentalWorkspaceListErrors,
-      ThrowOnError
-    >({
-      url: "/experimental/workspace",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Create workspace
-   *
-   * Create a workspace for the current project.
-   */
-  public create<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-      id?: string
-      type?: string
-      branch?: string | null
-      extra?: unknown | null
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
-    const body = {
-      id: parameters?.["id"],
-      type: parameters?.["type"],
-      branch: parameters?.["branch"],
-      extra: parameters?.["extra"],
-    }
-    return (options?.client ?? this.client).post<
-      T.ExperimentalWorkspaceCreateResponses,
-      T.ExperimentalWorkspaceCreateErrors,
-      ThrowOnError
-    >({
-      url: "/experimental/workspace",
-      ...options,
-      query,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Sync workspace list
-   *
-   * Register missing workspaces returned by workspace adapters.
-   */
-  public syncList<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
-    return (options?.client ?? this.client).post<
-      T.ExperimentalWorkspaceSyncListResponses,
-      T.ExperimentalWorkspaceSyncListErrors,
-      ThrowOnError
-    >({
-      url: "/experimental/workspace/sync-list",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Workspace status
-   *
-   * Get connection status for workspaces in the current project.
-   */
-  public status<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
-    return (options?.client ?? this.client).get<
-      T.ExperimentalWorkspaceStatusResponses,
-      T.ExperimentalWorkspaceStatusErrors,
-      ThrowOnError
-    >({
-      url: "/experimental/workspace/status",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Remove workspace
-   *
-   * Remove an existing workspace.
-   */
-  public remove<ThrowOnError extends boolean = false>(
-    parameters: {
-      id: string
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { id: parameters?.["id"] }
-    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
-    return (options?.client ?? this.client).delete<
-      T.ExperimentalWorkspaceRemoveResponses,
-      T.ExperimentalWorkspaceRemoveErrors,
-      ThrowOnError
-    >({
-      url: "/experimental/workspace/{id}",
-      ...options,
-      path,
-      query,
-    })
-  }
-
-  /**
-   * Warp session into workspace
-   *
-   * Move a session's sync history into the target workspace, or detach it to the local project.
-   */
-  public warp<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-      id?: string | null
-      sessionID?: string
-      copyChanges?: boolean
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
-    const body = {
-      id: parameters?.["id"],
-      sessionID: parameters?.["sessionID"],
-      copyChanges: parameters?.["copyChanges"],
-    }
-    return (options?.client ?? this.client).post<
-      T.ExperimentalWorkspaceWarpResponses,
-      T.ExperimentalWorkspaceWarpErrors,
-      ThrowOnError
-    >({
-      url: "/experimental/workspace/warp",
-      ...options,
-      query,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  private _adapter?: ApiExperimentalWorkspaceAdapter
-  get adapter(): ApiExperimentalWorkspaceAdapter {
-    return (this._adapter ??= new ApiExperimentalWorkspaceAdapter({ client: this.client }))
-  }
-}
-
 class ApiExperimental extends NovaClawApiClient {
   private _controlPlane?: ApiExperimentalControlPlane
   get controlPlane(): ApiExperimentalControlPlane {
     return (this._controlPlane ??= new ApiExperimentalControlPlane({ client: this.client }))
-  }
-
-  private _resource?: ApiExperimentalResource
-  get resource(): ApiExperimentalResource {
-    return (this._resource ??= new ApiExperimentalResource({ client: this.client }))
-  }
-
-  private _workspace?: ApiExperimentalWorkspace
-  get workspace(): ApiExperimentalWorkspace {
-    return (this._workspace ??= new ApiExperimentalWorkspace({ client: this.client }))
   }
 }
 
@@ -1827,26 +1589,6 @@ class ApiConfig extends NovaClawApiClient {
       headers: { "Content-Type": "application/json", ...options?.headers },
     })
   }
-
-  /**
-   * List config providers
-   *
-   * Get a list of all configured AI providers and their default models.
-   */
-  public providers<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
-    return (options?.client ?? this.client).get<T.ConfigProvidersResponses, T.ConfigProvidersErrors, ThrowOnError>({
-      url: "/config/providers",
-      ...options,
-      query,
-    })
-  }
 }
 
 class ApiProject extends NovaClawApiClient {
@@ -1891,76 +1633,7 @@ class ApiProject extends NovaClawApiClient {
   }
 }
 
-class ApiTool extends NovaClawApiClient {
-  /**
-   * List tools
-   *
-   * Get a list of available tools with their JSON schema parameters for a specific provider and model combination.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters: {
-      directory?: string
-      workspace?: string
-      provider: string
-      model: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = {
-      directory: parameters?.["directory"],
-      workspace: parameters?.["workspace"],
-      provider: parameters?.["provider"],
-      model: parameters?.["model"],
-    }
-    return (options?.client ?? this.client).get<T.ToolListResponses, T.ToolListErrors, ThrowOnError>({
-      url: "/experimental/tool",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * List tool IDs
-   *
-   * Get a list of all available tool IDs, including both built-in tools and dynamically registered tools.
-   */
-  public ids<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
-    return (options?.client ?? this.client).get<T.ToolIdsResponses, T.ToolIdsErrors, ThrowOnError>({
-      url: "/experimental/tool/ids",
-      ...options,
-      query,
-    })
-  }
-}
-
 class ApiWorktree extends NovaClawApiClient {
-  /**
-   * List worktrees
-   *
-   * List all sandbox worktrees for the current project.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
-    return (options?.client ?? this.client).get<T.WorktreeListResponses, T.WorktreeListErrors, ThrowOnError>({
-      url: "/experimental/worktree",
-      ...options,
-      query,
-    })
-  }
-
   /**
    * Create worktree
    *
@@ -1978,54 +1651,6 @@ class ApiWorktree extends NovaClawApiClient {
     const body = parameters?.["worktreeCreateInput"]
     return (options?.client ?? this.client).post<T.WorktreeCreateResponses, T.WorktreeCreateErrors, ThrowOnError>({
       url: "/experimental/worktree",
-      ...options,
-      query,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Remove worktree
-   *
-   * Remove a git worktree and delete its branch.
-   */
-  public remove<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-      worktreeRemoveInput?: T.WorktreeRemoveInput
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
-    const body = parameters?.["worktreeRemoveInput"]
-    return (options?.client ?? this.client).delete<T.WorktreeRemoveResponses, T.WorktreeRemoveErrors, ThrowOnError>({
-      url: "/experimental/worktree",
-      ...options,
-      query,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Reset worktree
-   *
-   * Reset a worktree branch to the primary default branch.
-   */
-  public reset<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-      worktreeResetInput?: T.WorktreeResetInput
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
-    const body = parameters?.["worktreeResetInput"]
-    return (options?.client ?? this.client).post<T.WorktreeResetResponses, T.WorktreeResetErrors, ThrowOnError>({
-      url: "/experimental/worktree/reset",
       ...options,
       query,
       body,
@@ -2545,28 +2170,6 @@ class ApiCommand extends NovaClawApiClient {
   }
 }
 
-class ApiFormatter extends NovaClawApiClient {
-  /**
-   * Get formatter status
-   *
-   * Get formatter status
-   */
-  public status<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
-    return (options?.client ?? this.client).get<T.FormatterStatusResponses, T.FormatterStatusErrors, ThrowOnError>({
-      url: "/formatter",
-      ...options,
-      query,
-    })
-  }
-}
-
 class ApiMcpAuth extends NovaClawApiClient {
   /**
    * Start MCP OAuth
@@ -2797,7 +2400,7 @@ class ApiMemory extends NovaClawApiClient {
       kinds?: string
       statuses?: string
       includeInvalid?: string
-      limit?: string
+      limit?: number
       offset?: string
     },
     options?: Options<never, ThrowOnError>,
@@ -2829,7 +2432,7 @@ class ApiMemory extends NovaClawApiClient {
       directory?: string
       workspace?: string
       scopes?: string
-      limit?: string
+      limit?: number
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3191,7 +2794,7 @@ class ApiRegistry extends NovaClawApiClient {
       directory?: string
       workspace?: string
       table: string
-      limit?: string
+      limit?: number
       offset?: string
     },
     options?: Options<never, ThrowOnError>,
@@ -3467,26 +3070,6 @@ class ApiSyncHistory extends NovaClawApiClient {
 }
 
 class ApiSync extends NovaClawApiClient {
-  /**
-   * Start workspace sync
-   *
-   * Start sync loops for workspaces in the current project that have active sessions.
-   */
-  public start<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
-    return (options?.client ?? this.client).post<T.SyncStartResponses, T.SyncStartErrors, ThrowOnError>({
-      url: "/sync/start",
-      ...options,
-      query,
-    })
-  }
-
   /**
    * Replay sync events
    *
@@ -4130,9 +3713,9 @@ class ApiV2SessionRevert extends NovaClawApiClient {
 
 class ApiV2SessionPermission extends NovaClawApiClient {
   /**
-   * Create permission request
+   * Evaluate permission
    *
-   * Evaluate and, when approval is required, create a permission request for a session.
+   * Evaluate the effective permission rules for a session action.
    */
   public create<ThrowOnError extends boolean = false>(
     parameters: {
@@ -4165,82 +3748,6 @@ class ApiV2SessionPermission extends NovaClawApiClient {
       ThrowOnError
     >({
       url: "/api/session/{sessionID}/permission",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * List session permission requests
-   *
-   * Retrieve pending permission requests owned by a session.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"] }
-    return (options?.client ?? this.client).get<
-      T.V2SessionPermissionListResponses,
-      T.V2SessionPermissionListErrors,
-      ThrowOnError
-    >({
-      url: "/api/session/{sessionID}/permission",
-      ...options,
-      path,
-    })
-  }
-
-  /**
-   * Get permission request
-   *
-   * Retrieve a pending permission request owned by a session.
-   */
-  public get<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      requestID: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"], requestID: parameters?.["requestID"] }
-    return (options?.client ?? this.client).get<
-      T.V2SessionPermissionGetResponses,
-      T.V2SessionPermissionGetErrors,
-      ThrowOnError
-    >({
-      url: "/api/session/{sessionID}/permission/{requestID}",
-      ...options,
-      path,
-    })
-  }
-
-  /**
-   * Reply to pending permission request
-   *
-   * Respond to a pending permission request owned by a session.
-   */
-  public reply<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      requestID: string
-      reply: T.PermissionV2Reply
-      message?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { sessionID: parameters?.["sessionID"], requestID: parameters?.["requestID"] }
-    const body = { reply: parameters?.["reply"], message: parameters?.["message"] }
-    return (options?.client ?? this.client).post<
-      T.V2SessionPermissionReplyResponses,
-      T.V2SessionPermissionReplyErrors,
-      ThrowOnError
-    >({
-      url: "/api/session/{sessionID}/permission/{requestID}/reply",
       ...options,
       path,
       body,
@@ -5014,7 +4521,7 @@ class ApiV2Session extends NovaClawApiClient {
   /**
    * Wait for session
    *
-   * Block until the session completes via exit() (its result is recorded). Times out after ~2 minutes with 503 — re-call to continue waiting.
+   * Block until the session completes via exit() (its result is recorded). Times out after ~10 minutes with 503 — re-call to continue waiting.
    */
   public wait<ThrowOnError extends boolean = false>(
     parameters: {
@@ -5080,7 +4587,7 @@ class ApiV2Session extends NovaClawApiClient {
   public events<ThrowOnError extends boolean = false>(
     parameters: {
       sessionID: string
-      after?: string
+      after?: number
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -5407,7 +4914,7 @@ class ApiV2Provider extends NovaClawApiClient {
   /**
    * Remove one model
    *
-   * Delete a single model from a provider in the instance catalog store, keeping the provider itself (and so its endpoint URL, auth and request defaults). Instance-wide and durable, unlike the client-side hide the Models tab used to perform. A model that is in no layer is a 404, never a cheerful 204.
+   * Delete a single model from a provider in the instance catalog store, keeping the provider itself (and so its endpoint URL, auth and request defaults). Instance-wide and durable. A model that is in no layer is a 404, never a cheerful 204.
    */
   public removeModel<ThrowOnError extends boolean = false>(
     parameters: {
@@ -6345,7 +5852,7 @@ class ApiV2Recipe extends NovaClawApiClient {
   /**
    * Read a recipe's file, and what it needs and produces
    *
-   * The bytes of recipe.md exactly as they are on disk — the unit a person shares — plus the host-capability facts it declares checked against THIS machine, the artifacts a finished cook should leave, and the shelf it is on. Read-only: the capability probe resolves names on PATH and stats paths, and never runs a candidate.
+   * The bytes of recipe.md exactly as they are on disk — the readable part of the folder — plus the host-capability facts it declares checked against THIS machine, the artifacts a finished cook should leave, and the shelf it is on. Read-only: the capability probe resolves names on PATH and stats paths, and never runs a candidate.
    */
   public source<ThrowOnError extends boolean = false>(
     parameters: {
@@ -6362,9 +5869,9 @@ class ApiV2Recipe extends NovaClawApiClient {
   }
 
   /**
-   * Store a recipe.md from somewhere else
+   * Store pasted recipe markdown without assets
    *
-   * Writes the supplied file byte for byte under a free slug — never overwriting an existing recipe. Assets are not carried: this is the recipe.md, which is the part a person can read.
+   * Writes the supplied file byte for byte under a free slug — never overwriting an existing recipe. This paste convenience is explicitly asset-free; use the ZIP import for a complete folder.
    */
   public import<ThrowOnError extends boolean = false>(
     parameters: {
@@ -6378,6 +5885,53 @@ class ApiV2Recipe extends NovaClawApiClient {
       ...options,
       body,
       headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Export a complete recipe folder
+   *
+   * Returns a standard ZIP containing recipe.md and every nested binary or text asset.
+   */
+  public archive<ThrowOnError extends boolean = false>(
+    parameters: {
+      slug: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { slug: parameters?.["slug"] }
+    return (options?.client ?? this.client).get<T.V2RecipeArchiveResponses, T.V2RecipeArchiveErrors, ThrowOnError>({
+      url: "/api/recipe/{slug}/archive",
+      ...options,
+      path,
+    })
+  }
+
+  /**
+   * Import a complete recipe folder
+   *
+   * Validates a bounded standard ZIP, reserves a free slug, and commits recipe.md plus its asset tree atomically.
+   */
+  public archiveImport<ThrowOnError extends boolean = false>(
+    parameters: {
+      slug?: string
+      body: Blob | File
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { slug: parameters?.["slug"] }
+    const body = parameters?.["body"]
+    return (options?.client ?? this.client).post<
+      T.V2RecipeArchiveImportResponses,
+      T.V2RecipeArchiveImportErrors,
+      ThrowOnError
+    >({
+      url: "/api/recipe/archive",
+      ...options,
+      query,
+      body,
+      bodySerializer: null,
+      headers: { "Content-Type": "application/zip", ...options?.headers },
     })
   }
 
@@ -6490,34 +6044,6 @@ class ApiV2App extends NovaClawApiClient {
   }
 }
 
-class ApiV2PermissionRequest extends NovaClawApiClient {
-  /**
-   * List pending permission requests
-   *
-   * Retrieve pending permission requests for a location.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { location: parameters?.["location"] }
-    return (options?.client ?? this.client).get<
-      T.V2PermissionRequestListResponses,
-      T.V2PermissionRequestListErrors,
-      ThrowOnError
-    >({
-      url: "/api/permission/request",
-      ...options,
-      query,
-    })
-  }
-}
-
 class ApiV2PermissionSaved extends NovaClawApiClient {
   /**
    * List saved permissions
@@ -6567,11 +6093,6 @@ class ApiV2PermissionSaved extends NovaClawApiClient {
 }
 
 class ApiV2Permission extends NovaClawApiClient {
-  private _request?: ApiV2PermissionRequest
-  get request(): ApiV2PermissionRequest {
-    return (this._request ??= new ApiV2PermissionRequest({ client: this.client }))
-  }
-
   private _saved?: ApiV2PermissionSaved
   get saved(): ApiV2PermissionSaved {
     return (this._saved ??= new ApiV2PermissionSaved({ client: this.client }))
@@ -6661,7 +6182,7 @@ class ApiV2Fs extends NovaClawApiClient {
       }
       query: string
       type?: "file" | "directory"
-      limit?: string
+      limit?: number
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -7400,10 +6921,6 @@ export class NovaclawClient extends NovaClawApiClient {
   get project(): ApiProject {
     return (this._project ??= new ApiProject({ client: this.client }))
   }
-  private _tool?: ApiTool
-  get tool(): ApiTool {
-    return (this._tool ??= new ApiTool({ client: this.client }))
-  }
   private _worktree?: ApiWorktree
   get worktree(): ApiWorktree {
     return (this._worktree ??= new ApiWorktree({ client: this.client }))
@@ -7431,10 +6948,6 @@ export class NovaclawClient extends NovaClawApiClient {
   private _command?: ApiCommand
   get command(): ApiCommand {
     return (this._command ??= new ApiCommand({ client: this.client }))
-  }
-  private _formatter?: ApiFormatter
-  get formatter(): ApiFormatter {
-    return (this._formatter ??= new ApiFormatter({ client: this.client }))
   }
   private _mcp?: ApiMcp
   get mcp(): ApiMcp {

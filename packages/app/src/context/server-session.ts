@@ -1,7 +1,6 @@
 import { retry } from "@novaclaw/core/util/retry"
 import type {
   NovaclawClient,
-  PermissionV2Request,
   QuestionRequest,
   SessionV2Info as Session,
   SessionStatus,
@@ -70,9 +69,8 @@ export function createServerSession(
     session_status: {} as Record<string, SessionStatus>,
     session_diff: {} as Record<string, SessionChangeDiff[]>,
     todo: {} as Record<string, Todo[]>,
-    permission: {} as Record<string, PermissionV2Request[]>,
     question: {} as Record<string, QuestionRequest[]>,
-    // The tags component (notes/entities.md T0): sessionID → tags, fed by `session.tags.updated`
+    // The tags component (notes/reports/entities-review-2026-07-06.md T0): sessionID → tags, fed by `session.tags.updated`
     // events + the /api/tag bootstrap. Organization over chats — replaces project grouping.
     tag: {} as Record<string, string[]>,
     // The presence component: sessionID → who is attached, who is driving, and whether two
@@ -126,9 +124,6 @@ export function createServerSession(
         ...inflight.keys(),
         ...inflightDiff.keys(),
         ...inflightTodo.keys(),
-        ...Object.entries(data.permission)
-          .filter(([, items]) => items.length > 0)
-          .map(([sessionID]) => sessionID),
         ...Object.entries(data.question)
           .filter(([, items]) => items.length > 0)
           .map(([sessionID]) => sessionID),
@@ -236,9 +231,6 @@ export function createServerSession(
       ...inflight.keys(),
       ...inflightDiff.keys(),
       ...inflightTodo.keys(),
-      ...Object.entries(data.permission)
-        .filter(([, items]) => items.length > 0)
-        .map(([sessionID]) => sessionID),
       ...Object.entries(data.question)
         .filter(([, items]) => items.length > 0)
         .map(([sessionID]) => sessionID),
@@ -300,7 +292,7 @@ export function createServerSession(
     if (event.type === "session.next.text.delta" || event.type === "session.next.reasoning.delta") {
       const props = event.properties as { sessionID?: string; delta?: string }
       if (typeof props.sessionID === "string" && typeof props.delta === "string") {
-        // The last phase of the boot timeline (`todo/startup.md`): the first generated character to
+        // The last phase of the boot timeline: the first generated character to
         // reach the renderer. Deliberately here rather than at a request or a status change — what
         // the measurement is for is time until the user SEES something, and only a delta proves that.
         // Repeats are dropped by the timeline itself, so this needs no guard of its own.
@@ -376,37 +368,6 @@ export function createServerSession(
         setData("session_status", props.sessionID, reconcile(props.status))
         // The run settled — drop its live-rate tracker so the ps badge clears with the spinner.
         if (props.status.type === "idle" || props.status.type === "exited") clearLive(props.sessionID)
-        return
-      }
-      // F1e S6: native `permission.v2.*` vocab; the V1 projection is ignored (retires in S7).
-      case "permission.v2.asked": {
-        const permission = event.properties as PermissionV2Request
-        const permissions = data.permission[permission.sessionID]
-        if (!permissions) {
-          setData("permission", permission.sessionID, [permission])
-          return
-        }
-        const result = Binary.search(permissions, permission.id, (item) => item.id)
-        if (result.found) setData("permission", permission.sessionID, result.index, reconcile(permission))
-        if (!result.found)
-          setData(
-            "permission",
-            permission.sessionID,
-            produce((draft) => void draft.splice(result.index, 0, permission)),
-          )
-        return
-      }
-      case "permission.v2.replied": {
-        const props = event.properties as { sessionID: string; requestID: string }
-        setData(
-          "permission",
-          props.sessionID,
-          produce((draft) => {
-            if (!draft) return
-            const result = Binary.search(draft, props.requestID, (item) => item.id)
-            if (result.found) draft.splice(result.index, 1)
-          }),
-        )
         return
       }
       case "question.asked": {

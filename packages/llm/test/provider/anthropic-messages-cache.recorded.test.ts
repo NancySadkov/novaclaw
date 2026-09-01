@@ -1,14 +1,14 @@
 import { describe, expect } from "bun:test"
 import { Effect } from "effect"
 import { CacheHint, LLM } from "../../src"
-import { LLMClient } from "../../src/route"
-import * as Anthropic from "../../src/providers/anthropic"
+import { Auth, LLMClient } from "../../src/route"
+import * as AnthropicMessages from "../../src/protocols/anthropic-messages"
 import { LARGE_CACHEABLE_SYSTEM } from "../recorded-scenarios"
 import { recordedTests } from "../recorded-test"
 
-const model = Anthropic.configure({
-  apiKey: process.env.ANTHROPIC_API_KEY ?? "fixture",
-}).model("claude-haiku-4-5-20251001")
+const model = AnthropicMessages.route
+  .with({ auth: Auth.header("x-api-key", process.env.ANTHROPIC_API_KEY ?? "fixture") })
+  .model({ id: "claude-haiku-4-5-20251001" })
 
 // Two identical generations in a row. The first call writes the prefix into
 // Anthropic's cache; the second should report a cache read against the same

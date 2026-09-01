@@ -20,7 +20,6 @@ export type Entry =
   | { readonly type: "refreshed"; readonly step: string; readonly command: string }
   | { readonly type: "observation"; readonly step: string; readonly ok: boolean }
   | { readonly type: "verification"; readonly step: string; readonly ok: boolean; readonly detail: string }
-  | { readonly type: "corrected"; readonly step: string }
   // R3: a new best progress score was observed (graded oracle).
   | { readonly type: "scored"; readonly step: string; readonly score: number }
   // R3: on a score regression, the best-scoring workspace snapshot was restored to disk. improve7 P1 (K5)
@@ -36,8 +35,6 @@ export type Entry =
   // improve7 P2 (C7): a file crossed COORD_AFTER consecutive `old_string not found` misses — edit_file is
   // disabled for it (intercepted pre-execution with a replace_lines redirect) until a successful edit lands.
   | { readonly type: "coord_mode"; readonly step: string; readonly file: string }
-  // R4: a rewrite-stage fix node produced no source change — the directive was ignored.
-  | { readonly type: "directive_ignored"; readonly step: string }
   // improve3 P1: N consecutive build-damaging edits → the harness auto-reverted to the last verified checkpoint.
   | { readonly type: "reverted"; readonly step: string; readonly reason: string }
   // improve3 P3b: lazy planning stripped nested sub-substeps from a decomposition (attach top level only).
@@ -161,16 +158,12 @@ function describe(e: Sequenced): string {
       return `observation ${e.step}: ${e.ok ? "ok" : "fail"}`
     case "verification":
       return `verification ${e.step}: ${e.ok ? "pass" : "fail"}${e.detail ? ` — ${e.detail}` : ""}`
-    case "corrected":
-      return `corrected ${e.step}`
     case "scored":
       return `scored ${e.step}: best=${e.score}`
     case "restored_best":
       return `restored_best ${e.step}: score=${e.score} (${e.reason})`
     case "coord_mode":
       return `coord_mode ${e.step}: ${e.file} — edit_file disabled after repeated mis-quotes; use replace_lines coordinates`
-    case "directive_ignored":
-      return `directive_ignored ${e.step}`
     case "reverted":
       return `reverted ${e.step}: ${e.reason}`
     case "flattened":

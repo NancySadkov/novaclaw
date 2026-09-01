@@ -91,7 +91,7 @@ export const layer = Layer.effect(
     const cipher = yield* CredentialCipher.Service
     const decode = Schema.decodeUnknownSync(Value)
     /**
-     * 🔴 The unwind of app-managed encryption, continued (`todo/code-review.md`, NC-REL-030).
+     * 🔴 The unwind of app-managed encryption, continued.
      *
      * Storing a credential is storing it. Decision §5 of `decisions-v0.2.0.md`, recorded six days
      * AFTER the cipher landed with a one-line commit and no rationale, says secrets stay plaintext

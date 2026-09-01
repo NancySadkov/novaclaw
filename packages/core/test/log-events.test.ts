@@ -242,7 +242,6 @@ describe("redaction is in the record, and it cannot drift from the attributes", 
     expect(mayEgress("config.file.load")).toBe(false)
     expect(mayEgress("git.tree.diff.truncated")).toBe(true)
     expect(mayEgress("resource.headroom.measure.failed")).toBe(false)
-    expect(mayEgress("storage.migration.run.failed")).toBe(false)
     expect(mayEgress("messenger.discord.backfill.truncated")).toBe(false)
     expect(mayEgress("messenger.operator.notice.failed")).toBe(false)
     expect(mayEgress("messenger.store.read.failed")).toBe(false)

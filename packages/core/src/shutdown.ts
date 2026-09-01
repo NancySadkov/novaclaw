@@ -5,7 +5,7 @@ import { Cause, Duration, Effect, Exit } from "effect"
 /**
  * Settle everything that can be settled, inside ONE deadline, and say what was forced.
  *
- * `todo/v0.2.0-prep.md`: *"Settle sessions, children, terminals, downloads and model workers within a
+ * The requirement: *"settle sessions, children, terminals, downloads and model workers within a
  * bounded deadline, then NAME anything forced."* Today each subsystem has a finalizer, there is no
  * deadline over them, and nothing is named — so closing the app mid-work is the one routine action
  * that can lose work, and it does so silently.

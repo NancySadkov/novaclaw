@@ -43,6 +43,7 @@ import { toggleMcp } from "./global-sync/mcp"
 import { createServerSession } from "./server-session"
 import { createNativeMessageStore } from "./global-sync/message-v2-store"
 import { withRequestDeadline } from "@/utils/request-deadline"
+import { afterFirstPaint } from "@/utils/after-first-paint"
 
 type GlobalStore = {
   ready: boolean
@@ -50,7 +51,7 @@ type GlobalStore = {
   path: Path
   provider: NormalizedProviderListResponse
   config: Config
-  reload: undefined | "pending" | "complete"
+  reload: undefined | "pending"
 }
 
 export const loadMcpQuery = (scope: ServerScope, directory: string, sdk: NovaclawClient) =>
@@ -142,14 +143,9 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
   const queryClient = useQueryClient()
 
   let bootedAt = 0
-  let bootingRoot = false
-  let eventFrame: number | undefined
-  let eventTimer: ReturnType<typeof setTimeout> | undefined
+  let cancelEventStart: (() => void) | undefined
 
-  onCleanup(() => {
-    if (eventFrame !== undefined) cancelAnimationFrame(eventFrame)
-    if (eventTimer !== undefined) clearTimeout(eventTimer)
-  })
+  onCleanup(() => cancelEventStart?.())
 
   const setBootStore = setGlobalStore
 
@@ -179,12 +175,11 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
   const queue = createRefreshQueue({
     paused,
     key: directoryKey,
-    bootstrap: () => queryClient.fetchQuery({ queryKey: [serverSDK.scope, "bootstrap"] }),
     bootstrapInstance,
   })
 
   const session = createServerSession(serverSDK.client)
-  // Tags component bootstrap (notes/entities.md T0) — instance-wide, once per server connection.
+  // Tags component bootstrap (notes/reports/entities-review-2026-07-06.md T0) — instance-wide, once per server connection.
   void session.loadTags()
   // Presence component bootstrap — who is attached to what, right now. Once per server connection;
   // everything after that arrives as `session.presence.updated`. This read doubles as the
@@ -241,10 +236,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     const meta = sessionMeta.get(key)
     const retainedLimit = Math.max(store.limit, options?.limit ?? 0, meta?.limit ?? 0)
     if (meta && meta.limit >= retainedLimit) {
-      const next = trimSessions(store.session, {
-        limit: retainedLimit,
-        permission: session.data.permission,
-      })
+      const next = trimSessions(store.session, { limit: retainedLimit })
       if (next.length !== store.session.length) {
         setStore("session", reconcile(next, { key: "id" }))
       }
@@ -272,10 +264,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
                 .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
               const limit = Math.max(store.limit, options?.limit ?? 0, sessionMeta.get(key)?.limit ?? 0)
               const childSessions = store.session.filter((s) => !!s.parentID)
-              const next = trimSessions([...nonArchived, ...childSessions], {
-                limit,
-                permission: session.data.permission,
-              })
+              const next = trimSessions([...nonArchived, ...childSessions], { limit })
               batch(() => {
                 next.forEach(session.remember)
                 setStore(
@@ -384,7 +373,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     const directory = e.name
     const key = directoryKey(directory)
     const event = e.details
-    const recent = bootingRoot || Date.now() - bootedAt < 1500
+    const recent = Date.now() - bootedAt < 1500
 
     session.apply(event)
 
@@ -407,7 +396,9 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     // F1e (strategy B, parallel): also fold the raw session.next.* events into the native store.
     // The bridge emits them non-sync alongside the v1 translation, so they already arrive here;
     // adapt the bus envelope { type, properties } -> the fold's { type, data }. The store ignores
-    // non-session.next.* events. Nothing renders from it yet — the V1 path above stays authoritative.
+    // non-session.next.* events. It IS the transcript render path (`NativeTimeline` →
+    // `NativeTranscript`) — see `global-sync/message-v2-store.ts`'s header — so a fold that drops an
+    // event here is a user-visible missing message, not a bookkeeping miss.
     const rawEvent = event as { type: string; properties?: unknown }
     nativeMessages.apply({ type: rawEvent.type, data: rawEvent.properties } as unknown as V2Event)
 
@@ -492,7 +483,6 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
       push: queue.push,
       retainedLimit: sessionMeta.get(key)?.limit,
       sessionContent: false,
-      permission: session.data.permission,
       vcsCache: children.vcsCache.get(key),
     })
   })
@@ -508,27 +498,11 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
   })
 
   onMount(() => {
-    // rAF defers the stream past first paint — but it NEVER fires in a hidden tab (background
-    // tab, headless preview), which used to leave the event stream unstarted until the tab was
-    // focused. Fall back to a plain timeout whenever the document isn't visible.
-    const begin = () => {
-      eventTimer = setTimeout(() => {
-        eventTimer = undefined
-        void serverSDK.event.start()
-      }, 0)
-    }
-    if (
-      typeof requestAnimationFrame === "function" &&
-      typeof document !== "undefined" &&
-      document.visibilityState === "visible"
-    ) {
-      eventFrame = requestAnimationFrame(() => {
-        eventFrame = undefined
-        begin()
-      })
-    } else {
-      begin()
-    }
+    // The hidden-tab fallback this file used to spell out inline now lives in `afterFirstPaint`,
+    // along with the two call sites that were missing it.
+    cancelEventStart = afterFirstPaint(() => {
+      void serverSDK.event.start()
+    })
   })
 
   const projectApi = {
@@ -574,7 +548,6 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     peek: children.peek,
     disableMcp: children.disableMcp,
     queryOptions: queryOptionsApi,
-    // bootstrap,
     updateConfig: (config: Config, options?: ConfigUpdateOptions) =>
       updateConfigMutation.mutateAsync({ config, ...options }),
     // Re-read the global config after something OTHER than `updateConfig` wrote it — the capability
@@ -613,7 +586,7 @@ export function createServerSyncContext(serverSDK: ServerSDK) {
   const inner = createServerSyncContextInner(serverSDK)
   return Object.assign(inner, {
     ensureDirSyncContext: createRefCountMap(
-      (dir) => createDirSyncContext(dir, inner, serverSDK),
+      (dir) => createDirSyncContext(dir, inner),
       (dir) => inner.disableMcp(dir),
       directoryKey,
     ),

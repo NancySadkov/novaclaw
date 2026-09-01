@@ -4,7 +4,7 @@ import type { InstalledPolicy } from "@/utils/policy-api"
 /**
  * **The decisions the folder-policy surface makes, out of the JSX.**
  *
- * `todo/projects.md`: *"A folder's policy list is READ-ONLY in the app — wants the section-scoped
+ * The gap: *"a folder's policy list is READ-ONLY in the app — wants the section-scoped
  * write Permissions got."* Settings could already say which checks are installed and switch one off
  * for the whole instance; the one thing it could not do was change the list a `novaclaw.json` asks
  * for, which left "edit the JSON by hand" as the only route — the *poke memory bytes* principle 12

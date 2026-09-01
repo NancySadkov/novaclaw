@@ -6,7 +6,7 @@ import path from "node:path"
 import { Quality } from "./quality"
 import { SessionStrict } from "./strict"
 
-// v0.2.0 — the SESSION half of the completion gate (todo/v0.2.0-prep.md item 12).
+// v0.2.0 — the SESSION half of the completion gate.
 //
 // The filing said `JhEngine.Deps.taskComplete` is unreachable from the session route, leaving Strict's
 // completion SELF-ATTESTED: with no oracle, `verifyGoal`'s LLM goal-check was the sole authority on

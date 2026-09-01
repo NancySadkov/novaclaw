@@ -6,7 +6,7 @@ export * as ComputerCoordinates from "./coordinates"
  * **Why this is its own module with its own tests, rather than three lines at the call site.**
  * Getting it wrong does not crash, does not error, and does not look like a coordinate bug: every
  * click simply lands up and to the left, and the agent reads as a model that cannot ground. Measured
- * 2026-08-06 (todo/computer-use.md): `Hcompany/Holo-3.1-35B-A3B-NVFP4` returned `{"x":814,"y":726}`
+ * 2026-08-06: `Hcompany/Holo-3.1-35B-A3B-NVFP4` returned `{"x":814,"y":726}`
  * for a button whose true centre on a 1280x800 screenshot is `(1040,582)`. Read as pixels that is a
  * point in the upper-left quadrant, on a plausible-looking widget, with nothing anywhere reporting a
  * fault.
@@ -76,7 +76,8 @@ const otherSpacesAccepting = (value: number, extent: number, declared: Space): R
  *
  * ⚠️ **Out of range is an ERROR, never a clamp.** Clamping a stray point to the screen edge produces
  * a click that is silently in the wrong place, which is the same class of fault this module exists to
- * prevent (todo.md ruling 2 — a fault is never described falsely). The caller decides whether to
+ * prevent (`notes/reports/decisions-v0.2.0.md` ruling 2 — a fault is never described falsely). The
+ * caller decides whether to
  * re-ask the model, and it can only decide if it is told.
  */
 export const toPixels = (point: Point, space: Space, viewport: Viewport): Conversion => {

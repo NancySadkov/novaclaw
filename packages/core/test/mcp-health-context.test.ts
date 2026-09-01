@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test"
 import { McpHealthContext } from "@novaclaw/core/mcp-health-context"
 
 // The model-facing half of the 2026-08-07 ruling on "should a failed MCP server be reported to the
-// model, or to the user?" (todo/assorted.md; the decision itself is written at
-// `core/src/mcp-health-context.ts`). Every claim here is about a property whose violation compiles
+// model, or to the user?" — the decision itself is written at `core/src/mcp-health-context.ts`.
+// Every claim here is about a property whose violation compiles
 // green — ruling 1 — and the first one is the load-bearing one: this seam is only cheap because it
 // says NOTHING when nothing is wrong.
 
@@ -12,7 +12,7 @@ describe("McpHealthContext.lines", () => {
     expect(
       McpHealthContext.lines([
         { name: "searxng", status: { status: "connected" } },
-        { name: "github", status: { status: "connected" } },
+        { name: "tracker", status: { status: "connected" } },
       ]),
     ).toEqual([])
   })

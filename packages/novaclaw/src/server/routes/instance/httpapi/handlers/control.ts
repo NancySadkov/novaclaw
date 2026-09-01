@@ -28,7 +28,7 @@ export const controlHandlers = HttpApiBuilder.group(RootHttpApi, "control", (han
     })
 
     /**
-     * `POST /log` — a CLIENT process's own faults reaching the instance log. `todo/logging.md` 1g.
+     * `POST /log` — a CLIENT process's own faults reaching the instance log.
      *
      * The refusals, their measurements and the reason each one is shaped the way it is live in
      * `./client-log.ts`; this function is the wiring. Two properties are decided here and nowhere

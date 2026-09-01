@@ -38,6 +38,19 @@ export function useDirectoryPicker() {
     const cancel = () => {
       if (!selected) input.onSelect(null)
     }
-    dialog.show(() => <DialogSelectDirectoryV2 {...input} onSelect={onSelect} />, cancel)
+    /**
+     * 🔴 `push`, never `show`. A picker is a MODAL UTILITY — the opener stays put and waits, the way
+     * a message box does. `show` REPLACES the stack, and `dialog-stack.ts` says what that costs:
+     * *"The displaced roots are torn down, not closed — nobody dismissed them."* Opened from inside
+     * the agent-config dialog that meant the opener was DESTROYED before the user had picked
+     * anything, so `onSelect` wrote `setDirectory(picked)` into a disposed reactive root and the
+     * dialog's own close hook never ran — the folder silently stayed unchanged and nothing reported
+     * a failure (owner, 2026-09-01).
+     *
+     * ⚠️ Safe at the call sites that open from a PAGE rather than a dialog: with an empty stack
+     * `push` and `show` do the same thing — nothing to displace, and `layer` is `stack().length`,
+     * which is 0.
+     */
+    dialog.push(() => <DialogSelectDirectoryV2 {...input} onSelect={onSelect} />, cancel)
   }
 }

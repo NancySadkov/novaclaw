@@ -8,7 +8,6 @@ import { useLanguage } from "@/context/language"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { errorDescriptionKey } from "./error-description"
 import { DISCORD_INVITE_URL } from "@/constants/links"
-import { updaterRefusal } from "@/components/updater-action"
 
 export type InitError = {
   name: string
@@ -244,30 +243,6 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
     void ensureFatalErrorRecorded().catch(() => undefined)
   })
 
-  async function checkForUpdates() {
-    const state = await platform.updater?.check()
-    const refusal = updaterRefusal(state)
-    setStore(
-      "actionError",
-      state?.status === "error" ? state.message : refusal ? language.t(refusal) : undefined,
-    )
-  }
-
-  async function installUpdate() {
-    await platform.updater
-      ?.install()
-      .then(() => setStore("actionError", undefined))
-      .catch((err) => {
-        setStore("actionError", formatError(err, language.t))
-      })
-  }
-
-  const updateVersion = () => {
-    const state = platform.updater?.state()
-    if (state?.status !== "ready") return
-    return state.version
-  }
-
   async function exportDebugLogs() {
     const exportLogs = platform.exportDebugLogs
     if (!exportLogs) return
@@ -280,7 +255,10 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
   }
 
   return (
-    <div class="relative flex-1 h-screen w-screen min-h-0 flex flex-col items-center justify-center bg-v2-background-bg-deep font-sans">
+    <div
+      data-component="error-page"
+      class="relative flex-1 h-screen w-screen min-h-0 flex flex-col items-center justify-center bg-v2-background-bg-deep font-sans"
+    >
       <div class="w-2/3 max-w-3xl flex flex-col items-center justify-center gap-8">
         <Logo class="w-58.5 opacity-12 shrink-0" />
         <div class="flex flex-col items-center gap-2 text-center">
@@ -323,29 +301,6 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
             <ButtonV2 size="large" variant="ghost" onClick={exportDebugLogs}>
               {language.t("error.page.action.exportLogs")}
             </ButtonV2>
-          </Show>
-          <Show when={platform.updater}>
-            <Show
-              when={updateVersion()}
-              fallback={
-                <ButtonV2
-                  size="large"
-                  variant="ghost"
-                  onClick={checkForUpdates}
-                  disabled={["checking", "downloading", "installing"].includes(platform.updater?.state().status ?? "")}
-                >
-                  {platform.updater?.state().status === "checking"
-                    ? language.t("error.page.action.checking")
-                    : language.t("error.page.action.checkUpdates")}
-                </ButtonV2>
-              }
-            >
-              {(version) => (
-                <ButtonV2 size="large" onClick={installUpdate}>
-                  {language.t("error.page.action.updateTo", { version: version() })}
-                </ButtonV2>
-              )}
-            </Show>
           </Show>
         </div>
         <Show when={store.actionError}>

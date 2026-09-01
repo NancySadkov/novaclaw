@@ -4,7 +4,7 @@ import type { ProjectPermissionRule, ProjectState } from "@/utils/project-api"
 /**
  * **The decisions the Project permissions surface makes, out of the JSX.**
  *
- * `todo/projects.md`: *"Make Permissions expose the Project defaults loaded from `novaclaw.json`,
+ * The brief: *"make Permissions expose the Project defaults loaded from `novaclaw.json`,
  * distinguish them from personal and session rules, and save Project-default edits back to only the
  * Permissions section."*
  *
@@ -19,7 +19,7 @@ import type { ProjectPermissionRule, ProjectState } from "@/utils/project-api"
  *     rules will land and which will not.
  *  2. **A `.gitignore` is not a "never read" list.** One says what should not be committed, the
  *     other what a model may never see. They overlap on `.env` and disagree on `dist/`, and
- *     equating them silently is the failure `todo/projects.md` names by hand.
+ *     equating them silently is the named failure.
  *
  * ⚠️ The server is the ENFORCEMENT for (1) — it drops an `allow` and reports it in
  * `refusedPermissions`, so the file is never wrong even if this copy drifts. This exists so the

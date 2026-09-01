@@ -14,7 +14,7 @@ import {
   Usage,
   type LLMRequest,
 } from "@novaclaw/llm"
-import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
+import * as OpenAIChat from "@novaclaw/llm/protocols/openai-compatible-chat"
 import { SessionSchema } from "../schema"
 import type { SessionMessage } from "@novaclaw/schema/session-message"
 import { Token } from "../../util/token"

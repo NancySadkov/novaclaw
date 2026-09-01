@@ -107,7 +107,7 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2
 // the difference between a dead turn and a recoverable one, and why the empty-registry branch and the
 // character budget are both load-bearing).
 //
-// It used to be defined HERE — it shipped in this file, ported from github.com/NancySadkov/novaclaw PR #4
+// It used to be defined HERE — it shipped in this file, ported from outside contribution #4
 // (@DassaultFalconKing) — and moved down the dependency edge on 2026-07-28 because a second dispatch seam
 // (`ToolRuntime.dispatch`) was still handing back a bare `Unknown tool: X`. Two seams answering the same
 // question two ways is ruling 6's forbidden shape; `core` depends on `llm` and not the reverse, so `llm` is

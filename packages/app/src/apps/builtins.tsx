@@ -74,14 +74,19 @@ export function useBuiltinApps(): () => HomeApp[] {
         return sub("contacts")
       },
       source: "builtin",
-      // ⚠️ The hero opens the ROSTER now, not a chat list — one door, because a second tile onto the
-      // same page is the "separate Contacts app" the owner ruled out. Its id stays `tasks` so an
-      // existing launcher keeps the hero in place (`RENAMED_IDS` exists for real renames, and this
-      // is not one); its NAME is an owner call, asked and not yet answered.
+      // ⚠️ The hero opens the ROSTER, not a chat list — one door, because a second tile onto the
+      // same page is the "separate Contacts app" the owner ruled out.
+      //
+      // ⚠️ The id is `contacts`; the ROUTE and the ARTWORK are still `/tasks` and `tasks.png`, and
+      // that split is deliberate rather than an oversight. This tile has been renamed twice
+      // (`chats` → `tasks` → `contacts`), and `RENAMED_IDS` in `home-screen.tsx` maps BOTH old ids
+      // onto `contacts` so a saved launcher arrangement keeps this tile in its slot. Renaming it
+      // again means adding a row there in the same edit — a lookup, not a chain, so every old name
+      // must point at where the tile lives TODAY.
       // The hero IS the system monitor: threads running, combined throughput, memory pressure.
       stats: () => systemLoadStats(systemLoad(), language.t),
       open: () => navigate("/tasks"),
-      // Threads wanting attention (pending permission/question + unseen) — uix-improvement slice 2.
+      // Threads wanting attention (pending question + unseen) — uix-improvement slice 2.
       badge: () => chatsAttention().length || undefined,
     },
     {

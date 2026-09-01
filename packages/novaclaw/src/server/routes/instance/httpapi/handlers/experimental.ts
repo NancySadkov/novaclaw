@@ -1,6 +1,4 @@
 import { InstanceState } from "@/effect/instance-state"
-import { MCP } from "@/mcp"
-import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { LocationServiceMap } from "@novaclaw/core/location-services"
 import { ServerLocationServiceMap } from "@/location-service-map"
 import { Location } from "@novaclaw/core/location"
@@ -17,13 +15,7 @@ import { Worktree } from "@/worktree"
 import { Effect, Layer } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
-import {
-  ProjectWriteInput,
-  SessionListQuery,
-  ToolListQuery,
-  WorktreeApiError,
-  WorktreeDirtyApiError,
-} from "../groups/experimental"
+import { ProjectWriteInput, WorktreeApiError } from "../groups/experimental"
 
 function mapWorktreeError<A, R>(self: Effect.Effect<A, Worktree.Error, R>) {
   return self.pipe(
@@ -33,39 +25,8 @@ function mapWorktreeError<A, R>(self: Effect.Effect<A, Worktree.Error, R>) {
 
 export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "experimental", (handlers) =>
   Effect.gen(function* () {
-    const mcp = yield* MCP.Service
     const locations = yield* LocationServiceMap.Service
     const worktreeSvc = yield* Worktree.Service
-
-    // Tool enumeration is an installed-catalogue surface, not a provider horizon: deferred external
-    // schemas still belong here even though materialize().definitions intentionally excludes them.
-    const toolDefinitions = Effect.fn("ExperimentalHttpApi.toolDefinitions")(function* () {
-      const directory = (yield* InstanceState.context).directory
-      return yield* ToolRegistry.Service.pipe(
-        Effect.flatMap((registry) => registry.catalogue()),
-        Effect.map((sources) => sources.map((source) => source.definition)),
-        Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))),
-      )
-    })
-
-    const tool = Effect.fn("ExperimentalHttpApi.tool")(function* (_ctx: { query: typeof ToolListQuery.Type }) {
-      const definitions = yield* toolDefinitions()
-      return definitions.map((def) => ({
-        id: def.name,
-        description: def.description,
-        parameters: def.inputSchema,
-      }))
-    })
-
-    const toolIDs = Effect.fn("ExperimentalHttpApi.toolIDs")(function* () {
-      const definitions = yield* toolDefinitions()
-      return definitions.map((def) => def.name)
-    })
-
-    const worktree = Effect.fn("ExperimentalHttpApi.worktree")(function* () {
-      // T3 (entities.md): the sandbox registry died with the entity — git is the truth.
-      return (yield* mapWorktreeError(worktreeSvc.list())).map((item) => item.directory)
-    })
 
     const worktreeCreate = Effect.fn("ExperimentalHttpApi.worktreeCreate")(function* (ctx: {
       payload: typeof Worktree.CreateInput.Type | void
@@ -73,42 +34,11 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       return yield* mapWorktreeError(worktreeSvc.create(ctx.payload ?? undefined))
     })
 
-    const worktreeRemove = Effect.fn("ExperimentalHttpApi.worktreeRemove")(function* (input: {
-      payload: Worktree.RemoveInput
-    }) {
-      // 🔴 The dirty refusal is NOT folded into `mapWorktreeError`'s 400. It is a 409 carrying
-      // `forceRequired: true`, so a client can offer "delete anyway" instead of showing an error —
-      // the difference between a choice and a dead end, which is what the vision's "never breaks in
-      // your hands" is about at the API boundary.
-      yield* worktreeSvc.remove(input.payload).pipe(
-        Effect.mapError((error) =>
-          error._tag === "WorktreeDirtyError"
-            ? new WorktreeDirtyApiError({
-                name: "WorktreeDirtyError",
-                data: { directory: error.directory, message: error.message, forceRequired: true },
-              })
-            : new WorktreeApiError({ name: error._tag, data: { message: error.message } }),
-        ),
-      )
-      return true
-    })
-
-    const worktreeReset = Effect.fn("ExperimentalHttpApi.worktreeReset")(function* (ctx: {
-      payload: Worktree.ResetInput
-    }) {
-      yield* mapWorktreeError(worktreeSvc.reset(ctx.payload))
-      return true
-    })
-
-    const resource = Effect.fn("ExperimentalHttpApi.resource")(function* () {
-      return yield* mcp.resources()
-    })
-
     /**
      * What importing the project root's `.gitignore` would ADD to its `exclude` list.
      *
-     * 🔴 A SUGGESTION, computed on read and applied by nobody. `todo/projects.md` keeps model read
-     * eligibility distinct from watcher/build ignores, and this is where that distinction is either
+     * 🔴 A SUGGESTION, computed on read and applied by nobody. Model read eligibility stays
+     * distinct from watcher/build ignores, and this is where that distinction is either
      * respected or quietly lost: a `.gitignore` says what should not be COMMITTED, `exclude` says
      * what must never reach a model, and the two lists genuinely disagree (`dist/` is fine to read;
      * a committed secrets folder is not in the `.gitignore` at all). So nothing is copied without a
@@ -152,9 +82,10 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
      */
     const project = Effect.fn("ExperimentalHttpApi.project")(function* () {
       const directory = (yield* InstanceState.context).directory
-      const resolution = yield* ProjectFileResolve.resolve(directory).pipe(
-        Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))),
-      )
+      const resolution = yield* Effect.gen(function* () {
+        const location = yield* Location.Service
+        return yield* ProjectFileResolve.resolve(directory, ProjectFileResolve.trustedBoundary(location))
+      }).pipe(Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))))
       if (resolution.kind === "project") {
         const exclude = resolution.info.exclude ?? []
         // ⚠️ The SAME function the kernel's cache applies, called here rather than re-derived: the
@@ -260,12 +191,6 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
     return handlers
       .handle("project", project)
       .handle("projectWrite", projectWrite)
-      .handle("tool", tool)
-      .handle("toolIDs", toolIDs)
-      .handle("worktree", worktree)
       .handle("worktreeCreate", worktreeCreate)
-      .handle("worktreeRemove", worktreeRemove)
-      .handle("worktreeReset", worktreeReset)
-      .handle("resource", resource)
   }),
 ).pipe(Layer.provide(ServerLocationServiceMap.layer))

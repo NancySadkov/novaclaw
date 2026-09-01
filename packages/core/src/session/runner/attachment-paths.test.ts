@@ -8,7 +8,7 @@ import type { SessionMessage } from "../message"
 import { AttachmentPaths } from "./attachment-paths"
 import { STEER_PROVENANCE_PREFIX } from "../steer-provenance"
 
-// Ported from https://github.com/NancySadkov/novaclaw/pull/9 by @DassaultFalconKing.
+// Ported from outside contribution #9 by @DassaultFalconKing.
 // Identity is `realpath`, so the cases that matter are the ALIASES: a symlink, a `..` segment and a
 // percent-escaped URI all name one file, and a comparison that missed any of them would be
 // protection in name only. Real files on purpose — the thing under test IS the filesystem resolution.

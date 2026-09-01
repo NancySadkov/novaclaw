@@ -479,7 +479,7 @@ function RemoteChatSection(props: { remote: ComposerRemoteChatState }) {
 }
 
 /**
- * **"Make Default for this Folder"** — `todo/projects.md`: *"It creates `novaclaw.json` when absent,
+ * **"Make Default for this Folder"** — *"it creates `novaclaw.json` when absent,
  * or updates only its Tune section when present, preserving Permissions and unrelated fields; show
  * the resulting change and a local receipt."*
  *

@@ -1,12 +1,10 @@
 export * as PermissionV2 from "./permission"
 
 import path from "path"
-import { and, eq, ne } from "drizzle-orm"
 import { makeLocationNode } from "./effect/app-node"
 import { Global } from "./global"
-import { Context, Deferred, Effect as EffectRuntime, FiberSet, Layer, Schema } from "effect"
+import { Context, Effect as EffectRuntime, Layer, Schema } from "effect"
 import { Permission } from "@novaclaw/schema/permission"
-import { EventV2 } from "./event"
 import { Location } from "./location"
 import { AgentV2 } from "./agent"
 import { SessionV2 } from "./session"
@@ -29,8 +27,6 @@ import {
 } from "./session/config-resolve"
 import { SessionAutoGrant } from "./session/auto-grant"
 import { PermissionSaved } from "./permission/saved"
-import { Database } from "./database/database"
-import { PermissionPendingTable } from "./permission/sql"
 import { ShortChat } from "./session/runner/short-chat"
 
 /** Where an Analyze-mode session may still write its report: the app's own temp dir, which the agent
@@ -54,12 +50,6 @@ const RequestFields = {
   metadata: Permission.Request.fields.metadata,
   source: Permission.Request.fields.source,
 }
-
-export const Request = Permission.Request
-export type Request = typeof Request.Type
-
-export const Reply = Permission.Reply
-export type Reply = typeof Reply.Type
 
 export const AssertInput = Schema.Struct({
   id: ID.pipe(Schema.optional),
@@ -86,26 +76,11 @@ export const AssertInput = Schema.Struct({
 }).annotate({ identifier: "PermissionV2.AssertInput" })
 export type AssertInput = typeof AssertInput.Type
 
-export const ReplyInput = Schema.Struct({
-  requestID: ID,
-  reply: Reply,
-  message: Schema.String.pipe(Schema.optional),
-}).annotate({ identifier: "PermissionV2.ReplyInput" })
-export type ReplyInput = typeof ReplyInput.Type
-
 export const AskResult = Schema.Struct({
   id: ID,
   effect: Permission.Effect,
 }).annotate({ identifier: "PermissionV2.AskResult" })
 export type AskResult = typeof AskResult.Type
-
-export const Event = Permission.Event
-
-export class RejectedError extends Schema.TaggedErrorClass<RejectedError>()("PermissionV2.RejectedError", {}) {}
-
-export class CorrectedError extends Schema.TaggedErrorClass<CorrectedError>()("PermissionV2.CorrectedError", {
-  feedback: Schema.String,
-}) {}
 
 /**
  * Why a denial happened, when the plain rule list would mislead the model. `unattended-confined`
@@ -179,11 +154,7 @@ export class DeniedError extends Schema.TaggedErrorClass<DeniedError>()("Permiss
   reason: DenialReason.pipe(Schema.optional),
 }) {}
 
-export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("PermissionV2.NotFoundError", {
-  requestID: ID,
-}) {}
-
-export type Error = DeniedError | RejectedError | CorrectedError
+export type Error = DeniedError
 
 /**
  * 1J: lower a permission failure into a model-legible message (denial as observation, never a
@@ -308,10 +279,6 @@ export function denialMessage(error: unknown): string | undefined {
       )
     return `Permission denied by policy: action '${actions}' on '${resources}' is not allowed in this mode. Do not retry the same call — work within permitted paths and actions, or ask the user to adjust permissions.`
   }
-  if (error instanceof CorrectedError)
-    return `The user declined this action and said: "${error.feedback}". Follow the user's direction instead of retrying the same call.`
-  if (error instanceof RejectedError)
-    return `The user declined permission for this action. Do not retry the identical call. If the task can proceed another way (a different tool, a permitted path, or answering from what you already know), CONTINUE with that approach now; only stop to ask the user when no alternative exists.`
   return undefined
 }
 
@@ -343,43 +310,6 @@ export function protectedAttachment(
   if (!MUTATING_ACTIONS.has(action)) return undefined
   const attachments = new Set(attachmentPaths)
   return targets.find((target) => attachments.has(target.canonical))
-}
-
-export type ReplyVerdict = "allow" | "deny"
-export type ReplyScope = "once" | "file" | "always"
-
-/** 1K: normalize the six verdict-scope replies (+ the legacy trio) into {verdict, scope}. */
-export function normalizeReply(reply: Reply): { verdict: ReplyVerdict; scope: ReplyScope } {
-  switch (reply) {
-    case "once":
-    case "allow-once":
-      return { verdict: "allow", scope: "once" }
-    case "always":
-    case "allow-always":
-      return { verdict: "allow", scope: "always" }
-    case "reject":
-    case "deny-once":
-      return { verdict: "deny", scope: "once" }
-    case "allow-file":
-      return { verdict: "allow", scope: "file" }
-    case "deny-file":
-      return { verdict: "deny", scope: "file" }
-    case "deny-always":
-      return { verdict: "deny", scope: "always" }
-  }
-}
-
-/**
- * 1K: the resources a reply persists. `file` scope saves the request's CONCRETE resources (this
- * file only); `always` saves the request's broad `save` patterns; `once` persists nothing.
- */
-export function savedResources(
-  request: { readonly resources: readonly string[]; readonly save?: readonly string[] },
-  scope: ReplyScope,
-): readonly string[] {
-  if (scope === "once") return []
-  if (scope === "file") return request.resources
-  return request.save ?? []
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -535,7 +465,7 @@ export function matchRule(action: string, resource: string, ruleset: Permission.
  * concatenation, so appending a ruleset is how you OVERRIDE — including with `allow`. That is correct
  * for user config, agent config and saved answers, which are the operator speaking. It is exactly
  * wrong for a `novaclaw.json` sitting inside a folder the user may have cloned five minutes ago:
- * `todo/projects.md` requires that a Project or session may never widen the operator's safety floor,
+ * AGENTS.md design principle 13 requires that a Project or session may never widen the operator's safety floor,
  * and appending would hand a repository author a `{"*": "*": "allow"}` past every deny in the install.
  *
  * So a constraint can only move the verdict UP the restrictiveness order, and a constraint with no
@@ -562,31 +492,13 @@ export function evaluateNarrowed(
 export interface Interface {
   readonly ask: (input: AssertInput) => EffectRuntime.Effect<AskResult, SessionV2.NotFoundError>
   readonly assert: (input: AssertInput) => EffectRuntime.Effect<void, Error | SessionV2.NotFoundError>
-  readonly reply: (input: ReplyInput) => EffectRuntime.Effect<ReplyResult, NotFoundError>
-  readonly get: (id: ID) => EffectRuntime.Effect<Request | undefined>
-  readonly forSession: (sessionID: SessionV2.ID) => EffectRuntime.Effect<ReadonlyArray<Request>>
-  readonly list: () => EffectRuntime.Effect<ReadonlyArray<Request>>
-}
-
-export interface ReplyResult {
-  readonly sessionID: SessionV2.ID
-  /** True when no live waiter remains and the HTTP seam must re-drive the interrupted session. */
-  readonly recovered: boolean
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/Permission") {}
 
-interface Pending {
-  readonly request: Request
-  readonly agent?: AgentV2.ID
-  readonly awaited: boolean
-  deferred?: Deferred.Deferred<void, RejectedError | CorrectedError>
-}
-
 export const layer = Layer.effect(
   Service,
   EffectRuntime.gen(function* () {
-    const events = yield* EventV2.Service
     const location = yield* Location.Service
     const agents = yield* AgentV2.Service
     const sessions = yield* SessionStore.Service
@@ -601,7 +513,7 @@ export const layer = Layer.effect(
      *
      * ⚠️ Resolved from the SESSION's working folder, not this location's directory. The two differ
      * whenever a session was opened somewhere else, and the folder the agent is actually working in
-     * is the one whose project governs it (`todo/projects.md`: *"the nearest valid `novaclaw.json`
+     * is the one whose project governs it (*"the nearest valid `novaclaw.json`
      * at or above the session folder"*). Reading the location's directory answered for the instance
      * no matter whose folder was asked about — correct only while every session sits in the
      * instance's own folder, which is not a property the kernel has. The direction of the change is
@@ -625,133 +537,6 @@ export const layer = Layer.effect(
 
     const autoGrants = yield* SessionAutoGrant.Service
     const saved = yield* PermissionSaved.Service
-    const { db } = yield* Database.Service
-    const pending = new Map<ID, Pending>()
-
-    const decodeRequest = (value: string) => Schema.decodeUnknownSync(Request)(JSON.parse(value))
-    const rowValues = (item: Pick<Pending, "request" | "agent" | "awaited">) => ({
-      id: item.request.id,
-      origin: location.origin,
-      session_id: String(item.request.sessionID),
-      request: JSON.stringify(item.request),
-      agent: item.agent === undefined ? null : String(item.agent),
-      awaited: item.awaited,
-    })
-
-    // Rehydrate before serving HTTP. Pending rows keep rendering as consent cards; resolved rows stay
-    // out of the list until the retried assertion consumes their one-shot verdict.
-    const durableRows = yield* db
-      .select()
-      .from(PermissionPendingTable)
-      .where(eq(PermissionPendingTable.origin, location.origin))
-      .all()
-      .pipe(EffectRuntime.orDie)
-    for (const row of durableRows) {
-      if (row.resolution !== null) continue
-      const request = decodeRequest(row.request)
-      pending.set(request.id, {
-        request,
-        awaited: row.awaited,
-        ...(row.agent === null ? {} : { agent: AgentV2.ID.make(row.agent) }),
-      })
-    }
-
-    const deleteDurable = (id: ID) =>
-      db.delete(PermissionPendingTable).where(eq(PermissionPendingTable.id, id)).run().pipe(EffectRuntime.orDie)
-
-    // Asked/Replied must carry this service's location EXPLICITLY: publishes can run on fibers
-    // without Location.Service in context (tool settlement, the session-deleted sweep), and the
-    // per-instance /event stream drops location-less events — the CLI deny path hung on exactly
-    // that (a runner-origin ask never reached the subscriber).
-    const eventLocation: Location.Ref = {
-      directory: location.directory,
-      ...(location.workspaceID === undefined ? {} : { workspaceID: location.workspaceID }),
-    }
-
-    yield* EffectRuntime.addFinalizer(() =>
-      EffectRuntime.forEach(
-        pending.values(),
-        (item) => (item.deferred ? Deferred.fail(item.deferred, new RejectedError()) : EffectRuntime.void),
-        {
-          discard: true,
-        },
-      ).pipe(
-        EffectRuntime.ensuring(
-          EffectRuntime.sync(() => {
-            pending.clear()
-          }),
-        ),
-      ),
-    )
-
-    // Reject every pending ask belonging to a session, publishing Replied so clients clear
-    // their stores. Used by the deny-cascade below and by the session-deleted sweep: once the
-    // session row is gone the V2 session-scoped reply route can never settle these (it 404s on
-    // the missing session), so an orphaned ask would pollute pending lists and attention badges
-    // forever with no way to dismiss it.
-    const rejectSessionPending = (sessionID: string, preserveID?: ID) =>
-      EffectRuntime.uninterruptible(
-        EffectRuntime.gen(function* () {
-          for (const [id, item] of pending) {
-            if (String(item.request.sessionID) !== sessionID) continue
-            if (id === preserveID) continue
-            yield* events.publish(
-              Event.Replied,
-              {
-                sessionID: item.request.sessionID,
-                requestID: item.request.id,
-                reply: "reject",
-              },
-              { location: eventLocation },
-            )
-            if (item.deferred) yield* Deferred.fail(item.deferred, new RejectedError())
-            pending.delete(id)
-            yield* deleteDurable(id)
-          }
-          // A recovered or already-resolved row may not be in the in-memory map. Session
-          // settlement still owns deleting it: a one-shot verdict must not survive the retried
-          // turn and accidentally authorize the same operation much later.
-          yield* db
-            .delete(PermissionPendingTable)
-            .where(
-              and(
-                eq(PermissionPendingTable.origin, location.origin),
-                eq(PermissionPendingTable.session_id, sessionID),
-                ...(preserveID === undefined ? [] : [ne(PermissionPendingTable.id, preserveID)]),
-              ),
-            )
-            .run()
-            .pipe(EffectRuntime.orDie)
-        }),
-      )
-
-    // A deleted session takes its pending asks with it. `session.deleted` is the session-level
-    // V1 event the engine still emits for every delete (kept through F1g), so this covers both
-    // engines with one subscription. A SETTLED DRAIN does too (owner-hit 2026-07-22): the only
-    // thing that can consume an answer is the tool awaiting it inside the drain, so once the
-    // drain publishes idle/exited (Stop, exit, error — the fiber is gone) every still-pending
-    // ask is an orphan. Left alone it wedged the chat permanently: the ask dock replaces the
-    // composer while asks are pending, so after an interrupt the user faced stale Allow/Deny
-    // buttons with no composer, no Stop, and no way to re-prompt.
-    // ⚠️ The sweep must run DETACHED from the publishing fiber: the idle status is published
-    // from the interrupted drain's finalizer under `Effect.ignore`, and a listener effect run
-    // inline there dies with the fiber and is swallowed (measured live 2026-07-22 — idle on the
-    // wire, no Replied). The service-scoped FiberSet runs it on a healthy fiber instead.
-    const fork = yield* FiberSet.makeRuntime<never, void, never>()
-    const settledOrphans = (event: { type: string; data: unknown }) => {
-      if (event.type === "session.deleted")
-        return rejectSessionPending(String((event.data as { sessionID?: string }).sessionID ?? ""))
-      if (event.type === "session.status") {
-        const data = event.data as { sessionID?: string; status?: { type?: string } }
-        if (data.status?.type === "idle" || data.status?.type === "exited")
-          return EffectRuntime.sync(() => fork(rejectSessionPending(String(data.sessionID ?? "")))).pipe(
-            EffectRuntime.asVoid,
-          )
-      }
-      return EffectRuntime.void
-    }
-    const unsubscribe = yield* events.listen(settledOrphans)
-    yield* EffectRuntime.addFinalizer(() => unsubscribe)
 
     const savedRules = EffectRuntime.fnUntraced(function* () {
       return (yield* saved.list({ origin: location.origin })).map(
@@ -1072,226 +857,21 @@ export const layer = Layer.effect(
       }
     })
 
-    function request(input: AssertInput, attachment?: MutationTarget): Request {
-      return {
-        id: input.id ?? ID.create(),
-        sessionID: input.sessionID,
-        action: input.action,
-        resources: input.resources,
-        save: input.save,
-        // The ask has to say WHY it is asking. Without this the user sees an ordinary edit prompt for
-        // a file the rest of the session was allowed to touch freely, which reads as a glitch rather
-        // than as the product noticing something — and a prompt whose reason is invisible is the
-        // obscurantism the vision forbids. `metadata` is the existing channel; no new wire shape.
-        metadata:
-          attachment === undefined
-            ? input.metadata
-            : { ...input.metadata, attachmentProtection: true, attachmentPath: attachment.canonical },
-        source: input.source,
-      }
-    }
-
-    const create = (request: Request, agent: AgentV2.ID | undefined, awaited: boolean) =>
-      EffectRuntime.uninterruptible(
-        EffectRuntime.gen(function* () {
-          const deferred = yield* Deferred.make<void, RejectedError | CorrectedError>()
-          const item = { request, agent, awaited, deferred }
-          if (pending.has(request.id)) return yield* EffectRuntime.die(`Duplicate pending permission ID: ${request.id}`)
-          yield* db.insert(PermissionPendingTable).values(rowValues(item)).run().pipe(EffectRuntime.orDie)
-          pending.set(request.id, item)
-          yield* events.publish(Event.Asked, request, { location: eventLocation }).pipe(
-            EffectRuntime.onError(() =>
-              EffectRuntime.gen(function* () {
-                pending.delete(request.id)
-                yield* deleteDurable(request.id)
-              }),
-            ),
-          )
-          return item
-        }),
-      )
-
     const ask = EffectRuntime.fn("PermissionV2.ask")(function* (input: AssertInput) {
       const result = yield* evaluateInput(input)
-      const value = request(input, result.attachment)
-      // No pending record is created any more: `evaluateInput` cannot return "ask" (owner ruling
-      // 2026-08-20), so there is never anything for a human to answer. The typechecker proved it —
-      // the `if (result.effect === "ask")` that stood here stopped compiling the moment the arm
-      // above began denying, which is the tidiest possible confirmation the outcome is gone.
-      return { id: value.id, effect: result.effect }
+      return { id: input.id ?? ID.create(), effect: result.effect }
     })
 
-    const assert = EffectRuntime.fn("PermissionV2.assert")((input: AssertInput) =>
-      EffectRuntime.uninterruptibleMask((restore) =>
-        EffectRuntime.gen(function* () {
-          // A reboot cannot preserve the Deferred that was waiting in the old worker. Its answer is
-          // therefore stored beside the request and consumed exactly once by the retried assertion.
-          const resolved = yield* db
-            .select()
-            .from(PermissionPendingTable)
-            .where(
-              and(
-                eq(PermissionPendingTable.origin, location.origin),
-                eq(PermissionPendingTable.session_id, String(input.sessionID)),
-              ),
-            )
-            .all()
-            .pipe(EffectRuntime.orDie)
-          const replay = resolved.find((row) => {
-            if (row.resolution === null) return false
-            const prior = decodeRequest(row.request)
-            return (
-              prior.action === input.action &&
-              prior.resources.length === input.resources.length &&
-              prior.resources.every((resource, index) => resource === input.resources[index])
-            )
-          })
-          if (replay) {
-            yield* deleteDurable(ID.make(replay.id))
-            if (replay.resolution === "allow") return
-            if (replay.feedback) return yield* new CorrectedError({ feedback: replay.feedback })
-            return yield* new RejectedError()
-          }
-          const result = yield* evaluateInput(input)
-          if (result.effect === "deny") {
-            return yield* new DeniedError({
-              rules: relevant(input, result.rules),
-              ...(result.reason ? { reason: result.reason } : {}),
-            })
-          }
-          if (result.effect === "allow") return
-          const item = yield* create(request(input, result.attachment), input.agent, true)
-          return yield* restore(Deferred.await(item.deferred)).pipe(
-            EffectRuntime.ensuring(
-              EffectRuntime.sync(() => {
-                // A disappearing waiter may mean Stop, a worker crash, or an autoupdate. Keep the
-                // card durable here; the authoritative idle/exited event deletes it for Stop, while
-                // a lost host leaves it available for recovery.
-                const current = pending.get(item.request.id)
-                if (current) current.deferred = undefined
-              }),
-            ),
-          )
-        }),
-      ),
-    )
-
-    const reply = EffectRuntime.fn("PermissionV2.reply")((input: ReplyInput) =>
-      EffectRuntime.uninterruptible(
-        EffectRuntime.gen(function* () {
-          const existing = pending.get(input.requestID)
-          if (!existing) return yield* new NotFoundError({ requestID: input.requestID })
-          yield* events.publish(
-            Event.Replied,
-            {
-              sessionID: existing.request.sessionID,
-              requestID: existing.request.id,
-              reply: input.reply,
-            },
-            { location: eventLocation },
-          )
-
-          const { verdict, scope } = normalizeReply(input.reply)
-          const persisted = savedResources(existing.request, scope)
-          const recovered = existing.awaited && existing.deferred === undefined
-
-          if (verdict === "deny") {
-            // 1K: a deny can persist (file/always scope) so the same ask never comes back.
-            if (persisted.length)
-              yield* saved.add({
-                origin: location.origin,
-                action: existing.request.action,
-                resources: persisted,
-                effect: "deny",
-              })
-            if (existing.deferred)
-              yield* Deferred.fail(
-                existing.deferred,
-                input.message ? new CorrectedError({ feedback: input.message }) : new RejectedError(),
-              )
-            pending.delete(input.requestID)
-            if (recovered)
-              yield* db
-                .update(PermissionPendingTable)
-                .set({ resolution: "deny", feedback: input.message ?? null })
-                .where(eq(PermissionPendingTable.id, input.requestID))
-                .run()
-                .pipe(EffectRuntime.orDie)
-            else yield* deleteDurable(input.requestID)
-            // The deny cascades: the session's other queued asks reject too.
-            yield* rejectSessionPending(String(existing.request.sessionID), recovered ? existing.request.id : undefined)
-            return { sessionID: existing.request.sessionID, recovered }
-          }
-
-          if (persisted.length) {
-            yield* saved.add({
-              origin: location.origin,
-              action: existing.request.action,
-              resources: persisted,
-              effect: "allow",
-            })
-          }
-          if (existing.deferred) yield* Deferred.succeed(existing.deferred, undefined)
-          pending.delete(input.requestID)
-          if (recovered && !persisted.length)
-            yield* db
-              .update(PermissionPendingTable)
-              .set({ resolution: "allow", feedback: null })
-              .where(eq(PermissionPendingTable.id, input.requestID))
-              .run()
-              .pipe(EffectRuntime.orDie)
-          else yield* deleteDurable(input.requestID)
-          if (!persisted.length) return { sessionID: existing.request.sessionID, recovered }
-
-          const rememberedRules = yield* savedRules()
-          for (const [id, item] of pending) {
-            // No live waiter means this card belongs to a drain that must be explicitly re-driven.
-            // Do not silently clear it as collateral from another session's remembered answer.
-            if (!item.deferred) continue
-            const input = { ...item.request }
-            const rules = yield* configured(item.request.sessionID, item.agent).pipe(
-              EffectRuntime.catchTag("Session.NotFoundError", () => EffectRuntime.succeed(undefined)),
-            )
-            if (!rules) continue
-            if (denied(input, rules)) continue
-            const effective = [...rules, ...rememberedRules]
-            if (
-              !item.request.resources.every(
-                (resource) => evaluate(item.request.action, resource, effective).effect === "allow",
-              )
-            )
-              continue
-            yield* events.publish(
-              Event.Replied,
-              {
-                sessionID: item.request.sessionID,
-                requestID: item.request.id,
-                reply: "always",
-              },
-              { location: eventLocation },
-            )
-            if (item.deferred) yield* Deferred.succeed(item.deferred, undefined)
-            pending.delete(id)
-            yield* deleteDurable(id)
-          }
-          return { sessionID: existing.request.sessionID, recovered }
-        }),
-      ),
-    )
-
-    const list = EffectRuntime.fn("PermissionV2.list")(function* () {
-      return Array.from(pending.values(), (item) => item.request)
+    const assert = EffectRuntime.fn("PermissionV2.assert")(function* (input: AssertInput) {
+      const result = yield* evaluateInput(input)
+      if (result.effect !== "deny") return
+      return yield* new DeniedError({
+        rules: relevant(input, result.rules),
+        ...(result.reason ? { reason: result.reason } : {}),
+      })
     })
 
-    const get = EffectRuntime.fn("PermissionV2.get")(function* (id: ID) {
-      return pending.get(id)?.request
-    })
-
-    const forSession = EffectRuntime.fn("PermissionV2.forSession")(function* (sessionID: SessionV2.ID) {
-      return Array.from(pending.values(), (item) => item.request).filter((request) => request.sessionID === sessionID)
-    })
-
-    return Service.of({ ask, assert, reply, get, forSession, list })
+    return Service.of({ ask, assert })
   }),
 )
 
@@ -1301,13 +881,11 @@ export const node = makeLocationNode({
   service: Service,
   layer,
   deps: [
-    EventV2.node,
     Location.node,
     AgentV2.node,
     SessionStore.node,
     PermissionSaved.node,
     SessionAutoGrant.node,
-    Database.node,
     // The session's `novaclaw.json`: its rules here, its tune through the effective-config entry
     // point. Both are GLOBAL nodes already built in every instance, so this adds references rather
     // than new subsystems to the boot order.

@@ -3,7 +3,6 @@ import { rowsForDirectory } from "./files-rows"
 import { fileDownloadHref } from "@/apps/agent-file-link"
 import { createEffect, createMemo, createResource, createSignal, For, Match, Show, Switch } from "solid-js"
 import { Icon } from "@novaclaw/ui/v2/icon"
-import { GoldGlyph } from "@/components/gold-glyph"
 import { useGlobal } from "@/context/global"
 import { ServerConnection, useServer } from "@/context/server"
 import { useTabs } from "@/context/tabs"
@@ -12,7 +11,7 @@ import { showToast } from "@/utils/toast"
 import { fsTrashList, fsTrashRestore } from "@/utils/fs-api"
 import { useFilesystemOperations, type FilesystemTarget } from "@/components/filesystem-operations"
 import { filesystemShortcut, isEditableFilesystemTarget } from "@/components/filesystem-domain"
-import { AppPage } from "@/components/app-page"
+import { AppPage, AppPageHeader } from "@/components/app-page"
 import { ProjectChip, ProjectDetail, useProjectSummary } from "@/components/project-indicator"
 
 // The Files app (B7 + the B8 Trash surface — plan.md M3/M4). Browses the SERVER host's filesystem
@@ -74,7 +73,7 @@ export function FilesPage() {
   // itself on every navigation within it — and now that the shell has a Suspense fallback
   // (`layout-new.tsx`), blanking is visible rather than silent. `.latest` keeps the last good value
   // on screen while the next one loads; `.loading` still drives the explicit spinners.
-  // Ported from https://github.com/NancySadkov/novaclaw/pull/11 by @DassaultFalconKing.
+  // Ported from outside contribution #11 by @DassaultFalconKing.
   const shape = (p: PathLike | undefined) =>
     p?.virtual && p.virtualRoot
       ? {
@@ -156,7 +155,7 @@ export function FilesPage() {
     setDir(target)
   }
 
-  // Whether the folder on screen is a Project (`todo/projects.md`). Files browses folders, so this is
+  // Whether the folder on screen is a Project. Files browses folders, so this is
   // the one surface where a person can SEE which of their folders carry a `novaclaw.json` without
   // turning on hidden files and reading it — and, when one is broken, that it is being ignored.
   const projectSource = createMemo(() => {
@@ -346,9 +345,7 @@ export function FilesPage() {
           setContextMenu(undefined)
       }}
     >
-      <div class="flex items-center gap-3 border-b border-v2-border-border-base px-4 py-2.5">
-        <GoldGlyph name="files" class="size-6" />
-        <span class="text-[15px] font-semibold">{language.t("files.title")}</span>
+      <AppPageHeader glyph="files" title={language.t("files.title")}>
         <button type="button" class={btn} onClick={up} disabled={!parentDir(dir())}>
           {language.t("files.up")}
         </button>
@@ -421,7 +418,7 @@ export function FilesPage() {
         <button type="button" class={btn} onClick={() => askAI(dir())} disabled={!ctx() || !dir()}>
           {language.t("files.askAiFolder")}
         </button>
-      </div>
+      </AppPageHeader>
 
       <Show when={projectExpanded() && project()}>
         {(summary) => (

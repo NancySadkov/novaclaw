@@ -8,7 +8,7 @@ import { InstanceIdentityTable } from "@novaclaw/core/instance-identity/sql"
 import { testEffect } from "./lib/effect"
 
 /**
- * Community P1 — the instance's cryptographic identity (`todo/community-p2p.md`).
+ * Community P1 — the instance's cryptographic identity (`notes/spec/community-p2p.md`).
  *
  * What these pin is the difference between a NAME and a PROOF. The `ins_…` id says who an instance
  * claims to be, and any stranger can claim the same string; only a signature settles it. The rest

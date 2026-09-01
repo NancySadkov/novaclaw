@@ -471,13 +471,8 @@ export const Terminal = (props: TerminalProps) => {
         if (clipboardShortcut === "copy") {
           const selection = t.getSelection()
           if (selection) {
-            if (!platform.writeClipboardText) {
-              t.copySelection()
-              return true
-            }
-            void platform
-              .writeClipboardText(selection)
-              .catch((error) => debugTerminal("failed to copy terminal selection", error))
+            const write = platform.writeClipboardText ?? navigator.clipboard?.writeText.bind(navigator.clipboard)
+            if (write) void write(selection).catch((error) => debugTerminal("failed to copy terminal selection", error))
           }
           return true
         }

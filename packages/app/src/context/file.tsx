@@ -9,6 +9,7 @@ import { useSDK } from "./sdk"
 import { useSync } from "./sync"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
+import { errorMessage } from "@/pages/layout/helpers"
 import { createPathHelpers } from "./file/path"
 import {
   approxBytes,
@@ -44,12 +45,6 @@ export {
   resetFileContentLru,
   setFileContentBytes,
   touchFileContent,
-}
-
-function errorMessage(error: unknown, fallback: string) {
-  if (error instanceof Error && error.message) return error.message
-  if (typeof error === "string" && error) return error
-  return fallback
 }
 
 export const { use: useFile, provider: FileProvider } = createSimpleContext({

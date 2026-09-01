@@ -17,7 +17,7 @@ const LogQuery = Schema.Struct({
 /**
  * `POST /log` — a NovaClaw CLIENT process reporting its OWN fault into the instance log.
  *
- * `todo/logging.md` 1g. The renderer's error ring is memory-only and evaporates on reload, so a UI
+ * The renderer's error ring is memory-only and evaporates on reload, so a UI
  * fault today exists in one place and dies there; this is the bridge that puts it in the same
  * bounded, rotated, key-addressable `novaclaw.log` as every server fault, under the same `run=`.
  *

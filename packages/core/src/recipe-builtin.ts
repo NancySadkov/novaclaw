@@ -40,8 +40,8 @@ import { Recipe } from "./recipe"
  * dependency manifest ruling 14 forbids under the name "configuration".
  *
  * ⚠️ **`produces` is the OTHER machine-read field, and it is why these prompts NAME their output files.**
- * A cook's verdict was prose until now, so nothing could mechanically read whether it worked
- * (`todo/recipes.md`); `recipe-verify.ts` fixes that by checking, after the cook, that the artifacts a
+ * A cook's verdict was prose until now, so nothing could mechanically read whether it worked;
+ * `recipe-verify.ts` fixes that by checking, after the cook, that the artifacts a
  * recipe declares are actually on disk and actually the shape their name implies. That only works if the
  * prompt asks for a FIXED filename, so four of the seven gained one word ("save it as `pi.txt`") — a
  * postcondition naming a file the prompt never requested would be a guaranteed false NOT WORKING, which
@@ -323,7 +323,7 @@ export const BUILTIN_SLUGS: ReadonlySet<string> = new Set(BUILTINS.map((recipe) 
 //
 // ── ⚠️ THE NAME COLLISION THIS ITEM WAS OPENED AGAINST, stated plainly ────────────────────────────────
 //
-// `todo/recipes.md`: *define the bundled `examples/` registry **without confusing recipes with Spark
+// The brief: *define the bundled `examples/` registry **without confusing recipes with Spark
 // runtime profiles***. That is not a stylistic worry — ruling 14's rules_out list ends with *"two things
 // called 'recipe' in one agent's context"*, and both things exist here already:
 //
@@ -376,7 +376,7 @@ export const BUILTIN_SLUGS: ReadonlySet<string> = new Set(BUILTINS.map((recipe) 
 //
 // ── IS THIS THE `needs`/`collection`/`level` SCHEMA BATCH? NO, and that is the finding ────────────────
 //
-// `todo/recipes.md` sequences *"one schema change, not two (three, counting the level)"* — `needs`,
+// The sequencing is *"one schema change, not two (three, counting the level)"* — `needs`,
 // `collection` and `level` promoted together, with a `packages/protocol` field to make them wire-visible.
 // The reasoning above removes `collection` from that batch entirely: it is not a frontmatter field at all,
 // so it has nothing to promote and cannot ride along. The batch is `needs` and `level`, both still

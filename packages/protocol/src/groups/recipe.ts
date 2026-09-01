@@ -53,9 +53,8 @@ const NeedCheck = Schema.Struct({
  * A recipe as its author wrote it, plus the two things a reader needs before pressing Run: whether this
  * machine has what the recipe says it needs, and what a finished cook will be judged on.
  *
- * ⚠️ `markdown` is the FILE'S OWN BYTES, not a re-rendering — that is what makes "export" a copy of the
- * author's recipe rather than a two-field reconstruction of it (`Recipe.sourceOf`). The wire `Recipe`
- * record carries the prompt body only, so nothing else on this API can hand a user their file back.
+ * ⚠️ `markdown` is the FILE'S OWN BYTES, not a re-rendering. It powers reading and lossless text edits;
+ * the archive endpoints are the complete share path because a recipe may also carry assets.
  */
 const Source = Schema.Struct({
   slug: Schema.String,
@@ -95,6 +94,9 @@ const ImportInput = Schema.Struct({
   slug: Schema.optional(Schema.String),
 }).annotate({ identifier: "Recipe.ImportInput" })
 
+/** A complete recipe folder on the wire, as actual ZIP bytes rather than a JSON wrapper. */
+const Archive = Schema.Uint8Array.pipe(HttpApiSchema.asUint8Array({ contentType: "application/zip" }))
+
 const RunResult = Schema.Struct({
   sessionID: Schema.String,
   /** Where it is cooking — the scratch folder by default, or whatever the caller chose. */
@@ -124,7 +126,7 @@ const RunResult = Schema.Struct({
 
 /**
  * One declared artifact, and what the HARNESS found when it looked — the deterministic success artifact
- * (`todo/recipes.md`). `outcome` is three-valued on purpose: `unknown` is not a failure, and `reason` says
+ * for a cook. `outcome` is three-valued on purpose: `unknown` is not a failure, and `reason` says
  * which kind of not-knowing it is, in `@novaclaw/schema`'s shared vocabulary.
  */
 const VerifyCheck = Schema.Struct({
@@ -194,7 +196,7 @@ export const RecipeGroup = HttpApiGroup.make("server.recipe")
         identifier: "v2.recipe.source",
         summary: "Read a recipe's file, and what it needs and produces",
         description:
-          "The bytes of recipe.md exactly as they are on disk — the unit a person shares — plus the " +
+          "The bytes of recipe.md exactly as they are on disk — the readable part of the folder — plus the " +
           "host-capability facts it declares checked against THIS machine, the artifacts a finished cook " +
           "should leave, and the shelf it is on. Read-only: the capability probe resolves names on PATH " +
           "and stats paths, and never runs a candidate.",
@@ -209,10 +211,38 @@ export const RecipeGroup = HttpApiGroup.make("server.recipe")
     }).annotateMerge(
       OpenApi.annotations({
         identifier: "v2.recipe.import",
-        summary: "Store a recipe.md from somewhere else",
+        summary: "Store pasted recipe markdown without assets",
         description:
           "Writes the supplied file byte for byte under a free slug — never overwriting an existing " +
-          "recipe. Assets are not carried: this is the recipe.md, which is the part a person can read.",
+          "recipe. This paste convenience is explicitly asset-free; use the ZIP import for a complete folder.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get("recipe.archive", "/api/recipe/:slug/archive", {
+      params: { slug: Schema.String },
+      success: Archive,
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.recipe.archive",
+        summary: "Export a complete recipe folder",
+        description: "Returns a standard ZIP containing recipe.md and every nested binary or text asset.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("recipe.archiveImport", "/api/recipe/archive", {
+      query: { slug: Schema.optional(Schema.String) },
+      payload: Archive,
+      success: Recipe,
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.recipe.archiveImport",
+        summary: "Import a complete recipe folder",
+        description:
+          "Validates a bounded standard ZIP, reserves a free slug, and commits recipe.md plus its asset tree atomically.",
       }),
     ),
   )

@@ -1,4 +1,4 @@
-// improve19 — the THINK/DO split (`notes/jh-think-stage.md`, owner design).
+// improve19 — the THINK/DO split (`notes/jh/think-stage.md`, owner design).
 //
 // jh disabled the `<think>` channel in wave 1 because reasoning and JSON-formatting fight inside one
 // call ("burns the entire token budget in <think> and returns EMPTY content"). Aider hit the same
@@ -38,7 +38,6 @@ function deps(
       spy.doPrompts.push(p)
       return Effect.succeed(atom)
     },
-    correct: () => Effect.succeed(atom),
     ...(think
       ? {
           think: (p: JhExpander.PromptPair) => {

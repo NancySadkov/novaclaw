@@ -17,7 +17,6 @@ import {
   type SessionModeChoice,
   type StrictChoice,
 } from "@/context/local"
-import { usePermission } from "@/context/permission"
 import { type ContextItem, type ImageAttachmentPart, type Prompt, type usePrompt } from "@/context/prompt"
 import { useSDK, type DirectorySDK } from "@/context/sdk"
 import { useSync, type DirectorySync } from "@/context/sync"
@@ -29,6 +28,7 @@ import { setCursorPosition } from "./editor-dom"
 import { formatServerError } from "@/utils/server-errors"
 import { ScopedKey } from "@/utils/server-scope"
 import { createPromptSubmissionState } from "./submission-state"
+import { errorMessage as layoutErrorMessage } from "@/pages/layout/helpers"
 
 type PendingPrompt = {
   abort: AbortController
@@ -171,36 +171,12 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     return true
   }
 
-  const [head, ...tail] = text.split(" ")
-  const cmd = head?.startsWith("/") ? head.slice(1) : undefined
-  if (cmd && input.sync.data.command.find((item) => item.name === cmd)) {
-    setBusy()
-    try {
-      if (!(await wait())) {
-        setIdle()
-        return false
-      }
-
-      // A command with image attachments has no native lowering (the V1 route rejected it
-      // server-side with the same message) — refuse legibly before sending.
-      if (images.length > 0)
-        throw new Error(
-          "A command with file attachments is not supported yet — send the attachment as a regular message instead.",
-        )
-      await input.client.v2.session.command({
-        sessionID: input.draft.sessionID,
-        command: cmd,
-        arguments: tail.join(" "),
-        agent: input.draft.agent,
-        model: `${input.draft.model.providerID}/${input.draft.model.modelID}`,
-        variant: input.draft.variant,
-      })
-      return true
-    } catch (err) {
-      setIdle()
-      throw err
-    }
-  }
+  // ⚠️ A custom-command branch stood here until 2026-09-01 (RF-18-5). It was unreachable: the only
+  // caller, `handleSubmit`, applies the identical test against the identical store and returns before
+  // ever reaching this call, so no input could arrive here naming a command. Its one piece of live
+  // reasoning — refusing a command that carries attachments — was NOT deleted with it; it now sits on
+  // `handleSubmit`'s command and shell branches, before `clearInput()`, where it can actually fire
+  // (RF-18-4). `git log -S "A command with file attachments"` has the original.
 
   const messageID = input.messageID ?? Identifier.ascending("message")
   const prompt = buildPrompt({
@@ -347,7 +323,6 @@ type PromptSubmitInput = {
   info: Accessor<{ id: string } | undefined>
   imageAttachments: Accessor<ImageAttachmentPart[]>
   commentCount: Accessor<number>
-  autoAccept: Accessor<boolean>
   mode: Accessor<"normal" | "shell">
   working: Accessor<boolean>
   editor: () => HTMLDivElement | undefined
@@ -369,7 +344,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const sync = useSync()
   const serverSync = useServerSync()
   const local = useLocal()
-  const permission = usePermission()
   const prompt = input.prompt
   const layout = useLayout()
   const language = useLanguage()
@@ -378,14 +352,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const tabs = useTabs()
   const pendingKey = (sessionID: string) => ScopedKey.from(sdk().scope, sessionID)
 
-  const errorMessage = (err: unknown) => {
-    if (err && typeof err === "object" && "data" in err) {
-      const data = (err as { data?: { message?: string } }).data
-      if (data?.message) return data.message
-    }
-    if (err instanceof Error) return err.message
-    return language.t("common.requestFailed")
-  }
+  const errorMessage = (err: unknown) => layoutErrorMessage(err, language.t("common.requestFailed"))
 
   const abort = async () => {
     const sessionID = params.id
@@ -412,7 +379,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         // failure here is the worst-placed one in the composer: the agent keeps streaming and the
         // UI gives no reason. Ruling 2 — a failed mutation never reports success. This was the last
         // `.catch(() => {})` in the file; every other failure path already toasts this exact shape.
-        // Ported from https://github.com/NancySadkov/novaclaw/pull/10 by @DassaultFalconKing.
+        // Ported from outside contribution #10 by @DassaultFalconKing.
         showToast({
           title: language.t("common.requestFailed"),
           description: errorMessage(err),
@@ -494,7 +461,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
     const projectDirectory = sdk().directory
     const isNewSession = !params.id
-    const shouldAutoAccept = isNewSession && input.autoAccept()
     const worktreeSelection = input.newSessionWorktree?.() || "main"
 
     let sessionDirectory = projectDirectory
@@ -567,7 +533,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       if (created) {
         seed(sessionDirectory, created)
         session = created
-        if (shouldAutoAccept) permission.enableAutoAccept(session.id, sessionDirectory)
         local.session.promote(sessionDirectory, session.id)
         layout.handoff.setTabs(base64Encode(sessionDirectory), session.id)
         const draftID = search.draftId
@@ -633,6 +598,18 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     input.onSubmit?.()
 
     if (mode === "shell") {
+      // 🔴 BEFORE `clearInput()`, which runs `target.reset()` and wipes the image parts. Neither
+      // `shell` nor `command` carries an attachment field, so without this the request succeeds, the
+      // thumbnail vanishes from the tray, and nothing is said — ruling 2, a loss reported as success.
+      // Refusing without clearing leaves the text AND the attachment in place, so the user can drop
+      // the image or send it as an ordinary message. (RF-18-4)
+      if (images.length > 0) {
+        showToast({
+          title: language.t("prompt.toast.attachmentsUnsupportedHere.title"),
+          description: language.t("prompt.toast.attachmentsUnsupportedHere.description"),
+        })
+        return
+      }
       clearInput()
       client.v2.session
         .shell({
@@ -654,6 +631,14 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       const commandName = cmdName.slice(1)
       const customCommand = sync().data.command.find((c) => c.name === commandName)
       if (customCommand) {
+        // Same refusal as the shell branch above, and for the same reason — see there. (RF-18-4)
+        if (images.length > 0) {
+          showToast({
+            title: language.t("prompt.toast.attachmentsUnsupportedHere.title"),
+            description: language.t("prompt.toast.attachmentsUnsupportedHere.description"),
+          })
+          return
+        }
         clearInput()
         client.v2.session
           .command({

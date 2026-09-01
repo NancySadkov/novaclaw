@@ -179,7 +179,6 @@ describe("PublicApi OpenAPI v2 errors", () => {
 
     for (const path of [
       "/api/session/{sessionID}/prompt",
-      "/api/session/{sessionID}/permission/{requestID}/reply",
       "/api/session/{sessionID}/question/{requestID}/reply",
     ]) {
       expect(spec.paths[path]?.post?.requestBody?.required, path).toBe(true)
@@ -300,15 +299,9 @@ describe("PublicApi OpenAPI v2 errors", () => {
     }
   })
 
-  test("documents permission and question not-found errors", () => {
+  test("documents question not-found errors", () => {
     const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
 
-    // The V1 `/permission/{requestID}/reply` assertion that stood here was re-pointed at the native
-    // route when the V1 permission routes were deleted (v0.2.0-prep Wave 4 §5). The V2 route carries
-    // BOTH not-founds, so this is strictly more than the legacy one asserted.
-    expect(
-      componentNames(spec.paths["/api/session/{sessionID}/permission/{requestID}/reply"]?.post?.responses?.["404"]),
-    ).toEqual(["PermissionNotFoundError", "SessionNotFoundError"])
     for (const route of [
       ["post", "/question/{requestID}/reply"],
       ["post", "/question/{requestID}/reject"],
@@ -329,8 +322,7 @@ describe("PublicApi OpenAPI v2 errors", () => {
   })
 
   /**
-   * **The V1 `/permission` routes stay deleted** (v0.2.0-prep Wave 4 §5, authorised by todo.md's
-   * *"we discard all the cruft"*; ruling 11 pins the legacy surface shrink-only).
+   * **The V1 `/permission` routes stay deleted**; the legacy surface is shrink-only.
    *
    * ⚠️ **Why this lives here and not only in the legacy-path ledger.**
    * `packages/sdk/js/test/legacy-path-ledger.test.ts` is the repo's shrink-only ratchet, and it does
@@ -339,7 +331,7 @@ describe("PublicApi OpenAPI v2 errors", () => {
    * `PermissionApi` to `api.ts` is red in the same edit that adds it, with no generated artifact in
    * between. Two different doors; ruling 1 wants the one that shuts immediately.
    */
-  test("the V1 /permission routes stay deleted, and the V2 surface carries the asks", () => {
+  test("the V1 and pending-request permission routes stay deleted", () => {
     const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
     const isLegacyPermissionPath = (path: string) => path === "/permission" || path.startsWith("/permission/")
 
@@ -347,7 +339,7 @@ describe("PublicApi OpenAPI v2 errors", () => {
       Object.keys(spec.paths).filter(isLegacyPermissionPath),
       [
         "The V1 permission routes are back. They served the V1 engine's asks ONLY and the V1 engine",
-        "is gone; a V2-native session's asks ride the routes asserted below. Declare permission work",
+        "is gone. Declare permission work",
         "under /api/* in packages/protocol/src/groups/permission.ts — that is the ONE contract.",
       ].join("\n  "),
     ).toEqual([])
@@ -358,12 +350,10 @@ describe("PublicApi OpenAPI v2 errors", () => {
       ["/permission", "/permission/{requestID}/reply", "/api/permission/request"].filter(isLegacyPermissionPath),
     ).toEqual(["/permission", "/permission/{requestID}/reply"])
 
-    // …and the replacement is really served, so this cannot pass by the API being empty.
-    expect(spec.paths["/api/permission/request"]?.get, "GET /api/permission/request").toBeDefined()
-    expect(
-      spec.paths["/api/session/{sessionID}/permission/{requestID}/reply"]?.post,
-      "POST /api/session/{sessionID}/permission/{requestID}/reply",
-    ).toBeDefined()
+    // Evaluation remains served while the unreachable pending-list and reply surfaces stay absent.
+    expect(spec.paths["/api/session/{sessionID}/permission"]?.post).toBeDefined()
+    expect(spec.paths["/api/permission/request"]?.get).toBeUndefined()
+    expect(spec.paths["/api/session/{sessionID}/permission/{requestID}/reply"]?.post).toBeUndefined()
   })
 
   test("documents MCP server not-found errors", () => {

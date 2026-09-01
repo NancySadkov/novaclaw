@@ -1,16 +1,15 @@
 import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import nodePath from "node:path"
-import { DateTime, Deferred, Effect, Fiber, Layer } from "effect"
+import { Effect, Layer } from "effect"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
-import { EventV2 } from "@novaclaw/core/event"
 import { Location } from "@novaclaw/core/location"
 import { PermissionV2 } from "@novaclaw/core/permission"
-import { PermissionPendingTable, PermissionTable } from "@novaclaw/core/permission/sql"
+import { PermissionTable } from "@novaclaw/core/permission/sql"
 import { PermissionSaved } from "@novaclaw/core/permission/saved"
 import { Project } from "@novaclaw/core/project"
 import { AbsolutePath } from "@novaclaw/core/schema"
@@ -36,7 +35,6 @@ const it = testEffect(
   AppNodeBuilder.build(
     LayerNode.group([
       Database.node,
-      EventV2.node,
       // PermissionV2 reads the SESSION's `novaclaw.json` through the shared cache, and its config
       // through the one effective-config entry point; FSUtil is how the cache reaches the disk.
       FSUtil.node,
@@ -166,22 +164,15 @@ const editingAnAttachment = (input: Partial<PermissionV2.AssertInput> = {}) =>
   })
 
 describe("PermissionV2", () => {
-  it.effect("returns the evaluated effect and NEVER queues a prompt", () =>
+  it.effect("returns the evaluated effect", () =>
     Effect.gen(function* () {
       yield* setup([{ action: "read", resource: "*", effect: "allow" }])
       const service = yield* PermissionV2.Service
       expect(yield* service.ask(assertion())).toEqual({ id: PermissionV2.ID.create("per_test"), effect: "allow" })
-      expect(yield* service.list()).toEqual([])
       yield* setRules([{ action: "read", resource: "*", effect: "deny" }])
       expect(yield* service.ask(assertion())).toEqual({ id: PermissionV2.ID.create("per_test"), effect: "deny" })
-      // 🔴 Nothing is queued, ever. The pending record is what stranded a session for twenty minutes
-      // on 2026-08-20, and the ruling removes the outcome that created it.
-      expect(yield* service.list()).toEqual([])
       yield* setRules([])
       expect(yield* service.ask(assertion())).toEqual({ id: PermissionV2.ID.create("per_test"), effect: "deny" })
-      // ⭐ The rename in the title is the finding: a fall-through used to QUEUE a prompt. Nothing is
-      // queued now, so there is nothing for a human to answer and nothing to strand the session.
-      expect(yield* service.get(PermissionV2.ID.create("per_test"))).toBeUndefined()
     }),
   )
 
@@ -278,7 +269,6 @@ describe("PermissionV2", () => {
         }),
       )
       expect(yield* service.ask(assertion({ agent: AgentV2.ID.make("reviewer") }))).toMatchObject({ effect: "deny" })
-      expect(yield* service.get(PermissionV2.ID.create("per_test"))).not.toHaveProperty("agent")
     }),
   )
 
@@ -290,12 +280,11 @@ describe("PermissionV2", () => {
       yield* setRules([{ action: "read", resource: "*", effect: "deny" }])
       const denied = yield* service.assert(assertion()).pipe(Effect.flip)
       expect(denied).toBeInstanceOf(PermissionV2.DeniedError)
-      expect(yield* service.list()).toEqual([])
     }),
   )
 
   // ── Attached-source protection ────────────────────────────────────────────────────────────────
-  // Ported from https://github.com/NancySadkov/novaclaw/pull/9 by @DassaultFalconKing. These drive
+  // Ported from outside contribution #9 by @DassaultFalconKing. These drive
   // the LIVE evaluator because the pure predicate is the easy half — what decides whether the
   // feature exists at all is where the rule sits relative to the mode overlay and to saved answers.
 
@@ -415,7 +404,6 @@ describe("PermissionV2", () => {
         id: PermissionV2.ID.create("per_test"),
         effect: "allow",
       })
-      expect(yield* service.list()).toEqual([])
     }),
   )
 
@@ -437,9 +425,6 @@ describe("PermissionV2", () => {
 
       const service = yield* PermissionV2.Service
       expect(yield* service.ask(assertion())).toEqual({ id: PermissionV2.ID.create("per_test"), effect: "deny" })
-      // 🔴 Nothing is queued, ever. The pending record is what stranded a session for twenty minutes
-      // on 2026-08-20, and the ruling removes the outcome that created it.
-      expect(yield* service.list()).toEqual([])
     }),
   )
 
@@ -464,7 +449,6 @@ describe("PermissionV2", () => {
       // record, because nothing is asked (owner ruling 2026-08-20). Under the owner's three modes this
       // is what "project-bound" means: anything not explicitly granted is refused, in advance.
       expect(yield* service.ask(bash)).toEqual({ id: PermissionV2.ID.create("per_test"), effect: "deny" })
-      expect(yield* service.get(PermissionV2.ID.create("per_test"))).toBeUndefined()
     }),
   )
 
@@ -479,8 +463,6 @@ describe("PermissionV2", () => {
         id: PermissionV2.ID.create("per_test"),
         effect: "allow",
       })
-      expect(yield* service.list()).toEqual([])
-
       yield* setRules([{ action: "bash", resource: "*", effect: "deny" }])
       expect(yield* service.ask(assertion({ action: "bash", resources: ["pwd"] }))).toEqual({
         id: PermissionV2.ID.create("per_test"),
@@ -701,7 +683,6 @@ describe("PermissionV2 — the surgical / ask switches", () => {
         // the empty queue is how the sibling unattended-confinement test proves the same shape.
         const error = yield* service.assert(input).pipe(Effect.flip)
         expect(error).toBeInstanceOf(PermissionV2.DeniedError)
-        expect(yield* service.list()).toEqual([])
       }
     }),
   )
@@ -739,7 +720,6 @@ describe("PermissionV2 — the surgical / ask switches", () => {
         // queue IS the guarantee: the user is never offered an "allow always" that could soften it.
         const error = yield* service.assert(input).pipe(Effect.flip)
         expect(error).toBeInstanceOf(PermissionV2.DeniedError)
-        expect(yield* service.list()).toEqual([])
       }
     }),
   )
@@ -773,15 +753,12 @@ describe("PermissionV2 — unattended confinement stance", () => {
       const service = yield* PermissionV2.Service
 
       const input = outside({ sessionID: SessionV2.ID.make("ses_cron") })
-      // `ask` reports the verdict without queueing anything...
+      // `ask` reports the verdict without blocking.
       expect(yield* service.ask(input)).toMatchObject({ effect: "deny" })
-      expect(yield* service.list()).toEqual([])
-
-      // ...and `assert` — the path every mutating tool takes — fails immediately instead of parking.
+      // `assert` — the path every mutating tool takes — fails immediately.
       const error = yield* service.assert(input).pipe(Effect.flip)
       expect(error).toBeInstanceOf(PermissionV2.DeniedError)
       expect((error as PermissionV2.DeniedError).reason).toBe("unattended-confined")
-      expect(yield* service.list()).toEqual([]) // nothing waiting for a human who will never come
 
       // This is exactly what the agent sees (every mutating tool lowers it through denialMessage
       // into a ToolFailure the model reads as an error-state tool result — never a silent no-op).
@@ -805,8 +782,6 @@ describe("PermissionV2 — unattended confinement stance", () => {
       })
       const attended = yield* service.assert(outside({ sessionID: SessionV2.ID.make("ses_chat") })).pipe(Effect.flip)
       expect((attended as PermissionV2.DeniedError).reason).toBe("ask-removed")
-      // …and nothing is queued for a human who is not there.
-      expect(yield* service.get(PermissionV2.ID.create("per_test"))).toBeUndefined()
     }),
   )
 
@@ -826,8 +801,6 @@ describe("PermissionV2 — unattended confinement stance", () => {
       const input = outside({ sessionID: SessionV2.ID.make("ses_orphan") })
 
       expect(yield* service.ask(input)).toMatchObject({ effect: "deny" })
-      expect(yield* service.list()).toEqual([]) // deny-fast: nothing parked for a human
-
       const error = yield* service.assert(input).pipe(Effect.flip)
       expect(error).toBeInstanceOf(PermissionV2.DeniedError)
       expect((error as PermissionV2.DeniedError).reason).toBe("chain-unreadable")
@@ -979,7 +952,6 @@ describe("PermissionV2 — unattended confinement stance", () => {
       expect(yield* service.ask(outside({ sessionID: SessionV2.ID.make("ses_kid") }))).toMatchObject({
         effect: "deny",
       })
-      expect(yield* service.list()).toEqual([])
     }),
   )
 
@@ -1074,20 +1046,14 @@ describe("PermissionV2 — an unattended ask denies FAST", () => {
   /**
    * The verdict, then the reason — and the ORDER is load-bearing, not style.
    *
-   * `assert` on an `ask` verdict parks on a Deferred nobody completes, and under `it.effect`'s
-   * TestClock bun's per-test timeout cannot cancel that: the suite WEDGES instead of failing.
-   * Measured while negative-controlling this very block — the first test failed in 23 ms and the run
-   * then hung until it was killed by tree. So `ask` (which queues nothing and returns immediately)
-   * checks the verdict first and throws on a regression, and `assert` — the path every tool takes —
-   * is only reached once the verdict is known to be `deny`. Same rule the attachment-protection test
-   * above records for the same reason.
+   * `ask` exposes the resolved verdict while `assert` lowers a denial into the error tools display.
+   * Check both so this block covers the inspection and enforcement surfaces together.
    */
   const denialFor = (service: PermissionV2.Interface, input: PermissionV2.AssertInput) =>
     Effect.gen(function* () {
       expect(yield* service.ask(input)).toMatchObject({ effect: "deny" })
       const error = yield* service.assert(input).pipe(Effect.flip)
       expect(error).toBeInstanceOf(PermissionV2.DeniedError)
-      expect(yield* service.list()).toEqual([]) // deny-fast: nothing parked for a human
       return error as PermissionV2.DeniedError
     })
 
@@ -1115,7 +1081,6 @@ describe("PermissionV2 — an unattended ask denies FAST", () => {
       expect(yield* service.ask(input)).toMatchObject({ effect: "allow" })
       // `assert` is the path every tool takes: it must return, not park and not fail.
       yield* service.assert(input)
-      expect(yield* service.list()).toEqual([]) // nothing parked for a human who is not there
     }),
   )
 
@@ -1159,8 +1124,6 @@ describe("PermissionV2 — an unattended ask denies FAST", () => {
       })
       const attended = yield* service.assert(gated({ sessionID: SessionV2.ID.make("ses_chat") })).pipe(Effect.flip)
       expect((attended as PermissionV2.DeniedError).reason).toBe("ask-removed")
-      // …and nothing is queued for anyone to answer.
-      expect(yield* service.get(PermissionV2.ID.create("per_test"))).toBeUndefined()
     }),
   )
 

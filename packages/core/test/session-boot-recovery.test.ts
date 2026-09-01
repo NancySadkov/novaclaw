@@ -33,7 +33,7 @@ import { tmpdir } from "./fixture/tmpdir"
  * Admission is durable — `session_input` rows survive anything — while the thing that RUNS them is
  * a `Map` in `SessionRunCoordinator`. Nothing polled, subscribed or timed, so a prompt typed while
  * the agent was mid-turn (or a spawned child's opening prompt) simply never ran again after a
- * crash, a quit or an autoupdate. The user saw an accepted message and no answer, forever.
+ * crash, a quit or a binary replacement. The user saw an accepted message and no answer, forever.
  *
  * The sibling half is quieter and was worse: `recoverStale` — the sweep that reclassifies leases a
  * dead host abandoned — was forked inside `SessionExecutionLocal`, which has **no production

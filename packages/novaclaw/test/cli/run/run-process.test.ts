@@ -11,6 +11,29 @@ import path from "node:path"
 import { cliIt } from "../../lib/cli-process"
 
 describe("novaclaw run (non-interactive subprocess)", () => {
+  cliIt.concurrent(
+    "refuses options whose scope would otherwise be silently ignored",
+    ({ novaclaw }) =>
+      Effect.gen(function* () {
+        const variant = yield* novaclaw.spawn(["run", "--variant", "high", "hello"])
+        novaclaw.expectExit(variant, 2)
+        expect(variant.stderr).toContain("--variant requires --model")
+
+        const auth = yield* novaclaw.spawn(["run", "--username", "someone", "hello"])
+        novaclaw.expectExit(auth, 2)
+        expect(auth.stderr).toContain("apply only with --attach")
+
+        const port = yield* novaclaw.spawn(["run", "--port", "4096", "hello"])
+        expect(port.exitCode).not.toBe(0)
+        expect(port.stderr).not.toContain("--port")
+
+        const query = yield* novaclaw.spawn(["debug", "rg", "files", "--query", "foo"])
+        expect(query.exitCode).not.toBe(0)
+        expect(query.stderr).not.toContain("--query")
+      }),
+    30_000,
+  )
+
   // Happy path: prompt completes, output reaches stdout, process exits 0.
   // If this fails, all the others likely will too — debug here first.
   cliIt.concurrent(

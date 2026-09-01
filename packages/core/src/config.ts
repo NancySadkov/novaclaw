@@ -66,11 +66,6 @@ export class Info extends Schema.Class<Info>("Config.Info")({
       "selection is authorship here, because the chosen agent decides both the system prompt and the " +
       "permission ruleset every future session opens with.",
   }),
-  autoupdate: Schema.Union([Schema.Boolean, Schema.Literal("notify")])
-    .pipe(Schema.optional)
-    .annotate({
-      description: "Automatically update or notify when a new version is available",
-    }),
   username: Schema.String.pipe(Schema.optional).annotate({
     description:
       "Username displayed in conversations and used for telemetry identity. ⚠️ Ruling 4: PRIVILEGED, " +
@@ -442,7 +437,7 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   })
     .pipe(Schema.optional)
     .annotate({
-      description: "Graph-memory (KB-G) privacy switch — the lay Memory on/off (notes/kb-graph-plan.md §5)",
+      description: "Graph-memory (KB-G) privacy switch — the lay Memory on/off",
     }),
   quality: Schema.Struct({
     enabled: Schema.Boolean.pipe(Schema.optional),
@@ -526,7 +521,7 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     description: "Additional paths or URLs to discover skills from",
   }),
   /**
-   * Per-skill invocation choices — the HUMAN half of `todo/projects.md`'s two switches.
+   * Per-skill invocation choices — the HUMAN half of the two skill-invocation switches.
    *
    * ⚠️ **Only `show` lives here, and the other switch's absence is deliberate.** "Nova may choose
    * this" is the `skill` PERMISSION action and is written into `permissions` above, because that
@@ -551,7 +546,7 @@ export class Info extends Schema.Class<Info>("Config.Info")({
         "Per-skill invocation choices, keyed by skill name. Only covers YOUR slash list; whether the agent may choose a skill is the `skill` permission action.",
     }),
   /**
-   * Which installed pre-action policies actually run — `todo/projects.md`'s policy management half.
+   * Which installed pre-action policies actually run — the policy-management half.
    *
    * ⚠️ **Sparse, and an absent entry means ON.** An installed policy runs because it was installed;
    * this key is how the person at the computer switches one OFF, and it is an override rather than
@@ -750,7 +745,7 @@ export class Info extends Schema.Class<Info>("Config.Info")({
         "and its models. This is where a moved vendor endpoint is repaired at runtime. ⚠️ `api` is a union " +
         "tagged on `type`, so it takes a COMPLETE alternative — a bare {url} decodes in no mode at all.",
     }),
-  // Models-primary (notes/models-primary-plan.md P1): the flat successor to `providers` — a map
+  // Models-primary: the flat successor to `providers` — a map
   // of models keyed by id, each with its OWN endpoint `url` + params + `tier`. Decoded in
   // PARALLEL with `providers` (both accepted) until P6 retires the nested path. Inert until the
   // P2 seed reads it; additive here so authored configs and the equivalence gate can use it.

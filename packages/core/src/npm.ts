@@ -84,7 +84,7 @@ export const layer = Layer.effect(
     // ⚠️ Read LIVE, per call. This used to be `loadPolicy(...)` captured HERE, at layer init, with a
     // comment claiming it matched the chokepoint — and that comment was stale twice over: the
     // chokepoint stopped snapshotting when A3 landed, and `layerManifest` reads the LIVE ref. So
-    // flipping airgap ON in Settings reported 9/9 layers active **instantly** while `npm install`
+    // flipping airgap ON in Settings reported 8/8 layers active **instantly** while `npm install`
     // kept egressing until the next restart. That is ruling 3's own defect (a settings change is not
     // a reboot) producing ruling 2's (the guard was off while the status surface said it was on) —
     // which is precisely the pair the A3 fix was written from. Found 2026-07-31 by an audit of the

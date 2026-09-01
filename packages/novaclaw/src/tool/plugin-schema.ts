@@ -11,6 +11,7 @@
 // with the walk, which was its only caller.
 
 import { type ToolDefinition } from "@novaclaw/plugin/tool"
+import { isRecord } from "@novaclaw/schema/record"
 import type { JSONSchema7, JSONSchema7Definition } from "json-schema"
 import z from "zod"
 
@@ -51,10 +52,10 @@ function legacyJsonSchema(entries: [string, unknown][]): JSONSchema7 {
 
 function zodJsonSchema(schema: z.ZodType): JSONSchema7 {
   const result = normalizeZodJsonSchema(z.toJSONSchema(schema, { io: "input", metadata: zodMetadataRegistry(schema) }))
-  if (!isJsonSchemaObject(result)) throw new Error("plugin tool Zod schema produced a non-object JSON Schema")
+  if (!isRecord(result)) throw new Error("plugin tool Zod schema produced a non-object JSON Schema")
   const { $defs, ...rest } = result
   return (
-    $defs && isJsonSchemaObject($defs) ? { ...rest, definitions: $defs as JSONSchema7["definitions"] } : rest
+    $defs && isRecord($defs) ? { ...rest, definitions: $defs as JSONSchema7["definitions"] } : rest
   ) as JSONSchema7
 }
 
@@ -96,8 +97,4 @@ function normalizeZodJsonSchema(value: unknown): unknown {
       )
       .map(([key, item]) => [key, normalizeZodJsonSchema(item)]),
   )
-}
-
-function isJsonSchemaObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
 }

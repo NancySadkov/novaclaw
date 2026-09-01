@@ -15,7 +15,7 @@ import {
 // and REFUSES when the lockfile and the manifests disagree.
 //
 // It is here because on 2026-08-04 that was the only thing between us and a live compromise. The
-// `keyv`/`cacheable` maintainer's GitHub account was taken over, poisoned releases went out carrying
+// `keyv`/`cacheable` maintainer's package-registry account was taken over, poisoned releases went out carrying
 // valid npm provenance, and a worm reached ~444 packages. Three of the poisoned versions were INSIDE
 // our declared `^` ranges — a re-resolving install would have taken them. Our lock pinned the versions
 // one release below, so we were untouched. Nothing about our dependency choices saved us; the lockfile
@@ -50,14 +50,19 @@ const TREE_MUTATING_INSTALLS: readonly string[] = [
   // ⚠️ This was TWO lines until `@parcel/watcher` was replaced by `packages/host`, which is compiled
   // from our own source rather than installed — one fewer platform-binary fan-out to trust.
   'packages/novaclaw/script/build.ts :: bun install --os="*" --cpu="*" @ff-labs/fff-bun@${pkg.dependencies["@ff-labs/fff-bun"]}',
-  // Installs OUR OWN freshly packed tarball into a throwaway directory to prove the published package
-  // resolves. There is no lockfile in that directory for a flag to freeze against — and per the bunfig
-  // note, a frozen install with no lockfile resolves freely anyway, so a flag here would read as
-  // protection while providing none.
-  // ⚠️ The flags are part of the pin on purpose: this is the tree's ONE npm invocation, and npm runs
-  // every dependency's `postinstall` by default where bun runs them only for `trustedDependencies`.
-  // If a later edit drops `--ignore-scripts`, this entry stops matching and the test says so by name.
-  'packages/http-recorder/script/verify-package.ts :: npm install "--ignore-scripts" "--no-audit" "--no-fund" archive "typescript@5.8.2"',
+  // ⚠️ A second entry lived here until 2026-09-01 (RF-13-15's sibling, RF-24-13):
+  // `http-recorder/script/verify-package.ts :: npm install "--ignore-scripts" …`, which packed the
+  // package and installed the tarball into a throwaway directory. It was the tree's ONE npm
+  // invocation. It went with the script, which could never run: `pack.ts` built its tarball path from
+  // `pkg.version` and that manifest declares no `version`, so the name resolved to `…-undefined.tgz`
+  // — and the package is `@novaclaw/http-recorder`, so `bun pm pack` would not have written that
+  // filename even with one. The publication posture around it (`publishConfig`, `keywords`,
+  // `homepage`, `bugs`) went too: the standing rule is that we never publish to npm.
+  //
+  // 🔴 **So this list is now empty of npm, and that is the STRONGER guarantee** — not a gap. The
+  // scan below still runs; an entry reappearing here means someone reintroduced an npm invocation,
+  // and npm runs every dependency's `postinstall` by default where bun runs them only for
+  // `trustedDependencies`. Do not delete this comment to tidy an empty-looking list.
 ]
 
 const fixtures: string[] = []
@@ -85,7 +90,14 @@ describe("the repo's install paths", () => {
     // cannot make every other test in this file vacuously green. Lowered 4 → 3 when `@parcel/watcher`
     // was replaced by `packages/host`, which is compiled rather than installed. Lower it only with
     // the removed invocation named, and never to zero.
-    expect(invocations.length).toBeGreaterThanOrEqual(3)
+    //
+    // Lowered 3 → 2 on 2026-09-01 (RF-24-13). The removed invocation, named as this comment requires:
+    // `packages/http-recorder/script/verify-package.ts :: npm install "--ignore-scripts" …`. The
+    // deletion is what is justified, not the number — that script packed the package and installed
+    // the tarball to prove it resolves, and it could never run: `pack.ts` built the tarball path from
+    // `pkg.version`, which that manifest does not declare, so it resolved to `…-undefined.tgz`. It
+    // was also the tree's only npm invocation, for a package our standing rule forbids publishing.
+    expect(invocations.length).toBeGreaterThanOrEqual(2)
     expect(invocations.map((item) => item.file)).toContain("build-linux.sh")
   })
 

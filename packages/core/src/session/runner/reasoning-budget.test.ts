@@ -5,7 +5,7 @@
 import { describe, expect, test } from "bun:test"
 import { Effect, Stream } from "effect"
 import { LLM, LLMEvent, Message, Model, Usage, type LLMRequest, type ProviderMetadata } from "@novaclaw/llm"
-import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
+import * as OpenAIChat from "@novaclaw/llm/protocols/openai-compatible-chat"
 import { ReasoningBudget } from "@novaclaw/core/session/runner/reasoning-budget"
 
 const model = Model.make({ id: "fake", provider: "fake", route: OpenAIChat.route })

@@ -15,14 +15,10 @@
  * `computer-rules.ts`, `tool-channel.ts`.
  */
 
-const GIB = 1024 ** 3
-const MIB = 1024 ** 2
+import { Bytes } from "@novaclaw/core/util/bytes"
 
-// ⚠️ Moved VERBATIM. The MiB branch switches precision at 10 MiB and the KiB branch does a bare
-// round — reconstructing either from memory changes what the user reads, so this is a move and not a
-// rewrite. (I rewrote it on the first pass; the existing tests are what caught the drift.)
-export function formatResourceBytes(value: number): string {
-  if (value >= GIB) return `${(value / GIB).toFixed(1)} GiB`
-  if (value >= MIB) return `${(value / MIB).toFixed(value >= 10 * MIB ? 0 : 1)} MiB`
-  return `${Math.round(value / 1024)} KiB`
-}
+// ⚠️ The body was moved VERBATIM to `@novaclaw/core/util/bytes` and is now shared with the instance's
+// own resource-pressure lines, which had grown a second copy of it. The precision switch at 10 MiB and
+// the bare round on the KiB branch are load-bearing — reconstructing either from memory changes what the
+// user reads. (It was rewritten on the first pass; the tests below are what caught the drift.)
+export const formatResourceBytes = Bytes.binary

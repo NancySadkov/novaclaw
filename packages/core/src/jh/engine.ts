@@ -14,7 +14,7 @@ export * as JhEngine from "./engine"
 //     C if needs_decomposition → validate law-7 (one repair) → attach (else block);
 //     D else force-split check → forceDecompose or cannot_split;
 //     E else atomic loop { action → observe → verify; pass → commit + bubble; fail → budget?
-//       exhausted → forceDecompose|block(budget); else write_file→corrector / other→re-introspect }.
+//       exhausted → forceDecompose|block(budget); else re-introspect }.
 
 import { Effect, Exit } from "effect"
 import type { Presence } from "../presence"
@@ -40,9 +40,8 @@ export interface LLMFail {
 
 export interface Deps {
   readonly introspect: (p: JhExpander.PromptPair) => Effect.Effect<string, LLMFail>
-  readonly correct: (p: JhExpander.PromptPair) => Effect.Effect<string, LLMFail>
   /**
-   * improve19 (owner design, `notes/jh-think-stage.md`) — the THINK/DO split. Optional REASONING
+   * improve19 (owner design, `notes/jh/think-stage.md`) — the THINK/DO split. Optional REASONING
    * stage: given the same context the introspect gets, return a SHORT free-form plan for this step.
    * The plan is injected into the following introspect prompt, so reasoning and schema-filling never
    * compete inside one call.
@@ -59,7 +58,7 @@ export interface Deps {
    * NEVER fatal: the engine falls through to the unplanned path (never-dead-end).
    */
   readonly think?: (p: JhExpander.PromptPair) => Effect.Effect<string, LLMFail>
-  /** Which step kinds get a think stage (default: all three). `notes/jh-think-stage.md` argues the
+  /** Which step kinds get a think stage (default: all three). `notes/jh/think-stage.md` argues the
    *  wall goes to decomposition + recovery, so a cost-sensitive caller can narrow to those. */
   readonly thinkOn?: ReadonlyArray<"decompose" | "recover" | "atomic">
   readonly executor: JhBasicTools.Executor
@@ -1130,7 +1129,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       if (deps.goalCheckCache !== false) goalCheckCache.set(key, verdict)
       return { ...verdict, cached: false }
     })
-  // improve19 — the THINK/DO split (`notes/jh-think-stage.md`). Run the optional reasoning stage for
+  // improve19 — the THINK/DO split (`notes/jh/think-stage.md`). Run the optional reasoning stage for
   // this node and return the bounded plan, or undefined when the stage is off/narrowed/unusable.
   // NEVER throws and never blocks: an empty, truncated or failed think falls through to the
   // unplanned path (the improve1 ghost — "<think> ate the budget, content came back empty" — is
@@ -1239,9 +1238,11 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       let current = drafts
       for (let attempt = 0; attempt < 2; attempt++) {
         // Only DANGLING consumes (a step needs an artifact nobody makes — the §5 law-7 load-bearing
-        // check) blocks the plan. duplicate_produce (store is latest-wins) and unused_produce are
-        // TOLERATED — weak models mis-declare produces routinely; the per-step verify catches real
-        // problems, and a hard reject on a harmless declaration error just stalls the task (§12).
+        // check) blocks the plan. duplicate_produce is TOLERATED (the store is latest-wins) — weak
+        // models mis-declare produces routinely; the per-step verify catches real problems, and a
+        // hard reject on a harmless declaration error just stalls the task (§12). ⚠️ Tolerated is not
+        // unread: the expander rig counts it as a `dataflowError` — see `jh/dataflow.ts`'s note on
+        // who reads which code. (A third code, `unused_produce`, was removed 2026-09-01 — RF-05-13.)
         // improve3 (char run74): TOLERATE dangling consumes at the task ROOT — disk is truth there and the
         // declared dataflow is an unreliable proxy (§5 law-7 amendment); a strict reject hard-blocks the whole
         // run (the root has no parent to grow a fix sibling on). The tolerant trySoftDecompose path already did
@@ -2262,7 +2263,16 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         return
       }
 
-      const measured = { cardinality: JhDataflow.cardinality(tree, node.id), density: 0 }
+      const parent = node.parent === undefined ? undefined : tree.nodes.get(node.parent)
+      const siblingDrafts =
+        parent?.children.flatMap((childID) => {
+          const child = tree.nodes.get(childID)
+          return child === undefined ? [] : [child.draft]
+        }) ?? []
+      const measured = {
+        cardinality: JhDataflow.cardinality(tree, node.id),
+        density: JhDataflow.density(siblingDrafts),
+      }
       if (JhBudget.shouldForceSplit(deps.trigger, measured) && node.depth < maxDepth) {
         // improve5 P3.2: under lazyPlan the closure-cardinality trigger no longer measures complexity (context
         // = disk, §5 law-5) and its threshold misfires (run82) — disarm it to ADVISORY-only by default.

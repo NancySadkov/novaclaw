@@ -9,6 +9,7 @@ import { RuntimeSettingTable } from "./settings-config/sql"
 import { CredentialCipher } from "./credential-cipher"
 import { LogSettings } from "./observability/log-settings"
 import { Log } from "@novaclaw/schema/log"
+import { isRecord } from "@novaclaw/schema/record"
 
 // Config→SQLite step 6: the instance-wide, SQLite-backed source of truth for runtime settings.
 // Global so every directory — including the shared scratch dir — resolves the same settings.
@@ -69,14 +70,12 @@ export const layer = Layer.effect(
       keyColumn: RuntimeSettingTable.key,
     })
 
-    const isRecord = (value: unknown): value is Record<string, unknown> =>
-      typeof value === "object" && value !== null && !Array.isArray(value)
     const passwordOf = (value: unknown): string | undefined =>
       isRecord(value) && typeof value.password === "string" && value.password.length > 0 ? value.password : undefined
     let serverPassword: string | undefined
     const secretAad = (path: string) => `novaclaw:runtime-setting:${path}`
     /**
-     * 🔴 The unwind of app-managed encryption, step 2 (see `todo/code-review.md`, NC-REL-030).
+     * 🔴 The unwind of app-managed encryption, step 2.
      *
      * Storing a secret is storing it. Decision §5 of `decisions-v0.2.0.md` — recorded 2026-08-07,
      * six days AFTER the cipher landed with a one-line commit and no rationale — says secrets stay

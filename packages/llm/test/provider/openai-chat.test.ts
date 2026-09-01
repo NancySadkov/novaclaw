@@ -2,8 +2,6 @@ import { describe, expect } from "bun:test"
 import { Effect, Schema, Stream } from "effect"
 import { HttpClientRequest } from "effect/unstable/http"
 import { LLM, LLMError, LLMEvent, Message, Model, ToolCallPart, Usage } from "../../src"
-import * as Azure from "../../src/providers/azure"
-import * as OpenAI from "../../src/providers/openai"
 import * as OpenAIChat from "../../src/protocols/openai-chat"
 import { ProviderShared } from "../../src/protocols/shared"
 import { Auth, LLMClient } from "../../src/route"
@@ -96,9 +94,9 @@ describe("OpenAI Chat route", () => {
     Effect.gen(function* () {
       const prepared = yield* LLMClient.prepare<OpenAIChat.OpenAIChatBody>(
         LLM.request({
-          model: OpenAI.configure({ baseURL: "https://api.openai.test/v1/", apiKey: "test" }).chat("gpt-4o-mini"),
+          model,
           prompt: "think",
-          providerOptions: { openai: { reasoningEffort: "low" } },
+          providerOptions: { openai: { reasoningEffort: "low", store: false } },
         }),
       )
 
@@ -118,32 +116,6 @@ describe("OpenAI Chat route", () => {
           Effect.gen(function* () {
             const web = yield* HttpClientRequest.toWeb(input.request).pipe(Effect.orDie)
             expect(web.url).toBe("https://api.openai.test/v1/chat/completions?api-version=v1")
-            return input.respond(sseEvents(deltaChunk({}, "stop")), {
-              headers: { "content-type": "text/event-stream" },
-            })
-          }),
-        ),
-      ),
-    ),
-  )
-
-  it.effect("uses Azure api-key header for static OpenAI Chat keys", () =>
-    LLMClient.generate(
-      LLM.updateRequest(request, {
-        model: Azure.configure({
-          baseURL: "https://novaclaw-test.openai.azure.com/openai/v1/",
-          apiKey: "azure-key",
-          headers: { authorization: "Bearer stale" },
-        }).chat("gpt-4o-mini"),
-      }),
-    ).pipe(
-      Effect.provide(
-        dynamicResponse((input) =>
-          Effect.gen(function* () {
-            const web = yield* HttpClientRequest.toWeb(input.request).pipe(Effect.orDie)
-            expect(web.url).toBe("https://novaclaw-test.openai.azure.com/openai/v1/chat/completions?api-version=v1")
-            expect(web.headers.get("api-key")).toBe("azure-key")
-            expect(web.headers.get("authorization")).toBeNull()
             return input.respond(sseEvents(deltaChunk({}, "stop")), {
               headers: { "content-type": "text/event-stream" },
             })

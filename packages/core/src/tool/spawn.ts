@@ -8,6 +8,7 @@ import { AgentV2 } from "../agent"
 import { ModelV2 } from "../model"
 import { PermissionV2 } from "../permission"
 import { SessionSpawner } from "../session/spawner"
+import { SessionMessage } from "../session/message"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -122,7 +123,7 @@ export const Input = Schema.Struct({
       "'auto-prompting' keeps prompting itself until it calls exit; 'goal-oriented' loops toward a " +
       "stated goal; 'interactive' blocks for a human.",
   }),
-  permissionMode: Schema.Literals(["plan", "ask", "surgical", "bypass", "yolo"])
+  permissionMode: SessionMessage.PermissionMode
     .pipe(Schema.optional)
     .annotate({
       description:

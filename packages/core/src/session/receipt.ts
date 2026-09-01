@@ -12,7 +12,7 @@ import { SessionPolicyDecisionTable } from "../tool-policy.sql"
 /**
  * "What Nova checked" — the task receipt, composed from durable sources.
  *
- * `todo/verified-autonomy.md` V1: *mechanical evidence is authoritative; model judgment may explain
+ * The governing rule: *mechanical evidence is authoritative; model judgment may explain
  * or calibrate but never promote.* So every field here is READ from a table that something else
  * wrote as it happened. Nothing is inferred, and nothing is asked of a model.
  *
@@ -43,7 +43,7 @@ export interface Check {
 /**
  * One tool call a pre-action policy INTERVENED on. Never one per tool call.
  *
- * `todo/projects.md` → *Typed pre-action policies*: *"bind every intervention to a receipt."* This is
+ * Typed pre-action policies (AGENTS.md design principle 13): *"bind every intervention to a receipt."* This is
  * that binding, surfaced through the receipt that already exists rather than through a second
  * document — the question *"what did Nova actually do, and what stopped it"* has one answer here or
  * it has two answers that can disagree.

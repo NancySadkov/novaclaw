@@ -1,6 +1,6 @@
 import type { Page, Route } from "@playwright/test"
 
-const emptyList = new Set(["/skill", "/command", "/formatter", "/vcs/status", "/vcs/diff"])
+const emptyList = new Set(["/skill", "/command", "/vcs/status", "/vcs/diff"])
 const emptyObject = new Set(["/global/config", "/config", "/mcp", "/session/status"])
 
 export interface MockServerConfig {
@@ -15,7 +15,6 @@ export interface MockServerConfig {
   events?: () => unknown[]
   eventRetry?: number
   todos?: (sessionID: string) => unknown[]
-  permissions?: unknown[] | (() => unknown[])
   questions?: unknown[] | (() => unknown[])
 }
 
@@ -49,8 +48,6 @@ export async function mockNovaClawServer(page: Page, config: MockServerConfig) {
     const path = url.pathname
     if (path === "/global/event" || path === "/event") return sse(route, config.events?.(), config.eventRetry)
     if (path === "/global/health") return json(route, { healthy: true })
-    if (path === "/permission")
-      return json(route, typeof config.permissions === "function" ? config.permissions() : (config.permissions ?? []))
     if (path === "/question")
       return json(route, typeof config.questions === "function" ? config.questions() : (config.questions ?? []))
     if (path === "/vcs/diff" && config.vcsDiff) return json(route, config.vcsDiff)

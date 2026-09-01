@@ -8,7 +8,7 @@ import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { testEffect } from "./lib/effect"
 
 /**
- * Community P3 — sealing a direct message (`todo/community-p2p.md`).
+ * Community P3 — sealing a direct message (`notes/spec/community-p2p.md`).
  *
  * 🔴 §11 argued a DM needs no encryption because the transport encrypted to the peer's KEY. The
  * shipped transport encrypts to an ADDRESS, so a relay — which is how unreachable peers are reached —

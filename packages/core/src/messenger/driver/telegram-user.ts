@@ -1,6 +1,7 @@
 export * as TelegramUserDriver from "./telegram-user"
 
 import { Effect, Queue, Stream } from "effect"
+import { LinkedAccount } from "./linked-account"
 import type { Messenger } from "@novaclaw/schema/messenger"
 import { MessengerFormat } from "../format"
 import type {
@@ -32,7 +33,6 @@ const CAPS: Messenger.Capabilities = {
   listChats: "full", // a user sees all their chats (unlike a bot)
   files: { up: true, down: true, maxBytes: 2_000_000_000 },
   edits: true,
-  typing: true,
   threads: false,
   moderation: { delete: true, ban: true, kick: true, mute: true, pin: true },
   // We send PLAIN text: a human typing doesn't emit markup, and plain can't inject entities.
@@ -162,42 +162,23 @@ const parseAccountConfig = (
 
 /** Remembers the last N messages WE sent (per chat), so our own outgoing traffic echoed back by
  *  the platform is recognized. Bounded FIFO — a long-lived connection must not grow forever. */
-const sentTracker = (capacity: number) => {
-  const order: string[] = []
-  const set = new Set<string>()
-  const key = (chatID: string, messageID: string) => `${chatID}:${messageID}`
-  return {
-    add: (chatID: string, messageID: string) => {
-      const item = key(chatID, messageID)
-      if (set.has(item)) return
-      set.add(item)
-      order.push(item)
-      if (order.length > capacity) {
-        const evicted = order.shift()
-        if (evicted !== undefined) set.delete(evicted)
-      }
-    },
-    has: (chatID: string, messageID: string) => set.has(key(chatID, messageID)),
-  }
-}
+const sentTracker = LinkedAccount.sentTracker
 
-/** The self-echo policy for a USER account (unlike a bot, the human and the agent share one
- *  identity — from Telegram's side both are "the account"):
- *  - incoming (not outgoing) → never self.
- *  - outgoing we sent ourselves → self (drop: our own relay echoing back).
- *  - outgoing in the SELF-chat (Saved Messages) that we did NOT send → the OPERATOR typing on
- *    their phone — this is the phone-remote-control channel, so it is REAL input, not an echo.
- *  - outgoing anywhere else we did not send → the human using their own account (or another
- *    device); acting as them there is not our turn — treat as self (drop). */
-export const isSelfMessage = (
+/**
+ * The self-echo policy, shared with every other linked-account driver — see
+ * `driver/linked-account.ts` for the four cases and why the rule is not per-platform. Re-exported
+ * rather than re-implemented: this was a byte-identical copy until 2026-09-01 (RF-08-9), and the
+ * copies had already drifted in their neighbouring error mapping.
+ *
+ * What Telegram supplies is the VOCABULARY, not the rule: the self-chat here is **Saved Messages**,
+ * and `selfID` is the account's own user id. From Telegram's side the human and the agent are one
+ * account, which is the premise the shared rule rests on.
+ */
+export const isSelfMessage: (
   message: Pick<UserMessage, "outgoing" | "chatID" | "messageID">,
   selfID: string,
   wasSentByUs: boolean,
-): boolean => {
-  if (!message.outgoing) return false
-  if (wasSentByUs) return true
-  return message.chatID !== selfID
-}
+) => boolean = LinkedAccount.isSelfMessage
 
 export const make = (factory: UserClientFactory): Driver => {
   const acquire = (config: UserClientConfig) =>

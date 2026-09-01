@@ -16,7 +16,6 @@ import type { LLMError, LLMEvent, LLMRequest, ProtocolID } from "../schema"
  * - `OpenAIResponses.protocol` — responses API
  * - `AnthropicMessages.protocol` — messages API with content blocks
  * - `Gemini.protocol` — generateContent
- * - `BedrockConverse.protocol` — Converse with binary event-stream framing
  *
  * A `Protocol` is **not** a deployment. It does not know which URL, which
  * headers, or which auth scheme to use. Those are deployment concerns owned
@@ -28,8 +27,9 @@ import type { LLMError, LLMEvent, LLMRequest, ProtocolID } from "../schema"
  *
  * - `Body` — provider-native request body candidate. `Route.make(...)`
  *   validates and JSON-encodes it with `body.schema`.
- * - `Frame` — one unit of the framed response stream. SSE: a JSON data
- *   string. AWS event stream: a parsed binary frame.
+ * - `Frame` — one unit of the framed response stream. The one shipped framing
+ *   is SSE, whose frame is a JSON data string; the parameter is generic
+ *   because a binary framing's would not be (see `Framing`).
  * - `Event` — schema-decoded provider event produced from one frame.
  * - `State` — accumulator threaded through `stream.step` to translate event
  *   sequences into `LLMEvent` sequences.
@@ -112,12 +112,12 @@ export interface ProtocolStream<Frame, Event, State> {
  * ⚠️ **Why this is shared while the reasoning-only ASSISTANT DROP is per-wire — the two look alike
  * and are not the same question.** `68d5029a2` put that drop in `openai-chat.ts` because *"can this
  * wire render an assistant that only thought?"* has six different answers for one input (Anthropic
- * lowers it to a `thinking` block, Gemini to `{thought:true}`, Bedrock to `reasoningContent`,
+ * lowers it to a `thinking` block, Gemini to `{thought:true}`,
  * `openai-responses` already omits it). *"May the conversation array be empty?"* has ONE answer on
- * all five wires — read off each body schema here: `openai-chat.messages`, `openai-responses.input`,
- * `anthropic-messages.messages`, `gemini.contents`, `bedrock-converse.messages` are each the sole
+ * all four wires — read off each body schema here: `openai-chat.messages`, `openai-responses.input`,
+ * `anthropic-messages.messages` and `gemini.contents` are each the sole
  * carrier of the turns, and a request with none of them asks nothing. A uniform answer belongs in
- * one place (ruling 6); a six-way answer does not. Do not read this as reopening that ruling — the
+ * one place (ruling 6); a per-wire answer does not. Do not read this as reopening that ruling — the
  * drop stays exactly where it is, and this guard runs strictly after it.
  *
  * ⚠️ **Why refusing is right HERE while it was wrong THERE**, since `openai-chat.ts:382` argues the

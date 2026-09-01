@@ -1,6 +1,7 @@
 import { createEffect, createSignal, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createSimpleContext } from "@novaclaw/ui/context"
+import { isRecord } from "@novaclaw/schema/record"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
@@ -101,10 +102,6 @@ type Store = {
 type ParsedRelease = {
   tag?: string
   highlights: Highlight[]
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function getText(value: unknown): string | undefined {

@@ -1,17 +1,10 @@
 import { createHash } from "node:crypto"
 import path from "path"
-import { Context, Effect, Layer, Stream } from "effect"
-import { FetchHttpClient, HttpClient } from "effect/unstable/http"
-import { ChildProcess } from "effect/unstable/process"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
-import { CrossSpawnSpawner } from "../cross-spawn-spawner"
-import { Download } from "../download"
+import { Context, Effect, Layer } from "effect"
 import { makeGlobalNode } from "../effect/app-node"
-import { httpClient } from "../effect/app-node-platform"
 import { FSUtil } from "../fs-util"
 import { Global } from "../global"
 import { which } from "../util/which"
-import { Log } from "@novaclaw/schema/log"
 
 export namespace RipgrepBinary {
   export const VERSION = "15.1.0"
@@ -34,8 +27,8 @@ export namespace RipgrepBinary {
    * extracted, `chmod 0755`'d and executed as the tree-search engine of an agent OS. A swapped
    * release asset, a box with a poisoned trust store, or an upstream account compromise was
    * therefore arbitrary code execution inside NovaClaw — the same "one-key arbitrary-code-execution
-   * path" ruling 12 refused to create for the update feed, except already shipped and with no key at
-   * all (`todo/supply-chain.md` §1).
+   * path" ruling 12 (`notes/reports/decisions-v0.2.0.md`) refused to create for the update feed,
+   * except already shipped and with no key at all.
    *
    * **Why two digests and not one.** The archive digest alone protects a *fresh install only*:
    * `target` carries no version in its name, so an `rg` left behind by a pre-pin build — i.e. every
@@ -51,7 +44,7 @@ export namespace RipgrepBinary {
    * the asset downloaded and hashed locally with `sha256sum`. Executable digests: extracted from
    * those verified archives and hashed locally; `x64-win32` additionally matches the `rg.exe` winget
    * had installed on the author's machine from a separate download. Recording them *after review* is
-   * the actual security property — the pin turns "whatever GitHub serves today" into "the exact
+   * the actual security property — the pin turns "whatever a remote host serves today" into "the exact
    * bytes a human vetted once", which a digest fetched at install time could never do, since
    * anything able to swap the asset can swap its sibling.
    *
@@ -159,123 +152,52 @@ export namespace RipgrepBinary {
     Service,
     Effect.gen(function* () {
       const fs = yield* FSUtil.Service
-      const http = yield* HttpClient.HttpClient
-      const spawner = yield* ChildProcessSpawner
-
-      const run = Effect.fnUntraced(function* (command: string, args: string[]) {
-        const handle = yield* spawner.spawn(ChildProcess.make(command, args, { extendEnv: true, stdin: "ignore" }))
-        const [stdout, stderr, code] = yield* Effect.all(
-          [
-            Stream.mkString(Stream.decodeText(handle.stdout)),
-            Stream.mkString(Stream.decodeText(handle.stderr)),
-            handle.exitCode,
-          ],
-          { concurrency: "unbounded" },
-        )
-        return { stdout, stderr, code }
-      }, Effect.scoped)
-
-      const extract = Effect.fnUntraced(function* (
-        archive: string,
-        config: (typeof PLATFORM)[keyof typeof PLATFORM],
-        target: string,
-      ) {
-        const dir = yield* fs.makeTempDirectoryScoped({ directory: Global.Path.bin, prefix: "ripgrep-" })
-
-        if (config.extension === "zip") {
-          const shell = (yield* Effect.sync(() => which("powershell.exe") ?? which("pwsh.exe"))) ?? "powershell.exe"
-          const result = yield* run(shell, [
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            `$global:ProgressPreference = 'SilentlyContinue'; Expand-Archive -LiteralPath '${archive.replaceAll("'", "''")}' -DestinationPath '${dir.replaceAll("'", "''")}' -Force`,
-          ])
-          if (result.code !== 0)
-            throw new Error(
-              result.stderr.trim() || result.stdout.trim() || `ripgrep extraction failed with code ${result.code}`,
-            )
-        }
-
-        if (config.extension === "tar.gz") {
-          const result = yield* run("tar", ["-xzf", archive, "-C", dir])
-          if (result.code !== 0)
-            throw new Error(
-              result.stderr.trim() || result.stdout.trim() || `ripgrep extraction failed with code ${result.code}`,
-            )
-        }
-
-        const extracted = path.join(
-          dir,
-          `ripgrep-${VERSION}-${config.platform}`,
-          process.platform === "win32" ? "rg.exe" : "rg",
-        )
-        if (!(yield* fs.isFile(extracted))) throw new Error(`ripgrep archive did not contain executable: ${extracted}`)
-
-        yield* fs.copyFile(extracted, target)
-        if (process.platform !== "win32") yield* fs.chmod(target, 0o755)
-      }, Effect.scoped)
 
       return Service.of({
         filepath: yield* Effect.cached(
           Effect.gen(function* () {
+            const platformKey = `${process.arch}-${process.platform}` as keyof typeof PLATFORM
+            const pin = PINNED[platformKey]
+            if (!pin) throw new Error(`unsupported platform for ripgrep: ${platformKey}`)
+
+            // Desktop packages set this to the verified binary embedded at build time. A supplied
+            // path is authoritative and therefore fails closed instead of falling through silently.
+            const embedded = process.env.NOVACLAW_RIPGREP_PATH
+            if (embedded) {
+              if (!(yield* fs.isFile(embedded).pipe(Effect.orDie)))
+                throw new Error(`the embedded ripgrep binary is missing: ${embedded}`)
+              const bytes = yield* fs.readFile(embedded)
+              verifyDigest(bytes, pin.executable, embedded)
+              return embedded
+            }
+
             // A system rg is the user's own OS package (winget/apt/brew), not an artefact NovaClaw
-            // downloaded. The pin below governs only our acquisition path; refusing a user-selected
+            // downloaded. The pin below governs only our embedded path; refusing a user-selected
             // system version would turn supply-chain verification into package-manager policy.
             const system = yield* Effect.sync(() => which(process.platform === "win32" ? "rg.exe" : "rg"))
             if (system && (yield* fs.isFile(system).pipe(Effect.orDie))) return system
 
-            const platformKey = `${process.arch}-${process.platform}` as keyof typeof PLATFORM
-            const config = PLATFORM[platformKey]
-            if (!config) throw new Error(`unsupported platform for ripgrep: ${platformKey}`)
-            const pin: { archive: string; executable: string } | undefined = PINNED[platformKey]
-
             // An already-installed copy is ours to trust only when it hashes to the pinned executable.
-            // A bare `isFile(target)` — what this used to be — re-executes forever whatever an
-            // unverified earlier build left on disk, so the archive pin alone would have protected
-            // fresh installs and nobody else. A genuine inherited binary passes here with no network,
-            // which is what keeps an offline box working; anything else falls through and re-downloads.
+            // A genuine inherited binary passes here without any network access.
             const target = path.join(Global.Path.bin, `rg${process.platform === "win32" ? ".exe" : ""}`)
             if (yield* fs.isFile(target).pipe(Effect.orDie)) {
               const existing = yield* fs.readFile(target).pipe(Effect.orElseSucceed(() => undefined))
-              if (existing !== undefined && matchesDigest(existing, pin?.executable)) return target
+              if (existing !== undefined && matchesDigest(existing, pin.executable)) return target
             }
-
-            const filename = `ripgrep-${VERSION}-${config.platform}.${config.extension}`
-            const url = `https://github.com/BurntSushi/ripgrep/releases/download/${VERSION}/${filename}`
-            const archive = path.join(Global.Path.bin, filename)
-
-            yield* Log.event("tool.ripgrep.download.start", { "tool.url": url })
-            yield* fs.ensureDir(Global.Path.bin).pipe(Effect.orDie)
-            yield* Download.toFile({
-              url,
-              destination: archive,
-              integrity: { sha256: pin?.archive ?? "" },
-            }).pipe(Effect.provideService(FSUtil.Service, fs), Effect.provideService(HttpClient.HttpClient, http))
-            yield* extract(archive, config, target)
-            yield* fs.remove(archive, { force: true }).pipe(Effect.ignore)
-
-            // The post-condition that makes the invariant unconditional: every path out of this
-            // Effect returns a file that hashed to a pinned digest. Implied by the archive digest, and
-            // asserted anyway so `extract` cannot quietly become the weak link (it shells out to
-            // PowerShell/tar and copies out of a temp directory).
-            const installed = yield* fs.readFile(target)
-            verifyDigest(installed, pin?.executable, target)
-            return target
+            throw new Error(
+              "ripgrep is unavailable. Desktop builds embed a verified local copy; other installs must provide rg through the OS package manager.",
+            )
           }),
         ),
       })
     }),
   )
 
-  export const defaultLayer = layer.pipe(
-    Layer.provide(FetchHttpClient.layer),
-    Layer.provide(FSUtil.defaultLayer),
-    Layer.provide(CrossSpawnSpawner.defaultLayer),
-  )
+  export const defaultLayer = layer.pipe(Layer.provide(FSUtil.defaultLayer))
 
   export const node = makeGlobalNode({
     service: Service,
     layer: layer,
-    deps: [FSUtil.node, httpClient, CrossSpawnSpawner.node],
+    deps: [FSUtil.node],
   })
 }

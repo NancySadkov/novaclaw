@@ -270,7 +270,7 @@ export class CacheHint extends Schema.Class<CacheHint>("LLM.CacheHint")({
 // usual. `"auto"` is the recommended default for agent loops — it places one
 // breakpoint at the last tool definition, one at the last system part, and one
 // at the latest user message. The combination of provider invalidation
-// hierarchy (tools → system → messages) and Anthropic/Bedrock's 20-block
+// hierarchy (tools → system → messages) and Anthropic's 20-block
 // lookback means three trailing breakpoints reliably cover the static prefix.
 //
 // Pass `"none"` to opt out entirely (the legacy behavior). Pass the granular

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { MessengerCommands } from "@novaclaw/core/messenger/commands"
 
-// P0 gate (notes/messenger-plan.md §8): the gateway command parser is deterministic and closed —
+// P0 gate: the gateway command parser is deterministic and closed —
 // plain chat text is NEVER a command, and the Telegram group form `/cmd@BotName` normalizes.
 
 describe("MessengerCommands.parse", () => {

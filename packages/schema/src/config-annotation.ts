@@ -6,13 +6,13 @@
  * ── WHY A MARKER AND NOT A NAME HEURISTIC ──────────────────────────────────────────────────────
  *
  * v0.2.0 item 4.1 refuses the shape the reference implementation uses (OpenLumara, assessed
- * 2026-08-06 — `todo/adoption.md` A13.5): it hides secrets by substring-matching key names against
+ * 2026-08-06): it hides secrets by substring-matching key names against
  * `["token","key","secret","password","auth","credential"]`. That guess **fails in both directions,
  * and ours fails in both directions too** — measured against `tool/configure.ts`'s `SECRET_FIELDS`
  * on 2026-08-07 and pinned in `test/config-projection.test.ts`:
  *
  *  · **under-redacts** — `mcp.servers.<n>.oauth.client_secret` is not the string `"secret"`, and
- *    `mcp.servers.<n>.environment.GITHUB_TOKEN` is not the string `"token"`, so a real credential
+ *    `mcp.servers.<n>.environment.SERVICE_TOKEN` is not the string `"token"`, so a real credential
  *    reads back verbatim into the model's transcript;
  *  · **over-redacts** — the name is a USER-CHOSEN record key in half the config surface, so an MCP
  *    server (or provider, or agent) a user happens to call `headers` reads back with its `type` and
@@ -20,7 +20,7 @@
  *
  * We have typed schemas, so the field itself can say what it is. {@link secret} is the marker and
  * `config-projection.ts` is its only reader — one source of truth, and the only form in which
- * `todo/adoption.md` A3's operator view (*what can this agent reach?*) can be honest.
+ * the operator view (*what can this agent reach?*) can be honest.
  *
  * ⚠️ **The marker is set through these functions and never by writing the annotation key.** The keys
  * below are module-private on purpose: a mistyped string annotation is not a compile error and would

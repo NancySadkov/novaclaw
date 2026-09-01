@@ -46,6 +46,16 @@ function normalizeArch(arch: string): string {
   return arch
 }
 
+/**
+ * ⚠️ **`packages/core/src/community/dht.ts` exports an identical `dhtExecutableName`, and the two
+ * copies are deliberate.** This file is the TS shim beside a cargo crate: `packages/dht` declares no
+ * dependencies and publishes no `exports` map, so it can neither import from the workspace nor be
+ * imported by it — its readers (`build.ts` here, `desktop/scripts/dht-packaging.ts`) reach it by
+ * relative path precisely because of that. Merging would mean giving a Rust crate a workspace
+ * dependency and a published TypeScript surface to save one ternary.
+ *
+ * **If you rename the binary, change BOTH** — and the Rust crate's own output name with them.
+ */
 export function dhtExecutableName(platform: NodeJS.Platform = process.platform): string {
   return platform === "win32" ? "novaclaw-dht.exe" : "novaclaw-dht"
 }

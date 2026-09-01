@@ -14,7 +14,7 @@ import {
 } from "./project-permissions"
 
 /**
- * `todo/projects.md` — the Permissions surface's decision logic, tested away from the DOM.
+ * The Permissions surface's decision logic, tested away from the DOM.
  *
  * 🔴 **Both rules here fail SILENTLY when they are wrong**, which is why they are a module and not
  * three `.filter(…)` chains in a JSX body:
@@ -232,7 +232,7 @@ describe("the copy this surface renders", () => {
   })
 
   test("🔴 the exclusion import copy distinguishes a .gitignore from dedicated-tool exclusions", () => {
-    // `todo/projects.md` requires read eligibility stay distinct from watcher/build ignores, and the
+    // Read eligibility must stay distinct from watcher/build ignores, and the
     // only place a user meets that distinction is this sentence. A rewrite that drops it turns a
     // confirmed suggestion back into "these look the same, click yes".
     const text = (en as unknown as Record<string, string>)["settings.project.exclude.import.distinct"]!

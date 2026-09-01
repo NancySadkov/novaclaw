@@ -3,7 +3,7 @@ import { fixture, pageMessages } from "../smoke/session-timeline.fixture"
 import { mockNovaClawServer } from "../utils/mock-server"
 import { expectAppVisible } from "../utils/waits"
 
-// Ported from https://github.com/NancySadkov/novaclaw/pull/11 by @DassaultFalconKing.
+// Ported from outside contribution #11 by @DassaultFalconKing.
 //
 // ⚠️ This directory is NOT run by `bun run test` — `test:e2e` is a separate `playwright test`
 // script, so these are manual/pre-release checks. They are kept because they encode the three

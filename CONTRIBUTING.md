@@ -52,14 +52,9 @@ git commit -s -m "fix(session): stop the drain loop leaking a fiber"
 That adds a `Signed-off-by:` line. It is the per-commit companion to the CLA, not a replacement for
 it.
 
-A pull request on the GitHub repository works too, and is how every outside contribution so far has
-arrived — but understand what happens to it. **That repository is a snapshot, not the working tree.**
-Each release replaces it with a single fresh commit, so it shares no ancestor with the tree your patch
-must land in, and by the time a patch arrives that tree has usually moved past the snapshot it was
-written against. Your change is therefore **ported, not merged**: read for intent, re-verified against
-current code, and re-applied in our file rather than yours. The PR itself is left alone. Credit for
-every ported patch is kept in [CONTRIBUTORS.md](CONTRIBUTORS.md), because a snapshot carries a file
-and cannot carry a commit author.
+Changes received from outside are **ported, not merged**: read for intent, re-verified against current
+code, and re-applied in our tree. Credit for every ported patch is kept in
+[CONTRIBUTORS.md](CONTRIBUTORS.md).
 
 **Contact:** through [novaclaw.app](https://novaclaw.app).
 

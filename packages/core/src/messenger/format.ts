@@ -1,6 +1,6 @@
 export * as MessengerFormat from "./format"
 
-// Outbound text shaping (notes/messenger-plan.md §3.2): downgrade the assistant's markdown to
+// Outbound text shaping: downgrade the assistant's markdown to
 // what the platform can render, then chunk to the platform budget. IRC budgets BYTES per line
 // (RFC 1459), so byte-mode chunking must never split a UTF-8 code point; character platforms
 // (Telegram 4096, Discord 2000) budget UTF-16 units — what both they and JS `.length` count.
@@ -12,7 +12,16 @@ const encoder = new TextEncoder()
 
 export const utf8Length = (text: string): number => encoder.encode(text).length
 
-const escapeHtml = (text: string): string =>
+/**
+ * ⚠️ **THREE characters, and the name says so.** Telegram's HTML flavour needs only `&`, `<` and `>`
+ * escaped in TEXT nodes, and this pipeline emits `<pre>`, `<b>` and `<code>` with no attributes, so an
+ * unescaped `"` cannot break out. It was called `escapeHtml` — the same name as the general
+ * five-character escaper in `util/html.ts` — which made it safe only by accident of its caller: the
+ * first person to add a Telegram `<a href="…">` link here would have reached for the `escapeHtml`
+ * already in the file and got the version that does not escape quotes. If you add an attribute to the
+ * emitted markup, use `escapeHtml` from `../util/html` instead of widening this one.
+ */
+const escapeTelegramText = (text: string): string =>
   text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
 
 // Shared inline-markdown passes. Order matters: fences first (their bodies must not be
@@ -46,7 +55,7 @@ export function downgrade(text: string, flavor: Flavor): string {
     return plainInline(unfenced).split("\n").map(plainLine).join("\n")
   }
   // html: escape FIRST so user content can't smuggle tags, then decorate.
-  const escaped = escapeHtml(text)
+  const escaped = escapeTelegramText(text)
   const fenced = stripFences(escaped, (body) => `<pre>${body}</pre>`)
   return fenced
     .split("\n")

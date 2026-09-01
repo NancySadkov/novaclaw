@@ -33,7 +33,7 @@ const SECRET_PATTERNS: ReadonlyArray<{ readonly label: string; readonly pattern:
   { label: "Anthropic API key", pattern: /\bsk-ant-[A-Za-z0-9_-]{20,}\b/ },
   { label: "Google API key", pattern: /\bAIza[0-9A-Za-z_-]{20,}\b/ },
   { label: "AWS access key", pattern: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/ },
-  { label: "GitHub token", pattern: /\bgh[pousr]_[A-Za-z0-9_]{20,}\b/ },
+  { label: "Forge token", pattern: /\bgh[pousr]_[A-Za-z0-9_]{20,}\b/ },
   { label: "private key", pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
 ]
 

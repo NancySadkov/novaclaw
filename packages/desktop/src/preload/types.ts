@@ -1,5 +1,4 @@
 import type { WslServersPlatform } from "@novaclaw/app/wsl/types"
-import type { UpdaterState } from "@novaclaw/app/updater"
 import type { SuperviseStatus } from "@novaclaw/script/supervise"
 export type { SuperviseStatus }
 export type {
@@ -23,12 +22,6 @@ export type ServerReadyData = {
 }
 
 export type WslServersAPI = WslServersPlatform
-export type UpdaterAPI = {
-  subscribe: (cb: (state: UpdaterState) => void) => Promise<() => void>
-  check: () => Promise<UpdaterState>
-  install: () => Promise<void>
-}
-
 /**
  * The sidecar supervisor, as the renderer sees it.
  *
@@ -56,16 +49,13 @@ export type FatalRendererError = {
 export type ElectronAPI = {
   killSidecar: () => Promise<void>
   supervisor: SupervisorAPI
-  installCli: () => Promise<string>
   awaitInitialization: () => Promise<ServerReadyData>
   wslServers: WslServersAPI
-  updater: UpdaterAPI
   consumeInitialDeepLinks: () => Promise<string[]>
   getDefaultServerUrl: () => Promise<string | null>
   setDefaultServerUrl: (url: string | null) => Promise<void>
   getDisplayBackend: () => Promise<LinuxDisplayBackend | null>
   setDisplayBackend: (backend: LinuxDisplayBackend | null) => Promise<void>
-  parseMarkdownCommand: (markdown: string) => Promise<string>
   checkAppExists: (appName: string) => Promise<boolean>
   resolveAppPath: (appName: string) => Promise<string | null>
   storeGet: (name: string, key: string) => Promise<string | null>

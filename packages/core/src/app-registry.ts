@@ -4,6 +4,7 @@ import fs from "fs/promises"
 import path from "path"
 import { isManifestRouteId, MANIFEST_ROUTE_IDS, type ManifestRouteId } from "./app-route"
 import { Global } from "./global"
+import { Slug } from "./util/slug"
 
 // The persisted home-app registry (B14): the server-side half of the "make me an app" seam. An
 // agent (or the user) registers a MANIFEST — a launcher, not code: open a closed built-in route id,
@@ -90,13 +91,7 @@ const RESERVED_IDS = new Set([
 ])
 
 /** Derive a valid id from a title ("Stock Prices" -> "stock-prices"). */
-export function slugify(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 64)
-}
+export const slugify = Slug.from
 
 const OPEN_TYPES: readonly OpenType[] = ["route", "url", "prompt"]
 

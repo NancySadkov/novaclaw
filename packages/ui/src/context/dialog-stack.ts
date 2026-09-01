@@ -8,7 +8,7 @@ import { createSignal, onCleanup, type Owner } from "solid-js"
  * calling owner's *context* and never adds it to that owner's `owned` list, so disposing the
  * component that opened a dialog disposes nothing at all. That is invisible in a component test —
  * there are none in this repo, since Solid JSX needs its compiler — and it is what produced a
- * measured WRITE to the wrong folder (`todo/projects.md`: the Tune dialog survived a route change,
+ * measured WRITE to the wrong folder (the Tune dialog survived a route change,
  * kept the previous chat's state, and "Save as folder default" created `novaclaw.json` in the
  * folder the user had already left).
  *

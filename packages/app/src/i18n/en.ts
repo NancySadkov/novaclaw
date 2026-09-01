@@ -35,7 +35,7 @@ export const dict = {
   // ─────────────────────────────────────────────────────────────────────────────────────────────
   // The Project a folder's `novaclaw.json` declares, said in Chats and in Files.
   //
-  // `todo/projects.md`: *"Never make a person infer project state from a hidden dotfile."* Settings
+  // The rule: *"never make a person infer project state from a hidden dotfile."* Settings
   // → General and the composer's Tune panel already say it; these two blocks are the same facts
   // written for the two surfaces a person is actually looking at when the question comes up.
   // `components/project-summary.ts` is the only reader, and `project-summary.test.ts` pins that
@@ -112,19 +112,13 @@ export const dict = {
   "nav.tasks.untitled": "Untitled chat",
   "nav.tasks.all": "All tasks",
   "nav.tasks.close": "Close this task",
-  "nav.chats": "Chats",
   "processes.status.working": "Working…",
 
   // Session presence — who else is looking at this chat, who is driving, and what to do when two
   // surfaces reach for it at once. Every line here has to read as an explanation, not a fault:
   // two people in one chat is a normal thing that happens, and the UI teaches it (principle 8).
-  "presence.you": "you",
   "presence.viewer.browser": "a browser window",
   "presence.viewer.desktop": "the desktop app",
-  "presence.viewer.peer": "another NovaClaw",
-  "presence.viewer.agent": "an agent",
-  "presence.attached": "{{count}} attached",
-  "presence.attached.title": "Attached right now: {{list}}",
   "presence.watching": "{{driver}} is driving this chat. You're watching along — you can still type.",
   "presence.driving": "{{others}} is here too, watching along. You're driving.",
   // These three name who is ACTUALLY writing. A room is contended as soon as anyone who is not
@@ -166,9 +160,6 @@ export const dict = {
   "settings.expertise.confirm.downgrade": "Your advanced settings stay saved and active — unlock again to see them.",
   "settings.expertise.confirm.typePrompt": "Type {{word}} to confirm",
   "settings.expertise.confirm.cta": "Confirm",
-  "settings.expertise.activeHidden.title": "An advanced setting is active",
-  "settings.expertise.activeHidden.description":
-    "A permission mode you set earlier is still in effect but hidden at this level. Unlock it to review.",
   "settings.expertise.discover.advanced.title": "Looking for more?",
   "settings.expertise.discover.advanced.description":
     "Unlock Advanced features — the agent's instructions, reasoning, and custom tools.",
@@ -357,17 +348,18 @@ export const dict = {
   "prompt.permissionMode.title": "Permission mode",
   // One word each — these render inside a narrow listbox (and on a phone). The explanations live in
   // `.hint` below, shown by the control's tooltip and the Settings row, not in the option label.
-  // NOTE the display names do not match the internal values: Analyze=plan, Build=bypass. Renaming the
-  // values would touch the schema, protocol, generated clients and every stored session row, for no
+  // NOTE the display names do not match the internal values: Analyze=plan, Modify=bypass, Admin=yolo
+  // (renamed from "Build"/"YOLO" — owner, 2026-09-01). Renaming the VALUES would touch the schema,
+  // protocol, generated clients and every stored session row, for no
   // user-visible gain — so the mapping is here, and here only. `ask` and `surgical` are no longer
-  // offered: surgical became a Tuning switch, and "ask about everything" is what Analyze/Build bracket.
+  // offered: surgical became a Tuning switch, and "ask about everything" is what Analyze/Modify bracket.
   "prompt.permissionMode.plan": "Analyze",
   "prompt.permissionMode.ask": "Ask",
   "prompt.permissionMode.surgical": "Surgical",
-  "prompt.permissionMode.bypass": "Build",
-  "prompt.permissionMode.yolo": "YOLO",
+  "prompt.permissionMode.bypass": "Modify",
+  "prompt.permissionMode.yolo": "Admin",
   "prompt.permissionMode.plan.hint": "Read only — but it can still write a report into a temp folder.",
-  "prompt.permissionMode.ask.hint": "Asks before every change. Superseded by Analyze and Build.",
+  "prompt.permissionMode.ask.hint": "Asks before every change. Superseded by Analyze and Modify.",
   "prompt.permissionMode.surgical.hint": "Now a Tuning switch — “Edits instead of overwriting”.",
   "prompt.permissionMode.bypass.hint": "Write access to this project's folder.",
   "prompt.permissionMode.yolo.hint": "Write access to the ENTIRE computer, not just this project.",
@@ -417,11 +409,7 @@ export const dict = {
   "composer.tune.makeDefault.nothing": "Nothing changed in this chat yet.",
   "composer.tune.makeDefault.preview": "Will save: {{list}}",
   "composer.tune.makeDefault.omitted": "Not saved: {{list}}.",
-  "composer.tune.makeDefault.omitted.more":
-    "A folder's file can turn a safety control on, never off — leaving these out keeps your own setting in charge.",
   "composer.tune.makeDefault.modeStays": "This chat's mode stays with the chat.",
-  "composer.tune.makeDefault.modeStays.more":
-    "A folder may only start ordinary interactive chats, never ones that prompt themselves.",
   "composer.tune.makeDefault.action": "Save as folder default",
   "composer.tune.makeDefault.saving": "Saving...",
   "composer.tune.makeDefault.receipt.created": "Created {{file}}",
@@ -451,8 +439,8 @@ export const dict = {
     "Adapts the model's sampling to its appraised mood — steadier when frustrated, freer when exploring.",
 
   "prompt.features.safeMode.title": "Safe mode",
-  // 531 characters inline in a popover until 2026-08-20. The visible line is what the switch DOES;
-  // the trade, the default and the two cases it does not affect are on demand.
+  // The visible line is what the switch DOES; the trade, the default and the two cases it does
+  // not affect are on demand.
   "prompt.features.safeMode.description":
     "Unattended, run shell commands only inside a sandbox — and refuse them where there is none.",
   "prompt.features.safeMode.description.more":
@@ -543,6 +531,9 @@ export const dict = {
   "prompt.toast.modelAgentRequired.description": "Choose an agent and model before sending a prompt.",
   "prompt.toast.worktreeCreateFailed.title": "Couldn't create workspace",
   "prompt.toast.sessionCreateFailed.title": "Couldn't start the chat",
+  "prompt.toast.attachmentsUnsupportedHere.title": "Attachments aren't supported here",
+  "prompt.toast.attachmentsUnsupportedHere.description":
+    "Commands and shell input can't carry a file yet. Send the attachment as an ordinary message instead.",
   "prompt.toast.shellSendFailed.title": "Failed to send shell command",
   "prompt.toast.commandSendFailed.title": "Failed to send command",
   "prompt.toast.promptSendFailed.title": "Failed to send prompt",
@@ -770,8 +761,6 @@ export const dict = {
   "toast.project.directoryMissing.description":
     "NovaClaw kept your chats, but {{directory}} no longer exists. Restore that folder or move the chat to another project before asking Nova to work there.",
 
-  "toast.update.action.installRestart": "Install and restart",
-
   "error.page.title": "Something went wrong",
   "error.page.description": "An error occurred while loading the application.",
   "error.page.description.localServerStartup": "An error occurred while starting the local server.",
@@ -781,9 +770,6 @@ export const dict = {
   "error.page.action.retry": "Try again",
   "error.page.action.restart": "Restart",
   "error.page.action.exportLogs": "Export Logs",
-  "error.page.action.checking": "Checking...",
-  "error.page.action.checkUpdates": "Check for updates",
-  "error.page.action.updateTo": "Update to {{version}}",
   "error.page.circular": "[Circular]",
   "error.page.report.prefix": "Please report this error to the NovaClaw team",
   "error.page.report.discord": "on Discord",
@@ -860,16 +846,7 @@ export const dict = {
   "session.error.toolFailure": "A tool failed.",
   "session.error.unknown": "The turn failed before it finished.",
 
-  "home.recentProjects": "Recent projects",
-  "home.empty.title": "No folders opened yet",
-  "home.empty.description": "Get started by opening a folder on your computer.",
   "home.title": "Home",
-  // Chats greeting entry (C5/O4 — was hardcoded English).
-  "home.chat.greeting": "How can I help you today?",
-  "home.chat.placeholder": "Message to start a new chat…",
-  "home.chat.start": "Start",
-  "home.chat.addProjectTitle": "Open a folder to start",
-  "home.chat.addProjectHint": "Chats work inside a folder on your computer. Pick one and your agents get to work.",
   // Help tour (O3/O4/O6 — i18n'd; adds a Settings pointer; softened data-safety copy).
   "help.tour.skip": "Skip",
   "help.tour.back": "Back",
@@ -899,18 +876,6 @@ export const dict = {
   "help.tour.step.done.title": "You’re all set",
   "help.tour.step.done.body":
     "Open Chats and say hi. Hover any tile for a hint of what it does, and reopen this tour anytime from the Help app.",
-  "home.session.info": "Details",
-  "home.session.stop": "Stop this chat's current run",
-  "home.session.export": "Export as Markdown",
-  "home.session.export.pick": "Choose a folder to export “{{title}}” into",
-  "home.session.export.toast.done": "Exported the chat",
-  "home.session.export.toast.running": "Exported — the chat was still running, so the file ends mid-turn",
-  "home.session.export.toast.failed": "Could not export that chat",
-  "home.session.clone": "Clone chat",
-  "home.session.tokens.title":
-    "{{generated}} tokens generated ({{output}} text · {{reasoning}} reasoning), sub-agent threads included",
-  "home.session.live.title": "Generating right now — approximate tokens this run and current speed",
-  "home.scratch.name": "Scratch",
   "session.info.folder": "Folder",
   "session.info.tags": "Tags",
   "common.remove": "Remove",
@@ -923,9 +888,6 @@ export const dict = {
     "{{control}} could not be changed on the server, so it has been put back. The chat is still running with the previous setting.",
   "home.newAgent.noColleagues":
     "This instance is not answering with its roster, so there is nobody to start a chat with. Nova is built in and can never be missing — check the server this window is connected to.",
-  "home.newAgent.folder.scratch": "Scratch",
-  "home.newAgent.folder.pick": "Choose the agent's working folder",
-  "home.newAgent.folder.reset": "Back to the scratch folder",
   "session.info.agent": "Agent",
   "session.info.model": "Model",
   "session.info.status": "Status",
@@ -1048,7 +1010,6 @@ export const dict = {
   "session.new.project.add": "Add project",
   "session.new.worktree.main": "Main branch",
   "session.new.worktree.mainWithBranch": "Main branch ({{branch}})",
-  "session.new.worktree.create": "Create new workspace",
   "session.new.workspace.runIn": "Run chat in",
   "session.new.workspace.triggerLocal": "Local",
   "session.new.workspace.local": "Local repository",
@@ -1153,7 +1114,6 @@ export const dict = {
   "common.moreOptions": "More options",
   "common.learnMore": "Learn more",
   "common.rename": "Rename",
-  "common.archive": "Archive",
   "common.delete": "Delete",
   "common.close": "Close",
   "common.edit": "Edit",
@@ -1178,8 +1138,6 @@ export const dict = {
   "common.time.minutesAgo.short": "{{count}}m ago",
   "common.time.hoursAgo.short": "{{count}}h ago",
   "common.time.daysAgo.short": "{{count}}d ago",
-
-  "sidebar.project.recentSessions": "Recent chats",
 
   "debugBar.ariaLabel": "Development performance diagnostics",
   "debugBar.na": "n/a",
@@ -1284,7 +1242,7 @@ export const dict = {
     "Where an agent works when you start a chat without picking a folder. Safe to empty when nothing is running.",
   "settings.storage.log": "Logs",
   "settings.storage.log.description": "Diagnostic logs. Handy when reporting a problem.",
-  // The activity-log retention row (todo/logging.md 3a). Anti-obscurantist wording is mandatory
+  // The activity-log retention row. Anti-obscurantist wording is mandatory
   // here: "Keep about 30 days of activity logs", never "retention: 30". "About" is exact: age
   // deletion only sees closed segments, while the independent byte ceiling may reclaim them sooner.
   "settings.storage.logs.title": "Activity log",
@@ -1521,7 +1479,7 @@ export const dict = {
   "settings.general.row.offline.active": "airgapped",
   "settings.general.row.offline.inactive": "ready (offline mode is off)",
 
-  // Settings → General → Confinement (todo/jail.md — the honest posture surface). ⚠️ ENGLISH-ONLY on
+  // Settings → General → Confinement — the honest posture surface. ⚠️ ENGLISH-ONLY on
   // purpose, like `askBeforeChanges` and `surgicalEdits` before it: the parity ratchet fails on an
   // EXTRA key in a locale and only COUNTS a missing one, and pasting English into de.ts et al. would
   // make the translation backlog read as done. Translate properly or leave the key out.
@@ -1578,7 +1536,7 @@ export const dict = {
 
   // ── Settings → Pre-action policies, and the chat sheet's "what a policy did" section ──────────
   //
-  // `todo/projects.md`: a policy could refuse a tool call, rewrite its arguments or hold it for a
+  // The gap: a policy could refuse a tool call, rewrite its arguments or hold it for a
   // human, and NONE of that was visible anywhere. Two surfaces read these keys — Settings (what is
   // installed, and the switch) and the chat details sheet (what actually happened in this chat).
   //
@@ -1626,7 +1584,7 @@ export const dict = {
 
   // ── The folder's list, as something a person can CHANGE ───────────────────────────────────────
   //
-  // `todo/projects.md`: *"A folder's policy list is READ-ONLY in the app — wants the section-scoped
+  // The gap: *"a folder's policy list is READ-ONLY in the app — wants the section-scoped
   // write Permissions got."* Until this block existed the only way to change it was to hand-edit
   // JSON, which is the "poke memory bytes" principle 12 was raised against.
   //
@@ -1667,35 +1625,6 @@ export const dict = {
   "policies.folder.edit.status.alwaysOn":
     "Already runs in every folder, so this changes nothing today. If you switch it off above, every tool call in this folder is refused rather than run unguarded.",
 
-  // The chat details sheet — what a policy actually DID in this chat.
-  "policies.session.title": "Checks that stepped in",
-  "policies.session.none":
-    "Nothing stepped in: every check allowed every tool call in this chat, and answered in time.",
-  // 🔴 Deliberately NOT a variant of "nothing stepped in". This line appears only when the receipt
-  // could not be read, and a reassuring sentence there would be a clean bill of health nobody
-  // obtained — the same failure this whole section exists to prevent, one layer up.
-  "policies.session.unavailable":
-    "This chat's record of checks could not be read just now, so nothing here says whether anything stepped in. Close and reopen this sheet to try again.",
-  "policies.session.summary.one": "1 tool call",
-  "policies.session.summary.many": "{{count}} tool calls",
-  "policies.session.ran": "It ran",
-  "policies.session.prevented": "It did not run",
-  "policies.session.unknownRan": "This NovaClaw cannot tell whether it ran",
-  "policies.session.outcome.deny": "Refused",
-  "policies.session.outcome.halt": "Refused, and the run was stopped",
-  "policies.session.outcome.patch": "Corrected first",
-  "policies.session.outcome.approve": "You were asked first",
-  "policies.session.outcome.context": "A note was added",
-  "policies.session.outcome.allow": "Allowed, with a check missing",
-  // ⚠️ Never folded into "Allowed". A row written by a newer NovaClaw must read as unfamiliar, not
-  // as reassuring — guessing in the permissive direction is how a refusal becomes a calm sentence.
-  "policies.session.outcome.unknown": "“{{decision}}” — a newer NovaClaw recorded this",
-  "policies.session.patched.title": "What was changed before it ran",
-  "policies.session.acted": "Done by {{ids}}",
-  "policies.session.silent": "Also consulted, and had nothing to say: {{ids}}",
-  "policies.session.unavailableProviders": "Did not answer: {{ids}}",
-  "policies.session.unresolved": "Not installed here any more: {{ids}}",
-
   // ── Settings → Project → the folder's permission rules, and where the OTHER rules come from ──
   //
   // 🔴 The sentences here carry the one thing a person needs when a tool call was refused: WHICH of
@@ -1727,7 +1656,7 @@ export const dict = {
     'What you chose when Nova asked — every "always allow" and "always refuse" you gave on this machine. Remove one and Nova will ask again next time.',
   "settings.permissions.project.origin.session": "The chat itself",
   "settings.permissions.project.origin.sessionDetail":
-    "Each chat adds rules of its own from its Mode (Analyze, Build, YOLO) and its Tuning switches. They belong to that chat and are changed below its message box, not here.",
+    "Each chat adds rules of its own from its Mode (Analyze, Modify, Admin) and its Tuning switches. They belong to that chat and are changed below its message box, not here.",
   "settings.permissions.project.narrowing":
     'A folder can only ever make things stricter. "Refuse" and "ask me first" work; "allow" does not, because a folder is never allowed to hand out access your own settings withhold.',
   "settings.permissions.project.empty": "This folder adds no rules of its own.",
@@ -1782,7 +1711,7 @@ export const dict = {
 
   // ── Settings → Project → importing a .gitignore into the excluded-path list ──────────────────
   //
-  // 🔴 `todo/projects.md`: read eligibility stays DISTINCT from watcher/build ignores. The copy has
+  // 🔴 Read eligibility stays DISTINCT from watcher/build ignores. The copy has
   // to say that out loud, because the two lists look interchangeable and are not.
   "settings.project.exclude.import.title": "Start from .gitignore",
   "settings.project.exclude.import.distinct":
@@ -1806,7 +1735,7 @@ export const dict = {
   // says what its row is about, which is what the heading was doing.
   "settings.confinement.title": "Sandbox for the agent's shell",
   "settings.confinement.meanwhile":
-    "Two things hold regardless: Analyze mode refuses to run shell commands at all, and a turn driven by someone messaging you from outside can only run them inside a sandbox — where there is none, it is refused. Beyond those, in every mode except YOLO the agent is told to leave everything outside your project folder alone, which is an instruction the model follows rather than a wall. Full OS confinement comes from a setup recipe, not from NovaClaw’s core.",
+    "Two things hold regardless: Analyze mode refuses to run shell commands at all, and a turn driven by someone messaging you from outside can only run them inside a sandbox — where there is none, it is refused. Beyond those, in every mode except Admin the agent is told to leave everything outside your project folder alone, which is an instruction the model follows rather than a wall. Full OS confinement comes from a setup recipe, not from NovaClaw’s core.",
 
   "settings.confinement.reason.confined":
     "This machine can sandbox, and it does ({{backend}}). A chat running on its own gets its shell commands boxed in: they can only change files in the project folder, and they have no network.",
@@ -1906,18 +1835,6 @@ export const dict = {
   "settings.general.row.releaseNotes.status.unavailableFinal":
     "No release notes are published for this version, so NovaClaw has stopped checking.",
 
-  "settings.updates.row.check.title": "Check for updates",
-  "settings.updates.row.check.description": "Check for a newer version now and install it if one is available.",
-  "settings.updates.action.checkNow": "Check now",
-  "settings.updates.action.checking": "Checking...",
-  "settings.updates.action.downloading": "Downloading...",
-  "settings.updates.action.installing": "Installing...",
-  "settings.updates.toast.latest.title": "You're up to date",
-  "settings.updates.toast.latest.description": "You're running the latest version of NovaClaw.",
-  "settings.updates.toast.blocked.title": "Update check blocked",
-  "settings.updates.refusal.airgap": "Offline / airgap mode is on, so NovaClaw did not contact the update service.",
-  "settings.updates.refusal.policyUnavailable":
-    "NovaClaw could not confirm that offline / airgap mode is off, so it kept the update service blocked.",
   "sound.option.none": "None",
   "sound.option.alert01": "Alert 01",
   "sound.option.alert02": "Alert 02",
@@ -2170,8 +2087,7 @@ export const dict = {
   "settings.models.new.title": "Add models",
   "settings.models.new.description": "Pick where your models come from.",
   "settings.models.new.custom.name": "Custom endpoint",
-  "settings.models.new.custom.description":
-    "Any OpenAI-compatible server — vLLM, SGLang, or the bundled llama.cpp.",
+  "settings.models.new.custom.description": "Any OpenAI-compatible server — vLLM, SGLang, or the bundled llama.cpp.",
   "settings.models.new.connect.title": "Connect to {{name}}",
   "settings.models.new.connect.description":
     "NovaClaw checks the connection and lists the models it serves, so you can pick which to add.",
@@ -2323,8 +2239,6 @@ export const dict = {
   "settings.systemPrompt.persona.enabled.description": "Add the persona to the start of every agent's system prompt.",
   "settings.systemPrompt.persona.enabled.description.more":
     "So its behaviour stays consistent even when you switch models.",
-  "settings.systemPrompt.persona.name.title": "Assistant name",
-  "settings.systemPrompt.persona.name.description": "Rename the assistant without forking the prompt text",
   "settings.systemPrompt.persona.prompt.title": "Persona prompt",
   "settings.systemPrompt.persona.prompt.description":
     "Replaces the canonical persona wholesale. Leave empty to use the default shown below.",
@@ -2401,7 +2315,6 @@ export const dict = {
     "NovaClaw cannot open its memory store, so nothing is being remembered and saved memories cannot be read. This is not an empty memory — it is a fault.",
   "settings.memory.unavailable.retry": "Retry",
   "settings.memory.unavailable.retrying": "Retrying…",
-  "settings.memory.unavailable.retryFailed": "Still cannot open the memory store.",
   "settings.memory.scope.global": "Always",
   "settings.memory.scope.chat": "This chat",
   "settings.memory.scope.otherChat": "Another chat",
@@ -2474,8 +2387,7 @@ export const dict = {
   "settings.affective.row.extended.description":
     "Also modulate top_k — for local engines (vLLM, llama.cpp) that accept it.",
   "settings.strict.title": "Strict mode",
-  // 373 characters as a section blurb until 2026-08-20. The line says what Strict IS; how it works and
-  // what it buys are one gesture away.
+  // The line says what Strict IS; how it works and what it buys are one gesture away.
   "settings.strict.description":
     "The training-wheels harness for small local models, applied to Strict-harness sessions.",
   "settings.strict.description.more":
@@ -2719,9 +2631,9 @@ export const dict = {
   "agentConfig.memoryOpen": "See what {{name}} remembers",
   "agentConfig.memoryOpenCount": "See what {{name}} remembers ({{count}})",
   "agentConfig.retire.confirm.title": "Retire {{name}}?",
-  // Names what is DESTROYED, in the order it will be missed. Retiring used to take the role and the
-  // chat; it now takes the private memories too, and a control that quietly grew teeth is worse than
-  // one that never had them.
+  // Names what is DESTROYED, in the order it will be missed — role, chat AND private memories.
+  // ⚠️ If this control's blast radius grows again, this sentence grows with it: a control that
+  // quietly grew teeth is worse than one that never had them.
   "agentConfig.retire.confirm.description":
     "Their chat is archived and everything they remember is set aside, so no future colleague inherits it. The name goes back into the pool.",
   "agentConfig.retire.confirm.action": "Retire",
@@ -2734,22 +2646,16 @@ export const dict = {
   "agentConfig.noTitle": "No job title yet",
   "agentConfig.who": "Who this colleague is",
   "agentConfig.name": "Name",
-  "agentConfig.nameHint": "Nova's name cannot change.",
-  "agentConfig.nameHint.more":
-    "Rename freely — everything this colleague remembers stays with it. Nova is the one name that cannot change.",
   "agentConfig.jobTitle": "Job title",
   "agentConfig.jobTitlePlaceholder": "Talent Scout, Expense Manager, Dungeon Master…",
   "agentConfig.personality": "Personality and standing instructions",
   "agentConfig.personalityPlaceholder": "How it should speak, what it should always do, what it must never do.",
-  "agentConfig.personalityHint": "Stays with the colleague, not the chat.",
-  "agentConfig.personalityHint.more":
-    "This stays with the colleague, not with a chat — it survives every conversation and never gets summarised away.",
   "agentConfig.memory": "What it remembers",
   "agentConfig.mind": "Model it thinks with",
   // ── How colleagues work ─────────────────────────────────────────────────────────────────────────
-  // The prose that used to sit under the controls, rehomed behind one Help button. Written about the
-  // MODEL rather than this dialog's fields: a help page that narrates the form goes stale the day a
-  // control moves, one that explains the ideas is still true afterwards.
+  // Behind one Help button, and written about the MODEL rather than this dialog's fields: a help
+  // page that narrates the form goes stale the day a control moves, one that explains the ideas is
+  // still true afterwards.
   // The composer's project button. "No project" is a STATE, not an empty value: a colleague without
   // one works in its own workspace, which is a real place and not a missing setting.
   "prompt.agent.project.none": "No project",
@@ -2801,22 +2707,11 @@ export const dict = {
   // is Theron's and nobody else's.
   "agentConfig.browseWorkspace": "Browse {{name}}'s workspace",
   "agentConfig.folderPick": "Choose the folder this colleague works on",
-  "agentConfig.folderHint": "The colleague is told when this changes.",
-  "agentConfig.folderHint.more":
-    "Change this and the colleague is told, so it does not carry on thinking it works on the old project.",
   "agentConfig.archive": "When the chat gets long",
   "agentConfig.archiveKeep": "Keep the older conversation in memory.",
-  "agentConfig.archiveKeep.more":
-    "Keep the older conversation in this colleague's memory, so it can look things up later instead of only having the summary.",
   "agentConfig.archiveThrowaway": "A throwaway keeps nothing, so there is nothing to archive.",
   "agentConfig.governingLocked": "Nova's profile is fixed.",
-  "agentConfig.governingLocked.more":
-    "Nova runs this NovaClaw. Its name, brief and memory setting are fixed, so nothing you type here could take effect.",
   "agentConfig.thisChat": "How this chat runs",
-  "agentConfig.thisChatHint": "Just this conversation.",
-  "agentConfig.thisChatHint.more": "Above is who this colleague is everywhere. Below is just this conversation.",
-  "contacts.title": "Contacts",
-  "contacts.hint": "Your colleagues. Nova hires, briefs and retires them; you decide who you need.",
   // The household row at the foot of the roster — everything every colleague can read. Named for WHO
   // can see it, not for where it is stored: "shared" is the fact a user needs before they write
   // something into it.
@@ -2834,10 +2729,7 @@ export const dict = {
   "contacts.retry": "Try again",
   "contacts.governing": "CEO",
   "contacts.noTitle": "No job title yet",
-  "contacts.noChat": "No chat yet — open to start one",
-  "contacts.starting": "Starting a chat…",
   "contacts.startFailed": "Could not start a chat with this colleague",
-  "contacts.untitled": "Working…",
   "contacts.spend": "Tokens this colleague and its helpers have produced",
   "contacts.rate": "{{tokens}}/min",
   // The row's live line. Each is a WORD, not a sentence: four facts share one line, so anything
@@ -2855,12 +2747,9 @@ export const dict = {
   "contacts.state.error": "Error",
   "contacts.rateTitle": "Tokens produced per minute, averaged over the last {{window}} minutes",
   "contacts.configure": "Configure this colleague",
-  "contacts.close": "Close",
   "contacts.memory.own": "Remembers its own chats, privately.",
   "contacts.memory.none": "Remembers nothing — a throwaway.",
   "contacts.memory.shared": "Shares this machine, its files and your household facts with every colleague.",
-  "contacts.governingLocked": "Nova runs this NovaClaw, so it cannot be retired or renamed. You can still ignore it.",
-  "contacts.retireHint": "You can retire this colleague at any time. Its chats and memories go with it.",
   "home.app.trash.name": "Trash",
   "home.app.trash.subtitle": "Restore anything deleted in the last 2 days",
   "home.app.social.name": "Community",
@@ -3090,10 +2979,10 @@ export const dict = {
   "skills.enablement.blocked":
     "Every one of your agents refuses this skill. It is loaded, but none of them will open it.",
   "skills.enablement.unknown": "NovaClaw could not read your agent list, so it cannot say who may open this skill.",
-  // ⚠️ This line used to read "There is no on/off switch for a single skill." That was true until
-  // the two invocation switches below it landed, and AGENTS.md principle 12's own lesson is that
-  // copy has to move WITH the control — a fixed control under a sentence describing the old one
-  // leaves the reader following an instruction the product no longer needs.
+  // ⚠️ **This sentence describes the switches below it and must change WITH them** (AGENTS.md
+  // principle 12). It has been wrong once already, telling readers there was no per-skill switch
+  // while one sat underneath it — a fixed control under a sentence describing the old one leaves
+  // the reader following an instruction the product no longer needs.
   "skills.enablement.noSwitch":
     "This is the whole permission picture. The switch below changes one part of it — whether your agents are offered this skill at all. Removing the skill entirely is still a matter of taking its folder off the list of places NovaClaw looks.",
 
@@ -3123,9 +3012,7 @@ export const dict = {
   // "this folder hides it" is fixed by editing a file in the repository, "you hid it" is fixed by
   // the switch on this screen, and "your agents may not choose it" is a permission rule. A user who
   // cannot tell which one is in force cannot fix any of them (AGENTS.md principle 12d).
-  // ⚠️ These two sentences changed WITH the control below them (principle 12's own lesson from its
-  // first sweep). They used to end "editing that file can", because hand-editing novaclaw.json was
-  // the only way; "This folder" at the bottom of this section is that edit now.
+  // ⚠️ These two sentences describe the control below them and must change WITH it (principle 12).
   // The visible half is the FACT plus the one control that answers it; the law about what a folder
   // may and may not do is on demand. Named and unnamed keep their own line because "which file" is
   // the actionable part — the fix is editing that file.
@@ -3169,9 +3056,8 @@ export const dict = {
     "This skill's name contains * or ?, which are the “match anything” characters in a permission rule. A rule written for this name would also cover other skills, so NovaClaw refuses to write one.",
   "skills.invocation.locked.unnormalized":
     "This skill's name is spelled with combining accents rather than the ordinary single letters, so two names that look identical would be saved as two different ones. NovaClaw refuses rather than guess which you meant.",
-  // Split 2026-08-20 under uix.md §1.4 (*teach on demand, state on sight*): the line is what is in
-  // force, the caveat is one tap away. It used to be 381 characters of permanent paragraph under a
-  // pair of switches.
+  // Split under uix.md §1.4 (*teach on demand, state on sight*): the line is what is in force, the
+  // caveat is one tap away.
   "skills.invocation.unknowns": "These switches decide when the skill is offered — not whether it is safe.",
   "skills.invocation.unknowns.detail":
     "NovaClaw cannot tell you what a skill is allowed to do, whether it fits this version, or who really wrote it: the skill format has nowhere to say any of it. What is above — where the file came from, what it says about itself, and the words in its instructions — is everything NovaClaw actually knows.",
@@ -3186,9 +3072,9 @@ export const dict = {
   "skills.instructions.note": "This is the text your agent is given, word for word, when it opens this skill.",
   "skills.instructions.empty": "(this skill's instructions are empty)",
 
-  // Shown only when the user HAS extra sources, folded behind a summary (owner, 2026-08-20). The
-  // empty-state line that used to sit here — "You have added no extra places…" — is gone with the
-  // block it explained: a person who has added nothing does not need to be told so on every visit.
+  // Shown only when the user HAS extra sources, folded behind a summary (owner, 2026-08-20). There
+  // is deliberately NO empty state: a person who has added nothing does not need to be told so on
+  // every visit.
   "skills.sources.title": "Extra sources",
   "skills.sources.note":
     "This list decides which skills exist at all; each skill's own switches decide when it is offered.",

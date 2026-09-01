@@ -6,7 +6,7 @@ import type { SessionType } from "@novaclaw/schema/session-type"
 import { isPeerTurn, lastRealUserTurn } from "../steer-provenance"
 import type { SessionMessage } from "../message"
 
-// Auto-extraction (notes/kb-graph-plan.md §1.3.3): at each drain end a model pass reads the latest
+// Auto-extraction: at each drain end a model pass reads the latest
 // exchange and records durable facts into SESSION-scope memory (staged), so memory fills WITHOUT the
 // agent calling `remember`. Pure helpers here (the runner does the model call + the writes). Idempotent
 // by content hash — re-extracting the same fact collides on id and dedups. Extracted memory is imperfect

@@ -14,8 +14,8 @@ import { makeLocationNode } from "./effect/app-node"
  *
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * WHY THIS SEAM EXISTS — the decision, recorded here because the decision is the deliverable
- * (todo/assorted.md: "should a *failed* MCP server be reported to the agent as a missing capability
- * rather than only to the log?", answered 2026-08-07; ruling 2 — *an unavailable subsystem names
+ * (the open question: should a *failed* MCP server be reported to the agent as a missing capability
+ * rather than only to the log? — answered 2026-08-07; ruling 2, *an unavailable subsystem names
  * itself instead of rendering empty · a fault is never described falsely*).
  *
  * **Answer: the user AND the model, through different channels, at different pressures.**

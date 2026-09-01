@@ -70,7 +70,7 @@
 //!
 //! So the caller passes an ABSOLUTE path to a real binary — which is what a packaged install has
 //! anyway. A command that cannot be found is reported and retried on the ladder rather than being
-//! fatal: it may be a half-finished autoupdate, and an instance that gives up because its binary was
+//! fatal: it may be a half-finished binary replacement, and an instance that gives up because its binary was
 //! momentarily absent is the failure this program exists to prevent.
 
 use std::fs;
@@ -118,7 +118,7 @@ enum Intent {
     Shutdown,
     /// Come back at this absolute wall-clock instant (ms since the Unix epoch).
     Dormant { wake_at_ms: u128 },
-    /// Come back immediately — an autoupdate or an operator-requested bounce.
+    /// Come back immediately — a binary replacement or an operator-requested bounce.
     Restart,
 }
 
@@ -399,7 +399,7 @@ fn main() -> ExitCode {
             Ok(child) => child,
             Err(error) => {
                 // A command that cannot even start is a crash like any other — it may be a
-                // half-finished autoupdate, so it is retried on the ladder rather than fatal.
+                // half-finished binary replacement, so it is retried on the ladder rather than fatal.
                 eprintln!("[watchdog] cannot start {}: {error}", args.command[0]);
                 let delay = BACKOFF_MS[attempt.min(BACKOFF_MS.len() - 1)];
                 attempt += 1;

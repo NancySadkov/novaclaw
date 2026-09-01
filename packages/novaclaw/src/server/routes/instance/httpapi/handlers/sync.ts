@@ -1,4 +1,3 @@
-import { Workspace } from "@/control-plane/workspace"
 import * as InstanceState from "@/effect/instance-state"
 import { Database } from "@novaclaw/core/database/database"
 import { EventV2 } from "@novaclaw/core/event"
@@ -11,7 +10,7 @@ import { eq } from "drizzle-orm"
 import { lte } from "drizzle-orm"
 import { not } from "drizzle-orm"
 import { or } from "drizzle-orm"
-import { Effect, Scope } from "effect"
+import { Effect } from "effect"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import { SessionPatch } from "@novaclaw/core/session/patch"
 import { SessionSchema } from "@novaclaw/core/session/schema"
@@ -21,17 +20,8 @@ import { HistoryPayload, ReplayPayload, SessionPayload } from "../groups/sync"
 
 export const syncHandlers = HttpApiBuilder.group(InstanceHttpApi, "sync", (handlers) =>
   Effect.gen(function* () {
-    const workspace = yield* Workspace.Service
-    const scope = yield* Scope.Scope
     const events = yield* EventV2Bridge.Service
     const { db } = yield* Database.Service
-
-    const start = Effect.fn("SyncHttpApi.start")(function* () {
-      yield* workspace
-        .startWorkspaceSyncing((yield* InstanceState.context).origin)
-        .pipe(Effect.ignore, Effect.forkIn(scope))
-      return true
-    })
 
     const replay = Effect.fn("SyncHttpApi.replay")(function* (ctx: { payload: typeof ReplayPayload.Type }) {
       const payload: EventV2.SerializedEvent[] = ctx.payload.events.map((event) => ({
@@ -93,6 +83,6 @@ export const syncHandlers = HttpApiBuilder.group(InstanceHttpApi, "sync", (handl
         .pipe(Effect.orDie)
     })
 
-    return handlers.handle("start", start).handle("replay", replay).handle("steal", steal).handle("history", history)
+    return handlers.handle("replay", replay).handle("steal", steal).handle("history", history)
   }),
 )

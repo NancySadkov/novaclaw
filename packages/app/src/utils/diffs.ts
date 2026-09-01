@@ -1,4 +1,5 @@
 import type { SessionChangeDiff, VcsFileDiff } from "@novaclaw/sdk/v2"
+import { isRecord } from "@novaclaw/schema/record"
 
 type Diff = SessionChangeDiff | VcsFileDiff
 
@@ -20,14 +21,10 @@ function diff(value: unknown): value is Diff {
   return value.status === "added" || value.status === "deleted" || value.status === "modified"
 }
 
-function object(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value)
-}
-
 export function diffs(value: unknown): Diff[] {
   if (Array.isArray(value) && value.every(diff)) return value
   if (Array.isArray(value)) return value.filter(diff)
   if (diff(value)) return [value]
-  if (!object(value)) return []
+  if (!isRecord(value)) return []
   return Object.values(value).filter(diff)
 }

@@ -79,7 +79,7 @@ describe.skipIf(!installed)("install-time network fetches", () => {
     // ⚠️ Reads the FILES rather than `process.env`: the variable is consumed by a child process at
     // install time, so a test asserting on its own environment would be asserting about the wrong
     // process and would pass no matter what the repo does.
-    const roots = ["package.json", "script", "packages/desktop/package.json", ".github"]
+    const roots = ["package.json", "script", "packages/desktop/package.json"]
     const offenders: string[] = []
     const walk = (target: string) => {
       if (!fs.existsSync(target)) return

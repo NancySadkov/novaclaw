@@ -72,7 +72,7 @@ describe("the authored permission dict stays an open namespace", () => {
     const authored: ConfigPermission.Info = {
       explore: "deny",
       my_deploy_tool: "ask",
-      mcp_github_create_issue: { "*": "deny" },
+      mcp_tracker_create_issue: { "*": "deny" },
       // Retired, still accepted — an open namespace cannot single a name out — and still lowered.
       // It simply names an action nothing spends now, which is why the change is owed a release note
       // rather than a mechanical rejection. See `src/config/permission.ts`.
@@ -81,7 +81,7 @@ describe("the authored permission dict stays an open namespace", () => {
     expect(ConfigPermission.ruleset(authored)).toEqual([
       { action: "explore", resource: "*", effect: "deny" },
       { action: "my_deploy_tool", resource: "*", effect: "ask" },
-      { action: "mcp_github_create_issue", resource: "*", effect: "deny" },
+      { action: "mcp_tracker_create_issue", resource: "*", effect: "deny" },
       { action: "glob", resource: "*", effect: "deny" },
     ])
   })
@@ -257,7 +257,7 @@ describe("the built-in agents the plugin actually builds", () => {
         "messenger.send",
         "messenger.connect",
         "messenger.moderate",
-        "mcp_github_create_issue",
+        "mcp_tracker_create_issue",
         "my_deploy_tool",
       ]
       for (const action of wasSilentlyAllowed)

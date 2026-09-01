@@ -73,10 +73,6 @@ const permissionStub = Layer.succeed(
         if (approvalOutcome) yield* Effect.fail(approvalOutcome)
       }),
     ask: () => Effect.die("unused"),
-    reply: () => Effect.die("unused"),
-    get: () => Effect.die("unused"),
-    forSession: () => Effect.die("unused"),
-    list: () => Effect.die("unused"),
   }),
 )
 
@@ -307,10 +303,10 @@ describe("the six outcomes, each reaching a real tool call", () => {
     expect(resultText(settlement.result)).toContain("ran: git push --force")
   })
 
-  test("approve — a refused ask stops the call and the receipt records a deny", async () => {
+  test("approve — a policy denial stops the call and the receipt records a deny", async () => {
     const { settlement, rows } = await withHarness(({ registry, gate }) =>
       Effect.gen(function* () {
-        approvalOutcome = new PermissionV2.RejectedError()
+        approvalOutcome = new PermissionV2.DeniedError({ rules: [] })
         yield* gate
           .install([
             provider("gatekeeper", {
@@ -327,8 +323,7 @@ describe("the six outcomes, each reaching a real tool call", () => {
     )
     expect(settlement.result.type).toBe("error")
     expect(resultText(settlement.result)).not.toContain("ran: ")
-    // The user's own refusal vocabulary, from `PermissionV2.denialMessage` — not a second wording.
-    expect(resultText(settlement.result)).toContain("declined permission")
+    expect(resultText(settlement.result)).toContain("Permission denied")
     expect(rows[0]).toMatchObject({ decision: "deny" })
     expect(rows[0]?.detail).toContain("gatekeeper")
   })

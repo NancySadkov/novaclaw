@@ -23,7 +23,6 @@ export function truthyUnlessDisabled(key: string) {
   return !(value === "false" || value === "0" || value === "off")
 }
 
-const copy = env("NOVACLAW_EXPERIMENTAL_DISABLE_COPY_ON_SELECT")
 const fff = env("NOVACLAW_DISABLE_FFF")
 
 function enabledByExperimental(key: string) {
@@ -40,13 +39,8 @@ export const Flag = {
   get NOVACLAW_IMAGEMAGICK_PATH() {
     return env("NOVACLAW_IMAGEMAGICK_PATH")
   },
-  NOVACLAW_CONFIG: env("NOVACLAW_CONFIG"),
   NOVACLAW_CONFIG_CONTENT: env("NOVACLAW_CONFIG_CONTENT"),
-  NOVACLAW_DISABLE_AUTOUPDATE: truthy("NOVACLAW_DISABLE_AUTOUPDATE"),
-  NOVACLAW_ALWAYS_NOTIFY_UPDATE: truthy("NOVACLAW_ALWAYS_NOTIFY_UPDATE"),
   NOVACLAW_DISABLE_PRUNE: truthy("NOVACLAW_DISABLE_PRUNE"),
-  NOVACLAW_DISABLE_TERMINAL_TITLE: truthy("NOVACLAW_DISABLE_TERMINAL_TITLE"),
-  NOVACLAW_SHOW_TTFD: truthy("NOVACLAW_SHOW_TTFD"),
   NOVACLAW_DISABLE_AUTOCOMPACT: truthy("NOVACLAW_DISABLE_AUTOCOMPACT"),
   NOVACLAW_DISABLE_MODELS_FETCH: truthy("NOVACLAW_DISABLE_MODELS_FETCH"),
   // The Ladybug graph-memory engine (WASM, in-process — no sidecar; §2.0 pivot). Instance/deployment-
@@ -74,7 +68,6 @@ export const Flag = {
   // Type-only imports need no install (bun erases them). Re-enable by default once
   // the package is published or bundled as a local tarball.
   NOVACLAW_INSTALL_PLUGIN_TYPES: truthy("NOVACLAW_INSTALL_PLUGIN_TYPES"),
-  NOVACLAW_DISABLE_MOUSE: truthy("NOVACLAW_DISABLE_MOUSE"),
   /**
    * Do not open a browser when the web server starts.
    *
@@ -84,7 +77,6 @@ export const Flag = {
    * repeatedly put a stack of tabs in the owner's browser, one per run.
    */
   NOVACLAW_NO_OPEN: truthy("NOVACLAW_NO_OPEN"),
-  NOVACLAW_FAKE_VCS: env("NOVACLAW_FAKE_VCS"),
   NOVACLAW_SERVER_PASSWORD: env("NOVACLAW_SERVER_PASSWORD"),
   NOVACLAW_SERVER_USERNAME: env("NOVACLAW_SERVER_USERNAME"),
   NOVACLAW_DISABLE_FFF: fff === undefined ? process.platform === "win32" : truthy("NOVACLAW_DISABLE_FFF"),
@@ -92,25 +84,22 @@ export const Flag = {
   // Experimental
   NOVACLAW_EXPERIMENTAL_FILEWATCHER: boolFlag("NOVACLAW_EXPERIMENTAL_FILEWATCHER"),
   NOVACLAW_EXPERIMENTAL_DISABLE_FILEWATCHER: boolFlag("NOVACLAW_EXPERIMENTAL_DISABLE_FILEWATCHER"),
-  NOVACLAW_EXPERIMENTAL_DISABLE_COPY_ON_SELECT:
-    copy === undefined ? process.platform === "win32" : truthy("NOVACLAW_EXPERIMENTAL_DISABLE_COPY_ON_SELECT"),
   NOVACLAW_MODELS_URL: env("NOVACLAW_MODELS_URL"),
   NOVACLAW_MODELS_PATH: env("NOVACLAW_MODELS_PATH"),
   NOVACLAW_DB: env("NOVACLAW_DB"),
 
   NOVACLAW_WORKSPACE_ID: env("NOVACLAW_WORKSPACE_ID"),
-  NOVACLAW_EXPERIMENTAL_WORKSPACES: enabledByExperimental("NOVACLAW_EXPERIMENTAL_WORKSPACES"),
+  // NOVACLAW_EXPERIMENTAL_WORKSPACES is deliberately NOT here. The workspaces gate is
+  // `RuntimeFlags.experimentalWorkspaces` (`packages/novaclaw/src/effect/runtime-flags.ts`), read at
+  // `control-plane/workspace.ts:459`. A `Flag` entry for it existed too and had ZERO production
+  // readers, so three server tests set `Flag.NOVACLAW_EXPERIMENTAL_WORKSPACES = true` and changed
+  // nothing — the env var `test/preload.ts` exports is what actually turned the feature on. Two
+  // registries for one variable is how a switch ends up connected to neither light.
 
   // Evaluated at access time (not module load) because tests, the CLI, and
   // external tooling set these env vars at runtime.
   get NOVACLAW_DISABLE_PROJECT_CONFIG() {
     return truthy("NOVACLAW_DISABLE_PROJECT_CONFIG")
-  },
-  get NOVACLAW_EXPERIMENTAL_REFERENCES() {
-    return enabledByExperimental("NOVACLAW_EXPERIMENTAL_REFERENCES")
-  },
-  get NOVACLAW_TUI_CONFIG() {
-    return env("NOVACLAW_TUI_CONFIG")
   },
   get NOVACLAW_CONFIG_DIR() {
     return env("NOVACLAW_CONFIG_DIR")

@@ -206,9 +206,15 @@ describe("MODE_RULES overlays (1K)", () => {
     expect(effect("yolo", "external_directory_write")).toBe("allow")
   })
 
-  test("mode overlays never touch non-file agent gating (question stays denied)", () => {
-    const rules = [...agentDefaults, { action: "question", resource: "*", effect: "deny" as const }, ...MODE_RULES.yolo]
-    expect(PermissionV2.evaluate("question", "*", rules).effect).toBe("deny")
+  // ⚠️ The action here is deliberately ARBITRARY — the rule under test is that a `yolo` overlay widens
+  // only the FILE actions and leaves everything else where it found it, so any non-file action with an
+  // explicit deny demonstrates it. It read `question` until 2026-09-01, which was misleading twice
+  // over: the deny came from this line, not from `agentDefaults`, and RF-12-14 then removed the
+  // `question` vocabulary entirely (no tool asserts it), so the name promised a gating that no longer
+  // exists anywhere to check.
+  test("a yolo overlay widens file actions only, and leaves a non-file deny standing", () => {
+    const rules = [...agentDefaults, { action: "messenger.send", resource: "*", effect: "deny" as const }, ...MODE_RULES.yolo]
+    expect(PermissionV2.evaluate("messenger.send", "*", rules).effect).toBe("deny")
   })
 
   test("mode narrowing: a spawned child cannot escalate past its parent", () => {
@@ -220,26 +226,7 @@ describe("MODE_RULES overlays (1K)", () => {
   })
 })
 
-describe("normalizeReply + savedResources (1K six replies)", () => {
-  test("legacy trio maps onto verdict-scope", () => {
-    expect(PermissionV2.normalizeReply("once")).toEqual({ verdict: "allow", scope: "once" })
-    expect(PermissionV2.normalizeReply("always")).toEqual({ verdict: "allow", scope: "always" })
-    expect(PermissionV2.normalizeReply("reject")).toEqual({ verdict: "deny", scope: "once" })
-  })
-
-  test("the six explicit forms round-trip", () => {
-    expect(PermissionV2.normalizeReply("allow-file")).toEqual({ verdict: "allow", scope: "file" })
-    expect(PermissionV2.normalizeReply("deny-file")).toEqual({ verdict: "deny", scope: "file" })
-    expect(PermissionV2.normalizeReply("deny-always")).toEqual({ verdict: "deny", scope: "always" })
-  })
-
-  test("file scope persists the request's CONCRETE resources; always persists the save patterns", () => {
-    const request = { resources: ["src/a.ts"], save: ["*"] }
-    expect(PermissionV2.savedResources(request, "once")).toEqual([])
-    expect(PermissionV2.savedResources(request, "file")).toEqual(["src/a.ts"])
-    expect(PermissionV2.savedResources(request, "always")).toEqual(["*"])
-  })
-
+describe("saved permission rules", () => {
   test("a persisted DENY beats a broad allow at evaluation (saved rules last)", () => {
     // The production order, from `permission.ts`'s `evaluateInput`: baseline → agent → mode overlay
     // → saved answers. ⚠️ The mode overlay is now what supplies the broad `bash` allow this test

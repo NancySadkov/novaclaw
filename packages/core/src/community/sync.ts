@@ -16,7 +16,7 @@ import { CommunityRoute } from "./route"
 import { CommunityReconcile } from "./reconcile"
 import { CommunitySuccession } from "./succession"
 import { CommunityTopic } from "./topic"
-import { answerTooLarge, MAX_ANSWER_BYTES, MAX_PEER_RESPONSE_BYTES, typedRoutes } from "./transport"
+import { askPeerJson, MAX_ANSWER_BYTES, MAX_PEER_RESPONSE_BYTES, typedRoutes } from "./transport"
 import { makeGlobalNode } from "../effect/app-node"
 import { httpClient } from "../effect/app-node-platform"
 import { InstanceIdentityStore } from "../instance-identity-store"
@@ -492,30 +492,18 @@ export const layer = Layer.effect(
       /** ⚠️ Per call for the same reason: 4 MB is derived from a page of messages, not from a sentence. */
       ceilingBytes: number = MAX_PEER_RESPONSE_BYTES,
     ) =>
-      http
-        .execute(
-          method === "GET"
-            ? HttpClientRequest.get(`${route.replace(/\/+$/, "")}${path}`)
-            : HttpClientRequest.post(`${route.replace(/\/+$/, "")}${path}`).pipe(HttpClientRequest.bodyJsonUnsafe(body)),
-        )
-        .pipe(
-          Effect.timeout(budgetMs ?? PER_REQUEST_TIMEOUT_MS),
-          Effect.flatMap((response) => {
-            /**
-             * ⚠️ Refused on the DECLARED length, before the body is read — the only place the check
-             * can happen before the allocation it exists to prevent. An answer with no declared
-             * length is refused for the same reason the inbound limiter refuses one: every honest
-             * responder here is a NovaClaw instance answering with a JSON string, which always sets
-             * it, and a peer that omits it is asking us to read an unknown quantity on trust.
-             */
-            if (answerTooLarge(response.headers, ceilingBytes))
-              return Effect.fail(new Error("peer answer too large"))
-            return response.json
-          }),
-          Effect.flatMap((json) => Schema.decodeUnknownEffect(schema)(json)),
-          Effect.map((value): A | undefined => value),
-          Effect.catchCause(() => Effect.succeed(undefined)),
-        )
+      // The dial itself lives in `transport.ts` — see `askPeerJson` for why the ceiling check and the
+      // call had to move together (RF-09-5). What stays here is this route family's DEFAULTS.
+      askPeerJson({
+        http,
+        route,
+        path,
+        body,
+        schema,
+        method,
+        timeoutMs: budgetMs ?? PER_REQUEST_TIMEOUT_MS,
+        ceilingBytes,
+      })
 
     /**
      * Everywhere we might reach the network: trusted contacts AND merely-known routes.

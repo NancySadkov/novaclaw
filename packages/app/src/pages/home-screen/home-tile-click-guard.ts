@@ -13,7 +13,7 @@ type PointerStart = {
  * stationary 250 ms hold — and a slow tap must still open the app.
  *
  * ⚠️ Two properties make this safe, and the version this replaces had neither. Ported from
- * https://github.com/NancySadkov/novaclaw/pull/11 by @DassaultFalconKing.
+ * outside contribution #11 by @DassaultFalconKing.
  *
  * 1. **The gesture must have started on a tile.** The previous guard armed on *any* window
  *    pointerdown, so a drag anywhere in the shell set the flag and the next launcher click was

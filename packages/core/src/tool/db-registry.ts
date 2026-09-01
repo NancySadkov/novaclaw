@@ -11,7 +11,7 @@ import { Tool } from "./tool"
 import { Tools } from "./tools"
 
 /**
- * **The `registry` tool — the self-healing law reaching the instance database.** `todo/startup.md`.
+ * **The `registry` tool — the self-healing law reaching the instance database.**
  *
  * 🔴 The defect it closes. `core/db-registry.ts` (tables · rows · insert · update · delete) had
  * exactly ONE caller: the Developer-mode Registry app. No tool imported it. So a **person** could
@@ -38,7 +38,7 @@ import { Tools } from "./tools"
  *
  * `Tool.withDeferred`, the same call `log` and `resource_status` make: a raw database surface is
  * reached AFTER something has gone wrong, so its schema has no claim on every turn's prefix
- * (`todo/tool-scale.md` — reported degradation from 30–50 tools, and we are past it). The index a
+ * (reported degradation starts at 30–50 tools, and we are past it). The index a
  * model needs is `{op:'tables'}`, which is a call, not a name it must already know.
  *
  * ── framed ──────────────────────────────────────────────────────────────────────────────────────

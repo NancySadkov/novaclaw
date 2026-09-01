@@ -9,7 +9,7 @@ import { InstanceIdentityStore } from "../instance-identity-store"
 import { CommunityContactTable, CommunityObservationTable, CommunitySuccessionTable } from "./sql"
 
 /**
- * Community P3 — the contact list (`todo/community-p2p.md`).
+ * Community P3 — the contact list (`notes/spec/community-p2p.md`).
  *
  * Two things at once, and the second is the one that matters: it is the user's address book, and it
  * is the **bootstrap set**. A user who has met anybody never needs a seed list the project controls,

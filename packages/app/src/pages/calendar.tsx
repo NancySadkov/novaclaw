@@ -2,7 +2,6 @@ import { createMemo, createResource, createSignal, For, onCleanup, onMount, Show
 import { fireStatusLabel } from "./calendar-status"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
-import { GoldGlyph } from "@/components/gold-glyph"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServer } from "@/context/server"
 import { useGlobal } from "@/context/global"
@@ -18,11 +17,14 @@ import {
   type Recurrence,
   type Schedule,
 } from "@/utils/calendar-api"
-import { AppPage } from "@/components/app-page"
+import { AppPage, AppPageHeader } from "@/components/app-page"
+import { scopedDirectory } from "@/utils/routing-directory"
 
-// Calendar app (notes/calendar-cron-plan.md, P4): the home tile's page. Shows the live date/time, the next
+// Calendar app: the home tile's page. Shows the live date/time, the next
 // scheduled run, the list of schedules with their next-fire, and a form to add one. Data comes from the
-// /api/calendar/schedule endpoints via the raw-fetch calendar-api client (schedules are instance-global).
+// /api/calendar/schedule endpoints via the raw-fetch calendar-api client. Schedules are
+// instance-global; writes also route through the current server-side directory so the instance can
+// validate unpinned agent/model choices against the right ambient catalog.
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -106,6 +108,10 @@ export function CalendarPage() {
   const rosterCtx = createMemo(() => {
     const current = conn()
     return current ? global.ensureServerCtx(current) : undefined
+  })
+  const routingDirectory = createMemo(() => {
+    const path = rosterCtx()?.sync.data.path
+    return scopedDirectory(path)
   })
   // 🔴 The server context's ONE shared roster (review D8), not a second `listAgents` resource.
   // Two reasons, and the first is the severe one: a rejected `createResource` read from an eager memo
@@ -271,7 +277,8 @@ export function CalendarPage() {
   async function submit(e: Event) {
     e.preventDefault()
     const base = httpBase()
-    if (!base) return
+    const directory = routingDirectory()
+    if (!base || !directory) return
     setBusy(true)
     setError(undefined)
     try {
@@ -286,7 +293,7 @@ export function CalendarPage() {
         tzOffsetMin: tzOffsetMin(),
       }
       if (id) {
-        await updateSchedule(base, id, {
+        await updateSchedule(base, directory, id, {
           ...common,
           title: title().trim(),
           agent: agent().trim() || null,
@@ -295,7 +302,7 @@ export function CalendarPage() {
           permissionMode: permission() || null,
         })
       } else {
-        await createSchedule(base, {
+        await createSchedule(base, directory, {
           ...common,
           title: title().trim() || undefined,
           agent: agent().trim() || undefined,
@@ -316,9 +323,10 @@ export function CalendarPage() {
   /** Pause/resume. Disabling clears next_fire_at server-side; enabling recomputes it from now. */
   async function toggle(s: Schedule) {
     const base = httpBase()
-    if (!base) return
+    const directory = routingDirectory()
+    if (!base || !directory) return
     try {
-      await updateSchedule(base, s.id, { enabled: !s.enabled })
+      await updateSchedule(base, directory, s.id, { enabled: !s.enabled })
       await refetch()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -359,13 +367,11 @@ export function CalendarPage() {
 
   return (
     <AppPage class="flex flex-col overflow-hidden">
-      <div class="flex items-center gap-3 border-b border-v2-border-border-base px-4 py-2.5">
-        <GoldGlyph name="calendar" class="size-6" />
-        <span class="text-[15px] font-semibold">Calendar</span>
-        <span class="min-w-0 flex-1 truncate text-xs text-v2-text-text-faint">
-          Schedule agents to run on a repeating date — daily, weekly, monthly, or yearly.
-        </span>
-      </div>
+      <AppPageHeader
+        glyph="calendar"
+        title="Calendar"
+        hint="Schedule agents to run on a repeating date — daily, weekly, monthly, or yearly."
+      />
 
       <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-4">
         {/* Clock + next run */}
@@ -448,6 +454,7 @@ export function CalendarPage() {
                       class={BTN}
                       onClick={() => void toggle(s)}
                       title={s.enabled ? "Pause this task" : "Resume this task"}
+                      disabled={!routingDirectory()}
                     >
                       {s.enabled ? "Pause" : "Resume"}
                     </button>
@@ -665,7 +672,7 @@ export function CalendarPage() {
           </Show>
 
           <div class="flex items-center gap-3">
-            <ButtonV2 variant="gold" type="submit" disabled={busy() || !httpBase()}>
+            <ButtonV2 variant="gold" type="submit" disabled={busy() || !httpBase() || !routingDirectory()}>
               {busy() ? (editingID() ? "Saving…" : "Adding…") : editingID() ? "Save changes" : "Add task"}
             </ButtonV2>
             <span class="text-xs text-v2-text-text-faint">Times are in your local timezone.</span>

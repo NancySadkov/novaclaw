@@ -3,7 +3,7 @@ import { authorText } from "./skills"
 // What a pre-action POLICY did to this chat's tool calls, in the words a person acts on.
 //
 // ─── WHY THIS EXISTS ──────────────────────────────────────────────────────────────────────────────
-// `todo/projects.md` → *Typed pre-action policies*: *"bind every intervention to a receipt."* The
+// Typed pre-action policies (AGENTS.md design principle 13): *"bind every intervention to a receipt."* The
 // kernel keeps that promise twice — a durable `session_policy_decision` row, and a sentence
 // prepended to the tool's own result so the MODEL is not lied to. Neither of those is a surface a
 // person looks at. Until this module existed an installed policy could rewrite a `bash` command,

@@ -241,7 +241,7 @@ describe("ProjectV2.resolve cache", () => {
   it.effect("the remote wins over the root commit, and is what gets cached", () => {
     const git = stubGit({
       repos: { [A.worktree]: A },
-      remotes: { [A.commonDirectory]: "git@github.com:owner/repo.git" },
+      remotes: { [A.commonDirectory]: "git@git.example.test:owner/repo.git" },
       roots: { [A.commonDirectory]: "aaaaaaa" },
     })
     return withGit(git, (project) =>

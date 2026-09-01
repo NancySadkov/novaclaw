@@ -1,5 +1,5 @@
+import { Persona } from "@novaclaw/core/persona"
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
-import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { TextareaV2 } from "@novaclaw/ui/v2/textarea-v2"
 import { type Component } from "solid-js"
 import { showToast } from "@/utils/toast"
@@ -10,8 +10,8 @@ import { SettingsRowV2 } from "./parts/row"
 import { SettingsExplainV2 } from "./explain"
 
 // B4 — the System Prompt settings tab. Exposes the composed prompt's EDITABLE
-// layers: (1) persona — rename the agent (Nova→anything) + replace the B3 base
-// prompt wholesale; (2) project instructions — the `instructions[]` paths/URLs
+// layers: (1) the role-neutral B3 approach baseline; (2) project instructions —
+// the `instructions[]` paths/URLs
 // already honored by the runtime, surfaced here. (The user profile lives in its
 // own Profile tab now — it's delivered on demand via the `profile` tool, not
 // injected here.) The shipped base stays immutable: editing here writes CONFIG
@@ -20,18 +20,21 @@ import { SettingsExplainV2 } from "./explain"
 
 interface PersonaConfig {
   enabled?: boolean
-  name?: string
   prompt?: string
 }
 
-// Placeholder mirrors core/src/persona.ts defaultPrompt() so an empty field
-// shows what actually runs (the introspection-tab convention).
-const defaultPersonaPrompt = (name: string) =>
-  [
-    `You're a pragmatic and highly capable software engineer, ${name}. Your responses are honest, direct, raw, and concise. Don't bury the user in walls of text unless they explicitly ask you to elaborate — maintain maximum signal-to-noise. If the user proposes something irrational, push back with constructive criticism, offer better solutions, and name the pitfalls; but if they persist and confirm, proceed — assume they know better and that you're skilled enough for any scale. If a prompt is ambiguous, ask for clarification.`,
-    `Formatting: no bullet or numbered lists by default — clean, direct paragraphs; use a list only if explicitly requested, or for a sequence so complex a paragraph would be unreadable. Keep responses raw, concise, and scannable via brief paragraphs and bold emphasis.`,
-    `Before writing or modifying code, research first and break the problem into manageable steps. Prefer small, surgical edits to existing files over rewriting them — make the minimal change (insert the one line you need) instead of regenerating a whole file; full rewrites waste tokens and introduce regressions. Always test what you write where possible, or clearly tell the user you couldn't and why.`,
-  ].join("\n\n")
+/**
+ * The placeholder is the RUNNING default, imported — not a copy of it.
+ *
+ * It used to be a hand-typed transcription under a comment saying it "mirrors core/src/persona.ts
+ * defaultPrompt() so an empty field shows what actually runs". All three paragraphs had drifted, so
+ * the one field whose empty state is documented as showing the composed default was showing a prompt
+ * the instance does not use — to a user reading it in order to decide whether to override it.
+ *
+ * `persona.ts` is pure and dependency-free, and `storage.tsx` already sets the precedent for
+ * value-importing a core constant into user-facing copy rather than retyping it.
+ */
+const defaultPersonaPrompt = Persona.defaultPrompt
 
 export const SettingsSystemPromptV2: Component = () => {
   const language = useLanguage()
@@ -98,24 +101,6 @@ export const SettingsSystemPromptV2: Component = () => {
                 {language.t("settings.systemPrompt.persona.enabled.title")}
               </Switch>
             </SettingsRowV2>
-
-            <SettingsRowV2
-              title={language.t("settings.systemPrompt.persona.name.title")}
-              description={language.t("settings.systemPrompt.persona.name.description")}
-            >
-              <div class="w-full sm:w-[200px]">
-                <TextInputV2
-                  type="text"
-                  appearance="base"
-                  value={persona().name ?? ""}
-                  placeholder="Nova"
-                  spellcheck={false}
-                  autocomplete="off"
-                  onChange={(event) => void persistPersona({ name: event.currentTarget.value.trim() })}
-                  aria-label={language.t("settings.systemPrompt.persona.name.title")}
-                />
-              </div>
-            </SettingsRowV2>
           </SettingsListV2>
 
           <p class="settings-v2-field-description">{language.t("settings.systemPrompt.persona.prompt.description")}</p>
@@ -123,7 +108,7 @@ export const SettingsSystemPromptV2: Component = () => {
             class="settings-v2-textarea"
             rows={7}
             value={persona().prompt ?? ""}
-            placeholder={defaultPersonaPrompt(persona().name?.trim() || "Nova")}
+            placeholder={defaultPersonaPrompt()}
             spellcheck={false}
             onChange={(event) => void persistPersona({ prompt: event.currentTarget.value.trim() })}
             aria-label={language.t("settings.systemPrompt.persona.prompt.title")}

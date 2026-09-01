@@ -22,7 +22,7 @@ import { location } from "./fixture/location"
 import { testEffect } from "./lib/effect"
 import { toolIdentity, executeTool } from "./lib/tool"
 
-// The `messenger` tool's pure helpers (notes/messenger-plan.md §4). buildModerationAct maps the flat
+// The `messenger` tool's pure helpers. buildModerationAct maps the flat
 // op the model emits onto the driver ModerationAct union, validating that each act carries the target
 // it needs (delete/pin → a message id; ban/kick/mute → a user id) with a legible error otherwise.
 
@@ -155,6 +155,17 @@ const withPermission = <A, E, R>(options: { deny?: string }, body: Effect.Effect
 const storeLayer = Layer.mock(MessengerStore.Service)({
   listAccounts: () => Effect.succeed([account]),
   bindingsForSession: () => Effect.succeed([]),
+  createBinding: (input) =>
+    Effect.succeed(
+      new Messenger.BindingInfo({
+        id: Messenger.BindingID.make("msb_connect_test"),
+        accountID: input.accountID,
+        chatID: input.chatID,
+        sessionID: input.sessionID as never,
+        trust: input.trust,
+        status: "active",
+      }),
+    ),
 })
 /** A session whose chain carries an ACTIVE client binding — an untrusted correspondent is driving
  *  the turn. `HostExec.chainHasHostileBinding` walks the parent chain looking for exactly this. */
@@ -257,6 +268,17 @@ const sendCall = (id: string, extra: Record<string, unknown> = {}) => ({
     id,
     name: MessengerTool.name,
     input: { op: "send", chat: "77", text: "on my way", ...extra },
+  },
+})
+
+const connectCall = (id: string, chat: string) => ({
+  sessionID,
+  ...toolIdentity,
+  call: {
+    type: "tool-call" as const,
+    id,
+    name: MessengerTool.name,
+    input: { op: "connect", chat, trust: "operator" },
   },
 })
 
@@ -472,19 +494,17 @@ describe("MessengerTool send", () => {
       expect(asked).toHaveLength(1)
       expect(asked[0]).toHaveProperty("initiate", true)
 
-      // BOTH gates, in this order. The initiate card is ADDITIONAL, never a replacement: a cold
+      // BOTH gates, in this order. The initiate assertion is ADDITIONAL, never a replacement: a cold
       // start is also a send, so a user who denied `messenger.send` for this chat must not be
-      // reachable through the initiate card instead — and conversely the `save: ["*"]` the send gate
+      // reachable through the initiate assertion instead — and conversely the `save: ["*"]` the send gate
       // offers cannot satisfy this one, because the action names differ and `Wildcard.match`
       // compares actions literally.
       expect(asserted).toEqual([
         { action: "messenger.send", resources: [CHAT_RESOURCE], save: ["*"] },
         { action: "messenger.initiate", resources: [CHAT_RESOURCE], save: [CHAT_RESOURCE] },
       ])
-      // ⭐ The line that matters most in this file. `save` is what an "always allow" persists
-      // (`PermissionV2.savedResources`), so `["*"]` here would turn one card about one person into a
-      // standing grant to COLD-DM ANYONE, FOREVER. `tool/recipe.ts` scoped `save` to a single slug
-      // for the same reason; this scopes it to a single chat.
+      // The durable-rule suggestion stays scoped to this chat; a wildcard would authorize cold DMs
+      // to every correspondent if an operator copied the suggested scope into settings.
       const initiate = asserted.find((entry) => entry.action === "messenger.initiate")
       expect(initiate?.save).toEqual([CHAT_RESOURCE])
       expect(initiate?.save).not.toContain("*")
@@ -513,6 +533,42 @@ describe("MessengerTool send", () => {
       expect(String(result.value)).not.toContain("Sent (paced")
       // The send gate was still consulted first — the deny under test is the initiate one.
       expect(asserted.map((entry) => entry.action)).toEqual(["messenger.send", "messenger.initiate"])
+    }),
+  )
+})
+
+describe("MessengerTool connect", () => {
+  it.effect("each conversation requires its own exact durable grant", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const first = `${account.id}:chat-one`
+      const second = `${account.id}:chat-two`
+
+      const results = yield* withPermission(
+        {},
+        Effect.gen(function* () {
+          const firstResult = yield* executeTool(registry, connectCall("call-connect-one", "  chat-one  "))
+          const secondResult = yield* executeTool(registry, connectCall("call-connect-two", "chat-two"))
+          return [firstResult, secondResult]
+        }),
+      )
+
+      expect(results.every((result) => String(result.value).includes("Bound this session"))).toBe(true)
+      expect(asserted).toEqual([
+        { action: "messenger.connect", resources: [first], save: [first] },
+        { action: "messenger.connect", resources: [second], save: [second] },
+      ])
+      expect(asserted.flatMap((entry) => entry.save ?? [])).not.toContain("*")
+
+      // Model a durable rule configured from the first assertion's suggested scope. It names only
+      // chat-one, so it has no opinion on chat-two.
+      const persisted = asserted[0]?.save ?? []
+      const rules = persisted.map((resource) => ({
+        action: "messenger.connect",
+        resource,
+        effect: "allow" as const,
+      }))
+      expect(PermissionV2.evaluate("messenger.connect", second, rules).effect).toBe("ask")
     }),
   )
 })

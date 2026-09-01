@@ -6,6 +6,7 @@ import { Effect, Layer } from "effect"
 import { Database } from "@novaclaw/core/database/database"
 import { EventV2 } from "@novaclaw/core/event"
 import { MemoryAccessLedger } from "@novaclaw/core/kb-graph/access-ledger"
+import { MemoryAccessTable } from "@novaclaw/core/kb-graph/access-ledger.sql"
 import { Memory } from "@novaclaw/core/kb-graph/memory"
 import { WasmMemory } from "@novaclaw/core/kb-graph/wasm-engine"
 import { testEffect } from "./lib/effect"
@@ -78,6 +79,37 @@ const stagedIn = async (engine: WasmMemory, scope: string) =>
   (await engine.list({ scopes: [scope], limit: 500 })).filter((row) => row.relation === "staged").map((row) => row.id)
 
 describe("the forgetting pass", () => {
+  it.effect("bounds raw recall detail while preserving the durable usage rollup", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      const engine = yield* Effect.promise(() => open())
+      yield* db
+        .insert(MemoryAccessTable)
+        .values(
+          Array.from({ length: 1_001 }, (_, index) => ({
+            id: `acc_${index.toString().padStart(4, "0")}`,
+            recall_id: `rcl_${index}`,
+            fingerprint: "qf_maintenance",
+            surface: "auto-recall",
+            memory_id: index === 0 ? "oldest" : index === 1_000 ? "newest" : `middle_${index}`,
+            scope: "global",
+            rank: 1,
+            score: 1,
+            accessed_at: index,
+          })),
+        )
+        .run()
+      yield* MemoryAccessLedger.feedback(db, { id: "oldest", useful: true, at: 2_000, scope: "global" })
+
+      // Drive the same helper as the background loop with its minimum supported test horizon.
+      yield* Memory.forgetEverywhere(engine, db, silentBus, 50, 1_000)
+
+      expect(yield* MemoryAccessLedger.accessesFor(db, "oldest")).toEqual([])
+      expect(yield* MemoryAccessLedger.accessesFor(db, "newest")).toHaveLength(1)
+      expect((yield* MemoryAccessLedger.usageFor(db, ["oldest"])).get("oldest")?.useful).toBe(1)
+    }),
+  )
+
   it.effect("caps a loud cabinet and leaves a quiet one whole", () =>
     Effect.gen(function* () {
       const { db } = yield* Database.Service

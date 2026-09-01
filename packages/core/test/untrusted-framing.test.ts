@@ -213,10 +213,6 @@ const permissionMock = Layer.succeed(
   PermissionV2.Service.of({
     assert: () => Effect.void,
     ask: () => Effect.die("unused"),
-    reply: () => Effect.die("unused"),
-    get: () => Effect.die("unused"),
-    forSession: () => Effect.die("unused"),
-    list: () => Effect.die("unused"),
   }),
 )
 

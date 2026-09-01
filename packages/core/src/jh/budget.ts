@@ -15,10 +15,9 @@ const RANK: Record<JhStep.DifficultyPrior, number> = { trivial: 0, moderate: 1, 
 export interface Telemetry {
   readonly attempts: number
   readonly verifierFails: number
-  readonly correctorCalls: number
   readonly parseFails: number
 }
-export const emptyTelemetry: Telemetry = { attempts: 0, verifierFails: 0, correctorCalls: 0, parseFails: 0 }
+export const emptyTelemetry: Telemetry = { attempts: 0, verifierFails: 0, parseFails: 0 }
 
 /** The harness's own difficulty read from runtime signals. */
 export function observedDifficulty(t: Telemetry): JhStep.DifficultyPrior {
@@ -71,7 +70,7 @@ export interface SplitTrigger {
 }
 export const DEFAULT_TRIGGER: SplitTrigger = { cardinality: 8, density: 12, margin: 1 } // generous; Phase 13 calibrates
 
-/** Force a split when measured cardinality (or density) exceeds its trigger minus the margin. */
+/** Force a split when measured cardinality or sibling-dependency density exceeds its trigger minus the margin. */
 export function shouldForceSplit(trigger: SplitTrigger, measured: { cardinality: number; density: number }): boolean {
   return (
     measured.cardinality > trigger.cardinality - trigger.margin || measured.density > trigger.density - trigger.margin

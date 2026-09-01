@@ -2,6 +2,7 @@ import { createStore, produce, reconcile } from "solid-js/store"
 import { batch, createEffect, createMemo, onCleanup, onMount, type Accessor } from "solid-js"
 import { useLocation } from "@solidjs/router"
 import { createSimpleContext } from "@novaclaw/ui/context"
+import { isRecord } from "@novaclaw/schema/record"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { useServerSync } from "./server-sync"
 import { useServerSDK } from "./server-sdk"
@@ -17,6 +18,7 @@ import { migrateLegacySessionStateKeys, ServerScope, SessionStateKey } from "@/u
 import { createSessionKeyReader, ensureSessionKey, pruneSessionKeys } from "./layout-helpers"
 import { requireServerKey } from "@/utils/session-route"
 import { type DraftTab, useTabs } from "./tabs"
+import { afterFirstPaint } from "@/utils/after-first-paint"
 
 export { createSessionKeyReader, ensureSessionKey, pruneSessionKeys }
 
@@ -182,9 +184,6 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       }
       return { ...value, server: server.key }
     })
-
-    const isRecord = (value: unknown): value is Record<string, unknown> =>
-      typeof value === "object" && value !== null && !Array.isArray(value)
 
     const migrate = (value: unknown) => {
       if (!isRecord(value)) return value
@@ -543,27 +542,23 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       }
     })
 
-    let sessionFrame: number | undefined
-    let sessionTimer: number | undefined
+    // Deferred through the shared helper, which falls back to a plain timeout when there will be no
+    // frame. This used to be a bare `requestAnimationFrame`, which never fires in a hidden tab — so
+    // a window opened in the background never loaded any project's sessions and showed an empty
+    // chat list until it was focused, indistinguishable from having no chats.
+    let cancelSessionLoad: (() => void) | undefined
 
     onMount(() => {
-      sessionFrame = requestAnimationFrame(() => {
-        sessionFrame = undefined
-        sessionTimer = window.setTimeout(() => {
-          sessionTimer = undefined
-          void Promise.all(
-            server.projects.list().map((project) => {
-              return serverSync().project.loadSessions(project.worktree)
-            }),
-          )
-        }, 0)
+      cancelSessionLoad = afterFirstPaint(() => {
+        void Promise.all(
+          server.projects.list().map((project) => {
+            return serverSync().project.loadSessions(project.worktree)
+          }),
+        )
       })
     })
 
-    onCleanup(() => {
-      if (sessionFrame !== undefined) cancelAnimationFrame(sessionFrame)
-      if (sessionTimer !== undefined) window.clearTimeout(sessionTimer)
-    })
+    onCleanup(() => cancelSessionLoad?.())
 
     return {
       route,

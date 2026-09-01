@@ -43,11 +43,11 @@ describe("novaclaw mcp add (non-interactive subprocess)", () => {
           [
             "mcp",
             "add",
-            "github",
+            "tracker",
             "--url",
             "https://example.com/mcp",
             "--header",
-            "Authorization=Bearer {env:GITHUB_TOKEN}",
+            "Authorization=Bearer {env:SERVICE_TOKEN}",
             "--header",
             "X-Option=one=two",
           ],
@@ -55,11 +55,11 @@ describe("novaclaw mcp add (non-interactive subprocess)", () => {
         )
         novaclaw.expectExit(result, 0)
 
-        expect(storedMcp(dbFile).servers?.["github"]).toEqual({
+        expect(storedMcp(dbFile).servers?.["tracker"]).toEqual({
           type: "remote",
           url: "https://example.com/mcp",
           headers: {
-            Authorization: "Bearer {env:GITHUB_TOKEN}",
+            Authorization: "Bearer {env:SERVICE_TOKEN}",
             "X-Option": "one=two",
           },
           disabled: false,

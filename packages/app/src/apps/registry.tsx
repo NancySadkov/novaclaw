@@ -45,7 +45,7 @@ export interface HomeApp {
   /**
    * Reactive attention count for the tile's badge (evaluated in the tile's render scope, so it
    * may close over signals/memos). Render a badge when > 0 — the iOS vocabulary for "this app
-   * wants you". Built-in example: Tasks = threads with a pending permission/question or unseen output.
+   * wants you". Built-in example: Tasks = threads with a pending question or unseen output.
    */
   readonly badge?: () => number | undefined
   /**

@@ -81,7 +81,7 @@ const auth = "Basic " + Buffer.from(`novaclaw:${password}`).toString("base64")
 /**
  * Chosen to reach DIFFERENT subsystems, not to be a long list: the hazard is about evaluation ORDER,
  * so one endpoint — however deep — proves almost nothing. Health is the layer graph, capability the
- * subsystem registry, config the store graph, tool ids the registry, find the filesystem layer.
+ * subsystem registry, config the store graph, and agent list the location-scoped catalogue.
  */
 const paths = [
   // ⚠️ A VERIFICATION KNOB, kept deliberately. A guard nobody has ever seen fail is not known to be a
@@ -93,7 +93,7 @@ const paths = [
   "/global/config",
   "/api/capability",
   "/config",
-  "/experimental/tool/ids",
+  "/agent",
 ]
 
 let failures = 0

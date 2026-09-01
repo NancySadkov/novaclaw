@@ -17,9 +17,20 @@ describe("ShortChat policy", () => {
       expect(ShortChat.offered(true, name), name).toBe(false)
   })
 
-  test("short prompt contains persona and guidance only", () => {
-    expect(ShortChat.systemParts("You are Nova.")).toEqual(["You are Nova.", ShortChat.GUIDANCE])
-    expect(ShortChat.systemParts(undefined)).toEqual([ShortChat.GUIDANCE])
+  test("short prompt retains the officer identity and standing job brief", () => {
+    const identity = SystemCompose.agentIdentitySection({
+      id: "iris",
+      name: "Iris",
+      title: "Companion",
+      personality: "Warm and brief.",
+    })
+    expect(
+      ShortChat.systemParts({ persona: "Be direct.", agentIdentity: identity, agentSystem: "Talk with care." }),
+    ).toEqual(["Be direct.", identity, "Talk with care.", ShortChat.GUIDANCE])
+    expect(ShortChat.systemParts({ agentIdentity: identity })).toEqual([identity, ShortChat.GUIDANCE])
+    expect(identity).toContain("Your name is Iris.")
+    expect(identity).toContain("Your job title is Companion.")
+    expect(identity).toContain("Warm and brief.")
     expect(ShortChat.GUIDANCE).toContain("MUST call upgrade_chat immediately")
     expect(ShortChat.GUIDANCE).toContain("Do not answer, offer, or describe the upgrade first")
   })
@@ -61,32 +72,30 @@ describe("ShortChat policy", () => {
     expect(order).toEqual([])
   })
 
-  // 🔴 The unification's whole safety claim, asserted rather than reasoned: expressing the Chat
-  // posture as named BLOCKS must not change one byte of what it sends. `composeSystemParts` emits
-  // `persona` first and `base` last and the Chat posture sets nothing in between, so the array is the
-  // same one `systemParts` built — but "so it should be" is exactly the sentence that ships a
-  // regression.
-  test("the Chat posture's prompt is byte-identical expressed as blocks", () => {
-    for (const persona of ["You are Iris, a warm and brief assistant.", undefined]) {
+  // The restricted posture and the ordinary one share the identity/job prefix. Only the trailing
+  // guidance and tool horizon change.
+  test("the Chat posture's identity prompt is byte-identical expressed as blocks", () => {
+    const agentIdentity = SystemCompose.agentIdentitySection({ id: "iris", name: "Iris" })
+    const agentSystem = "Talk with care."
+    for (const persona of ["Be direct.", undefined]) {
       const asBlocks = SystemCompose.composeSystemParts({
         ...(persona === undefined ? {} : { persona }),
+        agentIdentity,
+        agentSystem,
         base: ShortChat.GUIDANCE,
       })
-      expect(asBlocks).toEqual(ShortChat.systemParts(persona))
+      expect(asBlocks).toEqual(ShortChat.systemParts({ persona, agentIdentity, agentSystem }))
+      expect(asBlocks.indexOf(agentIdentity)).toBeLessThan(asBlocks.indexOf(agentSystem))
     }
   })
 
   test("the runner consumes the policy at every expensive boundary", () => {
     const runner = readFileSync(path.join(import.meta.dir, "llm.ts"), "utf8")
     expect(runner).toContain("? Effect.succeed(SystemContext.empty)")
-    // ⚠️ Was `"? ShortChat.systemParts(harness.chatPersona)"` until 2026-08-22. The two postures now
-    // build ONE `SystemPromptParts` object between them — the Chat posture as `persona` + `base` —
-    // so `SystemAccounting` can count both prompts on the same scale. The composed output is
-    // byte-identical (`composeSystemParts` emits persona first and base last, and the Chat posture
-    // sets nothing between), and what this ledger is about is unchanged: the posture still decides
-    // the prompt at this boundary, and it still supplies its own body.
     expect(runner).toContain("ShortChat.GUIDANCE")
     expect(runner).toContain("harness.chatPersona")
+    expect(runner).toContain("agentIdentity")
+    expect(runner).toContain("agentSystem: agent.info?.system")
     expect(runner).toContain("ShortChat.offered(config.shortChat, name)")
     expect(runner).toContain("const startSnapshot = ShortChat.enabled(config.shortChat)")
     expect(runner).toContain("const endSnapshot = ShortChat.enabled(config.shortChat)")

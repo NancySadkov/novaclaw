@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import type { DatabaseMigration } from "../migration"
 
-// T2 (notes/entities.md): workspaces re-key from the project entity onto the derived `origin`
+// T2 (notes/reports/entities-review-2026-07-06.md): workspaces re-key from the project entity onto the derived `origin`
 // hash (identical values — a straight rename); the table rebuilds to drop the project FK.
 export default {
   id: "20260717130000_workspace_origin",

@@ -388,7 +388,7 @@ export const makeSessionGroups = <
           ),
       )
       .add(
-        // Tags component (notes/entities.md T0): replace the chat's full tag set. Full-set PUT keeps
+        // Tags component (notes/reports/entities-review-2026-07-06.md T0): replace the chat's full tag set. Full-set PUT keeps
         // it idempotent and matches the `session.tags.updated` event, which also carries the list.
         HttpApiEndpoint.put("session.tags.set", "/api/session/:sessionID/tags", {
           params: { sessionID: Session.ID },
@@ -486,7 +486,7 @@ export const makeSessionGroups = <
         /**
          * "What Nova checked" — the task receipt for this session's CURRENT attempt.
          *
-         * `todo/verified-autonomy.md` V1: mechanical evidence is authoritative, so every field is
+         * Mechanical evidence is authoritative, so every field is
          * read from a table something else wrote as it happened. ⚠️ A session that has never run
          * answers 404, not an empty receipt — an empty one asserts that nothing happened, which is a
          * different claim from "nothing ran yet".
@@ -955,7 +955,7 @@ export const makeSessionGroups = <
               identifier: "v2.session.wait",
               summary: "Wait for session",
               description:
-                "Block until the session completes via exit() (its result is recorded). Times out after ~2 minutes with 503 — re-call to continue waiting.",
+                "Block until the session completes via exit() (its result is recorded). Times out after ~10 minutes with 503 — re-call to continue waiting.",
             }),
           ),
       )

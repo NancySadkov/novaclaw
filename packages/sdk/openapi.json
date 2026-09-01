@@ -6395,60 +6395,6 @@
         ]
       }
     },
-    "/config/providers": {
-      "get": {
-        "tags": ["config"],
-        "operationId": "config.providers",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "List of providers",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProviderCatalog"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Get a list of all configured AI providers and their default models.",
-        "summary": "List config providers",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.config.providers({\n  ...\n})"
-          }
-        ]
-      }
-    },
     "/api/project": {
       "get": {
         "tags": ["experimental"],
@@ -6585,208 +6531,7 @@
         ]
       }
     },
-    "/experimental/tool": {
-      "get": {
-        "tags": ["experimental"],
-        "operationId": "tool.list",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "provider",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": true
-          },
-          {
-            "name": "model",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Tools",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ToolList"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "BadRequest | InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
-                    },
-                    {
-                      "$ref": "#/components/schemas/InvalidRequestError"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        },
-        "description": "Get a list of available tools with their JSON schema parameters for a specific provider and model combination.",
-        "summary": "List tools",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.tool.list({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/experimental/tool/ids": {
-      "get": {
-        "tags": ["experimental"],
-        "operationId": "tool.ids",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Tool IDs",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ToolIDs"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "BadRequest | InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
-                    },
-                    {
-                      "$ref": "#/components/schemas/InvalidRequestError"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        },
-        "description": "Get a list of all available tool IDs, including both built-in tools and dynamically registered tools.",
-        "summary": "List tool IDs",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.tool.ids({\n  ...\n})"
-          }
-        ]
-      }
-    },
     "/experimental/worktree": {
-      "get": {
-        "tags": ["experimental"],
-        "operationId": "worktree.list",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "List of worktree directories",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  },
-                  "description": "List of worktree directories"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "WorktreeError | InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/WorktreeError"
-                    },
-                    {
-                      "$ref": "#/components/schemas/InvalidRequestError"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        },
-        "description": "List all sandbox worktrees for the current project.",
-        "summary": "List worktrees",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.worktree.list({\n  ...\n})"
-          }
-        ]
-      },
       "post": {
         "tags": ["experimental"],
         "operationId": "worktree.create",
@@ -6852,214 +6597,6 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.worktree.create({\n  ...\n})"
-          }
-        ]
-      },
-      "delete": {
-        "tags": ["experimental"],
-        "operationId": "worktree.remove",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Worktree removed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "boolean",
-                  "description": "Worktree removed"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "WorktreeError | InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/WorktreeError"
-                    },
-                    {
-                      "$ref": "#/components/schemas/InvalidRequestError"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "WorktreeDirtyError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WorktreeDirtyError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Remove a git worktree and delete its branch.",
-        "summary": "Remove worktree",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/WorktreeRemoveInput"
-              }
-            }
-          }
-        },
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.worktree.remove({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/experimental/worktree/reset": {
-      "post": {
-        "tags": ["experimental"],
-        "operationId": "worktree.reset",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Worktree reset",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "boolean",
-                  "description": "Worktree reset"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "WorktreeError | InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/WorktreeError"
-                    },
-                    {
-                      "$ref": "#/components/schemas/InvalidRequestError"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        },
-        "description": "Reset a worktree branch to the primary default branch.",
-        "summary": "Reset worktree",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/WorktreeResetInput"
-              }
-            }
-          }
-        },
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.worktree.reset({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/experimental/resource": {
-      "get": {
-        "tags": ["experimental"],
-        "operationId": "experimental.resource.list",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "MCP resources",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "$ref": "#/components/schemas/McpResource"
-                  },
-                  "description": "MCP resources"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Get all available MCP resources from connected servers. Optionally filter by name.",
-        "summary": "Get MCP resources",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.experimental.resource.list({\n  ...\n})"
           }
         ]
       }
@@ -8504,64 +8041,6 @@
         ]
       }
     },
-    "/formatter": {
-      "get": {
-        "tags": ["instance"],
-        "operationId": "formatter.status",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Formatter status",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/FormatterStatus"
-                  },
-                  "description": "Formatter status"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Get formatter status",
-        "summary": "Get formatter status",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.formatter.status({\n  ...\n})"
-          }
-        ]
-      }
-    },
     "/api/diagnosis": {
       "get": {
         "tags": ["instance"],
@@ -9823,7 +9302,7 @@
             "name": "limit",
             "in": "query",
             "schema": {
-              "type": "string"
+              "type": "number"
             },
             "required": false
           },
@@ -10049,7 +9528,7 @@
             "name": "limit",
             "in": "query",
             "schema": {
-              "type": "string"
+              "type": "number"
             },
             "required": false
           }
@@ -11764,7 +11243,7 @@
             "name": "limit",
             "in": "query",
             "schema": {
-              "type": "string"
+              "type": "number"
             },
             "required": false
           },
@@ -12747,7 +12226,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The N/9 offline-layer posture",
+            "description": "The N/8 offline-layer posture",
             "content": {
               "application/json": {
                 "schema": {
@@ -12787,7 +12266,7 @@
                   },
                   "required": ["enabled", "active", "total", "layers"],
                   "additionalProperties": false,
-                  "description": "The N/9 offline-layer posture"
+                  "description": "The N/8 offline-layer posture"
                 }
               }
             }
@@ -13009,61 +12488,6 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.shell.provision({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/sync/start": {
-      "post": {
-        "tags": ["sync"],
-        "operationId": "sync.start",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Workspace sync started",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "boolean",
-                  "description": "Workspace sync started"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Start sync loops for workspaces in the current project that have active sessions.",
-        "summary": "Start workspace sync",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.sync.start({\n  ...\n})"
           }
         ]
       }
@@ -13363,516 +12787,6 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.sync.history.list({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/experimental/workspace/adapter": {
-      "get": {
-        "tags": ["workspace"],
-        "operationId": "experimental.workspace.adapter.list",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Workspace adapters",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "type": {
-                        "type": "string"
-                      },
-                      "name": {
-                        "type": "string"
-                      },
-                      "description": {
-                        "type": "string"
-                      }
-                    },
-                    "required": ["type", "name", "description"],
-                    "additionalProperties": false
-                  },
-                  "description": "Workspace adapters"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
-                }
-              }
-            }
-          }
-        },
-        "description": "List all available workspace adapters for the current project.",
-        "summary": "List workspace adapters",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.experimental.workspace.adapter.list({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/experimental/workspace": {
-      "get": {
-        "tags": ["workspace"],
-        "operationId": "experimental.workspace.list",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Workspaces",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Workspace"
-                  },
-                  "description": "Workspaces"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
-                }
-              }
-            }
-          }
-        },
-        "description": "List all workspaces.",
-        "summary": "List workspaces",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.experimental.workspace.list({\n  ...\n})"
-          }
-        ]
-      },
-      "post": {
-        "tags": ["workspace"],
-        "operationId": "experimental.workspace.create",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Workspace created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Workspace"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "WorkspaceCreateError | BadRequest | InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/WorkspaceCreateError"
-                    },
-                    {
-                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
-                    },
-                    {
-                      "$ref": "#/components/schemas/InvalidRequestError"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        },
-        "description": "Create a workspace for the current project.",
-        "summary": "Create workspace",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "pattern": "^wrk"
-                  },
-                  "type": {
-                    "type": "string"
-                  },
-                  "branch": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "extra": {
-                    "anyOf": [
-                      {},
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  }
-                },
-                "required": ["type"],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.experimental.workspace.create({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/experimental/workspace/sync-list": {
-      "post": {
-        "tags": ["workspace"],
-        "operationId": "experimental.workspace.syncList",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Workspace list synced"
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Register missing workspaces returned by workspace adapters.",
-        "summary": "Sync workspace list",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.experimental.workspace.syncList({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/experimental/workspace/status": {
-      "get": {
-        "tags": ["workspace"],
-        "operationId": "experimental.workspace.status",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Workspace status",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/WorkspaceEventConnectionStatus"
-                  },
-                  "description": "Workspace status"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Get connection status for workspaces in the current project.",
-        "summary": "Workspace status",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.experimental.workspace.status({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/experimental/workspace/{id}": {
-      "delete": {
-        "tags": ["workspace"],
-        "operationId": "experimental.workspace.remove",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "schema": {
-              "type": "string",
-              "pattern": "^wrk"
-            },
-            "required": true
-          },
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Workspace removed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/Workspace"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ],
-                  "description": "Workspace removed"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "BadRequest | InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
-                    },
-                    {
-                      "$ref": "#/components/schemas/InvalidRequestError"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        },
-        "description": "Remove an existing workspace.",
-        "summary": "Remove workspace",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.experimental.workspace.remove({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/experimental/workspace/warp": {
-      "post": {
-        "tags": ["workspace"],
-        "operationId": "experimental.workspace.warp",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Session warped"
-          },
-          "400": {
-            "description": "WorkspaceWarpError | VcsApplyError | InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/WorkspaceWarpError"
-                    },
-                    {
-                      "$ref": "#/components/schemas/VcsApplyError"
-                    },
-                    {
-                      "$ref": "#/components/schemas/InvalidRequestError"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "NotFoundError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NotFoundError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Move a session's sync history into the target workspace, or detach it to the local project.",
-        "summary": "Warp session into workspace",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "pattern": "^wrk"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "sessionID": {
-                    "type": "string",
-                    "pattern": "^ses"
-                  },
-                  "copyChanges": {
-                    "type": "boolean"
-                  }
-                },
-                "required": ["id", "sessionID"],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.experimental.workspace.warp({\n  ...\n})"
           }
         ]
       }
@@ -19507,7 +18421,7 @@
             }
           }
         },
-        "description": "Block until the session completes via exit() (its result is recorded). Times out after ~2 minutes with 503 — re-call to continue waiting.",
+        "description": "Block until the session completes via exit() (its result is recorded). Times out after ~10 minutes with 503 — re-call to continue waiting.",
         "summary": "Wait for session",
         "x-codeSamples": [
           {
@@ -19890,7 +18804,7 @@
             "name": "limit",
             "in": "query",
             "schema": {
-              "type": "string"
+              "type": "number"
             },
             "required": false
           },
@@ -19898,7 +18812,7 @@
             "name": "after",
             "in": "query",
             "schema": {
-              "type": "string"
+              "type": "number"
             },
             "required": false
           }
@@ -19981,7 +18895,7 @@
             "name": "after",
             "in": "query",
             "schema": {
-              "type": "string"
+              "type": "number"
             },
             "required": false
           }
@@ -22689,7 +21603,7 @@
             }
           }
         },
-        "description": "Delete a single model from a provider in the instance catalog store, keeping the provider itself (and so its endpoint URL, auth and request defaults). Instance-wide and durable, unlike the client-side hide the Models tab used to perform. A model that is in no layer is a 404, never a cheerful 204.",
+        "description": "Delete a single model from a provider in the instance catalog store, keeping the provider itself (and so its endpoint URL, auth and request defaults). Instance-wide and durable. A model that is in no layer is a 404, never a cheerful 204.",
         "summary": "Remove one model",
         "x-codeSamples": [
           {
@@ -25197,7 +24111,7 @@
             }
           }
         },
-        "description": "The bytes of recipe.md exactly as they are on disk — the unit a person shares — plus the host-capability facts it declares checked against THIS machine, the artifacts a finished cook should leave, and the shelf it is on. Read-only: the capability probe resolves names on PATH and stats paths, and never runs a candidate.",
+        "description": "The bytes of recipe.md exactly as they are on disk — the readable part of the folder — plus the host-capability facts it declares checked against THIS machine, the artifacts a finished cook should leave, and the shelf it is on. Read-only: the capability probe resolves names on PATH and stats paths, and never runs a candidate.",
         "summary": "Read a recipe's file, and what it needs and produces",
         "x-codeSamples": [
           {
@@ -25252,8 +24166,8 @@
             }
           }
         },
-        "description": "Writes the supplied file byte for byte under a free slug — never overwriting an existing recipe. Assets are not carried: this is the recipe.md, which is the part a person can read.",
-        "summary": "Store a recipe.md from somewhere else",
+        "description": "Writes the supplied file byte for byte under a free slug — never overwriting an existing recipe. This paste convenience is explicitly asset-free; use the ZIP import for a complete folder.",
+        "summary": "Store pasted recipe markdown without assets",
         "requestBody": {
           "content": {
             "application/json": {
@@ -25268,6 +24182,146 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.recipe.import({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/recipe/{slug}/archive": {
+      "get": {
+        "tags": ["recipe"],
+        "operationId": "v2.recipe.archive",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Returns a standard ZIP containing recipe.md and every nested binary or text asset.",
+        "summary": "Export a complete recipe folder",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.recipe.archive({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/recipe/archive": {
+      "post": {
+        "tags": ["recipe"],
+        "operationId": "v2.recipe.archiveImport",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Recipe.Info",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipeInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Validates a bounded standard ZIP, reserves a free slug, and commits recipe.md plus its asset tree atomically.",
+        "summary": "Import a complete recipe folder",
+        "requestBody": {
+          "content": {
+            "application/zip": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.recipe.archiveImport({\n  ...\n})"
           }
         ]
       }
@@ -25573,87 +24627,6 @@
         ]
       }
     },
-    "/api/permission/request": {
-      "get": {
-        "tags": ["permissions"],
-        "operationId": "v2.permission.request.list",
-        "parameters": [
-          {
-            "name": "location",
-            "in": "query",
-            "schema": {
-              "type": "object",
-              "properties": {
-                "directory": {
-                  "type": "string"
-                },
-                "workspace": {
-                  "type": "string"
-                }
-              },
-              "additionalProperties": false
-            },
-            "required": false,
-            "style": "deepObject",
-            "explode": true
-          }
-        ],
-        "security": [],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "location": {
-                      "$ref": "#/components/schemas/LocationInfo"
-                    },
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/PermissionV2Request"
-                      }
-                    }
-                  },
-                  "required": ["location", "data"],
-                  "additionalProperties": false
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvalidRequestError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UnauthorizedError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Retrieve pending permission requests for a location.",
-        "summary": "List pending permission requests",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.permission.request.list({\n  ...\n})"
-          }
-        ]
-      }
-    },
     "/api/permission/saved": {
       "get": {
         "tags": ["permissions"],
@@ -25854,8 +24827,8 @@
             }
           }
         },
-        "description": "Evaluate and, when approval is required, create a permission request for a session.",
-        "summary": "Create permission request",
+        "description": "Evaluate the effective permission rules for a session action.",
+        "summary": "Evaluate permission",
         "requestBody": {
           "content": {
             "application/json": {
@@ -25902,283 +24875,6 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.session.permission.create({\n  ...\n})"
-          }
-        ]
-      },
-      "get": {
-        "tags": ["permissions"],
-        "operationId": "v2.session.permission.list",
-        "parameters": [
-          {
-            "name": "sessionID",
-            "in": "path",
-            "schema": {
-              "type": "string",
-              "pattern": "^ses"
-            },
-            "required": true
-          }
-        ],
-        "security": [],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/PermissionV2Request"
-                      }
-                    }
-                  },
-                  "required": ["data"],
-                  "additionalProperties": false
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvalidRequestError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UnauthorizedError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "SessionNotFoundError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/SessionNotFoundError"
-                    },
-                    {
-                      "$ref": "#/components/schemas/SessionNotFoundError"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        },
-        "description": "Retrieve pending permission requests owned by a session.",
-        "summary": "List session permission requests",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.session.permission.list({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/api/session/{sessionID}/permission/{requestID}": {
-      "get": {
-        "tags": ["permissions"],
-        "operationId": "v2.session.permission.get",
-        "parameters": [
-          {
-            "name": "sessionID",
-            "in": "path",
-            "schema": {
-              "type": "string",
-              "pattern": "^ses"
-            },
-            "required": true
-          },
-          {
-            "name": "requestID",
-            "in": "path",
-            "schema": {
-              "type": "string",
-              "pattern": "^per"
-            },
-            "required": true
-          }
-        ],
-        "security": [],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "$ref": "#/components/schemas/PermissionV2Request"
-                    }
-                  },
-                  "required": ["data"],
-                  "additionalProperties": false
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvalidRequestError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UnauthorizedError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "SessionNotFoundError | PermissionNotFoundError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/PermissionNotFoundError"
-                    },
-                    {
-                      "$ref": "#/components/schemas/SessionNotFoundError"
-                    },
-                    {
-                      "$ref": "#/components/schemas/SessionNotFoundError"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        },
-        "description": "Retrieve a pending permission request owned by a session.",
-        "summary": "Get permission request",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.session.permission.get({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/api/session/{sessionID}/permission/{requestID}/reply": {
-      "post": {
-        "tags": ["permissions"],
-        "operationId": "v2.session.permission.reply",
-        "parameters": [
-          {
-            "name": "sessionID",
-            "in": "path",
-            "schema": {
-              "type": "string",
-              "pattern": "^ses"
-            },
-            "required": true
-          },
-          {
-            "name": "requestID",
-            "in": "path",
-            "schema": {
-              "type": "string",
-              "pattern": "^per"
-            },
-            "required": true
-          }
-        ],
-        "security": [],
-        "responses": {
-          "204": {
-            "description": "<No Content>"
-          },
-          "400": {
-            "description": "InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvalidRequestError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UnauthorizedError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "SessionNotFoundError | PermissionNotFoundError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/PermissionNotFoundError"
-                    },
-                    {
-                      "$ref": "#/components/schemas/SessionNotFoundError"
-                    },
-                    {
-                      "$ref": "#/components/schemas/SessionNotFoundError"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        },
-        "description": "Respond to a pending permission request owned by a session.",
-        "summary": "Reply to pending permission request",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "reply": {
-                    "$ref": "#/components/schemas/PermissionV2Reply"
-                  },
-                  "message": {
-                    "type": "string"
-                  }
-                },
-                "required": ["reply"],
-                "additionalProperties": false
-              }
-            }
-          },
-          "required": true
-        },
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.session.permission.reply({\n  ...\n})"
           }
         ]
       }
@@ -26480,7 +25176,7 @@
             "name": "limit",
             "in": "query",
             "schema": {
-              "type": "string"
+              "type": "number"
             },
             "required": false
           }
@@ -28961,12 +27657,6 @@
             "$ref": "#/components/schemas/EventReferenceUpdated"
           },
           {
-            "$ref": "#/components/schemas/EventPermissionV2Asked"
-          },
-          {
-            "$ref": "#/components/schemas/EventPermissionV2Replied"
-          },
-          {
             "$ref": "#/components/schemas/EventPluginAdded"
           },
           {
@@ -29281,11 +27971,11 @@
           },
           "status": {
             "type": "string",
-            "description": "Current status of the task: pending, in_progress, completed, cancelled"
+            "description": "Current status of the task. Any string is accepted; the canonical values are pending, in_progress, completed and cancelled, and anything else is passed through unchanged."
           },
           "priority": {
             "type": "string",
-            "description": "Priority level of the task: high, medium, low"
+            "description": "Priority level of the task. Any string is accepted; the canonical values are high, medium and low, and anything else is passed through unchanged."
           }
         },
         "required": ["content", "status", "priority"],
@@ -32374,90 +31064,6 @@
                   },
                   "type": {
                     "type": "string",
-                    "enum": ["permission.v2.asked"]
-                  },
-                  "properties": {
-                    "type": "object",
-                    "properties": {
-                      "id": {
-                        "type": "string",
-                        "pattern": "^per"
-                      },
-                      "sessionID": {
-                        "type": "string",
-                        "pattern": "^ses"
-                      },
-                      "action": {
-                        "type": "string"
-                      },
-                      "resources": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      },
-                      "save": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      },
-                      "metadata": {
-                        "type": "object"
-                      },
-                      "source": {
-                        "$ref": "#/components/schemas/PermissionV2Source"
-                      }
-                    },
-                    "required": ["id", "sessionID", "action", "resources"],
-                    "additionalProperties": false
-                  }
-                },
-                "required": ["id", "type", "properties"],
-                "additionalProperties": false
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "pattern": "^evt_"
-                  },
-                  "type": {
-                    "type": "string",
-                    "enum": ["permission.v2.replied"]
-                  },
-                  "properties": {
-                    "type": "object",
-                    "properties": {
-                      "sessionID": {
-                        "type": "string",
-                        "pattern": "^ses"
-                      },
-                      "requestID": {
-                        "type": "string",
-                        "pattern": "^per"
-                      },
-                      "reply": {
-                        "$ref": "#/components/schemas/PermissionV2Reply"
-                      }
-                    },
-                    "required": ["sessionID", "requestID", "reply"],
-                    "additionalProperties": false
-                  }
-                },
-                "required": ["id", "type", "properties"],
-                "additionalProperties": false
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "pattern": "^evt_"
-                  },
-                  "type": {
-                    "type": "string",
                     "enum": ["plugin.added"]
                   },
                   "properties": {
@@ -33626,37 +32232,6 @@
           }
         }
       },
-      "ProviderCatalog": {
-        "type": "object",
-        "properties": {
-          "providers": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ProviderV2Info"
-            }
-          },
-          "models": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ModelV2Info"
-            }
-          },
-          "connected": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "default": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            }
-          }
-        },
-        "required": ["providers", "models", "connected", "default"],
-        "additionalProperties": false
-      },
       "ProjectState": {
         "anyOf": [
           {
@@ -33961,61 +32536,6 @@
           }
         ]
       },
-      "ToolListItem": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "parameters": {}
-        },
-        "required": ["id", "description", "parameters"],
-        "additionalProperties": false
-      },
-      "ToolList": {
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/ToolListItem"
-        }
-      },
-      "ToolIDs": {
-        "type": "array",
-        "items": {
-          "type": "string"
-        }
-      },
-      "WorktreeError": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "enum": [
-              "WorktreeNotGitError",
-              "WorktreeNameGenerationFailedError",
-              "WorktreeCreateFailedError",
-              "WorktreeStartCommandFailedError",
-              "WorktreeRemoveFailedError",
-              "WorktreeResetFailedError",
-              "WorktreeListFailedError"
-            ]
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "message": {
-                "type": "string"
-              }
-            },
-            "required": ["message"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["name", "data"],
-        "additionalProperties": false
-      },
       "WorktreeCreateInput": {
         "type": "object",
         "properties": {
@@ -34045,77 +32565,33 @@
         "required": ["name", "directory"],
         "additionalProperties": false
       },
-      "WorktreeRemoveInput": {
-        "type": "object",
-        "properties": {
-          "directory": {
-            "type": "string"
-          },
-          "force": {
-            "type": "boolean"
-          }
-        },
-        "required": ["directory"],
-        "additionalProperties": false
-      },
-      "WorktreeDirtyError": {
+      "WorktreeError": {
         "type": "object",
         "properties": {
           "name": {
             "type": "string",
-            "enum": ["WorktreeDirtyError"]
+            "enum": [
+              "WorktreeNotGitError",
+              "WorktreeNameGenerationFailedError",
+              "WorktreeCreateFailedError",
+              "WorktreeStartCommandFailedError",
+              "WorktreeRemoveFailedError",
+              "WorktreeResetFailedError",
+              "WorktreeListFailedError"
+            ]
           },
           "data": {
             "type": "object",
             "properties": {
-              "directory": {
-                "type": "string"
-              },
               "message": {
                 "type": "string"
-              },
-              "forceRequired": {
-                "type": "boolean",
-                "enum": [true]
               }
             },
-            "required": ["directory", "message", "forceRequired"],
+            "required": ["message"],
             "additionalProperties": false
           }
         },
         "required": ["name", "data"],
-        "additionalProperties": false
-      },
-      "WorktreeResetInput": {
-        "type": "object",
-        "properties": {
-          "directory": {
-            "type": "string"
-          }
-        },
-        "required": ["directory"],
-        "additionalProperties": false
-      },
-      "McpResource": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "uri": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "mimeType": {
-            "type": "string"
-          },
-          "client": {
-            "type": "string"
-          }
-        },
-        "required": ["name", "uri", "client"],
         "additionalProperties": false
       },
       "FileNode": {
@@ -34557,25 +33033,6 @@
         "required": ["name", "mode", "permission", "options"],
         "additionalProperties": false
       },
-      "FormatterStatus": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "extensions": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "enabled": {
-            "type": "boolean"
-          }
-        },
-        "required": ["name", "extensions", "enabled"],
-        "additionalProperties": false
-      },
       "AppManifest": {
         "type": "object",
         "properties": {
@@ -34884,117 +33341,35 @@
         "required": ["_tag", "requestID", "message"],
         "additionalProperties": false
       },
-      "Workspace": {
+      "ProviderCatalog": {
         "type": "object",
         "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^wrk"
+          "providers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProviderV2Info"
+            }
           },
-          "type": {
-            "type": "string"
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelV2Info"
+            }
           },
-          "name": {
-            "type": "string"
+          "connected": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
-          "branch": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "directory": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "extra": {
-            "anyOf": [
-              {},
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "origin": {
-            "type": "string"
-          },
-          "timeUsed": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string",
-                "enum": ["NaN"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["-Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity", "-Infinity", "NaN"]
-              }
-            ]
-          }
-        },
-        "required": ["id", "type", "name", "origin", "timeUsed"],
-        "additionalProperties": false
-      },
-      "WorkspaceCreateError": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "enum": ["WorkspaceCreateError"]
-          },
-          "data": {
+          "default": {
             "type": "object",
-            "properties": {
-              "message": {
-                "type": "string"
-              }
-            },
-            "required": ["message"],
-            "additionalProperties": false
+            "additionalProperties": {
+              "type": "string"
+            }
           }
         },
-        "required": ["name", "data"],
-        "additionalProperties": false
-      },
-      "WorkspaceWarpError": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "enum": ["WorkspaceWarpError"]
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "message": {
-                "type": "string"
-              }
-            },
-            "required": ["message"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["name", "data"],
+        "required": ["providers", "models", "connected", "default"],
         "additionalProperties": false
       },
       "UnauthorizedError": {
@@ -35589,23 +33964,6 @@
         "type": "string",
         "enum": ["not-applicable", "not-measured", "measurement-failed", "incomplete"]
       },
-      "PermissionNotFoundError": {
-        "type": "object",
-        "properties": {
-          "_tag": {
-            "type": "string",
-            "enum": ["PermissionNotFoundError"]
-          },
-          "requestID": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": ["_tag", "requestID", "message"],
-        "additionalProperties": false
-      },
       "messenger.account.status": {
         "type": "object",
         "properties": {
@@ -36020,12 +34378,6 @@
           },
           {
             "$ref": "#/components/schemas/ReferenceUpdated"
-          },
-          {
-            "$ref": "#/components/schemas/PermissionV2Asked"
-          },
-          {
-            "$ref": "#/components/schemas/PermissionV2Replied"
           },
           {
             "$ref": "#/components/schemas/PluginAdded"
@@ -37929,37 +36281,6 @@
           {
             "$ref": "#/components/schemas/SessionMessageCompaction"
           }
-        ]
-      },
-      "PermissionV2Source": {
-        "type": "object",
-        "properties": {
-          "type": {
-            "type": "string",
-            "enum": ["tool"]
-          },
-          "messageID": {
-            "type": "string"
-          },
-          "callID": {
-            "type": "string"
-          }
-        },
-        "required": ["type", "messageID", "callID"],
-        "additionalProperties": false
-      },
-      "PermissionV2Reply": {
-        "type": "string",
-        "enum": [
-          "once",
-          "always",
-          "reject",
-          "allow-once",
-          "allow-file",
-          "allow-always",
-          "deny-once",
-          "deny-file",
-          "deny-always"
         ]
       },
       "QuestionV2Option": {
@@ -41651,10 +39972,6 @@
                 "type": "string",
                 "enum": ["debug", "info", "warn", "error"]
               },
-              "patch": {
-                "type": "string",
-                "enum": ["debug", "info", "warn", "error"]
-              },
               "plugin": {
                 "type": "string",
                 "enum": ["debug", "info", "warn", "error"]
@@ -42834,18 +41151,6 @@
           "default_agent": {
             "type": "string"
           },
-          "autoupdate": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "string",
-                "enum": ["notify"]
-              }
-            ],
-            "description": "Automatically update or notify when a new version is available"
-          },
           "username": {
             "type": "string"
           },
@@ -42920,9 +41225,6 @@
             "properties": {
               "enabled": {
                 "type": "boolean"
-              },
-              "name": {
-                "type": "string"
               },
               "prompt": {
                 "type": "string"
@@ -43184,7 +41486,7 @@
                     "enum": ["Infinity", "-Infinity", "NaN"]
                   }
                 ],
-                "description": "Token budget for the REASONING stage that plans a step before it runs — 0 disables the stage (notes/jh-think-stage.md). MEASURED on qwen3.6-35b: a reasoning model cut off mid-thought returns EMPTY, because the close of its <think> block never arrives and the parser has nothing to extract — 3072 and 8192 both yield nothing, 24576 completes (18974 tokens used). Budget it generously or not at all: an empty finish=length reply is a BUDGET reading, never a capability reading (default: 0 = off)"
+                "description": "Token budget for the REASONING stage that plans a step before it runs — 0 disables the stage (notes/jh/think-stage.md). MEASURED on qwen3.6-35b: a reasoning model cut off mid-thought returns EMPTY, because the close of its <think> block never arrives and the parser has nothing to extract — 3072 and 8192 both yield nothing, 24576 completes (18974 tokens used). Budget it generously or not at all: an empty finish=length reply is a BUDGET reading, never a capability reading (default: 0 = off)"
               }
             },
             "additionalProperties": false
@@ -43665,6 +41967,176 @@
         },
         "additionalProperties": false
       },
+      "ProjectTune": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": ["interactive"]
+          },
+          "features": {
+            "type": "object",
+            "properties": {
+              "safeMode": {
+                "type": "boolean"
+              },
+              "askBeforeChanges": {
+                "type": "boolean"
+              },
+              "surgicalEdits": {
+                "type": "boolean"
+              },
+              "contextBudget": {
+                "type": "boolean"
+              },
+              "memory": {
+                "type": "boolean"
+              },
+              "introspection": {
+                "type": "boolean"
+              },
+              "quality": {
+                "type": "boolean"
+              },
+              "affective": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      "ProjectSkillChoice": {
+        "type": "object",
+        "properties": {
+          "show": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ProjectSkills": {
+        "type": "object",
+        "additionalProperties": {
+          "$ref": "#/components/schemas/ProjectSkillChoice"
+        }
+      },
+      "ProjectSection": {
+        "type": "string",
+        "enum": ["name", "permissions", "tune", "exclude", "policies", "skills"]
+      },
+      "DbRegistryTableSummary": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "rowCount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          }
+        },
+        "required": ["name", "rowCount"],
+        "additionalProperties": false
+      },
+      "DbRegistryTableRow": {
+        "type": "object",
+        "properties": {
+          "rowid": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "values": {
+            "type": "object"
+          }
+        },
+        "required": ["rowid", "values"],
+        "additionalProperties": false
+      },
+      "DbRegistryTablePage": {
+        "type": "object",
+        "properties": {
+          "table": {
+            "type": "string"
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rowCount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DbRegistryTableRow"
+            }
+          }
+        },
+        "required": ["table", "columns", "rowCount", "rows"],
+        "additionalProperties": false
+      },
       "ProviderRequest": {
         "type": "object",
         "properties": {
@@ -43929,191 +42401,6 @@
           "enabled",
           "limit"
         ],
-        "additionalProperties": false
-      },
-      "ProjectTune": {
-        "type": "object",
-        "properties": {
-          "mode": {
-            "type": "string",
-            "enum": ["interactive"]
-          },
-          "features": {
-            "type": "object",
-            "properties": {
-              "safeMode": {
-                "type": "boolean"
-              },
-              "askBeforeChanges": {
-                "type": "boolean"
-              },
-              "surgicalEdits": {
-                "type": "boolean"
-              },
-              "contextBudget": {
-                "type": "boolean"
-              },
-              "memory": {
-                "type": "boolean"
-              },
-              "introspection": {
-                "type": "boolean"
-              },
-              "quality": {
-                "type": "boolean"
-              },
-              "affective": {
-                "type": "boolean"
-              }
-            },
-            "additionalProperties": false
-          }
-        },
-        "additionalProperties": false
-      },
-      "ProjectSkillChoice": {
-        "type": "object",
-        "properties": {
-          "show": {
-            "type": "boolean"
-          }
-        },
-        "additionalProperties": false
-      },
-      "ProjectSkills": {
-        "type": "object",
-        "additionalProperties": {
-          "$ref": "#/components/schemas/ProjectSkillChoice"
-        }
-      },
-      "ProjectSection": {
-        "type": "string",
-        "enum": ["name", "permissions", "tune", "exclude", "policies", "skills"]
-      },
-      "DbRegistryTableSummary": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "rowCount": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string",
-                "enum": ["NaN"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["-Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity", "-Infinity", "NaN"]
-              }
-            ]
-          }
-        },
-        "required": ["name", "rowCount"],
-        "additionalProperties": false
-      },
-      "DbRegistryTableRow": {
-        "type": "object",
-        "properties": {
-          "rowid": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string",
-                "enum": ["NaN"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["-Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity", "-Infinity", "NaN"]
-              }
-            ]
-          },
-          "values": {
-            "type": "object"
-          }
-        },
-        "required": ["rowid", "values"],
-        "additionalProperties": false
-      },
-      "DbRegistryTablePage": {
-        "type": "object",
-        "properties": {
-          "table": {
-            "type": "string"
-          },
-          "columns": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "rowCount": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string",
-                "enum": ["NaN"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["-Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity", "-Infinity", "NaN"]
-              }
-            ]
-          },
-          "rows": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/DbRegistryTableRow"
-            }
-          }
-        },
-        "required": ["table", "columns", "rowCount", "rows"],
-        "additionalProperties": false
-      },
-      "WorkspaceEventConnectionStatus": {
-        "type": "object",
-        "properties": {
-          "workspaceID": {
-            "type": "string",
-            "pattern": "^wrk"
-          },
-          "status": {
-            "type": "string",
-            "enum": ["connected", "connecting", "disconnected", "error"]
-          }
-        },
-        "required": ["workspaceID", "status"],
         "additionalProperties": false
       },
       "LocationInfo": {
@@ -48439,9 +46726,6 @@
           "edits": {
             "type": "boolean"
           },
-          "typing": {
-            "type": "boolean"
-          },
           "threads": {
             "type": "boolean"
           },
@@ -48524,7 +46808,7 @@
             ]
           }
         },
-        "required": ["listChats", "files", "edits", "typing", "threads", "moderation", "format", "maxChars"],
+        "required": ["listChats", "files", "edits", "threads", "moderation", "format", "maxChars"],
         "additionalProperties": false
       },
       "MessengerDriverMeta": {
@@ -49998,42 +48282,6 @@
         "required": ["slug", "name", "directory", "verdict", "checks", "summary", "at"],
         "additionalProperties": false
       },
-      "PermissionV2Request": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^per"
-          },
-          "sessionID": {
-            "type": "string",
-            "pattern": "^ses"
-          },
-          "action": {
-            "type": "string"
-          },
-          "resources": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "save": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "source": {
-            "$ref": "#/components/schemas/PermissionV2Source"
-          }
-        },
-        "required": ["id", "sessionID", "action", "resources"],
-        "additionalProperties": false
-      },
       "PermissionSavedInfo": {
         "type": "object",
         "properties": {
@@ -50055,6 +48303,23 @@
           }
         },
         "required": ["id", "origin", "action", "resource"],
+        "additionalProperties": false
+      },
+      "PermissionV2Source": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["tool"]
+          },
+          "messageID": {
+            "type": "string"
+          },
+          "callID": {
+            "type": "string"
+          }
+        },
+        "required": ["type", "messageID", "callID"],
         "additionalProperties": false
       },
       "FileSystemSnapshotContent": {
@@ -51327,134 +49592,6 @@
           "data": {
             "type": "object",
             "properties": {}
-          }
-        },
-        "required": ["id", "type", "data"],
-        "additionalProperties": false
-      },
-      "PermissionV2Asked": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["permission.v2.asked"]
-          },
-          "durable": {
-            "type": "object",
-            "properties": {
-              "aggregateID": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer"
-              },
-              "version": {
-                "type": "integer"
-              }
-            },
-            "required": ["aggregateID", "seq", "version"],
-            "additionalProperties": false
-          },
-          "location": {
-            "$ref": "#/components/schemas/LocationRef"
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "pattern": "^per"
-              },
-              "sessionID": {
-                "type": "string",
-                "pattern": "^ses"
-              },
-              "action": {
-                "type": "string"
-              },
-              "resources": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "save": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "metadata": {
-                "type": "object"
-              },
-              "source": {
-                "$ref": "#/components/schemas/PermissionV2Source"
-              }
-            },
-            "required": ["id", "sessionID", "action", "resources"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "data"],
-        "additionalProperties": false
-      },
-      "PermissionV2Replied": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["permission.v2.replied"]
-          },
-          "durable": {
-            "type": "object",
-            "properties": {
-              "aggregateID": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer"
-              },
-              "version": {
-                "type": "integer"
-              }
-            },
-            "required": ["aggregateID", "seq", "version"],
-            "additionalProperties": false
-          },
-          "location": {
-            "$ref": "#/components/schemas/LocationRef"
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "sessionID": {
-                "type": "string",
-                "pattern": "^ses"
-              },
-              "requestID": {
-                "type": "string",
-                "pattern": "^per"
-              },
-              "reply": {
-                "$ref": "#/components/schemas/PermissionV2Reply"
-              }
-            },
-            "required": ["sessionID", "requestID", "reply"],
-            "additionalProperties": false
           }
         },
         "required": ["id", "type", "data"],
@@ -55851,90 +53988,6 @@
         "required": ["id", "type", "properties"],
         "additionalProperties": false
       },
-      "EventPermissionV2Asked": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["permission.v2.asked"]
-          },
-          "properties": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "pattern": "^per"
-              },
-              "sessionID": {
-                "type": "string",
-                "pattern": "^ses"
-              },
-              "action": {
-                "type": "string"
-              },
-              "resources": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "save": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "metadata": {
-                "type": "object"
-              },
-              "source": {
-                "$ref": "#/components/schemas/PermissionV2Source"
-              }
-            },
-            "required": ["id", "sessionID", "action", "resources"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "properties"],
-        "additionalProperties": false
-      },
-      "EventPermissionV2Replied": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["permission.v2.replied"]
-          },
-          "properties": {
-            "type": "object",
-            "properties": {
-              "sessionID": {
-                "type": "string",
-                "pattern": "^ses"
-              },
-              "requestID": {
-                "type": "string",
-                "pattern": "^per"
-              },
-              "reply": {
-                "$ref": "#/components/schemas/PermissionV2Reply"
-              }
-            },
-            "required": ["sessionID", "requestID", "reply"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "properties"],
-        "additionalProperties": false
-      },
       "EventPluginAdded": {
         "type": "object",
         "properties": {
@@ -57088,10 +55141,6 @@
     {
       "name": "sync",
       "description": "Experimental HttpApi sync routes."
-    },
-    {
-      "name": "workspace",
-      "description": "Experimental HttpApi workspace routes."
     },
     {
       "name": "novaclaw HttpApi",

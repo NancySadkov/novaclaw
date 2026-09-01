@@ -7,7 +7,7 @@ import type { JhProcessRunner } from "./process-runner"
 import { JhEngine } from "./engine"
 
 // jh-improve7 — keep the best, always + mandatory coordinates. Two permanent fixtures encode the wave-6
-// residual (notes/jh-improve6-report.md §VERDICT):
+// residual (notes/jh/improve6-report.md §VERDICT):
 //  · run112 (K5): the model HELD an 82-digit best (0.812) and ENDED the run on a 17-digit state — keep-best
 //    only restored via escalation, and no terminal path restored. Now: restore-on-drop (2 consecutive
 //    below-best samples) + a terminal restore on EVERY report path (the deliverable is the best state).
@@ -161,7 +161,6 @@ function harness(opts: {
         ? Effect.succeed(`{"achieved": false}`)
         : Effect.succeed(replies[i++] ?? idle)
     },
-    correct: () => Effect.fail({ message: "x" }),
     executor: opts.world.executor,
     runner: opts.world.runner,
     artifacts: JhArtifact.memory(),

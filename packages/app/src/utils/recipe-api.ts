@@ -1,5 +1,5 @@
 import type { ServerConnection } from "@/context/server"
-import { instanceFetch } from "@/utils/instance-fetch"
+import { instanceFetch, instanceFetchResponse } from "@/utils/instance-fetch"
 
 // Raw-fetch client for /api/recipe. Recipes are instance-global, so the connection (base URL +
 // creds) is the only routing needed — no `directory`.
@@ -37,8 +37,8 @@ export interface RecipeNeedCheck {
  * A recipe as its author wrote it (`GET /api/recipe/:slug/source`).
  *
  * ⚠️ `markdown` is the FILE'S OWN BYTES. The `Recipe` record above carries the prompt BODY only, so this
- * is the only thing on this API that can hand a user their file back — which is what makes export a copy
- * of the author's recipe rather than a two-field reconstruction of it.
+ * is the text-editing source rather than a two-field reconstruction. Folder export uses the ZIP endpoint
+ * below so assets travel too.
  */
 export interface RecipeSource {
   readonly slug: string
@@ -77,7 +77,7 @@ export interface RunResult {
 }
 
 /**
- * The deterministic verdict on a cook (`todo/recipes.md`). A cook's outcome used to be prose, so nothing
+ * The deterministic verdict on a cook. A cook's outcome used to be prose, so nothing
  * could read it mechanically; this is the harness's own answer, read off the work directory.
  *
  * ⚠️ Four states, and collapsing any two of them is the bug this shape exists to prevent: `working` ·
@@ -113,6 +113,45 @@ export interface VerifyResult {
 const call = <T>(server: ServerConnection.HttpBase, method: string, route: string, body?: unknown): Promise<T> =>
   instanceFetch<T>(server, { method, route, body })
 
+/** Mirrors the engine's compressed ZIP budget so an oversized upload is refused before allocation. */
+export const MAX_RECIPE_ARCHIVE_BYTES = 32 * 1024 * 1024
+/** Archive transfers are bounded even if a remote instance accepts a connection and then stalls. */
+export const RECIPE_ARCHIVE_TIMEOUT_MS = 60_000
+
+export interface RecipeArchiveTransferOptions {
+  readonly signal?: AbortSignal
+  readonly timeoutMs?: number
+}
+
+const readBoundedArchive = async (response: Response): Promise<Uint8Array<ArrayBuffer>> => {
+  const declared = Number(response.headers.get("content-length"))
+  if (Number.isFinite(declared) && declared > MAX_RECIPE_ARCHIVE_BYTES) {
+    await response.body?.cancel("recipe archive exceeded its byte budget")
+    throw new Error(`That recipe ZIP is over ${MAX_RECIPE_ARCHIVE_BYTES / 1024 / 1024} MB`)
+  }
+  const reader = response.body?.getReader()
+  if (!reader) return new Uint8Array()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  while (true) {
+    const next = await reader.read()
+    if (next.done) break
+    total += next.value.byteLength
+    if (total > MAX_RECIPE_ARCHIVE_BYTES) {
+      await reader.cancel("recipe archive exceeded its byte budget")
+      throw new Error(`That recipe ZIP is over ${MAX_RECIPE_ARCHIVE_BYTES / 1024 / 1024} MB`)
+    }
+    chunks.push(next.value)
+  }
+  const archive = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    archive.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return archive
+}
+
 export const listRecipes = (server: ServerConnection.HttpBase) => call<Recipe[]>(server, "GET", "api/recipe")
 
 export const saveRecipe = (server: ServerConnection.HttpBase, input: SaveRecipeInput) =>
@@ -127,6 +166,44 @@ export const updateRecipe = (server: ServerConnection.HttpBase, slug: string, pa
 /** Store a `recipe.md` somebody else wrote, byte for byte, under a free slug. Never overwrites. */
 export const importRecipe = (server: ServerConnection.HttpBase, input: { markdown: string; slug?: string }) =>
   call<Recipe>(server, "POST", "api/recipe/import", input)
+
+/** Download the complete folder transport: recipe.md plus every nested binary/text asset. */
+export const recipeArchive = async (
+  server: ServerConnection.HttpBase,
+  slug: string,
+  options: RecipeArchiveTransferOptions = {},
+): Promise<Uint8Array<ArrayBuffer>> => {
+  return instanceFetchResponse(
+    server,
+    {
+      method: "GET",
+      route: `api/recipe/${encodeURIComponent(slug)}/archive`,
+      headers: { accept: "application/zip" },
+      signal: options.signal,
+      timeoutMs: options.timeoutMs ?? RECIPE_ARCHIVE_TIMEOUT_MS,
+    },
+    readBoundedArchive,
+  )
+}
+
+/** Import a complete recipe folder ZIP under a claimed free slug. Never overwrites. */
+export const importRecipeArchive = (
+  server: ServerConnection.HttpBase,
+  archive: Uint8Array<ArrayBuffer>,
+  options: RecipeArchiveTransferOptions & { readonly slug?: string } = {},
+) => {
+  if (archive.byteLength > MAX_RECIPE_ARCHIVE_BYTES)
+    return Promise.reject(new Error(`That recipe ZIP is over ${MAX_RECIPE_ARCHIVE_BYTES / 1024 / 1024} MB`))
+  return instanceFetch<Recipe>(server, {
+    method: "POST",
+    route: "api/recipe/archive",
+    query: { slug: options.slug },
+    headers: { "content-type": "application/zip", accept: "application/json" },
+    rawBody: archive,
+    signal: options.signal,
+    timeoutMs: options.timeoutMs ?? RECIPE_ARCHIVE_TIMEOUT_MS,
+  })
+}
 
 export const duplicateRecipe = (server: ServerConnection.HttpBase, slug: string) =>
   call<Recipe>(server, "POST", `api/recipe/${encodeURIComponent(slug)}/duplicate`, {})

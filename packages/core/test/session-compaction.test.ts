@@ -10,7 +10,7 @@ import { applySteerProvenance, STEER_PROVENANCE_PREFIX } from "@novaclaw/core/se
 import type { SessionMessage } from "@novaclaw/core/session/message"
 import type { SessionSchema } from "@novaclaw/core/session/schema"
 import { LLM, LLMEvent, Model, type LLMRequest } from "@novaclaw/llm"
-import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
+import * as OpenAIChat from "@novaclaw/llm/protocols/openai-compatible-chat"
 import { Effect, Stream } from "effect"
 
 test("compaction describes tool media without embedding base64", () => {

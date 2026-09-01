@@ -73,7 +73,31 @@ describe("lazy CLI commands", () => {
     const registry = await Bun.file(new URL("../../src/cli/command-registry.ts", import.meta.url)).text()
 
     expect([...index.matchAll(/from\s+["']\.\/cli\/cmd\//g)]).toHaveLength(0)
-    expect([...registry.matchAll(/await import\(["']\.\/cmd\/[^"']+["']\)/g)]).toHaveLength(14)
+
+    /**
+     * 🔴 **DERIVED, not a magic number** — the invariant is *every registered command is imported
+     * lazily*, and that is what is asserted: one `await import("./cmd/…")` per `lazyCommand(…)`
+     * declaration, whatever the total happens to be.
+     *
+     * ⚠️ It was a hard-coded `toHaveLength(14)` until 2026-09-01, and it went stale the moment the
+     * `pr` command was deleted — the implementation, its `CommandSpec` spread and its lazy import all
+     * went together, and the count was the only thing left behind. A count that must be
+     * hand-maintained goes stale on every command ADDED or REMOVED, and its failure says "the number
+     * moved" rather than "a command is eager", which is the thing anyone actually cares about.
+     *
+     * What this now catches that a count could not: a command added with an EAGER import (the
+     * declaration count rises, the lazy-import count does not) and a `load()` that imports something
+     * other than its own module.
+     */
+    const declarations = [...registry.matchAll(/lazyCommand\(\{/g)].length
+    const lazyImports = [...registry.matchAll(/await import\(["']\.\/cmd\/[^"']+["']\)/g)].length
+
+    // ⚠️ Vacuity guard, in the shape this repo uses elsewhere: a renamed helper or a moved file would
+    // empty the scan and make every assertion below pass forever. A FLOOR, not a count — it moves
+    // down only when commands are genuinely deleted, and never to zero.
+    expect(declarations, "the scan found no commands — the registry moved or `lazyCommand` was renamed").
+      toBeGreaterThan(5)
+    expect(lazyImports, "a registered command is not imported lazily").toBe(declarations)
     expect([...registry.matchAll(/^import\s+.*["']\.\/cmd\//gm)]).toHaveLength(0)
   })
 })

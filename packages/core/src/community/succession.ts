@@ -8,7 +8,7 @@ import { makeGlobalNode } from "../effect/app-node"
 import { InstanceIdentityStore } from "../instance-identity-store"
 
 /**
- * Community P1 — key rotation (`todo/community-p2p.md`).
+ * Community P1 — key rotation (`notes/spec/community-p2p.md`).
  *
  * A **successor statement** is the old key saying, in its own signature, "the peer you knew as me is
  * now this other key". It is how a user moves to a new machine, or replaces a key they think is

@@ -10,7 +10,7 @@
 //   - NOVACLAW_TEST_HOME           : pins os.homedir() → tmpdir
 //   - NOVACLAW_DISABLE_PROJECT_CONFIG : skip walking up for novaclaw.json
 //   - NOVACLAW_PURE                : skip external plugin discovery + install
-//   - NOVACLAW_DISABLE_AUTOUPDATE / AUTOCOMPACT / MODELS_FETCH : no background work
+//   - AUTOCOMPACT / MODELS_FETCH : no background work
 // Plus HOME / XDG_* pointing at the tmpdir for belt-and-suspenders isolation.
 //
 // Today only `novaclaw.run` is fully wired. The shape supports adding more
@@ -70,7 +70,6 @@ function isolatedEnv(home: string, configJson: string): Record<string, string> {
     NOVACLAW_CONFIG_CONTENT: configJson,
     NOVACLAW_DISABLE_PROJECT_CONFIG: "1",
     NOVACLAW_PURE: "1",
-    NOVACLAW_DISABLE_AUTOUPDATE: "1",
     NOVACLAW_DISABLE_AUTOCOMPACT: "1",
     NOVACLAW_DISABLE_MODELS_FETCH: "1",
     NOVACLAW_AUTH_CONTENT: "{}",

@@ -27,7 +27,6 @@ function capture(opts: { file: { name: string; content: string }; numberedWorksp
       prompts.push({ goalCheck, user: p.user })
       return Effect.succeed(goalCheck ? '{"achieved": true, "evidence": ""}' : atom)
     },
-    correct: () => Effect.fail({ message: "x" }),
     executor: { run: () => Effect.succeed({ ok: true, output: "o", artifacts: new Map<string, string>() }) },
     runner: { run: () => Effect.succeed({ exitCode: 0, output: "", timedOut: false }) },
     artifacts: JhArtifact.memory(),
@@ -128,7 +127,6 @@ function budgetCapture(opts: { clock: number[]; budgetAware?: boolean; withBudge
       if (!p.user.includes("Is the goal fully achieved?")) introspectPrompts.push(p.user)
       return Effect.succeed(atom)
     },
-    correct: () => Effect.fail({ message: "x" }),
     executor: { run: () => Effect.succeed({ ok: true, output: "noted", artifacts: new Map<string, string>() }) },
     runner: {
       run: () => {

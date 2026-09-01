@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import nodeFs from "node:fs"
 import os from "node:os"
 import nodePath from "node:path"
+import { sql } from "drizzle-orm"
 import type { Cause } from "effect"
 import { Clock, DateTime, Duration, Effect, Layer, Queue, Stream } from "effect"
 import * as TestClock from "effect/testing/TestClock"
@@ -181,15 +182,14 @@ const makeSessionMock = () => {
 const workedTranscript = [{ type: "assistant", content: [{ type: "tool", name: "bash" }, { type: "text" }] }]
 const talkedTranscript = [{ type: "assistant", content: [{ type: "text" }, { type: "tool", name: "exit" }] }]
 
-// P0 gates (notes/messenger-plan.md §8): the gateway's account state machine — boot/reload
+// P0 gates: the gateway's account state machine — boot/reload
 // reconcile, connected/backoff/error/disabled/airgapped statuses, inbound seen-chat upkeep,
 // self-echo drop, and scope teardown on disable — all against a controllable fake driver.
 
 const CAPS: Messenger.Capabilities = {
-  listChats: "seen",
+  listChats: "full",
   files: { up: false, down: false },
   edits: false,
-  typing: false,
   threads: false,
   moderation: { delete: false, ban: false, kick: false, mute: false, pin: false },
   format: "plain",
@@ -213,6 +213,8 @@ const makeFakeDriver = () => {
     challengeNext: false,
     /** While true every outbound send fails — the driver-refuses-the-message case. */
     sendFails: false,
+    /** Number of upcoming sends that fail as transient transport hiccups. */
+    retryableFailures: 0,
     sendChallenges: false,
     open: 0,
     liveChats: undefined as readonly MessengerDriver.ChatSnapshot[] | undefined,
@@ -248,6 +250,12 @@ const makeFakeDriver = () => {
               // NC-REL-036: a provider challenge raised by an OUTBOUND op, not at connect.
               if (state.sendChallenges)
                 return yield* Effect.fail(new MessengerDriver.ChallengeError({ message: "CAPTCHA on send" }))
+              if (state.retryableFailures > 0) {
+                state.retryableFailures -= 1
+                return yield* Effect.fail(
+                  new MessengerDriver.SendError({ reason: "temporary transport hiccup", retryable: true }),
+                )
+              }
               if (state.sendFails)
                 return yield* Effect.fail(new MessengerDriver.SendError({ reason: SEND_REFUSAL, retryable: false }))
               state.sent.push({
@@ -1183,7 +1191,7 @@ describe("MessengerGateway pipeline", () => {
           attachments: [{ id: "ref-9", name: "brief.pdf", mime: "application/pdf" }],
         }),
       )
-      yield* eventually(store.hasChat(account.id, "77"), (seen) => seen === true, "chat seen")
+      yield* eventually(store.hasInbound(account.id, "77"), (seen) => seen === true, "inbound claimed")
       const sentBefore = fake.state.sent.length
       const sent = yield* gateway.sendFile({
         accountID: account.id,
@@ -1265,7 +1273,7 @@ describe("MessengerGateway pipeline", () => {
     }),
   )
 
-  it.live("gateway.chats serves the live driver list and seeds the seen-cache; history fetches", () =>
+  it.live("gateway.chats refreshes discovery without granting cold-start consent; history fetches", () =>
     Effect.gen(function* () {
       fake.state.liveChats = [
         { chatID: "self1", kind: "dm", title: "Saved Messages", self: true },
@@ -1275,14 +1283,35 @@ describe("MessengerGateway pipeline", () => {
         { messageID: "1", senderID: "9", senderName: "Buyer", outgoing: false, text: "still available?", at: 1000 },
         { messageID: "2", senderID: "me", senderName: "Nancy", outgoing: true, text: "yes!", at: 2000 },
       ]
-      const { store, gateway, account } = yield* online("chats")
+      const { store, gateway, account, queue } = yield* online("chats")
+      const { db } = yield* Database.Service
       const chats = yield* gateway.chats(account.id)
       expect(chats.ok).toBe(true)
       if (chats.ok) expect(chats.chats.map((chat) => chat.title)).toEqual(["Saved Messages", "Flea market"])
-      // The live list seeded the seen-cache — replying to an EXISTING conversation is never a cold start.
-      expect(yield* store.hasChat(account.id, "-1001")).toBe(true)
+      // Listing refreshed the discovery cache but did not manufacture inbound evidence.
+      expect((yield* store.listChats(account.id)).map((chat) => chat.chatID)).toContain("-1001")
+      expect(yield* store.hasInbound(account.id, "-1001")).toBe(false)
       const reply = yield* gateway.send({ accountID: account.id, chatID: "-1001", text: "bump" })
-      expect(reply.kind).toBe("sent")
+      expect(reply.kind).toBe("refused")
+
+      // Repeating the discovery read cannot change authority either.
+      yield* gateway.chats(account.id)
+      expect(yield* store.hasInbound(account.id, "-1001")).toBe(false)
+
+      // An explicit initiation still crosses the separate gate and spends the durable daily budget.
+      const initiated = yield* gateway.send({ accountID: account.id, chatID: "-1001", text: "bump", initiate: true })
+      expect(initiated.kind).toBe("sent")
+      expect(
+        yield* db.get<{ count: number }>(sql`SELECT "count" AS count FROM messenger_initiation WHERE scope = 'global'`),
+      ).toEqual({ count: 1 })
+
+      // A real inbound claim is the separate fact that authorizes ordinary replies. Refreshing the
+      // same discovery metadata afterwards must preserve that evidence, not recreate or erase it.
+      yield* Queue.offer(queue, message("-1001", { text: "still there?", sender: "buyer" }))
+      yield* eventually(store.hasInbound(account.id, "-1001"), (seen) => seen === true, "inbound -1001")
+      yield* gateway.chats(account.id)
+      expect(yield* store.hasInbound(account.id, "-1001")).toBe(true)
+      expect((yield* gateway.send({ accountID: account.id, chatID: "-1001", text: "yes" })).kind).toBe("sent")
 
       const history = yield* gateway.history({ accountID: account.id, chatID: "-1001", limit: 10 })
       expect(history.ok).toBe(true)
@@ -1311,7 +1340,7 @@ describe("MessengerGateway pipeline", () => {
       // The chat must have messaged us first, or the cold-start guard refuses before the driver is
       // ever asked — which is what the first draft of this test measured.
       yield* Queue.offer(queue, message("770", { text: "hello", sender: "friend" }))
-      yield* eventually(store.hasChat(account.id, "770"), (seen) => seen === true, "seen 770")
+      yield* eventually(store.hasInbound(account.id, "770"), (seen) => seen === true, "inbound 770")
       fake.state.sendChallenges = true
 
       const outcome = yield* gateway.send({ accountID: account.id, chatID: "770", text: "hello" })
@@ -1341,7 +1370,7 @@ describe("MessengerGateway pipeline", () => {
 
       // A chat that HAS messaged us is a reply, never a cold start — allowed without initiate.
       yield* Queue.offer(queue, message("888", { text: "hello", sender: "friend" }))
-      yield* eventually(store.hasChat(account.id, "888"), (seen) => seen === true, "seen 888")
+      yield* eventually(store.hasInbound(account.id, "888"), (seen) => seen === true, "inbound 888")
       const reply = yield* gateway.send({ accountID: account.id, chatID: "888", text: "welcome back" })
       expect(reply.kind).toBe("sent")
       yield* eventually(
@@ -1378,7 +1407,7 @@ describe("MessengerGateway pipeline", () => {
 
       // …and the cap is a COLD-START cap only: answering a chat that wrote to us is never rationed.
       yield* Queue.offer(queue, message("654", { text: "hello", sender: "friend" }))
-      yield* eventually(store.hasChat(account.id, "654"), (seen) => seen === true, "seen 654")
+      yield* eventually(store.hasInbound(account.id, "654"), (seen) => seen === true, "inbound 654")
       expect((yield* gateway.send({ accountID: account.id, chatID: "654", text: "hi back" })).kind).toBe("sent")
 
       yield* store.removeAccount(account.id)
@@ -1459,7 +1488,7 @@ describe("MessengerGateway pipeline", () => {
 
       // A chat that HAS written to us, so the reply leg below is a genuine control and not a fluke.
       yield* Queue.offer(queue, message("881", { text: "hello", sender: "friend" }))
-      yield* eventually(store.hasChat(account.id, "881"), (seen) => seen === true, "seen 881")
+      yield* eventually(store.hasInbound(account.id, "881"), (seen) => seen === true, "inbound 881")
 
       const sentBefore = fake.state.sent.length
       yield* db.run("DROP TABLE messenger_initiation")
@@ -1486,7 +1515,7 @@ describe("MessengerGateway pipeline", () => {
       // A chat that HAS messaged us, so the cold-start guard is out of the picture — the only thing
       // left that can go wrong is the driver itself.
       yield* Queue.offer(queue, message("321", { text: "hello", sender: "friend" }))
-      yield* eventually(store.hasChat(account.id, "321"), (seen) => seen === true, "seen 321")
+      yield* eventually(store.hasInbound(account.id, "321"), (seen) => seen === true, "inbound 321")
 
       fake.state.sendFails = true
       const refused = yield* gateway.send({ accountID: account.id, chatID: "321", text: "on it" })
@@ -1509,7 +1538,28 @@ describe("MessengerGateway pipeline", () => {
     }).pipe(Effect.ensuring(Effect.sync(() => (fake.state.sendFails = false)))),
   )
 
-  // ⚠️ The dead-letter class at the seam where it lied loudest. `hasChat` and `bindingForChat` both
+  it.live("a transient send gets one paced retry, and a second failure is final", () =>
+    Effect.gen(function* () {
+      const { store, gateway, account, queue } = yield* online("send-retry")
+      yield* Queue.offer(queue, message("322", { text: "hello", sender: "friend" }))
+      yield* eventually(store.hasInbound(account.id, "322"), (seen) => seen === true, "inbound 322")
+
+      fake.state.retryableFailures = 1
+      expect((yield* gateway.send({ accountID: account.id, chatID: "322", text: "recovered" })).kind).toBe("sent")
+      expect(fake.state.sent.some((sent) => sent.chatID === "322" && sent.text === "recovered")).toBe(true)
+
+      fake.state.retryableFailures = 2
+      const bounded = yield* gateway.send({ accountID: account.id, chatID: "322", text: "still down" })
+      expect(bounded.kind).toBe("refused")
+      expect(fake.state.retryableFailures).toBe(0)
+      expect(fake.state.sent.some((sent) => sent.chatID === "322" && sent.text === "still down")).toBe(false)
+
+      yield* store.removeAccount(account.id)
+      yield* gateway.reload()
+    }).pipe(Effect.ensuring(Effect.sync(() => (fake.state.retryableFailures = 0)))),
+  )
+
+  // ⚠️ The dead-letter class at the seam where it lied loudest. `hasInbound` and `bindingForChat` both
   // answered "no" for a read that never happened, and the two "no"s combined into the cold-start
   // refusal — so an unreadable database told the model "This chat has never messaged us" about
   // somebody who had been writing all week, and the model apologised to the user on its behalf.
@@ -1526,7 +1576,7 @@ describe("MessengerGateway pipeline", () => {
 
       // ① A chat that HAS written to us — sent, and the driver really received it.
       yield* Queue.offer(queue, message("770", { text: "hello", sender: "friend" }))
-      yield* eventually(store.hasChat(account.id, "770"), (seen) => seen === true, "seen 770")
+      yield* eventually(store.hasInbound(account.id, "770"), (seen) => seen === true, "inbound 770")
       expect((yield* gateway.send({ accountID: account.id, chatID: "770", text: "hi back" })).kind).toBe("sent")
       expect(fake.state.sent.some((s) => s.chatID === "770" && s.text === "hi back")).toBe(true)
 
@@ -1536,11 +1586,11 @@ describe("MessengerGateway pipeline", () => {
       expect(cold.kind).toBe("refused")
       if (cold.kind === "refused") expect(cold.reason).toContain("never messaged us")
 
-      // ③ A fault no caller can prevent: both tables the cold-start test reads are gone. Before
+      // ③ A fault no caller can prevent: both evidence tables the cold-start test reads are gone. Before
       //    this change the two reads died (killing the connection fiber outright) and, once they
       //    had been made recoverable, answered false/undefined — i.e. ② for a chat that is ①.
       const sentBefore = fake.state.sent.length
-      yield* db.run("DROP TABLE messenger_chat")
+      yield* db.run("DROP TABLE messenger_inbound")
       yield* db.run("DROP TABLE messenger_binding")
       const blind = yield* gateway.send({ accountID: account.id, chatID: "770", text: "are you there?" })
       expect(blind.kind).toBe("unavailable")
@@ -1974,6 +2024,7 @@ const LIVE_LEDGER: readonly string[] = [
   "a hostile CLIENT message is delivered wrapped in untrusted framing (injection guard §7.5)",
   "a moderating batch tells the agent its reply text goes nowhere, and names the ops",
   "a provider challenge parks the account (no retry-loop) — traffic rules §2.3",
+  "a transient send gets one paced retry, and a second failure is final",
   "an account whose driver is not installed parks in a legible error",
   "an audience binding COALESCES inbound — a batch flushes as one turn (§0.1)",
   "an audience binding does NOT auto-relay (the agent lurks)",
@@ -1982,7 +2033,7 @@ const LIVE_LEDGER: readonly string[] = [
   "connects an enabled account, tracks seen chats, drops self-echo, and parks on disable",
   "console dispatch is rate-capped per minute with a legible refusal",
   "finished assistant text relays out to the bound chat",
-  "gateway.chats serves the live driver list and seeds the seen-cache; history fetches",
+  "gateway.chats refreshes discovery without granting cold-start consent; history fetches",
   "gateway.send is cold-start-guarded then paced (traffic rules §2.3)",
   "gateway.sendFile is cold-start-guarded and paced; gateway.attachment serves the ring (P5)",
   "inbound attachments materialize as prompt files — small inline, big on disk (P5)",
@@ -2129,7 +2180,7 @@ describe("the wall-clock ledger actually bites (negative control)", () => {
 // ───────────────────────────────────────────────────────────────────────────────────────────────
 // THE COLD-START TRI-STATE'S COLLAPSE POINT (v0.2.0-prep, batch 3 — the dead-letter class)
 //
-// `hasChat` and `bindingForChat` are both fallible reads, so "may we write into this chat without
+// `hasInbound` and `bindingForChat` are both fallible reads, so "may we write into this chat without
 // cold-starting?" is a THREE-valued question. `Hostility`'s lesson, which this mirrors: the value
 // is safe only while exactly ONE piece of code turns the inputs into a decision. Two call sites
 // each deciding "unknown means…" for themselves is how `bash` and Strict came to speak different
@@ -2186,7 +2237,7 @@ describe("the cold-start tri-state collapses in exactly one place", () => {
     // Without this a moved file or a renamed helper empties every scan below and turns the whole
     // ledger into a tautology that passes forever.
     expect(GATEWAY_SOURCE).toContain("export const invitationOf")
-    expect(GATEWAY_SOURCE.match(/store\.hasChat\(/g) ?? []).toHaveLength(1)
+    expect(GATEWAY_SOURCE.match(/store\.hasInbound\(/g) ?? []).toHaveLength(1)
   })
 
   test("every `unavailable` send outcome names the read it could not perform", () => {
@@ -2228,8 +2279,8 @@ describe("the collapse-point ledger actually bites (negative control)", () => {
     expect(unused).toEqual(["!charge.read"])
   })
 
-  test("a second raw `hasChat` read outside the collapse is what the count reports", () => {
-    const rogue = "const known = yield* store.hasChat(a, b)\nconst again = yield* store.hasChat(a, c)"
-    expect(rogue.match(/store\.hasChat\(/g) ?? []).toHaveLength(2)
+  test("a second raw `hasInbound` read outside the collapse is what the count reports", () => {
+    const rogue = "const known = yield* store.hasInbound(a, b)\nconst again = yield* store.hasInbound(a, c)"
+    expect(rogue.match(/store\.hasInbound\(/g) ?? []).toHaveLength(2)
   })
 })

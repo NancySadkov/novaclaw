@@ -1,3 +1,11 @@
+# PATCH PROVENANCE
+# WHAT: the git-tarball fallback fires on `statusCode >= 400` or a `TAR_*` error code, instead of
+#       `er.constructor.name.match(/^Http/)`.
+# WHY: a hosted provider answering an HTML sign-in page with HTTP 200 produces a TAR error, not an
+#      Http error, so the clone fallback never fired.
+# CLASS: upstreamable — a genuine upstream bug with a crisp repro.
+# UPSTREAM: not filed.
+# REMOVE WHEN: pacote widens the fallback condition.
 diff --git a/lib/git.js b/lib/git.js
 index 000ee9fc..a2a6cbb7 100644
 --- a/lib/git.js

@@ -41,7 +41,6 @@ export const SETTINGS_KEYS = [
   "instructions",
   "disabled_providers",
   "enabled_providers",
-  "autoupdate",
   "username",
   "server",
   "snapshots",
@@ -88,14 +87,14 @@ export const SETTINGS_KEYS = [
   "provider_capability",
   "provider_media_limit",
   "provider_route_profile",
-  // Per-skill invocation choices (`todo/projects.md` → skill invocation controls). A settings key
+  // Per-skill invocation choices — the skill-invocation controls. A settings key
   // rather than a per-subsystem store: it is a sparse map of user DECISIONS, not a resource the
   // skill loader materialises, and `command/list.ts` reads it through `config.entries()` on every
   // list — so it needs no reload trigger, unlike `skills` (the discovery sources) next to it.
   // ⚠️ It MUST be listed here. An undeclared settings key is accepted by the write, stored, and
   // then bricks the next boot when the synthetic document fails to decode.
   "skill_invocation",
-  // Which installed pre-action policies run (`todo/projects.md` → typed pre-action policies). A
+  // Which installed pre-action policies run (AGENTS.md design principle 13). A
   // settings key for `skill_invocation`'s reason: a sparse map of user DECISIONS, not a resource
   // any subsystem materialises, and `tool-policy-gate.ts` reads it through `config.entries()` on
   // every screened call — so there is nothing to invalidate and no reload trigger to register.

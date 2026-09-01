@@ -10,8 +10,8 @@ import type { ComputerActions } from "./actions"
  * `verify.ts` already owns the asymmetry and refuses to over-read `changed`; what it cannot do alone
  * is attribute. On the animated Master of Magic screen that gap was total — all three steps of the
  * 08-06 probe returned `inconclusive (animated)` and the loop was blind, so the outcome was read by
- * a human looking at the final frame, which is the one thing a loop cannot do
- * (`todo/computer-use.md`). This module closes it by changing the SCOPE of the question rather than
+ * a human looking at the final frame, which is the one thing a loop cannot do.
+ * This module closes it by changing the SCOPE of the question rather than
  * the question: not *"did the screen change"* but *"did the pixels **where I aimed** change, on a
  * patch that was provably still a moment ago"*.
  *
@@ -32,7 +32,7 @@ import type { ComputerActions } from "./actions"
  * the ladder *around* that verdict: the capture-failure floor beneath it, the frame context beside
  * it, and the routing of the one genuinely ambiguous case to rung 2.
  *
- * **The three rungs** (`computer-use-loop-plan.md` §3): rung 1 is free and lives here; rung 2 costs
+ * **The three rungs.** Rung 1 is free and lives here; rung 2 costs
  * one adjudication call and this module only ROUTES to it (`needs-adjudication`); rung 3 is honest
  * silence (`inconclusive`), which is `verify.ts`'s existing contract — the verdict is a suspicion the
  * planner weighs, never a hard error, because clicking an already-selected item is an honest no-op.
@@ -269,11 +269,3 @@ export function attribute(input: Input): Attribution {
   return { kind: "needs-adjudication", reason: ADJUDICATION_REASON, verdict, frame }
 }
 
-/**
- * Is the coordinate the planner grounded from the observe frame already stale?
- *
- * Free from the whole-frame idle pair (§3's second refinement) and worth surfacing separately,
- * because it is advice for the NEXT step rather than a judgement about this one.
- */
-export const groundingIsStale = (attribution: Attribution): boolean =>
-  attribution.kind !== "capture-failed" && attribution.frame.known && attribution.frame.animated

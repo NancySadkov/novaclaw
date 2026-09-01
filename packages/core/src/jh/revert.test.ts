@@ -49,7 +49,6 @@ function harness(opts: {
       const r = replies.shift()
       return r === undefined ? Effect.fail({ message: "no more replies" }) : Effect.succeed(r)
     },
-    correct: () => Effect.fail({ message: "x" }),
     executor: { run: () => Effect.succeed({ ok: true, output: "edited", artifacts: new Map([["f", "content"]]) }) },
     runner: { run: () => Effect.succeed({ ...(runResults.shift() ?? { exitCode: 0, output: "" }), timedOut: false }) },
     artifacts: JhArtifact.memory(),

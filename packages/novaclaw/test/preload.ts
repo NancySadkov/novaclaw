@@ -102,7 +102,6 @@ delete process.env["ANTHROPIC_API_KEY"]
 delete process.env["OPENAI_API_KEY"]
 delete process.env["GOOGLE_API_KEY"]
 delete process.env["GOOGLE_GENERATIVE_AI_API_KEY"]
-delete process.env["AZURE_OPENAI_API_KEY"]
 delete process.env["AWS_ACCESS_KEY_ID"]
 delete process.env["AWS_PROFILE"]
 delete process.env["AWS_REGION"]
@@ -125,8 +124,3 @@ delete process.env["NOVACLAW_ENABLE_EXPERIMENTAL_MODELS"]
 
 // Use in-memory sqlite
 process.env["NOVACLAW_DB"] = ":memory:"
-
-// Now safe to import from src/
-const { initProjectors } = await import("../src/server/projectors")
-
-initProjectors()

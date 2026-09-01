@@ -4,7 +4,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { DateTime } from "effect"
 import { Model, type ToolContent } from "@novaclaw/llm"
-import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
+import * as OpenAIChat from "@novaclaw/llm/protocols/openai-compatible-chat"
 import { ModelV2 } from "@novaclaw/core/model"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { SessionMessage } from "@novaclaw/core/session/message"
@@ -12,7 +12,6 @@ import { FileAttachment } from "@novaclaw/core/session/prompt"
 import { SessionOrigin } from "@novaclaw/core/session/origin"
 import {
   budgetedImageNotice,
-  needsCapabilityEvidence,
   toLLMMessages,
   unreadableToolMediaNotice,
   type InputCapabilities,
@@ -308,65 +307,7 @@ describe("the two ways to get this subtly wrong", () => {
   })
 })
 
-// ─── 4. the runner must ASK for the evidence ────────────────────────────────────────────────────
-
-describe("needsCapabilityEvidence — the condition that made the gate inert", () => {
-  const userMessage = (files: readonly FileAttachment[]) =>
-    SessionMessage.User.make({ id: id("u"), type: "user", text: "hi", files: [...files], time: { created } })
-
-  test("true when a TOOL returned media — the case the old inline condition missed", () => {
-    // `runner/llm.ts` gated the catalog read on "some user message has files", which is false for a
-    // conversation whose only image came back from `read`. Under it, capabilities arrive undefined,
-    // `attachmentSupport` answers `unknown`, and the whole gate above is dead code.
-    expect(needsCapabilityEvidence([completed(READ_CONTENT)])).toBe(true)
-    expect(needsCapabilityEvidence([completed([filePart])])).toBe(true)
-    expect(
-      needsCapabilityEvidence([
-        completed([], { providerExecuted: true, result: { type: "content", value: [filePart] } }),
-      ]),
-    ).toBe(true)
-    expect(needsCapabilityEvidence([errored([filePart])])).toBe(true)
-  })
-
-  test("true for a user attachment — the original condition still holds", () => {
-    const png = FileAttachment.make({ uri: IMAGE_URI, mime: "image/png", name: "screenshot.png" })
-    expect(needsCapabilityEvidence([userMessage([png])])).toBe(true)
-  })
-
-  test("NEGATIVE CONTROL: false when nothing carries media, so the common turn pays nothing", () => {
-    expect(needsCapabilityEvidence([])).toBe(false)
-    expect(needsCapabilityEvidence([userMessage([])])).toBe(false)
-    expect(needsCapabilityEvidence([completed([{ type: "text", text: "ok" }])])).toBe(false)
-    expect(
-      needsCapabilityEvidence([completed([], { providerExecuted: true, result: { type: "json", value: { a: 1 } } })]),
-    ).toBe(false)
-  })
-
-  test("a still-running tool with media answers true — err toward having the evidence", () => {
-    // A running tool never reaches `toolResult`, so this is deliberately permissive rather than
-    // exact: the cost of a wrong `true` is one catalog lookup, and the cost of a wrong `false` is a
-    // silently ungated image the moment the tool settles mid-turn.
-    const running = assistantWith(
-      SessionMessage.AssistantTool.make({
-        type: "tool",
-        id: "call_1",
-        name: "read",
-        state: SessionMessage.ToolStateRunning.make({
-          status: "running",
-          input: {},
-          structured: {},
-          content: [filePart],
-        }),
-        time: { created },
-      }),
-    )
-    expect(needsCapabilityEvidence([running])).toBe(true)
-    // …and a running tool still lowers no result at all, gated or otherwise.
-    expect(wire(TEXT_ONLY, running)).not.toContain("tool-result")
-  })
-})
-
-// ─── 5. the source ratchet: no future branch may read the raw state ─────────────────────────────
+// ─── 4. the source ratchet: no future branch may read the raw state ─────────────────────────────
 
 const sourcePath = path.join(
   path.resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "src"),

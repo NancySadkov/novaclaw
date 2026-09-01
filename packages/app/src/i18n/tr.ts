@@ -24,8 +24,6 @@ export const dict = {
 
   "command.palette": "Komut paleti",
 
-
-
   "command.session.new": "Yeni oturum",
   "command.file.open": "Dosya aç",
   "command.tab.close": "Sekmeyi kapat",
@@ -65,16 +63,10 @@ export const dict = {
   "palette.group.commands": "Komutlar",
   "palette.group.files": "Dosyalar",
 
-
   "dialog.model.select.title": "Model seç",
   "dialog.model.search.placeholder": "Model ara",
   "dialog.model.empty": "Model sonucu yok",
   "dialog.model.manage": "Modelleri yönet",
-
-
-
-
-
 
   "model.tag.free": "Ücretsiz",
   "model.tag.latest": "En yeni",
@@ -170,7 +162,6 @@ export const dict = {
   "dialog.mcp.title": "MCP'ler",
   "dialog.mcp.description": "{{total}} içerisinden {{enabled}} etkin",
   "dialog.mcp.empty": "Yapılandırılmış MCP yok",
-
 
   "mcp.status.connected": "bağlı",
   "mcp.status.failed": "başarısız",
@@ -270,9 +261,6 @@ export const dict = {
   "language.th": "ไทย",
   "language.tr": "Türkçe",
 
-
-
-
   "toast.permissions.autoaccept.on.title": "Düzenlemeler otomatik kabul ediliyor",
   "toast.permissions.autoaccept.on.description": "Düzenleme ve yazma izinleri otomatik olarak onaylanacak",
   "toast.permissions.autoaccept.off.title": "Otomatik kabul durduruldu",
@@ -287,19 +275,12 @@ export const dict = {
   "toast.context.noLineSelection.title": "Satır seçimi yok",
   "toast.context.noLineSelection.description": "Önce bir dosya sekmesinde satır aralığı seçin.",
 
-
-
   "toast.session.listFailed.title": "{{project}} için oturumlar yüklenemedi",
-
-  "toast.update.action.installRestart": "Yükle ve yeniden başlat",
 
   "error.page.title": "Bir şeyler yanlış gitti",
   "error.page.description": "Uygulama yüklenirken bir hata oluştu.",
   "error.page.details.label": "Hata Detayları",
   "error.page.action.restart": "Yeniden Başlat",
-  "error.page.action.checking": "Kontrol ediliyor...",
-  "error.page.action.checkUpdates": "Güncellemeleri kontrol et",
-  "error.page.action.updateTo": "{{version}} sürümüne güncelle",
   "error.page.report.prefix": "Lütfen bu hatayı NovaClaw ekibine bildirin",
   "error.page.report.discord": "Discord üzerinden",
   "error.page.version": "Sürüm: {{version}}",
@@ -336,10 +317,6 @@ export const dict = {
   "notification.session.responseReady.title": "Yanıt hazır",
   "notification.session.error.title": "Oturum hatası",
   "notification.session.error.fallbackDescription": "Bir hata oluştu",
-
-  "home.recentProjects": "Son projeler",
-  "home.empty.title": "Son proje yok",
-  "home.empty.description": "Yerel bir proje açarak başlayın",
 
   "session.tab.session": "Oturum",
   "session.tab.review": "İnceleme",
@@ -379,7 +356,6 @@ export const dict = {
   "session.new.title": "İstediğini yap",
   "session.new.worktree.main": "Ana dal",
   "session.new.worktree.mainWithBranch": "Ana dal ({{branch}})",
-  "session.new.worktree.create": "Yeni çalışma ağacı oluştur",
   "session.new.lastModified": "Son değişiklik",
 
   "session.header.search.placeholder": "{{project}} ara",
@@ -424,14 +400,10 @@ export const dict = {
   "common.moreOptions": "Daha fazla seçenek",
   "common.learnMore": "Daha fazla bilgi",
   "common.rename": "Yeniden adlandır",
-  "common.archive": "Arşivle",
   "common.delete": "Sil",
   "common.close": "Kapat",
   "common.edit": "Düzenle",
   "common.key.esc": "ESC",
-
-  "sidebar.project.recentSessions": "Son oturumlar",
-
 
   "settings.section.desktop": "Masaüstü",
   "settings.section.server": "Sunucu",
@@ -456,16 +428,8 @@ export const dict = {
   "settings.general.row.uiFont.title": "Arayüz Yazı Tipi",
   "settings.general.row.uiFont.description": "Arayüz genelinde kullanılan yazı tipini özelleştirin",
 
-
   "settings.general.row.releaseNotes.title": "Sürüm notları",
   "settings.general.row.releaseNotes.description": "Güncellemelerden sonra Yenilikler bildirimlerini göster",
-
-  "settings.updates.row.check.title": "Güncellemeleri kontrol et",
-  "settings.updates.row.check.description": "Elle güncelleme kontrolü yap ve varsa yükle",
-  "settings.updates.action.checkNow": "Şimdi kontrol et",
-  "settings.updates.action.checking": "Kontrol ediliyor...",
-  "settings.updates.toast.latest.title": "Güncelsiniz",
-  "settings.updates.toast.latest.description": "NovaClaw'un en son sürümünü kullanıyorsunuz.",
 
   "sound.option.none": "Yok",
   "sound.option.alert01": "Uyarı 01",
@@ -548,8 +512,6 @@ export const dict = {
   "settings.shortcuts.group.prompt": "Komut",
 
   "settings.models.title": "Modeller",
-
-
 
   "settings.permissions.tool.read.title": "Oku",
   "settings.permissions.tool.read.description": "Bir dosyayı okuma (dosya yoluyla eşleşir)",

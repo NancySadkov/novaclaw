@@ -11,7 +11,7 @@ const attempt = (over: Partial<UtilityCap.Attempt> = {}): UtilityCap.Attempt => 
 
 // The numbers below are the measured ones, not invented thresholds: on holo3.1 with the shipped
 // extraction prompt every cap <= 384 finished `length` with zero content chars, while 512/2048/4096
-// stopped on their own at 260-310 completion tokens with identical valid JSON (todo/assorted.md).
+// stopped on their own at 260-310 completion tokens with identical valid JSON.
 describe("the case this exists for: budget spent, nothing said", () => {
   test("an empty completion that finished on `length` is re-asked with double the budget", () => {
     expect(UtilityCap.decide(attempt())).toEqual({ retry: true, cap: 1024 })

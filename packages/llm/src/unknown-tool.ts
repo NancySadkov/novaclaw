@@ -17,7 +17,7 @@
  * gate, and it only points one way: `@novaclaw/core` depends on `@novaclaw/llm` (package.json,
  * `"@novaclaw/llm": "workspace:*"`) and this package declares no dependency on core at all. So the shared
  * thing can only live at THIS end — putting it in core and importing it back would be an import cycle.
- * It shipped in core first (ported from github.com/NancySadkov/novaclaw PR #4, @DassaultFalconKing) and
+ * It shipped in core first (ported from outside contribution #4, @DassaultFalconKing) and
  * moved down here 2026-07-28, when the llm seam was found still returning the bare string.
  *
  * This module is a LEAF — it imports nothing at all — so its position constrains no consumer. It crosses

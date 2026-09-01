@@ -10,7 +10,7 @@ import { FILENAME } from "./project-file"
 /**
  * Create or update a folder's `novaclaw.json`, replacing **only the sections supplied**.
  *
- * `todo/projects.md`: *"Write path: create or update `novaclaw.json`, replacing only the sections
+ * The contract: *"write path: create or update `novaclaw.json`, replacing only the sections
  * supplied. Refuse when the existing file does not parse — an edit is a merge onto the raw object,
  * and there is none."*
  *

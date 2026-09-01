@@ -9,7 +9,7 @@ description: Build AI agents on Cloudflare Workers using the Agents SDK. Load wh
 
 ## Documentation
 
-Fetch current docs from `https://github.com/cloudflare/agents/tree/main/docs` before implementing.
+Fetch current docs from `https://docs.example.test/agents` before implementing.
 
 | Topic               | Doc                           | Use for                                        |
 | ------------------- | ----------------------------- | ---------------------------------------------- |

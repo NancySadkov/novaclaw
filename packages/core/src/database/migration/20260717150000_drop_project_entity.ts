@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import type { DatabaseMigration } from "../migration"
 
-// T3 (notes/entities.md): the project ENTITY dies. Sessions keep only their substrate
+// T3 (notes/reports/entities-review-2026-07-06.md): the project ENTITY dies. Sessions keep only their substrate
 // attributes (directory, path); the session table rebuilds to shed `project_id` + its FK, then
 // the `project` and `project_directory` tables drop. Saved permissions and workspaces already
 // re-keyed onto `origin` (T2 S2/S3), so nothing else references the entity.

@@ -6,7 +6,7 @@ import type { ProjectState } from "@/utils/project-api"
 /**
  * The FOLDER's half of the two skill-invocation switches, as an editable choice.
  *
- * `todo/projects.md`: *"Skill invocation is instance-scoped only. Project persistence needs a
+ * The gap: *"skill invocation is instance-scoped only. Project persistence needs a
  * `skills` section in `ProjectFile.Info` + `SECTIONS`, folded through `ProjectFileCache` as a
  * NARROWING constraint."* The kernel half landed; until this module existed the only way to author
  * that section was to hand-edit `novaclaw.json`, which is the poke-a-memory-byte shape principle 12

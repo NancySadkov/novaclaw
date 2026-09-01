@@ -5,8 +5,8 @@ import { ProjectExclusion } from "./project-exclusion"
 /**
  * Turn a `.gitignore` into a SUGGESTION for `novaclaw.json`'s `exclude` list.
  *
- * `todo/projects.md`: *"`.gitignore` import and writing the exclusion section back"*, and — from the
- * same file — *"Read eligibility stays distinct from watcher/build ignores."*
+ * *"`.gitignore` import and writing the exclusion section back"*, under the standing rule that
+ * *"read eligibility stays distinct from watcher/build ignores."*
  *
  * 🔴 **A `.gitignore` and a "never read" list are two different statements, and this module never
  * pretends otherwise.** `.gitignore` answers *"what should not be committed"* — build output, a

@@ -3,7 +3,6 @@ import type { AsyncStorage, SyncStorage } from "@solid-primitives/storage"
 import type { Accessor } from "solid-js"
 import { ServerConnection } from "./server"
 import type { WslServersPlatform } from "../wsl/types"
-import type { UpdaterPlatform } from "../updater"
 
 type PickerPaths = string | string[] | null
 type OpenDirectoryPickerOptions = { title?: string; multiple?: boolean }
@@ -59,9 +58,6 @@ type PlatformBase = {
   /** Storage mechanism, defaults to localStorage */
   storage?: (name?: string) => SyncStorage | AsyncStorage
 
-  /** Application-global desktop updater */
-  updater?: UpdaterPlatform
-
   /** Fetch override */
   fetch?: typeof fetch
 
@@ -79,9 +75,6 @@ type PlatformBase = {
 
   /** Set the preferred display backend (desktop only) */
   setDisplayBackend?(backend: DisplayBackend): Promise<void>
-
-  /** Parse markdown to HTML using native parser (desktop only, returns unprocessed code blocks) */
-  parseMarkdown?(markdown: string): Promise<string>
 
   /** Webview zoom level (desktop only) */
   webviewZoom?: Accessor<number>

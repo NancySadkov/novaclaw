@@ -5,7 +5,7 @@ import { WorkspaceRoutingQuery, WorkspaceRoutingQueryFields } from "../middlewar
 import { described } from "./metadata"
 
 // The graph-memory ("kb") HTTP surface — the read/edit API the Memory viewer/editor binds to
-// (notes/kb-graph-plan.md §5). Memory is GLOBAL (one graph per instance, like the SQLite DB);
+// Memory is GLOBAL (one graph per instance, like the SQLite DB);
 // `directory` on these endpoints is only routing. Read ops are open; the editing ops ride the same
 // trust as the rest of the instance API and the UI gates the advanced controls to Developer level.
 

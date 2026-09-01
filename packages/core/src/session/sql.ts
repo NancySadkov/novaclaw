@@ -255,7 +255,7 @@ export const TodoTable = sqliteTable(
 /**
  * The declared plan, FROZEN at the moment an execution attempt opened.
  *
- * `todo/verified-autonomy.md` V1: a task receipt carries the *declared plan*, and its only source is
+ * A task receipt carries the *declared plan*, and its only source is
  * `TodoTable` — which is per SESSION and mutable. A receipt pointing at the live list is not
  * order-stable: the model reorders and completes items while the attempt runs, so by the time anyone
  * reads the receipt, the "plan" it names is the plan as it ENDED, not as it was declared.
@@ -284,7 +284,7 @@ export const TodoSnapshotTable = sqliteTable(
   ],
 )
 
-// The ECS tag component on the session entity (notes/entities.md T0): a sparse two-column store —
+// The ECS tag component on the session entity (notes/reports/entities-review-2026-07-06.md T0): a sparse two-column store —
 
 // organization over chat processes lives here, never as structure on the session row itself.
 export const SessionTagTable = sqliteTable(

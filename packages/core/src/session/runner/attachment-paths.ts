@@ -20,7 +20,7 @@ import { isRealUserTurn } from "../steer-provenance"
  * and a differently-spelled absolute path are all the same file, and a comparison that missed any of
  * them would be protection in name only.
  *
- * ⚠️ Ported from https://github.com/NancySadkov/novaclaw/pull/9 by @DassaultFalconKing. The upstream
+ * ⚠️ Ported from outside contribution #9 by @DassaultFalconKing. The upstream
  * version resolved with `fs.realpathSync` inside the runner's Effect graph; this one does not block
  * the loop, matching how `location-mutation.ts` already resolves the mutation side.
  */

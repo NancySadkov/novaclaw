@@ -23,8 +23,6 @@ export const dict = {
 
   "command.palette": "Kommandopalett",
 
-
-
   "command.session.new": "Ny sesjon",
   "command.file.open": "Åpne fil",
   "command.tab.close": "Lukk fane",
@@ -64,16 +62,10 @@ export const dict = {
   "palette.group.commands": "Kommandoer",
   "palette.group.files": "Filer",
 
-
   "dialog.model.select.title": "Velg modell",
   "dialog.model.search.placeholder": "Søk etter modeller",
   "dialog.model.empty": "Ingen modellresultater",
   "dialog.model.manage": "Administrer modeller",
-
-
-
-
-
 
   "model.tag.free": "Gratis",
   "model.tag.latest": "Nyeste",
@@ -169,7 +161,6 @@ export const dict = {
   "dialog.mcp.title": "MCP-er",
   "dialog.mcp.description": "{{enabled}} av {{total}} aktivert",
   "dialog.mcp.empty": "Ingen MCP-er konfigurert",
-
 
   "mcp.status.connected": "tilkoblet",
   "mcp.status.failed": "mislyktes",
@@ -269,9 +260,6 @@ export const dict = {
   "language.th": "ไทย",
   "language.tr": "Türkçe",
 
-
-
-
   "toast.permissions.autoaccept.on.title": "Aksepterer tillatelser automatisk",
   "toast.permissions.autoaccept.on.description": "Forespørsler om tillatelse vil bli godkjent automatisk",
   "toast.permissions.autoaccept.off.title": "Stoppet automatisk akseptering av tillatelser",
@@ -286,19 +274,12 @@ export const dict = {
   "toast.context.noLineSelection.title": "Ingen linjevalg",
   "toast.context.noLineSelection.description": "Velg først et linjeområde i en filfane.",
 
-
-
   "toast.session.listFailed.title": "Kunne ikke laste sesjoner for {{project}}",
-
-  "toast.update.action.installRestart": "Installer og start på nytt",
 
   "error.page.title": "Noe gikk galt",
   "error.page.description": "Det oppstod en feil under lasting av applikasjonen.",
   "error.page.details.label": "Feildetaljer",
   "error.page.action.restart": "Start på nytt",
-  "error.page.action.checking": "Sjekker...",
-  "error.page.action.checkUpdates": "Se etter oppdateringer",
-  "error.page.action.updateTo": "Oppdater til {{version}}",
   "error.page.report.prefix": "Vennligst rapporter denne feilen til NovaClaw-teamet",
   "error.page.report.discord": "på Discord",
   "error.page.version": "Versjon: {{version}}",
@@ -333,10 +314,6 @@ export const dict = {
   "notification.session.responseReady.title": "Svar klart",
   "notification.session.error.title": "Sesjonsfeil",
   "notification.session.error.fallbackDescription": "Det oppstod en feil",
-
-  "home.recentProjects": "Nylige prosjekter",
-  "home.empty.title": "Ingen nylige prosjekter",
-  "home.empty.description": "Kom i gang ved å åpne et lokalt prosjekt",
 
   "session.tab.session": "Sesjon",
   "session.tab.review": "Gjennomgang",
@@ -376,7 +353,6 @@ export const dict = {
   "session.new.title": "Bygg hva som helst",
   "session.new.worktree.main": "Hovedgren",
   "session.new.worktree.mainWithBranch": "Hovedgren ({{branch}})",
-  "session.new.worktree.create": "Opprett nytt worktree",
   "session.new.lastModified": "Sist endret",
 
   "session.header.search.placeholder": "Søk i {{project}}",
@@ -422,14 +398,10 @@ export const dict = {
   "common.moreOptions": "Flere alternativer",
   "common.learnMore": "Lær mer",
   "common.rename": "Gi nytt navn",
-  "common.archive": "Arkiver",
   "common.delete": "Slett",
   "common.close": "Lukk",
   "common.edit": "Rediger",
   "common.key.esc": "ESC",
-
-  "sidebar.project.recentSessions": "Nylige sesjoner",
-
 
   "settings.section.desktop": "Skrivebord",
   "settings.section.server": "Server",
@@ -456,12 +428,6 @@ export const dict = {
   "settings.general.row.releaseNotes.title": "Utgivelsesnotater",
   "settings.general.row.releaseNotes.description": 'Vis "Hva er nytt"-vinduer etter oppdateringer',
 
-  "settings.updates.row.check.title": "Se etter oppdateringer",
-  "settings.updates.row.check.description": "Se etter oppdateringer manuelt og installer hvis tilgjengelig",
-  "settings.updates.action.checkNow": "Sjekk nå",
-  "settings.updates.action.checking": "Sjekker...",
-  "settings.updates.toast.latest.title": "Du er oppdatert",
-  "settings.updates.toast.latest.description": "Du bruker den nyeste versjonen av NovaClaw.",
   "sound.option.none": "Ingen",
   "sound.option.alert01": "Varsel 01",
   "sound.option.alert02": "Varsel 02",
@@ -543,8 +509,6 @@ export const dict = {
   "settings.shortcuts.group.prompt": "Prompt",
 
   "settings.models.title": "Modeller",
-
-
 
   "settings.permissions.tool.read.title": "Les",
   "settings.permissions.tool.read.description": "Lesing av en fil (matcher filbanen)",

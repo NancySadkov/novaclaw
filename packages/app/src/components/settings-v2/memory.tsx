@@ -25,8 +25,9 @@ import { runBackedUpMemoryErase } from "./memory-clear"
 import { MemoryRemembered } from "@/components/memory-remembered"
 import { SettingsProfileSection } from "./profile"
 import { SettingsExplainV2 } from "./explain"
+import { instanceGlobalDirectory } from "@/utils/routing-directory"
 
-// The Memory tab (notes/kb-graph-plan.md §5) — the lay-first home for "what NovaClaw remembers".
+// The Memory tab — the lay-first home for "what NovaClaw remembers".
 // Out of the box memory is fully automatic (recall + extract + consolidate under the hood); this tab
 // just makes it legible and controllable the way a normal person expects their own data to be:
 //   • a friendly, read-only list of what's remembered (teach-don't-gatekeep — the mission),
@@ -147,7 +148,7 @@ export const SettingsMemoryV2: Component<{ sessionID?: string; embedded?: boolea
   // Memory is a server-GLOBAL graph; `directory` is only request routing — the server's home works.
   const directory = () => {
     const path = ctx()?.sync.data.path
-    return path?.home || path?.directory || ""
+    return instanceGlobalDirectory(path)
   }
   const [tick, setTick] = createSignal(0)
   const refresh = () => setTick((t) => t + 1)

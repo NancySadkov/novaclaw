@@ -1,7 +1,13 @@
 export { LLMClient } from "./route/client"
 export { Auth } from "./route/auth"
-export { Provider } from "./provider"
-export { classify, imageLimitFrom, isContextOverflow, isContextOverflowFailure, isMediaLimit, mediaLimitFailure } from "./provider-error"
+export {
+  classify,
+  imageLimitFrom,
+  isContextOverflow,
+  isContextOverflowFailure,
+  isMediaLimit,
+  mediaLimitFailure,
+} from "./provider-error"
 export type {
   RouteModelInput,
   RouteRoutedModelInput,
@@ -38,8 +44,3 @@ export type {
   ToolToModelOutput,
 } from "./tool"
 export * as LLM from "./llm"
-export type {
-  Definition as ProviderDefinition,
-  ModelFactory as ProviderModelFactory,
-  ModelOptions as ProviderModelOptions,
-} from "./provider"

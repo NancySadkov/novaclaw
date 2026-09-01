@@ -832,7 +832,7 @@ export const layer = Layer.effect(
         Effect.gen(function* () {
           yield* WorkspaceAdapterRuntime.remove(info)
         }),
-        // ⚠️ The cause was DISCARDED here until `todo/logging.md` 1h. The 1b migration preserved the
+        // ⚠️ The cause was DISCARDED here until the fault-normalization sweep. The keying migration preserved the
         // old call's information loss faithfully, so the line named which adapter was unavailable
         // and never why — and "the adapter is not available" is not a fault anyone can act on.
         (cause) =>

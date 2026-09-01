@@ -4,7 +4,7 @@ import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 /**
  * An in-memory stand-in for the SQLite settings store.
  *
- * Storage depends on it because `Storage.pressure()` reads its thresholds through to the store on
+ * HostPressure depends on it because `HostPressure.pressure()` reads its thresholds through to the store on
  * every call (todo.md ruling 3). Tests that do not care about thresholds still have to supply it, and
  * tests that DO care need to mutate it underneath a live service — which is the whole point of ruling
  * 3 and is exactly what a real SQLite store makes expensive to arrange.

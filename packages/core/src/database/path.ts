@@ -1,6 +1,5 @@
 import nodePath from "path"
 import { customType } from "drizzle-orm/sqlite-core"
-import { AbsolutePath } from "../schema"
 
 function storagePath(input: string) {
   if (process.platform !== "win32") return input
@@ -23,22 +22,6 @@ function toPlatform(input: string) {
   if (process.platform !== "win32" || !isWindowsStoragePath(input)) return input
   return input.replaceAll("/", "\\")
 }
-
-export const absoluteColumn = customType<{
-  data: AbsolutePath
-  driverData: string
-  driverOutput: string
-}>({
-  dataType() {
-    return "text"
-  },
-  toDriver(input) {
-    return absolute(input)
-  },
-  fromDriver(input) {
-    return AbsolutePath.make(toPlatform(absolute(input)))
-  },
-})
 
 // Legacy sessions may persist an empty directory. Keep that existing value
 // readable while normalizing and validating every real directory.
@@ -71,21 +54,5 @@ export const pathColumn = customType<{
   },
   fromDriver(input) {
     return storagePath(input)
-  },
-})
-
-export const absoluteArrayColumn = customType<{
-  data: AbsolutePath[]
-  driverData: string
-  driverOutput: string
-}>({
-  dataType() {
-    return "text"
-  },
-  toDriver(input) {
-    return JSON.stringify(input.map(absolute))
-  },
-  fromDriver(input) {
-    return (JSON.parse(input) as string[]).map((item) => AbsolutePath.make(toPlatform(absolute(item))))
   },
 })

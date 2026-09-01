@@ -3,8 +3,8 @@
 // whose ESM entry is `export * from "framer-motion/dom"` — so it pulls framer-motion and 12 transitive
 // packages **including react, react-dom and scheduler** into a SolidJS app, plus a duplicate copy of
 // motion-dom itself (~25.9 MB on disk against motion-dom's 3.03 MB / 1 transitive). All three symbols
-// are motion-dom's own; the wrapper only re-exported them. Measured 2026-07-29 — see
-// `todo/supply-chain.md`, the flagship "zombie dependency" case.
+// are motion-dom's own; the wrapper only re-exported them. Measured 2026-07-29 — the flagship
+// "zombie dependency" case.
 import { attachSpring, motionValue } from "motion-dom"
 import type { SpringOptions } from "motion-dom"
 import { createComputed, createEffect, createSignal, onCleanup } from "solid-js"

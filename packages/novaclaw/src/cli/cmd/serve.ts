@@ -28,8 +28,8 @@ import { ExitIntent } from "../exit-intent"
  *
  * ⚠️ This is the shape AGENTS.md pitfall #8 warns about most directly: the supervisor's child
  * re-execs itself and spawns MCP node servers, so a kill that reaches only the root orphans two more
- * layers. It used to be win32-only (an inline `Bun.spawnSync` taskkill) with a bare `proc.kill()` on
- * POSIX, which orphaned the whole tree there. It now routes through the ONE tree-kill.
+ * layers. It must route through the ONE tree-kill on EVERY platform — a bare `proc.kill()` on POSIX
+ * orphans the tree exactly as a missing `taskkill` does on win32.
  *
  * The SYNC twin is required, not a shortcut: every caller is either a signal handler that calls
  * `process.exit` on the next line or the `process.on("exit")` hook, and an async `taskkill` spawned

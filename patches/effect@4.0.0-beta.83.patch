@@ -1,3 +1,11 @@
+# PATCH PROVENANCE
+# WHAT: HttpApiSchema.StreamSse — the SSE `data` field's `Schema.fromJsonString` wrapper is annotated
+#       with its own `{identifier: "<X>Stream"}` instead of inheriting the decoded schema's identifier.
+# WHY: without it the JSON-string wrapper claims the decoded schema's OpenAPI identifier and corrupts
+#      the generated SDK.
+# CLASS: upstreamable — small, general, patches `src/` as well as `dist/`, so it survives a bump.
+# UPSTREAM: not filed. This is the one patch here with a real chance of landing; file it.
+# REMOVE WHEN: effect ships the annotation.
 diff --git a/dist/unstable/httpapi/HttpApiSchema.js b/dist/unstable/httpapi/HttpApiSchema.js
 index ecb6603d1ee4e89e92174b3a1100e8c9c720b3f3..08b832b6b3e9e4d10df156eca36b16f571f67f6e 100644
 --- a/dist/unstable/httpapi/HttpApiSchema.js

@@ -1,5 +1,5 @@
 /**
- * The session scheduler (Tier-1 roadmap item; design: notes/scheduler.md).
+ * The session scheduler (Tier-1 roadmap item; design: notes/reports/scheduler-synthesis-2026-07-03.md).
  *
  * V1 = the ADMISSION GATE at turn boundaries, per device (provider/model):
  *   - interactive sessions dispatch immediately (vLLM's continuous batching handles

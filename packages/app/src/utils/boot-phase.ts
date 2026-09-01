@@ -1,7 +1,7 @@
 /**
  * Report a startup phase that only the renderer can observe.
  *
- * `todo/startup.md` wants the packaged desktop path measured through *renderer interactive* and
+ * The packaged desktop path must be measured through *renderer interactive* and
  * *first chat token*. The main process cannot see either — one is a paint, the other is a token
  * arriving over a websocket — so the renderer has to say.
  *

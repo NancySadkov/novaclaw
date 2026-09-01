@@ -46,8 +46,9 @@ import {
 import { nearestNeighborDistance, placeLabels, Priority, type LabelCandidate } from "./memory-graph/labels"
 import { graphFault, type GraphFault } from "./memory-graph/fault"
 import { hubLabel, isHub, projectGraph, type ProjectedNode } from "./memory-graph/project"
+import { instanceGlobalDirectory } from "@/utils/routing-directory"
 
-// The Memory graph viewer (notes/kb-graph-plan.md §5 — the advanced, node-link surface for
+// The Memory graph viewer (the advanced, node-link surface for
 // path-tracing) — renders the graph memory as an interactive node-link diagram over /memory/graph +
 // /memory/neighbors. ⚠️ It is NOT gated: this header claimed "a Developer-mode page (the home tile is
 // minLevel-gated)" until 2026-08-19, but the owner moved the tile to Normal on 2026-08-12 — "what
@@ -209,7 +210,7 @@ export function MemoryGraphPage() {
   })
   const directory = () => {
     const path = ctx()?.sync.data.path
-    return path?.home || path?.directory || ""
+    return instanceGlobalDirectory(path)
   }
   const [tick, setTick] = createSignal(0)
   /**
@@ -245,7 +246,9 @@ export function MemoryGraphPage() {
     ({ cn, dir, id }) =>
       memoryUsageDetail(cn.http, { directory: dir, id })
         .then((answer) => ({ ok: true, ...answer }) as const)
-        .catch(() => ({ ok: false, usage: null as UsageCounts | null, accesses: [] as readonly UsageAccess[] }) as const),
+        .catch(
+          () => ({ ok: false, usage: null as UsageCounts | null, accesses: [] as readonly UsageAccess[] }) as const,
+        ),
   )
 
   const [lifecycleBusy, setLifecycleBusy] = createSignal<string | undefined>()
@@ -633,7 +636,7 @@ export function MemoryGraphPage() {
   const focusLabel = () => {
     const node = selectedNode()
     if (!node) return undefined
-    return truncate(isHub(node) ? hubLabel(node) : (node.row.name?.trim() || node.row.text), 40)
+    return truncate(isHub(node) ? hubLabel(node) : node.row.name?.trim() || node.row.text, 40)
   }
   const selectedEdges = createMemo(() => {
     const sel = selected()
@@ -707,7 +710,6 @@ export function MemoryGraphPage() {
     observer.observe(el)
     onCleanup(() => observer.disconnect())
   }
-
 
   /**
    * Refit when the CONTENT or the WINDOW changes — and only then.
@@ -1081,42 +1083,51 @@ export function MemoryGraphPage() {
         {/* The legend belongs to the GRAPH, so it appears with it — a legend for marks that are not
             on screen is noise. */}
         <Show when={appView() === "graph"}>
-        <div class="flex items-center gap-3 text-[11px] opacity-70" data-slot="memory-kind-legend">
-          <For each={KIND_LEGEND}>
-            {(entry) => (
-              <button
-                type="button"
-                data-slot="memory-kind-toggle"
-                data-kind={entry.kind}
-                data-on={kindVisible(entry.kind) ? "" : undefined}
-                aria-pressed={kindVisible(entry.kind)}
-                onClick={() => toggleKind(entry.kind)}
-                title={entry.label}
-                class="flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-v2-background-bg-layer-02"
-                classList={{ "opacity-35": !kindVisible(entry.kind) }}
-              >
-                <svg width="12" height="12" viewBox="-6 -6 12 12" aria-hidden="true">
-                  <Show
-                    when={entry.kind === "entity"}
-                    fallback={
-                      <Show
-                        when={entry.kind === "episode"}
-                        fallback={
-                          <rect x={-4} y={-4} width={8} height={8} rx={1} fill="none" stroke="currentColor" stroke-width={1.5} />
-                        }
-                      >
-                        <rect x={-4} y={-4} width={8} height={8} transform="rotate(45)" fill="currentColor" />
-                      </Show>
-                    }
-                  >
-                    <circle r={4.5} fill="currentColor" />
-                  </Show>
-                </svg>
-                <span>{entry.label.split(" — ")[0]}</span>
-              </button>
-            )}
-          </For>
-        </div>
+          <div class="flex items-center gap-3 text-[11px] opacity-70" data-slot="memory-kind-legend">
+            <For each={KIND_LEGEND}>
+              {(entry) => (
+                <button
+                  type="button"
+                  data-slot="memory-kind-toggle"
+                  data-kind={entry.kind}
+                  data-on={kindVisible(entry.kind) ? "" : undefined}
+                  aria-pressed={kindVisible(entry.kind)}
+                  onClick={() => toggleKind(entry.kind)}
+                  title={entry.label}
+                  class="flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-v2-background-bg-layer-02"
+                  classList={{ "opacity-35": !kindVisible(entry.kind) }}
+                >
+                  <svg width="12" height="12" viewBox="-6 -6 12 12" aria-hidden="true">
+                    <Show
+                      when={entry.kind === "entity"}
+                      fallback={
+                        <Show
+                          when={entry.kind === "episode"}
+                          fallback={
+                            <rect
+                              x={-4}
+                              y={-4}
+                              width={8}
+                              height={8}
+                              rx={1}
+                              fill="none"
+                              stroke="currentColor"
+                              stroke-width={1.5}
+                            />
+                          }
+                        >
+                          <rect x={-4} y={-4} width={8} height={8} transform="rotate(45)" fill="currentColor" />
+                        </Show>
+                      }
+                    >
+                      <circle r={4.5} fill="currentColor" />
+                    </Show>
+                  </svg>
+                  <span>{entry.label.split(" — ")[0]}</span>
+                </button>
+              )}
+            </For>
+          </div>
         </Show>
         <Show when={appView() === "graph" && hiddenCount() > 0}>
           <span class="text-[11px] opacity-50" data-slot="memory-hidden-count">
@@ -1168,215 +1179,215 @@ export function MemoryGraphPage() {
           the views rather than an overlay on one of them, so it never covers the map's inspector
           and it is present whichever view you are reading. */}
       <div class="flex min-h-0 flex-1 overflow-hidden">
-      {/* The Remembered list, in the app where a person actually asks "what do you know about me".
+        {/* The Remembered list, in the app where a person actually asks "what do you know about me".
           It owns its own fetch, so switching views does not depend on the graph having loaded. */}
-      <Show when={appView() === "list"}>
-        <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-          {/* The list obeys the same picker as the graph: two views of ONE colleague's memory,
+        <Show when={appView() === "list"}>
+          <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+            {/* The list obeys the same picker as the graph: two views of ONE colleague's memory,
               never one scoped and one not. */}
-          <MemoryRemembered
-            scopes={owner()?.scopes}
-            filter={filter()}
-            revision={listRevision()}
-            onCounts={setListCounts}
-            restrictTo={focusIDs()}
-            restrictLabel={focusLabel()}
-            onClearRestrict={() => setSelected(undefined)}
-            onInspect={inspect}
-          />
-        </div>
-      </Show>
+            <MemoryRemembered
+              scopes={owner()?.scopes}
+              filter={filter()}
+              revision={listRevision()}
+              onCounts={setListCounts}
+              restrictTo={focusIDs()}
+              restrictLabel={focusLabel()}
+              onClearRestrict={() => setSelected(undefined)}
+              onInspect={inspect}
+            />
+          </div>
+        </Show>
 
-      {/* The retired Settings → Memory tab, hosted here verbatim (`embedded` drops its tab header).
+        {/* The retired Settings → Memory tab, hosted here verbatim (`embedded` drops its tab header).
           Same component the dialog used, so consent, embedding, the judge model, export/import and
           document ingest all keep working exactly as they did — this MOVED the surface, it did not
           reimplement it. */}
-      <Show when={appView() === "settings"}>
-        <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3" data-slot="memory-app-settings">
-          <SettingsMemoryV2 embedded />
-        </div>
-      </Show>
+        <Show when={appView() === "settings"}>
+          <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3" data-slot="memory-app-settings">
+            <SettingsMemoryV2 embedded />
+          </div>
+        </Show>
 
-      {/* ⚠️ `ref={attachCanvas}` on the CANVAS wrapper, not on the svg: the svg is inside the `Show`
+        {/* ⚠️ `ref={attachCanvas}` on the CANVAS wrapper, not on the svg: the svg is inside the `Show`
           and is torn down and rebuilt as the state changes, so an observer bound to it would be
           discarded on every fault and re-created with a stale size. The wrapper is always mounted. */}
-      <div
-        ref={attachCanvas}
-        class="relative flex min-h-0 flex-1"
-        classList={{ hidden: appView() !== "graph" }}
-        data-slot="memory-graph-canvas"
-        data-state={graphState()}
-      >
-        <Show
-          when={count() > 0}
-          fallback={
-            /* FOUR states, not two. "Loading", "unavailable" and "empty" used to collapse into one
+        <div
+          ref={attachCanvas}
+          class="relative flex min-h-0 flex-1"
+          classList={{ hidden: appView() !== "graph" }}
+          data-slot="memory-graph-canvas"
+          data-state={graphState()}
+        >
+          <Show
+            when={count() > 0}
+            fallback={
+              /* FOUR states, not two. "Loading", "unavailable" and "empty" used to collapse into one
                sentence — and because every rejection was caught as an empty graph, the sentence a
                broken engine produced was "Nothing remembered yet", a confident lie about the one
                thing this screen exists to report. */
-            <div
-              class="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center text-sm"
-              data-slot="memory-graph-state"
-              data-state={graphState()}
-            >
-              <Show when={graphState() === "loading"}>
-                <span class="opacity-50">Loading the memory graph…</span>
-              </Show>
-              <Show when={graphState() === "unavailable" ? fault() : undefined}>
-                {(f) => (
-                  <>
-                    <span class="opacity-70">Memory is unavailable right now.</span>
-                    <span class="max-w-md opacity-50">{f().reason}</span>
-                    <Show when={f().retryable}>
-                      <button
-                        type="button"
-                        data-slot="memory-graph-retry"
-                        class="rounded bg-v2-background-bg-layer-02 px-2.5 py-1 text-xs opacity-80 hover:opacity-100"
-                        onClick={retry}
-                      >
-                        Retry
-                      </button>
-                    </Show>
-                  </>
-                )}
-              </Show>
-              <Show when={graphState() === "empty"}>
-                <span class="opacity-50">Nothing remembered yet — the graph fills as you chat.</span>
-              </Show>
-            </div>
-          }
-        >
-          <svg
-            ref={svgEl}
-            class="flex-1 cursor-grab touch-none select-none active:cursor-grabbing"
-            width="100%"
-            height="100%"
-            onWheel={onWheel}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onClick={() => setSelected(undefined)}
+              <div
+                class="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center text-sm"
+                data-slot="memory-graph-state"
+                data-state={graphState()}
+              >
+                <Show when={graphState() === "loading"}>
+                  <span class="opacity-50">Loading the memory graph…</span>
+                </Show>
+                <Show when={graphState() === "unavailable" ? fault() : undefined}>
+                  {(f) => (
+                    <>
+                      <span class="opacity-70">Memory is unavailable right now.</span>
+                      <span class="max-w-md opacity-50">{f().reason}</span>
+                      <Show when={f().retryable}>
+                        <button
+                          type="button"
+                          data-slot="memory-graph-retry"
+                          class="rounded bg-v2-background-bg-layer-02 px-2.5 py-1 text-xs opacity-80 hover:opacity-100"
+                          onClick={retry}
+                        >
+                          Retry
+                        </button>
+                      </Show>
+                    </>
+                  )}
+                </Show>
+                <Show when={graphState() === "empty"}>
+                  <span class="opacity-50">Nothing remembered yet — the graph fills as you chat.</span>
+                </Show>
+              </div>
+            }
           >
-            <g transform={`translate(${view().tx} ${view().ty}) scale(${view().scale})`}>
-              {/* edges — the PROJECTION's, so every endpoint is guaranteed to be on the canvas */}
-              <For each={projected().edges}>
-                {(e) => {
-                  const a = () => positions()[e.from]
-                  const b = () => positions()[e.to]
-                  const active = () => selected() === e.from || selected() === e.to
-                  return (
-                    <Show when={a() && b()}>
-                      <line
-                        x1={a()!.x}
-                        y1={a()!.y}
-                        x2={b()!.x}
-                        y2={b()!.y}
-                        stroke={active() ? "#eab308" : "currentColor"}
-                        // A merged edge stands for many stored ones, and WEIGHT is the only channel a
-                        // line has to say so. Logarithmic and capped: 202 passages must read as "more
-                        // than three", not as a band two hundred times thicker.
-                        stroke-width={edgeWidth(e.count, active())}
-                        stroke-opacity={active() ? 0.9 : selected() ? 0.08 : 0.22}
-                      />
-                    </Show>
-                  )
-                }}
-              </For>
-              {/* nodes */}
-              <For each={projected().nodes}>
-                {(node) => {
-                  const p = () => positions()[node.id]
-                  const isSel = () => selected() === node.id
-                  const dim = () => dimmed(node.id)
-                  const hub = () => (isHub(node) ? node : undefined)
-                  const row = () => (isHub(node) ? undefined : node.row)
-                  // A hub carries no scope of its own unless every member agrees on one — see
-                  // `project.ts`. `undefined` paints it neutral rather than borrowing a colour, since
-                  // a colour here would be a claim about 202 memories made on the strength of one.
-                  const colour = () => {
-                    const scope = hub() ? hub()!.scope : row()!.scope
-                    return scope === undefined ? "currentColor" : scopeColor(scope)
-                  }
-                  return (
-                    <Show when={p()}>
-                      <g
-                        transform={`translate(${p()!.x} ${p()!.y})`}
-                        class="cursor-pointer"
-                        data-slot="memory-graph-node"
-                        data-node-id={node.id}
-                        data-node-kind={hub() ? "hub" : row()!.kind}
-                        opacity={dim() ? 0.25 : 1}
-                        onClick={(ev) => {
-                          ev.stopPropagation()
-                          setSelected(node.id)
-                        }}
-                      >
-                        {/* SHAPE = kind, COLOUR = scope. Two attributes on two channels; using
+            <svg
+              ref={svgEl}
+              class="flex-1 cursor-grab touch-none select-none active:cursor-grabbing"
+              width="100%"
+              height="100%"
+              onWheel={onWheel}
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onClick={() => setSelected(undefined)}
+            >
+              <g transform={`translate(${view().tx} ${view().ty}) scale(${view().scale})`}>
+                {/* edges — the PROJECTION's, so every endpoint is guaranteed to be on the canvas */}
+                <For each={projected().edges}>
+                  {(e) => {
+                    const a = () => positions()[e.from]
+                    const b = () => positions()[e.to]
+                    const active = () => selected() === e.from || selected() === e.to
+                    return (
+                      <Show when={a() && b()}>
+                        <line
+                          x1={a()!.x}
+                          y1={a()!.y}
+                          x2={b()!.x}
+                          y2={b()!.y}
+                          stroke={active() ? "#eab308" : "currentColor"}
+                          // A merged edge stands for many stored ones, and WEIGHT is the only channel a
+                          // line has to say so. Logarithmic and capped: 202 passages must read as "more
+                          // than three", not as a band two hundred times thicker.
+                          stroke-width={edgeWidth(e.count, active())}
+                          stroke-opacity={active() ? 0.9 : selected() ? 0.08 : 0.22}
+                        />
+                      </Show>
+                    )
+                  }}
+                </For>
+                {/* nodes */}
+                <For each={projected().nodes}>
+                  {(node) => {
+                    const p = () => positions()[node.id]
+                    const isSel = () => selected() === node.id
+                    const dim = () => dimmed(node.id)
+                    const hub = () => (isHub(node) ? node : undefined)
+                    const row = () => (isHub(node) ? undefined : node.row)
+                    // A hub carries no scope of its own unless every member agrees on one — see
+                    // `project.ts`. `undefined` paints it neutral rather than borrowing a colour, since
+                    // a colour here would be a claim about 202 memories made on the strength of one.
+                    const colour = () => {
+                      const scope = hub() ? hub()!.scope : row()!.scope
+                      return scope === undefined ? "currentColor" : scopeColor(scope)
+                    }
+                    return (
+                      <Show when={p()}>
+                        <g
+                          transform={`translate(${p()!.x} ${p()!.y})`}
+                          class="cursor-pointer"
+                          data-slot="memory-graph-node"
+                          data-node-id={node.id}
+                          data-node-kind={hub() ? "hub" : row()!.kind}
+                          opacity={dim() ? 0.25 : 1}
+                          onClick={(ev) => {
+                            ev.stopPropagation()
+                            setSelected(node.id)
+                          }}
+                        >
+                          {/* SHAPE = kind, COLOUR = scope. Two attributes on two channels; using
                             colour for both is what made a node unreadable.
                             A HUB gets a fourth shape and a DASHED stroke — the one mark on this
                             canvas that is not a memory has to look like it, or the map asserts
                             something the store never said. */}
-                        <Show
-                          when={hub()}
-                          fallback={
-                            <Show
-                              when={row()!.kind === "entity"}
-                              fallback={
-                                <Show
-                                  when={row()!.kind === "episode"}
-                                  fallback={
+                          <Show
+                            when={hub()}
+                            fallback={
+                              <Show
+                                when={row()!.kind === "entity"}
+                                fallback={
+                                  <Show
+                                    when={row()!.kind === "episode"}
+                                    fallback={
+                                      <rect
+                                        x={isSel() ? -6 : -4}
+                                        y={isSel() ? -6 : -4}
+                                        width={isSel() ? 12 : 8}
+                                        height={isSel() ? 12 : 8}
+                                        rx={1}
+                                        fill="none"
+                                        stroke={isSel() ? "#eab308" : colour()}
+                                        stroke-width={isSel() ? 2.5 : 1.5}
+                                      />
+                                    }
+                                  >
                                     <rect
-                                      x={isSel() ? -6 : -4}
-                                      y={isSel() ? -6 : -4}
-                                      width={isSel() ? 12 : 8}
-                                      height={isSel() ? 12 : 8}
-                                      rx={1}
-                                      fill="none"
-                                      stroke={isSel() ? "#eab308" : colour()}
-                                      stroke-width={isSel() ? 2.5 : 1.5}
+                                      x={isSel() ? -7 : -5}
+                                      y={isSel() ? -7 : -5}
+                                      width={isSel() ? 14 : 10}
+                                      height={isSel() ? 14 : 10}
+                                      transform="rotate(45)"
+                                      fill={colour()}
+                                      stroke={isSel() ? "#eab308" : "white"}
+                                      stroke-width={isSel() ? 2.5 : 1}
+                                      stroke-opacity={isSel() ? 1 : 0.5}
                                     />
-                                  }
-                                >
-                                  <rect
-                                    x={isSel() ? -7 : -5}
-                                    y={isSel() ? -7 : -5}
-                                    width={isSel() ? 14 : 10}
-                                    height={isSel() ? 14 : 10}
-                                    transform="rotate(45)"
-                                    fill={colour()}
-                                    stroke={isSel() ? "#eab308" : "white"}
-                                    stroke-width={isSel() ? 2.5 : 1}
-                                    stroke-opacity={isSel() ? 1 : 0.5}
-                                  />
-                                </Show>
-                              }
-                            >
-                              <circle
-                                r={isSel() ? 9 : 6}
-                                fill={colour()}
-                                stroke={isSel() ? "#eab308" : "white"}
-                                stroke-width={isSel() ? 2.5 : 1}
-                                stroke-opacity={isSel() ? 1 : 0.5}
-                              />
-                            </Show>
-                          }
-                        >
-                          <polygon
-                            points={HEX}
-                            transform={isSel() ? "scale(1.4)" : undefined}
-                            fill="none"
-                            stroke={isSel() ? "#eab308" : colour()}
-                            stroke-width={isSel() ? 2 : 1.25}
-                            stroke-dasharray="2.5 2"
-                            stroke-opacity={0.85}
-                          />
-                        </Show>
-                      </g>
-                    </Show>
-                  )
-                }}
-              </For>
-              {/* THE LIVE OVERLAY, drawn OVER the marks and in PLANE space so it travels with them.
+                                  </Show>
+                                }
+                              >
+                                <circle
+                                  r={isSel() ? 9 : 6}
+                                  fill={colour()}
+                                  stroke={isSel() ? "#eab308" : "white"}
+                                  stroke-width={isSel() ? 2.5 : 1}
+                                  stroke-opacity={isSel() ? 1 : 0.5}
+                                />
+                              </Show>
+                            }
+                          >
+                            <polygon
+                              points={HEX}
+                              transform={isSel() ? "scale(1.4)" : undefined}
+                              fill="none"
+                              stroke={isSel() ? "#eab308" : colour()}
+                              stroke-width={isSel() ? 2 : 1.25}
+                              stroke-dasharray="2.5 2"
+                              stroke-opacity={0.85}
+                            />
+                          </Show>
+                        </g>
+                      </Show>
+                    )
+                  }}
+                </For>
+                {/* THE LIVE OVERLAY, drawn OVER the marks and in PLANE space so it travels with them.
                   🔴 SMIL (`<animate>`), not CSS. Two reasons, both learned the hard way on this page:
                   a stylesheet imported from a `.tsx` is UNLAYERED and outranks every Tailwind
                   utility it collides with, and `getComputedStyle` during an unticked transition
@@ -1385,453 +1396,446 @@ export function MemoryGraphPage() {
                   the animation, which is what a test and a person can both check.
                   ⚠️ Under reduced motion no flare element is created at all (the fold never records
                   one), so there is nothing here to suppress a second time. */}
-              <g data-slot="memory-graph-overlay" class="pointer-events-none">
-                <For each={projected().nodes}>
-                  {(node) => {
-                    const p = () => positions()[node.id]
-                    const row = () => (isHub(node) ? undefined : node.row)
-                    const flare = () => flareOf(node.id)
-                    const retiredMark = () => isRetired(row())
-                    return (
-                      <Show when={p() && (flare() || retiredMark())}>
-                        <g transform={`translate(${p()!.x} ${p()!.y})`}>
-                          {/* RETIRED: a dashed ring that STAYS. It is a state, not an event, so it
+                <g data-slot="memory-graph-overlay" class="pointer-events-none">
+                  <For each={projected().nodes}>
+                    {(node) => {
+                      const p = () => positions()[node.id]
+                      const row = () => (isHub(node) ? undefined : node.row)
+                      const flare = () => flareOf(node.id)
+                      const retiredMark = () => isRetired(row())
+                      return (
+                        <Show when={p() && (flare() || retiredMark())}>
+                          <g transform={`translate(${p()!.x} ${p()!.y})`}>
+                            {/* RETIRED: a dashed ring that STAYS. It is a state, not an event, so it
                               survives reduced motion and outlives the flare that announced it —
                               and the mark keeps its place on the map, because a corrected claim is
                               history you can still reach, not a node that was deleted. */}
-                          <Show when={retiredMark()}>
-                            <circle
-                              data-slot="memory-graph-retired"
-                              data-node-id={node.id}
-                              r={12}
-                              fill="none"
-                              stroke="#94a3b8"
-                              stroke-width={1.25}
-                              stroke-dasharray="2 3"
-                              opacity={0.55}
-                            />
-                          </Show>
-                          <Show when={flare()}>
-                            {(mark) => (
+                            <Show when={retiredMark()}>
                               <circle
-                                data-slot="memory-graph-flare"
+                                data-slot="memory-graph-retired"
                                 data-node-id={node.id}
-                                data-tone={mark().tone}
-                                r={7}
+                                r={12}
                                 fill="none"
-                                stroke={FLARE_COLOUR[mark().tone]}
-                                stroke-width={2}
-                                opacity={0.95}
-                              >
-                                {/* ⚠️ Both animations START at the visible value, so a frozen
+                                stroke="#94a3b8"
+                                stroke-width={1.25}
+                                stroke-dasharray="2 3"
+                                opacity={0.55}
+                              />
+                            </Show>
+                            <Show when={flare()}>
+                              {(mark) => (
+                                <circle
+                                  data-slot="memory-graph-flare"
+                                  data-node-id={node.id}
+                                  data-tone={mark().tone}
+                                  r={7}
+                                  fill="none"
+                                  stroke={FLARE_COLOUR[mark().tone]}
+                                  stroke-width={2}
+                                  opacity={0.95}
+                                >
+                                  {/* ⚠️ Both animations START at the visible value, so a frozen
                                     timeline (a hidden tab) leaves a static ring that the pruner
                                     removes on schedule. The degradation is "no movement", never
                                     "no mark" — see `rankPop` for the measurement that settled it. */}
-                                <animate attributeName="r" from="7" to="26" dur={`${FLARE_MS}ms`} fill="freeze" />
-                                <animate
-                                  attributeName="opacity"
-                                  from="0.95"
-                                  to="0"
-                                  dur={`${FLARE_MS}ms`}
-                                  fill="freeze"
-                                />
-                              </circle>
-                            )}
-                          </Show>
-                        </g>
-                      </Show>
-                    )
-                  }}
-                </For>
-              </g>
-            </g>
-            {/* RECALL RANKS, in SCREEN space like the labels and for the same reason — a rank drawn
-                inside the zoomed group is illegible at one zoom and a billboard at another.
-                🔴 The RANK is the point. "These six came back" is a set; "this one first, then this"
-                is what the store actually decided, and it is the only part of ranking a person can
-                check against their own sense of what should have been remembered. */}
-            <Show when={recall()}>
-              {(hit) => (
-                <g data-slot="memory-graph-ranks" class="pointer-events-none">
-                  <For each={projected().nodes}>
-                    {(node) => {
-                      const rank = () => hit().ranks.get(node.id)
-                      const at = () => {
-                        const p = positions()[node.id]
-                        return p ? project(p, view()) : undefined
-                      }
-                      return (
-                        <Show when={rank() !== undefined && at()}>
-                          <g
-                            data-slot="memory-graph-rank"
-                            data-node-id={node.id}
-                            data-rank={rank()}
-                            transform={`translate(${at()!.x} ${at()!.y})`}
-                          >
-                            {/* 🔴 THE STAGGER RIDES THE RADIUS, NEVER THE OPACITY. Measured in the
-                                Browser pane: an animation that has BEGUN pins its attribute to the
-                                first value, and a hidden tab never advances the timeline — so a
-                                badge whose visibility depended on `opacity: 0 → 1` stayed at 0
-                                forever. Frozen here, the ring is merely a few pixels wide of its
-                                resting size. `rankPop` carries the whole reasoning. */}
-                            <circle r={RANK_RING_R} fill="none" stroke="#eab308" stroke-width={2} opacity={0.9}>
-                              <Show when={motion()}>
-                                <animate
-                                  attributeName="r"
-                                  values={rankPop(rank()!).values}
-                                  keyTimes={rankPop(rank()!).keyTimes}
-                                  dur={rankPop(rank()!).dur}
-                                  fill="freeze"
-                                />
-                              </Show>
-                            </circle>
-                            <text
-                              x={0}
-                              y={-14}
-                              font-size="10"
-                              text-anchor="middle"
-                              fill="#eab308"
-                              class="select-none"
-                            >
-                              {rank()}
-                            </text>
+                                  <animate attributeName="r" from="7" to="26" dur={`${FLARE_MS}ms`} fill="freeze" />
+                                  <animate
+                                    attributeName="opacity"
+                                    from="0.95"
+                                    to="0"
+                                    dur={`${FLARE_MS}ms`}
+                                    fill="freeze"
+                                  />
+                                </circle>
+                              )}
+                            </Show>
                           </g>
                         </Show>
                       )
                     }}
                   </For>
                 </g>
-              )}
-            </Show>
-            {/* LABELS, in SCREEN space — outside the zoomed group on purpose.
+              </g>
+              {/* RECALL RANKS, in SCREEN space like the labels and for the same reason — a rank drawn
+                inside the zoomed group is illegible at one zoom and a billboard at another.
+                🔴 The RANK is the point. "These six came back" is a set; "this one first, then this"
+                is what the store actually decided, and it is the only part of ranking a person can
+                check against their own sense of what should have been remembered. */}
+              <Show when={recall()}>
+                {(hit) => (
+                  <g data-slot="memory-graph-ranks" class="pointer-events-none">
+                    <For each={projected().nodes}>
+                      {(node) => {
+                        const rank = () => hit().ranks.get(node.id)
+                        const at = () => {
+                          const p = positions()[node.id]
+                          return p ? project(p, view()) : undefined
+                        }
+                        return (
+                          <Show when={rank() !== undefined && at()}>
+                            <g
+                              data-slot="memory-graph-rank"
+                              data-node-id={node.id}
+                              data-rank={rank()}
+                              transform={`translate(${at()!.x} ${at()!.y})`}
+                            >
+                              {/* 🔴 THE STAGGER RIDES THE RADIUS, NEVER THE OPACITY. Measured in the
+                                Browser pane: an animation that has BEGUN pins its attribute to the
+                                first value, and a hidden tab never advances the timeline — so a
+                                badge whose visibility depended on `opacity: 0 → 1` stayed at 0
+                                forever. Frozen here, the ring is merely a few pixels wide of its
+                                resting size. `rankPop` carries the whole reasoning. */}
+                              <circle r={RANK_RING_R} fill="none" stroke="#eab308" stroke-width={2} opacity={0.9}>
+                                <Show when={motion()}>
+                                  <animate
+                                    attributeName="r"
+                                    values={rankPop(rank()!).values}
+                                    keyTimes={rankPop(rank()!).keyTimes}
+                                    dur={rankPop(rank()!).dur}
+                                    fill="freeze"
+                                  />
+                                </Show>
+                              </circle>
+                              <text
+                                x={0}
+                                y={-14}
+                                font-size="10"
+                                text-anchor="middle"
+                                fill="#eab308"
+                                class="select-none"
+                              >
+                                {rank()}
+                              </text>
+                            </g>
+                          </Show>
+                        )
+                      }}
+                    </For>
+                  </g>
+                )}
+              </Show>
+              {/* LABELS, in SCREEN space — outside the zoomed group on purpose.
                 Inside it they scaled with the view: illegible when zoomed out, billboards when zoomed
                 in, and "do these two overlap?" had no stable answer to cull on. Here they are always
                 11px and `placeLabels` can decide what fits. */}
-            <g data-slot="memory-graph-labels">
-              <For each={projected().nodes}>
-                {(node) => {
-                  const at = () => {
-                    const p = positions()[node.id]
-                    return p ? project(p, view()) : undefined
-                  }
-                  const dim = () => dimmed(node.id)
-                  return (
-                    <Show when={labelled().has(node.id) && at()}>
-                      <text
-                        x={at()!.x + 13}
-                        y={at()!.y + 4}
-                        font-size="11"
-                        fill="currentColor"
-                        class="pointer-events-none select-none"
-                        data-slot="memory-graph-label"
-                        data-node-id={node.id}
-                        opacity={dim() ? 0.2 : isHub(node) ? 0.6 : 0.8}
-                        font-style={isHub(node) ? "italic" : undefined}
-                      >
-                        {markText(node)}
-                      </text>
-                    </Show>
-                  )
-                }}
-              </For>
-            </g>
-          </svg>
+              <g data-slot="memory-graph-labels">
+                <For each={projected().nodes}>
+                  {(node) => {
+                    const at = () => {
+                      const p = positions()[node.id]
+                      return p ? project(p, view()) : undefined
+                    }
+                    const dim = () => dimmed(node.id)
+                    return (
+                      <Show when={labelled().has(node.id) && at()}>
+                        <text
+                          x={at()!.x + 13}
+                          y={at()!.y + 4}
+                          font-size="11"
+                          fill="currentColor"
+                          class="pointer-events-none select-none"
+                          data-slot="memory-graph-label"
+                          data-node-id={node.id}
+                          opacity={dim() ? 0.2 : isHub(node) ? 0.6 : 0.8}
+                          font-style={isHub(node) ? "italic" : undefined}
+                        >
+                          {markText(node)}
+                        </text>
+                      </Show>
+                    )
+                  }}
+                </For>
+              </g>
+            </svg>
 
-          {/* detail panel for the selected memory */}
-          <Show when={selectedNode()}>
-            {(sel) => (
-              <aside
-                class="absolute right-0 top-0 h-full w-72 overflow-y-auto border-l border-v2-border-border-muted bg-v2-background-bg-layer-02 p-4 text-sm"
-                data-slot="memory-graph-detail"
-              >
-                <div class="mb-2 flex items-start justify-between gap-2">
-                  {/* A hub has a scope BADGE only when every memory in it agrees on one; otherwise it
+            {/* detail panel for the selected memory */}
+            <Show when={selectedNode()}>
+              {(sel) => (
+                <aside
+                  class="absolute right-0 top-0 h-full w-72 overflow-y-auto border-l border-v2-border-border-muted bg-v2-background-bg-layer-02 p-4 text-sm"
+                  data-slot="memory-graph-detail"
+                >
+                  <div class="mb-2 flex items-start justify-between gap-2">
+                    {/* A hub has a scope BADGE only when every memory in it agrees on one; otherwise it
                       says what it is instead of claiming who can read it. */}
-                  <Show
-                    when={selectedScope()}
-                    fallback={<span class="rounded bg-v2-background-bg-layer-03 px-1.5 py-0.5 text-xs opacity-60">Group</span>}
-                  >
-                    {(scope) => (
-                      <span
-                        class="rounded px-1.5 py-0.5 text-xs"
-                        style={{ background: scopeColor(scope()) + "33", color: scopeColor(scope()) }}
-                      >
-                        {scopeLabel(scope(), owners())}
-                      </span>
-                    )}
-                  </Show>
-                  <button class="opacity-60 hover:opacity-100" onClick={() => setSelected(undefined)}>
-                    <Icon name="close-small" size="large" />
-                  </button>
-                </div>
-                {/* THE HUB EXPLAINS ITSELF, and offers the one action that dissolves it. A mark the
+                    <Show
+                      when={selectedScope()}
+                      fallback={
+                        <span class="rounded bg-v2-background-bg-layer-03 px-1.5 py-0.5 text-xs opacity-60">Group</span>
+                      }
+                    >
+                      {(scope) => (
+                        <span
+                          class="rounded px-1.5 py-0.5 text-xs"
+                          style={{ background: scopeColor(scope()) + "33", color: scopeColor(scope()) }}
+                        >
+                          {scopeLabel(scope(), owners())}
+                        </span>
+                      )}
+                    </Show>
+                    <button class="opacity-60 hover:opacity-100" onClick={() => setSelected(undefined)}>
+                      <Icon name="close-small" size="large" />
+                    </button>
+                  </div>
+                  {/* THE HUB EXPLAINS ITSELF, and offers the one action that dissolves it. A mark the
                     user cannot account for is worse than the missing structure it was added to fix —
                     so it names what it stands for, why it is there, and how to see through it. */}
-                <Show
-                  when={isHubNode(sel())}
-                  fallback={
-                    <>
-                      <p class="mb-1 leading-snug" data-slot="memory-inspector-text">
-                        {rowOf(sel().id)?.text}
-                      </p>
-                      {/* WHAT IT IS AND HOW IT GOT HERE — the two things that are always true of a
+                  <Show
+                    when={isHubNode(sel())}
+                    fallback={
+                      <>
+                        <p class="mb-1 leading-snug" data-slot="memory-inspector-text">
+                          {rowOf(sel().id)?.text}
+                        </p>
+                        {/* WHAT IT IS AND HOW IT GOT HERE — the two things that are always true of a
                           stored memory, on one line each, before anything conditional. */}
-                      <div class="mb-2 flex flex-wrap items-center gap-2 text-xs opacity-60">
-                        <span>{rowOf(sel().id)?.kind}</span>
-                        <span>·</span>
-                        <span>{rowOf(sel().id)?.relation}</span>
-                        <Show when={statusBadge(rowOf(sel().id)?.status)}>
-                          {(badge) => (
-                            <span
-                              class="rounded px-1.5 py-0.5"
-                              data-slot="memory-inspector-status"
-                              style={{ background: badge().tint, color: badge().ink }}
-                              title={badge().title}
-                            >
-                              {badge().label}
-                            </span>
-                          )}
-                        </Show>
-                      </div>
-                      {/* PROVENANCE. `source` is who or what wrote it — auto-extraction, the `kb`
+                        <div class="mb-2 flex flex-wrap items-center gap-2 text-xs opacity-60">
+                          <span>{rowOf(sel().id)?.kind}</span>
+                          <span>·</span>
+                          <span>{rowOf(sel().id)?.relation}</span>
+                          <Show when={statusBadge(rowOf(sel().id)?.status)}>
+                            {(badge) => (
+                              <span
+                                class="rounded px-1.5 py-0.5"
+                                data-slot="memory-inspector-status"
+                                style={{ background: badge().tint, color: badge().ink }}
+                                title={badge().title}
+                              >
+                                {badge().label}
+                              </span>
+                            )}
+                          </Show>
+                        </div>
+                        {/* PROVENANCE. `source` is who or what wrote it — auto-extraction, the `kb`
                           tool, an import. It is the first question a person asks of a fact about
                           themselves that they did not type, and the panel used to bury it in a row
                           of dot-separated words. */}
-                      <Show when={rowOf(sel().id)?.source}>
-                        {(source) => (
-                          <p class="mb-1 text-xs opacity-60" data-slot="memory-inspector-source">
-                            <span class="opacity-70">Recorded by </span>
-                            {source()}
-                          </p>
-                        )}
-                      </Show>
-                      {/* EVIDENCE IS NOT THE CLAIM. A locator the claim was drawn FROM — and when a
+                        <Show when={rowOf(sel().id)?.source}>
+                          {(source) => (
+                            <p class="mb-1 text-xs opacity-60" data-slot="memory-inspector-source">
+                              <span class="opacity-70">Recorded by </span>
+                              {source()}
+                            </p>
+                          )}
+                        </Show>
+                        {/* EVIDENCE IS NOT THE CLAIM. A locator the claim was drawn FROM — and when a
                           `needs_review` flag is on the row, this is the thing that moved. Showing
                           them apart is what makes "the citation is stale, the fact is not" a
                           sentence somebody can check rather than one they have to take on faith. */}
-                      <Show when={rowOf(sel().id)?.evidence}>
-                        {(evidence) => (
-                          <p class="mb-1 text-xs opacity-60 break-words" data-slot="memory-inspector-evidence">
-                            <span class="opacity-70">
-                              {rowOf(sel().id)?.evidenceKind ? `${rowOf(sel().id)!.evidenceKind}: ` : "From: "}
-                            </span>
-                            {evidence()}
-                          </p>
-                        )}
-                      </Show>
-                      {/* IDENTITY — whether this claim can ever be corrected. A claim the harness
+                        <Show when={rowOf(sel().id)?.evidence}>
+                          {(evidence) => (
+                            <p class="mb-1 text-xs opacity-60 break-words" data-slot="memory-inspector-evidence">
+                              <span class="opacity-70">
+                                {rowOf(sel().id)?.evidenceKind ? `${rowOf(sel().id)!.evidenceKind}: ` : "From: "}
+                              </span>
+                              {evidence()}
+                            </p>
+                          )}
+                        </Show>
+                        {/* IDENTITY — whether this claim can ever be corrected. A claim the harness
                           accepted a `{subject, predicate}` for is one a later answer can retire; one
                           without is a fact that can only be forgotten. That difference is invisible
                           in the text and decides what the user can expect. */}
-                      <Show
-                        when={rowOf(sel().id)?.predicate}
-                        fallback={
-                          <Show when={rowOf(sel().id)?.kind === "claim"}>
-                            <p class="mb-1 text-xs opacity-50" data-slot="memory-inspector-identity">
-                              No identity — nothing can correct this later, only forget it.
+                        <Show
+                          when={rowOf(sel().id)?.predicate}
+                          fallback={
+                            <Show when={rowOf(sel().id)?.kind === "claim"}>
+                              <p class="mb-1 text-xs opacity-50" data-slot="memory-inspector-identity">
+                                No identity — nothing can correct this later, only forget it.
+                              </p>
+                            </Show>
+                          }
+                        >
+                          {(predicate) => (
+                            <p class="mb-1 text-xs opacity-60" data-slot="memory-inspector-identity">
+                              <span class="opacity-70">Identity: </span>
+                              {rowOf(sel().id)?.subject ?? "?"} · {predicate()}
                             </p>
-                          </Show>
-                        }
-                      >
-                        {(predicate) => (
-                          <p class="mb-1 text-xs opacity-60" data-slot="memory-inspector-identity">
-                            <span class="opacity-70">Identity: </span>
-                            {rowOf(sel().id)?.subject ?? "?"} · {predicate()}
-                          </p>
-                        )}
-                      </Show>
-                      {/* THE TIMELINE — what replaced this, and what it replaced. Both directions,
+                          )}
+                        </Show>
+                        {/* THE TIMELINE — what replaced this, and what it replaced. Both directions,
                           both clickable: a correction you can only read in one direction is half a
                           story. ⚠️ It is built from the ROWS on the canvas, not from a history
                           endpoint, because there is no `/memory/claimHistory` on this instance —
                           the engine has `claimHistory`, the HTTP surface does not expose it. So
                           this shows the links that ARE reachable and claims nothing further. */}
-                      <Show when={timeline(sel().id).length > 0}>
-                        <div class="mb-3 mt-2" data-slot="memory-inspector-timeline">
-                          <div class="text-xs font-medium opacity-70">Timeline</div>
-                          <ul class="mt-1 flex flex-col gap-1">
-                            <For each={timeline(sel().id)}>
-                              {(step) => (
-                                <li class="text-xs">
-                                  <Show
-                                    when={step.id}
-                                    fallback={<span class="opacity-60">{step.label}</span>}
-                                  >
-                                    {(id) => (
-                                      <button
-                                        class="text-left hover:underline"
-                                        onClick={() => setSelected(id())}
-                                      >
-                                        <span class="opacity-50">{step.label} </span>
-                                        {truncate(markLabel(id()), 28)}
-                                      </button>
-                                    )}
-                                  </Show>
-                                </li>
-                              )}
-                            </For>
-                          </ul>
-                        </div>
-                      </Show>
-                      {/* ARCHIVE / RESTORE — live now that `/api/memory/claim/status` exists.
+                        <Show when={timeline(sel().id).length > 0}>
+                          <div class="mb-3 mt-2" data-slot="memory-inspector-timeline">
+                            <div class="text-xs font-medium opacity-70">Timeline</div>
+                            <ul class="mt-1 flex flex-col gap-1">
+                              <For each={timeline(sel().id)}>
+                                {(step) => (
+                                  <li class="text-xs">
+                                    <Show when={step.id} fallback={<span class="opacity-60">{step.label}</span>}>
+                                      {(id) => (
+                                        <button class="text-left hover:underline" onClick={() => setSelected(id())}>
+                                          <span class="opacity-50">{step.label} </span>
+                                          {truncate(markLabel(id()), 28)}
+                                        </button>
+                                      )}
+                                    </Show>
+                                  </li>
+                                )}
+                              </For>
+                            </ul>
+                          </div>
+                        </Show>
+                        {/* ARCHIVE / RESTORE — live now that `/api/memory/claim/status` exists.
                           ⚠️ A SUPERSEDED claim is not restorable from here and the control says so
                           rather than offering a button that would answer `false`. Restoring it would
                           put two current answers to one question in the cabinet, which is the state
                           the lifecycle exists to prevent; the way back is to make a new claim. */}
-                      {/* WHY IS THIS HERE — the ledger's answer, asked for rather than always shown. */}
-                      <div class="mb-3" data-slot="memory-inspector-why">
-                        <button
-                          type="button"
-                          data-slot="memory-inspector-why-toggle"
-                          class="text-xs underline opacity-60 hover:opacity-100"
-                          onClick={() => setWhyOpen((current) => (current === sel().id ? undefined : sel().id))}
-                        >
-                          {whyOpen() === sel().id ? "Hide why this is here" : "Why is this here?"}
-                        </button>
-                        <Show when={whyOpen() === sel().id}>
-                          <Show
-                            when={why()}
-                            fallback={<p class="mt-1 text-[11px] opacity-50">Asking the ledger…</p>}
-                          >
-                            {(answer) => (
-                              <div class="mt-1 text-[11px] opacity-70">
-                                <Show
-                                  when={answer().ok}
-                                  fallback={
-                                    <p class="opacity-60">
-                                      This instance could not answer — it may not be recording which memories get
-                                      recalled.
-                                    </p>
-                                  }
-                                >
-                                  <Show
-                                    when={answer().usage}
-                                    fallback={
-                                      /* ⚠️ Not "never useful". No recall has ever RETURNED it, which is a
-                                         different and much weaker statement, and the one the ledger can
-                                         actually make. */
-                                      <p class="opacity-60">No recall has ever returned this one.</p>
-                                    }
-                                  >
-                                    {(usage) => (
-                                      <p>
-                                        Returned {usage().accesses}×, reached the model {usage().uses}×
-                                        {usage().useful > 0 ? ", vouched for" : ""}
-                                        {usage().corrections > 0
-                                          ? `, and cost ${usage().corrections} wrong answer${usage().corrections === 1 ? "" : "s"} before it was corrected`
-                                          : ""}
-                                        .
-                                      </p>
-                                    )}
-                                  </Show>
-                                  {/* ⚠️ The QUESTION is a fingerprint and never the words — a recall query
-                                      is built from the user's own prompt, and putting it on this panel
-                                      would make an open Memory app a copy of the prompt stream. */}
-                                  <Show when={answer().accesses.length > 0}>
-                                    <ul class="mt-1 flex flex-col gap-0.5">
-                                      <For each={answer().accesses.slice(0, 6)}>
-                                        {(access) => (
-                                          <li class="opacity-60">
-                                            {new Date(access.accessedAt).toLocaleString()} · {access.surface} · rank{" "}
-                                            {access.rank}
-                                            {access.usedAt === null ? " · not shown to the model" : ""}
-                                          </li>
-                                        )}
-                                      </For>
-                                    </ul>
-                                  </Show>
-                                </Show>
-                              </div>
-                            )}
-                          </Show>
-                        </Show>
-                      </div>
-                      <div class="mb-3 flex items-center gap-2" data-slot="memory-inspector-lifecycle">
-                        <Show
-                          when={rowOf(sel().id)?.status !== "superseded"}
-                          fallback={
-                            <span class="text-[11px] opacity-50" data-slot="memory-inspector-superseded">
-                              Replaced by a newer answer — record a new claim to change it back.
-                            </span>
-                          }
-                        >
+                        {/* WHY IS THIS HERE — the ledger's answer, asked for rather than always shown. */}
+                        <div class="mb-3" data-slot="memory-inspector-why">
                           <button
                             type="button"
-                            data-slot="memory-inspector-archive"
-                            disabled={lifecycleBusy() === sel().id}
-                            title={rowOf(sel().id)?.status === "archived" ? RESTORE_MEANS : ARCHIVE_MEANS}
-                            class="rounded bg-v2-background-bg-layer-03 px-2 py-1 text-xs opacity-80 hover:opacity-100 disabled:opacity-40"
-                            onClick={() => void setLifecycle(sel().id)}
+                            data-slot="memory-inspector-why-toggle"
+                            class="text-xs underline opacity-60 hover:opacity-100"
+                            onClick={() => setWhyOpen((current) => (current === sel().id ? undefined : sel().id))}
                           >
-                            {rowOf(sel().id)?.status === "archived" ? "Restore" : "Archive"}
+                            {whyOpen() === sel().id ? "Hide why this is here" : "Why is this here?"}
                           </button>
-                          <span class="text-[11px] opacity-50">
-                            {rowOf(sel().id)?.status === "archived" ? RESTORE_MEANS : ARCHIVE_MEANS}
-                          </span>
-                        </Show>
-                      </div>
-                    </>
-                  }
-                >
-                  {(hub) => (
-                    <>
-                      <p class="mb-1 leading-snug">{hubLabel(hub())}, drawn as one mark.</p>
-                      <p class="mb-3 text-xs opacity-60">
-                        They are hidden by the {hub().of} filter. Their links are kept so the rest of the map stays
-                        connected — nothing here is a relationship NovaClaw invented.
-                      </p>
-                      <button
-                        type="button"
-                        data-slot="memory-hub-reveal"
-                        class="mb-3 rounded bg-v2-background-bg-layer-03 px-2 py-1 text-xs opacity-80 hover:opacity-100"
-                        onClick={() => {
-                          toggleKind(hub().of)
-                          setSelected(undefined)
-                        }}
-                      >
-                        Show every {hub().of}
-                      </button>
-                    </>
-                  )}
-                </Show>
-                <Show when={selectedEdges().length > 0} fallback={<p class="text-xs opacity-40">No links.</p>}>
-                  <div class="text-xs font-medium opacity-70">Links</div>
-                  <ul class="mt-1 flex flex-col gap-1">
-                    <For each={selectedEdges()}>
-                      {(edge) => (
-                        <li>
-                          <button class="w-full text-left hover:underline" onClick={() => setSelected(edge.other)}>
-                            <span class="opacity-50">
-                              {edge.dir} [{edge.type}]
-                              {/* A merged edge says how many stored links it stands for; without it,
-                                  "1 link" and "202 links" read identically. */}
-                              <Show when={edge.count > 1}>{` ×${edge.count}`}</Show>{" "}
+                          <Show when={whyOpen() === sel().id}>
+                            <Show when={why()} fallback={<p class="mt-1 text-[11px] opacity-50">Asking the ledger…</p>}>
+                              {(answer) => (
+                                <div class="mt-1 text-[11px] opacity-70">
+                                  <Show
+                                    when={answer().ok}
+                                    fallback={
+                                      <p class="opacity-60">
+                                        This instance could not answer — it may not be recording which memories get
+                                        recalled.
+                                      </p>
+                                    }
+                                  >
+                                    <Show
+                                      when={answer().usage}
+                                      fallback={
+                                        /* ⚠️ Not "never useful". No recall has ever RETURNED it, which is a
+                                         different and much weaker statement, and the one the ledger can
+                                         actually make. */
+                                        <p class="opacity-60">No recall has ever returned this one.</p>
+                                      }
+                                    >
+                                      {(usage) => (
+                                        <p>
+                                          Returned {usage().accesses}×, reached the model {usage().uses}×
+                                          {usage().useful > 0 ? ", vouched for" : ""}
+                                          {usage().corrections > 0
+                                            ? `, and cost ${usage().corrections} wrong answer${usage().corrections === 1 ? "" : "s"} before it was corrected`
+                                            : ""}
+                                          .
+                                        </p>
+                                      )}
+                                    </Show>
+                                    {/* ⚠️ The QUESTION is a fingerprint and never the words — a recall query
+                                      is built from the user's own prompt, and putting it on this panel
+                                      would make an open Memory app a copy of the prompt stream. */}
+                                    <Show when={answer().accesses.length > 0}>
+                                      <ul class="mt-1 flex flex-col gap-0.5">
+                                        <For each={answer().accesses.slice(0, 6)}>
+                                          {(access) => (
+                                            <li class="opacity-60">
+                                              {new Date(access.accessedAt).toLocaleString()} · {access.surface} · rank{" "}
+                                              {access.rank}
+                                              {access.usedAt === null ? " · not shown to the model" : ""}
+                                            </li>
+                                          )}
+                                        </For>
+                                      </ul>
+                                    </Show>
+                                  </Show>
+                                </div>
+                              )}
+                            </Show>
+                          </Show>
+                        </div>
+                        <div class="mb-3 flex items-center gap-2" data-slot="memory-inspector-lifecycle">
+                          <Show
+                            when={rowOf(sel().id)?.status !== "superseded"}
+                            fallback={
+                              <span class="text-[11px] opacity-50" data-slot="memory-inspector-superseded">
+                                Replaced by a newer answer — record a new claim to change it back.
+                              </span>
+                            }
+                          >
+                            <button
+                              type="button"
+                              data-slot="memory-inspector-archive"
+                              disabled={lifecycleBusy() === sel().id}
+                              title={rowOf(sel().id)?.status === "archived" ? RESTORE_MEANS : ARCHIVE_MEANS}
+                              class="rounded bg-v2-background-bg-layer-03 px-2 py-1 text-xs opacity-80 hover:opacity-100 disabled:opacity-40"
+                              onClick={() => void setLifecycle(sel().id)}
+                            >
+                              {rowOf(sel().id)?.status === "archived" ? "Restore" : "Archive"}
+                            </button>
+                            <span class="text-[11px] opacity-50">
+                              {rowOf(sel().id)?.status === "archived" ? RESTORE_MEANS : ARCHIVE_MEANS}
                             </span>
-                            {truncate(markLabel(edge.other), 32)}
-                          </button>
-                        </li>
-                      )}
-                    </For>
-                  </ul>
-                </Show>
-              </aside>
-            )}
+                          </Show>
+                        </div>
+                      </>
+                    }
+                  >
+                    {(hub) => (
+                      <>
+                        <p class="mb-1 leading-snug">{hubLabel(hub())}, drawn as one mark.</p>
+                        <p class="mb-3 text-xs opacity-60">
+                          They are hidden by the {hub().of} filter. Their links are kept so the rest of the map stays
+                          connected — nothing here is a relationship NovaClaw invented.
+                        </p>
+                        <button
+                          type="button"
+                          data-slot="memory-hub-reveal"
+                          class="mb-3 rounded bg-v2-background-bg-layer-03 px-2 py-1 text-xs opacity-80 hover:opacity-100"
+                          onClick={() => {
+                            toggleKind(hub().of)
+                            setSelected(undefined)
+                          }}
+                        >
+                          Show every {hub().of}
+                        </button>
+                      </>
+                    )}
+                  </Show>
+                  <Show when={selectedEdges().length > 0} fallback={<p class="text-xs opacity-40">No links.</p>}>
+                    <div class="text-xs font-medium opacity-70">Links</div>
+                    <ul class="mt-1 flex flex-col gap-1">
+                      <For each={selectedEdges()}>
+                        {(edge) => (
+                          <li>
+                            <button class="w-full text-left hover:underline" onClick={() => setSelected(edge.other)}>
+                              <span class="opacity-50">
+                                {edge.dir} [{edge.type}]
+                                {/* A merged edge says how many stored links it stands for; without it,
+                                  "1 link" and "202 links" read identically. */}
+                                <Show when={edge.count > 1}>{` ×${edge.count}`}</Show>{" "}
+                              </span>
+                              {truncate(markLabel(edge.other), 32)}
+                            </button>
+                          </li>
+                        )}
+                      </For>
+                    </ul>
+                  </Show>
+                </aside>
+              )}
+            </Show>
           </Show>
-        </Show>
-      </div>
+        </div>
 
-      {/* The activity rail. Not on Settings — that tab is about switches, and a live feed beside a
+        {/* The activity rail. Not on Settings — that tab is about switches, and a live feed beside a
           consent toggle is decoration rather than information. */}
-      <Show when={appView() !== "settings"}>
-        <MemoryActivityFeedRail
-          entries={live().entries}
-          streamStatus={activity.streamStatus()}
-          reconciling={activity.reconciling()}
-          reducedMotion={activity.reducedMotion()}
-          skipped={live().skipped}
-          onSelect={inspect}
-        />
-      </Show>
+        <Show when={appView() !== "settings"}>
+          <MemoryActivityFeedRail
+            entries={live().entries}
+            streamStatus={activity.streamStatus()}
+            reconciling={activity.reconciling()}
+            reducedMotion={activity.reducedMotion()}
+            skipped={live().skipped}
+            onSelect={inspect}
+          />
+        </Show>
       </div>
     </div>
   )

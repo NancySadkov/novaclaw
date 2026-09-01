@@ -20,6 +20,7 @@ import { DialogModelConfig } from "./dialog-model-config"
 import { DialogNewModel } from "./dialog-new-model"
 import { ModelBundleIO } from "./models-io"
 import { useConfirm } from "@/components/dialog-confirm"
+import { scopedDirectory } from "@/utils/routing-directory"
 
 type ModelItem = ReturnType<ReturnType<typeof useModels>["list"]>[number]
 
@@ -70,12 +71,12 @@ export const SettingsModelsV2: Component = () => {
   })
   const [routeDir] = createResource(ctx, async (c) => {
     const p = c.sync.data.path
-    if (p && (p.directory || p.home)) return p.directory || p.home
+    if (p && scopedDirectory(p)) return scopedDirectory(p)
     const got = await c.sdk.client.path
       .get()
       .then((r) => r.data)
       .catch(() => undefined)
-    return got?.directory || got?.home || ""
+    return scopedDirectory(got)
   })
   const [probes, setProbes] = createSignal<Record<string, ProbeResult | "probing" | undefined>>({})
 
@@ -151,7 +152,7 @@ export const SettingsModelsV2: Component = () => {
       destructive: true,
     })
     if (!ok) return
-    // Two writes, and both are needed for different reasons — see todo/assorted.md.
+    // Two writes, and both are needed for different reasons.
     //
     // ① The SERVER delete is the real one. Until 2026-08-06 this button wrote ONLY the client store,
     //    so a destructive confirm dialog performed a per-browser-profile hide while stating an
@@ -175,7 +176,11 @@ export const SettingsModelsV2: Component = () => {
     const dir = routeDir()
     if (!c) return
     const removed = await c.sdk.client.v2.provider
-      .removeModel({ providerID: key.providerID, modelID: key.modelID, ...(dir ? { location: { directory: dir } } : {}) })
+      .removeModel({
+        providerID: key.providerID,
+        modelID: key.modelID,
+        ...(dir ? { location: { directory: dir } } : {}),
+      })
       .then(() => true)
       .catch(() => false)
     if (removed) models.remove(key)

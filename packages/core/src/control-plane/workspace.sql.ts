@@ -1,7 +1,7 @@
 import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core"
 import { WorkspaceV2 } from "../workspace"
 
-// T2 (notes/entities.md): workspaces are scoped by the rename-stable `origin` hash — a derived
+// T2 (notes/reports/entities-review-2026-07-06.md): workspaces are scoped by the rename-stable `origin` hash — a derived
 // substrate attribute of the repo they manage, not a foreign key into a project entity.
 export const WorkspaceTable = sqliteTable("workspace", {
   id: text().$type<WorkspaceV2.ID>().primaryKey(),

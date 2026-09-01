@@ -293,7 +293,7 @@ export const layer = Layer.effect(
                   })
                   .run()
                 /**
-                 * Freeze the declared plan for THIS attempt (`todo/verified-autonomy.md` V1).
+                 * Freeze the declared plan for THIS attempt.
                  *
                  * 🔴 In the SAME transaction that opens the attempt, and that is the whole
                  * correctness argument. The `todo` list is per SESSION and the model edits it while

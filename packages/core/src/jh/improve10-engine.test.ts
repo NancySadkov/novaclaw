@@ -114,7 +114,6 @@ function harness(opts: {
         ? Effect.succeed(`{"achieved": false}`)
         : Effect.succeed(replies[i++] ?? idle)
     },
-    correct: () => Effect.fail({ message: "x" }),
     executor: opts.world.executor,
     runner: opts.world.runner,
     artifacts: JhArtifact.memory(),

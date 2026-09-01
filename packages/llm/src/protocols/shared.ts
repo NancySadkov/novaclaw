@@ -23,6 +23,17 @@ const decodeJsonOption = Schema.decodeUnknownOption(Json)
 const isValidJson = (input: string) => Option.isSome(decodeJsonOption(input))
 
 /**
+ * One definition of "a leaked model special token", for every surface in the decode path that has
+ * to erase them. Special tokens are `<|word|>`-shaped: the class excludes `>` as well as `|` so a
+ * literal `<|a>b|>` in model prose is left alone.
+ *
+ * ⚠️ NOT for `recoverToolCallsFromText`, which deliberately strips ONLY the `<|mask_*|>` pair —
+ * a blanket strip there would corrupt harmony channel tokens inside hermes names before `scrubName`
+ * runs. That narrowing is a constraint, not drift; see the comment at its call site.
+ */
+export const stripSpecialTokens = (text: string) => text.replace(/<\|[^|>]*\|>/g, "")
+
+/**
  * Best-effort repair of tool-call argument JSON from small / local models so a
  * fumbled call does not hard-fail the whole turn (the jh-tolerance principle).
  * Valid JSON is returned UNTOUCHED — we never rewrite a well-formed payload (which
@@ -34,8 +45,7 @@ const isValidJson = (input: string) => Option.isSome(decodeJsonOption(input))
 export const repairToolJson = (raw: string): string => {
   const input = raw || "{}"
   if (isValidJson(input)) return input
-  const cleaned = input
-    .replace(/<\|[^|]*\|>/g, "")
+  const cleaned = stripSpecialTokens(input)
     .replace(/<\/?tool_call>/g, "")
     .trim()
   if (cleaned.length === 0) return "{}"

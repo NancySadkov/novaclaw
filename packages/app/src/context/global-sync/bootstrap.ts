@@ -2,7 +2,6 @@ import type {
   Config,
   NovaclawClient,
   Path,
-  PermissionV2Request,
   QuestionRequest,
   SessionV2Info as Session,
 } from "@novaclaw/sdk/v2/client"
@@ -20,31 +19,27 @@ import { CancelledError, QueryClient, queryOptions } from "@tanstack/solid-query
 import { loadMcpQuery } from "../server-sync"
 import { NormalizedProviderListResponse } from "@novaclaw/session-ui/context"
 import { ScopedKey, type ServerScope } from "@/utils/server-scope"
+import { afterFirstPaint } from "@/utils/after-first-paint"
 
+// ⚠️ Structurally matched to `context/server-sync.tsx`'s `GlobalStore` (which additionally carries
+// `error`): that file hands `setBootStore` in as `setGlobalStore`, so the two are compared by shape
+// and MUST move together. Narrow one alone and you get TS2719 — "two different types with this name
+// exist, but they are unrelated" — which is how the dead `"complete"` arm below was found.
 type GlobalStore = {
   ready: boolean
   path: Path
   provider: NormalizedProviderListResponse
   config: Config
-  reload: undefined | "pending" | "complete"
+  reload: undefined | "pending"
 }
 
+/**
+ * The 50 ms cap is this call site's own requirement, not a third spelling of the deferral: boot must
+ * not wait indefinitely on a frame a visible-but-not-yet-painting window has not produced.
+ */
 function waitForPaint() {
   return new Promise<void>((resolve) => {
-    let done = false
-    const finish = () => {
-      if (done) return
-      done = true
-      resolve()
-    }
-    const timer = setTimeout(finish, 50)
-    if (typeof requestAnimationFrame !== "function") return
-    requestAnimationFrame(() => {
-      setTimeout(() => {
-        clearTimeout(timer)
-        finish()
-      }, 0)
-    })
+    afterFirstPaint(resolve, { timeoutMs: 50 })
   })
 }
 
@@ -296,40 +291,6 @@ export async function bootstrapDirectory(input: {
           }),
         ),
       input.mcp && (() => retry(() => input.sdk.command.list().then((x) => input.setStore("command", x.data ?? [])))),
-      () =>
-        retry(() =>
-          // F1e S6: pending asks bootstrap from the native V2 request list (the V1 /permission
-          // merge route is no longer consumed by the app; it retires with S7).
-          input.sdk.v2.permission.request.list({ location: { directory: input.directory } }).then((x) => {
-            const pending = x.data?.data ?? []
-            const ids = pending.map((perm) => perm?.sessionID).filter((id): id is string => !!id)
-            const grouped = groupBySession(
-              pending.filter((perm): perm is PermissionV2Request => !!perm?.id && !!perm.sessionID),
-            )
-            const warm = input.session
-              ? Promise.all(ids.map((sessionID) => input.session!.resolve(sessionID))).then(() => undefined)
-              : warmSessions({ ids, store: input.store, setStore: input.setStore, sdk: input.sdk })
-            return warm.then(() =>
-              batch(() => {
-                const current = input.session?.data.permission ?? input.store.permission
-                for (const sessionID of Object.keys(current)) {
-                  if (grouped[sessionID]) continue
-                  if (input.session?.get(sessionID)?.location.directory !== input.directory) continue
-                  if (input.session) input.session.set("permission", sessionID, [])
-                  if (!input.session) input.setStore("permission", sessionID, [])
-                }
-                for (const [sessionID, permissions] of Object.entries(grouped)) {
-                  const value = reconcile(
-                    permissions.filter((p) => !!p?.id).sort((a, b) => cmp(a.id, b.id)),
-                    { key: "id" },
-                  )
-                  if (input.session) input.session.set("permission", sessionID, value)
-                  if (!input.session) input.setStore("permission", sessionID, value)
-                }
-              }),
-            )
-          }),
-        ),
       () =>
         retry(() =>
           input.sdk.question.list().then((x) => {

@@ -10,8 +10,7 @@ import { assertAttachmentBudget, createPickedFileAuthorizations } from "./attach
 import { createSaveFileAuthorizations, parseSavePickerOptions } from "./save-picker"
 import { getStore } from "./store"
 import { getPinchZoomEnabled, setPinchZoomEnabled, setTitlebar, updateTitlebar } from "./windows"
-import type { UpdaterController } from "./updater-controller"
-import { createUpdaterSubscriptions } from "./updater-subscriptions"
+import { createSubscriptions } from "./subscriptions"
 
 const pickerFilters = (ext?: string[]) => {
   if (!ext || ext.length === 0) return undefined
@@ -40,10 +39,8 @@ type Deps = {
   setDefaultServerUrl: (url: string | null) => Promise<void> | void
   getDisplayBackend: () => Promise<string | null>
   setDisplayBackend: (backend: string | null) => Promise<void> | void
-  parseMarkdown: (markdown: string) => Promise<string> | string
   checkAppExists: (appName: string) => Promise<boolean> | boolean
   resolveAppPath: (appName: string) => Promise<string | null>
-  updater: UpdaterController
   setBackgroundColor: (color: string) => void
   exportDebugLogs: (serverDiagnostics?: string) => Promise<string>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void> | void
@@ -56,9 +53,7 @@ type Deps = {
 }
 
 export function registerIpcHandlers(deps: Deps) {
-  const updaterSubscriptions = createUpdaterSubscriptions()
-  const supervisorSubscriptions = createUpdaterSubscriptions()
-  app.once("will-quit", updaterSubscriptions.clear)
+  const supervisorSubscriptions = createSubscriptions()
   app.once("will-quit", supervisorSubscriptions.clear)
 
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
@@ -88,23 +83,8 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("set-display-backend", (_event: IpcMainInvokeEvent, backend: string | null) =>
     deps.setDisplayBackend(backend),
   )
-  ipcMain.handle("parse-markdown", (_event: IpcMainInvokeEvent, markdown: string) => deps.parseMarkdown(markdown))
   ipcMain.handle("check-app-exists", (_event: IpcMainInvokeEvent, appName: string) => deps.checkAppExists(appName))
   ipcMain.handle("resolve-app-path", (_event: IpcMainInvokeEvent, appName: string) => deps.resolveAppPath(appName))
-  ipcMain.handle("updater-subscribe", (event) => {
-    const id = event.sender.id
-    updaterSubscriptions.set(
-      id,
-      deps.updater.subscribe((state) => {
-        if (event.sender.isDestroyed()) return updaterSubscriptions.delete(id)
-        event.sender.send("updater-state", state)
-      }),
-    )
-    event.sender.once("destroyed", () => updaterSubscriptions.delete(id))
-  })
-  ipcMain.handle("updater-unsubscribe", (event) => updaterSubscriptions.delete(event.sender.id))
-  ipcMain.handle("updater-check", () => deps.updater.check())
-  ipcMain.handle("updater-install", () => deps.updater.install())
   ipcMain.handle("set-background-color", (_event: IpcMainInvokeEvent, color: string) => deps.setBackgroundColor(color))
   ipcMain.handle("export-debug-logs", (_event: IpcMainInvokeEvent, serverDiagnostics?: string) =>
     deps.exportDebugLogs(serverDiagnostics),

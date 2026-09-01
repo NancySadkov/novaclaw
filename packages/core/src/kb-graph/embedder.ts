@@ -4,7 +4,7 @@ import { Offline } from "../offline"
 import { MemorySetting } from "./memory-setting"
 
 // The memory VECTOR leg — a minimal OpenAI-compatible embeddings client for the LAN embedding device
-// (Qwen3-Embedding-0.6B on the Spark). MEASURED (notes/kb-graph-plan.md P7d, same corpus + questions):
+// (Qwen3-Embedding-0.6B on the Spark). MEASURED (same corpus + questions):
 // hybrid vector+FTS retrieval 85% vs keyword-only 77%, and OBSCURE 86% → 100% — which is why this
 // exists. Retrieval is the whole ballgame: RAG answer-correctness tracked retrieval hit-rate EXACTLY
 // across three runs, so recall converts 1:1.

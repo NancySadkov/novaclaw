@@ -192,8 +192,9 @@ function createServerCtx(
 
   const projectsList = createMemo(() => projects.list().map(enrich))
 
-  const isLocal =
-    (conn?.type === "sidecar" && conn.variant === "base") || (conn?.type === "http" && isLocalHost(conn.http.url))
+  // ServerConnection.local IS this expression, and it returns a real boolean. The inline copy answered
+  // `boolean | "local" | undefined`, because the private isLocalHost it called returns the STRING "local".
+  const isLocal = ServerConnection.local(conn)
 
   return {
     queryClient,
@@ -209,8 +210,3 @@ function createServerCtx(
 }
 
 export type ServerCtx = ReturnType<typeof createServerCtx>
-
-function isLocalHost(url: string) {
-  const host = url.replace(/^https?:\/\//, "").split(":")[0]
-  if (host === "localhost" || host === "127.0.0.1") return "local"
-}

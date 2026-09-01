@@ -69,24 +69,21 @@ import { Telemetry } from "./telemetry"
  *   every machine today, so the honest outcome is `refused: no_endpoint`), and an unattended spool
  *   with no drain is a directory that only grows. It is the next item, not this one.
  *
- * ── what a crash actually put on the wire (loopback capture, 2026-08-07) ─────────────────────────
+ * ── what a crash payload may and may not contain ─────────────────────────
  *
- * ```json
- * {"signature":{"arch":"x64","channel":"local","frames":2,"kind":"TypeError","plane":"server",
- *  "platform":"win32","release":"<release line, e.g. 0.1.x>","repeat":1,"runtime":"bun-1.3.14",
- *  "signature":"b1291a3b5b90f149","uptime":0},"attributes":{}}
- * ```
+ * A crash packet is a **signature plus attributes** and nothing else: arch, channel, frame count,
+ * error kind, plane, platform, release LINE, repeat count, runtime, a signature hash, and uptime.
  *
- * ⚠️ The `release` value is ELIDED above on purpose. `test/version-single-source.test.ts` sweeps
- * `packages/core/src` for the current version literal and does NOT strip comments — so a pasted
- * sample containing the real one turns that guard red. It would also rot: a version pinned in a
- * comment becomes a lie at the next bump, which is the same defect class this file's own header
- * warns about. What was observed live was the release LINE (build stamps are stripped by
- * `releaseLine`), never a nightly stamp.
+ * 🔴 **What a loopback capture confirmed does NOT appear, and must never start to.** The thrown
+ * error's own message and its stack — which held an absolute `C:\Users\…` path — are both absent, as
+ * are the username, the cwd, the project name and the build stamp (`release` is the LINE;
+ * {@link releaseLine} strips everything after `major.minor.patch`, because a stamp like
+ * `-nightly.20260731t065756` is near-unique and identifies one machine).
  *
- * The thrown error's message was *"Cannot read properties of undefined (reading 'apiKey')"* and its
- * stack held an absolute `C:\Users\…` path. Neither appears. Neither does a username, a cwd, a
- * project name or a build stamp — `release` is the line, not the `0.2.0-nightly.…` build.
+ * ⚠️ **Do not paste a real payload sample into this file.** `test/version-single-source.test.ts`
+ * sweeps `packages/core/src` for the current version literal and does NOT strip comments, so a
+ * sample carrying the real release turns that guard red — and a version pinned in a comment becomes
+ * a lie at the next bump anyway.
  * · **Anything in here throws** — every handler body is wrapped, and the wrapper matters: a monitor
  *   that throws was measured to replace the crash and exit **7**, i.e. to destroy the very report it
  *   was trying to file. The re-raise in the rejection listener is the one statement deliberately

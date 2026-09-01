@@ -19,7 +19,7 @@ export class Local extends Schema.Class<Local>("ConfigV2.MCP.Local")({
   cwd: Schema.String.pipe(Schema.optional).annotate({
     description: "Working directory for the MCP server process. Relative paths resolve from the workspace directory.",
   }),
-  // The designated place a user parks a server's API key (`GITHUB_TOKEN`, `BRAVE_API_KEY`, …). Marked
+  // The designated place a user parks a server's API key (`SERVICE_TOKEN`, `BRAVE_API_KEY`, …). Marked
   // whole rather than per-entry, because the entry NAMES are the user's and a name test over them is
   // the guess item 4.1 refuses — `tool/configure.ts`'s `SECRET_FIELDS` reads this map in the clear
   // today for exactly that reason. Redaction keeps the keys and blanks the values, so "which

@@ -25,17 +25,14 @@
 // idempotent marker, same "a supplied archive that fails verification is an error, not a re-download".
 
 import { createHash } from "node:crypto"
-import { createReadStream, createWriteStream } from "node:fs"
+import { createReadStream } from "node:fs"
 import { cp, mkdir, readFile, readdir, rename, rm, stat } from "node:fs/promises"
 import { homedir } from "node:os"
 import path from "node:path"
-import { Readable } from "node:stream"
-import { pipeline } from "node:stream/promises"
 import { resolveSevenZipArchiver } from "../../../script/lib/build-tools"
 
 export const IMAGEMAGICK_VERSION = "7.1.2-29"
 export const IMAGEMAGICK_ARCHIVE = `ImageMagick-${IMAGEMAGICK_VERSION}-portable-Q16-x64.7z`
-export const IMAGEMAGICK_URL = `https://github.com/ImageMagick/ImageMagick/releases/download/${IMAGEMAGICK_VERSION}/${IMAGEMAGICK_ARCHIVE}`
 export const IMAGEMAGICK_SHA256 = "4715072c158c46bbdc3e6971817e92ed43fca7c93142cad142ee42c603baaac1"
 
 const packageDir = path.resolve(import.meta.dir, "..")
@@ -69,11 +66,7 @@ export async function prepareImageMagick() {
         IMAGEMAGICK_ARCHIVE,
       )
   await mkdir(path.dirname(cache), { recursive: true })
-  await ensureArchive(cache, {
-    url: IMAGEMAGICK_URL,
-    sha256: IMAGEMAGICK_SHA256,
-    supplied: process.env["NOVACLAW_IMAGEMAGICK_ARCHIVE"] !== undefined,
-  })
+  await ensureArchive(cache, IMAGEMAGICK_SHA256)
 
   const stage = path.join(path.dirname(IMAGEMAGICK_RESOURCE), `.imagemagick-stage-${process.pid}`)
   await rm(stage, { recursive: true, force: true })
@@ -154,22 +147,14 @@ async function validateTree(root: string) {
     throw new Error(`ImageMagick is incomplete; missing ${missing.map((item) => item.name).join(", ")}`)
 }
 
-async function ensureArchive(file: string, pin: { url: string; sha256: string; supplied: boolean }) {
-  if ((await sha256(file)) === pin.sha256) return
-  if (pin.supplied) throw new Error(`supplied ImageMagick archive failed SHA-256 verification: ${file}`)
-
-  await rm(file, { force: true })
-  const partial = `${file}.partial-${process.pid}`
-  await rm(partial, { force: true })
-  const response = await fetch(pin.url, { redirect: "follow", signal: AbortSignal.timeout(300_000) })
-  if (!response.ok || !response.body) throw new Error(`ImageMagick download failed: HTTP ${response.status}`)
-  await pipeline(Readable.fromWeb(response.body), createWriteStream(partial, { flags: "wx" }))
-  const digest = await sha256(partial)
-  if (digest !== pin.sha256) {
-    await rm(partial, { force: true })
-    throw new Error(`ImageMagick SHA-256 mismatch: expected ${pin.sha256}, got ${digest ?? "unreadable"}`)
-  }
-  await rename(partial, file)
+async function ensureArchive(file: string, expected: string) {
+  const digest = await sha256(file)
+  if (digest === expected) return
+  if (digest === undefined)
+    throw new Error(
+      `ImageMagick archive is not available locally: ${file}. Set NOVACLAW_IMAGEMAGICK_ARCHIVE to the verified archive.`,
+    )
+  throw new Error(`ImageMagick SHA-256 mismatch: expected ${expected}, got ${digest}`)
 }
 
 async function sha256(file: string) {

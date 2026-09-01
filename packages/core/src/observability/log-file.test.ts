@@ -2,7 +2,7 @@
  * **The log writer: segments, rotation, retention — and the rule that it may never take the
  * instance down.**
  *
- * `todo/logging.md` Phase 2. Every degradation claim here is paired with the **unguarded twin of
+ * Every degradation claim here is paired with the **unguarded twin of
  * the same operation, against the same paths, in the same run** — the shape `boot-degrade.test.ts`
  * established, and for the same reason: *"it survived"* is trivially true if the poison stopped
  * biting, and a green test that cannot fail is worse than no test. So each failure-mode test also
@@ -121,7 +121,7 @@ describe("rotation", () => {
     await using dir = await tmpdir()
 
     // ── the control: rename with the handle still open, exactly what an external sweeper does ────
-    // ⚠️ `todo/logging.md` §0.10 predicts `EPERM`/`EBUSY` here on Windows. It does not happen —
+    // ⚠️ The design sketch predicted `EPERM`/`EBUSY` here on Windows. It does not happen —
     // libuv passes FILE_SHARE_DELETE, the rename SUCCEEDS, and the descriptor follows the file.
     // That is a worse failure than the predicted one, and this is the arm that proves it bites.
     const raw = path.join(dir.path, "raw.log")
@@ -376,24 +376,6 @@ describe("retention — one bound, enforced over the directory", () => {
     fsSync.writeFileSync(huge, `timestamp=${at} message=${"x".repeat(20000)}\n`)
     expect(LogFile.firstLineTime(huge)).toBeUndefined()
     expect(LogFile.firstLineTime(path.join(dir.path, "absent.log"))).toBeUndefined()
-  })
-
-  test("reclaim(bytes) frees at least that much for the GC ladder, oldest first", async () => {
-    await using dir = await tmpdir()
-    const file = path.join(dir.path, "novaclaw.log")
-    const now = Date.parse("2026-08-07T00:00:00.000Z")
-    const oldest = plant(dir.path, "novaclaw", now - 3 * DAY, 1000)
-    const middle = plant(dir.path, "novaclaw", now - 2 * DAY, 1000)
-    const newest = plant(dir.path, "novaclaw", now - 1 * DAY, 1000)
-
-    const writer = LogFile.open({ file, totalBytes: 1024 * 1024, maxAgeMs: 30 * DAY, now: () => new Date(now) })
-    const freed = writer.reclaim(1500)
-    writer.close()
-
-    expect(freed).toBeGreaterThanOrEqual(1500)
-    expect(fsSync.existsSync(oldest)).toBe(false)
-    expect(fsSync.existsSync(middle)).toBe(false)
-    expect(fsSync.existsSync(newest)).toBe(true)
   })
 
   test("an abandoned .gz.tmp is swept only past its grace period", async () => {

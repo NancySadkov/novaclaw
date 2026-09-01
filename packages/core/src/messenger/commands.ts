@@ -1,6 +1,6 @@
 export * as MessengerCommands from "./commands"
 
-// The gateway-level command router's PARSER (notes/messenger-plan.md §3.2 step 3): a tiny,
+// The gateway-level command router's PARSER: a tiny,
 // deterministic, closed set parsed BEFORE any model sees the text. `/pair` is how a stranger
 // becomes somebody; everything else is operator-trust, DM-only — enforced by the GATEWAY, not
 // here (this module stays pure). The model never sees these commands and can never invoke them:

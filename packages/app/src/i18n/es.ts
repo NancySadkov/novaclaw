@@ -24,8 +24,6 @@ export const dict = {
 
   "command.palette": "Paleta de comandos",
 
-
-
   "command.session.new": "Nueva sesión",
   "command.file.open": "Abrir archivo",
   "command.tab.close": "Cerrar pestaña",
@@ -65,16 +63,10 @@ export const dict = {
   "palette.group.commands": "Comandos",
   "palette.group.files": "Archivos",
 
-
   "dialog.model.select.title": "Seleccionar modelo",
   "dialog.model.search.placeholder": "Buscar modelos",
   "dialog.model.empty": "Sin resultados de modelos",
   "dialog.model.manage": "Gestionar modelos",
-
-
-
-
-
 
   "model.tag.free": "Gratis",
   "model.tag.latest": "Último",
@@ -170,7 +162,6 @@ export const dict = {
   "dialog.mcp.title": "MCPs",
   "dialog.mcp.description": "{{enabled}} de {{total}} habilitados",
   "dialog.mcp.empty": "No hay MCPs configurados",
-
 
   "mcp.status.connected": "conectado",
   "mcp.status.failed": "fallido",
@@ -272,9 +263,6 @@ export const dict = {
   "language.th": "ไทย",
   "language.tr": "Türkçe",
 
-
-
-
   "toast.permissions.autoaccept.on.title": "Aceptando permisos automáticamente",
   "toast.permissions.autoaccept.on.description": "Las solicitudes de permisos se aprobarán automáticamente",
   "toast.permissions.autoaccept.off.title": "Se dejó de aceptar permisos automáticamente",
@@ -289,19 +277,12 @@ export const dict = {
   "toast.context.noLineSelection.title": "Sin selección de líneas",
   "toast.context.noLineSelection.description": "Primero selecciona un rango de líneas en una pestaña de archivo.",
 
-
-
   "toast.session.listFailed.title": "Fallo al cargar sesiones para {{project}}",
-
-  "toast.update.action.installRestart": "Instalar y reiniciar",
 
   "error.page.title": "Algo salió mal",
   "error.page.description": "Ocurrió un error al cargar la aplicación.",
   "error.page.details.label": "Detalles del error",
   "error.page.action.restart": "Reiniciar",
-  "error.page.action.checking": "Comprobando...",
-  "error.page.action.checkUpdates": "Buscar actualizaciones",
-  "error.page.action.updateTo": "Actualizar a {{version}}",
   "error.page.report.prefix": "Por favor reporta este error al equipo de NovaClaw",
   "error.page.report.discord": "en Discord",
   "error.page.version": "Versión: {{version}}",
@@ -337,10 +318,6 @@ export const dict = {
   "notification.session.responseReady.title": "Respuesta lista",
   "notification.session.error.title": "Error de sesión",
   "notification.session.error.fallbackDescription": "Ocurrió un error",
-
-  "home.recentProjects": "Proyectos recientes",
-  "home.empty.title": "Sin proyectos recientes",
-  "home.empty.description": "Empieza abriendo un proyecto local",
 
   "session.tab.session": "Sesión",
   "session.tab.review": "Revisión",
@@ -380,7 +357,6 @@ export const dict = {
   "session.new.title": "Construye lo que quieras",
   "session.new.worktree.main": "Rama principal",
   "session.new.worktree.mainWithBranch": "Rama principal ({{branch}})",
-  "session.new.worktree.create": "Crear nuevo árbol de trabajo",
   "session.new.lastModified": "Última modificación",
 
   "session.header.search.placeholder": "Buscar {{project}}",
@@ -426,14 +402,10 @@ export const dict = {
   "common.moreOptions": "Más opciones",
   "common.learnMore": "Saber más",
   "common.rename": "Renombrar",
-  "common.archive": "Archivar",
   "common.delete": "Eliminar",
   "common.close": "Cerrar",
   "common.edit": "Editar",
   "common.key.esc": "ESC",
-
-  "sidebar.project.recentSessions": "Sesiones recientes",
-
 
   "settings.section.desktop": "Escritorio",
   "settings.section.server": "Servidor",
@@ -461,12 +433,6 @@ export const dict = {
   "settings.general.row.releaseNotes.description":
     'Mostrar ventanas emergentes de "Novedades" después de las actualizaciones',
 
-  "settings.updates.row.check.title": "Buscar actualizaciones",
-  "settings.updates.row.check.description": "Buscar actualizaciones manualmente e instalarlas si hay alguna",
-  "settings.updates.action.checkNow": "Buscar ahora",
-  "settings.updates.action.checking": "Buscando...",
-  "settings.updates.toast.latest.title": "Estás al día",
-  "settings.updates.toast.latest.description": "Estás usando la última versión de NovaClaw.",
   "sound.option.none": "Ninguno",
   "sound.option.alert01": "Alerta 01",
   "sound.option.alert02": "Alerta 02",
@@ -550,8 +516,6 @@ export const dict = {
   "settings.shortcuts.group.prompt": "Prompt",
 
   "settings.models.title": "Modelos",
-
-
 
   "settings.permissions.tool.read.title": "Leer",
   "settings.permissions.tool.read.description": "Leer un archivo (coincide con la ruta del archivo)",

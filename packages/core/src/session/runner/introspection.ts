@@ -9,6 +9,7 @@
 import type { ConfigIntrospection } from "../../config/introspection"
 import { isRealUserTurn } from "../steer-provenance"
 import type { SessionMessage } from "../message"
+import { Model } from "@novaclaw/schema/model"
 
 export interface Resolved {
   readonly enabled: boolean
@@ -35,12 +36,7 @@ export const DEFAULT_INTERJECTION =
 export const MAX_EXCERPT_CHARS = 4_000
 
 /** Parse "provider/model" (the model id itself may contain slashes). */
-export function parseModelRef(ref: string | undefined): { providerID: string; id: string } | undefined {
-  if (!ref) return undefined
-  const slash = ref.indexOf("/")
-  if (slash <= 0 || slash === ref.length - 1) return undefined
-  return { providerID: ref.slice(0, slash), id: ref.slice(slash + 1) }
-}
+export const parseModelRef = Model.parseRef
 
 export function resolve(config: ConfigIntrospection.Info | undefined): Resolved {
   const cadence = config?.cadence !== undefined && config.cadence >= 1 ? Math.floor(config.cadence) : DEFAULT_CADENCE

@@ -200,7 +200,7 @@ export const unreadableTurnAttachments = (
 //    ⚠️ **This clause used to say "a screenshot tool that does not exist yet". It exists.**
 //    `tool/computer.ts`'s `toModelContent` returns the capture as a `{type:"file"}` part, so the
 //    case this framing was written AHEAD of is now the live one, and screen pixels — which
-//    `todo/jail.md`'s threat model still lists as an unframed seam — arrive framed by construction.
+//    the jail's threat model still lists as an unframed seam — arrive framed by construction.
 //    See `SessionOrigin.externalMediaFrame` for why it is a sibling text part and not a
 //    prefix, and why it is not a double-frame of a tool that already frames its own text.
 //    ⚠️ This deliberately overrides `read.ts`'s recorded decision not to frame — for its IMAGE
@@ -306,25 +306,6 @@ const toolCarriesMedia = (tool: SessionMessage.AssistantTool): boolean => {
   return value !== undefined && carriesMedia(value)
 }
 
-/**
- * Does lowering this history need the resolved model's declared capabilities?
- *
- * ⚠️ **This exists because the runner reads the catalog CONDITIONALLY**, and the condition it used
- * was "some user message has files" — which is false for a conversation whose only image came back
- * from a tool. Under that condition `capabilities` arrives `undefined`, `attachmentSupport` answers
- * `unknown`, and the gate above is inert for exactly the case it was written for. The predicate is
- * exported (rather than the runner asking twice) so the two doors are decided by ONE function and
- * cannot drift apart.
- *
- * It stays a predicate, not an unconditional read: the catalog lookup costs a turn nothing to skip,
- * and the overwhelming majority of turns carry no media at all.
- */
-export const needsCapabilityEvidence = (messages: readonly SessionMessage.Message[]): boolean =>
-  messages.some((message) => {
-    if (message.type === "user") return (message.files?.length ?? 0) > 0
-    if (message.type !== "assistant") return false
-    return message.content.some((item) => item.type === "tool" && toolCarriesMedia(item))
-  })
 
 // Decode a data: URI's payload to text (base64 or percent-encoded). Returns undefined
 // for any other URI scheme or a malformed data URI.
@@ -614,8 +595,7 @@ ${message.recent}
  * `capabilities` is the RESOLVED catalog model's declared input modalities, and it gates BOTH doors
  * into the context window: a user's attachments and a tool's returned media. Omitted (or
  * `undefined`) means *no evidence* and lowers exactly as it always has — that default is what keeps
- * every existing caller, test seam and hand-added local endpoint behaving unchanged. Ask
- * `needsCapabilityEvidence(messages)` whether it is worth resolving.
+ * every existing caller, test seam and hand-added local endpoint behaving unchanged.
  */
 export const toLLMMessages = (
   messages: readonly SessionMessage.Message[],
@@ -656,7 +636,7 @@ export const toLLMMessages = (
 //  · **UNSET means unlimited**, so an endpoint that never had this cap lowers byte-identically to
 //    before this existed. We do not guess a number for a stranger's server; we carry the one that
 //    was measured. Learning it from the 400 itself and storing it per endpoint — the
-//    `ProviderCapabilityStore` pattern — is the follow-up in `todo/vision.md`.
+//    `ProviderCapabilityStore` pattern — is the unlanded follow-up.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -675,7 +655,7 @@ export const toLLMMessages = (
  * pixels are GONE NOW and how to get them back, and it must make re-reading the expected act rather
  * than an afterthought.
  *
- * ⭐ The real fix is upstream and is `todo/vision.md` work: an image must not be elidable until the
+ * ⭐ The real fix is upstream and is unlanded: an image must not be elidable until the
  * model has committed a description of it to text — which is the jh thesis applied exactly
  * (*the model never instruments voluntarily; the harness must force it*), and is why a sub-session
  * that looks at ≤N images and returns TEXT is the shape that actually survives a large folder.

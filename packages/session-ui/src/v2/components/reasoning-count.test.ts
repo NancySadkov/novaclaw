@@ -10,7 +10,22 @@ describe("compactTokens", () => {
   test("thousands compact to one decimal + k", () => {
     expect(compactTokens(1000)).toBe("1.0k")
     expect(compactTokens(1500)).toBe("1.5k")
-    expect(compactTokens(32768)).toBe("32.8k")
+  })
+
+  // 🔴 This assertion read `compactTokens(32768)).toBe("32.8k")`. It was pinning a LOCAL copy of the
+  // formatter, and the Chats list — which renders the same counts on the same screen — rendered that
+  // number "33k". Three significant figures is the rule now: a tenth is informative at 1.5k and noise at
+  // 33k. The assertion is not dropped, it is corrected to the shared rule.
+  test("above 10k the tenth is dropped, matching the Chats list on the same screen", () => {
+    expect(compactTokens(32768)).toBe("33k")
+    expect(compactTokens(9999)).toBe("10.0k")
+  })
+
+  // The whole point of sharing: the local copy had no megabyte branch, so a long reasoning fold read
+  // "1200.0k" beside a "1.2M" elsewhere in the UI.
+  test("millions get a megabyte branch instead of running off the end of k", () => {
+    expect(compactTokens(1_200_000)).toBe("1.2M")
+    expect(compactTokens(12_000_000)).toBe("12M")
   })
 })
 

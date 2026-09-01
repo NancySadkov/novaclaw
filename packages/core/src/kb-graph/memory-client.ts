@@ -3,9 +3,9 @@ export * as MemoryClient from "./memory-client"
 import { Context, Effect, Layer, Schema } from "effect"
 import { KbChunk } from "./chunk"
 import { KbClaim } from "./claim"
-import type { MemoryAccess } from "./memory-access"
+import { compatible, narrowest, type MemoryAccess } from "./memory-access"
 
-// The memory tier's Effect-facing surface (notes/kb-graph-plan.md §2.0): the `Interface` the kb tool +
+// The memory tier's Effect-facing surface: the `Interface` the kb tool +
 // auto-recall/extract hooks depend on, its types + tagged error, and the ways to construct it —
 // `fromEngine` (adapt the in-process WASM engine, ./wasm-engine.ts), `stub` (in-memory, for tests),
 // `disabled` (degraded — memory unavailable but the instance still boots), and `proxy` (hand over a
@@ -398,33 +398,6 @@ export const fromEngine = (engine: Engine): Interface => {
   }
 }
 
-/** A client that resolves its delegate per call — lets the boot hand over a live client immediately
- *  and swap the real engine in once it finishes opening in the background (ops degrade via the
- *  delegate — a `disabled` client — until then). `Effect.suspend` defers the lookup to run time. */
-export const proxy = (get: () => Interface): Interface => ({
-  health: () => Effect.suspend(() => get().health()),
-  addMemory: (input) => Effect.suspend(() => get().addMemory(input)),
-  addEdge: (input, access) => Effect.suspend(() => get().addEdge(input, access)),
-  search: (input) => Effect.suspend(() => get().search(input)),
-  neighbors: (id, access, opts) => Effect.suspend(() => get().neighbors(id, access, opts)),
-  path: (from, to, access, maxHops) => Effect.suspend(() => get().path(from, to, access, maxHops)),
-  invalidate: (id, access, at) => Effect.suspend(() => get().invalidate(id, access, at)),
-  purge: (id, access) => Effect.suspend(() => get().purge(id, access)),
-  addClaim: (input, access) => Effect.suspend(() => get().addClaim(input, access)),
-  claimHistory: (id, access) => Effect.suspend(() => get().claimHistory(id, access)),
-  reviewEvidence: (locator, access) => Effect.suspend(() => get().reviewEvidence(locator, access)),
-  setClaimStatus: (id, status, access) => Effect.suspend(() => get().setClaimStatus(id, status, access)),
-  moveScope: (from, to) => Effect.suspend(() => get().moveScope(from, to)),
-  clearScope: (scope) => Effect.suspend(() => get().clearScope(scope)),
-  eraseAll: () => Effect.suspend(() => get().eraseAll()),
-  discardLegacyGlobalExtracts: () => Effect.suspend(() => get().discardLegacyGlobalExtracts()),
-  stats: () => Effect.suspend(() => get().stats()),
-  list: (input) => Effect.suspend(() => get().list(input)),
-  candidates: (input) => Effect.suspend(() => get().candidates(input)),
-  byIds: (ids) => Effect.suspend(() => get().byIds(ids)),
-  graph: (input) => Effect.suspend(() => get().graph(input)),
-})
-
 /** Test/wiring seam: provide a specific client Interface (a live `make`, or a `stub`). */
 export const layerWith = (client: Interface): Layer.Layer<Service> => Layer.succeed(Service, Service.of(client))
 
@@ -505,8 +478,8 @@ export const stub = (): Interface => {
         if (!from || !to) return { ok: false }
         const visible = (scope: string) => access.scopes === undefined || access.scopes.includes(scope)
         if (!visible(from.scope) || !visible(to.scope)) return { ok: false }
-        if (!(from.scope === to.scope || from.scope === "global" || to.scope === "global")) return { ok: false }
-        const scope = from.scope === "global" ? to.scope : from.scope
+        if (!compatible(from.scope, to.scope)) return { ok: false }
+        const scope = narrowest(from.scope, to.scope)
         edges.push({ from: input.from, to: input.to, type: input.type, scope })
         return { ok: true, scope }
       }),

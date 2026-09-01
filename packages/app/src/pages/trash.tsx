@@ -6,7 +6,8 @@ import { useServer } from "@/context/server"
 import { useLanguage, type Translator } from "@/context/language"
 import { showToast } from "@/utils/toast"
 import { fsTrashList, fsTrashRestore, type TrashEntry } from "@/utils/fs-api"
-import { AppPage } from "@/components/app-page"
+import { AppPage, AppPageHeader } from "@/components/app-page"
+import { resolveInstanceGlobalDirectory } from "@/utils/routing-directory"
 
 // The Trash app (B8 surface — plan.md M6). A home tile over the M4 endpoints: list every trashed
 // entry (the store is GLOBAL — deletions from any root land here), restore with one click, and show
@@ -34,15 +35,9 @@ export function TrashPage() {
   const [tick, setTick] = createSignal(0)
 
   // The trash store is global; `directory` is only for request routing — the server's home works.
-  const [routeDir] = createResource(ctx, async (c) => {
-    const p = c.sync.data.path
-    if (p && (p.home || p.directory)) return p.home || p.directory
-    const got = await c.sdk.client.path
-      .get()
-      .then((r) => r.data)
-      .catch(() => undefined)
-    return got?.home || got?.directory || ""
-  })
+  // The read itself is `utils/routing-directory.ts`, shared verbatim with registry.tsx and
+  // terminal.tsx.
+  const [routeDir] = createResource(ctx, resolveInstanceGlobalDirectory)
 
   const [entries] = createResource(
     () => {
@@ -72,14 +67,11 @@ export function TrashPage() {
 
   return (
     <AppPage class="flex flex-col overflow-hidden">
-      <div class="flex items-center gap-3 border-b border-v2-border-border-base px-4 py-2.5">
-        <GoldGlyph name="trash" class="size-6" />
-        <span class="text-[15px] font-semibold">{language.t("trash.title")}</span>
-        <span class="min-w-0 flex-1 truncate text-xs text-v2-text-text-faint">{language.t("trash.hint")}</span>
+      <AppPageHeader glyph="trash" title={language.t("trash.title")} hint={language.t("trash.hint")}>
         <button type="button" class={btn} onClick={() => setTick((t) => t + 1)} disabled={!routeDir()}>
           {language.t("trash.refresh")}
         </button>
-      </div>
+      </AppPageHeader>
 
       <div class="min-h-0 flex-1 overflow-auto py-1">
         <Show

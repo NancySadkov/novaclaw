@@ -1,5 +1,4 @@
 import { Database } from "bun:sqlite"
-import { drizzle } from "drizzle-orm/bun-sqlite"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
@@ -14,6 +13,33 @@ import type { Connection } from "effect/unstable/sql/SqlConnection"
 import { classifySqliteError, SqlError } from "effect/unstable/sql/SqlError"
 import * as Statement from "effect/unstable/sql/Statement"
 import { Sqlite } from "./sqlite"
+
+/**
+ * **The bun leg. Its sibling is `sqlite.node.ts`, and they are ~80 lines the same on purpose.**
+ *
+ * 🔴 **Why they were NOT collapsed into a shared core plus a driver adapter (RF-11-8, decided
+ * 2026-09-01).** The extraction is easy to write and impossible to verify here: `node:sqlite` **does
+ * not exist in bun** — `import("node:sqlite")` answers *"No such built-in module"* — so
+ * `sqlite.node.ts` cannot be loaded, let alone exercised, by anything `bun test` runs. That leg only
+ * executes inside the desktop server, which is an Electron `utilityProcess` running NODE. A shared
+ * module refactored under a green bun gate would therefore be verified on exactly one of its two
+ * callers, and the half that broke would surface as a packaged-app failure with no test naming it.
+ * The transaction-permit block is the part that makes this unacceptable rather than merely
+ * unpleasant: `semaphore`/`acquirer`/`transactionAcquirer` is correctness-critical, and a
+ * *silently* wrong permit is a corrupt database, not a red test.
+ *
+ * ⚠️ **The two divergences that look like drift, MEASURED 2026-09-01:**
+ *
+ * 1. `?? []` on `.all()`/`.values()` here and not in the node leg is **required**, not sloppiness.
+ *    Bun's `statement.values()` returns **`null`** for a statement that yields no result set (an
+ *    `INSERT`); `node:sqlite`'s `all()` returns `[]` for the same statement. Adding the coalesce to
+ *    node would be harmless but untrue of that driver; removing it here returns `null` where the
+ *    `SqliteConnection` contract promises an array.
+ * 2. The WAL guard now matches the node leg (see `nativeLayer`), which it did not before.
+ *
+ * If this ever is collapsed, the prerequisite is a way to run `sqlite.node.ts` under `node` in the
+ * gate — not a bigger bun suite.
+ */
 
 const ATTR_DB_SYSTEM_NAME = "db.system.name"
 
@@ -56,7 +82,7 @@ const make = (options: Config) =>
     const run = (query: string, params: ReadonlyArray<unknown> = []) =>
       Effect.withFiber<Array<Record<string, unknown>>, SqlError>((fiber) => {
         const statement = native.query(query)
-        // @ts-ignore bun-types missing safeIntegers method, fixed in https://github.com/oven-sh/bun/pull/26627
+        // @ts-ignore bun-types is missing the safeIntegers method tracked as Bun issue 26627
         statement.safeIntegers(Context.get(fiber.context, Client.SafeIntegers))
         try {
           return Effect.succeed((statement.all(...(params as any)) ?? []) as Array<Record<string, unknown>>)
@@ -72,7 +98,7 @@ const make = (options: Config) =>
     const runValues = (query: string, params: ReadonlyArray<unknown> = []) =>
       Effect.withFiber<Array<unknown[]>, SqlError>((fiber) => {
         const statement = native.query(query)
-        // @ts-ignore bun-types missing safeIntegers method, fixed in https://github.com/oven-sh/bun/pull/26627
+        // @ts-ignore bun-types is missing the safeIntegers method tracked as Bun issue 26627
         statement.safeIntegers(Context.get(fiber.context, Client.SafeIntegers))
         try {
           return Effect.succeed((statement.values(...(params as any)) ?? []) as Array<unknown[]>)
@@ -178,23 +204,22 @@ const nativeLayer = (config: Config) =>
         create: config.create ?? true,
       })
       yield* Effect.addFinalizer(() => Effect.sync(() => native.close()))
-      if (config.disableWAL !== true) native.run("PRAGMA journal_mode = WAL;")
+      // ⚠️ The `readonly` half of this guard was missing here while `sqlite.node.ts:172` had it, and
+      // the asymmetry was not benign — it was merely UNREACHED. Measured 2026-09-01: setting
+      // `journal_mode = WAL` on a genuinely read-only handle throws *"attempt to write a readonly
+      // database"* on BOTH drivers. It has never fired here only because the `readwrite: … ?? true`
+      // above keeps the handle writable unless a caller passes `readwrite: false` as well, and no
+      // production caller passes `readonly` to this layer at all today. The first one that does
+      // would have crashed on bun and worked on node, which is the worst shape a difference between
+      // these two files can take.
+      if (config.disableWAL !== true && config.readonly !== true) native.run("PRAGMA journal_mode = WAL;")
       return native
     }),
   )
 
 const sqliteLayer = (config: Config) => Layer.effect(Client.SqlClient, make(config))
 
-const drizzleLayer = Layer.effect(
-  Sqlite.Drizzle,
-  Effect.gen(function* () {
-    return drizzle({ client: (yield* Sqlite.Native) as Database })
-  }),
-)
-
 export const layer = (config: Config) => {
   const native = nativeLayer(config)
-  return Layer.merge(native, Layer.merge(sqliteLayer(config), drizzleLayer).pipe(Layer.provide(native))).pipe(
-    Layer.provide(Reactivity.layer),
-  )
+  return Layer.merge(native, sqliteLayer(config).pipe(Layer.provide(native))).pipe(Layer.provide(Reactivity.layer))
 }

@@ -1,7 +1,7 @@
 /**
  * What the recovery banner says about the WORKSPACE after an interrupted turn.
  *
- * `todo/session-recovery.md`'s gate wants the transcript UI to explain retry, stop, reconcile and
+ * The session-recovery gate wants the transcript UI to explain retry, stop, reconcile and
  * **changed files** without model assistance. The banner already explained retry and stop; this is
  * the changed-files half, and it is the one that decides whether retrying is safe — a failure class
  * tells you what broke, not what it did to your files first.

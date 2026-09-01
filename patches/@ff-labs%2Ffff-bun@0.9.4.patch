@@ -1,3 +1,10 @@
+# PATCH PROVENANCE
+# WHAT: replaces `createRequire`-based platform-package resolution with a direct `require()` of a
+#       template-literal specifier, plus a `declare const FFF_LIBC`.
+# WHY: makes the native binary path statically visible to a bundler.
+# CLASS: permanent private fork — bundler-specific; upstream has no reason to take it.
+# UPSTREAM: never upstreamable.
+# REMOVE WHEN: we stop bundling `@ff-labs/fff-bun`.
 diff --git a/src/download.ts b/src/download.ts
 index 3454256..6dca25a 100644
 --- a/src/download.ts

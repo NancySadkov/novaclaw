@@ -15,7 +15,7 @@ import { InstanceIdentityTable } from "./instance-identity/sql"
 // seed step. Advertised over mDNS and reported by /global/health so clients can recognize the
 // SAME instance behind different URLs (mDNS name vs IP vs tunnel).
 //
-// Community P1 (`todo/community-p2p.md`): that id is a random ULID, which is fine for recognising
+// Community P1 (`notes/spec/community-p2p.md`): that id is a random ULID, which is fine for recognising
 // one install across routes and useless the moment a stranger makes the claim — anyone can say
 // `ins_x`. So the instance also holds an **Ed25519 keypair**, minted on the same first read, and
 // the PUBLIC KEY is its identity to the network. A URL is a route, the ULID is a handle, and only a
@@ -293,7 +293,7 @@ export const layer = Layer.effect(
     const SEALING_AAD = "instance-identity.sealing_secret_key"
 
     /**
-     * 🔴 The unwind of app-managed encryption, last consumer (`todo/code-review.md`, NC-REL-030).
+     * 🔴 The unwind of app-managed encryption, last consumer.
      *
      * Decision §5 of `decisions-v0.2.0.md`, recorded after the cipher landed unexplained, says
      * secrets stay plaintext under OS account protection: no keyring exists in every run mode

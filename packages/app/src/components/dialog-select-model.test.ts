@@ -51,7 +51,7 @@ describe("model picker routing", () => {
 })
 
 // Owner directive 2026-08-06: a picker row is "model name + its context", never the endpoint it is
-// served from (todo/session-ui.md). Source-asserted for the same reason as the block above — both
+// served from. Source-asserted for the same reason as the block above — both
 // failure modes render as a perfectly normal-looking list, so nothing about them is visible to a test
 // that only checks the picker opens.
 describe("model picker row shows the model, not its endpoint", () => {

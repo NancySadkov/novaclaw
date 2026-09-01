@@ -14,7 +14,7 @@ export class Info extends Schema.Class<Info>("ConfigV2.Compaction")({
    * Whether a compaction cycle may write an LLM SUMMARY, or stop after the cheap prune.
    *
    * Default (absent) is `true` — prune then summarise, which is what has always shipped. Setting it
-   * `false` is the *prune only* tier `todo/adoption.md` asks for, and it is not merely a speed knob:
+   * `false` is the *prune only* tier of the compaction ladder, and it is not merely a speed knob:
    * summarising rewrites the conversation into a model's paraphrase, and a user who would rather
    * lose old TOOL OUTPUT than have their history restated now has a way to say so.
    *

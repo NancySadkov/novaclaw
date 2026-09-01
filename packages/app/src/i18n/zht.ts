@@ -24,8 +24,6 @@ export const dict = {
 
   "command.palette": "命令面板",
 
-
-
   "command.session.new": "新增工作階段",
   "command.file.open": "開啟檔案",
   "command.tab.close": "關閉分頁",
@@ -65,15 +63,10 @@ export const dict = {
   "palette.group.commands": "命令",
   "palette.group.files": "檔案",
 
-
   "dialog.model.select.title": "選擇模型",
   "dialog.model.search.placeholder": "搜尋模型",
   "dialog.model.empty": "找不到模型",
   "dialog.model.manage": "管理模型",
-
-
-
-
 
   "model.tag.free": "免費",
   "model.tag.latest": "最新",
@@ -169,7 +162,6 @@ export const dict = {
   "dialog.mcp.title": "MCP",
   "dialog.mcp.description": "已啟用 {{enabled}} / {{total}}",
   "dialog.mcp.empty": "未設定 MCP",
-
 
   "mcp.status.connected": "已連線",
   "mcp.status.failed": "失敗",
@@ -269,9 +261,6 @@ export const dict = {
   "language.th": "ไทย",
   "language.tr": "Türkçe",
 
-
-
-
   "toast.permissions.autoaccept.on.title": "正在自動接受權限",
   "toast.permissions.autoaccept.on.description": "權限請求將被自動批准",
   "toast.permissions.autoaccept.off.title": "已停止自動接受權限",
@@ -286,18 +275,12 @@ export const dict = {
   "toast.context.noLineSelection.title": "未選取行",
   "toast.context.noLineSelection.description": "請先在檔案分頁中選取行範圍。",
 
-
   "toast.session.listFailed.title": "無法載入 {{project}} 的工作階段",
-
-  "toast.update.action.installRestart": "安裝並重新啟動",
 
   "error.page.title": "出了點問題",
   "error.page.description": "載入應用程式時發生錯誤。",
   "error.page.details.label": "錯誤詳情",
   "error.page.action.restart": "重新啟動",
-  "error.page.action.checking": "檢查中...",
-  "error.page.action.checkUpdates": "檢查更新",
-  "error.page.action.updateTo": "更新到 {{version}}",
   "error.page.report.prefix": "請將此錯誤回報給 NovaClaw 團隊",
   "error.page.report.discord": "在 Discord 上",
   "error.page.version": "版本: {{version}}",
@@ -330,10 +313,6 @@ export const dict = {
   "notification.session.responseReady.title": "回覆已就緒",
   "notification.session.error.title": "工作階段錯誤",
   "notification.session.error.fallbackDescription": "發生錯誤",
-
-  "home.recentProjects": "最近專案",
-  "home.empty.title": "沒有最近專案",
-  "home.empty.description": "透過開啟本地專案開始使用",
 
   "session.tab.session": "工作階段",
   "session.tab.review": "審查",
@@ -370,7 +349,6 @@ export const dict = {
   "session.new.title": "建構任何東西",
   "session.new.worktree.main": "主分支",
   "session.new.worktree.mainWithBranch": "主分支 ({{branch}})",
-  "session.new.worktree.create": "建立新的 worktree",
   "session.new.lastModified": "最後修改",
 
   "session.header.search.placeholder": "搜尋 {{project}}",
@@ -413,13 +391,11 @@ export const dict = {
   "common.moreOptions": "更多選項",
   "common.learnMore": "深入了解",
   "common.rename": "重新命名",
-  "common.archive": "封存",
   "common.delete": "刪除",
   "common.close": "關閉",
   "common.edit": "編輯",
 
   "common.key.esc": "ESC",
-  "sidebar.project.recentSessions": "最近工作階段",
 
   "settings.section.desktop": "桌面",
   "settings.section.server": "伺服器",
@@ -445,13 +421,6 @@ export const dict = {
 
   "settings.general.row.releaseNotes.title": "發行說明",
   "settings.general.row.releaseNotes.description": "更新後顯示「新功能」彈出視窗",
-
-  "settings.updates.row.check.title": "檢查更新",
-  "settings.updates.row.check.description": "手動檢查更新並在有更新時安裝",
-  "settings.updates.action.checkNow": "立即檢查",
-  "settings.updates.action.checking": "檢查中...",
-  "settings.updates.toast.latest.title": "已是最新版本",
-  "settings.updates.toast.latest.description": "你正在使用最新版本的 NovaClaw。",
 
   "sound.option.none": "無",
   "sound.option.alert01": "警報 01",
@@ -532,8 +501,6 @@ export const dict = {
   "settings.shortcuts.group.prompt": "提示",
 
   "settings.models.title": "模型",
-
-
 
   "settings.permissions.tool.read.title": "讀取",
   "settings.permissions.tool.read.description": "讀取檔案（符合檔案路徑）",

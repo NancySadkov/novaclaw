@@ -1,15 +1,6 @@
 import { type ComponentProps, splitProps, Show } from "solid-js"
 
-const segmenter =
-  typeof Intl !== "undefined" && "Segmenter" in Intl
-    ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
-    : undefined
-
-function first(value: string) {
-  if (!value) return ""
-  if (!segmenter) return Array.from(value)[0] ?? ""
-  return segmenter.segment(value)[Symbol.iterator]().next().value?.segment ?? Array.from(value)[0] ?? ""
-}
+import { firstGrapheme } from "../../util/grapheme"
 
 export const PROJECT_AVATAR_VARIANTS = [
   "orange",
@@ -51,7 +42,7 @@ export function ProjectAvatar(props: ProjectAvatarProps) {
         data-variant={split.variant ?? "gray"}
         data-has-image={src ? "" : undefined}
       >
-        <Show when={src} fallback={first(split.fallback)}>
+        <Show when={src} fallback={firstGrapheme(split.fallback)}>
           {(value) => <img src={value()} draggable={false} data-slot="project-avatar-image" />}
         </Show>
       </div>

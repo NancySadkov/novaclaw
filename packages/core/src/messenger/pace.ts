@@ -3,7 +3,7 @@ export * as MessengerPace from "./pace"
 import { Context, Duration, Effect, Layer, Semaphore } from "effect"
 import { makeGlobalNode } from "../effect/app-node"
 
-// The traffic-rules governor's PACER (notes/messenger-plan.md §2.3, AGENTS.md #9): NovaClaw types
+// The traffic-rules governor's PACER (AGENTS.md design principle 9): NovaClaw types
 // like one human hand — outbound is serialized GLOBALLY across every chat and account (never two
 // chats answered at the same instant), with a per-message delay ≈ the message's length ÷ human
 // typing speed. This is the ban-avoidance backbone: providers tolerate automation that behaves,

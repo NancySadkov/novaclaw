@@ -218,7 +218,6 @@ export function createChildStoreManager(input: {
             },
             session_diff: {},
             todo: {},
-            permission: {},
             question: {},
             get mcp_ready() {
               return !mcpQuery.isLoading

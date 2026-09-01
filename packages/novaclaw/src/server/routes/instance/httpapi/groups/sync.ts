@@ -36,7 +36,6 @@ export const HistoryEvent = Schema.Struct({
 })
 
 export const SyncPaths = {
-  start: `${root}/start`,
   replay: `${root}/replay`,
   steal: `${root}/steal`,
   history: `${root}/history`,
@@ -46,16 +45,6 @@ export const SyncApi = HttpApi.make("sync")
   .add(
     HttpApiGroup.make("sync")
       .add(
-        HttpApiEndpoint.post("start", SyncPaths.start, {
-          query: WorkspaceRoutingQuery,
-          success: described(Schema.Boolean, "Workspace sync started"),
-        }).annotateMerge(
-          OpenApi.annotations({
-            identifier: "sync.start",
-            summary: "Start workspace sync",
-            description: "Start sync loops for workspaces in the current project that have active sessions.",
-          }),
-        ),
         HttpApiEndpoint.post("replay", SyncPaths.replay, {
           query: WorkspaceRoutingQuery,
           payload: ReplayPayload,

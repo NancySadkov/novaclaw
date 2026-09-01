@@ -94,7 +94,7 @@ function field(input: Record<string, unknown>, key: string) {
 }
 
 /**
- * **An ALIAS of `Log.fault`, not a second implementation** — `todo/logging.md` 1h, first seam.
+ * **An ALIAS of `Log.fault`, not a second implementation** — the first fault-normalization seam.
  *
  * This function and the log's `fault` attribute class had independently grown the same
  * `Error`/object/`{}`/`toString` ladder, in two files, for one question: *what does a caught error

@@ -1,7 +1,7 @@
 import type { ServerConnection } from "@/context/server"
 import { InstanceFetchError, instanceFetch, instanceFetchList, type InstanceFault } from "@/utils/instance-fetch"
 
-// The instance-global `/api/messenger/*` endpoints (notes/messenger-plan.md §5) — what the
+// The instance-global `/api/messenger/*` endpoints — what the
 // Settings → Messengers tab binds to. Secrets flow IN through `secret` only and never come back
 // (responses carry credentialID references); the login flow's session credential never touches the
 // client at all — the wire carries only the phone/code the user types.

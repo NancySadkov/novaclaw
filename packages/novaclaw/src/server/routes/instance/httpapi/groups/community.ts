@@ -6,7 +6,7 @@ import { PeerDoor } from "../middleware/peer-door"
 import { described } from "./metadata"
 
 /**
- * Community P3/P4 — the instance-hosted forum's read/write surface (`todo/community-p2p.md`).
+ * Community P3/P4 — the instance-hosted forum's read/write surface (`notes/spec/community-p2p.md`).
  *
  * The stores exist in core and nothing could reach them; this is the layer the Community app needs,
  * and it is independent of which transport eventually carries the messages.

@@ -8,7 +8,7 @@ import { Credential } from "./credential"
 import { SessionID } from "./session-id"
 import { optional, statics } from "./schema"
 
-// The Messenger module's wire contracts (novaclaw-plan notes/messenger-plan.md): a remote chat on
+// The Messenger module's wire contracts: a remote chat on
 // Telegram/Discord/IRC/email/… is a session's REMOTE TTY. A DRIVER is a platform adapter behind
 // one contract; an ACCOUNT is one credentialed driver instance (bot token, IRC identity, mailbox);
 // a BINDING links one session to one remote chat. The binding's TRUST tier is chosen by the user
@@ -161,7 +161,6 @@ export const Capabilities = Schema.Struct({
     maxBytes: optional(Schema.Number),
   }),
   edits: Schema.Boolean,
-  typing: Schema.Boolean,
   threads: Schema.Boolean,
   moderation: Schema.Struct({
     delete: Schema.Boolean,

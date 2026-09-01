@@ -160,14 +160,21 @@ describe("what a refused permission tells the model", () => {
    * identity is the `_tag`. A real agent run was what exposed it: the model still received the
    * generic line and still invented a cause.
    */
-  const classify = (cause: unknown) => {
-    const tag = (cause as { readonly _tag?: unknown })?._tag
-    return typeof tag === "string" && /Rejected|Denied/.test(tag) ? "refusal" : "generic"
-  }
+  /**
+   * ⚠️ **RE-POINTED 2026-09-01 (RF-04-6).** This was a private copy of the tool's `_tag` string
+   * compare, and the test below asserted the SOURCE still contained that exact string — so the test
+   * and the code said the same thing twice and neither checked the other. The tool now classifies
+   * with `cause instanceof PermissionV2.DeniedError`, which is the class `permission.ts` already
+   * exports, so this helper does too. That also makes the first case below a REAL error object
+   * instead of a `{_tag}` literal shaped to satisfy the matcher.
+   */
+  const classify = (cause: unknown) => (cause instanceof PermissionV2.DeniedError ? "refusal" : "generic")
 
-  test("🔴 the real permission error TAGS are recognised as refusals", () => {
-    for (const tag of ["PermissionV2.RejectedError", "PermissionV2.DeniedError"])
-      expect(classify({ _tag: tag }), tag).toBe("refusal")
+  test("🔴 a real permission error is recognised as a refusal", () => {
+    expect(classify(new PermissionV2.DeniedError({ rules: [], reason: "ask-removed" }))).toBe("refusal")
+    // The literal the old test used. It is NOT a DeniedError, and it must no longer pass as one —
+    // the point of classifying by class is that the shape cannot be imitated by accident.
+    expect(classify({ _tag: "PermissionV2.DeniedError" })).toBe("generic")
   })
 
   test("⚠️ and an ordinary fault still gets the generic line", () => {
@@ -179,9 +186,17 @@ describe("what a refused permission tells the model", () => {
 
   test("the mapper uses that same classification, not a message match", () => {
     const source = readFileSync(new URL("../src/tool/community.ts", import.meta.url), "utf8")
-    const mapper = source.slice(source.indexOf("Effect.mapError"))
-    expect(mapper).toContain("_tag")
-    expect(mapper).toMatch(/Rejected\|Denied/)
+    // ⚠️ Comments are stripped first. This file's mapper now carries a long note ABOUT
+    // `denialMessage` and `_tag`, and a raw `includes` over the source would match the prose —
+    // which is how a sweep reports a tree healthy on the day it broke.
+    const code = source.replaceAll(/\/\*[\s\S]*?\*\//g, "").replaceAll(/(^|[^:])\/\/[^\n]*/g, "$1")
+    const mapper = code.slice(code.indexOf("Effect.mapError"))
+    // 🔴 RE-POINTED 2026-09-01 (RF-04-6): was `expect(mapper).toContain('tag === "PermissionV2.DeniedError"')`,
+    // i.e. this test restated the implementation and could only fail if someone edited the string.
+    // The classification is now the exported CLASS, so a rename is a type error rather than a
+    // silent revert to the generic line, and the old private `_tag` compare must be gone.
+    expect(mapper).toContain("cause instanceof PermissionV2.DeniedError")
+    expect(mapper).not.toContain("_tag")
     // The message a model receives has to name the action and the advance grant.
     expect(mapper).toContain("community_say")
     expect(mapper).toContain("in advance")

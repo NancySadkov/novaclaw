@@ -14,9 +14,38 @@ describe("SBOM from bun.lock", () => {
     expect(parseIdent("@only-a-scope")).toBeUndefined()
   })
 
+  // ⚠️ The shape a `lastIndexOf("@")` gets wrong. A git spec carries an `@` INSIDE the version, so
+  // splitting on the last one names the package `ghostty-web@git+ssh://git` — and a git dependency is
+  // the one component in an SBOM that is not an audited registry artifact, so it is the one a consumer
+  // most needs named correctly. There is no git dependency in the tree today; that is exactly why this
+  // lives in the test rather than waiting for the next one.
+  test("splits a GIT ident on the version delimiter, not on an @ inside the version", () => {
+    expect(parseIdent("ghostty-web@github:anomalyco/ghostty-web#513463a")).toEqual({
+      name: "ghostty-web",
+      version: "github:anomalyco/ghostty-web#513463a",
+    })
+    expect(parseIdent("@scope/n@git+ssh://git@github.com/o/r.git#abc123")).toEqual({
+      name: "@scope/n",
+      version: "git+ssh://git@github.com/o/r.git#abc123",
+    })
+  })
+
   test("percent-encodes the scope separator, per the purl spec", () => {
     expect(purlOf("@adobe/css-tools", "4.5.0")).toBe("pkg:npm/@adobe%2Fcss-tools@4.5.0")
     expect(purlOf("typescript", "5.9.2")).toBe("pkg:npm/typescript@5.9.2")
+    expect(purlOf("@scope/n", "1.0.0-beta.1")).toBe("pkg:npm/@scope%2Fn@1.0.0-beta.1")
+  })
+
+  // ⚠️ `#` is the purl SUBPATH separator, so `pkg:npm/x@github:o/r#sha` parses as version
+  // "github:o/r" with subpath "sha", under a type that claims npm served it. It did not.
+  test("a git version does not become a malformed pkg:npm purl", () => {
+    expect(purlOf("ghostty-web", "github:anomalyco/ghostty-web#513463a")).toBe(
+      "pkg:github/anomalyco/ghostty-web@513463a",
+    )
+    const ssh = purlOf("@scope/n", "git+ssh://git@github.com/o/r.git#abc123")
+    expect(ssh.startsWith("pkg:generic/")).toBe(true)
+    expect(ssh).not.toContain("#")
+    expect(ssh).not.toContain("pkg:npm/")
   })
 
   test("carries the sha512 integrity and drops its prefix", () => {

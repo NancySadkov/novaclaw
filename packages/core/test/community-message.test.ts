@@ -7,7 +7,7 @@ import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { testEffect } from "./lib/effect"
 
 /**
- * Community P4 — the signed channel message (`todo/community-p2p.md`).
+ * Community P4 — the signed channel message (`notes/spec/community-p2p.md`).
  *
  * There is no moderator and no server, so the signature is the only thing that makes "who said this"
  * mean anything. These pin the ways that guarantee gets quietly lost: an ambiguous encoding, a

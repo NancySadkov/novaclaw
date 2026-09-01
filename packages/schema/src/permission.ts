@@ -2,7 +2,6 @@ export * as Permission from "./permission"
 
 import { Schema } from "effect"
 import { optional } from "./schema"
-import { define, inventory } from "./event"
 import { ascending } from "./identifier"
 import { SessionID } from "./session-id"
 import { statics } from "./schema"
@@ -36,32 +35,6 @@ export const Request = Schema.Struct({
   ...RequestFields,
 }).annotate({ identifier: "PermissionV2.Request" })
 export interface Request extends Schema.Schema.Type<typeof Request> {}
-
-// 1K: six explicit verdict-scope replies (allow/deny x once/file/always). The legacy trio stays
-// as aliases: once=allow-once, always=allow-always, reject=deny-once.
-export const Reply = Schema.Literals([
-  "once",
-  "always",
-  "reject",
-  "allow-once",
-  "allow-file",
-  "allow-always",
-  "deny-once",
-  "deny-file",
-  "deny-always",
-]).annotate({ identifier: "PermissionV2.Reply" })
-export type Reply = typeof Reply.Type
-
-const Asked = define({ type: "permission.v2.asked", schema: Request.fields })
-const Replied = define({
-  type: "permission.v2.replied",
-  schema: {
-    sessionID: SessionID,
-    requestID: ID,
-    reply: Reply,
-  },
-})
-export const Event = { Asked, Replied, Definitions: inventory(Asked, Replied) }
 
 export const Effect = Schema.Literals(["allow", "deny", "ask"]).annotate({ identifier: "PermissionV2.Effect" })
 export type Effect = typeof Effect.Type

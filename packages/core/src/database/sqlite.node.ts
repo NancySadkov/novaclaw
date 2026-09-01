@@ -1,5 +1,4 @@
 import { DatabaseSync, type SQLInputValue } from "node:sqlite"
-import { drizzle } from "drizzle-orm/node-sqlite"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
@@ -14,6 +13,20 @@ import type { Connection } from "effect/unstable/sql/SqlConnection"
 import { classifySqliteError, SqlError } from "effect/unstable/sql/SqlError"
 import * as Statement from "effect/unstable/sql/Statement"
 import { Sqlite } from "./sqlite"
+
+/**
+ * **The node leg. Its sibling is `sqlite.bun.ts`, and they are ~80 lines the same on purpose** —
+ * see that file's header for the full reasoning (RF-11-8, decided 2026-09-01).
+ *
+ * 🔴 **Nothing in the repo's test gate can load this file.** `node:sqlite` does not exist in bun, so
+ * `bun test` cannot import it; this leg runs only inside the desktop server's Electron
+ * `utilityProcess`. Treat every edit here as unverified by the gate, and prefer a change you can
+ * reason about line by line over one that is merely symmetrical with the bun leg.
+ *
+ * ⚠️ **`.all()` is NOT coalesced here and that is correct.** Measured 2026-09-01: `node:sqlite`'s
+ * `all()` returns `[]` for a statement with no result set, where bun's `values()` returns `null` —
+ * which is why the bun leg has a `?? []` this one does not need.
+ */
 
 const ATTR_DB_SYSTEM_NAME = "db.system.name"
 
@@ -178,16 +191,7 @@ const nativeLayer = (config: Config) =>
 
 const sqliteLayer = (config: Config) => Layer.effect(Client.SqlClient, make(config))
 
-const drizzleLayer = Layer.effect(
-  Sqlite.Drizzle,
-  Effect.gen(function* () {
-    return drizzle({ client: (yield* Sqlite.Native) as DatabaseSync }) as unknown as Sqlite.DrizzleClient
-  }),
-)
-
 export const layer = (config: Config) => {
   const native = nativeLayer(config)
-  return Layer.merge(native, Layer.merge(sqliteLayer(config), drizzleLayer).pipe(Layer.provide(native))).pipe(
-    Layer.provide(Reactivity.layer),
-  )
+  return Layer.merge(native, sqliteLayer(config).pipe(Layer.provide(native))).pipe(Layer.provide(Reactivity.layer))
 }

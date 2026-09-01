@@ -33,8 +33,6 @@ export * as ContextPack from "./context-pack"
 
 /** Safe default when the model config reports no honored window. */
 export const DEFAULT_CONTEXT_SIZE = 32_000
-/** Backward-compatible name for the shared response floor; estimation uncertainty is separate. */
-export const MIN_RESPONSE_RESERVE = PromptEstimate.MIN_RESPONSE_RESERVE
 /** Flat per-tool-call token overhead the chars/4 estimate can't see (ids, wire framing). */
 export const TOOL_CALL_OVERHEAD = 8
 

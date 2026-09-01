@@ -249,13 +249,6 @@ export const handle = Effect.fn("SessionWorkerInteractionBridge.handle")(functio
       rules: error.rules,
       ...(error.reason === undefined ? {} : { reason: error.reason }),
     }
-  if (error instanceof PermissionV2.CorrectedError)
-    return {
-      ...identity(input.message),
-      type: "permission-result" as const,
-      outcome: "corrected" as const,
-      feedback: error.feedback,
-    }
   if (typeof error === "object" && error !== null && "_tag" in error && error._tag === "Session.NotFoundError")
     return { ...identity(input.message), type: "permission-result" as const, outcome: "session-missing" as const }
   return { ...identity(input.message), type: "permission-result" as const, outcome: "rejected" as const }

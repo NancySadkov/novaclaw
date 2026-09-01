@@ -3,7 +3,7 @@ import { Effect, Stream } from "effect"
 import { KbAbsorb } from "@novaclaw/core/kb-graph/absorb"
 import { KbChunk } from "@novaclaw/core/kb-graph/chunk"
 import { LLMEvent, Model } from "@novaclaw/llm"
-import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
+import * as OpenAIChat from "@novaclaw/llm/protocols/openai-compatible-chat"
 
 /** A real resolved route: LLM.request VALIDATES the model, so a stub object is rejected. */
 const MODEL = Model.make({ id: "absorb-test", provider: "harness", route: OpenAIChat.route })

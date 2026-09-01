@@ -627,7 +627,7 @@ export const forgetCook = (slug?: string): void => {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// Import / export — the shareable unit is the FILE
+// Import / export — the shareable unit is the FOLDER
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -733,24 +733,19 @@ export function exportFilename(slug: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 64)
-  return `${safe || "recipe"}.recipe.md`
+  return `${safe || "recipe"}.recipe.zip`
 }
 
 /**
  * What a person is told they are getting when they export.
  *
- * ⚠️ It names the LIMIT. A recipe is a folder, and this hands over one file of it, so a recipe with assets
- * exports incomplete — saying so is the difference between a share that works and one that fails at the
- * other end for a reason nobody can see.
+ * The ZIP is the complete portable unit. Paste remains useful for prose-only recipes, but that path is
+ * labelled asset-free at the control rather than weakening the normal export.
  */
 export function describeExport(view: RecipeView): string {
-  const base =
-    "This saves the recipe's own file — the prose, exactly as it is written. Anybody can read it, change " +
-    "it in a text editor, and import it into their own NovaClaw."
-  if (view.assets.length === 0) return base
-  return (
-    `${base} It does NOT include this recipe's ${view.assets.length === 1 ? "file" : "files"} ` +
-    `(${quoted(view.assets)}) — copy ${view.assets.length === 1 ? "it" : "those"} across yourself, or send the ` +
-    `whole folder instead.`
-  )
+  const carried =
+    view.assets.length === 0
+      ? "its recipe.md"
+      : `its recipe.md and ${view.assets.length} asset${view.assets.length === 1 ? "" : "s"}`
+  return `This ZIP carries the complete recipe folder — ${carried}, with every byte preserved. Anybody can import it into their own NovaClaw.`
 }

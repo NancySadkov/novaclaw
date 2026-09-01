@@ -1,12 +1,15 @@
 export * as MemoryAccessLedger from "./access-ledger"
 
-import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm"
+import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm"
 import { Effect } from "effect"
 import type { Database } from "../database/database"
 import { ascending } from "@novaclaw/schema/identifier"
 import { MemoryAccessTable, MemoryUsageTable } from "./access-ledger.sql"
 
 type Db = Database.Interface["db"]
+
+/** Raw per-hit detail retained after each background memory-maintenance pass. */
+export const RAW_ROW_HORIZON = 50_000
 
 /**
  * THE RETRIEVAL ACCESS LEDGER — what recall delivered, and what became of it.
@@ -417,7 +420,7 @@ export const accessesFor = (db: Db, id: string, limit = 50): Effect.Effect<Reado
  * detail has a horizon; but deleting a memory's last raw row must never make it look never-recalled
  * again, which is the whole reason the rollup is a separate table.
  */
-export const trim = (db: Db, keep = 50_000) =>
+export const trim = (db: Db, keep = RAW_ROW_HORIZON) =>
   db
     .run(
       sql`DELETE FROM ${MemoryAccessTable} WHERE ${MemoryAccessTable.id} NOT IN (
@@ -460,19 +463,6 @@ export const forgetEverything = (db: Db) =>
     .pipe(
       Effect.flatMap(() => db.delete(MemoryAccessTable).run()),
       degradeWrite,
-    )
-
-/** Oldest-first rollups within a scope set — the paging arm of the noise views. */
-export const leastRecent = (db: Db, limit = 50): Effect.Effect<ReadonlyArray<Usage>> =>
-  db
-    .select()
-    .from(MemoryUsageTable)
-    .orderBy(asc(MemoryUsageTable.last_accessed_at))
-    .limit(bounded(limit))
-    .all()
-    .pipe(
-      Effect.map((rows) => rows.map(toUsage)),
-      Effect.orElseSucceed(() => [] as ReadonlyArray<Usage>),
     )
 
 const bounded = (limit: number) => Math.max(1, Math.min(Math.trunc(limit), 1000))

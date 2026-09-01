@@ -50,17 +50,23 @@ test("rejects incompatible replies and all pending waits on close", async () => 
   expect(closed.pendingCount()).toBe(0)
 })
 
-test("abort removes a pending RPC and stale identity never sends", async () => {
+// The abort half of this test went with the `AbortSignal` parameter on 2026-09-01 (RF-15-13): no
+// production caller ever supplied one, and the path it exercised turned a cancelled call into a dead
+// worker — abort dropped the pending entry while the host was still working, so the reply arrived
+// unknown and `accept` closed the transport, failing every other in-flight RPC. The stale-identity
+// half is unrelated and stays.
+test("stale identity never sends", async () => {
   let sends = 0
   const client = SessionWorkerClient.make({ lease, send: () => sends++ })
-  const abort = new AbortController()
-  const waiting = client.request(publish("rpc_abort"), abort.signal)
-  abort.abort(new Error("turn interrupted"))
-  await expect(waiting).rejects.toThrow("turn interrupted")
-  expect(client.pendingCount()).toBe(0)
+  // Left deliberately pending — no reply arrives in this test; it is the thing `sends` counts.
+  const inflight = client.request(publish("rpc_ok"))
+  expect(client.pendingCount()).toBe(1)
 
   await expect(client.request({ ...publish("rpc_stale"), generation: lease.generation - 1 })).rejects.toThrow(
     "stale RPC",
   )
   expect(sends).toBe(1)
+
+  client.close(new Error("worker stopping"))
+  await expect(inflight).rejects.toThrow("worker stopping")
 })

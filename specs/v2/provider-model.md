@@ -11,9 +11,7 @@ export const ID = Schema.String.pipe(
     openai: schema.make("openai"),
     google: schema.make("google"),
     googleVertex: schema.make("google-vertex"),
-    githubCopilot: schema.make("github-copilot"),
     amazonBedrock: schema.make("amazon-bedrock"),
-    azure: schema.make("azure"),
     openrouter: schema.make("openrouter"),
     mistral: schema.make("mistral"),
     gitlab: schema.make("gitlab"),
@@ -281,7 +279,7 @@ aisdk:@ai-sdk/anthropic
 
 Native endpoint URLs are complete endpoint URLs and are split into base URL plus request path when building an LLM route. AI SDK endpoint URLs remain base URLs. The adapter preserves model headers and body options, environment-backed provider credentials, direct model API keys, and selected Session variant overlays.
 
-Unsupported routes fail explicitly with `SessionRunnerModel.UnsupportedEndpointError`. In particular, `openai/responses` with WebSocket transport must not silently downgrade to HTTP. Google, Azure, Bedrock, OpenRouter-specific behavior, GitHub Copilot, Vertex, gateway adapters, and signed authentication remain future provider slices.
+Unsupported routes fail explicitly with `SessionRunnerModel.UnsupportedEndpointError`. In particular, `openai/responses` with WebSocket transport must not silently downgrade to HTTP. Google, Bedrock, OpenRouter-specific behavior, Vertex, gateway adapters, and signed authentication remain future provider slices.
 
 ## Plugin Interface
 

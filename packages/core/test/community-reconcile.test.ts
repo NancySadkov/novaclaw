@@ -4,7 +4,7 @@ import { CommunityReconcile } from "@novaclaw/core/community/reconcile"
 import { CommunitySync } from "@novaclaw/core/community/sync"
 
 /**
- * Community P4 — log reconciliation (`todo/community-p2p.md`).
+ * Community P4 — log reconciliation (`notes/spec/community-p2p.md`).
  *
  * The property that matters is not correctness alone but COST: two instances that already agree must
  * exchange almost nothing, or syncing on every reconnect is unaffordable and history quietly stops

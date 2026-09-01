@@ -100,11 +100,14 @@ export const layer = Layer.effectDiscard(
               // abort — a stopped session leaves no sandbox process behind.
               return yield* Effect.promise((signal) => runJs(input.code, { timeoutMs: JS_TIMEOUT_MS, env, signal }))
             }).pipe(
-              Effect.mapError((error) =>
-                error instanceof ToolFailure
-                  ? error
-                  : new ToolFailure({ message: error instanceof Error ? error.message : String(error) }),
-              ),
+              // 🔴 1J. This used to be `error.message`, which is the EMPTY STRING for a
+              // `PermissionV2.DeniedError` — that class declares only `rules` and `reason`, so it
+              // carries no message at all (measured 2026-09-01). In Analyze mode `MODE_RULES.plan`
+              // hard-denies `js`, so the model called it, got a blank refusal indistinguishable from
+              // a transient fault, and retried — the exact loop the deny-fast wording exists to end.
+              // `Tool.absorb` consults `denialMessage` first; the fallback below is only reached for
+              // errors that are not refusals, and it keeps the old wording for those.
+              Effect.mapError(Tool.absorb((error) => (error instanceof Error ? error.message : String(error)))),
             ),
         }),
       })

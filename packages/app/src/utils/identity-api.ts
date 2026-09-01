@@ -2,7 +2,7 @@ import type { ServerConnection } from "@/context/server"
 import { instanceFetch } from "./instance-fetch"
 
 /**
- * Community P1 — the instance's cryptographic identity (`todo/community-p2p.md`).
+ * Community P1 — the instance's cryptographic identity (`notes/spec/community-p2p.md`).
  *
  * `instanceID` is a random handle that recognises one install across routes; `networkID` is the
  * public key, which is the half a peer can verify and the string a user shares to be added as

@@ -7,7 +7,7 @@ import { Duration, Effect, Schema } from "effect"
 /**
  * ─── TYPED PRE-ACTION POLICIES: the vocabulary and the composition ─────────────────────────────
  *
- * `todo/projects.md` → *Four adopted product ideas*: *"before tool execution, installed policy
+ * The adopted product idea, in full: *"before tool execution, installed policy
  * providers may return a typed allow, deny, input patch, context addition, approval request, or
  * halt. Compose deterministically, make deny win, bind every intervention to a receipt, and fail
  * closed for safety-critical timeouts. `novaclaw.json` may configure policy IDs but may never

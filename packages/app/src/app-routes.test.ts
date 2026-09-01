@@ -49,6 +49,17 @@ describe("the legacy app shell stays collapsed", () => {
   })
 })
 
+describe("server-scoped provider ordering", () => {
+  test("Highlights initializes inside ServerSDK", () => {
+    const app = read("app.tsx")
+    const selected = app.slice(app.indexOf("function SelectedServerProviders"), app.indexOf("function DraftRoute"))
+    const shared = app.slice(app.indexOf("function SharedProviders"), app.indexOf("type ServerScopedShellProps"))
+
+    expect(selected).toMatch(/<ServerSDKProvider>\s*<HighlightsProvider>/)
+    expect(shared).not.toContain("<HighlightsProvider>")
+  })
+})
+
 describe("the legacy directory URL shape still resolves", () => {
   const routes = read("app.tsx")
 

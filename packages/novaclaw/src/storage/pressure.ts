@@ -25,7 +25,7 @@ import { Schema } from "effect"
  * TotalVirtualMemorySize/FreeVirtualMemory — the commit pair — because free RAM alarms fire far too
  * late or not at all: the box "works" at 99% commit for a day before dying. Those are the same two
  * fields heavy-guard reads, deliberately, so the Storage row and `Get-CimInstance Win32_OperatingSystem`
- * can never disagree (todo/resource-pressure.md ②: a number the operator cannot cross-check is worse
+ * can never disagree (a number the operator cannot cross-check is worse
  * than no number). Every known reading carries the exact command that reproduces it.
  *
  * ⚠️ UNKNOWN IS A VALUE, NOT A ZERO (todo.md ruling 2 — a fault is never described falsely). A host we
@@ -110,14 +110,14 @@ const GIB = 1024 ** 3
  * free-bytes gate and a level needs BOTH** (measured 2026-08-13). The Windows commit limit GROWS
  * under load — the pagefile expands — so this machine crossed 75% used while ~35 GB stayed free, and
  * the ambient warning told the model to avoid memory-intensive work on a box with room for anything.
- * 75% is also this box's healthy MEDIAN under a test run (todo/test-speed.md's history rows), and a
+ * 75% is also this box's healthy MEDIAN under a test run (the gate's own peak history rows), and a
  * threshold that fires on normal is not a threshold. The absolute gates say what a task can actually
  * feel: warning needs free ≤ 8 GiB (a model load or a build run is 2–13 GB here, so past that a
  * normal heavy task may not fit), floor needs free ≤ 2 GiB (the settle-and-flush room). A small
  * cgroup still warns — 80% of a 2 GB container is 400 MB free, well under both gates — while a big
  * host with tens of GB free never does, whatever its fraction says.
  *
- * The disk lines are absolute: 2 GiB warns (a model download is multi-GB — `todo/sidecar-inference.md`),
+ * The disk lines are absolute: 2 GiB warns (a sidecar model download is multi-GB),
  * 512 MiB floors (enough for a SQLite WAL checkpoint, a log flush and a session record to land rather
  * than tear).
  */
@@ -308,8 +308,8 @@ export function linuxMemory(read: FileReader): MemoryReading {
 }
 
 /**
- * macOS reports compressed and free pages, not a commit charge, and `todo/resource-pressure.md` is
- * explicit that free pages are meaningless there — the OS compresses, so a "free" number would be a
+ * macOS reports compressed and free pages, not a commit charge, and free pages are
+ * meaningless there — the OS compresses, so a "free" number would be a
  * fabricated reassurance. Until a real memory-pressure probe lands this says so out loud, which is
  * ruling 2 obeyed rather than a gap papered over.
  */

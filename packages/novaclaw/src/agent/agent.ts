@@ -210,7 +210,7 @@ export const layer = Layer.effect(
           question: "deny",
           plan_enter: "deny",
           plan_exit: "deny",
-          // mirrors github.com/github/gitignore Node.gitignore pattern for .env files
+          // mirrors the standard Node ignore pattern for .env files
           read: {
             "*": "allow",
             "*.env": "ask",

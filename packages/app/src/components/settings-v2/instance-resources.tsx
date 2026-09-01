@@ -13,6 +13,7 @@ import { SettingsRowV2 } from "./parts/row"
 // implementation lives in a component-free sibling so its test can load without dragging Kobalte in;
 // a bare `export … from` would re-export without binding it locally.
 import { formatResourceBytes } from "./instance-resources-format"
+import { scopedDirectory } from "@/utils/routing-directory"
 
 export { formatResourceBytes } from "./instance-resources-format"
 
@@ -32,7 +33,7 @@ export const InstanceResources: Component = () => {
   const stop = async () => {
     const current = connection()
     if (!current) return
-    const directory = sync().data.path.directory || sync().data.path.home || ""
+    const directory = scopedDirectory(sync().data.path)
     await localModelStop(current.http, { directory })
     await actions.refetch()
   }

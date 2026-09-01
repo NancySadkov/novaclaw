@@ -1,6 +1,5 @@
 import { Agent } from "@/agent/agent"
 import { Command } from "@/command"
-import { Format } from "@/format"
 import { Vcs } from "@/project/vcs"
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
@@ -127,8 +126,8 @@ const SchedulerDevice = Schema.Struct({
  * multiply the only expensive reading to answer something nobody asked.
  *
  * ⚠️ `unknown` is a first-class verdict here and must never render as a tick. Half of these signals
- * can legitimately answer "cannot tell" — the updater flag is unreadable outside the desktop shell,
- * a pressure probe reports `unknown` rather than guessing. This is the one screen a person opens
+ * can legitimately answer "cannot tell" — a pressure probe reports `unknown` rather than guessing.
+ * This is the one screen a person opens
  * when they already suspect something is broken; dressing an unread probe as healthy is ruling 2.
  */
 const DiagnosisStatus = Schema.Literals(["problem", "warning", "unknown", "ok"])
@@ -163,7 +162,6 @@ export const InstancePaths = {
   vcsApply: "/vcs/apply",
   command: "/command",
   agent: "/agent",
-  formatter: "/formatter",
   app: "/app",
   scheduler: "/scheduler/snapshot",
   // ⚠️ `/api/` — ruling 11's ONE contract prefix. Every sibling in this map is a LEGACY path pinned
@@ -272,16 +270,6 @@ export const InstanceApi = HttpApi.make("instance")
             identifier: "app.agents",
             summary: "List agents",
             description: "Get a list of all available AI agents in the NovaClaw system.",
-          }),
-        ),
-        HttpApiEndpoint.get("formatter", InstancePaths.formatter, {
-          query: WorkspaceRoutingQuery,
-          success: described(Schema.Array(Format.Status), "Formatter status"),
-        }).annotateMerge(
-          OpenApi.annotations({
-            identifier: "formatter.status",
-            summary: "Get formatter status",
-            description: "Get formatter status",
           }),
         ),
         HttpApiEndpoint.get("diagnosis", InstancePaths.diagnosis, {

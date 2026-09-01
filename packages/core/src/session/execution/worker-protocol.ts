@@ -82,10 +82,9 @@ export const PermissionResult = Schema.Struct({
   ...Identity,
   type: Schema.Literal("permission-result"),
   requestID: Schema.String,
-  outcome: Schema.Literals(["allowed", "denied", "rejected", "corrected", "session-missing"]),
+  outcome: Schema.Literals(["allowed", "denied", "rejected", "session-missing"]),
   rules: Permission.Ruleset.pipe(Schema.optional),
   reason: Schema.String.pipe(Schema.optional),
-  feedback: Schema.String.pipe(Schema.optional),
 }).annotate({ identifier: "SessionWorker.PermissionResult" })
 
 /**

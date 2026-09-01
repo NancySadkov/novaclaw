@@ -103,7 +103,7 @@ const ModelList: Component<{
       key={(x) => `${x.provider.id}:${x.id}`}
       items={models}
       current={model.current()}
-      // Models-primary (notes/entities.md / todo "no first-class providers"): a FLAT model list —
+      // Models-primary (notes/reports/entities-review-2026-07-06.md / todo "no first-class providers"): a FLAT model list —
       // a provider is just where a model is served from, shown as the row's muted suffix, never a
       // grouping header. (The popularProviders group ordering was inherited cloud-service residue.)
       filterKeys={["provider.name", "name", "id"]}
@@ -157,7 +157,7 @@ const ModelList: Component<{
           const status = probe()?.status
           return status === "unreachable" || status === "model-missing"
         }
-        // Owner directive 2026-08-06 (todo/session-ui.md): a picker row says WHAT the model is —
+        // Owner directive 2026-08-06: a picker row says WHAT the model is —
         // its name and its context — never WHERE it is served from. Models-primary: a provider is
         // the URL a model happens to sit behind, and for every user-added model `provider.name`
         // defaults to that endpoint's host slug, so printing it here put a URL beside every model.

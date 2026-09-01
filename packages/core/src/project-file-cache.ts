@@ -7,7 +7,9 @@ import { ProjectFile } from "@novaclaw/schema/project-file"
 import { makeGlobalNode, makeLocationNode } from "./effect/app-node"
 import { FSUtil } from "./fs-util"
 import { Location } from "./location"
+import { ProjectV2 } from "./project"
 import { ProjectFileResolve } from "./project-file"
+import { AbsolutePath } from "./schema"
 
 /**
  * ONE read of a folder's `novaclaw.json`, shared by every consumer of it.
@@ -209,6 +211,7 @@ export const layer = Layer.effect(
     // service's only method, which must be `never` — a service that leaks a requirement is one no
     // caller can hold.
     const fsUtil = yield* FSUtil.Service
+    const project = yield* ProjectV2.Service
     const cache = new Map<string, { readonly at: number; readonly entry: Entry }>()
 
     return Service.of({
@@ -216,7 +219,15 @@ export const layer = Layer.effect(
         const now = Date.now()
         const held = cache.get(directory)
         if (held && now - held.at < TTL_MS) return held.entry
-        const entry = yield* ProjectFileResolve.resolve(directory).pipe(
+        const location = yield* project.resolve(AbsolutePath.make(directory))
+        const entry = yield* ProjectFileResolve.resolve(
+          directory,
+          ProjectFileResolve.trustedBoundary({
+            directory,
+            root: location.directory,
+            vcs: location.vcs,
+          }),
+        ).pipe(
           Effect.provideService(FSUtil.Service, fsUtil),
           Effect.map(
             (resolution): Entry =>
@@ -270,9 +281,9 @@ export const layer = Layer.effect(
   }),
 )
 
-export const defaultLayer = layer.pipe(Layer.provide(FSUtil.defaultLayer))
+export const defaultLayer = layer.pipe(Layer.provide(FSUtil.defaultLayer), Layer.provide(ProjectV2.defaultLayer))
 
-export const node = makeGlobalNode({ service: Service, layer, deps: [FSUtil.node] })
+export const node = makeGlobalNode({ service: Service, layer, deps: [FSUtil.node, ProjectV2.node] })
 
 /**
  * The project governing THIS location — the same cache, asked the question a location consumer has.

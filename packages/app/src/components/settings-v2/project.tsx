@@ -14,11 +14,12 @@ import { projectSectionCopy } from "./project-copy"
 import { projectExclusionCopy } from "./project-exclusion-copy"
 import type { ShellStatusWithJail } from "./confinement-state"
 import { ProjectExcludeSection, ProjectGitignoreImport, ProjectPermissionsSection } from "./project-permissions-section"
+import { scopedDirectory } from "@/utils/routing-directory"
 
 /**
  * Which `novaclaw.json` governs this folder.
  *
- * `todo/projects.md`: *"Never make a person infer project state from a hidden dotfile."* A project
+ * The rule: *"never make a person infer project state from a hidden dotfile."* A project
  * file can NARROW a session's permissions, and until this screen existed the only way to discover
  * that was to be refused and go looking. It sits beside Confinement for the reason Confinement sits
  * where it does — it answers the question the safety rows above it raise: what else is deciding what
@@ -26,7 +27,7 @@ import { ProjectExcludeSection, ProjectGitignoreImport, ProjectPermissionsSectio
  *
  * ⚠️ The fact rows report the rule COUNT and where the file is. The RULES themselves — and the two
  * other places rules come from — live in `ProjectPermissionsSection` below them, which is the
- * surface `todo/projects.md` asked for. Until 2026-08-18 the comment here said the permission
+ * surface the programme asked for. Until 2026-08-18 the comment here said the permission
  * surface rendered them; no such surface existed, so the count was the only thing anyone could see.
  *
  * 🔴 **WHICH FOLDER. The target is the INSTANCE's directory, and that is correct — do not "fix" it.**
@@ -57,7 +58,7 @@ export const SettingsProjectSection: Component<{
   const global = useGlobal()
   const sync = useServerSync()
   const connection = createMemo(() => server.current ?? global.servers.list()[0])
-  const directory = createMemo(() => sync().data.path.directory || sync().data.path.home || "")
+  const directory = createMemo(() => scopedDirectory(sync().data.path))
   // Read separately, because `directory` above has already FOLDED the home into itself as a
   // fallback — so by the time the copy sees it, "the instance is working in the home" is
   // indistinguishable from any other folder. The home is what decides which of the two "not a
@@ -95,28 +96,25 @@ export const SettingsProjectSection: Component<{
   // ⚠️ The MEMO is the source, not a fresh `{http, dir}` literal. A source function that mints a new
   // object each read changes identity on every reactive pass, which is a refetch loop nobody asked
   // for — the trap `session-composer-controls.ts` records against the draft's own project probe.
-  const [savedRules] = createResource(
-    source,
-    async (value): Promise<readonly ProjectPermissionRule[] | undefined> => {
-      try {
-        const answer = await instanceFetch<{
-          data?: readonly { action: string; resource: string; effect?: string }[]
-        }>(value.http, { route: "api/permission/saved", directory: value.dir })
-        const rows = answer.data
-        if (!rows) return undefined
-        // ⚠️ A legacy row carries no `effect` and means "allow" — the schema says so
-        // (`PermissionSaved.Info`), and defaulting it to anything else would misreport an old
-        // grant as a refusal on the one screen a user consults after being refused.
-        return rows.map((row) => ({
-          action: row.action,
-          resource: row.resource,
-          effect: (row.effect ?? "allow") as ProjectPermissionRule["effect"],
-        }))
-      } catch {
-        return undefined
-      }
-    },
-  )
+  const [savedRules] = createResource(source, async (value): Promise<readonly ProjectPermissionRule[] | undefined> => {
+    try {
+      const answer = await instanceFetch<{
+        data?: readonly { action: string; resource: string; effect?: string }[]
+      }>(value.http, { route: "api/permission/saved", directory: value.dir })
+      const rows = answer.data
+      if (!rows) return undefined
+      // ⚠️ A legacy row carries no `effect` and means "allow" — the schema says so
+      // (`PermissionSaved.Info`), and defaulting it to anything else would misreport an old
+      // grant as a refusal on the one screen a user consults after being refused.
+      return rows.map((row) => ({
+        action: row.action,
+        resource: row.resource,
+        effect: (row.effect ?? "allow") as ProjectPermissionRule["effect"],
+      }))
+    } catch {
+      return undefined
+    }
+  })
 
   const invalid = createMemo(() => {
     const value = state()

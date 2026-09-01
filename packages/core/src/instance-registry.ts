@@ -3,7 +3,7 @@ export * as InstanceRegistry from "./instance-registry"
 /**
  * ─── which NovaClaw instances exist on this machine ────────────────────────────────────────────
  *
- * `todo/instances.md` I1: *"discover named instances by pinned home folder, not databases or channel
+ * The requirement: *"discover named instances by pinned home folder, not databases or channel
  * variants."*
  *
  * 🔴 **The correction that sentence encodes.** Today an instance is implicitly `(data directory ×
@@ -22,7 +22,7 @@ export * as InstanceRegistry from "./instance-registry"
  *
  * ⚠️ **Unknown fields are PRESERVED on rewrite.** A newer NovaClaw may pin things this build has no
  * word for, and a registry that silently dropped them would make "open it in the old build once"
- * destructive. Same rule `todo/projects.md` states for `novaclaw.json`, arrived at here first because
+ * destructive. Same rule `project-file.ts` states for `novaclaw.json`, arrived at here first because
  * this file is written by two builds far more often.
  */
 
@@ -30,6 +30,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { Schema } from "effect"
+import { isRecord } from "@novaclaw/schema/record"
 import { Xdg } from "./util/xdg"
 
 /** One registered instance. `home` is the pin; everything else is convenience. */
@@ -53,7 +54,7 @@ export interface Registry {
  *
  * ⚠️ A NEWER file is not corrupt. Reading one must degrade — keep the entries it can understand and
  * say the version is ahead — never refuse the machine's whole instance list because one field is
- * from the future. That is `todo/projects.md`'s *"reject unknown schema versions calmly"* applied to
+ * from the future. That is *"reject unknown schema versions calmly"* applied to
  * the file that decides whether the user can reach their own data at all.
  */
 export const VERSION = 1
@@ -62,9 +63,6 @@ export const EMPTY: Registry = { version: VERSION, entries: [] }
 
 const KNOWN_ENTRY_KEYS = new Set(["name", "home"])
 const KNOWN_ROOT_KEYS = new Set(["version", "entries"])
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
 
 /** Everything in `source` that this build has no field for. `undefined` when there is nothing. */
 const spare = (source: Record<string, unknown>, known: ReadonlySet<string>) => {
@@ -189,7 +187,7 @@ export const location = (env?: NodeJS.ProcessEnv, homedir?: string): string | un
  * from one whose folder was deleted or is on an unplugged drive.
  *
  * ⚠️ `unreachable` is not `missing`. A home on a disconnected volume is still that user's instance
- * and must not be silently dropped from a picker; `todo/instances.md` I2 asks it to *"recover calmly
+ * and must not be silently dropped from a picker; the instance surface must *"recover calmly
  * when one home is unavailable"*, which it cannot do if discovery has already forgotten the entry.
  */
 export type Reachability = "ready" | "empty" | "unreachable"

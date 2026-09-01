@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
 import { eq } from "drizzle-orm"
 import { DateTime, Deferred, Duration, Effect, Fiber, Layer } from "effect"
+import * as TestClock from "effect/testing/TestClock"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
@@ -18,6 +20,7 @@ import { SessionEvent } from "@novaclaw/core/session/event"
 import { SessionExecution } from "@novaclaw/core/session/execution"
 import { SessionExecutionLocal } from "@novaclaw/core/session/execution/local"
 import { SessionInput } from "@novaclaw/core/session/input"
+import { SessionJoin } from "@novaclaw/core/session/join"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionRunCoordinator } from "@novaclaw/core/session/run-coordinator"
 import { SessionRunner } from "@novaclaw/core/session/runner"
@@ -496,4 +499,80 @@ describe("the guard actually bites", () => {
       expect((yield* session.get(spawned.id)).result).toBe(`ran: ${PROMPT}`)
     }),
   )
+})
+
+/**
+ * **The two doors onto "has this child finished?", proved to be ONE join** (RF-03-1).
+ *
+ * 🔴 `SessionV2.wait` — the `POST /api/session/:id/wait` door — used to be a hand-rolled
+ * `for (let i = 0; i < 60)` loop re-reading the session row every 2000 ms and failing
+ * `OperationUnavailable` after ~120 s, under a comment claiming *"same semantics as the wait TOOL"*.
+ * It had neither the tool's transport nor its bound: `tool/wait.ts:53-59` records the measurement
+ * that killed the 2-minute value — a child asked only to reply "BANANA" settled **121.7 s** after
+ * `wait` started, 1.6 s after the poll had given up. So the HTTP door reported a healthy run as
+ * unavailable, which is the one thing a supervisor must never do.
+ *
+ * ⚠️ The first test of this file already covers the case where the child has ALREADY exited, and it
+ * passed against the poll too — the store read carries it. What could not be told apart there is
+ * whether the wait actually JOINS. These use `TestClock`, because the claim under test IS a duration:
+ * a virtual clock is the only way to stand at 3 minutes (past the old bound, inside the new one) and
+ * at 11 minutes (past the new one) without a test that takes eleven minutes.
+ */
+describe("both wait doors are the same bounded join", () => {
+  const stillRunning = <A, E>(fiber: Fiber.Fiber<A, E>) => fiber.pollUnsafe() === undefined
+
+  it.effect("🔴 at THREE minutes it is still waiting — the old 2-minute bound is gone", () =>
+    Effect.gen(function* () {
+      const location = yield* workspace
+      const session = yield* SessionV2.Service
+      const events = yield* EventV2.Service
+      const child = yield* session.create({ location, agent: rootAgent })
+
+      const waiting = yield* Effect.exit(session.wait(child.id)).pipe(Effect.forkChild)
+      // Past 120_000 ms. The old implementation had failed `OperationUnavailable` by here, on a
+      // child that is perfectly healthy and simply slow.
+      yield* TestClock.adjust(Duration.minutes(3))
+      expect(stillRunning(waiting)).toBe(true)
+
+      // …and it is a JOIN, not a poll: the child's Completed event releases it.
+      yield* events.publish(
+        SessionEvent.Completed,
+        { sessionID: child.id, timestamp: yield* DateTime.now, result: "done" },
+        { location },
+      )
+      yield* TestClock.adjust(Duration.seconds(1))
+      const exit = yield* Fiber.join(waiting)
+      expect(exit._tag).toBe("Success")
+    }),
+  )
+
+  it.effect("⚠️ it is still BOUNDED: past ten minutes it answers OperationUnavailable, as the endpoint promises", () =>
+    Effect.gen(function* () {
+      const location = yield* workspace
+      const session = yield* SessionV2.Service
+      const child = yield* session.create({ location, agent: rootAgent })
+
+      const waiting = yield* Effect.exit(session.wait(child.id)).pipe(Effect.forkChild)
+      yield* TestClock.adjust(Duration.millis(SessionJoin.JOIN_TIMEOUT_MS + 1000))
+      const exit = yield* Fiber.join(waiting)
+      expect(exit._tag).toBe("Failure")
+      // The endpoint's contract is "503, re-call to keep waiting" — a timeout must NOT read as
+      // success, which would tell a client a running child had finished.
+      expect(JSON.stringify(exit)).toContain("OperationUnavailableError")
+    }),
+  )
+
+  test("the bound is ONE constant, not two — this is the whole finding", () => {
+    // The tool path and the HTTP path both read `SessionJoin.JOIN_TIMEOUT_MS`. Two copies is how the
+    // 2026-08-20 fix landed on one door and not the other.
+    expect(SessionJoin.JOIN_TIMEOUT_MS).toBe(10 * 60_000)
+    const waitTool = readFileSync(new URL("../src/tool/wait.ts", import.meta.url), "utf8")
+    const kernel = readFileSync(new URL("../src/session.ts", import.meta.url), "utf8")
+    expect(waitTool).toContain("SessionJoin.JOIN_TIMEOUT_MS")
+    expect(kernel).toContain("SessionJoin.JOIN_TIMEOUT_MS")
+    // And the poll is gone: the kernel's `wait` no longer sleeps in a loop.
+    const wait = kernel.slice(kernel.indexOf('Effect.fn("V2Session.wait")'))
+    expect(wait.slice(0, 2000)).not.toContain("Effect.sleep")
+    expect(wait.slice(0, 2000)).toContain("awaitCompletion")
+  })
 })

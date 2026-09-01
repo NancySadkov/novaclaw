@@ -10,7 +10,7 @@ import { Offline } from "@novaclaw/core/offline"
 import { testEffect } from "./lib/effect"
 
 /**
- * Community P4 — saying something (`todo/community-p2p.md`).
+ * Community P4 — saying something (`notes/spec/community-p2p.md`).
  *
  * The counterpart to `record`. What matters here is what happens when there is nowhere to send: a
  * user's own words must survive a missing transport, because that is every install today.

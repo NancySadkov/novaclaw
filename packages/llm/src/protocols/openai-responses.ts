@@ -2,7 +2,7 @@ import { Effect, Schema } from "effect"
 import { Route } from "../route/client"
 import { Auth } from "../route/auth"
 import { Endpoint } from "../route/endpoint"
-import { HttpTransport, WebSocketTransport } from "../route/transport"
+import { HttpTransport } from "../route/transport"
 import { Protocol } from "../route/protocol"
 import {
   LLMEvent,
@@ -120,10 +120,6 @@ const OpenAIResponsesToolChoice = Schema.Union([
   Schema.Struct({ type: Schema.tag("function"), name: Schema.String }),
 ])
 
-// Fields shared between the HTTP body and the WebSocket `response.create`
-// message. The HTTP body adds `stream: true`; the WebSocket message adds
-// `type: "response.create"`. Defining the shared shape once keeps the two
-// transports in sync without a destructure-and-strip dance.
 const OpenAIResponsesCoreFields = {
   model: Schema.String,
   input: Schema.Array(OpenAIResponsesInputItem),
@@ -155,16 +151,6 @@ const OpenAIResponsesBody = Schema.Struct({
   stream: Schema.Literal(true),
 })
 export type OpenAIResponsesBody = Schema.Schema.Type<typeof OpenAIResponsesBody>
-
-const OpenAIResponsesWebSocketMessage = Schema.StructWithRest(
-  Schema.Struct({
-    type: Schema.tag("response.create"),
-    ...OpenAIResponsesCoreFields,
-  }),
-  [Schema.Record(Schema.String, Schema.Unknown)],
-)
-type OpenAIResponsesWebSocketMessage = Schema.Schema.Type<typeof OpenAIResponsesWebSocketMessage>
-const encodeWebSocketMessage = Schema.encodeSync(Schema.fromJsonString(OpenAIResponsesWebSocketMessage))
 
 const OpenAIResponsesUsage = Schema.Struct({
   input_tokens: Schema.optional(Schema.Number),
@@ -349,8 +335,7 @@ const lowerMessages = Effect.fn("OpenAIResponses.lowerMessages")(function* (requ
   // system prompt INSIDE the input list, so a second item is a second turn-shaped message.
   const toolsSection = PromptedTools.isPrompted(request) ? PromptedTools.promptedToolsSection(request.tools) : undefined
   const systemText = [ProviderShared.joinText(request.system), toolsSection].filter(Boolean).join("\n\n")
-  const system: OpenAIResponsesInputItem[] =
-    systemText.length === 0 ? [] : [{ role: "system", content: systemText }]
+  const system: OpenAIResponsesInputItem[] = systemText.length === 0 ? [] : [{ role: "system", content: systemText }]
   const input: OpenAIResponsesInputItem[] = [...system]
   const store = OpenAIOptions.store(request)
 
@@ -962,8 +947,7 @@ const step = (state: ParserState, event: OpenAIResponsesEvent) => {
 // =============================================================================
 /**
  * The OpenAI Responses protocol — request body construction, body schema, and
- * the streaming-event state machine. Used by native OpenAI and (once
- * registered) Azure OpenAI Responses.
+ * the streaming-event state machine. Used by native OpenAI-compatible routes.
  */
 export const protocol = Protocol.make({
   id: ADAPTER,
@@ -1001,34 +985,6 @@ export const route = Route.make({
   endpoint,
   auth,
   transport: httpTransport,
-  defaults: { providerOptions: { openai: { store: false } } },
-})
-
-const decodeWebSocketMessage = ProviderShared.validateWith(Schema.decodeUnknownEffect(OpenAIResponsesWebSocketMessage))
-
-const webSocketMessage = (body: OpenAIResponsesBody | Record<string, unknown>) =>
-  Effect.gen(function* () {
-    if (!ProviderShared.isRecord(body))
-      return yield* ProviderShared.invalidRequest("OpenAI Responses WebSocket body must be a JSON object")
-    const { stream: _stream, ...message } = body
-    return yield* decodeWebSocketMessage({ ...message, type: "response.create" })
-  })
-
-export const webSocketTransport = WebSocketTransport.jsonTransport.with<
-  OpenAIResponsesBody,
-  OpenAIResponsesWebSocketMessage
->({
-  toMessage: webSocketMessage,
-  encodeMessage: encodeWebSocketMessage,
-})
-
-export const webSocketRoute = Route.make({
-  id: `${ADAPTER}-websocket`,
-  provider: "openai",
-  protocol,
-  endpoint,
-  auth,
-  transport: webSocketTransport,
   defaults: { providerOptions: { openai: { store: false } } },
 })
 

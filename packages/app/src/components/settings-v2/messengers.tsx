@@ -31,7 +31,7 @@ import {
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 
-// Settings → Messengers (notes/messenger-plan.md §6.1) — "which messenger apps can NovaClaw use?"
+// Settings → Messengers — "which messenger apps can NovaClaw use?"
 // A headline lay feature (Normal level): connect NovaClaw to Telegram & friends so the agent can
 // cover chats while you're away, and pair your phone for remote control. Accounts are
 // instance-global (they live on the server, not this window); status streams live over SSE

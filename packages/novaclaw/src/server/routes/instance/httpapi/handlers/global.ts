@@ -10,7 +10,7 @@ import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecy
 import { InstallationVersion } from "@novaclaw/core/installation/version"
 import { LocalModelManager } from "@novaclaw/core/local-model-manager"
 import type { ConfigLocalModelCatalog } from "@novaclaw/core/config/local-model-catalog"
-import { Storage } from "@/storage/storage"
+import { HostPressure } from "@/storage/host-pressure"
 import { ResourceUsage } from "@/storage/resource-usage"
 import { Effect, Queue, Schema } from "effect"
 import * as Stream from "effect/Stream"
@@ -105,7 +105,7 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     const config = yield* Config.Service
     const identity = yield* InstanceIdentityStore.Service
     const localModels = yield* LocalModelManager.Service
-    const storage = yield* Storage.Service
+    const storage = yield* HostPressure.Service
     const launchAuth = yield* ServerAuth.Config
     const settings = yield* SettingsConfigStore.Service
 

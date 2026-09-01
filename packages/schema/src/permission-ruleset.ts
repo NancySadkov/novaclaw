@@ -74,7 +74,6 @@ export const Event = { Asked, Replied, Definitions: inventory(Asked, Replied) }
 // thing that raised them. The comment they carried claimed they were "live vocabulary: the ask/reply
 // pipeline and the tool gate raise these" — that had stopped being true when the V1 wrapper died.
 //
-// The live vocabulary is `PermissionV2.{DeniedError,RejectedError,CorrectedError}` in
-// `core/src/permission.ts`, and the wire's is `PermissionNotFoundError` in `protocol/src/errors.ts`.
+// The live enforcement vocabulary is `PermissionV2.DeniedError` in `core/src/permission.ts`.
 // Checked before deleting, because this is the SCHEMA package and a reference count is not the test:
 // zero hits across the generated SDK, `openapi.json`, the event codecs and the UI.

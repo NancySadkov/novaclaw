@@ -26,11 +26,11 @@ const source = (name: string, server: string, description: string): ToolCatalogu
 
 describe("ToolCatalogue", () => {
   test("extracts argument metadata and deterministic index-only vocabulary", () => {
-    expect(ToolCatalogue.rows("/work", [source("github_create_issue", "github", "Creates an issue")])).toEqual([
+    expect(ToolCatalogue.rows("/work", [source("tracker_create_issue", "tracker", "Creates an issue")])).toEqual([
       {
         scope: "/work",
-        name: "github_create_issue",
-        server: "github",
+        name: "tracker_create_issue",
+        server: "tracker",
         description: "Creates an issue",
         argument_names: "repository title",
         arguments: [
@@ -53,7 +53,7 @@ describe("ToolCatalogue", () => {
   test("renders categories only and bounds a many-server manifest", () => {
     const sources = [
       source("read", "core", "SECRET DESCRIPTION"),
-      source("github_create_issue", "github", "SECRET DESCRIPTION"),
+      source("issue_create_ticket", "issue", "SECRET DESCRIPTION"),
       ...Array.from({ length: 1_000 }, (_, index) =>
         source(`server${index}_search_records`, `server${index}`, "SECRET DESCRIPTION"),
       ),
@@ -61,14 +61,14 @@ describe("ToolCatalogue", () => {
     const rendered = ToolCatalogueGuidance.render(ToolCatalogue.manifest(sources))
 
     expect(rendered).toContain("core — files")
-    expect(rendered).toContain("github — issue")
+    expect(rendered).toContain("issue — ticket")
     expect(rendered).toContain("more servers catalogued")
     expect(rendered).not.toContain("SECRET DESCRIPTION")
     expect(rendered.length).toBeLessThanOrEqual(6_100)
   })
 
   test("derives stable source labels from namespaced external tools", () => {
-    expect(ToolCatalogue.externalServer("github_create_issue")).toBe("github")
+    expect(ToolCatalogue.externalServer("tracker_create_issue")).toBe("tracker")
     expect(ToolCatalogue.externalServer("standalone")).toBe("external")
   })
 })
@@ -82,15 +82,15 @@ test("ToolCatalogueStore lazily indexes, searches, scopes, and replaces catalogu
   await Effect.runPromise(
     Effect.gen(function* () {
       const store = yield* ToolCatalogueStore.Service
-      const issue = ToolCatalogue.rows("/alpha", [source("github_create_issue", "github", "Creates an issue")])
-      const users = ToolCatalogue.rows("/beta", [source("github_list_users", "github", "Lists users")])
+      const issue = ToolCatalogue.rows("/alpha", [source("tracker_create_issue", "tracker", "Creates an issue")])
+      const users = ToolCatalogue.rows("/beta", [source("tracker_list_users", "tracker", "Lists users")])
 
       yield* store.replace("/alpha", issue)
       yield* store.replace("/beta", users)
       expect(yield* store.search("/alpha", "file bug")).toMatchObject([
         {
-          name: "github_create_issue",
-          server: "github",
+          name: "tracker_create_issue",
+          server: "tracker",
           arguments: [
             { name: "repository", description: "Repository name" },
             { name: "title", description: "Issue title" },
@@ -99,8 +99,8 @@ test("ToolCatalogueStore lazily indexes, searches, scopes, and replaces catalogu
         },
       ])
       expect(yield* store.search("/beta", "file bug")).toEqual([])
-      expect(yield* store.search("/alpha", "file bug", 5, new Set(["github_create_issue"]))).toHaveLength(1)
-      expect(yield* store.search("/alpha", "file bug", 5, new Set(["github_list_users"]))).toEqual([])
+      expect(yield* store.search("/alpha", "file bug", 5, new Set(["tracker_create_issue"]))).toHaveLength(1)
+      expect(yield* store.search("/alpha", "file bug", 5, new Set(["tracker_list_users"]))).toEqual([])
       expect(yield* store.search("/alpha", "file bug", 5, new Set())).toEqual([])
 
       yield* store.replace("/alpha", [])

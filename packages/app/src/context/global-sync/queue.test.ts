@@ -10,7 +10,6 @@ describe("createRefreshQueue", () => {
     const queue = createRefreshQueue({
       paused: () => false,
       key: directoryKey,
-      bootstrap: async () => {},
       bootstrapInstance: (directory) => {
         calls.push(directory)
       },
@@ -30,7 +29,6 @@ describe("createRefreshQueue", () => {
     const queue = createRefreshQueue({
       paused: () => false,
       key: directoryKey,
-      bootstrap: async () => {},
       bootstrapInstance: (directory) => {
         calls.push(directory)
       },

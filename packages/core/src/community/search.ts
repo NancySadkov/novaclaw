@@ -9,7 +9,7 @@ import { CommunityPeers } from "./peers"
 import { CommunityReach } from "./reach"
 import { CommunityWork } from "./work"
 import { CommunityTopic } from "./topic"
-import { answerTooLarge } from "./transport"
+import { askPeerJson, MAX_ANSWER_BYTES } from "./transport"
 import { makeGlobalNode } from "../effect/app-node"
 import { httpClient } from "../effect/app-node-platform"
 import { InstanceIdentityStore } from "../instance-identity-store"
@@ -17,7 +17,7 @@ import { CommunityConsent } from "./consent"
 import { Offline } from "../offline"
 
 /**
- * Community P5 — throttled broadcast search (`todo/community-p2p.md`).
+ * Community P5 — throttled broadcast search (`notes/spec/community-p2p.md`).
  *
  * Owner's decision: search is a **request-count-throttled broadcast**, no servers, any one living
  * node a complete entry point. That is the Gnutella lineage, and Gnutella collapsed in 2001 because
@@ -369,35 +369,31 @@ export const layer = Layer.effect(
     })
 
     const askPeer = (route: string, query: Query) =>
-      http
-        .execute(
-          HttpClientRequest.post(`${route.replace(/\/+$/, "")}${SEARCH_PATH}`).pipe(
-            HttpClientRequest.bodyJsonUnsafe(query),
-          ),
-        )
-        .pipe(
-          Effect.timeout(FORWARD_TIMEOUT_MS),
-          Effect.flatMap((response) =>
-            /**
-             * 🔴 The same ceiling `sync.ts` applies — and this file did not have it. The outbound
-             * size limit was written for `ask` and stopped there, so a search answer was read with
-             * no bound at all while its sibling was guarded. One rule, in `transport.ts`, because
-             * two copies drift the moment one is tuned.
-             */
-            answerTooLarge(response.headers) ? Effect.fail(new Error("peer answer too large")) : response.json,
-          ),
-          Effect.flatMap((json) => Schema.decodeUnknownEffect(Answer)(json)),
-          /**
-           * ⚠️ And a COUNT ceiling, which bytes do not give: every name here joins a Set that this
-           * returns to the app and to the agent tool, and `MAX_ASKED` bounds how many PEERS answer,
-           * never how much each one says. A peer hosting more rooms than this is not a case that
-           * exists — `channelsNearby` uses the same number for the same reason.
-           */
-          Effect.map((answer) => [...answer.channels].slice(0, MAX_CHANNELS_PER_ANSWER)),
-          // A peer that is offline, slow or speaking a different version is the ordinary case, and
-          // none of it may abort a search that other peers are answering.
-          Effect.catchCause(() => Effect.succeed([] as string[])),
-        )
+      askPeerJson({
+        http,
+        route,
+        path: SEARCH_PATH,
+        body: query,
+        schema: Answer,
+        timeoutMs: FORWARD_TIMEOUT_MS,
+        /**
+         * 🔴 **The ceiling this file was missing.** It used to call `answerTooLarge(headers)` with no
+         * argument, taking the 4 MB `sync/messages` default — five hundred times what this route can
+         * honestly return. A search answer is a few hundred channel NAMES, so it is bounded by the
+         * answer-shaped limit, not by a page of messages. The dial itself now lives in
+         * `transport.ts` precisely so the next tuning cannot reach one caller and miss the other.
+         */
+        ceilingBytes: MAX_ANSWER_BYTES,
+      }).pipe(
+        /**
+         * ⚠️ And a COUNT ceiling, which bytes do not give: every name here joins a Set that this
+         * returns to the app and to the agent tool, and `MAX_ASKED` bounds how many PEERS answer,
+         * never how much each one says. A peer hosting more rooms than this is not a case that
+         * exists — `channelsNearby` uses the same number for the same reason. It stays HERE, not in
+         * the shared dial, because it is a fact about channels rather than about peers.
+         */
+        Effect.map((answer) => (answer === undefined ? [] : [...answer.channels].slice(0, MAX_CHANNELS_PER_ANSWER))),
+      )
 
     /**
      * Ask peers in WAVES, widening only when a wave under-delivers.

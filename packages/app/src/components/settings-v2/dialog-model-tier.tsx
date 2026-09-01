@@ -3,13 +3,18 @@ import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useLanguage } from "@/context/language"
+import { TIERS } from "@/apps/agent-model"
 import type { ModelTier } from "@/context/models"
 
 // The capability-tier picker as a MODAL (uix.md — phone-friendly, and the rich per-tier blurbs need
 // room a droplist can't give without rendering the description over the label). Coarsest→finest by
 // parameter count; "guess" lets NovaClaw estimate it later (notes/guesstimation.md). Picking a card
 // commits immediately and closes — same one-tap pattern as the expertise dialog.
-const TIERS: readonly ModelTier[] = ["guess", "micro", "tiny", "small", "medium", "large", "frontier"]
+//
+// ⚠️ The ORDER is `AgentModelFit.LADDER` and is not re-spelled here: this copy used to be the one
+// nothing pinned, so a tier added to the schema and to the config dialog still could not be picked
+// from this screen. `"guess"` is this picker's own addition and the only part it owns.
+const TIER_CARDS: readonly ModelTier[] = ["guess", ...TIERS]
 
 export const DialogModelTier: Component<{
   modelName: string
@@ -37,7 +42,7 @@ export const DialogModelTier: Component<{
         </div>
 
         <div class="flex flex-col gap-2 max-h-[60vh] overflow-y-auto -mx-1 px-1">
-          <For each={TIERS}>
+          <For each={TIER_CARDS}>
             {(tier) => (
               <button
                 type="button"

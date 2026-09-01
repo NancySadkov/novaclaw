@@ -1,6 +1,7 @@
 export * as SystemCompose from "./system-compose"
 
 import type { PermissionMode } from "../config-resolve"
+import { XmlText } from "../../util/xml-text"
 // Type-only, so this file stays pure: `InputCapabilities` is the structural shape `attachmentSupport`
 // reads, and sharing it is what keeps the perception SECTION and the media GATE deciding from one
 // declaration rather than two that can drift (ruling 6).
@@ -10,7 +11,7 @@ import type { InputCapabilities } from "./to-llm-message"
 // so the composition — and especially the placement of the optional per-model PRE-PROMPT — is a pure
 // unit, testable without executing the live runner.
 //
-// ⚠️ PLACEMENT of the model pre-prompt (owner 2026-07-29, todo/assorted.md "Per-model PRE-PROMPT").
+// ⚠️ PLACEMENT of the model pre-prompt — an owner ruling, 2026-07-29.
 // The vision wants it as a distinct, clearly-labelled section that reads as "about this model" —
 // sitting AFTER the immutable base and BEFORE the persona, so a session inspecting its own prompt can
 // tell base / model-preprompt / persona apart. But the ACTUAL runner composes parts persona-FIRST and
@@ -32,7 +33,7 @@ import type { InputCapabilities } from "./to-llm-message"
 // cache for the whole request — system prompt AND transcript. Prefix caching is linear: the first
 // differing token forfeits everything after it.
 //
-// Measured against the DGX Spark's DeepSeek V4 Flash server (notes/ds4-0731-q2-maintaince.md), on a
+// Measured against the DGX Spark's DeepSeek V4 Flash server (notes/reports/ds4-q2-maintenance-2026-07-31.md), on a
 // 13.5K-token prompt, cold prefill ≈ 1000 tok/s:
 //
 //     identical prompt re-sent .................. 15.1s -> 0.9s
@@ -51,7 +52,7 @@ import type { InputCapabilities } from "./to-llm-message"
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The header that makes the per-model pre-prompt read as "about this model" and keeps it from being
- *  mistaken for task instructions (todo/assorted.md: "Do not make it a dumping ground"). */
+ *  mistaken for task instructions. ⚠️ Standing rule: *"do not make it a dumping ground."* */
 export const MODEL_PREPROMPT_LABEL =
   "The following are user-authored corrections for this specific model's known behaviour (not task instructions):"
 
@@ -104,6 +105,13 @@ export const modelPrePromptSection = (prePrompt: string | undefined): string | u
  *    anything", because the vague version is the one a model rationalises its way around.
  *  · It says what to do INSTEAD (ask, and let the user decide) rather than only refusing. An
  *    instruction with no route forward gets abandoned the moment a task seems to need it.
+ *
+ * 🔴 **The same rule, applied to a kernel instruction that did NOT survive.** A turn-CLOSING
+ * instruction shipped and was cut the same day by its own pre-registered kill rule
+ * (`notes/reports/turn-closing-instruction-killed-2026-08-11.md`). The defect it aimed at is still
+ * open — a turn that stops on a tool call leaves the fold with nothing to show — so whatever is
+ * tried next: **do not re-add a bare "be brief" line.** That is exactly the vague form this
+ * instruction is written to avoid.
  */
 export const PROJECT_SCOPE_INSTRUCTION =
   "Project scope: this session's working folder is your workspace.\n\n" +
@@ -433,31 +441,44 @@ export const delegationSection = (input: {
   return lines.length === 0 ? undefined : lines.join("\n\n")
 }
 
+/** The instance-owned profile fields that define one officer to the model. */
+export interface AgentIdentityProfile {
+  readonly id: string
+  readonly name?: string | undefined
+  readonly title?: string | undefined
+  readonly personality?: string | undefined
+}
+
+const identityLabel = (value: string | undefined): string | undefined => {
+  const trimmed = value?.trim()
+  return trimmed ? XmlText.escape(trimmed.replace(/\s+/g, " ")) : undefined
+}
+
+const IDENTITY_SENTINELS = ["<agent_identity>", "</agent_identity>"] as const
+
 /**
- * ⚠️ **The turn-CLOSING instruction lived here and was CUT on 2026-08-11 — the day it shipped.**
- *
- * The idea: a settled turn renders as the answer with everything behind it folded under "Done", so
- * the prose after the last tool call is the entire visible reply, and 24% of tool-bearing turns
- * ended with none. A kernel-level instruction told the model to always close with a sentence or two
- * and not replay the steps.
- *
- * It shipped with a pre-registered kill rule, because the evidence for it was already mixed — the
- * history arm supported it while a synthetic arm showed it ADDING length. The rule: *if the median
- * answer length rises, cut it — it is then doing the opposite of its job.*
- *
- * Re-measured against the same instance, before vs after the ship
- * (`tests/turn-closing-history.ts --since/--until`): median **9 → 25 words**, no-visible-answer
- * **37% → 57%**. Both metrics moved the wrong way, so it went. ⚠️ n=7 after, which is far too small
- * to call it harmful — but a weak signal against a change that never had positive evidence is
- * enough, and a pre-registered rule honoured only when convenient is not a rule.
- *
- * **The defect it aimed at is still open**: a turn that stops on a tool call leaves the fold with
- * nothing to show. Whatever is tried next, do not re-add a bare "be brief" line — that is the vague
- * form `PROJECT_SCOPE_INSTRUCTION` records as the one a model reasons its way around.
+ * The ONE model-facing officer identity block. The immutable id is only a degraded fallback; a
+ * resolved profile name wins without changing the id that owns the chat and memory cabinet.
  */
+export const agentIdentitySection = (profile: AgentIdentityProfile): string => {
+  const name = identityLabel(profile.name) ?? identityLabel(profile.id) ?? "unknown colleague"
+  const title = identityLabel(profile.title)
+  // Personality is authored instruction text, so preserve its markup and neutralise only the two
+  // wrapper sentinels. A profile describing this prompt format must not accidentally close its own
+  // identity block or manufacture a second one.
+  const personality = profile.personality?.trim()
+  const framedPersonality = personality ? XmlText.neutralizeSentinels(personality, IDENTITY_SENTINELS) : undefined
+  return [
+    "<agent_identity>",
+    `Your name is ${name}.`,
+    ...(title === undefined ? [] : [`Your job title is ${title}.`]),
+    ...(framedPersonality ? ["Your personality and standing instructions are:", framedPersonality] : []),
+    "</agent_identity>",
+  ].join("\n")
+}
 
 export interface SystemPromptParts {
-  /** The Nova persona baseline — composed FIRST (persona.ts), before per-session/agent prompts. */
+  /** The role-neutral harness baseline — composed FIRST (persona.ts). */
   readonly persona?: string
   /** The optional per-model pre-prompt SECTION (already wrapped via `modelPrePromptSection`). */
   readonly modelPrePrompt?: string
@@ -467,6 +488,8 @@ export interface SystemPromptParts {
   readonly tierHint?: string
   /** Per-session system-prompt override (the config-inheritance walk). */
   readonly systemPromptOverride?: string
+  /** The selected officer's resolved name/title/personality — immediately before its job brief. */
+  readonly agentIdentity?: string
   /** The selected agent's own system prompt. */
   readonly agentSystem?: string
   /** That the tool list is partial (via `toolDiscoverySection`); absent when nothing is deferred. */
@@ -517,6 +540,7 @@ export const systemPartsInOrder = (parts: SystemPromptParts): ReadonlyArray<{ bl
   { block: "expertiseHint", text: parts.expertiseHint },
   { block: "tierHint", text: parts.tierHint },
   { block: "systemPromptOverride", text: parts.systemPromptOverride },
+  { block: "agentIdentity", text: parts.agentIdentity },
   { block: "agentSystem", text: parts.agentSystem },
   { block: "toolDiscovery", text: parts.toolDiscovery },
   // Beside `toolDiscovery` and for the same reason: both are facts about what this runtime can

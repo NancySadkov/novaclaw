@@ -18,9 +18,9 @@ export interface PendingTool extends ToolAccumulator {
  * Sparse parser state keyed by the provider's stream-local tool identifier.
  *
  * This key is not the final tool-call id (`call_...`). It is the id/index the
- * provider uses while streaming a partial call: OpenAI Chat / Anthropic /
- * Bedrock use numeric content indexes, while OpenAI Responses uses string
- * `item_id`s. The generic keeps each protocol internally consistent.
+ * provider uses while streaming a partial call: OpenAI Chat and Anthropic use
+ * numeric content indexes, while OpenAI Responses uses string `item_id`s.
+ * The generic keeps each protocol internally consistent.
  */
 export type State<K extends StreamKey> = Partial<Record<K, PendingTool>>
 
@@ -99,8 +99,8 @@ export const isError = <K extends StreamKey>(result: AppendOutcome<K> | LLMError
 
 /**
  * Register a tool call whose start event arrived before any argument deltas.
- * Used by Anthropic `content_block_start`, Bedrock `contentBlockStart`, and
- * OpenAI Responses `response.output_item.added`.
+ * Used by Anthropic `content_block_start` and OpenAI Responses
+ * `response.output_item.added`.
  */
 export const start = <K extends StreamKey>(
   tools: State<K>,

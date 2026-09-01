@@ -6,11 +6,11 @@
     "typecheck": "bun ../../script/tsgo.ts -b"
   },
   "dependencies": {
-    "semver": "^7.6.3"
+    "semver": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:",
-    "@types/semver": "^7.5.8"
+    "@types/semver": "catalog:"
   },
   "exports": {
     ".": "./src/index.ts",

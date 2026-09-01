@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { MessengerFormat } from "@novaclaw/core/messenger/format"
 
-// P0 gate (notes/messenger-plan.md §8): the outbound shaping is pure and platform-honest —
+// P0 gate: the outbound shaping is pure and platform-honest —
 // markdown passes through, plain keeps every word, html never lets content smuggle tags, and
 // byte-mode chunking (IRC) never severs a UTF-8 code point.
 

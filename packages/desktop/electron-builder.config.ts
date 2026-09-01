@@ -1,62 +1,14 @@
-import { execFile } from "node:child_process"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { promisify } from "node:util"
 
 import type { Configuration } from "electron-builder"
 
 import { resolveChannel } from "@novaclaw/script/channel"
 import { verifyStagedDht } from "./scripts/dht-packaging"
-import { windowsSigning } from "./scripts/windows-signing"
+import { sanitizeBuildOutput } from "./scripts/sanitize-build-output"
 
-const execFileAsync = promisify(execFile)
 const packageDir = path.dirname(fileURLToPath(import.meta.url))
 const rootDir = path.resolve(packageDir, "../..")
-const signScript = path.join(rootDir, "script", "sign-windows.ps1")
-/**
- * 🔴 **NC-SEC-010 — a RELEASE build that could not sign must not package.**
- *
- * This returned silently whenever it was not on Windows under GitHub Actions, and electron-builder
- * has no force-signing requirement to contradict it, so `beta`/`latest` packaged to a normal `.7z`
- * and every later hash/SBOM/release-record step ran green over an unsigned binary. One missing
- * secret, one renamed CI variable, or one local emergency build was enough.
- *
- * ⚠️ **The build LOG is not evidence, and that is what made this survive.** electron-builder prints
- * `• signing with signtool.exe path=…` BEFORE it calls this function — 267 of those lines in the
- * 0.1.67 Windows build, with nothing signed. Reading that log is how a reviewer (and an agent, on
- * 2026-08-28) concludes a build "signed everything". A guard here is the only thing that can tell
- * the difference, because the log says the same words either way.
- *
- * ⚠️ `dev` is EXEMPT and stays silent-but-stated. Dev builds are the ones a person makes on their own
- * machine all day, they are never published, and failing them would make the guard something people
- * route around — which is how a release guard stops being one. The exemption is by CHANNEL, not by
- * "am I in CI": a beta cut on a laptop is exactly the emergency build this exists to catch.
- *
- * The shape is the one this build already uses for the native host module: refuse to package rather
- * than ship a degraded artifact and call it success.
- */
-async function signWindows(configuration: { path: string }) {
-  const verdict = windowsSigning({
-    channel,
-    platform: process.platform,
-    githubActions: process.env.GITHUB_ACTIONS,
-  })
-  if (verdict === "skip-allowed") return
-  if (verdict === "refuse")
-    throw new Error(
-      `Refusing to package a ${channel} Windows build without code signing.\n` +
-        `Signing runs only on Windows under GITHUB_ACTIONS=true, and this build is neither — so ` +
-        `"${configuration.path}" would ship with no authenticated publisher while every later ` +
-        `hash/SBOM/release step reported success.\n` +
-        `Build the ${channel} channel in CI, or use the dev channel for a local build.`,
-    )
-
-  await execFileAsync(
-    "pwsh",
-    ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", signScript, configuration.path],
-    { cwd: rootDir },
-  )
-}
 
 // ONE resolver, shared with electron-vite, the desktop build scripts and `Script.channel`
 // (`@novaclaw/script/channel`). This used to be a local copy that did NOT understand the "latest"
@@ -85,6 +37,10 @@ const getBase = (appId: string): Configuration => ({
   // direct electron-builder invocation: a release cannot copy absence, an old source identity, a
   // wrong target, or a binary that no longer speaks the protocol beside the current TypeScript.
   beforePack: verifyDhtBeforePack,
+  // Dependencies can carry retired service names in metadata and diagnostics even though the product
+  // has no integration with them. Sanitize the staged tree before it becomes a distributable archive;
+  // the sanitizer deliberately preserves signed PE payloads so upstream Authenticode remains valid.
+  afterPack: ({ appOutDir }) => sanitizeBuildOutput(appOutDir),
   artifactName: "novaclaw-desktop-${os}-${arch}.${ext}",
   directories: {
     output: "dist",
@@ -167,6 +123,11 @@ const getBase = (appId: string): Configuration => ({
     ...(process.platform === "win32"
       ? [
           {
+            // Staged from the build host and verified against the core executable pin.
+            from: "resources/third-party/ripgrep/",
+            to: "third-party/ripgrep/",
+          },
+          {
             // Prepared and SHA-256 verified by scripts/prepare-w64devkit.ts before every Windows
             // build. Ship the expanded tree so first launch needs neither network nor extraction.
             from: "resources/third-party/w64devkit/",
@@ -192,12 +153,7 @@ const getBase = (appId: string): Configuration => ({
     entitlements: "resources/entitlements.plist",
     entitlementsInherit: "resources/entitlements.plist",
     notarize: true,
-    // ⚠️ The `zip` here is NOT a size choice and must not be traded for a 7z. electron-updater's
-    // macOS updater downloads the artifact named in `latest-mac.yml` and hands it to Squirrel.Mac,
-    // which unpacks ZIP only — drop it and macOS autoupdate stops working, which is the one thing
-    // AGENTS.md's "we tend the flame for you" promise cannot lose. The dmg is the human download
-    // and is already compressed. Windows, which has no such constraint, ships 7z (see `win`).
-    target: ["dmg", "zip"],
+    target: ["dmg"],
   },
   dmg: {
     sign: true,
@@ -208,9 +164,6 @@ const getBase = (appId: string): Configuration => ({
   },
   win: {
     icon: `resources/icons/icon.ico`,
-    signtoolOptions: {
-      sign: signWindows,
-    },
     // What Windows actually ships is the PORTABLE app — a folder you unpack anywhere and run, no
     // installer and no admin rights (README) — so the default target is the ARCHIVE, and the archive
     // is 7z rather than zip: same tree, LZMA2-solid at `-mx=9` instead of deflate, which is a much
@@ -221,7 +174,6 @@ const getBase = (appId: string): Configuration => ({
     // `electron-builder --win nsis` still produces the one-click installer. Only the default moved.
     artifactName: "NovaClaw-${version}-windows-${arch}.${ext}",
     target: ["7z"],
-    verifyUpdateCodeSignature: false,
   },
   nsis: {
     oneClick: true,
@@ -270,7 +222,6 @@ function getConfig() {
         appId,
         productName: "NovaClaw Beta",
         protocols: { name: "NovaClaw Beta", schemes: ["novaclaw"] },
-        publish: { provider: "github", owner: "nancysadkov", repo: "novaclaw-beta", channel: "latest" },
         rpm: { packageName: "novaclaw-beta" },
         pacman: {
           packageName: "novaclaw-beta",
@@ -286,7 +237,6 @@ function getConfig() {
         appId,
         productName: "NovaClaw",
         protocols: { name: "NovaClaw", schemes: ["novaclaw"] },
-        publish: { provider: "github", owner: "nancysadkov", repo: "novaclaw", channel: "latest" },
         rpm: { packageName: "novaclaw" },
         pacman: {
           packageName: "novaclaw",

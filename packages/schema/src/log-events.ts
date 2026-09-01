@@ -4,8 +4,8 @@
  * **THE closed log-event key set.** One dotted `subsystem.object.action[.outcome]` identifier per
  * event, declared once, here, and nowhere else.
  *
- * `todo/logging.md` item 1a. The finding that produced it (§0.3, measured against the real
- * `novaclaw.log`): the on-disk line is already machine-PARSEABLE — logfmt, `key=value` — but the
+ * The finding that produced it, measured against the real
+ * `novaclaw.log`: the on-disk line is already machine-PARSEABLE — logfmt, `key=value` — but the
  * event itself is not machine-ADDRESSABLE, because the only thing naming it is `message=`, an
  * English sentence. `grep 'message="watcher backend"'` is not a query, it is a bet on nobody
  * rewording a string literal. Worse, one word can name two unrelated faults: `Effect.logError(
@@ -23,20 +23,20 @@
  * It is **not a second logging system.** The wrapper that consumes it (`./log.ts`) calls
  * `Effect.log*` and nothing else, so every keyed record lands in the SAME logfmt line, through the
  * SAME formatter, into the SAME `novaclaw.log` as the still-unkeyed sites do today. A second file
- * writer beside `novaclaw.log` is the copy-paste-store defect this project keeps finding
- * (`todo/logging.md` §0.2); there is no second sink here and there must never be one.
+ * writer beside `novaclaw.log` is the copy-paste-store defect this project keeps finding; there is
+ * no second sink here and there must never be one.
  *
  * ── the four properties that make this a contract rather than a convention ──────────────────────
  *
  * 1. **Closed.** `EventKey` is `keyof typeof EVENTS`, so an undeclared key does not compile.
  * 2. **The subsystem is a PARSED FIELD, not a naming habit.** `subsystemOf()` reads the first
  *    segment and `SUBSYSTEMS` closes the set. That is what makes per-subsystem log levels
- *    (`todo/logging.md` 3b, Settings → Developer) a prefix match resolved once, rather than a second
+ *    (Settings → Developer) a prefix match resolved once, rather than a second
  *    registry somebody has to keep in sync — and it is why the level check can stay free in the
- *    hot loops (§0.10).
- * 3. **The English lives WITH the key.** ⚠️ This is a deliberate departure from item 1b's sketched
- *    `Log.event(key, message, attrs)` signature, and the reason is the one 1b itself calls the acute
- *    case: the seed had 17 sites that interpolate values INTO the sentence
+ *    hot loops.
+ * 3. **The English lives WITH the key.** ⚠️ This is a deliberate departure from the obvious
+ *    `Log.event(key, message, attrs)` signature, and the reason is the acute case measured on the
+ *    seed: 17 sites interpolate values INTO the sentence
  *    (`` `discord: caught up ${N}+ missed messages in ${id}` ``), which makes `message=` a
  *    high-cardinality field and buries an attribute inside prose. A `message` PARAMETER leaves that
  *    door open at every remaining site forever. Declaring the sentence here shuts it by construction: the
@@ -46,7 +46,7 @@
  * 4. **Redaction is in the record type, not in a downstream filter.** Every attribute declares a
  *    CLASS, and each class says whether that field may ever leave this machine. So "may this event
  *    egress?" is answered by the declaration, at authoring time — not by a scrubber run over a log
- *    that already captured a prompt, which is a leak with a delay (`todo/logging.md` 1f). The
+ *    that already captured a prompt, which is a leak with a delay. The
  *    maintenance plane carries crash signatures; the data plane never egresses (AGENTS.md
  *    design-principle 4).
  *
@@ -69,16 +69,14 @@
  * fill up with aspirational keys for events nobody emits: a key exists because a call site exists.
  *
  * The registry began as a deliberately small measured seed and grows only through ledger-backed,
- * subsystem-by-subsystem migrations. `mcp.server.output` became the first converted site only after
- * the shrink-only source ledger was in force; the four `patch.file.*` template-literal sites followed
- * as the first whole-subsystem vocabulary pass. Every later pass keeps the same rule: declare only
- * events a live call site emits, and remove exactly those sites from the source ledger.
+ * subsystem-by-subsystem migrations. Every pass keeps the same rule: declare only events a live
+ * call site emits, and remove exactly those sites from the source ledger.
  */
 
 /**
  * **The closed subsystem set — the first segment of every key.**
  *
- * Small on purpose: `todo/logging.md` 3b renders one row per subsystem in Settings → Developer, and
+ * Small on purpose: Settings → Developer renders one level row per subsystem, and
  * a list a person scrolls is a list nobody uses. Grow it when a subsystem's first key is declared,
  * never in advance. The value is the human label that surface will show.
  */
@@ -116,7 +114,6 @@ export const SUBSYSTEMS = {
   messenger: "Messenger",
   mcp: "MCP servers",
   offline: "Offline mode",
-  patch: "File changes",
   plugin: "Plugins",
   pty: "Terminal sessions",
   question: "Questions",
@@ -136,7 +133,7 @@ export type Subsystem = keyof typeof SUBSYSTEMS
 
 /**
  * The four levels on the wire. Core's `observability/logging.ts` accepts exactly these, and
- * `todo/logging.md` §0.8 settles the count: six recurs across the industry, and six is already too
+ * four is the settled count: six recurs across the industry, and six is already too
  * many for a product surface — the renderer's extra `notice` is a UI concern, not a wire severity.
  */
 export type Level = "debug" | "info" | "warn" | "error"
@@ -144,7 +141,7 @@ export type Level = "debug" | "info" | "warn" | "error"
 /**
  * **What plane an attribute belongs to — the ONE declaration, from which egress is derived.**
  *
- * Three values, not two, and the middle one is `todo/logging.md` **1e**:
+ * Three values, not two, and the middle one is the one that is easy to miss:
  *
  * - `"none"` — carries nothing about this user. A count, a flag, a token from a closed vocabulary.
  *   These are the only things the maintenance plane may ever carry.
@@ -186,7 +183,7 @@ export const ATTRIBUTE_CLASSES = {
   flag: { content: "none", value: "boolean" },
   /**
    * **A correlation id — an identifier we minted that names one unit of the user's own work.**
-   * Content-free and never egresses. `todo/logging.md` 1e.
+   * Content-free and never egresses. See {@link CORRELATION_ATTRIBUTES}.
    */
   correlate: { content: "correlated", value: "string" },
   /** A filesystem path — carries the user's account and project names. Never egresses. */
@@ -196,7 +193,7 @@ export const ATTRIBUTE_CLASSES = {
   /** Our own error text. Routinely embeds paths, payloads and prompts. Never egresses. */
   fault: { content: "user", value: "string" },
   /**
-   * **A bounded list of strings, kept as a LIST.** `todo/logging.md` 1h's second seam: ignore
+   * **A bounded list of strings, kept as a LIST.** Ignore
    * globs, command argv, changed config keys and failure reasons were all crossing the scalar-only
    * boundary as hand-written `JSON.stringify(…)` at the call site — which preserves the bytes and
    * discards the type, and puts the encoding decision in 20 places. The call site now passes
@@ -256,12 +253,12 @@ export type EventDeclaration = {
  */
 export const RESERVED_ATTRIBUTES: ReadonlyArray<string> = ["timestamp", "level", "run", "event", "message", "cause"]
 
-// ── correlation ids (todo/logging.md 1e) ────────────────────────────────────────────────────────
+// ── correlation ids ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * **THE CORRELATION VOCABULARY — every attribute that names a unit of work, declared once.**
  *
- * `todo/logging.md` 1e: *correlation ids as first-class attributes*. The point of the item is one
+ * *Correlation ids as first-class attributes.* The point is one
  * sentence — **a log line that mentions a session id inside its `message=` is neither queryable nor
  * redactable, and an attribute is both.** The declaration model already makes the first half
  * structurally impossible, because `message` is a constant on the declaration and `Log.event` takes
@@ -335,7 +332,6 @@ export const CORRELATION_ATTRIBUTES = {
   /** One question put to the user, and answered by them. */
   "question.request": "correlate",
   /** The legacy on-disk project id — derived from the user's own directory. */
-  "storage.project": "correlate",
   /**
    * A colleague on the roster (AGENTS.md — the structural metaphor).
    *
@@ -384,7 +380,7 @@ export const CORRELATION_ATTRIBUTES = {
  * **The name shapes that MUST be decided in the table above.**
  *
  * The table alone is a list somebody has to remember to add to — which is a habit, not a mechanism
- * (the same gap `todo/logging.md` 1b filed against "check the registry before declaring"). So the
+ * (the same gap an instruction to "check the registry before declaring" always leaves). So the
  * check runs in both directions: a name in the table must be declared with the table's class, **and
  * a name that READS like a correlator must be in the table.** A future `turn.id`, `trace.id` or
  * `agent.session` cannot be declared as an egress-safe `id` without someone opening this file.
@@ -425,7 +421,7 @@ export function correlationFault(name: string, cls: AttributeClass): string | un
   return undefined
 }
 
-// ── bounded list encoding (todo/logging.md 1h, second seam) ─────────────────────────────────────
+// ── bounded list encoding ───────────────────────────────────────────────────────────────────────
 
 /** At most this many items survive; the rest become one `…+N more` element. */
 export const LIST_MAX_ITEMS = 20
@@ -1348,11 +1344,12 @@ export const EVENTS = {
   // ── log ───────────────────────────────────────────────────────────────────────────────────────
   /**
    * **How big this instance's log directory is and how fast it is growing — the measurement the
-   * Phase-2 defaults table was filed without.**
+   * writer's retention defaults were filed without.**
    *
-   * `todo/logging.md` handed this key to Phase 3 with an unusually blunt confession attached:
-   * *"Every one of these is a guess dressed in a measurement… Until it exists the Phase-2 defaults
-   * table is still a guess — do not cite 8 MB / 256 MB / 30 d as measured."* One line per instance
+   * ⚠️ Those defaults — `SEGMENT_BYTES` / `TOTAL_BYTES` / `MAX_AGE_MS` in
+   * `core/src/observability/log-file.ts` — were shipped with a blunt confession attached: *every one
+   * of them is a guess dressed in a measurement, and until this key exists **do not cite 8 MB /
+   * 256 MB / 30 d as measured.*** That confession still stands until the fleet answers. One line per instance
    * boot, from `core/src/observability/logging.ts`, so **every install measures itself** instead of
    * inheriting one developer's 27 days on one machine at INFO — a number that then moved 2× within
    * nine days of being taken.
@@ -1645,40 +1642,6 @@ export const EVENTS = {
     attributes: { "offline.request.url": "text", "offline.request.host": "text" },
     content: "user",
     file: "packages/core/src/offline.ts",
-  },
-
-  // ── patch ─────────────────────────────────────────────────────────────────────────────────────
-  /** A patch created a file. The path used to be interpolated into `message=`. */
-  "patch.file.add": {
-    level: "info",
-    message: "Added file:",
-    attributes: { "patch.file": "path" },
-    content: "user",
-    file: "packages/novaclaw/src/patch/index.ts",
-  },
-  /** A patch removed a file. The path used to be interpolated into `message=`. */
-  "patch.file.delete": {
-    level: "info",
-    message: "Deleted file:",
-    attributes: { "patch.file": "path" },
-    content: "user",
-    file: "packages/novaclaw/src/patch/index.ts",
-  },
-  /** A patch moved a file, possibly while changing its contents. */
-  "patch.file.move": {
-    level: "info",
-    message: "Moved file:",
-    attributes: { "patch.from": "path", "patch.to": "path" },
-    content: "user",
-    file: "packages/novaclaw/src/patch/index.ts",
-  },
-  /** A patch changed a file in place. The path used to be interpolated into `message=`. */
-  "patch.file.update": {
-    level: "info",
-    message: "Updated file:",
-    attributes: { "patch.file": "path" },
-    content: "user",
-    file: "packages/novaclaw/src/patch/index.ts",
   },
 
   // ── plugin ────────────────────────────────────────────────────────────────────────────────────
@@ -2120,8 +2083,8 @@ export const EVENTS = {
    * This names the block.
    *
    * ⚠️ `prompt.largest` is the point of the whole event: a total that moved tells you something
-   * regressed, and the block name tells you where to look. `todo/tool-scale.md` asks for exactly this
-   * before any capping decision, because a proportional squeeze over unnamed blocks would trim the
+   * regressed, and the block name tells you where to look. Any prompt-CAPPING decision needs exactly
+   * this breakdown first, because a proportional squeeze over unnamed blocks would trim the
    * safety rules along with everything else.
    */
   "session.prompt.blocks": {
@@ -2882,7 +2845,7 @@ export const EVENTS = {
   /**
    * Snapshot-object garbage collection failed without disabling later attempts.
    *
-   * ⚠️ **`snapshot.stderr` is `text`, and that is a RULING, not a downgrade** (`todo/logging.md` 1h,
+   * ⚠️ **`snapshot.stderr` is `text`, and that is a RULING, not a downgrade** (decided
    * 2026-08-08). It holds git's own words and nothing else. It was `fault` only because the `git`
    * helper used to write a caught spawn failure into the same field — so the column named git as the
    * author of our exception, which is ruling 2 broken. The helper now names itself under
@@ -3128,79 +3091,6 @@ export const EVENTS = {
     file: "packages/core/src/jh/store.ts",
   },
 
-  // ── storage ───────────────────────────────────────────────────────────────────────────────────
-  /** A legacy message document is copied into the current layout. */
-  "storage.message.copy": {
-    level: "info",
-    message: "copying",
-    attributes: { "storage.source": "path", "storage.destination": "path" },
-    content: "user",
-    file: "packages/novaclaw/src/storage/storage.ts",
-  },
-  /** Migration is about to copy the messages belonging to one session. */
-  "storage.message.migrate": {
-    level: "info",
-    message: "migrating messages for session",
-    attributes: { "session.id": "correlate" },
-    content: "correlated",
-    file: "packages/novaclaw/src/storage/storage.ts",
-  },
-  /** One numbered migration is starting. */
-  "storage.migration.run": {
-    level: "info",
-    message: "running migration",
-    attributes: { "storage.index": "count" },
-    content: "none",
-    file: "packages/novaclaw/src/storage/storage.ts",
-  },
-  /** A numbered migration failed and later migrations will not run. */
-  "storage.migration.run.failed": {
-    level: "error",
-    message: "failed to run migration",
-    attributes: { "storage.index": "count", "storage.cause": "fault" },
-    content: "user",
-    file: "packages/novaclaw/src/storage/storage.ts",
-  },
-  /** A legacy part document is copied into the current layout. */
-  "storage.part.copy": {
-    level: "info",
-    message: "copying",
-    attributes: { "storage.source": "path", "storage.destination": "path" },
-    content: "user",
-    file: "packages/novaclaw/src/storage/storage.ts",
-  },
-  /** Migration is about to copy the parts belonging to one message. */
-  "storage.part.migrate": {
-    level: "info",
-    message: "migrating parts for message",
-    attributes: { "session.message": "correlate" },
-    content: "correlated",
-    file: "packages/novaclaw/src/storage/storage.ts",
-  },
-  /** One legacy project directory is being inspected and migrated. */
-  "storage.project.migrate": {
-    level: "info",
-    message: "migrating project",
-    attributes: { "storage.legacy_project": "path" },
-    content: "user",
-    file: "packages/novaclaw/src/storage/storage.ts",
-  },
-  /** A legacy session document is copied into the current layout. */
-  "storage.session.copy": {
-    level: "info",
-    message: "copying",
-    attributes: { "storage.source": "path", "storage.destination": "path" },
-    content: "user",
-    file: "packages/novaclaw/src/storage/storage.ts",
-  },
-  /** Migration is about to copy the sessions belonging to one project. */
-  "storage.session.migrate": {
-    level: "info",
-    message: "migrating sessions for project",
-    attributes: { "storage.project": "correlate" },
-    content: "correlated",
-    file: "packages/novaclaw/src/storage/storage.ts",
-  },
   /** The session adhoc-recipe store could not be read; the prompt lists only configured recipes. */
   "tool.adhoc.read.failed": {
     level: "warn",
@@ -3236,14 +3126,6 @@ export const EVENTS = {
     content: "user",
     file: "packages/novaclaw/src/tool/external-tool-source.ts",
   },
-  /** The bundled ripgrep was absent, so a release binary is being fetched. */
-  "tool.ripgrep.download.start": {
-    level: "info",
-    message: "downloading ripgrep",
-    attributes: { "tool.url": "id" },
-    content: "none",
-    file: "packages/core/src/ripgrep/binary.ts",
-  },
   /** The hourly cleanup of saved, truncated tool output failed unexpectedly. */
   "tool.truncation.cleanup.failed": {
     level: "error",
@@ -3266,7 +3148,7 @@ export const EVENTS = {
    * A new worktree could not populate its checkout.
    *
    * ⚠️ **`worktree.cause` is `text` HERE and `fault` on its siblings, and the split is deliberate**
-   * (`todo/logging.md` 1h, 2026-08-08). This one carries `git reset --hard`'s own stderr/stdout — a
+   * (decided 2026-08-08). This one carries `git reset --hard`'s own stderr/stdout — a
    * foreign process's words, so `Log.fault` on it would be the identity and the class was simply
    * wrong. It could not move until the `git` helper stopped writing OUR caught spawn failure into
    * the same field; that now goes to {@link EVENTS "worktree.git.spawn.failed"}. A class is a claim
@@ -3346,8 +3228,8 @@ export const EVENTS = {
   },
   /** A workspace was removed from the store after its backing adapter became unavailable. */
   /**
-   * ⚠️ **The cause is carried, and that is `todo/logging.md` 1h's third bullet.** The 1b migration
-   * deliberately preserved the old call's information loss — it named the missing adapter and threw
+   * ⚠️ **The cause is carried, and that was the last of the three fault-normalization seams.** The
+   * keying migration deliberately preserved the old call's information loss — it named the missing adapter and threw
    * the caught error away — so the line said *which* adapter was unavailable and never *why*. Naming
    * a missing thing is not a repairable fault (ruling 2): an operator asked to fix an adapter that
    * "is not available" has nothing to act on. The finished vocabulary carries both.
@@ -3522,8 +3404,8 @@ export function keyFault(key: string): string | undefined {
 
 /**
  * **The subsystem, PARSED.** Not a string search over the whole key and not a second registry: the
- * first segment, read once. `todo/logging.md` 3b's per-subsystem levels and §0.10's "a level check
- * must be free when the level is off" both depend on this being a field rather than a convention.
+ * first segment, read once. Per-subsystem log levels and the rule that "a level check must be free
+ * when the level is off" both depend on this being a field rather than a convention.
  *
  * Typed to return `Subsystem` for a declared key; every declared key is checked to satisfy that.
  */
@@ -3553,7 +3435,7 @@ export function derivedContent(declaration: EventDeclaration): ContentClass {
 }
 
 /**
- * Whether this event may leave the machine at all — the precondition for `todo/logging.md` 1f's
+ * Whether this event may leave the machine at all — the precondition for the egress
  * filter and for anything the maintenance plane carries. `observability/telemetry.ts` gate 4 is its
  * consumer.
  *

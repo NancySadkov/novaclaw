@@ -14,7 +14,7 @@ import { testEffect } from "./lib/effect"
 import { bypassedPolicyGate, settleTool } from "./lib/tool"
 import { ToolPolicyGate } from "@novaclaw/core/tool-policy-gate"
 
-// The unknown-tool horizon (ported from github.com/NancySadkov/novaclaw PR #4, @DassaultFalconKing).
+// The unknown-tool horizon (ported from outside contribution #4, @DassaultFalconKing).
 //
 // Registry lifecycle/staleness is covered by session-runner-tool-registry.test.ts; this file covers only
 // what a model is told when it calls a name that was never advertised.

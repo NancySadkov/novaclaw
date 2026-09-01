@@ -176,6 +176,27 @@ export const RecipeHandler = handlerLayer(
           }),
         )
         .handle(
+          "recipe.archive",
+          Effect.fn(function* (ctx) {
+            return yield* Effect.tryPromise({
+              try: () => Recipe.exportArchive(ctx.params.slug),
+              catch: badRequest,
+            })
+          }),
+        )
+        .handle(
+          "recipe.archiveImport",
+          Effect.fn(function* (ctx) {
+            return yield* Effect.tryPromise({
+              try: () =>
+                Recipe.importArchive(ctx.payload, {
+                  ...(ctx.query.slug ? { slug: ctx.query.slug } : {}),
+                }),
+              catch: badRequest,
+            })
+          }),
+        )
+        .handle(
           "recipe.update",
           // The PARTIAL edit — `Recipe.update`, which changes the lines it was asked about inside the
           // author's own bytes and copies every other byte forward untouched by construction.
@@ -400,7 +421,7 @@ export const RecipeHandler = handlerLayer(
           Effect.fn(function* (ctx) {
             // ── THE DETERMINISTIC SUCCESS ARTIFACT ────────────────────────────────────────────────────
             //
-            // A cook's verdict was PROSE, so nothing mechanical could read its outcome (`todo/recipes.md`)
+            // A cook's verdict was PROSE, so nothing mechanical could read its outcome
             // — and AGENTS.md's promise is that a user can tell *in one click* whether their NovaClaw
             // works. This reads the work dir and answers from the filesystem, so the answer does not
             // depend on what the model said about its own work. It runs nothing, writes nothing and is a

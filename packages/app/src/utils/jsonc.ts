@@ -42,6 +42,10 @@ export function parseJSONC(content: string): unknown {
   return value
 }
 
-export function isJSONObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
+/**
+ * The JSONC-shaped name for the shared plain-record predicate (RF-29-6). Re-exported rather than
+ * re-pointed at the callers because both of them live in `components/settings-v2/`, and the name
+ * reads better there than `isRecord` does: after `parseJSONC`, "is this an object and not an array"
+ * IS the JSON question.
+ */
+export { isRecord as isJSONObject } from "@novaclaw/schema/record"

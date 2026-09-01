@@ -1,8 +1,7 @@
 import { useNavigate } from "@solidjs/router"
-import { createEffect, createMemo, createResource, createSignal, For, Show } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show } from "solid-js"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
-import { GoldGlyph } from "@/components/gold-glyph"
 import { useDirectoryPicker } from "@/components/directory-picker"
 import { useServer } from "@/context/server"
 import { useServerSDK } from "@/context/server-sdk"
@@ -11,7 +10,10 @@ import { sessionHref } from "@/utils/session-route"
 import {
   duplicateRecipe,
   importRecipe,
+  importRecipeArchive,
   listRecipes,
+  MAX_RECIPE_ARCHIVE_BYTES,
+  recipeArchive,
   recipeSource,
   removeRecipe,
   runRecipe,
@@ -19,7 +21,6 @@ import {
   updateRecipe,
   verifyRecipe,
   type Recipe,
-  type RecipeSource,
   type VerifyResult,
 } from "@/utils/recipe-api"
 import {
@@ -41,7 +42,7 @@ import {
   type RecipeView,
   type VerdictView,
 } from "@/apps/recipes"
-import { AppPage } from "@/components/app-page"
+import { AppPage, AppPageHeader } from "@/components/app-page"
 
 // The Recipes app (AGENTS.md → *Recipes are source code for the AI era*). A recipe is a folder of prompt +
 // assets; this page is where a normal person reads, runs, copies, edits, shares and CHECKS one.
@@ -103,6 +104,8 @@ export function RecipesPage() {
   const pickDirectory = useDirectoryPicker()
   const httpBase = createMemo(() => sdk()?.server?.http)
   const conn = createMemo(() => server.current)
+  const archiveTransfers = new AbortController()
+  onCleanup(() => archiveTransfers.abort())
 
   const [recipes, { refetch }] = createResource(
     () => httpBase(),
@@ -128,6 +131,7 @@ export function RecipesPage() {
   const [creating, setCreating] = createSignal(false)
   const [importing, setImporting] = createSignal(false)
   const [importText, setImportText] = createSignal("")
+  const [importFile, setImportFile] = createSignal<File | undefined>()
   const [receipt, setReceipt] = createSignal<VerifyResult | undefined>()
   const [checking, setChecking] = createSignal(false)
   const [producesDraft, setProducesDraft] = createSignal("")
@@ -140,7 +144,7 @@ export function RecipesPage() {
 
   /**
    * The author's own file, plus what it needs and produces. A SEPARATE read from the list on purpose: the
-   * list record carries the prompt BODY only, so `needs:` / `produces:` and the exportable bytes live
+   * list record carries the prompt BODY only, so `needs:` / `produces:` and the editable markdown live
    * nowhere else. A failure here stays `undefined`, which every describe* function below reports as
    * *"I could not read this recipe's file"* rather than as *"it declares nothing"*.
    */
@@ -210,6 +214,12 @@ export function RecipesPage() {
     setDraftDescription("")
     setDraftPrompt("")
     setDirty(true)
+  }
+
+  const startImport = () => {
+    setImportFile(undefined)
+    setImportText("")
+    setImporting(true)
   }
 
   const fail = (error: unknown) =>
@@ -310,25 +320,28 @@ export function RecipesPage() {
     }
   }
 
-  /**
-   * Hand the user their recipe as a FILE — the author's own bytes, straight from disk.
-   *
-   * The unit a person shares is `recipe.md`, and it is prose: they can read it, change it in any text
-   * editor, mail it to somebody, and import it back. That is the anti-elitist claim made operational; a
-   * proprietary export format would be the opposite of it.
-   */
-  function exportRecipe(recipe: RecipeView, file: RecipeSource) {
-    const blob = new Blob([file.markdown], { type: "text/markdown;charset=utf-8" })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement("a")
-    link.href = url
-    link.download = exportFilename(recipe.key)
-    link.click()
-    URL.revokeObjectURL(url)
-    showToast({ title: `Saved ${exportFilename(recipe.key)}`, description: describeExport(recipe) })
+  /** Download the complete folder, not a reconstruction and not only its markdown. */
+  async function exportRecipe(recipe: RecipeView) {
+    const base = httpBase()
+    if (!base) return
+    setBusy(true)
+    try {
+      const archive = await recipeArchive(base, recipe.key, { signal: archiveTransfers.signal })
+      const url = URL.createObjectURL(new Blob([archive], { type: "application/zip" }))
+      const link = document.createElement("a")
+      link.href = url
+      link.download = exportFilename(recipe.key)
+      link.click()
+      URL.revokeObjectURL(url)
+      showToast({ title: `Saved ${exportFilename(recipe.key)}`, description: describeExport(recipe) })
+    } catch (error) {
+      fail(error)
+    } finally {
+      setBusy(false)
+    }
   }
 
-  async function doImport() {
+  async function doMarkdownImport() {
     const base = httpBase()
     const preview = previewImport(importText())
     if (!base || !preview.ok) return
@@ -341,7 +354,36 @@ export function RecipesPage() {
       open(toView(made))
       showToast({
         title: `Imported “${made.name}”`,
-        description: "Stored exactly as it was written. Read it before you run it — somebody else wrote it.",
+        description: "Stored exactly as it was written. Pasted markdown carries no assets; read it before you run it.",
+      })
+    } catch (error) {
+      fail(error)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function doArchiveImport() {
+    const base = httpBase()
+    const file = importFile()
+    if (!base || !file) return
+    if (file.size > MAX_RECIPE_ARCHIVE_BYTES) {
+      fail(new Error(`That recipe ZIP is over ${MAX_RECIPE_ARCHIVE_BYTES / 1024 / 1024} MB`))
+      return
+    }
+    setBusy(true)
+    try {
+      const made = await importRecipeArchive(base, new Uint8Array(await file.arrayBuffer()), {
+        signal: archiveTransfers.signal,
+      })
+      await refetch()
+      setImportFile(undefined)
+      setImportText("")
+      setImporting(false)
+      open(toView(made))
+      showToast({
+        title: `Imported “${made.name}”`,
+        description: "The complete folder arrived — recipe.md and all nested assets. Read it before you run it.",
       })
     } catch (error) {
       fail(error)
@@ -459,19 +501,18 @@ export function RecipesPage() {
 
   return (
     <AppPage class="flex flex-col overflow-hidden">
-      <div class="flex items-center gap-3 border-b border-v2-border-border-base px-4 py-2.5">
-        <GoldGlyph name="recipes" class="size-6" />
-        <span class="text-[15px] font-semibold">Recipes</span>
-        <span class="min-w-0 flex-1 truncate text-xs text-v2-text-text-faint">
-          Ready-made prompts an agent cooks for you. Source code rots; a good recipe stays fresh.
-        </span>
-        <button class={BTN} data-action="recipe-import-open" onClick={() => setImporting(true)}>
+      <AppPageHeader
+        glyph="recipes"
+        title="Recipes"
+        hint="Ready-made prompts an agent cooks for you. Source code rots; a good recipe stays fresh."
+      >
+        <button class={BTN} data-action="recipe-import-open" onClick={startImport}>
           Import…
         </button>
         <button class={BTN} data-action="recipe-new" onClick={startNew}>
           New recipe
         </button>
-      </div>
+      </AppPageHeader>
 
       <div class="flex min-h-0 flex-1 overflow-hidden">
         {/* ── The list, on its shelves ─────────────────────────────────────────────────────────── */}
@@ -540,12 +581,19 @@ export function RecipesPage() {
           <Show when={importing()}>
             <div class="max-w-2xl">
               <ImportPanel
+                file={importFile()}
+                onFile={setImportFile}
                 text={importText()}
                 onText={setImportText}
                 preview={preview()}
                 busy={busy()}
-                onCancel={() => setImporting(false)}
-                onImport={() => void doImport()}
+                onCancel={() => {
+                  setImportFile(undefined)
+                  setImportText("")
+                  setImporting(false)
+                }}
+                onArchiveImport={() => void doArchiveImport()}
+                onMarkdownImport={() => void doMarkdownImport()}
               />
             </div>
           </Show>
@@ -606,12 +654,9 @@ export function RecipesPage() {
                         <button
                           class={BTN}
                           data-action="recipe-export"
-                          disabled={busy() || !source()}
+                          disabled={busy() || !httpBase()}
                           title={describeExport(recipe())}
-                          onClick={() => {
-                            const file = source()
-                            if (file) exportRecipe(recipe(), file)
-                          }}
+                          onClick={() => void exportRecipe(recipe())}
                         >
                           Export
                         </button>
@@ -668,7 +713,7 @@ export function RecipesPage() {
 
                 {/* ── 3. What a finished run should leave behind, and how to say so. ───────────── */}
                 <Show when={current()}>
-                  {(recipe) => (
+                  {(_recipe) => (
                     <section class={CARD} data-slot="recipe-produces">
                       <h2 class={LABEL}>What a finished run should leave behind</h2>
                       <p class="mt-1.5 text-sm text-v2-text-text-base" data-slot="recipe-produces-sentence">
@@ -699,8 +744,8 @@ export function RecipesPage() {
                           </button>
                         </div>
                         <p class="mt-1 text-[11px] text-v2-text-text-faint">
-                          Just file names, separated by commas — no commands. Saving this changes one line
-                          of the recipe and nothing else in the file.
+                          Just file names, separated by commas — no commands. Saving this changes one line of the recipe
+                          and nothing else in the file.
                         </p>
                       </Show>
                     </section>
@@ -771,9 +816,7 @@ export function RecipesPage() {
                                     <li class="text-xs text-v2-text-text-muted">
                                       {/* The separator is real TEXT, not margin: read aloud or copied, a
                                           bare margin makes this "pi.txtnot found". */}
-                                      <span class="font-mono text-v2-text-text-base">
-                                        {row.path || row.declared}
-                                      </span>
+                                      <span class="font-mono text-v2-text-text-base">{row.path || row.declared}</span>
                                       <span>{" — "}</span>
                                       <span>{OUTCOME_WORD[row.outcome] ?? row.outcome}</span>
                                       <span>{": "}</span>
@@ -804,14 +847,14 @@ export function RecipesPage() {
                   <h2 class={LABEL}>The recipe</h2>
                   <Show when={current()?.shipped}>
                     <p class="text-xs text-v2-text-text-faint">
-                      This one shipped with NovaClaw. Edit it freely — your version is kept on upgrade, and
-                      deleting it brings the original back on next start.
+                      This one shipped with NovaClaw. Edit it freely — your version is kept on upgrade, and deleting it
+                      brings the original back on next start.
                     </p>
                   </Show>
                   <Show when={current() && !current()!.shipped}>
                     <p class="text-xs text-v2-text-text-faint" data-slot="recipe-authorship">
-                      The text below is whoever wrote this recipe speaking, not NovaClaw. If somebody sent it
-                      to you, read it before you run it.
+                      The text below is whoever wrote this recipe speaking, not NovaClaw. If somebody sent it to you,
+                      read it before you run it.
                     </p>
                   </Show>
                   {/* ⚠️ The boxes below hold the RAW text, because whatever is in them is what Save writes
@@ -819,9 +862,9 @@ export function RecipesPage() {
                       the surface says out loud that the text is not what it looks like. */}
                   <Show when={current()?.hiddenCharacters}>
                     <p class="text-xs text-v2-state-fg-warning" data-slot="recipe-hidden-characters">
-                      Careful: this recipe's own text contains invisible characters — the kind that can make a
-                      name or a filename read differently than it really is. The boxes below show it exactly as
-                      it is stored, so what you see here may not match what you saw in the list.
+                      Careful: this recipe's own text contains invisible characters — the kind that can make a name or a
+                      filename read differently than it really is. The boxes below show it exactly as it is stored, so
+                      what you see here may not match what you saw in the list.
                     </p>
                   </Show>
                   <input
@@ -858,8 +901,8 @@ export function RecipesPage() {
                     <div class={LABEL}>Files that travel with it</div>
                     <div class="mt-1 text-sm break-all text-v2-text-text-muted">{current()!.assets.join(", ")}</div>
                     <div class="mt-1 text-[11px] text-v2-text-text-faint">
-                      Copied into the work folder alongside the prompt when you run it. Export saves the
-                      recipe's own file only — send the whole folder to share these too.
+                      Copied into the work folder alongside the prompt when you run it. Export includes this complete
+                      nested asset tree in the recipe ZIP.
                     </div>
                   </div>
                 </Show>
@@ -875,27 +918,61 @@ export function RecipesPage() {
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * Paste a `recipe.md` somebody sent you and see what it actually says BEFORE it lands on disk.
+ * Import a complete folder ZIP, or paste an explicitly asset-free `recipe.md` convenience.
  *
  * ⚠️ Everything shown here is a stranger's text, labelled as such. The parse is a PREVIEW, not the
  * authority: the server reads the file again and stores the BYTES, so a disagreement between the two can
  * only ever mislabel this panel — it can never write something other than what was pasted.
  */
 function ImportPanel(props: {
+  file: File | undefined
+  onFile: (value: File | undefined) => void
   text: string
   onText: (value: string) => void
   preview: ReturnType<typeof previewImport>
   busy: boolean
   onCancel: () => void
-  onImport: () => void
+  onArchiveImport: () => void
+  onMarkdownImport: () => void
 }) {
   return (
     <div class="flex flex-col gap-3" data-component="recipe-import">
       <div>
         <h1 class="text-lg font-semibold">Import a recipe</h1>
         <p class="mt-1 text-sm text-v2-text-text-muted">
-          A recipe is a plain text file. Paste one here — from an email, a message, a folder somebody shared
-          — and it is stored exactly as it was written.
+          A recipe is a folder. Choose its ZIP to bring across recipe.md and every nested file, including binary assets,
+          exactly as they were sent.
+        </p>
+      </div>
+
+      <section class={CARD} data-slot="recipe-import-archive">
+        <h2 class={LABEL}>Complete recipe folder</h2>
+        <input
+          class="mt-2 block w-full text-sm text-v2-text-text-muted"
+          type="file"
+          accept=".zip,application/zip"
+          data-action="recipe-import-archive-file"
+          onChange={(event) => props.onFile(event.currentTarget.files?.[0])}
+        />
+        <p class="mt-1 text-xs text-v2-text-text-faint">
+          Up to {MAX_RECIPE_ARCHIVE_BYTES / 1024 / 1024} MB compressed. NovaClaw checks paths, file count, expanded size
+          and checksums before the folder appears.
+        </p>
+        <button
+          class={`${PRIMARY} mt-3`}
+          data-action="recipe-import-archive-confirm"
+          disabled={props.busy || !props.file}
+          onClick={() => props.onArchiveImport()}
+        >
+          Import folder
+        </button>
+      </section>
+
+      <div>
+        <h2 class={LABEL}>Paste recipe.md only</h2>
+        <p class="mt-1 text-sm text-v2-text-text-muted" data-slot="recipe-import-markdown-limit">
+          Use this for a prose-only recipe copied from a message. Paste carries recipe.md only — no assets can travel
+          with it.
         </p>
       </div>
 
@@ -944,8 +1021,8 @@ function ImportPanel(props: {
               </p>
             </Show>
             <p class="mt-2 text-[11px] text-v2-text-text-faint">
-              Somebody else wrote this. Nothing in the file can grant it any permission — the prompt below is
-              all it is. Read it before you run it.
+              Somebody else wrote this. Nothing in the file can grant it any permission — the prompt below is all it is.
+              Read it before you run it.
             </p>
             <pre class="mt-1.5 max-h-[240px] overflow-auto rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-02 p-2.5 font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-v2-text-text-muted">
               {props.preview.body}
@@ -957,11 +1034,11 @@ function ImportPanel(props: {
       <div class="flex flex-wrap items-center gap-3">
         <button
           class={PRIMARY}
-          data-action="recipe-import-confirm"
+          data-action="recipe-import-markdown-confirm"
           disabled={props.busy || !props.preview.ok || props.text.trim() === ""}
-          onClick={() => props.onImport()}
+          onClick={() => props.onMarkdownImport()}
         >
-          Import it
+          Import pasted markdown (no assets)
         </button>
         <button class={BTN} onClick={() => props.onCancel()}>
           Cancel

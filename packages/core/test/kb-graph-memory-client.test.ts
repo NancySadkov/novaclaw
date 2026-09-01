@@ -117,21 +117,6 @@ describe("MemoryClient.fromEngine", () => {
   })
 })
 
-describe("MemoryClient.proxy", () => {
-  test("delegates per call — degrades until the delegate swaps to a live client", async () => {
-    let delegate = MemoryClient.disabled("still opening")
-    const c = MemoryClient.proxy(() => delegate)
-    // before swap: disabled
-    expect(await run(c.health())).toBe(false)
-    expect(await run(c.stats().pipe(Effect.flip))).toBeInstanceOf(MemoryClient.MemoryError)
-    // swap in a live (stub) client — the proxy now delegates to it
-    delegate = MemoryClient.stub()
-    expect(await run(c.health())).toBe(true)
-    await run(c.addMemory({ id: "p", kind: "entity", text: "proxied", scope: "global" }))
-    expect((await run(c.stats())).total).toBe(1)
-  })
-})
-
 describe("stub fidelity vs the real engine", () => {
   test("a duplicate id is IGNORED, keeping the FIRST write (engine-measured semantics)", async () => {
     const c = MemoryClient.stub()

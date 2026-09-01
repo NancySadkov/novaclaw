@@ -69,15 +69,6 @@ export function truncateLeft(str: string, len: number): string {
   return "…" + str.slice(-(len - 1))
 }
 
-export function truncateMiddle(str: string, maxLength: number = 35): string {
-  if (str.length <= maxLength) return str
-
-  const ellipsis = "…"
-  const keepStart = Math.ceil((maxLength - ellipsis.length) / 2)
-  const keepEnd = Math.floor((maxLength - ellipsis.length) / 2)
-
-  return str.slice(0, keepStart) + ellipsis + str.slice(-keepEnd)
-}
 
 export function pluralize(count: number, singular: string, plural: string): string {
   const template = count === 1 ? singular : plural

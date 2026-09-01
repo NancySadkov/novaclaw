@@ -29,11 +29,11 @@
  * ⚠️ **`produces` is the SECOND machine-read field and it does not re-open ruling 14** — the full argument
  * is in `recipe-verify.ts`'s header, and the owner already applied its test when admitting `collection`:
  * *what the recipe IS* is fine, *what the recipe is GRANTED* is not. It states the artifacts a finished
- * cook leaves behind, which is how a cook stops being judged by prose (`todo/recipes.md`). It grants
+ * cook leaves behind, which is how a cook stops being judged by prose. It grants
  * nothing and cannot: an entry is a plain relative file name, and declaring one you do not produce marks
  * your OWN recipe NOT WORKING.
  *
- * ⚠️ **No `level` and no `collection` either.** Both are designed but unlanded (`todo/recipes.md`), and
+ * ⚠️ **No `level` and no `collection` either.** Both are designed but unlanded, and
  * both are *instance* decisions rather than artifact ones: a shared recipe's self-declared expertise level
  * is untrusted input, so the artifact may propose and the instance decides, and a proposal may never LOWER
  * the gate. A tool that let a model write `level: normal` today would be the wrong half of that shape.

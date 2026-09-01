@@ -41,7 +41,7 @@ export const MAX_TOTAL_STEPS = 64
 // finish its own reply. An execution step that truncates loses a half-written file; a reasoning step
 // that truncates returns EMPTY (the <think> block never closes, so the parser extracts nothing).
 export const EXECUTION_TOKENS_DEFAULT = 24_576
-// Where reasoning pays (notes/jh-think-stage.md): the wall goes to decomposition quality and to ruts,
+// Where reasoning pays (notes/jh/think-stage.md): the wall goes to decomposition quality and to ruts,
 // not to individual atoms — so the stage is scoped rather than charged for on every step.
 const THINK_ON = ["decompose", "recover"] as const
 /** A budget knob is OFF at 0 (the `attempts: 1 = off` idiom); non-finite/negative is treated as unset. */
@@ -863,8 +863,7 @@ export function runTask(args: RunArgs): Effect.Effect<StrictReport> {
       flush.pipe(Effect.andThen(args.completeOnce(p.system, p.user, maxTokens)))
   const deps: JhEngine.Deps = {
     introspect: withFlush(execTokens),
-    correct: withFlush(execTokens),
-    // The THINK/DO split (notes/jh-think-stage.md): opt-in via a non-zero reasoning budget, and
+    // The THINK/DO split (notes/jh/think-stage.md): opt-in via a non-zero reasoning budget, and
     // scoped to the steps the wall actually goes to — decomposition and recovery, not every atom.
     ...(reasonTokens !== undefined ? { think: withFlush(reasonTokens), thinkOn: THINK_ON } : {}),
     executor: (() => {

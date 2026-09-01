@@ -55,7 +55,6 @@ function escHarness(opts: {
       calls++
       return Effect.succeed(calls === 2 ? compound1() : atomObj()) // call 1 root-atomic → soft-decompose → call 2 compound; rest = run atoms
     },
-    correct: () => Effect.fail({ message: "x" }),
     executor: {
       run: ({ tool, args }) => {
         if (tool === "run") {
@@ -146,7 +145,6 @@ describe("D11/D12 never-dead-end robustness (from the char campaign)", () => {
     // check passes, but taskComplete says NOT done → the root must NOT false-commit (char run46).
     const deps: JhEngine.Deps = {
       introspect: () => Effect.succeed(atomObj()), // always atomic → soft-decompose fails → root runs atomic
-      correct: () => Effect.fail({ message: "x" }),
       executor: { run: () => Effect.succeed({ ok: true, output: "wrong", artifacts: new Map<string, string>() }) },
       runner: { run: () => Effect.succeed({ exitCode: 0, output: "wrong", timedOut: false }) }, // the run check passes
       artifacts: JhArtifact.memory(),
@@ -180,7 +178,6 @@ describe("D11/D12 never-dead-end robustness (from the char campaign)", () => {
         p.user.includes("Is the goal fully achieved?")
           ? Effect.succeed(`{"achieved": false}`)
           : Effect.succeed(steps[i++] ?? atomObj()),
-      correct: () => Effect.fail({ message: "x" }),
       executor: { run: () => Effect.succeed({ ok: true, output: "ran", artifacts: new Map<string, string>() }) },
       runner: { run: () => Effect.succeed({ exitCode: 0, output: "", timedOut: false }) },
       artifacts: JhArtifact.memory(),
@@ -204,7 +201,6 @@ describe("D11/D12 never-dead-end robustness (from the char campaign)", () => {
     let i = 0
     const deps: JhEngine.Deps = {
       introspect: () => Effect.succeed(steps[i++] ?? "garbage"),
-      correct: () => Effect.fail({ message: "x" }),
       executor: { run: () => Effect.succeed({ ok: true, output: "", artifacts: new Map<string, string>() }) },
       runner: { run: () => Effect.succeed({ exitCode: 0, output: "", timedOut: false }) },
       artifacts: JhArtifact.memory(),

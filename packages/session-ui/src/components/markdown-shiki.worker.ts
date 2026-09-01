@@ -1,16 +1,17 @@
 /// <reference lib="webworker" />
 
 import { ShikiStreamTokenizer } from "@shikijs/stream"
-import {
-  bundledLanguages,
-  createHighlighter,
-  getTokenStyleObject,
-  stringifyTokenStyle,
-  type BundledLanguage,
-  type ThemedToken,
-} from "shiki"
+import { createBundledHighlighter, getTokenStyleObject, stringifyTokenStyle, type ThemedToken } from "shiki/core"
+import { createOnigurumaEngine } from "shiki/engine/oniguruma"
+import { bundledLanguages, type BundledLanguage } from "shiki/langs"
 import type { MarkdownToken, MarkdownWorkerRequest, MarkdownWorkerResponse } from "./markdown-worker-protocol"
 import { createLatestWorkerQueue } from "./markdown-worker-queue"
+
+const createHighlighter = createBundledHighlighter({
+  langs: bundledLanguages,
+  themes: {},
+  engine: () => createOnigurumaEngine(import("shiki/wasm")),
+})
 
 type Stream = {
   language: string

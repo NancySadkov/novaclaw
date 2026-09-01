@@ -14,7 +14,7 @@ import type { SessionStore } from "./store"
  * **What a dead host leaves behind, and who re-drives it.**
  *
  * Two kinds of session work are DURABLE while the thing that would run them is IN-MEMORY, so a
- * process restart — a crash, an autoupdate, an ordinary quit — strands both:
+ * process restart — a crash, a binary replacement, an ordinary quit — strands both:
  *
  *   1. **A lease left mid-flight.** `session_execution` rows sit in `starting`/`busy`/`recovering`
  *      with a heartbeat that stopped. Only `recoverStale` reclassifies them into the interrupted /
@@ -206,7 +206,7 @@ export const wakeAbandonedInput = Effect.fn("SessionBootRecovery.wakeAbandonedIn
 
 /**
  * Start both sweeps in the caller's scope. Forked, and each arm is independently non-fatal: boot is
- * exactly where the self-healing law is void (`todo/startup.md`), so a recovery that cannot run must
+ * exactly where the self-healing law is void, so a recovery that cannot run must
  * degrade rather than take the instance down with it.
  */
 export const start = (input: {

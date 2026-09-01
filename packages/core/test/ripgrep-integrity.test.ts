@@ -5,26 +5,25 @@ import path from "node:path"
 import { RipgrepBinary } from "@novaclaw/core/ripgrep/binary"
 
 /**
- * **ripgrep is downloaded from the internet, extracted, `chmod 0755`'d and executed as this agent
- * OS's tree-search engine.** Until 2026-07-30 the only check on that path was
+ * **ripgrep is embedded from a local build-host binary and executed as this agent OS's tree-search
+ * engine.** Until 2026-07-30 the only check on the old acquisition path was
  * `if (bytes.byteLength === 0)` — a swapped release asset, a poisoned trust store or an upstream
  * account compromise was arbitrary code execution inside NovaClaw (`todo/supply-chain.md` §1, the
  * highest-severity finding that audit produced).
  *
- * The fix is a per-triple SHA-256 pin — of the archive, verified **before extraction or publication**, and
- * of the executable, so an `rg` inherited from a pre-pin build is verified too rather than trusted
+ * The fix is a per-triple SHA-256 pin of the executable, so an embedded or inherited `rg` is verified
+ * rather than trusted
  * forever. This file is the mechanical half of it (todo.md ruling 1), and it protects five things
  * that all compile green when broken:
  *   ① a platform triple added to `PLATFORM` with no digest — verification silently skipped for it;
  *   ② `VERSION` bumped without re-pinning — the old release's digests vouching for a new download;
  *   ③ a refusal turned into a fall-through — the guard-shaped no-op this codebase keeps finding;
- *   ④ the shared verified downloader moved *after* the extract — still reads as a checksum, protects
- *      nothing, because by then the archive has been handed to PowerShell/tar;
+ *   ④ a remote acquisition path quietly reappeared;
  *   ⑤ the pre-installed binary short-circuited on `isFile` alone — the shipped shape, which returns
  *      whatever an earlier unverified build left behind.
  *
- * ④ and ⑤ are why this file reads the source. Ordering is not expressible as a type, and the network
- * download that would exercise it for real is exactly what a unit test must not do.
+ * ④ and ⑤ are why this file reads the source. The test must prove the product has no network
+ * acquisition path while both local paths remain digest-gated.
  */
 
 const SOURCE_PATH = path.join(import.meta.dir, "..", "src", "ripgrep", "binary.ts")
@@ -195,45 +194,30 @@ describe("matchesDigest agrees with verifyDigest in every direction", () => {
   })
 })
 
-describe("the download path verifies BEFORE it extracts", () => {
-  // ④/⑤. Every assertion here is on comment-stripped source: prose about verification is not
-  // verification, which is the distinction the finding turned on in the first place.
+describe("the local acquisition paths are verified and never download", () => {
+  // ④/⑤. Every assertion here is on comment-stripped source: prose about verification is not proof.
 
   test("the source is actually loaded", () => {
     expect(SOURCE.length).toBeGreaterThan(500)
-    expect(SOURCE).toContain("BurntSushi/ripgrep/releases/download")
+    expect(SOURCE).toContain("NOVACLAW_RIPGREP_PATH")
   })
 
-  test("the two local verify call sites cover inherited and extracted executables", () => {
-    // Archive verification moved into the shared streaming primitive. The two local calls that remain
-    // are `matchesDigest`'s delegation and the extracted-executable post-condition.
+  test("the two local verify call sites cover embedded and inherited executables", () => {
     expect(SOURCE.match(/verifyDigest\(/g)?.length, "unexpected local verifyDigest(...) call count").toBe(2)
-    expect(SOURCE).toMatch(/verifyDigest\(\s*installed\s*,\s*pin\?\.executable\s*,/)
+    expect(SOURCE).toMatch(/verifyDigest\(\s*bytes\s*,\s*pin\.executable\s*,\s*embedded\s*\)/)
     expect(SOURCE).toMatch(/verifyDigest\(\s*candidate\s*,\s*expected\s*,/)
   })
 
-  test("the archive goes through the pinned shared downloader before extraction", () => {
-    const verifyAt = SOURCE.indexOf("Download.toFile(")
-    expect(verifyAt, "ripgrep bypasses the shared verified downloader").toBeGreaterThan(-1)
-    expect(SOURCE.slice(verifyAt)).toMatch(/integrity:\s*\{\s*sha256:\s*pin\?\.archive\s*\?\?\s*""\s*\}/)
-    const extractAt = SOURCE.indexOf("extract(archive")
-    expect(extractAt, "no extract(archive, …) call in binary.ts").toBeGreaterThan(-1)
-    expect(extractAt, "the archive is extracted before it is verified").toBeGreaterThan(verifyAt)
-  })
-
-  test("the extracted executable is verified before the path is handed out", () => {
-    const extractAt = SOURCE.indexOf("extract(archive")
-    const verifyAt = SOURCE.indexOf("verifyDigest(installed")
-    expect(verifyAt, "the installed executable is never verified").toBeGreaterThan(extractAt)
-    expect(SOURCE.indexOf("return target", verifyAt), "no `return target` after the executable check").toBeGreaterThan(
-      verifyAt,
-    )
+  test("there is no remote downloader or archive extraction path", () => {
+    expect(SOURCE).not.toContain("Download.toFile(")
+    expect(SOURCE).not.toContain("fetch(")
+    expect(SOURCE).not.toContain("extract(archive")
   })
 
   test("the pre-installed binary is digest-gated, not a bare isFile short-circuit", () => {
     // ⑤. The shipped shape was `if (yield* fs.isFile(target)) return target`, which trusts whatever
     // an earlier unverified build left on disk forever. Deleting the check restores it silently.
-    expect(SOURCE).toMatch(/matchesDigest\(\s*existing\s*,\s*pin\?\.executable\s*\)/)
+    expect(SOURCE).toMatch(/matchesDigest\(\s*existing\s*,\s*pin\.executable\s*\)/)
     expect(SOURCE).toContain("fs.readFile(target)")
   })
 })
@@ -247,19 +231,19 @@ describe("the guards bite (negative control on the checkers themselves)", () => 
     expect(pinned).not.toEqual(platform)
   })
 
-  test("the ordering check reports verification after extraction", () => {
+  test("an embedded path without a digest check is visibly incomplete", () => {
     const rogue = stripComments(`
-      yield* extract(archive, config, target)
-      yield* Download.toFile({ url, destination: archive, integrity: { sha256: pin?.archive ?? "" } })
+      const embedded = process.env.NOVACLAW_RIPGREP_PATH
+      if (embedded) return embedded
     `)
-    expect(rogue.indexOf("extract(archive")).toBeLessThan(rogue.indexOf("Download.toFile("))
+    expect(rogue).not.toContain("verifyDigest(")
   })
 
   test("prose about verifying does not count as verifying", () => {
     const rogue = stripComments(`
-      // we use Download.toFile with a pin here, honest
-      yield* extract(archive, config, target)
+      // verifyDigest(bytes, pin.executable, embedded)
+      return embedded
     `)
-    expect(rogue).not.toContain("Download.toFile(")
+    expect(rogue).not.toContain("verifyDigest(")
   })
 })

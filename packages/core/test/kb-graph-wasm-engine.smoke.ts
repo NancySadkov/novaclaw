@@ -155,34 +155,6 @@ describe("WasmMemory (in-process, everywhere)", () => {
     await e.close()
   }, 30_000)
 
-  test("prune evicts by IMPORTANCE tier, not FIFO — deliberate memories outlive bulk ingest", async () => {
-    // Uses an ISOLATED SCOPE on the shared engine rather than opening another WasmMemory: each open
-    // holds its own WASM heap, and enough of them exhausts the JS heap mid-suite.
-    const S = "prunetier"
-    // The deliberate memory is written FIRST (oldest), so a FIFO policy would evict it first.
-    await mem.addMemory({ id: "pt_kept", kind: "entity", text: "The user deliberately remembered this", scope: S })
-    await mem.addMemory({ id: "pt_auto1", kind: "episode", text: "auto noted one", scope: S, source: "auto-extract" })
-    await mem.addMemory({ id: "pt_auto2", kind: "episode", text: "auto noted two", scope: S, source: "auto-extract" })
-    for (let i = 0; i < 3; i++)
-      await mem.addMemory({
-        id: `pt_doc${i}`,
-        kind: "passage",
-        text: `ingested passage ${i}`,
-        scope: S,
-        source: "ingest",
-      })
-
-    // 6 staged, cap 3 ⇒ the 3 least valuable go: the ingested passages (bulk AND re-derivable).
-    expect(await mem.prune({ scope: S, maxStaged: 3 })).toBe(3)
-    const left = new Set((await mem.list({ scopes: [S], limit: 50 })).map((m) => m.id))
-    expect(left.has("pt_kept")).toBe(true) // the OLDEST — FIFO would have killed it first
-    expect([...left].some((id) => id.startsWith("pt_doc"))).toBe(false)
-
-    // Squeeze harder: auto-extract goes before the deliberate memory.
-    expect(await mem.prune({ scope: S, maxStaged: 1 })).toBe(2)
-    expect((await mem.list({ scopes: [S], limit: 50 })).map((m) => m.id)).toEqual(["pt_kept"])
-  }, 30_000)
-
   test("self-heals a stale non-directory at realDir (retired native-sidecar file) instead of bricking", async () => {
     // The retired native sidecar persisted the graph as a single FILE named `graph`; the WASM engine
     // expects that path to be a snapshot DIRECTORY. Opening over the stale file must recover (discard +

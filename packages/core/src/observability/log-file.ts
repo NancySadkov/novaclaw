@@ -7,19 +7,17 @@ import zlib from "node:zlib"
 /**
  * **The log writer: one active segment, gzipped rotations, a bounded directory.**
  *
- * `todo/logging.md` Phase 2, §0.7 Option B — the sidecar owns its own segments, because
- * `electron-log` only exists in the desktop app and the headless instance is the one whose logs
- * matter most.
+ * ⭐ **The sidecar owns its own segments**, rather than delegating to `electron-log`: that library
+ * only exists in the desktop app, and the headless instance is the one whose logs matter most.
  *
  * ── THE RULE, and why this module has no error channel ──────────────────────────────────────────
  *
- * **Logging must never take the instance down.** That rule was violated until 2026-08-07:
- * `observability.ts` piped `Layer.orDie` over `Logger.toFile`, whose error channel is
- * `PlatformError`, so an unwritable `<data>/log` killed the boot — in the one subsystem you most
- * need when a boot is failing. `40223f295` fixed it by DELETING the `orDie` so the type holds the
- * channel empty.
+ * 🔴 **Logging must never take the instance down** — it is the one subsystem you most need when a
+ * boot is failing, so an unwritable `<data>/log` must not be able to kill the boot. That is why
+ * `observability.ts` carries no `Layer.orDie` over the file logger: an `orDie` over an error channel
+ * of `PlatformError` is exactly how the rule was broken once.
  *
- * This module is built so that fix cannot be undone by accident: **no function here fails.** Every
+ * This module is built so that cannot be undone by accident: **no function here fails.** Every
  * syscall is inside a `try`, a failure sets {@link Writer.state} to `unavailable`, names itself once
  * on stderr, and the lines keep flowing to stderr. There is nothing to `orDie` over, because there
  * is no error channel to widen.
@@ -32,20 +30,15 @@ import zlib from "node:zlib"
  *    writer must own rotation — close, rename, reopen, **in that order** — which means owning the
  *    handle.
  *
- *    ⚠️ **`todo/logging.md` §0.10 justifies this with a "Windows rename trap" that DOES NOT
- *    REPRODUCE, measured 2026-08-07 on win32 + bun 1.3.14.** It claims *"Node does not open with
- *    `FILE_SHARE_DELETE` — so an external sweeper renaming `novaclaw.log` out from under the live
- *    writer will fail with `EPERM`/`EBUSY` on Windows"*. Probed both ways — the writer's own
- *    append handle open, and a second reader handle open — and `fs.renameSync` **succeeded** each
- *    time. libuv passes `FILE_SHARE_DELETE`.
- *
- *    ⭐ **The correction makes the rule stronger, not weaker, and it is what the test asserts.**
- *    The hazard is not a loud `EPERM`, it is a SILENT one: a rename succeeds and the open
- *    descriptor follows the file to its new name, so every line written after an external rotation
- *    lands **inside the sealed, about-to-be-gzipped segment** while the fresh `novaclaw.log` stays
- *    empty. An error you can see is a better failure than data in the wrong file. Close-before-
- *    rename is correct on every platform, and `log-file.test.ts` proves the unguarded twin loses
- *    the bytes on this one.
+ *    ⚠️ **The hazard is a SILENT rename, not a loud `EPERM`** — and do not "simplify" the ordering
+ *    on the belief that Windows refuses the rename. It does not: measured 2026-08-07 on win32 +
+ *    bun 1.3.14, `fs.renameSync` **succeeded** with the writer's own append handle open and again
+ *    with a second reader handle open, because libuv passes `FILE_SHARE_DELETE`. What actually goes
+ *    wrong is that the rename succeeds and the open descriptor FOLLOWS the file to its new name, so
+ *    every line written after an external rotation lands **inside the sealed, about-to-be-gzipped
+ *    segment** while the fresh `novaclaw.log` stays empty. An error you can see would be the better
+ *    failure. Close-before-rename is correct on every platform, and `log-file.test.ts` proves the
+ *    unguarded twin loses the bytes on this one.
  * 2. **Its error channel is `PlatformError`** — the boot-killer above.
  * 3. 🔴 **It batches into a `setTimeout` a short-lived process never reaches.** `novaclaw.log` was
  *    empty for the CLI entry point, for *every* event, while a long-lived `serve` flushed fine. A
@@ -81,9 +74,7 @@ import zlib from "node:zlib"
  * jh row TTL) and every one of them converged independently on the same shape: **lazy, on the write
  * path, no timer**. For logs it is cleaner still, because **rotation is itself a write event** — the
  * sweep runs when a segment closes and never otherwise, so a quiet instance does no work and there
- * is no timer to leak. {@link Writer.reclaim} is the entry point the resource-pressure GC ladder
- * calls; this module deliberately grows no free-space probe of its own (ruling 6 — two measurements
- * of one fact).
+ * is no timer to leak.
  */
 
 /**
@@ -102,6 +93,7 @@ export const SEGMENT_BYTES = 8 * 1024 * 1024
 export { TOTAL_BYTES, MAX_AGE_MS } from "./log-bounds"
 import { MAX_AGE_MS, TOTAL_BYTES } from "./log-bounds"
 import { LogSettings } from "./log-settings"
+import { escapeRegExp } from "@novaclaw/schema/text"
 /** Effect's own default. ⚠️ Do not lower it toward 0 — that burns idle CPU (§0.5). */
 export const FLUSH_MS = 1000
 /** Flush early when the buffer gets big, so a burst cannot hold a megabyte of lines hostage. */
@@ -139,7 +131,6 @@ export interface Segment {
   readonly bytes: number
 }
 
-const escapeRegExp = (input: string) => input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
 const sizeOf = (file: string): number => {
   try {
@@ -258,7 +249,7 @@ const gzip = (input: Buffer): Promise<Buffer> =>
 /**
  * Every live writer, flushed synchronously from ONE `process.on("exit")` hook.
  *
- * 🔴 This is the fix for the open defect in `todo/logging.md`: `Logger.toFile` batches into a
+ * 🔴 This is the fix for a measured defect: `Logger.toFile` batches into a
  * `setTimeout`, so a short-lived CLI exits before the batch window and `novaclaw.log` was empty for
  * that entry point for every event. Measured on bun 1.3.14: an `exit` handler DOES run on
  * `process.exit(0)`, and `fs.writeSync` inside one lands — which is why {@link Writer.flush} is
@@ -337,27 +328,19 @@ export class Writer {
     if (this.state.kind === "ok") {
       live.add(this)
       hookExit()
-      // ⚠️ **Rotation alone does not make the 30-day promise true.** At the measured 83 KB/day an
-      // 8 MB segment closes about every 14 weeks, so an instance that is merely *quiet* would keep
-      // segments for months past the age limit.
+      // 🔴 **NEITHER rotation NOR the sweep makes "30 days" a CEILING — it is a retention FLOOR,
+      // and the Settings row must keep saying "at least" (`log-bounds.ts`).** `sweep()` can only
+      // delete ROTATED segments; the active one is never a candidate. At the measured ~83 KB/day an
+      // 8 MB segment closes about every 14 weeks, so a merely *quiet* instance keeps its whole
+      // history in the one file no sweep can reach — measured 2026-08-08, `LogRead.usage` over both
+      // of this machine's real log directories reported `segments: 0`, i.e. neither had ever
+      // rotated. Same shape `trash.ts` states honestly about its own TTL.
       //
-      // 🔴 **AND THE SWEEP DOES NOT FINISH THE JOB EITHER — measured 2026-08-08, and this comment
-      // used to claim otherwise.** It said the `open()` sweep is *"the thing that makes the 30-day
-      // number honest"*. It is not, because `sweep()` can only delete ROTATED segments — the active
-      // one is never a candidate — and `LogRead.usage` over this machine's two real log directories
-      // reports **`segments: 0` for both**: 3 089 922 B over 872.8 h (83 KB/day) and 968 034 B over
-      // 718.9 h (32 KB/day). Neither has ever rotated, so on both of them the entire history lives
-      // in the one file no sweep can reach, and will for ~99 more days.
-      //
-      // What survives is the honest half: **nothing newer than the age limit is deleted, and the
-      // byte ceiling is real** (it totals the whole directory, and the active segment is separately
-      // hard-capped by `ROTATION_STUCK_MULTIPLE`). What does NOT survive is *"about 30 days"* as a
-      // ceiling — it is the *"the TTL is a retention FLOOR, not a deadline"* shape `trash.ts` states
-      // honestly about itself, and `todo/logging.md` said this item *"cannot afford"* it because the
-      // number goes in a user-facing row. The measurement says it has it anyway, so the Settings row
-      // says **"at least"** (`log-bounds.ts`) rather than the code pretending. Changing the rotation
-      // policy to make the ceiling real is a Phase-2 decision with a genuine granularity trade —
-      // filed, not smuggled in here.
+      // What IS true, and is the reason both mechanisms stay: **nothing newer than the age limit is
+      // ever deleted, and the byte ceiling is real** — it totals the whole directory, and the active
+      // segment is separately hard-capped by `ROTATION_STUCK_MULTIPLE`. Making the 30 days a real
+      // ceiling means changing the rotation policy, which carries a genuine granularity trade-off;
+      // do it deliberately, not by tightening a number here.
       //
       // Opening the log IS a write event, so the sweep rides it. This is deliberately the same
       // launch-triggered pattern §0.6 identified in electron-log and told us to copy: no daemon, no
@@ -504,7 +487,7 @@ export class Writer {
    * Close the active segment and open a fresh one. **close → rename → reopen, in that order.**
    *
    * ⚠️ The order is load-bearing for the reason measured in this module's header, which is NOT the
-   * one `todo/logging.md` §0.10 gives: on win32 the rename SUCCEEDS with the handle open, and the
+   * `EPERM`/`EBUSY` the design sketch predicted: on win32 the rename SUCCEEDS with the handle open, and the
    * handle follows the file — so every subsequent line lands in the sealed segment and the fresh
    * `novaclaw.log` stays empty. Silent, not loud.
    *
@@ -652,7 +635,7 @@ export class Writer {
    * Returns bytes freed. Never throws: a retention sweep that can fail a log write would be the
    * housekeeping-breaks-the-user's-operation shape `trash.ts` already refused.
    */
-  sweep(reclaimBytes = 0): number {
+  sweep(): number {
     let freed = 0
     try {
       const cutoff = this.now().getTime() - this.maxAgeMs()
@@ -661,8 +644,7 @@ export class Writer {
       for (const segment of segments) {
         const expired = segment.time < cutoff
         const overBudget = total > this.totalBytes
-        const owed = freed < reclaimBytes
-        if (!expired && !overBudget && !owed) break
+        if (!expired && !overBudget) break
         try {
           fsSync.rmSync(segment.file, { force: true })
         } catch {
@@ -689,18 +671,6 @@ export class Writer {
       // An unreadable log directory is not a reason to fail whatever triggered the sweep.
     }
     return freed
-  }
-
-  /**
-   * The entry point for the resource-pressure GC ladder (§0.9): free at least `bytes` of rotated
-   * history, oldest first. Logs are OUR derived data, so rung 2 may reclaim them without asking —
-   * ⚠️ unlike Trash, which the ladder may only ever ASK about.
-   *
-   * This module deliberately owns no free-space probe: how much pressure exists is the ladder's
-   * measurement, and two measurements of one fact is what ruling 6 forbids.
-   */
-  reclaim(bytes: number): number {
-    return this.sweep(bytes)
   }
 
   /**

@@ -383,7 +383,7 @@ export interface SessionConfig {
 //
 // ⚠️ THREE things it deliberately is NOT, each of which someone will be tempted to add:
 //  · it is not a second attendance flag — an ATTENDED chain is unaffected in both positions. The
-//    "confine bash in EVERY non-YOLO mode, attended included" item (todo/jail.md) needs the MODE as
+//    "confine bash in EVERY non-YOLO mode, attended included" item needs the MODE as
 //    an input to `decideBash`, which is a reshape, not this switch;
 //  · it does not gate reads — host-readable files are available in every permission mode. Safe
 //    mode is per-session and gates host EXECUTION;
@@ -882,7 +882,7 @@ export const forkSessionConfig = <E, R>(
 
 /**
  * The chain ROOT's attendance answer — attendance is a property of who answers at the root
- * (Agent Jail P0b, notes/agent-jail-plan.md §2.1). Same root-ward walk + cycle guard as
+ * (Agent Jail P0b). Same root-ward walk + cycle guard as
  * `resolveSessionConfig`, but it reports the ROOT layer, not the target's resolution.
  *
  * ⚠️ A BROKEN chain is `"unknown"`, not a type (see `RootType`). The paragraph that used to stand
@@ -976,7 +976,7 @@ export const rootSessionType = <E, R>(
 ): Effect.Effect<SessionType, E, R> => rootAttendance(sessionID, getSession).pipe(Effect.map(narrowRootType))
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AUTO MODE — the agent sets its own level and OWNS it (todo/permissions.md).
+// AUTO MODE — the agent sets its own level and OWNS it.
 //
 // The owner's ask: a session where the MODEL raises and lowers its own permission level explicitly,
 // in writing, *acknowledging that it now owns it* — the self-authored-commitment lever. AGENTS.md

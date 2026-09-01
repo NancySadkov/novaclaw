@@ -51,17 +51,12 @@ describe("the tuning component's key set", () => {
     }
   })
 
-  test("⚠️ an unknown switch is ACCEPTED and dropped — registry-wide, and a known defect", () => {
-    // Measured, not intended. `decodeInput` calls `Schema.decodeUnknownEffect(codec)` with no
-    // `onExcessProperty`, so Effect's default (ignore) applies to EVERY struct-codec component: a
-    // write of `{safeMod: true}` — a typo — reports success and changes nothing, which is ruling 2's
-    // failed-mutation-reporting-success. Pinned here so the day someone tightens the registry this
-    // test fails and points at the decision rather than at a mystery.
-    // todo/ecs.md owns it; not fixed here because the option is registry-wide and every component's
-    // callers would have to be checked first.
-    const decoded = Schema.decodeUnknownResult(SessionComponentRegistry.Tuning)({ notASwitch: true })
-    expect(decoded._tag).toBe("Success")
-  })
+  // ⚠️ **An unknown switch is REFUSED on the write path, and that is pinned at the REGISTRY, not
+  // here.** `session-component-registry.test.ts` → *"a write with an unknown key is REFUSED, not
+  // silently dropped"* drives `registry.put` and `registry.validate`, both of which decode with
+  // `onExcessProperty: "error"`, and carries the negative control. A test here could only assert
+  // `Schema.decodeUnknownResult(Tuning)` on a bare codec — which measures Effect's default, not
+  // this product's behaviour, and would stay green whatever the registry did. Do not add one.
 })
 
 describe("the tuning component is declared", () => {

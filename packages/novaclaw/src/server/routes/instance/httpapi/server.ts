@@ -38,7 +38,6 @@ import { Agent } from "@/agent/agent"
 import { Auth } from "@/auth"
 import { Config } from "@/config/config"
 import { Workspace } from "@/control-plane/workspace"
-import { Env } from "@/env"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Format } from "@/format"
 import { Git } from "@/git"
@@ -47,11 +46,10 @@ import { McpAuth } from "@/mcp/auth"
 import { InstanceStore } from "@/project/instance-store"
 import { Vcs } from "@/project/vcs"
 import { Question } from "@/question"
-import { Todo } from "@/session/todo"
 import { Skill } from "@/skill"
 import { SkillDiscovery } from "@novaclaw/core/skill/discovery"
 import { Snapshot } from "@/snapshot"
-import { Storage } from "@/storage/storage"
+import { HostPressure } from "@/storage/host-pressure"
 import { Truncate } from "@/tool/truncate"
 import { Worktree } from "@/worktree"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -136,7 +134,6 @@ import { SessionExecutionWorker } from "@/session-worker/execution"
 import { layer as locationLayer } from "@novaclaw/server/location"
 import { sessionLocationLayer } from "@novaclaw/server/middleware/session-location"
 import { schemaErrorLayer as v2SchemaErrorLayer } from "@novaclaw/server/middleware/schema-error"
-import { workspaceHandlers } from "./handlers/workspace"
 import { instanceContextLayer } from "./middleware/instance-context"
 import { workspaceRoutingLayer } from "./middleware/workspace-routing"
 import { disposeMiddleware, locationDisposerLayer } from "./lifecycle"
@@ -206,7 +203,6 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
     providerHandlers,
     shellHandlers,
     syncHandlers,
-    workspaceHandlers,
   ]),
 )
 
@@ -360,10 +356,9 @@ const app = LayerNode.group([
   SessionReceipt.node,
   Auth.node,
   Config.node,
-  Env.node,
   Git.node,
   Ripgrep.node,
-  Storage.node,
+  HostPressure.node,
   // Demand-loaded local inference. The same global node is injected into every location's model
   // resolver and serves the Instance controls, so there is exactly one llama.cpp child per instance.
   LocalModelRuntime.managerNode,
@@ -374,7 +369,6 @@ const app = LayerNode.group([
   SkillDiscovery.node,
   Question.node,
   PermissionSaved.node,
-  Todo.node,
   SessionProjector.node,
   // 🔴 The reassignment DELIVERY, registered where the sessions and the event bus are.
   //

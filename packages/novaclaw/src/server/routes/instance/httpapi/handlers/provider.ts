@@ -65,7 +65,7 @@ function transportDetail(error: unknown): string {
  * OFF-A — the probe's single round trip, through the SHARED guarded `HttpClient`.
  *
  * ⚠️ This used to be a raw global `fetch`, which meant *Settings → Models → Custom endpoint → Find
- * models* EGRESSED with airgap mode ON — while `/shell/offline` reported 9/9 layers active and
+ * models* EGRESSED with airgap mode ON — while `/shell/offline` reported 8/8 layers active and
  * `offline.ts`'s layer-1 manifest named "probe" as one of the callers riding the chokepoint. The
  * payload can carry an API key (the handler below falls back to the saved provider's
  * `request.body.apiKey`), so what escaped was a credential, not just a URL. Design-principle 4 says
@@ -582,17 +582,12 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
     // shared location-service map for the instance directory (cf. experimental.ts).
     const list = Effect.fn("ProviderHttpApi.list")(function* () {
       const directory = (yield* InstanceState.context).directory
-      return yield* Effect.gen(function* () {
-        const catalog = yield* Catalog.Service
-        const providers = yield* catalog.provider.all()
-        const models = yield* catalog.model.all()
-        const available = yield* catalog.provider.available()
-        return ProviderCatalogResult.listResult({
-          providers,
-          models,
-          connected: available.map((p) => p.id),
-        })
-      }).pipe(Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))))
+      // RF-14-8: the four-call catalog read lives in `ProviderCatalogResult.listCatalog`, shared
+      // with `cli/cmd/models.ts`. Only the directory differs between the two callers, so only this
+      // provision is local.
+      return yield* ProviderCatalogResult.listCatalog.pipe(
+        Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))),
+      )
     })
 
     // B15 (codehamr A8) — the config-drift killer: one GET {baseURL}/models round trip

@@ -46,9 +46,9 @@ const discoveryMessage = (names: ReadonlyArray<string>, kind = ToolDiscovery.RES
 
 const deferred: ReadonlyArray<ToolCatalogue.Source> = [
   {
-    server: "github",
+    server: "tracker",
     definition: new ToolDefinition({
-      name: "github_create_issue",
+      name: "tracker_create_issue",
       description: "Create an issue in a repository",
       inputSchema: {
         type: "object",
@@ -61,9 +61,9 @@ const deferred: ReadonlyArray<ToolCatalogue.Source> = [
 
 describe("ToolDiscovery", () => {
   test("derives callable names only from completed tool_search discovery results in the current transcript", () => {
-    expect([...ToolDiscovery.discovered([discoveryMessage(["github_create_issue"])])]).toEqual(["github_create_issue"])
+    expect([...ToolDiscovery.discovered([discoveryMessage(["tracker_create_issue"])])]).toEqual(["tracker_create_issue"])
     expect([...ToolDiscovery.discovered([])]).toEqual([])
-    expect([...ToolDiscovery.discovered([discoveryMessage(["github_create_issue"], "tool-search-empty")])]).toEqual([])
+    expect([...ToolDiscovery.discovered([discoveryMessage(["tracker_create_issue"], "tool-search-empty")])]).toEqual([])
   })
 })
 
@@ -107,8 +107,8 @@ describe("tool_search", () => {
       expect(limit).toBe(5)
       return Effect.succeed([
         {
-          name: "github_create_issue",
-          server: "github",
+          name: "tracker_create_issue",
+          server: "tracker",
           description: "Create an issue in a repository",
           inputSchema: deferred[0].definition.inputSchema,
           arguments: [{ name: "repository" }, { name: "title" }],
@@ -116,10 +116,10 @@ describe("tool_search", () => {
         },
       ])
     })
-    expect([...allowed!]).toEqual(["github_create_issue"])
+    expect([...allowed!]).toEqual(["tracker_create_issue"])
     expect(output.structured).toMatchObject({
       kind: ToolDiscovery.RESULT_KIND,
-      tools: [{ name: "github_create_issue", input_schema: { type: "object" } }],
+      tools: [{ name: "tracker_create_issue", input_schema: { type: "object" } }],
       categories: [],
     })
     const content = output.content[0]
@@ -135,7 +135,7 @@ describe("tool_search", () => {
     expect(empty.structured).toMatchObject({
       kind: "tool-search-empty",
       message: expect.stringContaining("tool_search found no matching deferred tool"),
-      categories: [{ server: "github", categories: ["issue"] }],
+      categories: [{ server: "tracker", categories: ["issue"] }],
     })
 
     const unavailable = await executeWith(() => Effect.fail(new Error("fts offline")))
@@ -150,8 +150,8 @@ describe("tool_search", () => {
       () =>
         Effect.succeed([
           {
-            name: "github_create_issue",
-            server: "github",
+            name: "tracker_create_issue",
+            server: "tracker",
             description: "x".repeat(2_000),
             inputSchema: deferred[0].definition.inputSchema,
             arguments: [],
@@ -197,7 +197,7 @@ test("tool_call forwards the exact disclosed name and input through the resident
         type: "tool-call",
         id: "call_dispatch",
         name: "tool_call",
-        input: { name: "github_create_issue", input: { repository: "nova", title: "Bug" } },
+        input: { name: "tracker_create_issue", input: { repository: "nova", title: "Bug" } },
       },
       {
         sessionID: SessionV2.ID.make("ses_tool_call"),
@@ -211,6 +211,6 @@ test("tool_call forwards the exact disclosed name and input through the resident
       },
     ),
   )
-  expect(seen).toEqual([{ name: "github_create_issue", input: { repository: "nova", title: "Bug" } }])
+  expect(seen).toEqual([{ name: "tracker_create_issue", input: { repository: "nova", title: "Bug" } }])
   expect(output).toEqual({ structured: { created: true }, content: [{ type: "text", text: "created" }] })
 })

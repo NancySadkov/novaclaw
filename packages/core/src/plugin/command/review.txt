@@ -21,7 +21,7 @@ Based on the input provided, determine which type of review to perform:
 3. **Branch name**: Compare current branch to the specified branch
    - Run: `git diff $ARGUMENTS...HEAD`
 
-4. **PR URL or number** (contains "github.com" or "pull" or looks like a PR number): Review the pull request
+4. **Pull request URL or number** (contains "/pull/" or looks like a pull request number): Review the pull request
    - Run: `gh pr view $ARGUMENTS` to get PR context
    - Run: `gh pr diff $ARGUMENTS` to get the diff
 

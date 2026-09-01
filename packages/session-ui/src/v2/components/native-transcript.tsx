@@ -1133,8 +1133,8 @@ const PERMISSION_LABEL = {
   plan: "Analyze",
   ask: "Ask",
   surgical: "Surgical",
-  bypass: "Build",
-  yolo: "YOLO",
+  bypass: "Modify",
+  yolo: "Admin",
 } as const
 
 function PermissionChangedMessage(props: { message: SessionMessagePermissionChanged }) {

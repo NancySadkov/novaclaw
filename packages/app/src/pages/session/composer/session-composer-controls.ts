@@ -347,7 +347,7 @@ export function createPromptInputController(input: {
 
   /**
    * "Make Default for this Folder" — write this chat's declared stance into the folder's own
-   * `novaclaw.json` (`todo/projects.md`, Tune and Permissions).
+   * `novaclaw.json` (its Tune and Permissions sections).
    *
    * ⚠️ `undefined` rather than a disabled control when there is no folder or no server: a chip that
    * exists but can never do anything is a worse answer than one that is not there.

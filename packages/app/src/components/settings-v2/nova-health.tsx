@@ -11,6 +11,7 @@ import { shellStatus } from "@/utils/fs-api"
 import { ConfinementRows, type ShellStatusWithJail } from "./confinement"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
+import { scopedDirectory } from "@/utils/routing-directory"
 
 /**
  * Nova Health — **the health report**: the one place that answers "is anything wrong with this
@@ -40,8 +41,8 @@ import { SettingsRowV2 } from "./parts/row"
  *
  * Two rules it exists to keep, both easy to undo by accident:
  *
- * 1. **`unknown` is never a tick.** Several readings can legitimately answer "cannot tell" — the
- *    updater flag is unreadable outside the desktop shell, a pressure probe reports `unknown` rather
+ * 1. **`unknown` is never a tick.** Several readings can legitimately answer "cannot tell" — a
+ *    pressure probe reports `unknown` rather
  *    than guessing. Rendering those as healthy is a false report on the one screen someone opens
  *    when they are already worried, so `unknown` gets its own neutral mark and its own words.
  * 2. **Opening this must not cost anything.** The endpoint deliberately gathers no reading that
@@ -144,7 +145,7 @@ export const NovaHealthBoard: Component = () => {
    * instance must reach `ConfinementRows` as "we do not know", which is a state it renders honestly,
    * and never as a throw that the root ErrorBoundary turns into "Something went wrong".
    */
-  const confinementDir = createMemo(() => sync().data.path.directory || sync().data.path.home || "")
+  const confinementDir = createMemo(() => scopedDirectory(sync().data.path))
   const [shell] = createResource(
     () => {
       const conn = connection()

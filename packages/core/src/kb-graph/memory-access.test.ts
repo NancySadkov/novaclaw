@@ -139,7 +139,7 @@ describe("…and the owner of a memory is not locked out of it", () => {
     // `MemoryAccess.owner()` carries no scope filter. Confining the person's own Memory app to one
     // chat would be a different product; the point is that this reach is spelled, not reached by
     // leaving an argument out.
-    expect(MemoryAccess.isUnrestricted(MemoryAccess.owner())).toBe(true)
+    expect(MemoryAccess.owner().scopes).toBeUndefined()
     const seen = await mem.neighbors("G")
     expect(seen.map((n) => n.id).sort()).toEqual(["O", "S"])
   })
@@ -249,12 +249,5 @@ describe("scope arithmetic", () => {
     expect(MemoryAccess.compatible("global", "session:alice")).toBe(true)
     expect(MemoryAccess.compatible("session:alice", "session:alice")).toBe(true)
     expect(MemoryAccess.compatible("session:alice", "agent:lysander")).toBe(false)
-  })
-
-  test("an EMPTY restricted access admits nothing, and is not confused with unrestricted", () => {
-    const none = MemoryAccess.of([])
-    expect(MemoryAccess.isUnrestricted(none)).toBe(false)
-    expect(MemoryAccess.admits(none, "global")).toBe(false)
-    expect(MemoryAccess.admits(MemoryAccess.owner(), "agent:anyone")).toBe(true)
   })
 })

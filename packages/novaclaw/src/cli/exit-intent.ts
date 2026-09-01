@@ -107,7 +107,7 @@ export const childEnv = (env: Record<string, string | undefined> = process.env):
 export type Intent =
   /** Stay down. The watchdog exits too. */
   | { readonly kind: "shutdown" }
-  /** Come back immediately — an autoupdate, or an operator-requested bounce. */
+  /** Come back immediately — a binary replacement, or an operator-requested bounce. */
   | { readonly kind: "restart" }
   /**
    * Come back at an absolute instant.

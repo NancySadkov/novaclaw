@@ -17,7 +17,7 @@ import {
   type ToolDefinition,
   type ToolContent,
 } from "../schema"
-import { isRecord, JsonObject, optionalArray, optionalNull, ProviderShared } from "./shared"
+import { isRecord, JsonObject, optionalArray, optionalNull, ProviderShared, stripSpecialTokens } from "./shared"
 import { OpenAIOptions } from "./utils/openai-options"
 import { Lifecycle } from "./utils/lifecycle"
 import { ToolSchemaProjection } from "./utils/tool-schema"
@@ -100,7 +100,7 @@ const OpenAIChatToolChoice = Schema.Union([
 // member must be reachable, and `text`/`json_schema` are reachable on all four.
 //
 // ⚠️ UNVERIFIED HERE, and it is the live smoke's job: per-engine acceptance is read from vendor
-// docs, not measured. `todo/sidecar-inference.md` records llama.cpp's constraint surface as the
+// docs, not measured. llama.cpp's constraint surface on record is the
 // SERVER FLAGS `--grammar`/`--json-schema`; that the per-REQUEST `response_format` form is honoured
 // by `llama-server` and by the Spark's vLLM has not been observed by anyone on this codebase. An
 // engine that ignores it degrades to today's behaviour (see the "asks, and assumes nothing" tests)
@@ -296,9 +296,8 @@ const RESPONSE_FORMAT_NAME = "novaclaw_response"
  *
  * ⚠️ **This constrains the assistant's CONTENT, not tool-call arguments.** On the OpenAI Chat wire
  * a tool call is constrained by `function.strict` (OpenAI) or by the server's own tool grammar
- * (llama.cpp `--jinja`, vLLM `tool_choice: "required"`), never by `response_format`. The roadmap's
- * "a malformed tool call becomes unrepresentable" is real but is a DIFFERENT field; see
- * `todo/sidecar-inference.md` S5.
+ * (llama.cpp `--jinja`, vLLM `tool_choice: "required"`), never by `response_format`. The goal
+ * "a malformed tool call becomes unrepresentable" is real but is a DIFFERENT field.
  */
 const lowerResponseFormat = Effect.fn("OpenAIChat.lowerResponseFormat")(function* (
   format: NonNullable<LLMRequest["responseFormat"]>,
@@ -406,7 +405,7 @@ const lowerAssistantMessage = Effect.fn("OpenAIChat.lowerAssistantMessage")(func
   //
   // ⚠️ Why HERE and not in `@novaclaw/core` (ruling 6): the answer is per-wire, not shared.
   // Anthropic lowers the same message to a legal `thinking` block carrying the signature it must
-  // echo back, Gemini to `{thought:true}`, Bedrock to `reasoningContent`, and `openai-responses`
+  // echo back, Gemini to `{thought:true}`, and `openai-responses`
   // ALREADY omits it (`lowerReasoning` returns undefined without an itemId) — precedent for this
   // exact drop in this exact layer. A core-side drop would strip all four, and it was rejected for
   // that reason: it turns `session-runner-message.test.ts` red on two round-trip pins that exist to
@@ -706,8 +705,7 @@ const safeParseArgs = (json: string): Record<string, unknown> => {
 // True when the turn's visible text is nothing but whitespace and leaked special-token
 // debris (`<|mask_start|>`, stray `<think>` tags) — the model produced NO answer.
 const debrisOnly = (content: string) =>
-  content
-    .replace(/<\|[^|>]*\|>/g, "")
+  stripSpecialTokens(content)
     .replace(/<\/?think>/g, "")
     .trim().length === 0
 
@@ -765,7 +763,7 @@ const finishEvents = (state: ParserState): ReadonlyArray<LLMEvent> => {
  * The OpenAI Chat protocol — request body construction, body schema, and the
  * streaming-event state machine. Reused by every route that speaks OpenAI Chat
  * over HTTP+SSE: native OpenAI, DeepSeek, TogetherAI, Cerebras, Baseten,
- * Fireworks, DeepInfra, and (once added) Azure OpenAI Chat.
+ * Fireworks and DeepInfra.
  */
 export const protocol = Protocol.make({
   id: ADAPTER,

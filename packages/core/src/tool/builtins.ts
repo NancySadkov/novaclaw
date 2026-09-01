@@ -3,7 +3,6 @@ export * as BuiltInTools from "./builtins"
 import { makeLocationNode } from "../effect/app-node"
 import { Layer } from "effect"
 import { BashTool } from "./bash"
-import { BashJobs } from "./bash-jobs"
 import { ApplyPatchTool } from "./apply-patch"
 import { ConfigureTool } from "./configure"
 import { DefineToolTool } from "./define-tool"
@@ -24,7 +23,6 @@ import { ReadTool } from "./read"
 import { SessionTool } from "./session"
 import { ResourceStatusTool } from "./resource-status"
 import { ReadHexTool } from "./read-hex"
-import { ReadToolFileSystem } from "./read-filesystem"
 import { RecipeTool } from "./recipe"
 import { RegisterAppTool } from "./register-app"
 import { RevertTool } from "./revert"
@@ -45,85 +43,6 @@ import { WaitTool } from "./wait"
 import { WriteTool } from "./write"
 import { WriteHexTool } from "./write-hex"
 import { UpgradeChatTool } from "./upgrade-chat"
-
-/**
- * Composes only the shipped Location-scoped built-in tool transforms.
- * Each tool retains its implementation and focused tests independently. Dynamic
- * MCP and plugin tools later use separate scoped canonical registrations, while
- * provider/model filtering belongs to a future materialization phase rather
- * than this static list. The caller intentionally supplies shared Location
- * services once to this merged set.
- *
- * TODO: Port the remaining launch-follow-up leaves deliberately:
- * parity, task,
- * repo_clone, repo_overview, plan_exit, and Rune/code mode. Keep MCP and plugin
- * transforms separate from this static built-in list.
- */
-export const locationLayer = Layer.mergeAll(
-  ApplyPatchTool.layer,
-  BashTool.layer.pipe(Layer.provide(BashJobs.layer)),
-  // Registered under its own name with no `Tool.withPermission` wrap, for `recipe.ts`'s reason: the
-  // name fallback in `tool.ts` already resolves it, and `validateRegistration` refuses a declaration
-  // that repeats the name. ⚠️ `configure` spends TWO actions rather than one — `configure` for a
-  // consequential key and `configure_privileged` for a privileged one (ruling 4's tiers; see
-  // `configure.ts`) — and neither is declarable through `withPermission`, which carries a single
-  // action. The tiering lives in the asserts, which is where a per-key decision belongs.
-  ConfigureTool.layer,
-  DefineToolTool.layer,
-  // RESIDENT on purpose (no `withDeferred`): the manual's topic NAMES are the index, and a deferred
-  // tool has no prompt presence to carry them. Pages stay out of the prompt; see `docs.ts`.
-  DocsTool.layer,
-  EditTool.layer,
-  GlobTool.layer,
-  GrepTool.layer,
-  JsTool.layer,
-  KbTool.layer,
-  // DEFERRED (see log.ts): a diagnostic reached after something failed, not a per-turn capability,
-  // so it costs no prompt tokens until tool_search discloses it. Same call as resource_status.
-  LogTool.layer,
-  // DEFERRED for the same reason as LogTool, and the pair is deliberate: the log says what broke,
-  // this reaches the state that only lives in SQLite. Writes to config-backed tables are refused
-  // here and sent to `configure`, so the per-setting permission tiers cannot be walked around.
-  DbRegistryTool.layer,
-  MessengerTool.layer,
-  // Auto mode (`tool/permission.ts`). Registered under its own name with no `Tool.withPermission`
-  // wrap, for the same reason `configure` and `recipe` are: the name fallback in `tool.ts` already
-  // makes it answer to `permission`, and `validateRegistration` REFUSES a declaration that repeats
-  // the registration key. ⚠️ Like `configure` it spends a SECOND action — `permission_privileged`,
-  // for the one raise that routes through the ask (a return to `yolo`) — and a second action is not
-  // declarable through `withPermission`, which carries one. The split lives in the assert, which is
-  // where a per-target decision belongs.
-  PermissionTool.layer,
-  ProfileTool.layer,
-  QualityProvisionTool.layer,
-  ReadTool.layer.pipe(Layer.provide(ReadToolFileSystem.layer)),
-  ReadHexTool.layer,
-  // Registered under its own name with no `Tool.withPermission` wrap: the permission fallback in
-  // `tool.ts` already makes a tool answer to the name it is registered under, and
-  // `validateRegistration` REFUSES a declaration that repeats it (that shape reads as a gate while
-  // gating nothing). `recipe.ts` asserts the `recipe` action itself, on `save` only.
-  RecipeTool.layer,
-  SessionTool.layer,
-  ResourceStatusTool.layer,
-  RegisterAppTool.layer,
-  RevertTool.layer,
-  SkillTool.layer,
-  TodoWriteTool.layer,
-  ToolManualTool.layer,
-  ToolCallTool.layer,
-  ToolSearchTool.layer,
-  TrashTool.layer,
-  ComputerTool.layer,
-  WebFetchTool.layer,
-  WebSearchTool.layer,
-  WriteTool.layer,
-  WriteHexTool.layer,
-  ColleagueTool.layer,
-  SpawnTool.layer,
-  ExitTool.layer,
-  WaitTool.layer,
-  UpgradeChatTool.layer,
-)
 
 export const node = makeLocationNode({
   name: "built-in-tools",

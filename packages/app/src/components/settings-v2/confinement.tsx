@@ -12,8 +12,8 @@ import { SettingsExplainV2 } from "./explain"
 import type { BashPlan, ConfinementReason, Enclosure, JailPostureWire } from "@novaclaw/core/agent-jail"
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// Settings → General → "How this machine confines the agent" (todo/jail.md → *A capability probe +
-// an honest posture surface*).
+// Settings → General → "How this machine confines the agent" — *a capability probe + an honest
+// posture surface*.
 //
 // WHY IT EXISTS. On 2026-07-30 the owner made unattended `bash` allowed by DEFAULT and deferred the
 // real OS sandboxes (AppContainer, Seatbelt) to v0.3.0. The stated mitigations are an opt-in Safe
@@ -156,9 +156,9 @@ export const ConfinementRows: Component<{
       {/*
           ONE row, not five. This section used to carry ~5 800 characters across five rows, two of
           which rendered `<span />` as their control — prose wearing a settings row's clothes.
-          Nothing here is a setting, because the core does not implement OS confinement: per
-          `todo/jail.md` the plan is a `set-up-isolation` RECIPE, and the Windows/macOS backends are
-          v0.3. So this states the fact, names what protects the user meanwhile, and stops.
+          Nothing here is a setting, because the core does not implement OS confinement: the plan
+          is a `set-up-isolation` RECIPE, and the Windows/macOS backends are v0.3. So this states
+          the fact, names what protects the user meanwhile, and stops.
 
           It stays at Normal level deliberately: it is a safety-relevant fact about the user's own
           machine, and the anti-obscurantist principle says a lay person must be able to find it.

@@ -234,7 +234,7 @@ describe("AggregateExternalToolSource", () => {
   test("keeps external schemas out of the resident array and unlocks settlement only after discovery", async () => {
     await using tmp = await tmpdir<void>({ init: async () => {} })
     const root = AbsolutePath.make(tmp.path)
-    const base = testBase(root, "prj_deferred", { github_create_issue: mcpTool("created") })
+    const base = testBase(root, "prj_deferred", { tracker_create_issue: mcpTool("created") })
 
     const program = Effect.gen(function* () {
       const service = yield* ToolRegistry.Service
@@ -257,8 +257,8 @@ describe("AggregateExternalToolSource", () => {
         ),
       })
       const before = yield* service.materialize()
-      const after = yield* service.materialize([], undefined, new Set(["github_create_issue"]))
-      expect(before.deferred.map((source) => source.definition.name)).toEqual(["github_create_issue"])
+      const after = yield* service.materialize([], undefined, new Set(["tracker_create_issue"]))
+      expect(before.deferred.map((source) => source.definition.name)).toEqual(["tracker_create_issue"])
       expect(JSON.stringify(after.definitions)).toBe(JSON.stringify(before.definitions))
 
       const input = {
@@ -269,7 +269,7 @@ describe("AggregateExternalToolSource", () => {
           type: "tool-call" as const,
           id: "call-deferred",
           name: "tool_call",
-          input: { name: "github_create_issue", input: {} },
+          input: { name: "tracker_create_issue", input: {} },
         },
       }
       expect((yield* before.settle(input)).result).toMatchObject({

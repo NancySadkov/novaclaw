@@ -457,3 +457,19 @@ const estimateUnstringifiable = (value: unknown, imagePatchPixels: number): numb
     return FALLBACK_SATURATION_TOKENS
   }
 }
+
+/**
+ * A token count, compacted for a badge or a counter ("234", "1.5k", "33k", "1.2M").
+ *
+ * 🔴 **One implementation, because the two it replaces rendered the SAME count differently on the SAME
+ * screen.** The Chats list had this version; the reasoning fold carried a k-only copy with no megabyte
+ * branch, so a 1.2M-token fold read "1200.0k" beside the list's "1.2M", and a 32,768-token count read
+ * "32.8k" in one place and "33k" in the other.
+ *
+ * The precision rule is three significant figures: a tenth is informative at 1.5k and noise at 33k.
+ */
+export function compact(count: number): string {
+  if (count >= 1e6) return `${(count / 1e6).toFixed(count >= 1e7 ? 0 : 1)}M`
+  if (count >= 1e3) return `${(count / 1e3).toFixed(count >= 1e4 ? 0 : 1)}k`
+  return String(count)
+}

@@ -140,7 +140,7 @@ describe("RepositoryCache", () => {
           const cache = yield* RepositoryCache.Service
           const initial = yield* cache.ensure({ reference: fixture.reference })
           yield* Effect.promise(async () => {
-            await git(initial.localPath, "config", "remote.origin.url", "https://github.com/other/repo.git")
+            await git(initial.localPath, "config", "remote.origin.url", "https://git.example.test/other/repo.git")
             await fs.writeFile(path.join(initial.localPath, "stale.txt"), "stale")
           })
 

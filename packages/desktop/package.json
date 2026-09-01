@@ -4,19 +4,20 @@
   "version": "0.1.67",
   "type": "module",
   "license": "SEE LICENSE IN LICENSE",
-  "description": "NovaClaw \u2014 a local-first AI agent OS",
+  "description": "NovaClaw — a local-first AI agent OS",
   "homepage": "https://novaclaw.app",
   "author": {
     "name": "Nancy Sadkov",
-    "email": "112661214+NancySadkov@users.noreply.github.com"
+    "email": "nancy@novaclaw.app"
   },
   "scripts": {
     "typecheck": "bun ../../script/tsgo.ts -b && bun ../../script/tsgo.ts --noEmit -p tsconfig.test.json",
-    "test": "bun test src electron-builder.config.test.ts --only-failures",
+    "test": "bun test src electron-builder.config.test.ts scripts --only-failures",
     "predev": "bun ./scripts/predev.ts",
     "dev": "electron-vite dev",
     "prebuild": "bun ./scripts/prebuild.ts",
     "build": "electron-vite build",
+    "postbuild": "bun ./scripts/sanitize-build-output.ts",
     "preview": "electron-vite preview",
     "package": "electron-builder --config electron-builder.config.ts",
     "package:mac": "electron-builder --mac --config electron-builder.config.ts",
@@ -27,24 +28,23 @@
   "dependencies": {
     "@ladybugdb/wasm-core": "0.18.2",
     "@lydell/node-pty": "catalog:",
-    "@novaclaw/schema": "workspace:*",
     "@zip.js/zip.js": "2.7.62",
     "effect": "catalog:",
     "electron-context-menu": "4.1.2",
     "electron-log": "^5",
     "electron-store": "11.0.2",
-    "electron-updater": "6.8.9",
     "electron-window-state": "^5.0.3",
     "jsonc-parser": "3.3.1",
     "marked": "^15"
   },
   "devDependencies": {
     "@novaclaw/app": "workspace:*",
+    "@novaclaw/schema": "workspace:*",
     "@novaclaw/script": "workspace:*",
     "@novaclaw/ui": "workspace:*",
     "@solid-primitives/i18n": "2.2.1",
     "@solid-primitives/storage": "catalog:",
-    "@solidjs/router": "0.15.4",
+    "@solidjs/router": "catalog:",
     "@types/bun": "catalog:",
     "@types/node": "catalog:",
     "@typescript/native-preview": "catalog:",
@@ -52,7 +52,7 @@
     "electron-builder": "26.15.2",
     "electron-vite": "^5",
     "solid-js": "catalog:",
-    "typescript": "~5.6.2",
+    "typescript": "catalog:",
     "vite": "catalog:"
   },
   "optionalDependencies": {

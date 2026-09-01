@@ -6,7 +6,7 @@ import { ModelV2 } from "../model"
 import { ConfigAnnotation } from "@novaclaw/schema/config-annotation"
 
 // Models-primary capability tier — the single source of truth is `ModelV2.Tier` (schema/model.ts),
-// re-exported here for config authoring. See notes/models-primary-plan.md.
+// re-exported here for config authoring.
 export const Tier = ModelV2.Tier
 export type Tier = ModelV2.Tier
 
@@ -117,7 +117,7 @@ export class Info extends Schema.Class<Info>("ConfigV2.Provider")({
   models: Schema.Record(Schema.String, Model).pipe(Schema.optional),
 }) {}
 
-// The MODELS-PRIMARY model entry (notes/models-primary-plan.md): a top-level `Config.Info.models`
+// The MODELS-PRIMARY model entry: a top-level `Config.Info.models`
 // map keys these by model id, each carrying its OWN endpoint `url` + params + `tier` — the flat
 // successor to the provider-nested `providers.<id>.models.<id>` shape (pre-detachment residue). Reuses
 // every field of the nested `Model` above and adds `url` (the served-from endpoint, the vision's

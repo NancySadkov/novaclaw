@@ -11,7 +11,7 @@ import { Schema } from "effect"
 // CAP on it (the reasoning-budget controller stops monitoring and the model reasons to its own stop).
 // It exists so a budget change can be A/B'd in one chat without touching the instance default.
 // `surgicalEdits` and `askBeforeChanges` are the two former permission MODES, demoted to switches so the
-// mode picker can stay three plain postures (Analyze · Build · YOLO). Both default OFF: they NARROW the
+// mode picker can stay three plain postures (Analyze · Modify · Admin). Both default OFF: they NARROW the
 // active mode (deny a full-file overwrite / turn changes into consent) and never widen it.
 // `safeMode` is the third of that kind and the opt-in half of the owner's 2026-07-30 directive
 // (*"unattended bash should be allowed by default, unless the user have enabled safe mode in tuning"*):

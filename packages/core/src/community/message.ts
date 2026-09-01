@@ -5,7 +5,7 @@ import { Effect, Schema } from "effect"
 import { InstanceIdentityStore } from "../instance-identity-store"
 
 /**
- * Community P4 — the channel message (`todo/community-p2p.md`).
+ * Community P4 — the channel message (`notes/spec/community-p2p.md`).
  *
  * The owner's shape: `(Channel_Name, InstanceId, Date, Message)`, broadcast to whoever subscribes.
  * There is no moderator and no server, so **the signature is the only thing that makes any of it

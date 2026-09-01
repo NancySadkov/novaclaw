@@ -189,12 +189,12 @@ export function AgentConfigDialog(props: {
     const chosen = model()
     if (chosen !== undefined) return chosen
     const bound = agent()?.model
-    return bound ? modelRef({ providerID: bound.providerID, modelID: bound.id }) : ""
+    return bound ? modelRef(bound) : ""
   }
   const boundTier = createMemo(() => {
     const ref = parseModelRef(modelValue())
     if (ref === undefined) return undefined
-    const found = models.list().find((item) => item.id === ref.modelID && item.provider.id === ref.providerID) as
+    const found = models.list().find((item) => item.id === ref.id && item.provider.id === ref.providerID) as
       | { tier?: unknown }
       | undefined
     return isTier(found?.tier) ? found.tier : undefined
@@ -659,7 +659,7 @@ export function AgentConfigDialog(props: {
               </option>
               <For each={models.list()}>
                 {(item) => {
-                  const ref = modelRef({ providerID: item.provider.id, modelID: item.id })
+                  const ref = modelRef({ providerID: item.provider.id, id: item.id })
                   return (
                     <option value={ref} selected={modelValue() === ref}>
                       {item.name ?? item.id}

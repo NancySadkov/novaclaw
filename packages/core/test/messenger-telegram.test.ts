@@ -5,7 +5,7 @@ import type { FetchLike } from "@novaclaw/core/messenger/driver/telegram"
 import type { InboundEvent } from "@novaclaw/core/messenger/driver"
 import { it } from "./lib/effect"
 
-// P1 gate (notes/messenger-plan.md §8): the Telegram bot driver against a FAKE Bot API server —
+// P1 gate: the Telegram bot driver against a FAKE Bot API server —
 // getUpdates→normalize, sendMessage→chunk+call shape, self-echo tagging, durable offset advance.
 // Live clock: real promises (fake fetch) + a forked poll loop + a queue.
 

@@ -11,7 +11,7 @@
  * decoded it. A law illustrated by an example nobody exercised is how a knob ends up in the wrong
  * place while the doc says otherwise."*
  *
- * The item is v0.2.0 4.1 / `todo/v0.2.0-prep.md` A13.5, and the observation behind it is that our
+ * The item is v0.2.0 ruling 4.1, and the observation behind it is that our
  * schemas ALREADY carry the descriptions the settings UI renders. One description string, three
  * consumers — UI, agent, docs — and no second source to drift.
  *
@@ -522,7 +522,7 @@ export const overview = (): readonly Key[] => keys().map((name) => key(name, 0)!
 
 /**
  * **Every path in `Config.Info` that holds a credential**, exhaustively — the answer to
- * `todo/adoption.md` A3's operator question *what can this agent reach?*, and the ledger
+ * the operator question *what can this agent reach?*, and the ledger
  * `test/config-projection.test.ts` pins so that adding or dropping a marker is a visible decision.
  *
  * Walks the whole tree rather than the `describe` children, because a marker under an array element

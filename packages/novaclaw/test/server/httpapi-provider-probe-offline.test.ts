@@ -2,7 +2,7 @@
 //
 // THE BUG THIS PINS (found 2026-07-31): `handlers/provider.ts`'s probe used a raw global `fetch`,
 // so with offline/airgap mode ON, typing a WAN endpoint into Settings → Models → Custom endpoint and
-// clicking *Find models* EGRESSED — while `/shell/offline` reported 9/9 layers active and
+// clicking *Find models* EGRESSED — while `/shell/offline` reported 8/8 layers active and
 // `core/src/offline.ts`'s layer-1 manifest named "probe" among the callers riding the shared
 // chokepoint. The payload can carry an API key (the handler falls back to the saved provider's
 // `request.body.apiKey`), so what left the machine was a credential, not just a URL. That is

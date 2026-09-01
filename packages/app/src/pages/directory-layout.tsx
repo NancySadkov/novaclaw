@@ -1,11 +1,8 @@
 import { DataProvider } from "@novaclaw/session-ui/context"
-import { showToast } from "@/utils/toast"
 import { base64Encode } from "@novaclaw/core/util/encode"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import { type Accessor, createEffect, createMemo, createResource, onCleanup, type ParentProps, Show } from "solid-js"
-import { useLanguage } from "@/context/language"
 import { LocalProvider } from "@/context/local"
-import { SDKProvider } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { decode64 } from "@/utils/base64"
 import { Schema } from "effect"
@@ -83,43 +80,4 @@ export function decodeDirectory(dir: string): ProjectDirString | undefined {
   if (!decoded) return
   if (!/^(?:[A-Za-z]:[\\/]|\/)/.test(decoded)) return
   return ProjectDirString.make(decoded)
-}
-
-export default function Layout(props: ParentProps) {
-  const params = useParams()
-  const language = useLanguage()
-  const navigate = useNavigate()
-  let invalid = ""
-
-  const resolved = createMemo(() => {
-    if (!params.dir) return ""
-    return decodeDirectory(params.dir) ?? ""
-  })
-
-  createEffect(() => {
-    const dir = params.dir
-    if (!dir) return
-    if (resolved()) {
-      invalid = ""
-      return
-    }
-    if (invalid === dir) return
-    invalid = dir
-    showToast({
-      variant: "error",
-      title: language.t("common.requestFailed"),
-      description: language.t("directory.error.invalidUrl"),
-    })
-    navigate("/", { replace: true })
-  })
-
-  return (
-    <Show when={resolved()} keyed>
-      {(resolved) => (
-        <SDKProvider directory={resolved}>
-          <DirectoryDataProvider directory={resolved}>{props.children}</DirectoryDataProvider>
-        </SDKProvider>
-      )}
-    </Show>
-  )
 }

@@ -3,7 +3,6 @@ import { createEffect, createMemo, createResource, createSignal, For, on, onClea
 import type { LogReadResult } from "@novaclaw/sdk/v2/types"
 import type { SessionPresenceSnapshot } from "@novaclaw/sdk/v2/client"
 import { Icon } from "@novaclaw/ui/v2/icon"
-import { GoldGlyph } from "@/components/gold-glyph"
 import { instanceFetch } from "@/utils/instance-fetch"
 import { useGlobal } from "@/context/global"
 import { useServer, ServerConnection } from "@/context/server"
@@ -18,10 +17,11 @@ import { contextTurns, formatContextFinding, formatContextTokens } from "./debug
 import { debugPresenceBusy, debugPresenceCell, debugPresenceOrphanText, debugPresenceOrphans } from "./debug-presence"
 import { VIEWER_TTL_SECONDS } from "./session/session-presence"
 import { useSettingsDialog } from "@/components/settings-dialog"
-import { AppPage } from "@/components/app-page"
+import { AppPage, AppPageHeader } from "@/components/app-page"
 import { ExpertiseGate } from "@/components/expertise-gate"
 import { RequiresLevel } from "@/context/expertise"
 import { useLanguage } from "@/context/language"
+import { instanceGlobalDirectory } from "@/utils/routing-directory"
 
 // The Debug app (dependability P5) — the Developer-mode diagnostic surface. Most panels are
 // observational; the capability panel has one explicit recovery action that retries a cached startup
@@ -200,10 +200,10 @@ function DebugAppPage() {
     const conn = focused()
     if (!conn) return undefined
     const path = global.ensureServerCtx(conn).sync.data.path
-    return path?.home || path?.directory || ""
+    return instanceGlobalDirectory(path)
   }
   // Where the INSTANCE's own log lives. `GET /instance` already reports it (`path.log`), which is
-  // the answer to todo/logging.md §0.6's *"the desktop GUESSES where the sidecar's logs are"* — ask
+  // the answer to *"the desktop GUESSES where the sidecar's logs are"* — ask
   // the instance, never rebuild the path from environment guesses.
   const serverLogPath = () => {
     const conn = focused()
@@ -292,7 +292,7 @@ function DebugAppPage() {
     return contextTurns(global.ensureServerCtx(conn).sync.nativeMessages.messages(row.id) ?? [])
   })
 
-  // ── the error log as a READER (todo/logging.md 3f) ──────────────────────────────────────────
+  // ── the error log as a READER ───────────────────────────────────────────────────────────────
   //
   // 3f asks this panel to gain filters and a copyable line for a bug report rather than growing a
   // second viewer beside it. Two things about what it filters, both worth stating because both are
@@ -354,7 +354,7 @@ function DebugAppPage() {
       .catch(() => showToast({ variant: "error", title: "Copy failed" }))
   }
 
-  // ── the SERVER's log (todo/logging.md 3f — the half that was blocked) ───────────────────────
+  // ── the SERVER's log (the half that was blocked) ────────────────────────────────────────────
   //
   // 3f shipped the panel above without server lines and recorded why: the read route's only legal
   // home is `/api/*` (ruling 11 pins the legacy surface shrink-only) and `formatLines` reaches
@@ -469,11 +469,7 @@ function DebugAppPage() {
 
   return (
     <AppPage class="flex flex-col overflow-hidden">
-      <div class="flex items-center gap-2 border-b border-v2-border-border-base px-4 py-3">
-        <GoldGlyph name="debug" class="size-5" />
-        <span class="text-[14px] font-semibold text-v2-text-text-base">Debug</span>
-        <span class="text-[12px] text-v2-text-text-faint">diagnostics and recovery</span>
-      </div>
+      <AppPageHeader dense glyph="debug" title="Debug" hint="diagnostics and recovery" />
       <div class="min-h-0 flex-1 overflow-y-auto">
         {/* ── Connection ─────────────────────────────────────────────────────────────── */}
         <div class={section}>
@@ -803,7 +799,7 @@ function DebugAppPage() {
           </div>
         </div>
 
-        {/* ── Instance log (todo/logging.md 3f, server half) ─────────────────────────── */}
+        {/* ── Instance log (the server half) ─────────────────────────────────────────── */}
         <div class={section} data-panel="server-log">
           <div class={heading}>
             <span class={title}>Instance log</span>
@@ -1012,9 +1008,7 @@ function DebugAppPage() {
                                 data-session={row.id}
                                 data-attached={String(cell.attached)}
                                 data-unverified={cell.unverified ? "true" : "false"}
-                                class={
-                                  cell.attached > 0 ? "text-v2-text-text-muted" : "text-v2-text-text-faint"
-                                }
+                                class={cell.attached > 0 ? "text-v2-text-text-muted" : "text-v2-text-text-faint"}
                                 title={cell.title}
                               >
                                 {cell.text}

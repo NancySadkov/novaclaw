@@ -1,6 +1,6 @@
 export * as CommunityTransport from "./transport"
 
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { CommunityChannels } from "./channels"
 import { CommunityContacts } from "./contacts"
@@ -15,7 +15,7 @@ import { CommunityRoute } from "./route"
 import { Offline } from "../offline"
 
 /**
- * Community P2 — the seam a transport plugs into (`todo/community-p2p.md`).
+ * Community P2 — the seam a transport plugs into (`notes/spec/community-p2p.md`).
  *
  * 🔴 This exists so ONE unmeasurable number stops blocking six phases. Choosing between iroh and
  * libp2p rests on cross-NAT success, which cannot be measured from a single machine — but that
@@ -146,6 +146,60 @@ export const answerTooLarge = (
 ): boolean => {
   const declared = Number(headers["content-length"])
   return !Number.isFinite(declared) || declared > ceiling
+}
+
+/**
+ * Dial one peer, decode its answer, and answer `undefined` for every way that can fail. THE one
+ * implementation — `sync.ts` and `search.ts` each had their own until 2026-09-01 (RF-09-5).
+ *
+ * 🔴 **The constant living here was not enough, and that is the lesson this module keeps recording.**
+ * `MAX_PEER_RESPONSE_BYTES` above was moved here precisely so two dialling files could not drift on
+ * the ceiling — and they drifted anyway, because the FUNCTION stayed duplicated: `search.ts` called
+ * `answerTooLarge(headers)` with no argument, taking the 4 MB sync-page default for an answer of a
+ * few hundred channel names. A shared constant that each caller may forget to pass is a shared
+ * constant in name only. Both the rule AND the call now live in one place.
+ *
+ * ⚠️ **Every failure collapses to `undefined` on purpose.** A peer that is offline, slow, speaking a
+ * different version, over its ceiling or answering unparseable JSON is the ORDINARY case out here,
+ * and none of it may abort the caller — a search is asking several peers at once, and one bad
+ * answer must not lose the others. Callers turn `undefined` into their own empty value.
+ * ⚠️ That is also why this returns no reason: it is not a mutation, so ruling 2 is not in play. A
+ * caller that needs to TELL someone a dial failed must not use this.
+ */
+export const askPeerJson = <A, I>(input: {
+  readonly http: HttpClient.HttpClient
+  readonly route: string
+  readonly path: string
+  readonly schema: Schema.Codec<A, I>
+  readonly timeoutMs: number
+  /** The limit for THIS route. Required — the default is what drifted; make every caller state it. */
+  readonly ceilingBytes: number
+  readonly body?: unknown
+  readonly method?: "POST" | "GET"
+}): Effect.Effect<A | undefined> => {
+  const url = `${input.route.replace(/\/+$/, "")}${input.path}`
+  const request =
+    (input.method ?? "POST") === "GET"
+      ? HttpClientRequest.get(url)
+      : HttpClientRequest.post(url).pipe(HttpClientRequest.bodyJsonUnsafe(input.body))
+  return input.http.execute(request).pipe(
+    Effect.timeout(input.timeoutMs),
+    Effect.flatMap((response) =>
+      /**
+       * ⚠️ Refused on the DECLARED length, before the body is read — the only place the check can
+       * happen before the allocation it exists to prevent. An answer with no declared length is
+       * refused for the same reason the inbound limiter refuses one: every honest responder here is
+       * a NovaClaw instance answering with a JSON string, which always sets it, and a peer that
+       * omits it is asking us to read an unknown quantity on trust.
+       */
+      answerTooLarge(response.headers, input.ceilingBytes)
+        ? Effect.fail(new Error("peer answer too large"))
+        : response.json,
+    ),
+    Effect.flatMap((json) => Schema.decodeUnknownEffect(input.schema)(json)),
+    Effect.map((value): A | undefined => value),
+    Effect.catchCause(() => Effect.succeed(undefined)),
+  )
 }
 
 /**

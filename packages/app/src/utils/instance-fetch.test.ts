@@ -11,11 +11,11 @@ import {
   instanceUrl,
 } from "@/utils/instance-fetch"
 import { MessengerApiError, messengerDrivers, messengerUpdateAccount } from "@/utils/messenger-api"
-import { listSchedules, removeSchedule } from "@/utils/calendar-api"
+import { createSchedule, listSchedules, removeSchedule, updateSchedule } from "@/utils/calendar-api"
 import { adhocDiscard, fsWrite, switchFeature } from "@/utils/fs-api"
 import { discoverInstances } from "@/utils/instance-discovery"
 import { memoryList } from "@/utils/memory-api"
-import { runRecipe } from "@/utils/recipe-api"
+import { importRecipeArchive, MAX_RECIPE_ARCHIVE_BYTES, recipeArchive, runRecipe } from "@/utils/recipe-api"
 import { registryRows } from "@/utils/registry-api"
 import { schedulerSnapshot } from "@/utils/scheduler-api"
 import { fetchPendingPrompts } from "@/utils/session-pending-api"
@@ -36,7 +36,7 @@ import { fetchPendingPrompts } from "@/utils/session-pending-api"
  * pinned BY NAME, an unpinned offender fails outright, and a pin the tree no longer justifies fails
  * with "delete the line" so un-pinning is mandatory rather than optional.
  *
- * ⚠️ **Why this specific invariant, and why now.** `todo/v0.2.0-prep.md` schedules the collapse
+ * ⚠️ **Why this specific invariant, and why now.** The collapse is scheduled
  * *before* P2P token rotation, because rotating the instance token with nine copies of the
  * `Authorization` block means nine edits, and a missed one does not fail loudly — it 401s one app
  * screen. The third ledger below is therefore the real deliverable: the written-down list of every
@@ -413,12 +413,33 @@ describe("every collapsed client still puts the same request on the wire", () =>
     return { url: seen.url, method: seen.init?.method ?? "GET", headers, body: seen.init?.body }
   }
 
-  test("calendar-api -> GET /api/calendar/schedule, instance-global, no directory", async () => {
+  test("calendar-api -> instance-global reads carry no directory", async () => {
     const sent = await wire(() => listSchedules(server), { status: 200, body: [] })
     expect(sent.url).toBe("http://instance.test:4096/api/calendar/schedule")
     expect(sent.method).toBe("GET")
     expect(sent.headers.Authorization).toBe(auth)
     expect(sent.headers["content-type"]).toBe("application/json")
+  })
+
+  test("calendar-api -> create/update route the ambient directory in a header, outside the schedule body", async () => {
+    const recurrence = { kind: "daily" as const, time: { hour: 9, minute: 0 } }
+    const created = await wire(() => createSchedule(server, "C:/work/Календарь", { recurrence, prompt: "review" }), {
+      status: 200,
+      body: {},
+    })
+    expect(created.url).toBe("http://instance.test:4096/api/calendar/schedule")
+    expect(created.method).toBe("POST")
+    expect(created.headers["x-novaclaw-directory"]).toBe(encodeURIComponent("C:/work/Календарь"))
+    expect(created.body).toBe(JSON.stringify({ recurrence, prompt: "review" }))
+
+    const updated = await wire(() => updateSchedule(server, "/work/current", "sch 1", { agent: "nova" }), {
+      status: 200,
+      body: {},
+    })
+    expect(updated.url).toBe("http://instance.test:4096/api/calendar/schedule/sch%201")
+    expect(updated.method).toBe("PATCH")
+    expect(updated.headers["x-novaclaw-directory"]).toBe(encodeURIComponent("/work/current"))
+    expect(updated.body).toBe(JSON.stringify({ agent: "nova" }))
   })
 
   test("calendar-api -> DELETE tolerates the declared 204 rather than throwing on an empty body", async () => {
@@ -432,6 +453,69 @@ describe("every collapsed client still puts the same request on the wire", () =>
     expect(sent.url).toBe("http://instance.test:4096/api/recipe/a%20b/run")
     expect(sent.method).toBe("POST")
     expect(sent.body).toBe(JSON.stringify({ directory: "/w" }))
+  })
+
+  test("recipe-api -> ZIP upload/download keep remote routing, auth, and raw bytes", async () => {
+    const original = globalThis.fetch
+    const seen: Array<{ url: string; init?: RequestInit }> = []
+    const downloaded = Uint8Array.of(0x50, 0x4b, 3, 4, 0, 255)
+    globalThis.fetch = ((url: URL | RequestInfo, init?: RequestInit) => {
+      seen.push({ url: String(url), init })
+      return Promise.resolve(
+        seen.length === 1
+          ? new Response(downloaded, { status: 200, headers: { "content-type": "application/zip" } })
+          : json({ slug: "arrived" }, 200),
+      )
+    }) as unknown as typeof globalThis.fetch
+    try {
+      const abort = new AbortController()
+      expect(await recipeArchive(server, "folder one", { signal: abort.signal, timeoutMs: 1_000 })).toEqual(downloaded)
+      expect(
+        (await importRecipeArchive(server, downloaded, { slug: "copy one", signal: abort.signal, timeoutMs: 1_000 }))
+          .slug,
+      ).toBe("arrived")
+    } finally {
+      globalThis.fetch = original
+    }
+
+    expect(seen[0]?.url).toBe("http://instance.test:4096/api/recipe/folder%20one/archive")
+    const downloadHeaders = new Headers(seen[0]?.init?.headers)
+    expect(downloadHeaders.get("authorization")).toBe(auth)
+    expect(downloadHeaders.get("accept")).toBe("application/zip")
+    expect(seen[0]?.init?.signal).toBeInstanceOf(AbortSignal)
+    expect(seen[1]?.url).toBe("http://instance.test:4096/api/recipe/archive?slug=copy+one")
+    const uploadHeaders = new Headers(seen[1]?.init?.headers)
+    expect(uploadHeaders.get("authorization")).toBe(auth)
+    expect(uploadHeaders.get("content-type")).toBe("application/zip")
+    expect(seen[1]?.init?.body).toBe(downloaded)
+    expect(seen[1]?.init?.signal).toBeInstanceOf(AbortSignal)
+  })
+
+  test("recipe-api -> a lengthless oversized download is cancelled before one huge allocation", async () => {
+    const original = globalThis.fetch
+    let cancelled = false
+    const chunk = new Uint8Array(MAX_RECIPE_ARCHIVE_BYTES / 2 + 1)
+    globalThis.fetch = (() =>
+      Promise.resolve(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(chunk)
+              controller.enqueue(chunk)
+            },
+            cancel() {
+              cancelled = true
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/zip" } },
+        ),
+      )) as unknown as typeof globalThis.fetch
+    try {
+      await expect(recipeArchive(server, "too-large")).rejects.toThrow(/over 32 MB/)
+    } finally {
+      globalThis.fetch = original
+    }
+    expect(cancelled).toBe(true)
   })
 
   test("fs-api -> the write endpoints route `directory` as a QUERY param", async () => {
@@ -629,20 +713,21 @@ export function stalePins(
 }
 
 /**
- * **The raw-`fetch` ledger, pinned 2026-07-31.** Nine files in `utils/` held 11 `fetch(` calls; all
- * eleven are gone. What remains is ONE file outside this folder.
+ * **The raw-`fetch` ledger, pinned 2026-07-31 — and EMPTY since 2026-09-01.** Nine files in `utils/`
+ * held 11 `fetch(` calls; all eleven are gone. The tenth client, `apps/persisted.ts` (`GET /app`,
+ * the persisted app-registry manifests), sat outside `utils/` with its own base-URL join and its own
+ * `Authorization` block — the copy a P2P token rotation would miss. It now calls `instanceFetch`,
+ * so its line is deleted, as this ledger's own shrink-only rule requires.
+ *
+ * ⚠️ With the list empty, the "can only SHRINK" test below is vacuous — nothing is pinned, so
+ * nothing can go stale. The test that carries the weight is the one above it, which is now at FULL
+ * strength: every file in `packages/app/src` except the seam must be free of `fetch(`, with zero
+ * exceptions. Do not repopulate this array to make room for a new client; that is the offence it
+ * detects.
  *
  * This list may only ever get SHORTER.
  */
-const RAW_FETCH_OFFENDERS: readonly string[] = [
-  // The TENTH raw-fetch client, and the reason the roadmap's "nine … in app/src/utils" undercounts
-  // the rotation surface it was worried about: `GET /app` (the persisted app-registry manifests)
-  // carries its own base-URL join and its own `Authorization` block, outside `utils/` where nobody
-  // looking at the nine would find it. It is not in this change's scope (a sibling worker's round
-  // owns nothing here, but the file was outside the assigned set); folding it onto `instanceFetch`
-  // is a ~10-line edit and deletes this line.
-  "apps/persisted.ts",
-]
+const RAW_FETCH_OFFENDERS: readonly string[] = []
 
 /**
  * **The instance-credential ledger, pinned 2026-07-31 — the P2P token-rotation checklist.**
@@ -657,9 +742,7 @@ const CREDENTIAL_SITES: readonly string[] = [
   "utils/server.ts",
   // (2) Applies it for every raw fetch. The seam. Not residue.
   SEAM,
-  // (3) RESIDUE — goes away with `apps/persisted.ts` above.
-  "apps/persisted.ts",
-  // (4) LEGITIMATE and expected to stay: a browser WebSocket cannot carry an Authorization header,
+  // (3) LEGITIMATE and expected to stay: a browser WebSocket cannot carry an Authorization header,
   //     so the pty terminal puts the same token in the URL. It cannot use `instanceHeaders`, but it
   //     absolutely must be on the rotation checklist — which is the whole point of writing the list
   //     down instead of grepping for it.
@@ -755,9 +838,10 @@ describe("all instance HTTP goes through one module, and the exception list can 
 
   test("the raw-fetch ledger is exactly today's measured residue", () => {
     // Pinned as a MEASUREMENT: the honest answer to "how many raw clients are left". It was 10 on
-    // 2026-07-31; folding `apps/persisted.ts` in is supposed to fail here, and lowering this number
-    // is how that removal gets recorded.
-    expect(RAW_FETCH_OFFENDERS.length, "the residue moved — recount and update this pin").toBe(1)
+    // 2026-07-31 and 1 after the nine in `utils/` collapsed; folding `apps/persisted.ts` in was
+    // supposed to fail here, and it did (2026-09-01). It is 0 now — the residue is gone, and this
+    // pin exists so that a NEW exception has to be recorded on purpose rather than appended.
+    expect(RAW_FETCH_OFFENDERS.length, "the residue moved — recount and update this pin").toBe(0)
   })
 })
 
@@ -787,7 +871,8 @@ describe("the P2P token-rotation surface is a written-down list, not a grep", ()
 
   test("the ledger has no duplicate lines and is the measured size", () => {
     expect(new Set(CREDENTIAL_SITES).size).toBe(CREDENTIAL_SITES.length)
-    expect(CREDENTIAL_SITES.length, "the rotation surface moved — recount and update this pin").toBe(4)
+    // 4 until 2026-09-01, when `apps/persisted.ts` stopped deriving its own header.
+    expect(CREDENTIAL_SITES.length, "the rotation surface moved — recount and update this pin").toBe(3)
   })
 })
 

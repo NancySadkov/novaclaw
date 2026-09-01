@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { SessionStatus } from "@novaclaw/sdk/v2/client"
 import { isSessionWorking } from "./session-working"
 
-// Ported from https://github.com/NancySadkov/novaclaw/pull/10 by @DassaultFalconKing, which found
+// Ported from outside contribution #10 by @DassaultFalconKing, which found
 // that an `exited` session read as working forever. The upstream fix patched the two call sites;
 // this pins the behaviour on the one shared predicate they were collapsed onto.
 

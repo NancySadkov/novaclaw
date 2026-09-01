@@ -9,9 +9,8 @@ import type { Driver } from "./driver"
 // future third-party platform). The static registry (drivers.ts) composes `builtin ∪ external`, so
 // an novaclaw-side / plugin replacement adds transports WITHOUT core depending on novaclaw or
 // importing a heavy / ToS-gray library. Default impl is EMPTY → no behavior change until something
-// replaces it. This is the notes/messenger-plan.md §3.6 mechanism the plan reserved ("the same
-// dependency-inversion trick as tools: an ExternalDriverSource service that plugins/MCP contribute
-// into; cf. external-tool-source.ts; not built until asked for").
+// replaces it. The mechanism is deliberately the same dependency-inversion trick as tools — an
+// ExternalDriverSource service that plugins/MCP contribute into; cf. external-tool-source.ts.
 //
 // ⚠️ GLOBAL, not location-scoped (unlike the tool/command sources): accounts + the gateway are
 // instance-wide, so drivers are too. The contributed set is read once when the driver registry is

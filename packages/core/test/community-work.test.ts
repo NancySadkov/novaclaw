@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { CommunityWork } from "@novaclaw/core/community/work"
 
 /**
- * Community P5 — proof-of-work per message (`todo/community-p2p.md`).
+ * Community P5 — proof-of-work per message (`notes/spec/community-p2p.md`).
  *
  * **Measured 2026-08-14** on this machine, which is how `DEFAULT_DIFFICULTY` was chosen rather than
  * guessed:

@@ -28,7 +28,6 @@ import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { SessionContextUsage } from "@/components/session-context-usage"
 import { useCommand } from "@/context/command"
-import { usePermission } from "@/context/permission"
 import { useLanguage } from "@/context/language"
 import { useExpertise } from "@/context/expertise"
 import {
@@ -174,7 +173,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const comments = useComments()
   const dialog = useDialog()
   const command = useCommand()
-  const permission = usePermission()
   const language = useLanguage()
   const platform = usePlatform()
   const expertise = useExpertise()
@@ -673,12 +671,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const variants = createMemo(() => ["default", ...props.controls.model.selection.variant.list()])
   // Check provider variants directly: `variants` also includes the UI-only default option.
   const showVariantControl = createMemo(() => props.controls.model.selection.variant.list().length > 0)
-  const accepting = createMemo(() => {
-    const id = props.controls.session.id
-    if (!id) return permission.isAutoAcceptingDirectory(sdk().directory)
-    return permission.isAutoAccepting(id, sdk().directory)
-  })
-
   const { abort, handleSubmit } =
     props.submission ??
     createPromptSubmit({
@@ -686,7 +678,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       info,
       imageAttachments,
       commentCount,
-      autoAccept: () => accepting(),
       mode: () => store.mode,
       working,
       editor: () => editorRef,

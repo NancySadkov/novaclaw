@@ -4,7 +4,7 @@ import { Schema } from "effect"
 import { define, inventory } from "./event"
 import { SessionID } from "./session-id"
 
-// The tags component on the session entity (notes/entities.md): free-form user/agent labels that
+// The tags component on the session entity (notes/reports/entities-review-2026-07-06.md): free-form user/agent labels that
 // organize chat processes (tagging a thread ROOT organizes its tree). One event carries the full
 // per-session tag list — idempotent client folds, no add/remove ordering to reconcile.
 const Updated = define({

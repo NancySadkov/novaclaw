@@ -5,7 +5,6 @@ let createPromptSubmit: typeof import("./submit").createPromptSubmit
 
 const createdClients: string[] = []
 const createdSessions: string[] = []
-const enabledAutoAccept: Array<{ sessionID: string; directory: string }> = []
 const optimistic: Array<{
   directory?: string
   sessionID?: string
@@ -157,14 +156,6 @@ beforeAll(async () => {
     }),
   }))
 
-  mock.module("@/context/permission", () => ({
-    usePermission: () => ({
-      enableAutoAccept(sessionID: string, directory: string) {
-        enabledAutoAccept.push({ sessionID, directory })
-      },
-    }),
-  }))
-
   mock.module("@/context/server", () => ({
     useServer: () => ({ key: "server-key" }),
   }))
@@ -230,6 +221,7 @@ beforeAll(async () => {
   }))
 
   mock.module("@/context/server-sync", () => ({
+    loadMcpQuery: () => ({ queryKey: [] }),
     useServerSync: () => () => ({
       session: {
         remember: () => undefined,
@@ -287,7 +279,6 @@ beforeAll(async () => {
 beforeEach(() => {
   createdClients.length = 0
   createdSessions.length = 0
-  enabledAutoAccept.length = 0
   optimistic.length = 0
   optimisticSeeded.length = 0
   promoted.length = 0
@@ -305,7 +296,7 @@ beforeEach(() => {
 })
 
 describe("prompt submit worktree selection", () => {
-  // Ported from https://github.com/NancySadkov/novaclaw/pull/10 by @DassaultFalconKing. Stop is the
+  // Ported from outside contribution #10 by @DassaultFalconKing. Stop is the
   // control a user reaches for when something is already wrong; `.catch(() => {})` meant the agent
   // kept streaming with no reason given.
   test("reports interrupt failures", async () => {
@@ -316,7 +307,6 @@ describe("prompt submit worktree selection", () => {
       info: () => ({ id: "session-1" }),
       imageAttachments: () => [],
       commentCount: () => 0,
-      autoAccept: () => false,
       mode: () => "normal",
       working: () => true,
       editor: () => undefined,
@@ -333,13 +323,57 @@ describe("prompt submit worktree selection", () => {
     expect(toasts).toEqual([{ title: "common.requestFailed", description: "interrupt unavailable" }])
   })
 
+  // 🔴 RF-18-4: paste a screenshot, type `/review` or a shell command, press Enter — neither `shell`
+  // nor `command` carries an attachment field, so the request used to succeed while `clearInput()`
+  // wiped the image and nothing was said. A loss reported as success. The refusal was written, but in
+  // `sendFollowupDraft`, which `handleSubmit` returns before ever reaching (RF-18-5).
+  //
+  // ⚠️ Asserts BOTH halves, because either alone passes over the bug: that nothing was sent, AND that
+  // the user was told. A test that only checked the toast would pass while the shell command still ran.
+  test("refuses to send shell input carrying an attachment, and says so", async () => {
+    const image = {
+      type: "image" as const,
+      id: "img-1",
+      filename: "shot.png",
+      mime: "image/png",
+      dataUrl: "data:image/png;base64,iVBORw0KGgo=",
+    }
+    const submit = createPromptSubmit({
+      prompt,
+      info: () => ({ id: "session-1" }),
+      imageAttachments: () => [image],
+      commentCount: () => 0,
+      mode: () => "shell",
+      working: () => false,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+      newSessionWorktree: () => selected,
+      onNewSessionWorktreeReset: () => undefined,
+      onSubmit: () => undefined,
+    })
+
+    await submit.handleSubmit({ preventDefault: () => undefined } as unknown as Event)
+
+    expect(sentShell).toEqual([])
+    expect(toasts).toEqual([
+      {
+        title: "prompt.toast.attachmentsUnsupportedHere.title",
+        description: "prompt.toast.attachmentsUnsupportedHere.description",
+      },
+    ])
+  })
+
   test("reads the latest worktree accessor value per submit", async () => {
     const submit = createPromptSubmit({
       prompt,
       info: () => undefined,
       imageAttachments: () => [],
       commentCount: () => 0,
-      autoAccept: () => false,
       mode: () => "shell",
       working: () => false,
       editor: () => undefined,
@@ -371,34 +405,6 @@ describe("prompt submit worktree selection", () => {
     expect(syncedDirectories).toEqual(["/repo/worktree-a", "/repo/worktree-a", "/repo/worktree-b", "/repo/worktree-b"])
   })
 
-  test("applies auto-accept to newly created sessions", async () => {
-    const submit = createPromptSubmit({
-      prompt,
-      info: () => undefined,
-      imageAttachments: () => [],
-      commentCount: () => 0,
-      autoAccept: () => true,
-      mode: () => "shell",
-      working: () => false,
-      editor: () => undefined,
-      queueScroll: () => undefined,
-      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
-      addToHistory: () => undefined,
-      resetHistoryNavigation: () => undefined,
-      setMode: () => undefined,
-      setPopover: () => undefined,
-      newSessionWorktree: () => selected,
-      onNewSessionWorktreeReset: () => undefined,
-      onSubmit: () => undefined,
-    })
-
-    const event = { preventDefault: () => undefined } as unknown as Event
-
-    await submit.handleSubmit(event)
-
-    expect(enabledAutoAccept).toEqual([{ sessionID: "session-1", directory: "/repo/worktree-a" }])
-  })
-
   test("promotes drafts using the selected project's server", async () => {
     search = { draftId: "draft-1" }
     const submit = createPromptSubmit({
@@ -406,7 +412,6 @@ describe("prompt submit worktree selection", () => {
       info: () => undefined,
       imageAttachments: () => [],
       commentCount: () => 0,
-      autoAccept: () => false,
       mode: () => "normal",
       working: () => false,
       editor: () => undefined,
@@ -435,7 +440,6 @@ describe("prompt submit worktree selection", () => {
       info: () => ({ id: "session-1" }),
       imageAttachments: () => [],
       commentCount: () => 0,
-      autoAccept: () => false,
       mode: () => "normal",
       working: () => false,
       editor: () => undefined,
@@ -465,7 +469,6 @@ describe("prompt submit worktree selection", () => {
       info: () => undefined,
       imageAttachments: () => [],
       commentCount: () => 0,
-      autoAccept: () => false,
       mode: () => "normal",
       working: () => false,
       editor: () => undefined,

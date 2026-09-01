@@ -1,3 +1,10 @@
+# PATCH PROVENANCE
+# WHAT: moves the ~60 generated `__wbg_*` wasm-bindgen shims off `module.exports` onto a private
+#       `__wbindgen_placeholder__` object.
+# WHY: the generated glue pollutes the public export surface.
+# CLASS: permanent in practice — the fix belongs in wasm-bindgen's generator, not in photon.
+# UPSTREAM: not filed; photon is not where it would land.
+# REMOVE WHEN: wasm-bindgen stops emitting the shims as public exports.
 diff --git a/photon_rs.js b/photon_rs.js
 index 8f4144d..29a964a 100644
 --- a/photon_rs.js

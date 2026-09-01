@@ -2,6 +2,7 @@ export * as SettingsConfigMigrate from "./settings-config-migrate"
 
 import { Effect } from "effect"
 import { Log } from "@novaclaw/schema/log"
+import { isRecord } from "@novaclaw/schema/record"
 import type { Commands } from "./session/runner/quality"
 import { QualityProvision } from "./session/runner/quality-provision"
 import { SettingsConfigStore } from "./settings-config-store"
@@ -35,9 +36,6 @@ import { SettingsConfigStore } from "./settings-config-store"
  * migration. The relocate-don't-drop reasoning lives with the table, in
  * `session/runner/quality-provision.ts`.
  */
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
 
 /**
  * Repair `quality.commands` in the settings store. Returns the user-facing notes, one per repaired

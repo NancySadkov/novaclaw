@@ -128,11 +128,6 @@ const LEDGER: readonly Entry[] = [
   },
   // ── desktop ───────────────────────────────────────────────────────────────────────────────────
   {
-    file: "desktop/src/main/constants.ts",
-    kind: "fallback",
-    why: "decides whether this build carries an updater manifest; the answer selects a code path, not a sentence.",
-  },
-  {
     file: "desktop/src/main/wsl/runtime.ts",
     kind: "fallback",
     why: "resolves a command to an absolute path, falling back to the bare command name.",

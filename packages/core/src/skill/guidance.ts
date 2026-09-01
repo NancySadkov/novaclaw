@@ -20,7 +20,7 @@ export type Summary = typeof Summary.Type
  * ⚠️ **This is a TIER-2 disclosure and it is unbounded** (`notes/reports/disclosure-tiers-2026-08-12.md`).
  * Measured 2026-08-12 against this very function: **~157 bytes per skill**, so ~142 skills cost more
  * than the entire 21-tool resident schema set (22 235 bytes) and 1 000 skills is ~40k prompt tokens on
- * every turn — the wall `todo/tool-scale.md` exists to keep the tool catalogue away from.
+ * every turn — the wall the tool catalogue is kept away from.
  *
  * 157 B/skill is CHEAP per item next to 932 B/tool, and that is exactly why it is worth saying: tier 1
  * has a ratchet AND deferral behind `tool_search`, and this has neither. A cheaper per-item cost with

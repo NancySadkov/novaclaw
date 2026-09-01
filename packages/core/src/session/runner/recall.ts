@@ -5,7 +5,7 @@ import type { ModelV2 } from "../../model"
 import type { MemoryClient } from "../../kb-graph/memory-client"
 import type { SessionMessage } from "../message"
 
-// Auto-recall (notes/kb-graph-plan.md §1.3.1): each turn, surface relevant memories into the system
+// Auto-recall: each turn, surface relevant memories into the system
 // prompt so the model "just remembers" — the user (and other chats') facts show up without the agent
 // having to call the `kb` tool. Pure helpers here (the runner does the search + injection). Budgeted
 // DOWN for weak models (the JH floor) so recalled memory never crowds out the task.
@@ -36,7 +36,7 @@ export const recallBudget = (tier: ModelV2.Tier | undefined): number => {
 /** How many candidates to RETRIEVE before ranking — deliberately DECOUPLED from `recallBudget`.
  *  The budget bounds what the model SEES (window pressure, correctly small for weak models); the pool
  *  bounds what the ranker can CHOOSE FROM, which costs rerank latency, not context. Conflating them
- *  penalised weak models exactly where recall matters most: MEASURED (notes/kb-graph-plan.md, the D20
+ *  penalised weak models exactly where recall matters most: MEASURED (the D20
  *  bisection), a query with no rare anchor put its answer at hybrid rank 12 and 18 — so a micro tier's
  *  3x3=9 pool could not contain it at all, while the model would still only have been shown 3.
  *  Floor 16 covers the measured range; cap 40 bounds rerank cost (measured ~915ms at 24 candidates).

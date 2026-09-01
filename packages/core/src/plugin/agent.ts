@@ -116,7 +116,7 @@ Report what you OBSERVED, with the conditions it was observed under, what it doe
 many observations it rests on. A measurement whose limits you state is worth more than a confident one
 a reader has to distrust.`
 
-const NOVA_SYSTEM = `You are Nova, the chief executive of this NovaClaw instance.
+const NOVA_SYSTEM = `You are the chief executive of this NovaClaw instance.
 
 The person you are talking to is the shareholder. They set direction and approve what matters; they do
 not staff the organization or supervise its work. That is your job.
@@ -175,15 +175,19 @@ export const floor = (input: {
     { action: "external_directory_read", resource, effect: "allow" },
     { action: "external_directory_write", resource, effect: "allow" },
   ]),
-  // ⚠️ DENIED for everyone, officers included — and this reverses a grant made earlier the same day.
+  // 🔴 **There is deliberately no `question` rule here, and no `question` tool to gate.** Principle 14:
+  // **the chat IS the channel.** A model that needs a decision ends its turn and says so in its reply,
+  // where asking costs nothing, works in every client, and cannot strand a session. The grant that
+  // once existed was argued for as "a colleague that cannot ask *which invoice did you mean?* has to
+  // guess" — which is exactly the shape the principle rejects. `bf39088eb` retired ASK as an outcome
+  // and took the tool off the horizon.
   //
-  // The reasoning behind that grant was "a colleague that cannot ask *which invoice did you mean?*
-  // has to guess", which is precisely the shape principle 14 rejects: **the chat IS the channel**. A
-  // model that needs a decision ends its turn and says so in its reply, where asking costs nothing,
-  // works in every client and cannot strand a session. There is no `question` TOOL in the tree any
-  // more (`bf39088eb` retired ASK as an outcome and took it off the horizon), so the grant was also
-  // dead weight — but the reason it stays denied is the principle, not the absence.
-  { action: "question", resource: "*", effect: "deny" },
+  // ⚠️ A `deny` floor and FOUR re-allows for this action survived that removal until 2026-09-01
+  // (RF-12-14): six rules over a vocabulary nothing asserts, with this comment reading as a standing
+  // prohibition while the file below reversed it four times. Inert either way — no tool means no
+  // `evaluate("question", …)` ever happens — so they were removed rather than reconciled. **If a
+  // question tool is ever proposed, principle 14 is the answer, and it is a structural rule, not a
+  // permission default:** do not add a rule here and consider it handled.
   // DENIED unless this is an officer, which is what keeps the hand-off tool OFF the horizon for
   // agents that may not use it — `ToolRegistry.materialize` withdraws a wholly-denied tool rather
   // than advertising it and refusing. Measured 2026-08-21: resident tool schemas were 32,822 bytes
@@ -261,7 +265,6 @@ export const Plugin = define({
         item.mode = "primary"
         item.permissions.push(
           ...PermissionV2.merge(defaults, [
-            { action: "question", resource: "*", effect: "allow" },
             { action: "plan_enter", resource: "*", effect: "allow" },
           ]),
         )
@@ -283,7 +286,6 @@ export const Plugin = define({
         ]
         item.permissions.push(
           ...PermissionV2.merge(defaults, [
-            { action: "question", resource: "*", effect: "allow" },
             { action: "plan_exit", resource: "*", effect: "allow" },
             {
               action: "external_directory_read",
@@ -316,7 +318,6 @@ export const Plugin = define({
         item.mode = "primary"
         item.permissions.push(
           ...PermissionV2.merge(defaults, [
-            { action: "question", resource: "*", effect: "allow" },
             { action: "plan_enter", resource: "*", effect: "allow" },
             // 🔴 The CEO's own job, granted in the charter rather than asked for each time.
             //
@@ -443,7 +444,6 @@ export const Plugin = define({
           item.hidden = true
           item.permissions.push(
             ...PermissionV2.merge(defaults, [
-              { action: "question", resource: "*", effect: "allow" },
               { action: "plan_enter", resource: "*", effect: "allow" },
             ]),
           )

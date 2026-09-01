@@ -1,12 +1,12 @@
 import type { Pressure } from "@/storage/pressure"
 import type { ConfigLocalModelCatalog } from "@novaclaw/core/config/local-model-catalog"
+import { Bytes } from "@novaclaw/core/util/bytes"
 
-const GIB = 1024 ** 3
+const GIB = Bytes.GIB
 
 export const RUNTIME_ARTIFACT = {
   version: "b10240",
   sha256: "0f238e2b0ef8caabcdb70d9f4dd14dc4fadc4976911601e08d446a9a05d4a097",
-  url: "https://github.com/ggml-org/llama.cpp/releases/download/b10240/llama-b10240-bin-win-vulkan-x64.zip",
 } as const
 
 export const QWEN_PROFILE_ID = "qwen3.5-4b-q4-k-m"
@@ -96,13 +96,13 @@ export function evaluatePreflight(input: {
     const free = memory.limitBytes - memory.usedBytes
     const capacity = input.physicalMemoryBytes ?? memory.limitBytes
     if (capacity < physicalFloor)
-      issues.push(`A ${tokenLabel(input.context)} context needs at least ${formatBytes(memoryMinimum)} of memory.`)
+      issues.push(`A ${tokenLabel(input.context)} context needs at least ${Bytes.requirement(memoryMinimum)} of memory.`)
     else if (free < workingMemory)
-      issues.push(`Free about ${formatBytes(workingMemory)} of memory before starting this context size.`)
+      issues.push(`Free about ${Bytes.requirement(workingMemory)} of memory before starting this context size.`)
   } else warnings.push(memory.reason)
   if (disk.known) {
     if (disk.freeBytes < requiredBytes)
-      issues.push(`Free ${formatBytes(requiredBytes - disk.freeBytes)} more disk space before installing.`)
+      issues.push(`Free ${Bytes.requirement(requiredBytes - disk.freeBytes)} more disk space before installing.`)
   } else warnings.push(disk.reason)
   return {
     ok: issues.length === 0,
@@ -130,11 +130,6 @@ export function supportedContext(context: number): boolean {
 
 function defined<T extends object>(value: T | undefined): Partial<T> {
   return Object.fromEntries(Object.entries(value ?? {}).filter(([, entry]) => entry !== undefined)) as Partial<T>
-}
-
-function formatBytes(value: number): string {
-  const gib = Math.max(0, value) / GIB
-  return `${gib < 10 ? gib.toFixed(1) : Math.ceil(gib)} GB`
 }
 
 function tokenLabel(value: number): string {

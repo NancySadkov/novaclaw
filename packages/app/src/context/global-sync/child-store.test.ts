@@ -175,7 +175,7 @@ describe("createChildStoreManager", () => {
     }
   })
 
-  // Ported from https://github.com/NancySadkov/novaclaw/pull/10 by @DassaultFalconKing — the second
+  // Ported from outside contribution #10 by @DassaultFalconKing — the second
   // of the two stores that had the bug.
   test("treats exited sessions as settled", () => {
     let manager: ReturnType<typeof createChildStoreManager> | undefined

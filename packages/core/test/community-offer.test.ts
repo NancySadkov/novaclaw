@@ -11,7 +11,7 @@ import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { testEffect } from "./lib/effect"
 
 /**
- * Community P6 — signed service offers (`todo/community-p2p.md`).
+ * Community P6 — signed service offers (`notes/spec/community-p2p.md`).
  *
  * The owner's motivation: *"users may offer their model servers for free or for btc."* What a
  * signature buys here is narrow and worth stating — an offer travels through strangers, so the thing

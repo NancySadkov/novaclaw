@@ -23,7 +23,7 @@ import { LocationGroup } from "./groups/location"
 import { IntegrationGroup } from "./groups/integration"
 import { CredentialGroup } from "./groups/credential"
 import { MessengerGroup } from "./groups/messenger"
-import { CalendarGroup } from "./groups/calendar"
+import { makeCalendarGroup } from "./groups/calendar"
 import { RecipeGroup } from "./groups/recipe"
 import { AppGroup } from "./groups/app"
 import { ConfigGroup } from "./groups/config"
@@ -68,7 +68,7 @@ const makeApiFromGroup = <
     .add(IntegrationGroup.middleware(locationMiddleware))
     .add(CredentialGroup.middleware(locationMiddleware))
     .add(MessengerGroup)
-    .add(CalendarGroup)
+    .add(makeCalendarGroup(locationMiddleware))
     .add(RecipeGroup)
     .add(AppGroup)
     .add(makePermissionGroup(locationMiddleware, sessionLocationMiddleware).middleware(workspaceRoutingMiddleware))
@@ -134,7 +134,7 @@ type ApiFromGroup<
       | HttpApiGroup.AddMiddleware<typeof IntegrationGroup, LocationId>
       | HttpApiGroup.AddMiddleware<typeof CredentialGroup, LocationId>
       | typeof MessengerGroup
-      | typeof CalendarGroup
+      | ReturnType<typeof makeCalendarGroup<LocationId, LocationService>>
       | typeof RecipeGroup
       | typeof AppGroup
       | HttpApiGroup.AddMiddleware<

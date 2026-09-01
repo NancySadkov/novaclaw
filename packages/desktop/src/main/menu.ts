@@ -2,12 +2,10 @@ import { BrowserWindow, Menu, shell } from "electron"
 import type { MenuItemConstructorOptions } from "electron"
 import { DESKTOP_MENU, type DesktopMenuEntry, type DesktopMenuRole } from "@novaclaw/app/desktop-menu"
 
-import { UPDATER_ENABLED } from "./constants"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
 
 type Deps = {
   trigger: (id: string) => void
-  checkForUpdates: () => void
   relaunch: () => void
 }
 
@@ -37,7 +35,6 @@ function nativeItem(entry: DesktopMenuEntry, deps: Deps): MenuItemConstructorOpt
   const item: MenuItemConstructorOptions = {
     label: entry.label,
     accelerator: entry.accelerator,
-    enabled: entry.enabled === "updater" ? UPDATER_ENABLED : undefined,
   }
 
   if (entry.command) {
@@ -48,7 +45,6 @@ function nativeItem(entry: DesktopMenuEntry, deps: Deps): MenuItemConstructorOpt
     const action = entry.action
     item.click = () =>
       runDesktopMenuAction(BrowserWindow.getFocusedWindow(), action, {
-        checkForUpdates: deps.checkForUpdates,
         relaunch: deps.relaunch,
       })
   }

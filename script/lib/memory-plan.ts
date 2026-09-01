@@ -30,17 +30,27 @@
  * ceiling on every gate, and the profile kept a 1 007 MB entry the instrument was structurally
  * unable to correct.
  *
- * Attribution is now by process **birth time** (app `2d6ad8db7`), and the profile was re-derived on
- * 2026-08-07 from twenty attributed units over the runs recorded in `tmp/peak-series.jsonl`.
- * `core`'s attributed tree is **16 364–17 958 MB** across seven runs (own process ~7 330–7 381,
- * flat; the rest is the sixteen workers it spawns itself). Each re-derivation is stated where the
- * constant is declared, so a dead premise cannot sit next to a corrected number again.
+ * Attribution is now by process **birth time** (app `2d6ad8db7`), re-derived on 2026-08-07 and then
+ * **re-baselined whole on 2026-08-13** over the runs recorded in `tmp/peak-series.jsonl`. Each
+ * re-derivation is stated where the constant is declared, so a dead premise cannot sit next to a
+ * corrected number again.
+ *
+ * ⚠️ **The 16.4–18.0 GB figure this file used to quote for `core` is the SECOND dead premise.**
+ * Those were SHARDED rows, and a shard's window carries the previous shard's unreclaimed memory —
+ * feeding them back is what kept `core` permanently sharded. `test-baseline.json`'s `peaksNote`
+ * settled it and set `peaks.core = 10822`, the largest healthy WHOLE-run reading as of that date.
+ * Re-measured 2026-09-01 over the same series (44 healthy whole runs: `shards: 1`, not `regressed`,
+ * ≥3 own ticks, carrying `foreignMb`): **7 921–16 310 MB commit, 2 422–7 971 MB resident.** Six of
+ * the 44 exceed 10 822 and all six are 2026-08-25 runs taken at 74–85 % host commit — i.e. the box
+ * was already full. That is a re-baseline question for the profile, not a licence to quote a
+ * sharded number again.
  *
  * ─── two measurements, two walls ─────────────────────────────────────────────────────────────────
  *
- * App `b2b591b83` measured `core` at **16,552 MB commit / 4,616 MB resident** across 907 attributed
- * ticks. Comparing the first number to free physical RAM made `core` permanently sharded even on an
- * otherwise empty laptop. The planner now keeps both dimensions: commit demand meets Windows commit
+ * App `b2b591b83` measured `core` at 16,552 MB commit / **4,616 MB resident** across 907 attributed
+ * ticks — the commit half of that pair was a sharded row and is superseded by `peaks.core`; the
+ * resident half is still what `workingSets.core` carries. Comparing a commit number to free
+ * physical RAM made `core` permanently sharded even on an otherwise empty laptop. The planner now keeps both dimensions: commit demand meets Windows commit
  * headroom; resident demand meets immediately available RAM. Neither safety arm was removed — the
  * category error between them was.
  */
@@ -63,10 +73,12 @@ const MB = 1024 ** 2
 /**
  * Headroom a unit needs beyond its own peak before it may run whole.
  *
- * 1.3× is retained; **its old justification is retired.** That justification was *"`core` peaked at
- * ~1.0 GB across five measurements that varied by under 3 %"* — a stability claim taken from the
- * dead 1 007 MB reading. The attributed spread is nothing like 3 %: seven `core` runs span
- * 16 364–17 958 MB (**9.6 %**) and nine `novaclaw:server` runs span 1 353–2 237 MB (**65 %**).
+ * 1.3× is retained; **its old justification is retired twice over.** The original was *"`core`
+ * peaked at ~1.0 GB across five measurements that varied by under 3 %"* — a stability claim taken
+ * from the dead 1 007 MB reading. Its replacement quoted the SHARDED 16 364–17 958 MB range, which
+ * is the second dead premise (see the header). Measured 2026-09-01 over healthy WHOLE runs in
+ * `tmp/peak-series.jsonl`: 44 `core` runs span **7 921–16 310 MB** and 439 `novaclaw:server` runs
+ * span **436–3 828 MB**. Neither is anywhere near 3 %.
  *
  * What makes 1.3 defensible now is a different property of the profile: every entry is the
  * **largest** attributed reading for that unit, not a typical one. So the factor is covering
@@ -106,8 +118,8 @@ export const MAX_SHARDS = 8
  *
  * ⚠️ **This lives here rather than in `test.ts` because it is a property of the PROFILE.** A ceiling
  * below an entry's true value silently discards the one reading that entry needs, and the profile
- * can then never be corrected — which is exactly what happened: 8 192 MB against a `core` that
- * really costs 16.4–18.0 GB, discarded on four consecutive gates while the entry stayed at 1 007.
+ * can then never be corrected — which is exactly what happened: 8 192 MB against a `core` whose real
+ * readings start around 10 GB, discarded on four consecutive gates while the entry stayed at 1 007.
  * {@link unrecordableUnits} is the mechanical check that the pair can never drift apart again.
  *
  * ⚠️ **32 768 MB is a coarse backstop and must not be read as a fine filter.** Before attribution it
@@ -172,8 +184,8 @@ export function planFor(demand: Demand, headroom: Headroom): Plan {
   //   · **Accumulation.** Nineteen of twenty units are dominated by a per-process baseline
   //     (415–2 237 MB attributed) that grows slowly with the files sharing the process. For these
   //     the old sentence still holds and sharding buys a little — the gentle scaling above.
-  //   · **Fan-out.** `core` is not that shape at all. ~9.3 GB of its 16.4–18.0 GB is *sixteen*
-  //     concurrent `bun` workers spawned by `test/util/flock.test.ts` and `util/effect-flock.test.ts`
+  //   · **Fan-out.** `core` is not that shape at all. The bulk of its peak is *sixteen* concurrent
+  //     `bun` workers spawned by `test/util/flock.test.ts` and `util/effect-flock.test.ts`
   //     (`const n = 16`, `process.execPath`). Those live in ONE file, so they land in ONE shard —
   //     **splitting `core` does not lower its peak by a byte.** For a fan-out unit the sharded rung
   //     is inert: it reports DEGRADED, costs per-process startup, and mitigates nothing.
@@ -181,8 +193,7 @@ export function planFor(demand: Demand, headroom: Headroom): Plan {
   // ⚠️ The rung is left in place rather than special-cased, because the honest repair is not here:
   // it is either the 16-way fan-out itself (a test-side item — do not "fix" the measurement by
   // changing the thing measured) or the commit-vs-free-RAM yardstick described in this file's
-  // header. Both are filed in todo/test-speed.md. What must not happen is this comment claiming a
-  // reduction the data says is absent.
+  // header. What must not happen is this comment claiming a reduction the data says is absent.
   const pressure = Math.max(
     commitRequiredBytes / headroom.commitBytes,
     residentRequiredBytes / headroom.residentBytes,

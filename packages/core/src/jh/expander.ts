@@ -116,7 +116,7 @@ export function introspectPrompt(input: {
 export const PLAN_MAX_LINES = 8
 
 /**
- * improve19 — the THINK stage prompt (`notes/jh-think-stage.md`). Deliberately schema-FREE: this is
+ * improve19 — the THINK stage prompt (`notes/jh/think-stage.md`). Deliberately schema-FREE: this is
  * the one call in jh that must NOT produce JSON. It gets the same context the introspect gets and
  * returns a short plan in plain language, which is then pre-prompted into the DO call.
  *

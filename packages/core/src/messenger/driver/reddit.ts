@@ -49,7 +49,6 @@ const CAPS: Messenger.Capabilities = {
   listChats: "full", // the subreddit + its live posts
   files: { up: false, down: false },
   edits: false,
-  typing: false,
   threads: true,
   moderation: { delete: true, ban: true, kick: false, mute: true, pin: true, approve: true, lock: true },
   format: "markdown",

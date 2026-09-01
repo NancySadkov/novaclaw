@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs"
 import path from "node:path"
 import { DateTime, Effect, Schema } from "effect"
 import { Model, type ToolContent } from "@novaclaw/llm"
-import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
+import * as OpenAIChat from "@novaclaw/llm/protocols/openai-compatible-chat"
 import { ComputerTool } from "./computer"
 import { Tool } from "./tool"
 import { ComputerActions } from "../computer/actions"
@@ -381,7 +381,7 @@ describe("a screenshot returns its pixels, not just a path", () => {
 
   test("the file part is the shape `Tool.make` settles into a ToolFileContent — data, not a uri", () => {
     // A core tool authors base64 `data`; settlement builds the `data:` URI. Emitting `uri` here
-    // produces `data:image/png;base64,data:image/png;base64,…` (todo/computer-use.md, P6 note).
+    // produces `data:image/png;base64,data:image/png;base64,…` — measured, not supposed.
     const file = ComputerTool.toModelContent(screenshotOutput())[1]!
     expect(file.type).toBe("file")
     expect("uri" in file).toBe(false)

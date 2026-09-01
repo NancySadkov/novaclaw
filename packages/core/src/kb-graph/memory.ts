@@ -242,35 +242,6 @@ export const layerFromConfig = (
   )
 
 /**
- * FORGETTING, with the access ledger in the loop.
- *
- * 🔴 **What changed and why it matters.** The engine's own `prune` tiers by `source` and then falls
- * through to `t_created`, because when it was written no other column had any spread in it — so in
- * practice a scope over its cap forgot its OLDEST rows. That is the naive policy the forgetting design
- * exists to avoid: it drops the fact recall reaches for every week and keeps the passage nobody has
- * ever retrieved. `prune-policy.ts` holds the replacement and the reasoning; this is the wiring.
- *
- * ⚠️ **Three cheap steps, in this order, because the first two must not run when there is nothing to
- * do.** A count (one aggregate), then a bounded window of SHORT candidate rows, then the ledger's
- * rollup for exactly those ids. A scope inside its cap costs one count and nothing else, which is the
- * common case on every pass.
- *
- * ⚠️ **The window is oldest-first and that IS a bound, not a policy.** The pass needs at least
- * `excess` prunable rows to choose among; it takes them from the old end because that is where stale
- * ones concentrate, and then REORDERS inside the window on provenance, lifecycle, recency and
- * usefulness. The cost of the bound is real and worth naming: a young worthless row can outlive an old
- * valuable one until the window grows to reach it. It converges — the pass runs every five minutes and
- * the window is four times the excess — and the alternative is scanning a whole cabinet every pass.
- *
- * ⚠️ **Exported for its test.** `kb-graph-forgetting-pass.test.ts` drives THIS function against a real
- * engine and a real ledger, which is what replaced a source ledger that asserted the shape of the call
- * this one used to make. A guard that reads the source cannot see whether the quiet cabinet survived.
- *
- * ⚠️ **`WasmMemory.prune` is now unreachable from production and stays as it is.** It is the engine's
- * own last-resort bound, still exercised by the engine's tests; what changed is who decides, not what
- * the engine is capable of.
- */
-/**
  * ONE PASS OVER EVERY PILE THAT HAS A CAP: the household's, then each colleague's cabinet.
  *
  * 🔴 **…AND EVERY COLLEAGUE'S CABINET, each capped on its own.** Until 2026-08-22 auto-extracted
@@ -296,6 +267,7 @@ export const forgetEverywhere = (
   db: Database.Interface["db"],
   events: EventV2.Interface,
   cap: number,
+  rawAccessKeep = MemoryAccessLedger.RAW_ROW_HORIZON,
 ): Effect.Effect<void> =>
   Effect.gen(function* () {
     yield* forgetOverCap(live, db, events, "global", cap)
@@ -303,8 +275,38 @@ export const forgetEverywhere = (
       Effect.orElseSucceed(() => [] as string[]),
     ))
       yield* forgetOverCap(live, db, events, scope, cap)
+    // Raw recall detail is deliberately finite; the durable per-memory usage rollup survives this.
+    // Running it in the existing maintenance pass gives the bound a production actuator without
+    // adding another timer, store owner, or turn-path write.
+    yield* MemoryAccessLedger.trim(db, rawAccessKeep)
   })
 
+/**
+ * FORGETTING, with the access ledger in the loop.
+ *
+ * 🔴 **What changed and why it matters.** The retired engine-local policy tiered by `source` and then
+ * fell through to `t_created`, so in practice a scope over its cap forgot its OLDEST rows. That is the
+ * naive policy the forgetting design exists to avoid: it drops the fact recall reaches for every week
+ * and keeps the passage nobody has ever retrieved. `prune-policy.ts` holds the policy and the reasoning;
+ * this is the wiring.
+ *
+ * ⚠️ **Three cheap steps, in this order, because the first two must not run when there is nothing to
+ * do.** A count (one aggregate), then a bounded window of SHORT candidate rows, then the ledger's
+ * rollup for exactly those ids. A scope inside its cap costs one count and nothing else, which is the
+ * common case on every pass.
+ *
+ * ⚠️ **The window is oldest-first and that IS a bound, not a policy.** The pass needs at least
+ * `excess` prunable rows to choose among; it takes them from the old end because that is where stale
+ * ones concentrate, and then REORDERS inside the window on provenance, lifecycle, recency and
+ * usefulness. The cost of the bound is real and worth naming: a young worthless row can outlive an old
+ * valuable one until the window grows to reach it. It converges — the pass runs every five minutes and
+ * the window is four times the excess — and the alternative is scanning a whole cabinet every pass.
+ *
+ * ⚠️ **Exported for its test.** `kb-graph-forgetting-pass.test.ts` drives THIS function against a real
+ * engine and a real ledger, which is what replaced a source ledger that asserted the shape of the call
+ * this one used to make. A guard that reads the source cannot see whether the quiet cabinet survived.
+ *
+ */
 export const forgetOverCap = (
   live: WasmMemory,
   db: Database.Interface["db"],

@@ -6,7 +6,13 @@ import * as prompts from "@clack/prompts"
 import { Config, ConfigProvider, Effect, FileSystem, PlatformError, Redacted } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/unstable/http"
 import * as ProviderShared from "../src/protocols/shared"
-import * as Cloudflare from "../src/providers/cloudflare"
+
+const aiGatewayAuthEnvVars = ["CLOUDFLARE_API_TOKEN", "CF_AIG_TOKEN"] as const
+const workersAIAuthEnvVars = ["CLOUDFLARE_API_KEY", "CLOUDFLARE_WORKERS_AI_TOKEN"] as const
+const aiGatewayBaseURL = (accountId: string, gatewayId?: string) =>
+  `https://gateway.ai.cloudflare.com/v1/${encodeURIComponent(accountId)}/${encodeURIComponent(gatewayId?.trim() || "default")}/compat`
+const workersAIBaseURL = (accountId: string) =>
+  `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/v1`
 
 type Provider = {
   readonly id: string
@@ -105,11 +111,8 @@ const PROVIDERS: ReadonlyArray<Provider> = [
     ],
     validate: (env) =>
       validateChat({
-        url: `${Cloudflare.aiGatewayBaseURL({
-          accountId: env.CLOUDFLARE_ACCOUNT_ID,
-          gatewayId: env.CLOUDFLARE_GATEWAY_ID || undefined,
-        })}/chat/completions`,
-        token: Redacted.make(envValue(env, Cloudflare.aiGatewayAuthEnvVars)),
+        url: `${aiGatewayBaseURL(env.CLOUDFLARE_ACCOUNT_ID, env.CLOUDFLARE_GATEWAY_ID)}/chat/completions`,
+        token: Redacted.make(envValue(env, aiGatewayAuthEnvVars)),
         tokenHeader: "cf-aig-authorization",
         model: "workers-ai/@cf/meta/llama-3.1-8b-instruct",
       }),
@@ -125,8 +128,8 @@ const PROVIDERS: ReadonlyArray<Provider> = [
     ],
     validate: (env) =>
       validateChat({
-        url: `${Cloudflare.workersAIBaseURL({ accountId: env.CLOUDFLARE_ACCOUNT_ID })}/chat/completions`,
-        token: Redacted.make(envValue(env, Cloudflare.workersAIAuthEnvVars)),
+        url: `${workersAIBaseURL(env.CLOUDFLARE_ACCOUNT_ID)}/chat/completions`,
+        token: Redacted.make(envValue(env, workersAIAuthEnvVars)),
         model: "@cf/meta/llama-3.1-8b-instruct",
       }),
   },

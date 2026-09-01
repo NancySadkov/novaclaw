@@ -179,7 +179,7 @@ describe("confinement surface", () => {
     // true — the section says the write rule is enforced only where a sandbox exists.
     const meanwhile = en["settings.confinement.meanwhile"]
     expect(meanwhile).toContain("Analyze mode")
-    expect(meanwhile).toContain("YOLO")
+    expect(meanwhile).toContain("Admin")
     expect(meanwhile).toContain("instruction the model follows rather than a wall")
     // …and it names where real confinement actually comes from, which is the owner's point.
     expect(meanwhile).toContain("recipe")

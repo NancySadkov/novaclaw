@@ -30,7 +30,7 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/Fo
 /**
  * A formatter's environment map as the `list` attribute class wants it — one `NAME=value` per entry.
  *
- * `todo/logging.md` 1h: this used to be `JSON.stringify(item.environment)` at two call sites, which
+ * This used to be `JSON.stringify(item.environment)` at two call sites, which
  * preserved the bytes and discarded the type. The values are unchanged and still local-only (the
  * class is `list`, `content: "user"`) — `config/formatter.ts` marks this map secret for the same
  * reason `mcp.servers.<n>.environment` is marked.

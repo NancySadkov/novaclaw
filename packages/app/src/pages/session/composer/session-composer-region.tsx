@@ -1,6 +1,5 @@
 import { Show, type JSX } from "solid-js"
 import { useLanguage } from "@/context/language"
-import { SessionPermissionDock } from "@/pages/session/composer/session-permission-dock"
 import { SessionQuestionDock } from "@/pages/session/composer/session-question-dock"
 import { SessionRevertDock } from "@/pages/session/composer/session-revert-dock"
 import { SessionResponderDock } from "@/pages/session/composer/session-responder-dock"
@@ -40,22 +39,6 @@ export function SessionComposerRegion(props: {
           {(request) => (
             <div>
               <SessionQuestionDock request={request} onSubmit={controller.onResponseSubmit} />
-            </div>
-          )}
-        </Show>
-
-        <Show when={controller.state.permissionRequest()} keyed>
-          {(request) => (
-            <div>
-              <SessionPermissionDock
-                request={request}
-                responding={controller.state.permissionResponding()}
-                onDecide={(reply, message) => {
-                  controller.onResponseSubmit()
-                  controller.state.decide(reply, message)
-                }}
-                onStop={controller.state.stop}
-              />
             </div>
           )}
         </Show>

@@ -49,6 +49,14 @@ function flatten(
   })
 }
 
+/**
+ * 🔴 **Deliberately NOT `@novaclaw/schema/record` (RF-29-6, 2026-09-01): this adds a PROTOTYPE
+ * check and is a different question.** The shared predicate is loose on purpose — `Date`, `Map`,
+ * `RegExp` and class instances pass it. Here they must NOT, because `flatten` above recurses into
+ * anything this accepts, and a `Date` flattened into its own keys is a log line of nothing.
+ * `packages/schema/src/record.test.ts` pins the exact twelve shapes the two disagree on, so a future
+ * merge of the two fails a test instead of a review.
+ */
 function plain(input: unknown): input is Record<string, unknown> {
   if (input === null || typeof input !== "object" || Array.isArray(input)) return false
   const prototype = Object.getPrototypeOf(input)
@@ -83,7 +91,7 @@ const mirrored = () => process.env.NOVACLAW_PRINT_LOGS === "1"
 const IMMEDIATE = new Set<LogLevel.LogLevel>(["Error", "Fatal"])
 
 /**
- * **The scoped writer** — `todo/logging.md` Phase 2. Acquiring it cannot fail (see
+ * **The scoped writer.** Acquiring it cannot fail (see
  * {@link LogFile}), and releasing it flushes: the long-lived `serve` path loses nothing on a clean
  * shutdown, and the short-lived CLI is covered by the writer's own `process.on("exit")` hook.
  */
@@ -132,7 +140,7 @@ export function sink(open: LogFile.Writer, id: string = runID) {
  * The defect this replaced: `Logger.toFile` opens the file at layer-BUILD time and its error channel
  * is `PlatformError`, and `observability.ts` piped `Layer.orDie` over the layer carrying it. So
  * EACCES/EROFS/ENOSPC on `<data>/log` was a boot defect — in the one subsystem you most need when a
- * boot is failing, and against `todo/logging.md` phase 2's own rule that logging must never take the
+ * boot is failing, and against the standing rule that logging must never take the
  * instance down (`notes/reports/startup-classification-2026-08-07.md` §5, finding 2).
  *
  * ⭐ **The first fix absorbed that failure; this one deletes it.** `LogFile.open` has no error
@@ -151,7 +159,7 @@ export function fileLogger(file = defaultLogFile(), id: string = runID) {
 /**
  * **One line per boot saying how big this instance's log is and how fast it grows.**
  *
- * `todo/logging.md` Phase 2 → Phase 3: the writer's `SEGMENT_BYTES` / `TOTAL_BYTES` / `MAX_AGE_MS`
+ * The writer's `SEGMENT_BYTES` / `TOTAL_BYTES` / `MAX_AGE_MS`
  * ship with their own author's confession that *"every one of these is a guess dressed in a
  * measurement"* — 27 days of one developer's usage on one machine at INFO, a figure that then moved
  * 2× within nine days of being taken. This is the event that was handed forward to fix it, and the

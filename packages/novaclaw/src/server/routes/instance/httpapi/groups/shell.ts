@@ -22,8 +22,8 @@ export const BundleInfo = Schema.Struct({
 })
 
 /**
- * The confinement posture this instance measured on ITS OWN machine (`todo/jail.md` — the honest
- * posture surface). It rides `/shell/status` rather than a new route for two reasons: Settings already
+ * The confinement posture this instance measured on ITS OWN machine — the honest
+ * posture surface. It rides `/shell/status` rather than a new route for two reasons: Settings already
  * fetches this endpoint for the sibling airgap/shell facts, and ruling 11 pins the legacy path set
  * shrink-only — a new non-`/api/*` route would fail a test. A field on a pinned path is free.
  *
@@ -51,7 +51,7 @@ const JailPosture = Schema.Struct({
 })
 
 /**
- * What already encloses THIS instance — `todo/jail.md`'s *"report whether the instance is inside a
+ * What already encloses THIS instance — *"report whether the instance is inside a
  * container or VM using measured host capabilities"*.
  *
  * ⚠️ Separate from `jail` above and deliberately so: that one says what confinement this host can
@@ -119,7 +119,7 @@ export const ShellApi = HttpApi.make("shell")
         ),
         HttpApiEndpoint.get("offline", `${root}/offline`, {
           query: WorkspaceRoutingQuery,
-          success: described(OfflineStatus, "The N/9 offline-layer posture"),
+          success: described(OfflineStatus, "The N/8 offline-layer posture"),
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "shell.offline",

@@ -1,6 +1,6 @@
 export * as MemorySetting from "./memory-setting"
 
-// The lay Memory ON/OFF privacy switch (notes/kb-graph-plan.md §5). Two independent gates decide
+// The lay Memory ON/OFF privacy switch. Two independent gates decide
 // whether memory does anything:
 //   • NOVACLAW_KB_MEMORY (env)  — CAPABILITY: does the engine open at all (a constrained host / airgap
 //     can leave it off). Owned by Memory.node.

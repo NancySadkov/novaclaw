@@ -1,6 +1,34 @@
 import { describe, expect, test } from "bun:test"
-import { isTruncatedToolArgs, repairToolJson } from "./shared"
+import { isTruncatedToolArgs, repairToolJson, stripSpecialTokens } from "./shared"
+import { recoverToolCallsFromText } from "./utils/tool-recovery"
 import { truncatedArgsInput, truncatedArgsMessage, truncatedArgsResult } from "./utils/truncated-args"
+
+describe("stripSpecialTokens (RF-23-8 — one definition for the decode path)", () => {
+  test("erases the token shapes local models actually leak", () => {
+    expect(stripSpecialTokens("<|channel|>analysis<|message|>")).toBe("analysis")
+    expect(stripSpecialTokens("<|im_start|>assistant<|im_end|>")).toBe("assistant")
+    expect(stripSpecialTokens("<|mask_start|>x<|mask_end|>")).toBe("x")
+    expect(stripSpecialTokens("text <|x|> and <|y|> end")).toBe("text  and  end")
+  })
+
+  test("a `>` inside the delimiters is prose, not a token, and survives", () =>
+    expect(stripSpecialTokens("<|a>b|>")).toBe("<|a>b|>"))
+
+  test("`<|>` is not a token", () => expect(stripSpecialTokens("<|>")).toBe("<|>"))
+
+  test("repairToolJson uses THIS definition, not a second one", () =>
+    expect(JSON.parse(repairToolJson('<|channel|>{"q":"hi"}<|end|>'))).toEqual({ q: "hi" }))
+
+  test("recoverToolCallsFromText DELIBERATELY does not use it — only the mask pair is stripped", () => {
+    // A blanket strip would erase the harmony channel token before scrubName sees it. Proof that
+    // the narrow strip is still in force: the mask pair is removed and the call is recovered...
+    expect(recoverToolCallsFromText('<|mask_start|>{"name":"read","arguments":{}}<|mask_end|>', ["read"])).toHaveLength(
+      1,
+    )
+    // ...while a non-mask special token is left in place, so it does NOT become a bare-JSON call.
+    expect(recoverToolCallsFromText('<|channel|>read<|message|>', ["read"])).toHaveLength(0)
+  })
+})
 
 describe("repairToolJson", () => {
   test("valid JSON is returned untouched", () => expect(repairToolJson('{"a":1}')).toBe('{"a":1}'))

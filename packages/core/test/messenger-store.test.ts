@@ -10,7 +10,7 @@ import { MessengerStore } from "@novaclaw/core/messenger/store"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import { testEffect } from "./lib/effect"
 
-// P0 gates (notes/messenger-plan.md §8): store CRUD round-trips, the one-session-per-chat
+// P0 gates: store CRUD round-trips, the one-session-per-chat
 // constraint surfaces as a typed error naming the holder, cursors upsert, and account removal
 // cascades to every dependent table.
 
@@ -38,8 +38,10 @@ describe("MessengerStore", () => {
       const account = yield* store.createAccount({ driverID: "fake", label: "ledger", enabled: true, settings: {} })
       const key = { accountID: account.id, chatID: "c1", messageID: "m1" }
 
+      expect(yield* store.hasInbound(account.id, "c1")).toBe(false)
       // Never seen: deliver it.
       expect(yield* store.claimInbound(key)).toBe("fresh")
+      expect(yield* store.hasInbound(account.id, "c1")).toBe(true)
 
       // The process died before delivery. A replay must be DELIVERED, not skipped — this is the drop
       // case, and re-delivery is the only way anyone ever sees that message.
@@ -98,9 +100,10 @@ describe("MessengerStore", () => {
       expect(chats[1]?.title).toBe("Nancy L")
       expect(chats[1]?.lastSeen).toBe(200)
 
-      // hasChat is the cold-start test (traffic rules §2.3): a seen chat is known, others aren't.
-      expect(yield* store.hasChat(account.id, "42")).toBe(true)
-      expect(yield* store.hasChat(account.id, "never-heard-of")).toBe(false)
+      // Discovery is address-book metadata, never invitation evidence. Only `claimInbound` may turn
+      // this predicate on; listing/upserting a chat cannot authorize a cold-start reply.
+      expect(yield* store.hasInbound(account.id, "42")).toBe(false)
+      expect(yield* store.hasInbound(account.id, "never-heard-of")).toBe(false)
     }),
   )
 
@@ -249,7 +252,7 @@ describe("MessengerStore", () => {
   // `Effect.orDie` under an `orElseSucceed` whose fallback is a STATEMENT, not an absence:
   // `listAccounts` → "No messenger accounts are set up. Ask the user to add one" (a claim about
   // the user's setup) and, in the gateway's reconcile, the cue to disconnect every live account;
-  // `hasChat` → "This chat has never messaged us" (a claim about the correspondent);
+  // `hasInbound` → "This chat has never messaged us" (a claim about the correspondent);
   // `bindingForChat` → "This chat isn't driving any session" (a claim about the session — and the
   // read a self-chat MINTS a new console session on the strength of).
   //
@@ -258,22 +261,23 @@ describe("MessengerStore", () => {
   // written for them was unreachable and the fiber died instead. `Effect.flip` below only succeeds
   // for a typed failure — a die propagates through it and fails the test, which is exactly how
   // this test bites if the `nameTheFault` calls are reverted.
-  it.effect("listAccounts, hasChat and bindingForChat fail typed — none of them invents an answer", () =>
+  it.effect("listAccounts, hasInbound and bindingForChat fail typed — none of them invents an answer", () =>
     Effect.gen(function* () {
       const store = yield* MessengerStore.Service
       const { db } = yield* Database.Service
       const account = yield* store.createAccount({ driverID: "telegram", label: "t", enabled: true, settings: {} })
       yield* store.seenChat({ accountID: account.id, chatID: "9", kind: "dm", title: "Nancy", at: 1 })
+      yield* store.claimInbound({ accountID: account.id, chatID: "9", messageID: "msg-9" })
       yield* store.createBinding({ accountID: account.id, chatID: "9", sessionID: "ses_dead", trust: "client" })
 
       // The positive control, first: with the tables intact each read answers, so the assertions
       // below are about the FAULT and not about the read being broken outright.
       expect((yield* store.listAccounts()).map((entry) => entry.id)).toContain(account.id)
-      expect(yield* store.hasChat(account.id, "9")).toBe(true)
+      expect(yield* store.hasInbound(account.id, "9")).toBe(true)
       expect((yield* store.bindingForChat(account.id, "9"))?.sessionID).toBe(SessionSchema.ID.make("ses_dead"))
 
       yield* db.run("DROP TABLE messenger_account")
-      yield* db.run("DROP TABLE messenger_chat")
+      yield* db.run("DROP TABLE messenger_inbound")
       yield* db.run("DROP TABLE messenger_binding")
 
       const accounts = yield* store.listAccounts().pipe(Effect.flip)
@@ -281,10 +285,10 @@ describe("MessengerStore", () => {
       expect(accounts.read).toBe("listAccounts()")
       expect(accounts.detail).toContain("messenger_account")
 
-      const chat = yield* store.hasChat(account.id, "9").pipe(Effect.flip)
+      const chat = yield* store.hasInbound(account.id, "9").pipe(Effect.flip)
       expect(chat._tag).toBe("MessengerStore.Unavailable")
-      expect(chat.read).toBe(`hasChat(${account.id}, 9)`)
-      expect(chat.detail).toContain("messenger_chat")
+      expect(chat.read).toBe(`hasInbound(${account.id}, 9)`)
+      expect(chat.detail).toContain("messenger_inbound")
 
       const binding = yield* store.bindingForChat(account.id, "9").pipe(Effect.flip)
       expect(binding._tag).toBe("MessengerStore.Unavailable")
@@ -295,7 +299,7 @@ describe("MessengerStore", () => {
       const logged = (yield* TestConsole.logLines).map((line) => JSON.stringify(line)).join("\n")
       expect(logged).toContain("messenger.store.read.failed")
       expect(logged).toContain('"messenger.operation":"listAccounts()"')
-      expect(logged).toContain('"messenger.operation":"hasChat(')
+      expect(logged).toContain('"messenger.operation":"hasInbound(')
       expect(logged).toContain('"messenger.operation":"bindingForChat(')
     }),
   )
@@ -326,6 +330,7 @@ describe("MessengerStore", () => {
       const store = yield* MessengerStore.Service
       const account = yield* store.createAccount({ driverID: "telegram", label: "t", enabled: true, settings: {} })
       yield* store.seenChat({ accountID: account.id, chatID: "1", kind: "dm", title: "x", at: 1 })
+      yield* store.claimInbound({ accountID: account.id, chatID: "1", messageID: "m1" })
       yield* store.upsertContact({
         accountID: account.id,
         senderID: "u",
@@ -338,6 +343,7 @@ describe("MessengerStore", () => {
 
       yield* store.removeAccount(account.id)
       expect(yield* store.listChats(account.id)).toEqual([])
+      expect(yield* store.hasInbound(account.id, "1")).toBe(false)
       expect(yield* store.listContacts(account.id)).toEqual([])
       expect(yield* store.bindingsForAccount(account.id)).toEqual([])
       expect(yield* store.getCursor(account.id)).toBeUndefined()

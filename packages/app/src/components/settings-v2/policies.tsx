@@ -23,12 +23,13 @@ import {
   projectPoliciesPayload,
 } from "./project-policies"
 import { SettingsExplainV2 } from "./explain"
+import { scopedDirectory } from "@/utils/routing-directory"
 
 /**
  * **Which checks run before a tool call, which of them you have switched off, and what this folder
  * asks for.**
  *
- * `todo/projects.md`: *"Policies have no management surface … Settings cannot list or toggle them;
+ * The gap: *"policies have no management surface … Settings cannot list or toggle them;
  * only built-ins install."* — and then *"A folder's policy list is READ-ONLY in the app — wants the
  * section-scoped write Permissions got."* A pre-action policy can refuse a tool call, rewrite its
  * arguments or hold it for approval; this section is where all three of those become visible and
@@ -72,7 +73,7 @@ export const SettingsPoliciesSection: Component = () => {
   const sync = useServerSync()
 
   const connection = createMemo(() => server.current ?? global.servers.list()[0])
-  const directory = createMemo(() => sync().data.path.directory || sync().data.path.home || "")
+  const directory = createMemo(() => scopedDirectory(sync().data.path))
   const source = createMemo(() => {
     const http = connection()?.http
     const dir = directory()
@@ -271,7 +272,7 @@ export const SettingsPoliciesSection: Component = () => {
 /**
  * **The folder's own list, as something a person can change.**
  *
- * `todo/projects.md`: *"A folder's policy list is READ-ONLY in the app — wants the section-scoped
+ * The gap: *"a folder's policy list is READ-ONLY in the app — wants the section-scoped
  * write Permissions got."* So it got exactly that one: `POST /api/project` touching only the
  * `policies` section, a preview of what will be written, and the shared `WriteReceipt` naming the
  * file. Nothing here is a new pattern — the differences from `ProjectPermissionsSection` are the

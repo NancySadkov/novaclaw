@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { PermissionV2Request, QuestionRequest, SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
+import type { QuestionRequest, SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 import { createStore } from "solid-js/store"
 import type { State } from "./types"
 import { applyDirectoryEvent, applyGlobalEvent } from "./event-reducer"
@@ -14,16 +14,6 @@ const rootSession = (input: { id: string; parentID?: string; archived?: number }
       archived: input.archived,
     },
   }) as unknown as Session
-
-const permissionRequest = (id: string, sessionID: string, title = id) =>
-  ({
-    id,
-    sessionID,
-    action: title,
-    resources: ["*"],
-    metadata: {},
-    save: [],
-  }) as PermissionV2Request
 
 const questionRequest = (id: string, sessionID: string, title = id) =>
   ({
@@ -53,7 +43,6 @@ const baseState = (input: Partial<State> = {}) =>
     session_status: {},
     session_diff: {},
     todo: {},
-    permission: {},
     question: {},
     mcp: {},
     vcs: undefined,
@@ -186,7 +175,6 @@ describe("applyDirectoryEvent", () => {
         sessionTotal: 2,
         session_diff: { ses_1: [] },
         todo: { ses_1: [] },
-        permission: { ses_1: [] },
         question: { ses_1: [] },
         session_status: { ses_1: { type: "busy" } },
       }),
@@ -204,7 +192,6 @@ describe("applyDirectoryEvent", () => {
     expect(store.sessionTotal).toBe(1)
     expect(store.session_diff.ses_1).toBeUndefined()
     expect(store.todo.ses_1).toBeUndefined()
-    expect(store.permission.ses_1).toBeUndefined()
     expect(store.question.ses_1).toBeUndefined()
     expect(store.session_status.ses_1).toBeUndefined()
   })
@@ -226,7 +213,6 @@ describe("applyDirectoryEvent", () => {
           sessionTotal: 2,
           session_diff: { [item.info.id]: [] },
           todo: { [item.info.id]: [] },
-          permission: { [item.info.id]: [] },
           question: { [item.info.id]: [] },
           session_status: { [item.info.id]: { type: "busy" } },
         }),
@@ -244,7 +230,6 @@ describe("applyDirectoryEvent", () => {
       expect(store.sessionTotal).toBe(item.expectedTotal)
       expect(store.session_diff[item.info.id]).toBeUndefined()
       expect(store.todo[item.info.id]).toBeUndefined()
-      expect(store.permission[item.info.id]).toBeUndefined()
       expect(store.question[item.info.id]).toBeUndefined()
       expect(store.session_status[item.info.id]).toBeUndefined()
     }
@@ -260,7 +245,6 @@ describe("applyDirectoryEvent", () => {
         session: [dropped],
         session_diff: { [dropped.id]: [] },
         todo: { [dropped.id]: [] },
-        permission: { [dropped.id]: [] },
         question: { [dropped.id]: [] },
         session_status: { [dropped.id]: { type: "busy" } },
       }),
@@ -281,47 +265,18 @@ describe("applyDirectoryEvent", () => {
     expect(store.session.map((x) => x.id)).toEqual([kept.id])
     expect(store.session_diff[dropped.id]).toBeUndefined()
     expect(store.todo[dropped.id]).toBeUndefined()
-    expect(store.permission[dropped.id]).toBeUndefined()
     expect(store.question[dropped.id]).toBeUndefined()
     expect(store.session_status[dropped.id]).toBeUndefined()
     expect(todos).toEqual([dropped.id])
   })
 
-  test("tracks permission and question request lifecycles", () => {
+  test("tracks question request lifecycles", () => {
     const sessionID = "ses_1"
     const [store, setStore] = createStore(
       baseState({
-        permission: { [sessionID]: [permissionRequest("perm_1", sessionID), permissionRequest("perm_3", sessionID)] },
         question: { [sessionID]: [questionRequest("q_1", sessionID), questionRequest("q_3", sessionID)] },
       }),
     )
-
-    applyDirectoryEvent({
-      event: { type: "permission.v2.asked", properties: permissionRequest("perm_2", sessionID) },
-      store,
-      setStore,
-      push() {},
-      directory: "/tmp",
-    })
-    expect(store.permission[sessionID]?.map((x) => x.id)).toEqual(["perm_1", "perm_2", "perm_3"])
-
-    applyDirectoryEvent({
-      event: { type: "permission.v2.asked", properties: permissionRequest("perm_2", sessionID, "updated") },
-      store,
-      setStore,
-      push() {},
-      directory: "/tmp",
-    })
-    expect(store.permission[sessionID]?.find((x) => x.id === "perm_2")?.action).toBe("updated")
-
-    applyDirectoryEvent({
-      event: { type: "permission.v2.replied", properties: { sessionID, requestID: "perm_2" } },
-      store,
-      setStore,
-      push() {},
-      directory: "/tmp",
-    })
-    expect(store.permission[sessionID]?.map((x) => x.id)).toEqual(["perm_1", "perm_3"])
 
     applyDirectoryEvent({
       event: { type: "question.asked", properties: questionRequest("q_2", sessionID) },

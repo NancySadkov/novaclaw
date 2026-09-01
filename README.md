@@ -8,9 +8,10 @@ knowledge base never leave your machine. It ships a friendly desktop app (Electr
 HTML UI available in the browser, plus a headless server for remote or LAN instances.
 
 The organizing idea: an **operating system whose processes are agent sessions**. Sessions spawn
-sub-sessions, exit with results a parent can join, inherit configuration down the parent chain, and
-show up in a task manager like any other process. Home is an app launcher — Chats, Processes,
-Settings, Notes, Files, Search — not a terminal.
+sub-sessions, exit with results a parent can join, and inherit configuration down the parent chain.
+Home is an app launcher — Contacts, Notes, Calendar, Recipes, Skills, Files, Terminal, Registry,
+Debug, Trash, Community, Help, Settings — not a terminal. Contacts is the roster: one row per
+colleague, what each is working on right now, and what each remembers.
 
 ## Download
 

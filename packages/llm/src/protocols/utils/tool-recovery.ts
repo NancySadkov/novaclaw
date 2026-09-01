@@ -15,6 +15,7 @@
 // repair) so it runs inside the protocol decoder and is testable without a model.
 
 import { isRecord, repairToolJson } from "../shared"
+import { escapeRegExp } from "@novaclaw/schema/text"
 
 // 0.85 mirrors afpro's difflib cutoff: high enough that we only remap on a near-
 // certain typo, never a coincidental overlap.
@@ -125,10 +126,6 @@ function normalizeArgs(obj: Record<string, unknown>): string {
     flat[key] = value
   }
   return JSON.stringify(flat)
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
 
 // hermes / Qwen: `[preamble] <tool_call>{json}</tool_call>` — possibly unclosed,
@@ -261,7 +258,8 @@ export function recoverToolCallsFromText(text: string, names: ReadonlyArray<stri
   // structural boundaries and hide an otherwise-recoverable call — strip them for RECOVERY
   // only (the displayed text upstream is untouched). ONLY the mask pair: harmony channel
   // tokens inside hermes names are scrubName's job, and a blanket `<|…|>` strip would
-  // corrupt them before it runs.
+  // corrupt them before it runs. So this is DELIBERATELY not `ProviderShared.stripSpecialTokens`,
+  // which every other surface in the decode path shares — the narrowing is the constraint.
   const cleaned = text.replace(/<\|mask_[a-z]+\|>/g, " ")
   const hermes = recoverHermes(cleaned, names)
   if (hermes.length > 0) return dedupeCalls(hermes)

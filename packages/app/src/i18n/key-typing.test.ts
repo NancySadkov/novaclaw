@@ -38,11 +38,6 @@ const BYPASS_PATTERNS = [/\bdynamicKey\s*\(/, /as\s+Parameters<typeof\s+language
  * cannot be narrowed. ⚠️ SHRINK ONLY.
  */
 const LEDGER: Record<string, string> = {
-  // The tool name arrives on the wire — MCP and plugin tools register at runtime, so there is no
-  // compile-time set to narrow to. The miss is HANDLED: `session-permission-dock.tsx` compares the
-  // result to the key and renders nothing when they match, so a raw key never reaches the user.
-  "pages/session/composer/session-permission-dock.tsx": "runtime tool name; missing-key case handled",
-
   // ✅ `components/settings-v2/parts/theme-swatches.tsx` was here until 2026-07-29, because
   // `APP_THEME_PRESETS[].nameKey` was declared `string`. It is a closed three-row table authored in
   // `context/app-theme.tsx`, so the fix was to narrow the SOURCE to `TranslationKey` — the same

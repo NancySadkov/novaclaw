@@ -8,7 +8,7 @@ import { described } from "./metadata"
 /**
  * ─── THE PRE-ACTION POLICIES INSTALLED IN THIS NOVACLAW ────────────────────────────────────────
  *
- * `todo/projects.md`: *"Policies have no management surface … Settings cannot list or toggle them."*
+ * The gap this closes: *"policies have no management surface … Settings cannot list or toggle them."*
  * This is the list half. The kernel could already refuse, patch, hold and record a tool call; what
  * nobody could do was find out WHICH guards were installed, what each one does, or whether the one
  * their folder asked for is running.

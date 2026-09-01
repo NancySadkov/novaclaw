@@ -2,7 +2,7 @@ import { createEffect, createSignal, onMount, Show, Suspense, type ParentProps }
 import { useLocation, useNavigate } from "@solidjs/router"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { DebugBar } from "@/components/debug-bar"
-import { Titlebar, type TitlebarUpdate } from "@/components/titlebar"
+import { Titlebar } from "@/components/titlebar"
 import { useJumpToAttentionCommand } from "@/apps/jump-to-attention"
 import { useSettingsCommand } from "@/components/settings-dialog"
 import { useCommand } from "@/context/command"
@@ -103,16 +103,6 @@ export default function NewLayout(props: ParentProps) {
       : [],
   )
 
-  const update: TitlebarUpdate = {
-    version: () => {
-      const state = platform.updater?.state()
-      if (state?.status !== "ready") return
-      return state.version
-    },
-    installing: () => platform.updater?.state().status === "installing",
-    install: () => void platform.updater?.install(),
-  }
-
   return (
     <div
       class="relative bg-v2-background-bg-deep flex-1 min-h-0 min-w-0 flex flex-col select-none [&_input]:select-text [&_textarea]:select-text [&_[contenteditable]]:select-text"
@@ -121,7 +111,7 @@ export default function NewLayout(props: ParentProps) {
         "padding-bottom": "env(safe-area-inset-bottom, 0px)",
       }}
     >
-      <Titlebar update={update} />
+      <Titlebar />
       <main class="flex-1 min-h-0 min-w-0 overflow-x-hidden flex flex-col items-start contain-strict">
         {/* A route that suspends renders NOTHING without a fallback — an empty shell with no way
             back, which is the dead end AGENTS.md's "never breaks in your hands" clause forbids. The
@@ -132,7 +122,7 @@ export default function NewLayout(props: ParentProps) {
             keying on `search` too (as the upstream PR did) remounts the page on any query-string
             change. `new-session.tsx` clears its deep-link `?prompt=` via setSearchParams while the
             user is typing, which would destroy the live page. Ported from
-            https://github.com/NancySadkov/novaclaw/pull/11 by @DassaultFalconKing. */}
+            outside contribution #11 by @DassaultFalconKing. */}
         <Show when={location.pathname} keyed>
           <Suspense
             fallback={
@@ -159,8 +149,6 @@ export default function NewLayout(props: ParentProps) {
         </Show>
       </main>
       {import.meta.env.DEV && <DebugBar inline />}
-      {/* No floating HelpButton in the new layout — the Help app tile owns the tour (SP8; the old
-          placeholder popover was dev-only lorem-ipsum competing with it). */}
       <ToastRegion />
     </div>
   )

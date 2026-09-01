@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { KbAbsorb } from "@novaclaw/core/kb-graph/absorb"
-import { KbAbsorbEval } from "@novaclaw/core/kb-graph/absorb-eval"
+import { KbAbsorbEval } from "../script/absorb-eval"
 import { KbChunk } from "@novaclaw/core/kb-graph/chunk"
 import { SessionExtract } from "@novaclaw/core/session/runner/extract"
 

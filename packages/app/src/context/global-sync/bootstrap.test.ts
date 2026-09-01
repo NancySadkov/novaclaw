@@ -46,7 +46,6 @@ describe("bootstrapDirectory", () => {
       },
       session_diff: {},
       todo: {},
-      permission: {},
       question: {},
       mcp_ready: true,
       mcp: {},
@@ -82,10 +81,7 @@ describe("bootstrapDirectory", () => {
             return { data: [] }
           },
         },
-        v2: {
-          permission: { request: { list: async () => ({ data: { data: [] } }) } },
-          session: { active: async () => ({ data: { data: {} } }) },
-        },
+        v2: { session: { active: async () => ({ data: { data: {} } }) } },
         question: { list: async () => ({ data: [] }) },
         mcp: {
           status: async () => {
@@ -135,7 +131,6 @@ describe("bootstrapDirectory", () => {
       },
       session_diff: {},
       todo: {},
-      permission: {},
       question: {},
       mcp_ready: true,
       mcp: {},
@@ -225,7 +220,6 @@ describe("bootstrapDirectory path seeding", () => {
       },
       session_diff: {},
       todo: {},
-      permission: {},
       question: {},
       mcp_ready: true,
       mcp: {},
@@ -254,10 +248,7 @@ describe("bootstrapDirectory path seeding", () => {
           session: { status: async () => ({ data: {} }) },
           vcs: { get: async () => ({ data: undefined }) },
           command: { list: async () => ({ data: [] }) },
-          v2: {
-            permission: { request: { list: async () => ({ data: { data: [] } }) } },
-            session: { active: async () => ({ data: { data: {} } }) },
-          },
+          v2: { session: { active: async () => ({ data: { data: {} } }) } },
           question: { list: async () => ({ data: [] }) },
           mcp: { status: async () => ({ data: {} }) },
           provider: { list: async () => ({ data: { providers: [], models: [], connected: [], default: {} } }) },
@@ -313,7 +304,6 @@ describe("bootstrapDirectory path seeding", () => {
       },
       session_diff: {},
       todo: {},
-      permission: {},
       question: {},
       mcp_ready: true,
       mcp: {},
@@ -336,10 +326,7 @@ describe("bootstrapDirectory path seeding", () => {
         session: { status: async () => ({ data: {} }) },
         vcs: { get: async () => ({ data: undefined }) },
         command: { list: async () => ({ data: [] }) },
-        v2: {
-          permission: { request: { list: async () => ({ data: { data: [] } }) } },
-          session: { active: async () => ({ data: { data: {} } }) },
-        },
+        v2: { session: { active: async () => ({ data: { data: {} } }) } },
         question: { list: async () => ({ data: [] }) },
         mcp: { status: async () => ({ data: {} }) },
         provider: { list: async () => ({ data: { providers: [], models: [], connected: [], default: {} } }) },

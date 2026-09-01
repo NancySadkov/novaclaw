@@ -33,7 +33,6 @@ export const CAPS: Messenger.Capabilities = {
   listChats: "full", // we can list recent inbox threads on demand (fetchRecent), so an agent can read
   files: { up: false, down: false }, // MIME attachments are P9 residue (text threads first)
   edits: false,
-  typing: false,
   threads: true,
   moderation: { delete: false, ban: false, kick: false, mute: false, pin: false },
   format: "plain",
@@ -544,7 +543,7 @@ export const make = (
           return yield* Effect.fail(
             new ConnectError({
               reason:
-                "OAuth sign-in needs a client ID (an Azure app registration). Add it in Settings, or use an app-password account instead (paste the password as the secret — no OAuth).",
+                "OAuth sign-in needs a Microsoft client ID. Add it in Settings, or use an app-password account instead (paste the password as the secret — no OAuth).",
             }),
           )
         const oauth = oauthFor(config, config.clientId)
@@ -610,7 +609,7 @@ export const make = (
         {
           type: "text",
           key: "clientId",
-          message: "OAuth client ID (Azure app registration — Microsoft requires OAuth for Outlook/365)",
+          message: "OAuth client ID (Microsoft requires OAuth for Outlook/365)",
           placeholder: "00000000-0000-0000-0000-000000000000",
         },
         {

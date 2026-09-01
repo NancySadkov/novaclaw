@@ -2,7 +2,7 @@ import type { ServerConnection } from "@/context/server"
 import { instanceFetch } from "./instance-fetch"
 
 /**
- * Community P3/P4 — the forum's client surface (`todo/community-p2p.md`).
+ * Community P3/P4 — the forum's client surface (`notes/spec/community-p2p.md`).
  *
  * Instance-global: contacts and channels belong to the install, not to whichever folder is open.
  */

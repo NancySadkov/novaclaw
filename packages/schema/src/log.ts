@@ -4,12 +4,11 @@ import { ATTRIBUTE_CLASSES, type Attributes, encodeList, type EventKey, EVENTS }
 /**
  * **The keyed log call — a thin wrapper over `Effect.log*`, and nothing else.**
  *
- * `todo/logging.md` item 1b, pass 1. There is exactly one line of behaviour in this module, and the
+ * There is exactly one line of behaviour in this module, and the
  * important thing about it is what it does NOT do: it opens no file, holds no state, starts no
  * daemon and adds no sink. A keyed record goes through the same `Effect.log*` entry point, the same
  * `Logger` layer, core's same logfmt formatter (`observability/logging.ts`) and into the same
- * `novaclaw.log` as the 172 un-keyed sites do today. §0.2 of that document is explicit that a
- * second writer beside
+ * `novaclaw.log` as the 172 un-keyed sites do today. 🔴 A second writer beside
  * `novaclaw.log` is the defect class this project keeps re-finding; this is a column, not a channel.
  *
  * ── what the line looks like ────────────────────────────────────────────────────────────────────
@@ -18,7 +17,7 @@ import { ATTRIBUTE_CLASSES, type Attributes, encodeList, type EventKey, EVENTS }
  *
  * `event=` rides in as a structured message part, so it lands immediately after `run=` and before
  * `message=`, with **no change to the formatter at all**. ⚠️ That is one field later than
- * `todo/logging.md` 1a's "immediately after `level=`", and the deviation is deliberate: putting it
+ * the "immediately after `level=`" the design sketch asked for, and the deviation is deliberate: putting it
  * there means editing the one function every existing log line in the product flows through, for a
  * column position that no `grep`, `cut -d= -f2` or logfmt reader can observe. `grep 'event=mcp\.'`
  * is identical either way. The formatter change is real risk for cosmetic gain, so it is not taken.
@@ -54,8 +53,8 @@ const LOG_AT = {
 } as const
 
 /**
- * **THE one normalization of a caught error into a `fault` attribute** — `todo/logging.md` 1h's
- * first seam.
+ * **THE one normalization of a caught error into a `fault` attribute** — the first of the three
+ * fault-normalization seams.
  *
  * The seam it closes, measured at app HEAD `34e45a066` by parsing every `Log.event` call: **100
  * assignments to a `fault`-class attribute, in 21 distinct expression shapes** — `Cause.pretty(c)`

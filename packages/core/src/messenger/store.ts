@@ -16,7 +16,7 @@ import {
   MessengerInitiationTable,
 } from "./sql"
 
-// The Messenger module's persistence (notes/messenger-plan.md §3.1): accounts, the seen-chat
+// The Messenger module's persistence: accounts, the seen-chat
 // cache, paired contacts, bindings, and durable per-account cursors. Instance-global (accounts
 // span locations; sessions from any location can bind). LIVE reads only — nothing here rides
 // the boot-frozen Config snapshot, so the agent tool and the gateway always see current state.
@@ -29,23 +29,21 @@ export class ChatAlreadyBoundError extends Schema.TaggedErrorClass<ChatAlreadyBo
 /**
  * The messenger database could not be read, so this store has NO ANSWER to give — not an empty one.
  *
- * ⚠️ A TYPED failure on purpose, and the third shape these reads have had. They were `Effect.orDie`
- * (a defect: it unwound the caller's fiber, and the `orElseSucceed(() => [])` recoveries written
- * for them were unreachable code). Wave 1 made `bindingsForSession` succeed with `[]` and log —
- * which fixed the fiber kill but handed `host-exec.ts`'s containment walk the most PERMISSIVE
- * possible answer to a question the database had just refused to answer. A typed failure is the
- * only one of the three that lets each consumer decide: `orElseSucceed(…)` still catches it (a die
- * never was), so a consumer that genuinely wants an empty keeps it in one line, while a consumer
- * whose empty would be a LIE can finally tell "nothing there" from "we could not look".
+ * 🔴 **A TYPED failure, and neither `orDie` nor a succeed-with-`[]` is an acceptable substitute.**
+ * `orDie` unwinds the caller's fiber, which makes every `orElseSucceed(() => [])` written against
+ * it unreachable code. Succeeding with `[]` hands `host-exec.ts`'s containment walk the most
+ * PERMISSIVE possible answer to a question the database just refused to answer. Only a typed
+ * failure lets each consumer decide — `orElseSucceed(…)` still catches it (a die never was), so a
+ * consumer that genuinely wants an empty keeps it in one line, while a consumer whose empty would
+ * be a LIE can tell "nothing there" from "we could not look".
  *
  * It is also the mechanical half: a NEW consumer cannot silently inherit a fail-closed empty it
  * never thought about, because the error channel makes the compiler ask.
  *
- * **Four reads carry it** — `bindingsForSession` (2026-07-28, the containment guard) plus
- * `listAccounts`, `hasChat` and `bindingForChat` (the same day, the same defect class: each was
- * `orDie` under an `orElseSucceed` whose fallback made the product state something false — "No
- * messenger accounts are set up", "This chat has never messaged us", "This chat isn't driving any
- * session"). Every other read here is still `orDie`, and that is a real gap rather than a
+ * **Four reads carry it** — `bindingsForSession` (the containment guard), `listAccounts`,
+ * `hasInbound` and `bindingForChat`: each one's fallback made the product state something false
+ * ("No messenger accounts are set up", "This chat has never messaged us", "This chat isn't driving
+ * any session"). ⚠️ Every other read here is still `orDie`, and that is a real gap rather than a
  * distinction: they are simply not yet consumed anywhere that an invented answer would lie.
  */
 export class UnavailableError extends Schema.TaggedErrorClass<UnavailableError>()("MessengerStore.Unavailable", {
@@ -92,7 +90,7 @@ export interface Interface {
   readonly getAccount: (id: Messenger.AccountID) => Effect.Effect<Messenger.AccountInfo | undefined>
   readonly createAccount: (input: AccountInput) => Effect.Effect<Messenger.AccountInfo>
   readonly updateAccount: (id: Messenger.AccountID, patch: AccountPatch) => Effect.Effect<void>
-  /** Removes the account AND its chats, contacts, bindings, and cursor (edge #9's substrate). */
+  /** Removes the account AND its discovery, inbound, contact, binding, and cursor state. */
   readonly removeAccount: (id: Messenger.AccountID) => Effect.Effect<void>
 
   /** Upsert into the seen-chat cache (kind/title/proposed-access refresh, last_seen advances).
@@ -150,7 +148,7 @@ export interface Interface {
    * ⚠️ **Nothing model-facing may reach this.** A declaration is the user's word; if an agent could
    * set it, a prompt-injected message in a chat could relabel that chat public and have itself
    * quoted into a report. The `messenger` tool therefore has no op for it, and the surface that
-   * should is the Settings chat picker (todo/messenger.md → P3).
+   * should own it is the Settings chat picker, which is not built yet.
    *
    * Answers `false` when the chat is not in the seen-cache — never creates the row.
    */
@@ -160,14 +158,19 @@ export interface Interface {
     readonly access: Messenger.SourceAccess | undefined
   }) => Effect.Effect<boolean>
   /**
-   * True if we've ever seen this chat (an inbound message put it in the cache) — the cold-start
-   * test for the traffic-rules governor: a chat we've never heard from is a NEW conversation.
+   * True only when the durable inbound ledger contains a successfully claimed message for this
+   * chat — the cold-start evidence for the traffic-rules governor.
+   *
+   * Discovery metadata deliberately lives in `MessengerChatTable` and is NOT consulted here. A
+   * full-list driver can discover every addressable channel without proving that anybody there
+   * initiated a conversation. Keeping the query on `MessengerInboundTable` makes a read-only chat
+   * listing structurally incapable of widening outbound authority.
    *
    * **Fails typed rather than answering `false`.** `false` here means "nobody in this chat has ever
    * written to us", which the gateway turns into a refusal that says exactly that — a statement
    * about the CORRESPONDENT, made from a database read that never happened. See `UnavailableError`.
    */
-  readonly hasChat: (accountID: Messenger.AccountID, chatID: string) => Effect.Effect<boolean, UnavailableError>
+  readonly hasInbound: (accountID: Messenger.AccountID, chatID: string) => Effect.Effect<boolean, UnavailableError>
 
   readonly upsertContact: (contact: ContactInfo) => Effect.Effect<void>
   readonly getContact: (accountID: Messenger.AccountID, senderID: string) => Effect.Effect<ContactInfo | undefined>
@@ -197,8 +200,7 @@ export interface Interface {
    * dies, and it never answers `[]` for a read it could not perform.
    *
    * Why this one read is special: it is the only store read consumed by a GUARD. Four call sites
-   * take it. ⚠️ **Only ONE of them still recovers to an empty**, and the list below has been
-   * corrected (2026-07-28) because the original three were not alike:
+   * take it, and ⚠️ **only ONE of them may recover to an empty**:
    *   · `messenger/gateway.ts`'s outbound relay KEEPS `Effect.orElseSucceed(() => [])` — no
    *     bindings, no relay, and there is nobody to tell (it is an instance-global fiber with no
    *     chat of its own), so an empty is genuinely fail-closed there;
@@ -210,15 +212,11 @@ export interface Interface {
    * half of the bash/Strict confinement decision. There, `[]` is the **permissive** answer — "no
    * untrusted chat drives this turn" — so an unreadable database used to buy raw host execution.
    *
-   * ⚠️ Three shapes, and the reasoning for the third. `Effect.orDie` made all four recoveries
-   * unreachable (a defect unwinds the fiber; `orElseSucceed` catches a failure, not a die), so a
-   * sqlite fault killed the turn — and in the relay's case the ONE fiber delivering replies to every
-   * bound chat instance-wide. Wave 1 replaced it with succeed-`[]`-and-log, which fixed that and
-   * left the guard deciding containment on data it did not have. This — log, then fail typed with
-   * `UnavailableError` — is the shape that serves all four: each consumer spends one line saying
-   * what an unreadable database means for IT, and the guard finally distinguishes *unknown* from
-   * *no binding*. `host-exec.ts` maps any failure here to `Hostility "unknown"`, which takes
-   * the unattended arm: confined where a sandbox backend exists, denied where none does.
+   * ⚠️ Log, then fail TYPED — the shape that serves all four. Each consumer spends one line saying
+   * what an unreadable database means for IT, and the guard distinguishes *unknown* from *no
+   * binding*. `host-exec.ts` maps any failure here to `Hostility "unknown"`, which takes the
+   * unattended arm: confined where a sandbox backend exists, denied where none does. (`orDie` would
+   * make all four recoveries unreachable and kill the relay fiber; see `UnavailableError`.)
    *
    * ⚠️ Do NOT "simplify" this back to `Effect<…[]>`. The empty array and the unreadable database are
    * different facts, and a signature that cannot tell them apart is how a containment decision came
@@ -246,7 +244,7 @@ export interface Interface {
    * instances on one database file serialize on the write lock) — which an in-process mutex would not.
    *
    * ⚠️ **Fails typed rather than answering `exhausted` or `charged`** — the ruling-2 discipline this
-   * module already applies to `hasChat` and `bindingForChat`. Neither invented answer is acceptable:
+   * module already applies to `hasInbound` and `bindingForChat`. Neither invented answer is acceptable:
    * `charged` on an unreadable database is an uncounted cold DM to a stranger (the ban risk 9(b)
    * exists to bound), and `exhausted` states "you have used today's twenty" — a claim about the day's
    * traffic made from a write that never happened. The caller must decide, and `gateway.send` decides
@@ -457,6 +455,7 @@ export const layer = Layer.effect(
       removeAccount: Effect.fn("MessengerStore.removeAccount")(function* (id) {
         yield* db.delete(MessengerBindingTable).where(eq(MessengerBindingTable.account_id, id)).run().pipe(Effect.orDie)
         yield* db.delete(MessengerContactTable).where(eq(MessengerContactTable.account_id, id)).run().pipe(Effect.orDie)
+        yield* db.delete(MessengerInboundTable).where(eq(MessengerInboundTable.account_id, id)).run().pipe(Effect.orDie)
         yield* db.delete(MessengerChatTable).where(eq(MessengerChatTable.account_id, id)).run().pipe(Effect.orDie)
         yield* db.delete(MessengerCursorTable).where(eq(MessengerCursorTable.account_id, id)).run().pipe(Effect.orDie)
         yield* db.delete(MessengerAccountTable).where(eq(MessengerAccountTable.id, id)).run().pipe(Effect.orDie)
@@ -531,7 +530,7 @@ export const layer = Layer.effect(
           .pipe(Effect.orDie)
       }),
       getChat: Effect.fn("MessengerStore.getChat")(function* (accountID, chatID) {
-        // ⚠️ Typed-fallible on purpose, like `hasChat` next door: the gateway's ruling-7 gate asks
+        // ⚠️ Typed-fallible on purpose, like `hasInbound` next door: the gateway's ruling-7 gate asks
         // this "is it safe to quote?" and `undefined` would answer "no such chat" for a read that
         // never happened. The gate must be able to tell those apart to refuse under its own name.
         const row = yield* nameTheFault(
@@ -573,15 +572,16 @@ export const layer = Layer.effect(
         return rows.map(chatFromRow).sort((a, b) => b.lastSeen - a.lastSeen)
       }),
       // ⚠️ NOT `Effect.orDie`, and NOT a silent `false`: `false` is "this chat has never messaged
-      // us", which the gateway states to the model as fact. See the interface note.
-      hasChat: Effect.fn("MessengerStore.hasChat")(function* (accountID, chatID) {
+      // us", which the gateway states to the model as fact. Discovery rows are intentionally absent
+      // from this query; only the durable inbound claim ledger is invitation evidence.
+      hasInbound: Effect.fn("MessengerStore.hasInbound")(function* (accountID, chatID) {
         const row = yield* nameTheFault(
           db
-            .select()
-            .from(MessengerChatTable)
-            .where(and(eq(MessengerChatTable.account_id, accountID), eq(MessengerChatTable.chat_id, chatID)))
+            .select({ messageID: MessengerInboundTable.message_id })
+            .from(MessengerInboundTable)
+            .where(and(eq(MessengerInboundTable.account_id, accountID), eq(MessengerInboundTable.chat_id, chatID)))
             .get(),
-          `hasChat(${accountID}, ${chatID})`,
+          `hasInbound(${accountID}, ${chatID})`,
         )
         return row !== undefined
       }),

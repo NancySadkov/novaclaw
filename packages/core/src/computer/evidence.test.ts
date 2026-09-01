@@ -16,7 +16,7 @@ import { ComputerEvidence as CE } from "./evidence"
  *
  * ⚠️ **The design cites that last measurement under its *attributed* bullet, and that is a
  * mis-citation worth not inheriting.** The probe changed the screen OUTSIDE the watch box on purpose
- * (`todo/computer-use.md`, and `verify.ts`'s own module note), so what it measured is region
+ * (see `verify.ts`'s own module note), so what it measured is region
  * determinism plus locality: the region stayed byte-identical while the frame moved. In this
  * module's vocabulary that is `no-visible-effect` with the frame CORROBORATING it — the strongest
  * negative the system can produce — not an attribution. It is pinned below as such. The positive
@@ -91,9 +91,11 @@ describe("🔴 G2 — a failed capture beats every other reading", () => {
   test("🔴 an unknown frame never reads as `not animated` — the permissive direction is refused", () => {
     const result = CE.attribute(probe({ frameIdlePair: [bad("x"), bad("y")], frameAfter: bad("z") }))
     if (result.kind !== "no-visible-effect") throw new Error("expected no-visible-effect")
+    // `known: false` is the whole assertion: `FrameContext` carries `animated` only on the known
+    // arm, so an unknown frame cannot read as animated — the type makes the permissive direction
+    // unrepresentable rather than merely untaken.
     expect(result.frame.known).toBe(false)
     expect(result.corroboratedByFrame).toBe(false)
-    expect(CE.groundingIsStale(result)).toBe(false)
   })
 })
 
@@ -153,7 +155,6 @@ describe("rung 1 on the REAL substrate digests", () => {
 
   test("the real MoM frames at FRAME scope: animated, so the grounding is already stale", () => {
     const result = CE.attribute(probe({ frameIdlePair: [ok(MOM_BEFORE), ok(MOM_AFTER)], frameAfter: ok(MOM_AFTER) }))
-    expect(CE.groundingIsStale(result)).toBe(true)
     if (result.kind !== "no-visible-effect") throw new Error("expected no-visible-effect")
     expect(result.frame).toEqual({ known: true, animated: true, changed: false })
     // …and the watch box being quiet still convicts, which is exactly the signal the 08-06 loop

@@ -47,18 +47,7 @@ const VERSION = env.NOVACLAW_VERSION ?? rootPkg.version
 if (typeof VERSION !== "string" || VERSION.length === 0)
   throw new Error(`the root package.json has no "version" — it is the single source of truth`)
 
-const bot = ["actions-user", "novaclaw", "novaclaw-agent[bot]"]
-const teamPath = path.resolve(import.meta.dir, "../../../.github/TEAM_MEMBERS")
-const team = [
-  // `.github/TEAM_MEMBERS` was removed during detachment (it's upstream infra); tolerate its
-  // absence so importing this build-tooling module never throws (it broke `predev`/build-node.ts).
-  ...(await Bun.file(teamPath)
-    .text()
-    .then((x) => x.split(/\r?\n/).map((x) => x.trim()))
-    .then((x) => x.filter((x) => x && !x.startsWith("#")))
-    .catch(() => [] as string[])),
-  ...bot,
-]
+const team = ["novaclaw", "novaclaw-agent[bot]"]
 
 export const Script = {
   get channel() {

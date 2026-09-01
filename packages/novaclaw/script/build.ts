@@ -7,6 +7,7 @@ import path from "path"
 import { fileURLToPath } from "url"
 
 import { Shell } from "@novaclaw/core/shell"
+import { dhtExecutableName } from "@novaclaw/core/community/dht"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -229,7 +230,7 @@ await $`bun ${path.resolve(dir, "../host/build.ts")}`.catch((error) => {
  * silently DHT-less looks identical to a network with nobody in it, and the person who can fix that
  * is the one reading this build's output.
  */
-const dhtBinary = process.platform === "win32" ? "novaclaw-dht.exe" : "novaclaw-dht"
+const dhtBinary = dhtExecutableName()
 // ⚠️ `build/`, not `target/release/` — the sidecar build publishes its one artifact there so the
 // desktop packager can copy a directory without dragging cargo's whole scratch tree with it.
 const dhtBuilt = path.resolve(dir, "../dht/build", dhtBinary)

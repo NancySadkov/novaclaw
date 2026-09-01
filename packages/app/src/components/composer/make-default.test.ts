@@ -9,7 +9,7 @@ import {
 } from "./make-default"
 
 /**
- * `todo/projects.md`: *"Add **Make Default for this Folder** to the Tune dialogue … show the
+ * The brief: *"add **Make Default for this Folder** to the Tune dialogue … show the
  * resulting change and a local receipt."*
  *
  * What is asserted here is the SENTENCE the panel prints before the button, because getting it wrong

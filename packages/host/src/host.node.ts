@@ -14,7 +14,7 @@ export * as Host from "./host.node"
  * shape declared in `include/host.h`, never a callback into the runtime. What differs is only who
  * fills the queue: `ReadDirectoryChangesW`/`inotify` through our own C++ under Bun, and Node's
  * built-in `fs.watch` here. No dependency is added by this file; the real end-state is ONE runtime
- * for the sidecar, and that is recorded in `todo/host-module.md` rather than pretended away.
+ * for the sidecar, and that is stated here rather than pretended away.
  *
  * ⚠️ Two differences a caller must know about, because pretending they do not exist is how a watcher
  * silently goes stale:

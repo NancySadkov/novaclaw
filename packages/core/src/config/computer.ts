@@ -19,8 +19,8 @@ export const DEFAULT_SCREENSHOT_PATH = path.join(tmpdir(), "novaclaw-computer.jp
  *
  * ⚠️ **A display is CONFIGURED here or the tool declines — it is never inherited from the process
  * environment.** On a headless server an inherited `DISPLAY` fails; on a Linux desktop it succeeds and
- * silently drives the operator's REAL X11 screen, which is P6 and human-gated (`todo/computer-use.md`,
- * build order). The second failure is much worse than the first, and only an explicit setting
+ * silently drives the operator's REAL X11 screen, which is human-gated by
+ * design. The second failure is much worse than the first, and only an explicit setting
  * distinguishes "I have an X11 sandbox" from "I happen to be sitting at a monitor". Windows real
  * desktop control never reads this field; it uses a session's approved HWND/PID/executable binding.
  *

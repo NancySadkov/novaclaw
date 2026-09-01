@@ -1,6 +1,7 @@
 export * as WhatsAppBaileysDriver from "./whatsapp-baileys"
 
 import { Deferred, Effect, Queue, Stream } from "effect"
+import { LinkedAccount } from "./linked-account"
 import type { Messenger } from "@novaclaw/schema/messenger"
 import { MessengerFormat } from "../format"
 import type {
@@ -36,7 +37,6 @@ const CAPS: Messenger.Capabilities = {
   listChats: "full", // a linked device sees the account's chats (accumulated from the socket store)
   files: { up: true, down: true, maxBytes: 16_000_000 }, // WhatsApp's common media cap
   edits: false,
-  typing: true,
   threads: false,
   moderation: { delete: false, ban: false, kick: false, mute: false, pin: false }, // §2.1: no moderation
   format: "plain", // a human typing emits no markup, and plain can't inject entities
@@ -139,24 +139,7 @@ const tryClient = <A>(run: () => Promise<A>): Effect.Effect<A, ConnectError | Ch
 
 /** Remembers the last N messages WE sent (per chat), so our own outgoing traffic echoed back by the
  *  platform (fromMe) is recognized as our relay, not new input. Bounded FIFO. */
-const sentTracker = (capacity: number) => {
-  const order: string[] = []
-  const set = new Set<string>()
-  const key = (chatID: string, messageID: string) => `${chatID}:${messageID}`
-  return {
-    add: (chatID: string, messageID: string) => {
-      const item = key(chatID, messageID)
-      if (set.has(item)) return
-      set.add(item)
-      order.push(item)
-      if (order.length > capacity) {
-        const evicted = order.shift()
-        if (evicted !== undefined) set.delete(evicted)
-      }
-    },
-    has: (chatID: string, messageID: string) => set.has(key(chatID, messageID)),
-  }
-}
+const sentTracker = LinkedAccount.sentTracker
 
 /** ONE account, TWO addresses. WhatsApp identifies users both by phone JID (`…@s.whatsapp.net`) and
  *  by **LID** (`…@lid`, the privacy-preserving id), and which one an inbound message carries depends
@@ -169,21 +152,23 @@ const sentTracker = (capacity: number) => {
 export const foldSelfAddress = (jid: string, self: { readonly id: string; readonly lid?: string }): string =>
   self.lid !== undefined && self.lid.length > 0 && jid === self.lid ? self.id : jid
 
-/** The self-echo policy for a linked WhatsApp account (the human and the agent share one identity):
- *  - incoming (not fromMe) → never self.
- *  - fromMe that WE sent → self (drop: our own relay echoing back).
- *  - fromMe in the SELF-chat ("Message Yourself") we did NOT send → the OPERATOR typing on their
- *    phone (the remote-control console) → REAL input, not an echo.
- *  - fromMe elsewhere we did not send → the human using their own account → not our turn (self, drop). */
-export const isSelfMessage = (
+/**
+ * The self-echo policy, shared with every other linked-account driver — see
+ * `driver/linked-account.ts` for the four cases and why the rule is not per-platform. Re-exported
+ * rather than re-implemented: this was a byte-identical copy until 2026-09-01 (RF-08-9).
+ *
+ * 🔴 **WhatsApp's contribution is the one thing that must happen BEFORE this is called:** fold the
+ * address with `foldSelfAddress` above. The self-chat case is an equality test against `selfID`, and
+ * "Message Yourself" arrives under the LID rather than the phone JID — unfolded, the operator's own
+ * console message reads as a stranger who happens to share our identity and is dropped as an echo.
+ * That failure is silent, and it is why `foldSelfAddress` stays in this file rather than moving to
+ * the shared module: it is a WhatsApp addressing quirk, not part of the rule.
+ */
+export const isSelfMessage: (
   message: Pick<WAMessage, "outgoing" | "chatID" | "messageID">,
   selfID: string,
   wasSentByUs: boolean,
-): boolean => {
-  if (!message.outgoing) return false
-  if (wasSentByUs) return true
-  return message.chatID !== selfID
-}
+) => boolean = LinkedAccount.isSelfMessage
 
 /** Human instructions for the link step, from whichever mode the factory started.
  *

@@ -1,6 +1,7 @@
 import { HTML_EMBED_PATH } from "@novaclaw/schema/html-embed"
 import { EMBED_WRITE, isEmbedReady } from "@novaclaw/schema/html-embed-bootstrap"
 import { useMarked } from "@novaclaw/ui/context/marked"
+import { escapeHtml } from "@novaclaw/ui/util/html"
 import { useI18n } from "@novaclaw/ui/context/i18n"
 import morphdom from "morphdom"
 import { checksum } from "@novaclaw/core/util/encode"
@@ -15,7 +16,7 @@ import {
   splitProps,
 } from "solid-js"
 import { isServer } from "solid-js/web"
-import { bundledLanguages } from "shiki"
+import { bundledLanguages } from "shiki/langs"
 import { canReusePendingBlock, project, type Block, type Projection } from "./markdown-stream"
 import {
   disposeStreamingCode,
@@ -62,17 +63,8 @@ const iconPaths = {
     '<path d="M2.5 10C2.5 10 5.41667 4.58398 10 4.58398C14.5833 4.58398 17.5 10 17.5 10C17.5 10 14.5833 15.4173 10 15.4173C5.41667 15.4173 2.5 10 2.5 10Z" stroke="currentColor" stroke-linejoin="round"/><circle cx="10" cy="10" r="2.5" stroke="currentColor"/>',
 }
 
-function escape(text: string) {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;")
-}
-
 function fallback(markdown: string) {
-  return escape(markdown).replace(/\r\n?/g, "\n").replace(/\n/g, "<br>")
+  return escapeHtml(markdown).replace(/\r\n?/g, "\n").replace(/\n/g, "<br>")
 }
 
 async function code(text: string, language: string | undefined, key: string, complete = false) {

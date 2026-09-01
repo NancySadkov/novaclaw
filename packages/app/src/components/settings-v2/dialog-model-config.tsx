@@ -18,6 +18,8 @@ import { errorMessage } from "@/pages/layout/helpers"
 import * as ToolChannel from "./tool-channel"
 import { showToast } from "@/utils/toast"
 import { SettingsListV2 } from "./parts/list"
+import { PresetFieldV2 } from "./parts/preset-field"
+import { SAMPLING, type FieldKey, numFromText as num } from "./parts/preset-value"
 import { SettingsRowV2 } from "./parts/row"
 import { SettingsExplainV2 } from "./explain"
 
@@ -57,16 +59,6 @@ type ProviderConfig = {
 }
 
 const MODALITIES = ["text", "image", "audio"] as const
-const SAMPLING = [
-  "temperature",
-  "top_p",
-  "top_k",
-  "min_p",
-  "repetition_penalty",
-  "presence_penalty",
-  "frequency_penalty",
-] as const
-type FieldKey = (typeof SAMPLING)[number] | "context" | "maxTokens" | "images" | "thinkingBudget" | "retryAttempts"
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 // MindControl thinking budget is stored in request.body (the free-form record the runtime reads),
@@ -75,134 +67,6 @@ type WithRequestBody = {
   request?: { headers?: Record<string, string>; body?: Record<string, unknown>; variant?: string }
 }
 const bodyBudget = (m: unknown): unknown => (m as WithRequestBody | undefined)?.request?.body?.thinkingBudget
-
-// Presets per field. `{}` = "use the default" (blank). `word` is a shared i18n intensity term; `size`
-// is a literal unit label (context/output are token counts, not intensities). The number is the value.
-// ⚠️ `word` is a union, not `string`: it is interpolated into `settings.models.config.preset.<word>`
-// and the app's translator is key-typed, so widening it would silently switch that check off.
-type PresetWord =
-  | "precise"
-  | "focused"
-  | "balanced"
-  | "creative"
-  | "wild"
-  | "off"
-  | "diverse"
-  | "tight"
-  | "wide"
-  | "light"
-  | "strong"
-  | "gentle"
-  | "moderate"
-  | "disabled"
-type RawPreset = { num?: number; word?: PresetWord; size?: string }
-const PRESETS: Record<FieldKey, RawPreset[]> = {
-  temperature: [
-    {},
-    { word: "precise", num: 0 },
-    { word: "focused", num: 0.3 },
-    { word: "balanced", num: 0.7 },
-    { word: "creative", num: 1 },
-    { word: "wild", num: 1.3 },
-  ],
-  top_p: [
-    {},
-    { word: "off", num: 1 },
-    { word: "focused", num: 0.9 },
-    { word: "balanced", num: 0.95 },
-    { word: "diverse", num: 0.8 },
-  ],
-  top_k: [
-    {},
-    { word: "off", num: 0 },
-    { word: "tight", num: 20 },
-    { word: "balanced", num: 40 },
-    { word: "wide", num: 100 },
-  ],
-  min_p: [
-    {},
-    { word: "off", num: 0 },
-    { word: "light", num: 0.05 },
-    { word: "balanced", num: 0.1 },
-    { word: "strong", num: 0.2 },
-  ],
-  repetition_penalty: [
-    {},
-    { word: "off", num: 1 },
-    { word: "gentle", num: 1.02 },
-    { word: "light", num: 1.05 },
-    { word: "moderate", num: 1.1 },
-    { word: "strong", num: 1.2 },
-  ],
-  presence_penalty: [
-    {},
-    { word: "off", num: 0 },
-    { word: "light", num: 0.3 },
-    { word: "moderate", num: 0.6 },
-    { word: "strong", num: 1 },
-  ],
-  frequency_penalty: [
-    {},
-    { word: "off", num: 0 },
-    { word: "light", num: 0.3 },
-    { word: "moderate", num: 0.6 },
-    { word: "strong", num: 1 },
-  ],
-  context: [
-    {},
-    { size: "4K", num: 4096 },
-    { size: "8K", num: 8192 },
-    { size: "16K", num: 16384 },
-    { size: "32K", num: 32768 },
-    { size: "64K", num: 65536 },
-    { size: "128K", num: 131072 },
-    { size: "256K", num: 262144 },
-  ],
-  // A count of pictures, so the presets are small and literal. 3 is holo3.1's vLLM cap and the
-  // reason this row exists; 1 is what the harness assumes when this is blank.
-  images: [
-    {},
-    { size: "1", num: 1 },
-    { size: "2", num: 2 },
-    { size: "3", num: 3 },
-    { size: "4", num: 4 },
-    { size: "8", num: 8 },
-    { size: "16", num: 16 },
-    { size: "32", num: 32 },
-  ],
-  maxTokens: [
-    {},
-    { size: "512", num: 512 },
-    { size: "1K", num: 1024 },
-    { size: "2K", num: 2048 },
-    { size: "4K", num: 4096 },
-    { size: "8K", num: 8192 },
-    { size: "16K", num: 16384 },
-    { size: "32K", num: 32768 },
-  ],
-  // -1 is the DISABLED value (owner 2026-07-26): one entry in the same list rather than a separate switch,
-  // because "no budget" is a budget setting. The runtime already collapses any non-positive configured
-  // value to 0 (`defaultThinkingBudget` clamps with Math.max(0, …)) and the runner gates on `> 0`, so the
-  // sentinel needs no schema, migration or protocol change. Blank still means "derive the default".
-  thinkingBudget: [
-    {},
-    { word: "disabled", num: -1 },
-    { size: "2K", num: 2048 },
-    { size: "4K", num: 4096 },
-    { size: "6K", num: 6144 },
-    { size: "8K", num: 8192 },
-    { size: "16K", num: 16384 },
-    { size: "32K", num: 32768 },
-  ],
-  retryAttempts: [
-    { size: "1", num: 1 },
-    { size: "3", num: 3 },
-    { size: "5", num: 5 },
-    { size: "10", num: 10 },
-  ],
-}
-
-type Opt = { id: string; num: number | undefined; label: string }
 
 export const DialogModelConfig: Component<{
   providerID: string
@@ -335,29 +199,6 @@ export const DialogModelConfig: Component<{
     outAudio: outMod.includes("audio"),
   })
 
-  const num = (s: string): number | undefined => {
-    const t = s.trim()
-    if (!t) return undefined
-    const n = Number(t)
-    return Number.isFinite(n) ? n : undefined
-  }
-
-  const optLabel = (p: RawPreset): string => {
-    if (p.num === undefined) return language.t("settings.models.config.preset.default")
-    // A sentinel is not a quantity: "Disabled (-1)" would invite the reader to reason about -1 tokens.
-    if (p.word)
-      return p.num < 0
-        ? language.t(`settings.models.config.preset.${p.word}`)
-        : `${language.t(`settings.models.config.preset.${p.word}`)} (${p.num})`
-    if (p.size) return p.size
-    return String(p.num)
-  }
-  // The option id is an internal key, and it must not start with "-": a NEGATIVE value (the -1 "Disabled"
-  // budget) produced the id "-1", and the listbox then refused to open at all — measured, with the
-  // temperature select opening from the identical events while this one stayed shut. Prefixing keeps every
-  // id a safe identifier regardless of sign.
-  const optId = (p: RawPreset) => (p.num === undefined ? "default" : `v${p.num}`)
-
   const save = async () => {
     const options: Record<string, number> = {}
     for (const k of SAMPLING) {
@@ -445,69 +286,6 @@ export const DialogModelConfig: Component<{
     }
   }
 
-  // A named-preset droplist + a raw input for one numeric field. The droplist teaches typical values
-  // by name; the input allows any exact value and reflects back as "Custom" when it matches no preset.
-  const PresetField = (p: { field: FieldKey }) => {
-    const options = createMemo<Opt[]>(() =>
-      PRESETS[p.field].map((preset) => ({ id: optId(preset), num: preset.num, label: optLabel(preset) })),
-    )
-    const currentNum = () => num(form[p.field])
-    const matched = () => options().find((o) => o.num === currentNum())
-    const customOpt = (): Opt | undefined =>
-      currentNum() !== undefined && !matched()
-        ? {
-            id: "custom",
-            num: currentNum(),
-            label: `${language.t("settings.models.config.preset.custom")} (${currentNum()})`,
-          }
-        : undefined
-    const allOptions = () => {
-      const extra = customOpt()
-      return extra ? [...options(), extra] : options()
-    }
-    const current = () => matched() ?? customOpt() ?? options()[0]
-    return (
-      // No disabled state here any more. It existed for ONE caller — the old budgeting switch, which greyed
-      // the budget row out via `pointer-events-none`. "Disabled" is now a value in the list itself, so a row
-      // that cannot be clicked is always a bug; keeping the mechanism around only preserved a way to cause it.
-      <div class="flex items-center gap-2 justify-end">
-        <SelectV2<Opt>
-          appearance="inline"
-          aria-label={language.t(`settings.models.config.${p.field}.name`)}
-          options={allOptions()}
-          current={current()}
-          value={(o) => o.id}
-          label={(o) => o.label}
-          placement="bottom-end"
-          gutter={6}
-          onSelect={(o) => o && setForm(p.field, o.num === undefined ? "" : String(o.num))}
-        />
-        <div class="w-[76px] shrink-0">
-          <TextInputV2
-            type="text"
-            appearance="base"
-            inputmode="decimal"
-            value={form[p.field]}
-            onInput={(event) => setForm(p.field, event.currentTarget.value)}
-            // Select the whole value on focus so typing REPLACES it. These fields arrive pre-filled with
-            // the current setting, and a click lands the caret wherever you happened to click — so
-            // typing a new number silently INSERTED into the old one. Measured live: a field holding
-            // `32768`, clicked and typed `8192`, became `327819268`. Nothing downstream clamps it, so
-            // the garbage was persisted; the real dev DB ended up with a thinkingBudget of 600060006000
-            // (6000 typed three times), which silently disables the budget it was meant to set.
-            onFocus={(event) => event.currentTarget.select()}
-            placeholder={language.t("settings.models.config.defaultPlaceholder")}
-            spellcheck={false}
-            autocorrect="off"
-            autocomplete="off"
-            autocapitalize="off"
-            aria-label={language.t(`settings.models.config.${p.field}.name`)}
-          />
-        </div>
-      </div>
-    )
-  }
-
   // The explain node is passed in rather than derived from `field`: a template-literal `.desc.more`
   // key would type-check for every field and render the RAW KEY for the ones that have no second
   // half — the live bug `dynamicKey`'s doc warns about, and a `?` with nothing behind it is a dead
@@ -522,7 +300,12 @@ export const DialogModelConfig: Component<{
         </>
       }
     >
-      <PresetField field={field} />
+      <PresetFieldV2
+        field={field}
+        value={() => form[field]}
+        onValue={(next) => setForm(field, next)}
+        ariaLabel={language.t(`settings.models.config.${field}.name`)}
+      />
     </SettingsRowV2>
   )
 

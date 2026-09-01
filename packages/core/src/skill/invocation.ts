@@ -2,7 +2,7 @@ export * as SkillInvocation from "./invocation"
 
 // ─── SKILL INVOCATION: two independent audiences, two independent switches ────────────────────────
 //
-// `todo/projects.md`: *expose **Nova may choose this** and **Show it for me to run** independently,
+// The brief: *expose **Nova may choose this** and **Show it for me to run** independently,
 // plus an **Only when I choose it** preset.* This module is the whole of that decision, kept pure
 // (no Effect, no node builtins, no imports at all) so the kernel gate and the browser both run the
 // SAME code rather than two spellings of it.
@@ -73,7 +73,7 @@ export * as SkillInvocation from "./invocation"
 //      (a `novaclaw.json` travels in a repository; an absolute `location` does not) and stable
 //      across a re-download, a cache move and every edit to the body.
 //
-//   ❌ `location` — machine-specific, and `todo/skills.md` already records that moving the cache
+//   ❌ `location` — machine-specific, and moving the cache
 //      silently changes what provenance we derive from it. A choice keyed on it would evaporate.
 //   ❌ a hash of `content` — changes on every edit, i.e. the opposite of stable.
 //   ❌ a minted UUID — nothing persists one. The engine has no per-skill store, and a re-download
@@ -85,9 +85,9 @@ export * as SkillInvocation from "./invocation"
 //
 // ⚠️ **The collision that remains is the engine's own, inherited rather than doubled.** Two sources
 // that both ship `pdf` collapse to one entry, last source wins, and V2 logs no duplicate-name event
-// (`todo/skills.md` has this open). A saved choice therefore governs whichever `pdf` survived. That
-// is a real hazard and it is not one this module can close from the outside — it is filed where it
-// belongs, on the wire.
+// — still open. A saved choice therefore governs whichever `pdf` survived. That
+// is a real hazard and it is not one this module can close from the outside — it belongs on the
+// wire, where the collision is made.
 //
 // ⚠️ **A name that cannot be written down is NOT addressable, and we say so instead of guessing.**
 // Four kinds of name fail, each for a mechanical reason rather than a taste one — see
@@ -390,7 +390,7 @@ export interface Invocation {
   readonly me: boolean
 }
 
-/** The preset `todo/projects.md` names: Nova-may-choose OFF, show-it-for-me ON. */
+/** The **Only when I choose it** preset: Nova-may-choose OFF, show-it-for-me ON. */
 export const ONLY_WHEN_I_CHOOSE: Invocation = { nova: false, me: true }
 
 /**

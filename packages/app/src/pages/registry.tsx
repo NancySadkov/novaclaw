@@ -1,6 +1,5 @@
 import { createMemo, createResource, createSignal, For, Show } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
-import { GoldGlyph } from "@/components/gold-glyph"
 import { useConfirm } from "@/components/dialog-confirm"
 import { useGlobal } from "@/context/global"
 import { useServer } from "@/context/server"
@@ -13,10 +12,11 @@ import {
   registryUpdateRow,
   type RegistryRow,
 } from "@/utils/registry-api"
-import { AppPage } from "@/components/app-page"
+import { AppPage, AppPageHeader } from "@/components/app-page"
 import { ExpertiseGate } from "@/components/expertise-gate"
 import { RequiresLevel } from "@/context/expertise"
 import { useLanguage } from "@/context/language"
+import { resolveInstanceGlobalDirectory } from "@/utils/routing-directory"
 
 // The Registry app (owner directive 2026-07-15) — a Regedit-style editor over the instance
 // SQLite database. Developer expertise only — gated on the ROUTE below, not merely on the home
@@ -81,16 +81,9 @@ function RegistryAppPage() {
   })
   const [tick, setTick] = createSignal(0)
 
-  // The database is global; `directory` is only request routing — the server's home works.
-  const [routeDir] = createResource(ctx, async (c) => {
-    const p = c.sync.data.path
-    if (p && (p.home || p.directory)) return p.home || p.directory
-    const got = await c.sdk.client.path
-      .get()
-      .then((r) => r.data)
-      .catch(() => undefined)
-    return got?.home || got?.directory || ""
-  })
+  // The database is global; `directory` is only request routing — the server's home works. The read
+  // itself is `utils/routing-directory.ts`, shared verbatim with trash.tsx and terminal.tsx.
+  const [routeDir] = createResource(ctx, resolveInstanceGlobalDirectory)
 
   const [selected, setSelected] = createSignal<string | undefined>()
   const [offset, setOffset] = createSignal(0)
@@ -229,13 +222,12 @@ function RegistryAppPage() {
 
   return (
     <AppPage class="flex flex-col overflow-hidden">
-      <div class="flex items-center gap-2 border-b border-v2-border-border-base px-4 py-3">
-        <GoldGlyph name="registry" class="size-5" />
-        <span class="text-[14px] font-semibold text-v2-text-text-base">Registry</span>
-        <span class="text-[12px] text-v2-text-text-faint">
-          the instance database, editable — changes are immediate and unguarded
-        </span>
-      </div>
+      <AppPageHeader
+        dense
+        glyph="registry"
+        title="Registry"
+        hint="the instance database, editable — changes are immediate and unguarded"
+      />
       <div class="flex min-h-0 flex-1">
         <div class="w-56 shrink-0 overflow-y-auto border-r border-v2-border-border-base p-2">
           <For each={tables() ?? []}>

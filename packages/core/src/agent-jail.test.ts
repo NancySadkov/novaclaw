@@ -241,7 +241,7 @@ describe("AgentJail", () => {
 })
 
 /**
- * 🔴 `todo/jail.md`: *"Report whether the instance is inside a container or VM using measured host
+ * 🔴 The requirement: *"report whether the instance is inside a container or VM using measured host
  * capabilities."*
  *
  * The Linux arms are exercised HERE, on Windows, because `detectEnclosure` takes the platform and its

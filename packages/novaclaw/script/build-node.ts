@@ -14,6 +14,11 @@ process.chdir(dir)
 
 const generated = await import("./generate.ts")
 
+// Bun's split build does not remove chunks that disappeared from the current graph. Shipping the
+// whole directory would otherwise retain code from an older build, including dependencies that
+// have been removed from source. Recreate the output boundary before every sidecar build.
+await rm("./dist/node", { recursive: true, force: true })
+
 const result = await Bun.build({
   target: "node",
   // Resolve the core's conditional `#sqlite`/`#pty`/`#fff` imports (package.json `imports`) to

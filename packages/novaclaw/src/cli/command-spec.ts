@@ -44,10 +44,6 @@ export const CommandSpec = {
     command: "export [sessionID]",
     describe: "export session data as JSON",
   },
-  pr: {
-    command: "pr <number>",
-    describe: "fetch and checkout a GitHub PR branch, then run novaclaw",
-  },
   session: {
     command: "session",
     describe: "manage sessions",

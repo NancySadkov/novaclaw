@@ -1,7 +1,6 @@
 import { EOL } from "os"
 import { Effect } from "effect"
 import { ModelsDev } from "@novaclaw/core/models-dev"
-import { Catalog } from "@novaclaw/core/catalog"
 import { PluginV2 } from "@novaclaw/core/plugin"
 import { LocationServiceMap, locationServiceMapLayer } from "@novaclaw/core/location-services"
 import { Location } from "@novaclaw/core/location"
@@ -48,11 +47,12 @@ export const ModelsCommand = effectCmd({
       // The location graph starts PluginInternal in a scoped fork. Await its initial
       // batch before reading Catalog or a fast CLI process can observe an empty store.
       yield* (yield* PluginV2.Service).ready
-      const catalog = yield* Catalog.Service
-      const providers = yield* catalog.provider.all()
-      const models = yield* catalog.model.all()
-      const available = yield* catalog.provider.available()
-      return ProviderCatalogResult.listResult({ providers, models, connected: available.map((p) => p.id) })
+      // RF-14-8: the four-call catalog read is `ProviderCatalogResult.listCatalog`, shared verbatim
+      // with `httpapi/handlers/provider.ts`'s `list`. Only the DIRECTORY differs between the two —
+      // `process.cwd()` here, `InstanceState.context.directory` there — so only the provision below
+      // stays local. `run.ts` drives the in-process HTTP handler instead, which is the other valid
+      // shape; this command predates it.
+      return yield* ProviderCatalogResult.listCatalog
     }).pipe(
       Effect.provide(
         LocationServiceMap.Service.get(Location.Ref.make({ directory: AbsolutePath.make(process.cwd()) })),

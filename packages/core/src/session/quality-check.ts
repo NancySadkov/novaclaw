@@ -7,7 +7,7 @@ import type { Database } from "../database/database"
 import { SessionQualityCheckTable } from "./quality-check.sql"
 
 /**
- * Durable evidence that a quality check RAN — `todo/verified-autonomy.md` V1's only new write.
+ * Durable evidence that a quality check RAN — verified autonomy's only new write.
  *
  * The table's header carries the shape decisions. This module carries the two rules a CALLER has to
  * get right, and both exist because the alternative silently produces a receipt that reads well and
@@ -54,7 +54,7 @@ const id = (input: Record) =>
  *
  * ⚠️ **`exitCode` is written as NULL when absent, never coerced to 0.** A receipt that cannot tell
  * "the process exited 0" from "no process ever ran" is the ambiguous blank
- * `todo/verified-autonomy.md` names as its second gap — and on an evidence document an ambiguous
+ * that verified autonomy names as its second gap — and on an evidence document an ambiguous
  * blank reads as zero, i.e. as success.
  */
 export const record = (db: Database.Interface["db"], input: Record) =>

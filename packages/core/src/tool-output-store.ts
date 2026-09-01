@@ -8,7 +8,7 @@ import { Global } from "./global"
 import { makeGlobalNode, makeLocationNode } from "./effect/app-node"
 import { SessionSchema } from "./session/schema"
 import { ToolTruncation } from "./tool/truncation"
-import { Identifier } from "./util/identifier"
+import { Identifier } from "./id/id"
 import type { ToolOutput } from "@novaclaw/llm"
 
 export const MAX_LINES = 2_000
@@ -83,7 +83,7 @@ export const layer = Layer.effect(
     })
 
     const write = Effect.fn("ToolOutputStore.write")(function* (content: string) {
-      const file = path.join(directory, `tool_${Identifier.ascending()}`)
+      const file = path.join(directory, Identifier.ascending("tool"))
       yield* fs.ensureDir(directory).pipe(Effect.mapError((cause) => new StorageError({ operation: "write", cause })))
       yield* fs
         .writeFileString(file, content, { flag: "wx" })

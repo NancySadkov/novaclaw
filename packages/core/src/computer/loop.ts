@@ -1,7 +1,6 @@
 export * as ComputerLoop from "./loop"
 
 import { ComputerActions } from "./actions"
-import { ComputerAccessibility } from "./accessibility"
 import { ComputerCoordinates } from "./coordinates"
 import { ComputerEvidence } from "./evidence"
 import { ComputerGroundingConsensus } from "./grounding-consensus"
@@ -38,8 +37,8 @@ import { ComputerProposal } from "./proposal"
  * frame where the ratchet happened to be pointing at it is gone.
  *
  * `claim_done` therefore does not transition anywhere: it schedules an adjudication and continues.
- * This is the jh completion gate's law with a screen as the witness instead of a command
- * (`todo.md`, run 3: unsatisfiable gate → `task_blocked: completion_unverified`).
+ * This is the jh completion gate's law with a screen as the witness instead of a command: an
+ * unsatisfiable gate ends the run as `task_blocked: completion_unverified`, never as a pass.
  *
  * 🔴 **The Guard calls `ComputerActions.build`, and closing that hole is this slice's named
  * obligation.** S1 deliberately kept value-level action validation (keysym syntax, scroll bounds,
@@ -185,8 +184,8 @@ export const REPAIRS_PER_STEP = 1
  *
  * A structural repair says *"your reply was malformed"*; a repeat refusal says *"your reply was
  * well-formed and you are stuck"*. Until now both spent the same single {@link REPAIRS_PER_STEP} and
- * both ended the step the same way, and that conflation is what the 2.2 acceptance re-run ended on
- * (`computer-use-loop-plan.md` §7d). At Master of Magic's Game Options dialog the planner clicked
+ * both ended the step the same way, and that conflation is what the 2.2 acceptance re-run ended on.
+ * At Master of Magic's Game Options dialog the planner clicked
  * `(900,920)` → `attributed`, the identical click → `no-visible-effect`, and then **five consecutive
  * steps of `refused: repeat` while re-emitting the identical proposal**, until `no-progress` fired.
  *
@@ -278,7 +277,6 @@ export type Command =
       readonly purpose: CapturePurpose
       readonly region?: ComputerActions.Region
     }
-  | { readonly kind: "scan-accessibility" }
   | { readonly kind: "ask-planner"; readonly prompt: ComputerPrompt.Prompt }
   | { readonly kind: "ask-grounder"; readonly prompt: ComputerPrompt.Prompt }
   | { readonly kind: "ask-preaction-critic"; readonly prompt: ComputerPrompt.Prompt }
@@ -291,18 +289,11 @@ export type Command =
   | {
       readonly kind: "act"
       readonly action: ComputerActions.Action
-      readonly execution:
-        | {
-            readonly kind: "argv"
-            readonly argv: ReadonlyArray<ReadonlyArray<string>>
-            readonly env: Readonly<Record<string, string>>
-          }
-        | {
-            readonly kind: "accessibility"
-            readonly elementID: string
-            readonly ownName: string
-            readonly actionName: string
-          }
+      readonly execution: {
+        readonly kind: "argv"
+        readonly argv: ReadonlyArray<ReadonlyArray<string>>
+        readonly env: Readonly<Record<string, string>>
+      }
       /** Watch scope in PIXELS. `undefined` → the driver measures at whole-frame scope. */
       readonly watch?: ComputerActions.Region
     }
@@ -317,7 +308,6 @@ export type Event =
       readonly image?: ComputerPrompt.Image
     }
   | { readonly kind: "planner-replied"; readonly text: string; readonly promptTokens?: number }
-  | { readonly kind: "accessibility-scanned"; readonly candidates: ReadonlyArray<ComputerAccessibility.Candidate> }
   | { readonly kind: "grounder-replied"; readonly text: string; readonly promptTokens?: number }
   | { readonly kind: "preaction-critiqued"; readonly text: string; readonly promptTokens?: number }
   | { readonly kind: "adjudicated"; readonly text: string; readonly promptTokens?: number }
@@ -338,7 +328,6 @@ export type Phase =
   | "calibrate-capture"
   | "calibrate-adjudicate"
   | "observe"
-  | "scan-accessibility"
   | "propose"
   | "ground"
   | "preaction-capture"
@@ -378,8 +367,6 @@ export interface State {
   readonly checkpointIndex: number
   /** The newest frame, and ONLY the newest frame (G11). */
   readonly image?: ComputerPrompt.Image
-  /** Fresh for the same frame in {@link image}; never carried across steps. */
-  readonly accessibility: ReadonlyArray<ComputerAccessibility.Candidate>
   readonly pending?: Pending
   /** The planner's accepted pointer proposal while the blind grounder supplies only its point. */
   readonly groundingDraft?: ComputerProposal.ProposalDraft
@@ -468,7 +455,6 @@ export const initial = (spec: TaskSpec): State => ({
   promptTokens: 0,
   ledger: ComputerLedger.empty,
   checkpointIndex: 0,
-  accessibility: [],
   groundingReplies: 0,
   groundingPoints: [],
   groundingIssues: [],
@@ -573,7 +559,8 @@ const spend = (state: State, reported: number | undefined): State => ({
  *
  * ⚠️ **The other candidate fix — gate the stop on the run never having had an `attributed` step — was
  * REFUSED, and the program's own measurement is what refuses it.** DOSBox `autolock` captures the
- * mouse *on the first click* (`todo/computer-use.md`, 2026-08-06), so the canonical autolock run is
+ * mouse *on the first click* (measured 2026-08-06; the run is written up in `verify.ts`'s header),
+ * so the canonical autolock run is
  * one attributed step followed by an unbroken run of dead ones. Gating on "never attributed" would
  * disable G13 in **exactly** the scenario it was written for. The attributed history is evidence to
  * REPORT, never a condition to suppress the stop on.
@@ -667,7 +654,6 @@ const beginStep = (state: State): Transition => {
       groundingIssues: [],
       preparedAction: undefined,
       preactionTarget: undefined,
-      accessibility: [],
     },
     command: { kind: "capture", scope: "frame", purpose: "observe" },
   }
@@ -681,14 +667,7 @@ type Refusal = { readonly ok: false; readonly reason: string }
 type BuiltAction = {
   readonly ok: true
   readonly action: ComputerActions.Action
-  readonly execution:
-    | { readonly kind: "argv"; readonly built: ComputerActions.Valid }
-    | {
-        readonly kind: "accessibility"
-        readonly elementID: string
-        readonly ownName: string
-        readonly actionName: string
-      }
+  readonly execution: { readonly kind: "argv"; readonly built: ComputerActions.Valid }
   readonly watch?: ComputerActions.Region
 }
 
@@ -751,14 +730,13 @@ const buildAction = (
   draft: ComputerProposal.ProposalDraft,
   spec: TaskSpec,
   grounded?: ComputerProposal.PointDraft,
-  candidate?: ComputerAccessibility.Candidate,
 ): BuiltAction | Refusal => {
   const source = draft.action
   if (source == null) return { ok: false, reason: "no action" }
   const kind = typeof source.kind === "string" ? source.kind.trim() : ""
   if (!ComputerProposal.isActionKind(kind)) return { ok: false, reason: `not an action kind: ${kind || "(absent)"}` }
-  if (ComputerProposal.isPointerKind(kind) && grounded === undefined && candidate === undefined)
-    return { ok: false, reason: `${kind} needs either an exact accessibility candidate or a point from the blind grounder` }
+  if (ComputerProposal.isPointerKind(kind) && grounded === undefined)
+    return { ok: false, reason: `${kind} needs a point from the blind grounder` }
 
   let point: ComputerCoordinates.Point | undefined
   let watchPoint: ComputerCoordinates.Point | undefined
@@ -769,9 +747,6 @@ const buildAction = (
     const offset = spec.pointerOffset
     point =
       offset === undefined ? converted.point : { x: converted.point.x + offset.x, y: converted.point.y + offset.y }
-  } else if (candidate !== undefined) {
-    watchPoint = ComputerAccessibility.center(candidate)
-    point = watchPoint
   }
 
   let action: ComputerActions.Action
@@ -816,20 +791,7 @@ const buildAction = (
   const built = ComputerActions.build(action, spec.actionOptions)
   if (!built.ok) return { ok: false, reason: built.reason }
 
-  const semantic =
-    candidate === undefined || !ComputerProposal.isPointerKind(kind)
-      ? undefined
-      : ComputerAccessibility.semanticAction(candidate, kind, action.kind === "click" ? action.button : undefined)
-  const execution =
-    semantic === undefined
-      ? ({ kind: "argv", built } as const)
-      : ({
-          kind: "accessibility",
-          elementID: candidate!.id,
-          ownName: candidate!.name,
-          actionName: semantic,
-        } as const)
-  if (candidate !== undefined) return { ok: true, action, execution, watch: candidate.bounds }
+  const execution = { kind: "argv", built } as const
   return watchPoint === undefined
     ? { ok: true, action, execution }
     : { ok: true, action, execution, watch: watchAround(watchPoint, spec.viewport) }
@@ -932,7 +894,6 @@ const reprompt = (
       goal: state.spec.goal,
       ledger: state.ledger,
       image: state.image,
-      accessibility: state.accessibility,
       note,
     }),
     "ask-planner",
@@ -945,9 +906,8 @@ const scheduleAction = (
   draft: ComputerProposal.ProposalDraft,
   described: Pending,
   grounded?: ComputerProposal.PointDraft,
-  candidate?: ComputerAccessibility.Candidate,
 ): Transition => {
-  const build = buildAction(draft, state.spec, grounded, candidate)
+  const build = buildAction(draft, state.spec, grounded)
   if (!build.ok) {
     return reprompt(
       state,
@@ -956,15 +916,7 @@ const scheduleAction = (
       described,
     )
   }
-  const signature =
-    build.execution.kind === "argv"
-      ? JSON.stringify(build.execution.built.argv)
-      : JSON.stringify([
-          "accessibility",
-          build.execution.elementID,
-          build.execution.ownName,
-          build.execution.actionName,
-        ])
+  const signature = JSON.stringify(build.execution.built.argv)
   if (state.lastNoEffect !== undefined && state.lastNoEffect === signature) {
     const note =
       state.repeatEpisode === 0
@@ -975,10 +927,7 @@ const scheduleAction = (
   const command: Extract<Command, { kind: "act" }> = {
     kind: "act",
     action: build.action,
-    execution:
-      build.execution.kind === "argv"
-        ? { kind: "argv", argv: build.execution.built.argv, env: build.execution.built.env }
-        : build.execution,
+    execution: { kind: "argv", argv: build.execution.built.argv, env: build.execution.built.env },
     ...(build.watch === undefined ? {} : { watch: build.watch }),
   }
   const acting: State = {
@@ -989,12 +938,10 @@ const scheduleAction = (
     groundingDraft: undefined,
     pending: { ...described, signature, kind: build.action.kind },
   }
-  // C3 applies to screenshot-grounded pointer actions only. Accessibility targets are revalidated
-  // by id/name immediately before invocation; key/type/scroll have no proposed coordinate to check.
+  // C3 applies to screenshot-grounded pointer actions; key/type/scroll have no proposed coordinate to check.
   const pixelPoint = "point" in build.action ? build.action.point : undefined
   if (
     grounded !== undefined &&
-    command.execution.kind === "argv" &&
     build.watch !== undefined &&
     pixelPoint !== undefined
   ) {
@@ -1160,23 +1107,13 @@ export function next(state: State, event: Event): Transition {
       if (event.kind !== "captured") return unexpected(state, event)
       if (!event.capture.ok)
         return blocked(state, "capture-failed", `the observe frame was not captured: ${event.capture.reason}`)
-      return {
-        state: { ...state, phase: "scan-accessibility", image: event.image, accessibility: [] },
-        command: { kind: "scan-accessibility" },
-      }
-    }
-
-    // ── Accessibility accelerator ────────────────────────────────────────────────────────────
-    case "scan-accessibility": {
-      if (event.kind !== "accessibility-scanned") return unexpected(state, event)
-      const observed: State = { ...state, phase: "propose", accessibility: event.candidates }
+      const observed: State = { ...state, phase: "propose", image: event.image }
       return ask(
         observed,
         ComputerPrompt.planner({
           goal: state.spec.goal,
           ledger: state.ledger,
-          image: state.image,
-          accessibility: event.candidates,
+          image: event.image,
         }),
         "ask-planner",
       )
@@ -1252,21 +1189,6 @@ export function next(state: State, event: Event): Transition {
       const actionKind = draft.action?.kind?.trim() ?? ""
       if (ComputerProposal.isPointerKind(actionKind)) {
         const target = draft.action?.target?.trim() ?? ""
-        const elementID = draft.action?.element_id?.trim() ?? ""
-        if (elementID !== "") {
-          const selected = ComputerAccessibility.select(spent.accessibility, elementID, target)
-          if (!selected.ok) {
-            return reprompt(
-              spent,
-              `The harness REFUSED accessibility target ${JSON.stringify(elementID)}: ${selected.reason}. ` +
-                "Choose one supplied candidate with its exact own name, or omit element_id and use the screenshot channel.\n\n" +
-                "Re-emit the WHOLE proposal, corrected.",
-              "refused: accessibility target",
-              described,
-            )
-          }
-          return scheduleAction(spent, draft, described, undefined, selected.candidate)
-        }
         const issue = ComputerPrompt.grounderLabelIssue(target)
         if (issue !== undefined) {
           return reprompt(

@@ -106,7 +106,7 @@ export interface Footprint {
  * keys its cadence on `estimatedTokens`, so a visual session now re-grounds LESS often than it did
  * this morning. That is the correct direction — it was re-grounding on phantom growth — but it does
  * mean image growth is currently invisible to that trigger. Giving images a real cost needs a
- * per-model token rule, which is `todo/vision.md` work and not a number to guess here.
+ * per-model token rule, which is unbuilt and not a number to guess here.
  */
 const DATA_URI = /"(data:[^";,]*;base64,[A-Za-z0-9+/=]+)"/g
 const mediaFreeJson = (json: string): { readonly text: string; readonly media: number; readonly pixels: number } => {

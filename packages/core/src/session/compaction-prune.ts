@@ -1,6 +1,6 @@
 export * as CompactionPrune from "./compaction-prune"
 
-// A2-a (todo/adoption.md §A2) — the CHEAP tier of the compaction ladder, restored.
+// The CHEAP tier of the compaction ladder, restored.
 //
 // `prune()` is the NON-LLM context reclaim: walk the transcript backwards, protect the newest 40k
 // tokens of tool output and the last 2 turns, exempt `skill` output, erase older tool RESULTS
@@ -22,8 +22,8 @@ export * as CompactionPrune from "./compaction-prune"
 // a model (test/session-compaction-prune.test.ts). `compaction.ts` keeps the wiring.
 //
 // Tokenizer-free by deliberate design — `util/token.ts` is the ONE estimator shared by context
-// packing, compaction and the reasoning budget, and prune joins it rather than adding a tokenizer
-// (todo/adoption.md A2.1 gate 2). The estimate mirrors what `runner/to-llm-message.ts` actually
+// packing, compaction and the reasoning budget, and prune joins it rather than adding a tokenizer.
+// The estimate mirrors what `runner/to-llm-message.ts` actually
 // lowers for a completed tool part, so "tokens reclaimed" means tokens the MODEL stops paying for,
 // not bytes in the row.
 //
@@ -37,7 +37,7 @@ export * as CompactionPrune from "./compaction-prune"
 // ⛔ WITHHELD: rewriting the transcript ROWS via a durable `SessionEvent.Tool.Pruned`. It was built
 // and it worked (branch `tool-pruned-event`), then adversarial review found 10 defects and one of
 // them voids the premise on the DEFAULT path: `SessionHistory.messageRows` bounds the runner's query
-// with `gte(seq, compaction.seq)` (`session/history.ts:36-43`), so once this cycle writes its
+// at the compaction boundary, so once this cycle writes its
 // compaction message every pruned row is ALREADY out of the model's context, permanently. Erasing
 // the rows as well therefore reclaims nothing and only destroys the human-readable transcript — and
 // destroys it badly, wiping the `structured` payload that is the only rendering of what an
@@ -115,9 +115,6 @@ export type Plan = {
 
 export const isExempt = (name: string): boolean => EXEMPT_TOOLS.includes(name)
 
-/** Already pruned — its output is the notice, and the timestamp says who did it. */
-export const isPruned = (tool: SessionMessage.AssistantTool): boolean => tool.time.pruned !== undefined
-
 /**
  * 🔴 Media-aware, and this site had the worst version of the bug. The pruner ERASES tool outputs to
  * reclaim context and weighs candidates by this number. An image looked like 11,772 reclaimable
@@ -145,10 +142,19 @@ export const outputTokens = (tool: SessionMessage.AssistantTool, imagePatchPixel
 /**
  * The reclaim decision over a transcript, newest → oldest.
  *
- * The walk stops (rather than skips) at two boundaries, both deliberate: a `compaction` message —
- * everything older is already represented by its summary — and the first ALREADY-pruned tool
- * result, because prune runs oldest-last, so anything beyond it was erased by a previous pass.
- * That second stop is what makes repeated prunes idempotent and O(new work).
+ * The walk stops (rather than skips) at a `compaction` message — everything older is already
+ * represented by its summary.
+ *
+ * ⚠️ **It does NOT stop at an already-pruned tool result, and must not pretend to.** A second stop
+ * on `time.pruned` stood here until 2026-09-01 (RF-03-10), documented as "what makes repeated prunes
+ * idempotent and O(new work)". It could never fire: `time.pruned` is written only by `erase()`
+ * below, `erase` is IN-MEMORY within one compaction cycle (the ⛔ block at the top of this file is
+ * why), and nothing persists it — so `plan` always runs over a freshly decoded transcript in which
+ * no part is marked. The walk is O(new work) anyway, because `plan` runs once per cycle over that
+ * fresh load; the branch was not what delivered the property it claimed.
+ *
+ * 🔴 **Do not re-add it as a guard "for a future durable tier."** The ⛔ block above forbids that
+ * tier outright — it was built, adversarially reviewed and withheld over 10 defects.
  */
 export const plan = (messages: readonly SessionMessage.Message[], imagePatchPixels?: number): Plan => {
   const targets: Target[] = []
@@ -168,7 +174,6 @@ export const plan = (messages: readonly SessionMessage.Message[], imagePatchPixe
       if (part.type !== "tool") continue
       if (part.state.status !== "completed") continue
       if (isExempt(part.name)) continue
-      if (isPruned(part)) break walk
       const tokens = outputTokens(part, imagePatchPixels)
       scanned += tokens
       if (scanned <= PROTECT_TOOL_OUTPUT_TOKENS) continue

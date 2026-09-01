@@ -57,10 +57,10 @@ import { Token } from "../../util/token"
  * chars** — not a truncated answer, no answer — while 512/2048/4096 stopped on their own with
  * byte-identical valid JSON. A cut-off reasoner returns nothing, which is exactly the "empty-reply
  * trap" named in checkpoint 4 above, now with a measured boundary.
- * ⚠️ Note what did NOT survive: `runner/llm.ts` used to read the 2026-07-20 table as an INVERSION
- * ("a bigger output limit is worse"). On holo3.1 a bigger cap is *neutral*, not worse. The
- * mechanism here is unaffected — it never rested on the inversion — but do not re-import that
- * conclusion from the neighbouring file's history. A model that finishes
+ * ⚠️ Note what did NOT survive: the 2026-07-20 table was read as an INVERSION ("a bigger output
+ * limit is worse"). On holo3.1 a bigger cap is *neutral*, not worse. The mechanism here is
+ * unaffected — it never rested on the inversion — but do not re-import that conclusion. Both tables
+ * are in `notes/reports/utility-pass-token-cliff-2026-08-06.md`. A model that finishes
  * reasoning on its own (emits answer
  * `content`) short-circuits with NO continuation — the common, cheap path, and the reason phase 1
  * carries no prefill: a non-thinking model just answers and the mechanism is a no-op. The whole turn

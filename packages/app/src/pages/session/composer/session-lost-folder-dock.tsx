@@ -15,7 +15,7 @@ import { showToast } from "@/utils/toast"
  * working somewhere they never chose, with no way to correct it. The agent cannot correct it either:
  * it has no idea where the folder moved to. This is the affordance for the person who does.
  *
- * ⚠️ A PICKER, never a path field (`todo/settings-ux.md`: a setting may never require a value the
+ * ⚠️ A PICKER, never a path field (a setting may never require a value the
  * user has no way to know). `useDirectoryPicker` browses the SERVER's filesystem, which is the only
  * one that matters — NovaClaw's files live where the server runs, not on the client.
  */

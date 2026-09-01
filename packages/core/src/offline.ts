@@ -197,7 +197,7 @@ export function loadPolicy(input: PolicySource): Policy {
 // The policy used to be computed ONCE inside `layer` and captured by `check`/`egressEnv`/
 // `manifest`. Flipping airgap ON in Settings therefore blocked NOTHING until the process was
 // restarted — while `/shell/offline`, which re-reads the same sources on every request, honestly
-// reported 9/9 layers active. A guard that is off while the status surface says it is on is not a
+// reported 8/8 layers active. A guard that is off while the status surface says it is on is not a
 // latency wart; it is v0.2.0 ruling 3's *a fault is never described falsely*.
 //
 // The ref is MODULE-level, not layer-level, deliberately:
@@ -314,7 +314,7 @@ export function egressEnv(policy: Policy): Record<string, string> | undefined {
   }
 }
 
-// ── The offline-layer manifest (the "N/9 layers active" indicator) ──────────────────────
+// ── The offline-layer manifest (the "N/8 layers active" indicator) ──────────────────────
 export interface LayerStatus {
   readonly layer: number
   readonly name: string
@@ -356,18 +356,10 @@ export function layerManifest(policy: Policy): {
       detail: "the closed crash sender applies the live airgap gate before every report",
     },
     { layer: 5, name: "share/sync egress", active: on, detail: "share URLs ride the chokepoint" },
+    { layer: 6, name: "LAN services", active: on, detail: "SearXNG/KB allowed as loopback/LAN hosts" },
+    { layer: 7, name: "npm installs", active: on, detail: "package fetches fail closed (pre-provision or mirror)" },
     {
-      layer: 6,
-      name: "auto-update",
-      active: policy.enabled,
-      detail: policy.enabled
-        ? "the desktop updater controller refuses check/download from this named live gate"
-        : "the desktop updater controller permits checks while this named live gate is inactive",
-    },
-    { layer: 7, name: "LAN services", active: on, detail: "SearXNG/KB allowed as loopback/LAN hosts" },
-    { layer: 8, name: "npm installs", active: on, detail: "package fetches fail closed (pre-provision or mirror)" },
-    {
-      layer: 9,
+      layer: 8,
       name: "process egress guard",
       active: on,
       detail: on
@@ -387,7 +379,7 @@ export interface Interface {
   readonly check: (url: string) => Verdict
   /** OFF-C: the child-process env overlay (undefined when offline mode is off). */
   readonly egressEnv: () => Record<string, string> | undefined
-  /** The N/9 layer manifest for the status surface. */
+  /** The N/8 layer manifest for the status surface. */
   readonly manifest: () => ReturnType<typeof layerManifest>
   // No `reload` member, deliberately. Refreshing is a MODULE function (`Offline.reload`), because
   // the one caller that needs it — the config write path — has no `Offline.Service` in context,

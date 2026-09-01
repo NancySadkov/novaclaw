@@ -89,14 +89,6 @@ export const ExportCommand = lazyCommand({
   },
 })
 
-export const PrCommand = lazyCommand({
-  ...CommandSpec.pr,
-  async load() {
-    const { PrCommand } = await import("./cmd/pr")
-    return PrCommand
-  },
-})
-
 export const SessionCommand = lazyCommand({
   ...CommandSpec.session,
   async load() {

@@ -566,9 +566,9 @@ function ContactRow(props: {
               · The TIME uses the transcript's own `messageTime`, so the clock-today / date-after
                 rule cannot drift between the two surfaces. */}
           <For each={meta()}>
-            {(part, index) => (
+            {(part) => (
               <span class="text-v2-text-text-faint">
-                {index() === 0 ? " · " : " · "}
+                {" · "}
                 <Show when={part.at !== undefined} fallback={part.text}>
                   <time dateTime={new Date(part.at!).toISOString()} title={part.title}>
                     {part.text}

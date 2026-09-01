@@ -442,14 +442,12 @@ const ICON_MAPS: IconMaps = {
     k8s: "FolderKubernetes",
     terraform: "FolderTerraform",
     aws: "FolderAws",
-    azure: "FolderAzurePipelines",
     firebase: "FolderFirebase",
     supabase: "FolderSupabase",
     vercel: "FolderVercel",
     netlify: "FolderNetlify",
 
     // CI/CD
-    ".github": "FolderGithub",
     ".gitlab": "FolderGitlab",
     ".circleci": "FolderCircleci",
     ci: "FolderCi",

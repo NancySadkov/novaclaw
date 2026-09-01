@@ -118,7 +118,7 @@ export const ProviderGroup = HttpApiGroup.make("server.provider")
           identifier: "v2.provider.removeModel",
           summary: "Remove one model",
           description:
-            "Delete a single model from a provider in the instance catalog store, keeping the provider itself (and so its endpoint URL, auth and request defaults). Instance-wide and durable, unlike the client-side hide the Models tab used to perform. A model that is in no layer is a 404, never a cheerful 204.",
+            "Delete a single model from a provider in the instance catalog store, keeping the provider itself (and so its endpoint URL, auth and request defaults). Instance-wide and durable. A model that is in no layer is a 404, never a cheerful 204.",
         }),
       ),
   )

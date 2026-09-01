@@ -15,12 +15,3 @@ export const MessageID = Schema.String.check(Schema.isStartsWith("msg")).pipe(
 )
 
 export type MessageID = Schema.Schema.Type<typeof MessageID>
-
-export const PartID = Schema.String.check(Schema.isStartsWith("prt")).pipe(
-  Schema.brand("PartID"),
-  statics((s) => ({
-    ascending: (id?: string) => s.make(Identifier.ascending("part", id)),
-  })),
-)
-
-export type PartID = Schema.Schema.Type<typeof PartID>

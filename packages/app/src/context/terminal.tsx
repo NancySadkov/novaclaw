@@ -1,5 +1,6 @@
 import { createStore, produce } from "solid-js/store"
 import { createSimpleContext } from "@novaclaw/ui/context"
+import { isRecord } from "@novaclaw/schema/record"
 import { batch, createEffect, createMemo, createRoot, on, onCleanup } from "solid-js"
 import { useParams } from "@solidjs/router"
 import { useSDK, type DirectorySDK } from "./sdk"
@@ -45,10 +46,6 @@ export type LocalPTY = {
 
 const WORKSPACE_KEY = "__workspace__"
 const MAX_TERMINAL_SESSIONS = 20
-
-function record(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
 
 function text(value: unknown) {
   return typeof value === "string" ? value : undefined
@@ -98,7 +95,7 @@ export function disconnectLiveTerminals(all: LocalPTY[]): LocalPTY[] {
 }
 
 function pty(value: unknown): LocalPTY | undefined {
-  if (!record(value)) return
+  if (!isRecord(value)) return
 
   const storedID = text(value.id)
   if (!storedID) return
@@ -145,18 +142,18 @@ function pty(value: unknown): LocalPTY | undefined {
 }
 
 export function migrateTerminalState(value: unknown) {
-  if (!record(value)) return value
+  if (!isRecord(value)) return value
 
   const seen = new Set<string>()
   const legacyIDs = new Map<string, string>()
   const all = (Array.isArray(value.all) ? value.all : []).flatMap((item) => {
     // Exited tabs are a within-session diagnosis. The server retains at most 25 of them, but after a
     // reload their Ghostty buffer is no longer authoritative and the old process cannot reconnect.
-    if (record(item) && (item.status === "exited" || num(item.exitCode) !== undefined)) return []
+    if (isRecord(item) && (item.status === "exited" || num(item.exitCode) !== undefined)) return []
     const next = pty(item)
     if (!next || seen.has(next.id)) return []
     seen.add(next.id)
-    if (record(item)) {
+    if (isRecord(item)) {
       const oldID = text(item.id)
       if (oldID) legacyIDs.set(oldID, next.id)
     }

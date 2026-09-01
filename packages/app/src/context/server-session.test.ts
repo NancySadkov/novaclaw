@@ -98,7 +98,7 @@ describe("server session", () => {
     expect(ctx.get).toEqual([])
   })
 
-  // Ported from https://github.com/NancySadkov/novaclaw/pull/10 by @DassaultFalconKing. The
+  // Ported from outside contribution #10 by @DassaultFalconKing. The
   // predicate itself is pinned in `session-working.test.ts`; this proves the STORE reaches it, so
   // reverting one of the two call sites cannot stay green.
   test("treats exited sessions as settled", () => {

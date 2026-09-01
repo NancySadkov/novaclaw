@@ -3,8 +3,9 @@ export * as MessengerPipeline from "./pipeline"
 import type { Messenger } from "@novaclaw/schema/messenger"
 import type { Origin } from "@novaclaw/schema/prompt"
 import type { InboundEvent } from "./driver"
+import { escapeRegExp as escapeRegex } from "@novaclaw/schema/text"
 
-// Pure helpers for the gateway's inbound/outbound pipeline (notes/messenger-plan.md §3.2) —
+// Pure helpers for the gateway's inbound/outbound pipeline —
 // separated so the provenance framing and command rendering are unit-testable without a live
 // gateway. The effectful routing (SessionV2.prompt, driver.send) lives in gateway.ts.
 
@@ -59,7 +60,6 @@ export const renderSessions = (
  *  `address` setting overrides it ("whatever name the user picked for the agent"). */
 export const DEFAULT_ADDRESS = "Nova"
 
-const escapeRegex = (text: string): string => text.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
 /** §0.1.5 — the self-chat address gate. Operator and agent share one pen in Saved Messages, so
  *  only messages addressed to the agent ("Nova, do X" / "nova: do X") are commands; everything
@@ -215,11 +215,6 @@ export const HELP_TEXT = [
   "/pair <code> — pair this chat (code from Settings → Messengers)",
   "/help — this message",
 ].join("\n")
-
-/** The canned reply for an unpaired sender (default is silence; a per-account setting may enable
- *  this). Kept here so its wording is testable and consistent. */
-export const UNPAIRED_HINT =
-  "This account isn't set up to chat with you. If you're the operator, pair from Settings → Messengers and send /pair <code>."
 
 /**
  * WHICH chat a flood is counted against.

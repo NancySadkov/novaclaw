@@ -2,7 +2,6 @@ export * as ComputerDriver from "./driver"
 
 import { Duration, Effect } from "effect"
 import { ComputerActions } from "./actions"
-import { ComputerAccessibility } from "./accessibility"
 import { ComputerEvidence } from "./evidence"
 import type { ComputerLedger } from "./ledger"
 import { ComputerLoop } from "./loop"
@@ -127,14 +126,6 @@ export interface ActRequest {
   readonly env: Readonly<Record<string, string>>
 }
 
-export interface AccessibilityInvokeRequest {
-  readonly elementID: string
-  /** Revalidated immediately before invocation so a changed traversal index cannot hit a new node. */
-  readonly ownName: string
-  /** Exact action name advertised by that node in the immediately preceding scan. */
-  readonly actionName: string
-}
-
 export type ActOutcome = { readonly ok: true } | { readonly ok: false; readonly reason: string }
 
 export interface CheckpointVerifyRequest {
@@ -170,10 +161,6 @@ export type AskOutcome =
 export interface Deps {
   readonly capture: (request: CaptureRequest) => Effect.Effect<CaptureOutcome>
   readonly act: (request: ActRequest) => Effect.Effect<ActOutcome>
-  /** Absent means this substrate exposes no accessibility channel; pixels remain the floor. */
-  readonly scanAccessibility?: () => Effect.Effect<ReadonlyArray<unknown>>
-  /** Required only when a selected candidate advertised an invokable semantic action. */
-  readonly invokeAccessibility?: (request: AccessibilityInvokeRequest) => Effect.Effect<ActOutcome>
   readonly ask: (request: AskRequest) => Effect.Effect<AskOutcome>
   /** A positive executable-state result can confirm a visual award, never create one. */
   readonly verifyCheckpoint?: (request: CheckpointVerifyRequest) => Effect.Effect<CheckpointVerifyOutcome>
@@ -218,8 +205,8 @@ export interface Deps {
 // ---------------------------------------------------------------------------------------------
 
 /**
- * How long to wait before the delayed watch re-capture that separates *slow* from *nothing*
- * (`computer-use-loop-plan.md` §3, "two refinements, both free").
+ * How long to wait before the delayed watch re-capture that separates *slow* from *nothing*.
+ * One of the two refinements that cost nothing: it buys a second look, not a second call.
  */
 export const DEFAULT_SETTLE_DELAY_MS = 400
 
@@ -375,10 +362,6 @@ export interface RunReport {
   readonly commands: number
   readonly finalState: ComputerLoop.State
 }
-
-/** The measured series in call order. `undefined` = that call reported nothing. */
-export const promptTokenSeries = (report: RunReport): ReadonlyArray<number | undefined> =>
-  report.usage.map((sample) => sample.promptTokens)
 
 // ---------------------------------------------------------------------------------------------
 // Path allocation
@@ -577,20 +560,11 @@ export function run(spec: ComputerLoop.TaskSpec, deps: Deps): Effect.Effect<RunR
           }
         }
 
-        const outcome =
-          command.execution.kind === "argv"
-            ? yield* deps.act({
-                action: command.action,
-                argv: command.execution.argv,
-                env: command.execution.env,
-              })
-            : deps.invokeAccessibility === undefined
-              ? ({ ok: false, reason: "the selected accessibility node is invokable but this substrate has no accessibility actuator" } as const)
-              : yield* deps.invokeAccessibility({
-                  elementID: command.execution.elementID,
-                  ownName: command.execution.ownName,
-                  actionName: command.execution.actionName,
-                })
+        const outcome = yield* deps.act({
+          action: command.action,
+          argv: command.execution.argv,
+          env: command.execution.env,
+        })
         if (!outcome.ok) return { kind: "act-failed", reason: outcome.reason }
         acted += 1
 
@@ -638,12 +612,6 @@ export function run(spec: ComputerLoop.TaskSpec, deps: Deps): Effect.Effect<RunR
               capture: taken.capture,
               ...(taken.image === undefined ? {} : { image: taken.image }),
             }
-          }
-          case "scan-accessibility": {
-            if (deps.scanAccessibility === undefined) return { kind: "accessibility-scanned", candidates: [] }
-            const raw = yield* deps.scanAccessibility()
-            const normalized = ComputerAccessibility.normalize(raw, spec.viewport)
-            return { kind: "accessibility-scanned", candidates: normalized.candidates }
           }
           case "ask-planner":
           case "ask-grounder":

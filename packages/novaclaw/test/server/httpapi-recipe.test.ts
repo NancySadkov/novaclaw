@@ -87,6 +87,60 @@ describe("POST /api/recipe/import", () => {
   )
 })
 
+describe("recipe folder ZIP transport", () => {
+  it.effect("serves and accepts actual application/zip bytes with nested binary assets intact", () =>
+    Effect.gen(function* () {
+      const sourceSlug = "route-archive-source"
+      const importedSlug = "route-archive-arrived"
+      fs.rmSync(path.join(root(), sourceSlug), { recursive: true, force: true })
+      fs.rmSync(path.join(root(), importedSlug), { recursive: true, force: true })
+      yield* request(
+        "/api/recipe/import",
+        json({ markdown: "---\nname: Route archive arrived\n---\n\nUse the binary asset.\n", slug: sourceSlug }),
+      )
+      const nested = path.join(root(), sourceSlug, "nested")
+      fs.mkdirSync(nested, { recursive: true })
+      const asset = Uint8Array.of(0, 255, 17, 0, 128, 42)
+      fs.writeFileSync(path.join(nested, "asset.bin"), asset)
+
+      const exported = yield* request(`/api/recipe/${sourceSlug}/archive`, {
+        headers: { accept: "application/zip" },
+      })
+      expect(exported.status).toBe(200)
+      expect(exported.headers["content-type"]).toContain("application/zip")
+      const archive = new Uint8Array(yield* exported.arrayBuffer)
+      expect(Buffer.from(archive).readUInt32LE(0)).toBe(0x04034b50)
+
+      fs.rmSync(path.join(root(), sourceSlug), { recursive: true, force: true })
+      const imported = yield* request("/api/recipe/archive", {
+        method: "POST",
+        headers: { "content-type": "application/zip" },
+        body: archive,
+      })
+      expect(imported.status).toBe(200)
+      const body = JSON.parse(yield* imported.text) as { slug: string; assets: string[] }
+      expect(body.slug).toBe(importedSlug)
+      expect(body.assets).toEqual(["nested"])
+      expect(fs.readFileSync(path.join(root(), importedSlug, "nested", "asset.bin"))).toEqual(Buffer.from(asset))
+    }),
+  )
+
+  it.effect("rejects an invalid ZIP without leaving a visible or staged recipe", () =>
+    Effect.gen(function* () {
+      const slug = "route-archive-refused"
+      const response = yield* request("/api/recipe/archive", {
+        method: "POST",
+        headers: { "content-type": "application/zip" },
+        body: Uint8Array.of(80, 75, 3, 4),
+      })
+      expect(response.status).toBe(400)
+      expect(yield* response.text).toContain("complete ZIP")
+      expect(fs.existsSync(path.join(root(), slug))).toBe(false)
+      expect(fs.readdirSync(root()).some((name) => name.includes(`${slug}.recipe-stage`))).toBe(false)
+    }),
+  )
+})
+
 describe("GET /api/recipe/:slug/source", () => {
   it.effect("returns the author's bytes, the checked needs, the produces, and the shelf", () =>
     Effect.gen(function* () {

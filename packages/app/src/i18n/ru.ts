@@ -24,8 +24,6 @@ export const dict = {
 
   "command.palette": "Палитра команд",
 
-
-
   "command.session.new": "Новая сессия",
   "command.file.open": "Открыть файл",
   "command.tab.close": "Закрыть вкладку",
@@ -65,15 +63,10 @@ export const dict = {
   "palette.group.commands": "Команды",
   "palette.group.files": "Файлы",
 
-
   "dialog.model.select.title": "Выбрать модель",
   "dialog.model.search.placeholder": "Поиск моделей",
   "dialog.model.empty": "Модели не найдены",
   "dialog.model.manage": "Управление моделями",
-
-
-
-
 
   "model.tag.free": "Бесплатно",
   "model.tag.latest": "Последняя",
@@ -169,7 +162,6 @@ export const dict = {
   "dialog.mcp.title": "MCP",
   "dialog.mcp.description": "{{enabled}} из {{total}} включено",
   "dialog.mcp.empty": "MCP не настроены",
-
 
   "mcp.status.connected": "подключено",
   "mcp.status.failed": "ошибка",
@@ -271,13 +263,10 @@ export const dict = {
   "language.th": "ไทย",
   "language.tr": "Türkçe",
 
-
-
   "toast.permissions.autoaccept.on.title": "Разрешения принимаются автоматически",
   "toast.permissions.autoaccept.on.description": "Запросы на разрешения будут одобряться автоматически",
   "toast.permissions.autoaccept.off.title": "Автоматическое принятие разрешений остановлено",
   "toast.permissions.autoaccept.off.description": "Запросы на разрешения будут требовать одобрения",
-
 
   "toast.model.none.title": "Модель не выбрана",
   "toast.model.none.description": "Подключите провайдера для суммаризации сессии",
@@ -288,18 +277,12 @@ export const dict = {
   "toast.context.noLineSelection.title": "Нет выделения строк",
   "toast.context.noLineSelection.description": "Сначала выберите диапазон строк во вкладке файла.",
 
-
   "toast.session.listFailed.title": "Не удалось загрузить сессии для {{project}}",
-
-  "toast.update.action.installRestart": "Установить и перезапустить",
 
   "error.page.title": "Что-то пошло не так",
   "error.page.description": "Произошла ошибка при загрузке приложения.",
   "error.page.details.label": "Детали ошибки",
   "error.page.action.restart": "Перезапустить",
-  "error.page.action.checking": "Проверка...",
-  "error.page.action.checkUpdates": "Проверить обновления",
-  "error.page.action.updateTo": "Обновить до {{version}}",
   "error.page.report.prefix": "Пожалуйста, сообщите об этой ошибке команде NovaClaw",
   "error.page.report.discord": "в Discord",
   "error.page.version": "Версия: {{version}}",
@@ -336,10 +319,6 @@ export const dict = {
   "notification.session.responseReady.title": "Ответ готов",
   "notification.session.error.title": "Ошибка сессии",
   "notification.session.error.fallbackDescription": "Произошла ошибка",
-
-  "home.recentProjects": "Недавние проекты",
-  "home.empty.title": "Нет недавних проектов",
-  "home.empty.description": "Начните с открытия локального проекта",
 
   "session.tab.session": "Сессия",
   "session.tab.review": "Обзор",
@@ -384,7 +363,6 @@ export const dict = {
   "session.new.title": "Создавайте что угодно",
   "session.new.worktree.main": "Основная ветка",
   "session.new.worktree.mainWithBranch": "Основная ветка ({{branch}})",
-  "session.new.worktree.create": "Создать новый worktree",
   "session.new.lastModified": "Последнее изменение",
 
   "session.header.search.placeholder": "Поиск {{project}}",
@@ -430,13 +408,10 @@ export const dict = {
   "common.moreOptions": "Дополнительные опции",
   "common.learnMore": "Подробнее",
   "common.rename": "Переименовать",
-  "common.archive": "Архивировать",
   "common.delete": "Удалить",
   "common.close": "Закрыть",
   "common.edit": "Редактировать",
   "common.key.esc": "ESC",
-
-  "sidebar.project.recentSessions": "Недавние сессии",
 
   "settings.section.desktop": "Приложение",
   "settings.section.server": "Сервер",
@@ -463,12 +438,6 @@ export const dict = {
   "settings.general.row.releaseNotes.title": "Примечания к выпуску",
   "settings.general.row.releaseNotes.description": 'Показывать всплывающие окна "Что нового" после обновлений',
 
-  "settings.updates.row.check.title": "Проверить обновления",
-  "settings.updates.row.check.description": "Проверить обновления вручную и установить, если доступны",
-  "settings.updates.action.checkNow": "Проверить сейчас",
-  "settings.updates.action.checking": "Проверка...",
-  "settings.updates.toast.latest.title": "У вас последняя версия",
-  "settings.updates.toast.latest.description": "Вы используете последнюю версию NovaClaw.",
   "sound.option.none": "Нет",
   "sound.option.alert01": "Alert 01",
   "sound.option.alert02": "Alert 02",
@@ -551,8 +520,6 @@ export const dict = {
   "settings.shortcuts.group.prompt": "Запрос",
 
   "settings.models.title": "Модели",
-
-
 
   "settings.permissions.tool.read.title": "Чтение",
   "settings.permissions.tool.read.description": "Чтение файла (по совпадению пути)",

@@ -38,10 +38,6 @@ const permission = Layer.succeed(
         if (assertFailure) yield* Effect.fail(assertFailure)
       }),
     ask: () => Effect.die("unused"),
-    reply: () => Effect.die("unused"),
-    get: () => Effect.die("unused"),
-    forSession: () => Effect.die("unused"),
-    list: () => Effect.die("unused"),
   }),
 )
 
@@ -257,27 +253,28 @@ describe("the `permission` tool (Auto mode)", () => {
     }),
   )
 
-  it.effect("a REFUSED card leaves the level exactly where it was — ruling 2", () =>
+  it.effect("a policy refusal leaves the level exactly where it was — ruling 2", () =>
     Effect.gen(function* () {
       yield* setup
       yield* insert({ id: "ses_tool_refused", permissionMode: "yolo" })
       const registry = yield* ToolRegistry.Service
 
       yield* executeTool(registry, call("ses_tool_refused", { op: "lower", mode: "plan" }))
-      // Drive the refusal EXPLICITLY (see the note on `assertFailure`).
-      assertFailure = new PermissionV2.RejectedError()
+      assertFailure = new PermissionV2.DeniedError({ rules: [] })
 
       const result = yield* executeTool(registry, call("ses_tool_refused", { op: "raise", mode: "yolo" }))
       expect(result.type).toBe("error")
       expect(result.value).toContain("unchanged")
       // The denial keeps its own identity instead of collapsing into a generic tool error.
-      expect(result.value).toContain(PermissionV2.denialMessage(new PermissionV2.RejectedError()) ?? "<missing>")
-      // The write happens AFTER the card, so a refusal cannot half-apply.
+      expect(result.value).toContain(
+        PermissionV2.denialMessage(new PermissionV2.DeniedError({ rules: [] })) ?? "<missing>",
+      )
+      // The write happens after enforcement, so a refusal cannot half-apply.
       expect((yield* grant("ses_tool_refused"))?.mode).toBe("plan")
     }),
   )
 
-  it.effect("an UNATTENDED root cannot reach `yolo` — refused before any card is ever raised", () =>
+  it.effect("an UNATTENDED root cannot reach `yolo` — refused before an assertion is spent", () =>
     Effect.gen(function* () {
       yield* setup
       // The user set yolo on a scheduled chain: the one posture that escapes the deny-fast stance.
@@ -289,7 +286,7 @@ describe("the `permission` tool (Auto mode)", () => {
 
       expect(result.type).toBe("error")
       expect(result.value).toContain("UNATTENDED")
-      // The cap is MECHANICAL, not a card nobody could answer: no assert was spent at all.
+      // The cap is mechanical: no assert was spent at all.
       expect(assertions).toEqual([])
       expect((yield* grant("ses_tool_unattended"))?.mode).toBe("bypass")
 

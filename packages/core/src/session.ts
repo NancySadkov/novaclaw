@@ -36,6 +36,7 @@ import { SessionStore } from "./session/store"
 import { SessionCompactionRequest } from "./session/compaction-request"
 import { SessionBootRecovery } from "./session/boot-recovery"
 import { SessionExecution } from "./session/execution"
+import { SessionJoin } from "./session/join"
 import { SessionExecutionAttempt } from "./session/execution-attempt"
 import { SessionRunCoordinator } from "./session/run-coordinator"
 import { makeGlobalNode } from "./effect/app-node"
@@ -131,7 +132,7 @@ const ListDirectoryInput = Schema.Struct({
   directory: AbsolutePath,
 })
 
-// T2 (notes/entities.md): "a project's sessions" is an entity-free query — every session whose
+// T2 (notes/reports/entities-review-2026-07-06.md): "a project's sessions" is an entity-free query — every session whose
 // directory IS the root or lives under it (boundary-exact, both separators).
 const ListUnderInput = Schema.Struct({
   ...ListInputBase,
@@ -570,8 +571,7 @@ export const createSessionRecord = (
      * this was written. Defaulting to a colleague cannot work: the one-live-root rule is a DB index
      * on the `agent` column, so a second anonymous root owned by Nova violates it. Defaulting to a
      * posture reintroduces exactly the ghost `DEFAULT_COLLEAGUE_ID` was moved OFF `build` to
-     * remove — a chat answering with no Contacts row, which *"did not appear to exist"*. The full
-     * table is in `todo/code-review.md` under NC-SEC-020.
+     * remove — a chat answering with no Contacts row, which *"did not appear to exist"*.
      */
     if (input.parentID === undefined && input.agent === undefined)
       return yield* new OwnerRequiredError({ reason: "A root session must name the agent it runs as." })
@@ -666,8 +666,9 @@ export const createSessionRecord = (
       // Chats list shows relative time). SessionTitle.isDefault matches this AND the old form.
       title: input.title ?? defaultTitle(input),
       metadata: input.metadata,
-      // The seventeen per-session CONFIG fields, generated from `SESSION_CONFIG_FIELDS` rather than
-      // listed here. Until 2026-08-08 this literal named each one — the THIRD hand-written copy of
+      // Every per-session CONFIG field, generated from `SESSION_CONFIG_FIELDS` rather than listed
+      // here — the descriptor is the count, so nothing here can go stale against it.
+      // Until 2026-08-08 this literal named each one — the THIRD hand-written copy of
       // that list, and the same defect class that made `sessionRow` drop `thinking_budget`,
       // `surgical_edits` and `ask_before_changes` for four months (two of them RESTRICTIONS, so a
       // create meaning to restrict produced an unrestricted session and nothing said so).
@@ -680,8 +681,6 @@ export const createSessionRecord = (
       // field, quietly carrying the same defect. Removed rather than wired up: one authority for
       // permissions is the decision (notes/named-agents.md), and a second one on the session row is
       // the widening path the org chart calls a coup.
-      // not resolve through the chain walk (ruling 16). Generating from the descriptor excludes it
-      // by construction, so it stays listed here on purpose.
       cost: 0,
       tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
       time: { created: DateTime.makeUnsafe(now), updated: DateTime.makeUnsafe(now) },
@@ -1411,10 +1410,10 @@ export const layer = Layer.effect(
              * collapses SUB-AGENT sessions into their parent's tab — worker threads must not each open
              * one — so a branch of an interactive chat is interactive and gets its own tab, while a
              * branch of a worker stays a worker. Forcing `interactive` here would also have broken the
-             * contract the fork suite pins: a fork carries the source's resolved config.
+             * contract the fork suite pins: a fork carries the source's resolved config — with ONE
+             * reasoned exclusion, `agent`, for the reason spelled out at the `agent:` key below.
              */
             parentID: SessionSchema.ID.make(input.sessionID),
-            ...(source.agent === undefined ? {} : { agent: source.agent }),
             title: SessionTitle.forked(source.title),
             metadata: source.metadata ? structuredClone({ ...source.metadata }) : undefined,
             // 🔴 A FORK DOES NOT CARRY A COLLEAGUE'S IDENTITY (owner, 2026-08-23:
@@ -1524,17 +1523,31 @@ export const layer = Layer.effect(
         yield* execution.wake(input.sessionID)
       }),
       wait: Effect.fn("V2Session.wait")(function* (sessionID) {
-        // K1 de-stub: join on completion, same semantics as the wait TOOL — poll the session's
-        // `result` (set by exit() via the Completed event) until present. Times out after ~2
-        // minutes with the retryable unavailable error, so a client keeps waiting by re-calling.
-        const POLL_MS = 2000
-        const MAX_POLLS = 60
-        for (let i = 0; i < MAX_POLLS; i++) {
-          const session = yield* result.get(sessionID)
-          if (session.result !== undefined) return
-          yield* Effect.sleep(Duration.millis(POLL_MS))
-        }
-        return yield* new OperationUnavailableError({ operation: "wait" })
+        // 🔴 **This is the SAME join the `wait` tool uses now — it was a second one** (RF-03-1).
+        //
+        // It used to be a hand-rolled `for (let i = 0; i < 60)` loop re-reading the session row every
+        // 2000 ms, under a comment claiming *"same semantics as the wait TOOL"*. It had neither the
+        // transport nor the bound: `SessionJoin` is a durable event stream (no polling — `join.ts`'s
+        // header names *"polling SQLite every two seconds"* as the shape it replaced), and its bound
+        // is `JOIN_TIMEOUT_MS`, raised from 2 minutes on 2026-08-20 after a child asked only to reply
+        // "BANANA" settled 121.7 s after `wait` started. So this door returned "operation
+        // unavailable" for healthy children on a single-device box — the exact false negative the
+        // tool path was fixed for — because a fix landed on one of two copies.
+        //
+        // ⚠️ The store read stays, and stays FIRST. It is what turns an unknown id into
+        // `NotFoundError` (the endpoint's 404), and it is the fast path for a session that has
+        // already exited — `result` is set by `exit()` via the same Completed event this joins on, so
+        // the two agree, and re-reading it costs one row rather than a subscription.
+        const existing = yield* result.get(sessionID)
+        if (existing.result !== undefined) return
+        const joined = yield* SessionJoin.fromEvents(events).awaitCompletion({
+          childID: sessionID,
+          timeoutMs: SessionJoin.JOIN_TIMEOUT_MS,
+        })
+        // ⚠️ A timeout still answers `OperationUnavailableError`, not a success: the endpoint's
+        // contract is "re-call to keep waiting", and reporting completion for a child still running
+        // would be a false statement about the run (ruling 2).
+        if (!joined.completed) return yield* new OperationUnavailableError({ operation: "wait" })
       }),
       active: execution.active,
       resume: Effect.fn("V2Session.resume")(function* (sessionID) {

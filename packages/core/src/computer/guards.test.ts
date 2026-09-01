@@ -68,9 +68,7 @@ describe("the directory-sweeping guards cover every module, including the new on
    * screen. The test is here so the decision is made rather than defaulted.
    */
   const EXPECTED = [
-    "accessibility.ts",
     "actions.ts",
-    "atspi.ts",
     "control-target.ts",
     "coordinates.ts",
     "driver.ts",
@@ -209,7 +207,6 @@ describe("G8 — a `toPixels` error is SURFACED, never clamped", () => {
       capture: { ok: true, digest: "d1" },
       image: { mime: "image/png", data: "B64" },
     })
-    transition = ComputerLoop.next(transition.state, { kind: "accessibility-scanned", candidates: [] })
     transition = ComputerLoop.next(transition.state, {
       kind: "planner-replied",
       text: JSON.stringify({

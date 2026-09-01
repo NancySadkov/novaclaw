@@ -1,41 +1,27 @@
 import { createEffect, createMemo, on, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
-import type { PermissionV2Request, QuestionRequest, Todo } from "@novaclaw/sdk/v2"
+import type { QuestionRequest, Todo } from "@novaclaw/sdk/v2"
 import { useParams } from "@solidjs/router"
-import { showToast } from "@/utils/toast"
 import { useServerSync } from "@/context/server-sync"
-import { useLanguage } from "@/context/language"
-import { usePermission } from "@/context/permission"
-import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
-import type { PermissionReply } from "./session-permission-dock"
-import { sessionPermissionRequest, sessionQuestionRequest } from "./session-request-tree"
+import { sessionQuestionRequest } from "./session-request-tree"
 import { todoDockAtBoundary, todoState } from "./session-composer-todo"
 
 const idle = { type: "idle" as const }
 
 export function createSessionComposerController(options?: { closeMs?: number | (() => number) }) {
   const params = useParams()
-  const sdk = useSDK()
   const sync = useSync()
   const serverSync = useServerSync()
-  const language = useLanguage()
-  const permission = usePermission()
 
   const questionRequest = createMemo((): QuestionRequest | undefined => {
     return sessionQuestionRequest(sync().data.session, sync().data.question, params.id)
   })
 
-  const permissionRequest = createMemo((): PermissionV2Request | undefined => {
-    return sessionPermissionRequest(sync().data.session, sync().data.permission, params.id, (item) => {
-      return !permission.autoResponds(item, sdk().directory)
-    })
-  })
-
   const blocked = createMemo(() => {
     const id = params.id
     if (!id) return false
-    return !!permissionRequest() || !!questionRequest()
+    return !!questionRequest()
   })
 
   const todos = createMemo((): Todo[] => {
@@ -52,58 +38,10 @@ export function createSessionComposerController(options?: { closeMs?: number | (
 
   const [store, setStore] = createStore({
     sessionID: params.id,
-    responding: undefined as string | undefined,
     dock: todos().length > 0 && !done() && live(),
     closing: false,
     opening: false,
   })
-
-  const permissionResponding = createMemo(() => {
-    const perm = permissionRequest()
-    if (!perm) return false
-    return store.responding === perm.id
-  })
-
-  // The ask-flood escape hatch (owner 2026-07-22): Stop from the ask dock interrupts the RUN.
-  // The server's drain-settled sweep then rejects the now-orphaned asks (PermissionV2/QuestionV2
-  // listen for the idle status), their Replied/Rejected events clear every client store, and the
-  // composer returns. Without this, a run waiting on an ask had NO Stop anywhere — the dock
-  // replaces the composer — so a 20-file write plan meant 20 decisions or a wedged chat.
-  const stop = () => {
-    const sessionID = params.id
-    if (!sessionID) return
-    sdk()
-      .client.v2.session.interrupt({ sessionID })
-      .catch((err: unknown) => {
-        const description = err instanceof Error ? err.message : String(err)
-        showToast({ title: language.t("common.requestFailed"), description })
-      })
-  }
-
-  // 1K: six verdict-scope replies + an optional deny reason. F1e S6: rides the native V2
-  // session-scoped reply route; the generated SDK type still lags the nine-literal union the
-  // server schema accepts, hence the cast (golden rule: never edit sdk/gen).
-  const decide = (reply: PermissionReply, message?: string) => {
-    const perm = permissionRequest()
-    if (!perm) return
-    if (store.responding === perm.id) return
-
-    setStore("responding", perm.id)
-    sdk()
-      .client.v2.session.permission.reply({
-        sessionID: perm.sessionID,
-        requestID: perm.id,
-        reply: reply as unknown as "once",
-        message,
-      })
-      .catch((err: unknown) => {
-        const description = err instanceof Error ? err.message : String(err)
-        showToast({ title: language.t("common.requestFailed"), description })
-      })
-      .finally(() => {
-        setStore("responding", (id) => (id === perm.id ? undefined : id))
-      })
-  }
 
   let timer: number | undefined
   let raf: number | undefined
@@ -201,10 +139,6 @@ export function createSessionComposerController(options?: { closeMs?: number | (
   return {
     blocked,
     questionRequest,
-    permissionRequest,
-    permissionResponding,
-    decide,
-    stop,
     todos,
     dock: () =>
       store.sessionID === params.id

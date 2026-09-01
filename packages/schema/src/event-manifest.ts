@@ -12,7 +12,6 @@ import { McpEvent } from "./mcp-event"
 import { MemoryEvent } from "./memory-event"
 import { Messenger } from "./messenger"
 import { ModelsDev } from "./models-dev"
-import { Permission } from "./permission"
 import { PermissionRuleset } from "./permission-ruleset"
 import { Plugin } from "./plugin"
 import { Pty } from "./pty"
@@ -55,7 +54,6 @@ const featureDefinitions = Event.inventory(
   ...MemoryEvent.Definitions,
   ...FileSystem.Event.Definitions,
   ...Reference.Event.Definitions,
-  ...Permission.Event.Definitions,
   ...Plugin.Event.Definitions,
   ...FileSystemWatcher.Event.Definitions,
   ...Pty.Event.Definitions,

@@ -236,11 +236,6 @@ export const layer = Layer.effect(
           if (!record) return
           const provider = record.provider
 
-          // TODO: Remove these provider-specific assumptions once model syncing reliably reports available deployments.
-          if (providerID === ProviderV2.ID.azure || providerID === ProviderV2.ID.make("azure-cognitive-services")) {
-            return
-          }
-
           const candidates = pipe(
             Array.fromIterable(record.models.values()),
             Array.filter(

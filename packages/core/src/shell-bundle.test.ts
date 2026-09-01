@@ -5,6 +5,8 @@ import path from "path"
 import { ShellBundle } from "./shell-bundle"
 import { Shell } from "./shell"
 
+const TEST_URL = `https://packages.example.test/PortableGit-${ShellBundle.DEFAULT_VERSION}-64-bit.7z.exe`
+
 // Each test builds its own fake bundle tree and points NOVACLAW_SHELL_BUNDLE_ROOT at it —
 // no Global.Path writes, no network, no real extraction.
 const cleanups: string[] = []
@@ -128,6 +130,8 @@ describe("shell bundle provisioning", () => {
         configDir,
         env: { NOVACLAW_OFFLINE: "1" },
         fetchImpl,
+        url: TEST_URL,
+        sha256: "a".repeat(64),
       }),
     ).rejects.toThrow(/provision-before-airgap/)
     expect(fetched).toBe(false)
@@ -146,7 +150,8 @@ describe("shell bundle provisioning", () => {
         configDir,
         env: {},
         fetchImpl,
-        url: ShellBundle.DEFAULT_URL,
+        url: TEST_URL,
+        sha256: "a".repeat(64),
       }),
     ).rejects.toThrow(/sha256 mismatch/)
     const leftovers = await fs.readdir(dir).catch(() => [])
@@ -175,7 +180,7 @@ describe("shell bundle provisioning", () => {
       env: {},
       fetchImpl,
       extract,
-      url: ShellBundle.DEFAULT_URL,
+      url: TEST_URL,
       sha256: digest,
     })
     expect(resolved.bash).toBe(path.join(root, "bin", "bash.exe"))

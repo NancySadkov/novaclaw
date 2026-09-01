@@ -37,7 +37,7 @@ import { SkillConfigStore } from "./skill-config-store"
 // ignored (`NOT_ROUTED_KEYS` + `unroutedKeys` below).
 //
 // ⚠️ "Every key routes" was FALSE for `models` until v0.2.0-prep B7: the models-primary flat map
-// (`Config.Info.models`, notes/models-primary-plan.md P1) decoded cleanly, routed nowhere and
+// (`Config.Info.models`) decoded cleanly, routed nowhere and
 // still answered 200 — a write that vanished while reporting success. It now expands through
 // `CatalogSeed.expandFlatModels`, the SAME flat→nested transform the jsonc seed applies, so a
 // PATCH and an import of one document land identically. The read side answers in the STORED
@@ -410,7 +410,7 @@ const applyToStores = (patch: Config.Info) =>
     const consumed = new Set<string>()
     const plain = encodeInfo(patch)
 
-    // Models-primary (notes/models-primary-plan.md P1/P2): `models` is the FLAT authoring shape —
+    // Models-primary: `models` is the FLAT authoring shape —
     // one entry per model carrying its OWN endpoint `url`, whose host becomes the internal provider
     // group. The catalog stores the nested shape, so the write router expands exactly the way the
     // jsonc seed does; running the transform over `{models, model}` alone keeps the already-decoded
@@ -620,10 +620,15 @@ export const RESTART_REQUIRED_KEYS: ReadonlyMap<string, string> = new Map([])
  * back, and the location's `Catalog` still served nothing at all
  * (`packages/core/test/config-catalog-reload.test.ts`).
  *
- * ⚠️ And `disabled_providers`/`enabled_providers` are deliberately NOT triggers. They are settings
- * keys that no core reader consults — grepped 2026-07-31: `config.ts` declares them, the settings
- * seed stores them, and nothing else in `packages/core/src` reads either one. Adding them would be a
- * reload fired on a key that changes nothing, i.e. the per-key discipline abandoned for a guess.
+ * ⚠️ And `disabled_providers`/`enabled_providers` are deliberately NOT triggers — for a reason about
+ * their READER, not about their reach. Re-checked tree-wide 2026-09-01: `cli/cmd/providers.ts:102-103`
+ * reads both and `settings-v2/dialog-new-model.tsx:403` writes `disabled_providers`, so they are not
+ * inert keys. But the only reader is a CLI command that resolves config once per process and exits,
+ * so **no live location holds a value derived from them for an invalidation to reach.** A trigger here
+ * would fire a reload that changes nothing observable, i.e. the per-key discipline abandoned for a
+ * guess. ⚠️ Add one the day a long-lived service reads either key — and note that the earlier version
+ * of this note claimed *no reader exists*, which was true only because its grep was scoped to
+ * `packages/core/src`. Scope a negative to the tree or do not write it.
  *
  * ─── the three B7 tier-3 domains, which live in `packages/novaclaw` ──────────────────────────────
  *
@@ -871,7 +876,7 @@ const refreshDomains = (domains: readonly ReloadDomain[]) =>
  * process-wide snapshot of exactly two things this function writes (`runtime_setting.offline` and
  * every `catalog_provider` host), and it used to be taken once, when `Offline.layer` was built:
  * flipping airgap ON in Settings blocked nothing until the next boot, while `/shell/offline`
- * re-read the same stores per request and reported 9/9 layers active — a guard that was off while
+ * re-read the same stores per request and reported 8/8 layers active — a guard that was off while
  * the status surface said it was on (ruling 3). So the re-read lives HERE, for two reasons:
  *   · AFTER the transaction commits — `Offline.reload` reads through a separate read-only
  *     connection, which must not see a half-written or uncommitted store;

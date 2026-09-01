@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto"
-import { updaterNetworkPolicy } from "./updater-airgap"
 import { mkdirSync, rmSync } from "node:fs"
 import { rename } from "node:fs/promises"
 import * as http from "node:http"
@@ -30,18 +29,15 @@ import {
   startNetLog,
   write as writeLog,
 } from "./logging"
-import { parseMarkdown } from "./markdown"
 import { createMenu } from "./menu"
 import {
   getDefaultServerUrl,
   preferAppEnv,
   setDefaultServerUrl,
-  checkUpdaterAirgap,
   superviseLocalServer,
   type SidecarListener,
 } from "./server"
 import type { SuperviseStatus } from "@novaclaw/script/supervise"
-import { setupAutoUpdater, showUpdaterDialog } from "./updater"
 import {
   createMainWindow,
   registerRendererProtocol,
@@ -69,7 +65,7 @@ const jsCallStackFeature = "DocumentPolicyIncludeJSCallStacksInCrashReports"
 let logger: ReturnType<typeof initLogging>
 
 /**
- * The boot timeline (`todo/startup.md`). Module scope because the marks are taken from four
+ * The boot timeline. Module scope because the marks are taken from four
  * different places — this fiber, the window-first callback, and two IPC handlers the renderer calls.
  *
  * ⚠️ `getCreationTime()` is the anchor, NOT `performance.timeOrigin`. In a packaged build the main
@@ -152,9 +148,6 @@ const setSupervisorState = (state: SuperviseStatus) => {
     }
   }
 }
-// P6: set once the sidecar is up — lets the updater guard read the machine's offline status.
-let sidecarOfflineProbe: (() => Promise<boolean | undefined>) | undefined
-
 const pendingDeepLinks: string[] = []
 
 function useEnvProxy() {
@@ -407,9 +400,6 @@ const main = Effect.gen(function* () {
   app.setAsDefaultProtocolClient("novaclaw")
   registerRendererProtocol()
   setDockIcon()
-  const updater = setupAutoUpdater(stopSidecars, () =>
-    updaterNetworkPolicy({ env: process.env.NOVACLAW_OFFLINE, probe: sidecarOfflineProbe }),
-  )
   registerIpcHandlers({
     killSidecar: () => killSidecar(),
     supervisorState: () => supervisorState,
@@ -432,10 +422,8 @@ const main = Effect.gen(function* () {
     setDefaultServerUrl: (url) => setDefaultServerUrl(url),
     getDisplayBackend: async () => null,
     setDisplayBackend: async () => undefined,
-    parseMarkdown: async (markdown) => parseMarkdown(markdown),
     checkAppExists: (appName) => checkAppExists(appName),
     resolveAppPath: async (appName) => resolveAppPath(appName),
-    updater,
     setBackgroundColor: (color) => setBackgroundColor(color),
     exportDebugLogs: (serverDiagnostics) => exportDebugLogs(serverDiagnostics),
     recordFatalRendererError: (error) => writeLog("renderer", "fatal renderer error", { ...error }, "error"),
@@ -447,16 +435,6 @@ const main = Effect.gen(function* () {
     },
   })
   registerWslIpcHandlers(wslServers)
-  // The controller owns the final policy decision. Startup, polling, IPC, the native menu and every
-  // future caller all cross it; this timer only owns cadence.
-  const pollUpdaterSafely = (kind: "start" | "poll") =>
-    void (kind === "start" ? updater.start() : updater.check()).catch((error: unknown) =>
-      logger.warn("updater poll failed", error),
-    )
-  pollUpdaterSafely("start")
-  const updateTimer = setInterval(() => pollUpdaterSafely("poll"), 10 * 60 * 1000)
-  updateTimer.unref()
-  app.once("will-quit", () => clearInterval(updateTimer))
 
   // Net logging is diagnostics; it must never sit between the user and their window. Forked, and
   // caught with `catchCause` because `Effect.promise` rejects into a defect that `Effect.catch`
@@ -589,7 +567,6 @@ const main = Effect.gen(function* () {
       Effect.catch((cause) => Effect.die(cause)),
     )
     server = listener
-    sidecarOfflineProbe = () => checkUpdaterAirgap(url, password, app.getPath("home"))
     yield* Deferred.succeed(serverReady, {
       url,
       username: "novaclaw",
@@ -635,9 +612,6 @@ const main = Effect.gen(function* () {
         trigger: (id) => {
           const focused = BrowserWindow.getFocusedWindow() ?? mainWindow
           if (focused) sendMenuCommand(focused, id)
-        },
-        checkForUpdates: () => {
-          void showUpdaterDialog(updater, true)
         },
         relaunch: () => {
           relaunch()

@@ -311,40 +311,6 @@ test("C3 refuses a point the current-screen critic rejects, before any input rea
   expect(crop).toMatchObject({ scope: "watch", region: { x: 553, y: 522, width: 82, height: 51 } })
 })
 
-test("P5 scans the current frame and invokes the exact advertised accessibility action", async () => {
-  const screen = substrate()
-  const invoked: DRV.AccessibilityInvokeRequest[] = []
-  const candidate = {
-    id: "gtk/button/save",
-    role: "push button",
-    name: "Save",
-    bounds: { x: 900, y: 720, width: 100, height: 40 },
-    actions: ["Press"],
-  }
-  const planner = JSON.stringify({
-    observation: "Save is available",
-    action: { kind: "click", button: "left", target: "Save", element_id: candidate.id },
-    expect: "the document is saved",
-  })
-  const { report } = await drive({
-    screen,
-    spec: spec({ budget: { maxSteps: 1, maxPromptTokens: 500_000 } }),
-    llm: model({ planner: [planner], adjudicator: CALIBRATED }),
-    deps: {
-      scanAccessibility: () => Effect.succeed([candidate]),
-      invokeAccessibility: (request) =>
-        Effect.sync(() => {
-          invoked.push(request)
-          return { ok: true as const }
-        }),
-    },
-  })
-  expect(invoked).toEqual([{ elementID: candidate.id, ownName: candidate.name, actionName: "Press" }])
-  expect(screen.acts).toEqual([])
-  expect(report.acted).toBe(1)
-  expect(report.usage.some((sample) => sample.call === "grounder")).toBe(false)
-})
-
 // ================================================================================================
 // G2 — the capture freshness assertion
 // ================================================================================================
@@ -714,7 +680,7 @@ describe("the RunReport carries the MEASURED prompt-token series", () => {
       }),
     })
     expect(report.usage.length).toBeGreaterThan(3)
-    expect(DRV.promptTokenSeries(report).every((value) => typeof value === "number")).toBe(true)
+    expect(report.usage.every((sample) => typeof sample.promptTokens === "number")).toBe(true)
     expect(report.promptTokens.fromWire).toBe(true)
     expect(report.promptTokens.measuredCalls).toBe(report.promptTokens.calls)
     expect(report.promptTokens.reported).toBe(report.promptTokens.counted)
@@ -733,7 +699,7 @@ describe("the RunReport carries the MEASURED prompt-token series", () => {
     })
     expect(report.promptTokens.fromWire).toBe(false)
     expect(report.promptTokens.measuredCalls).toBeLessThan(report.promptTokens.calls)
-    expect(DRV.promptTokenSeries(report)[0]).toBeUndefined()
+    expect(report.usage[0]?.promptTokens).toBeUndefined()
     // The estimator filled the hole for the BUDGET, and the report says so rather than hiding it.
     expect(report.usage[0]?.estimated).toBeGreaterThan(0)
     expect(report.promptTokens.counted).toBe(report.finalState.promptTokens)

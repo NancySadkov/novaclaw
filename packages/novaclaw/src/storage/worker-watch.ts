@@ -13,7 +13,7 @@ import { WorkerRegistry } from "./worker-registry"
 /**
  * WATCH THE FLEET, AND SAY WHAT IT IS HOLDING. Nothing is shed — deliberately, for now.
  *
- * 🔴 **Warn-only is the whole point of this step.** `todo/resource-pressure.md` says the kill path
+ * 🔴 **Warn-only is the whole point of this step.** The kill path
  * must not be armed before a warn-only tick has shown what a HEALTHY fleet looks like: a threshold
  * that has never seen the healthy distribution is the `threshold-that-fires-on-normal` defect, which
  * this codebase has already paid for once. So this samples, decides, and LOGS — and the `shed` arm

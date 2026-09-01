@@ -1,4 +1,5 @@
 import { createSimpleContext } from "@novaclaw/ui/context"
+import { isRecord } from "@novaclaw/schema/record"
 import { type Accessor, batch, createMemo } from "solid-js"
 import { createStore, type SetStoreFunction, type Store } from "solid-js/store"
 import { Persist, persisted } from "@/utils/persist"
@@ -8,7 +9,6 @@ type StoredProject = { worktree: string; expanded: boolean }
 type StoredServer = string | ServerConnection.HttpBase | ServerConnection.Http
 type StoredAuthOverride = { password: string | null }
 type ServerProjectState = { projects: Record<string, StoredProject[]>; lastProject: Record<string, string> }
-const HEALTH_POLL_INTERVAL_MS = 10_000
 
 export function normalizeServerUrl(input: string) {
   const trimmed = input.trim()
@@ -23,13 +23,12 @@ export function serverName(conn?: ServerConnection.Any, ignoreDisplayName = fals
   return conn.http.url.replace(/^https?:\/\//, "").replace(/\/+$/, "")
 }
 
+// Returns a BOOLEAN. It used to return the string "local" or undefined, and the copy of it that lived in
+// `global.tsx` used the result truthily — so `isLocal` there was typed `boolean | "local" | undefined`.
+// One implementation now, and it answers the question it is named after.
 function isLocalHost(url: string) {
   const host = url.replace(/^https?:\/\//, "").split(":")[0]
-  if (host === "localhost" || host === "127.0.0.1") return "local"
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
+  return host === "localhost" || host === "127.0.0.1"
 }
 
 export function migrateCanonicalLocalServerState(value: unknown, canonicalLocalServer?: ServerConnection.Key) {
@@ -214,7 +213,7 @@ export namespace ServerConnection {
 
   export const builtin = (conn: Any) => conn.type === "sidecar" && conn.variant === "base"
   export const local = (conn?: Any) =>
-    !!conn && (builtin(conn) || (conn.type === "http" && isLocalHost(conn.http.url) === "local"))
+    !!conn && (builtin(conn) || (conn.type === "http" && isLocalHost(conn.http.url)))
 }
 
 export function nextServerAfterRemoval(

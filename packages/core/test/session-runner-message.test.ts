@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Message, Model } from "@novaclaw/llm"
-import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
+import * as OpenAIChat from "@novaclaw/llm/protocols/openai-compatible-chat"
 import { ModelV2 } from "@novaclaw/core/model"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { SessionMessage } from "@novaclaw/core/session/message"

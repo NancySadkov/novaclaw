@@ -41,7 +41,7 @@ import {
 import { instanceIdentity } from "@/utils/identity-api"
 
 /**
- * The instance-hosted community — `todo/community-p2p.md`.
+ * The instance-hosted community — `notes/spec/community-p2p.md`.
  *
  * 🔴 Shown ALONGSIDE the Discord/Reddit links rather than replacing them. This said "a transport
  * does not exist" and named its own exit condition — "when a message can arrive, this becomes the

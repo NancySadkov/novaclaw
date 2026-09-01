@@ -9,7 +9,7 @@ import { makeGlobalNode } from "../effect/app-node"
 import { InstanceIdentityStore } from "../instance-identity-store"
 
 /**
- * Community P4 — saying something (`todo/community-p2p.md`).
+ * Community P4 — saying something (`notes/spec/community-p2p.md`).
  *
  * The counterpart to `CommunityChannels.record`: that is how a stranger's words come IN, this is how
  * ours go OUT. Sits above identity, the log and the transport because it needs all three, and none

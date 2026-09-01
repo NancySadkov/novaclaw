@@ -5,7 +5,7 @@ import { RedditDriver } from "@novaclaw/core/messenger/driver/reddit"
 import type { InboundEvent } from "@novaclaw/core/messenger/driver"
 import { it } from "./lib/effect"
 
-// The Reddit driver against a FAKE api (notes/messenger-plan.md §2.1). What matters here is the
+// The Reddit driver against a FAKE api. What matters here is the
 // shape that makes ONE binding able to moderate a live subreddit — posts and comments arrive as
 // threads parented to the subreddit — plus the three things Reddit gets wrong-footed on: the
 // User-Agent it demands, the throttle it hides inside an HTTP 200, and the listing cursor that

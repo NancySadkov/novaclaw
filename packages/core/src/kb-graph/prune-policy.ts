@@ -7,9 +7,11 @@ import type { MemoryClient } from "./memory-client"
  * WHAT A MEMORY IS WORTH KEEPING, once there is a record of what it ever did.
  *
  * 🔴 **The point of this file is that AGE is the tiebreak and nothing else.** Before the access
- * ledger there was no other axis to sort on: `wasm-engine.prune` tiers by `source` and then falls
- * through to `t_created`, because "no writer ever sets `confidence`" (measured 2026-07-20) left age
- * as the only column with any spread in it. A store pruned mainly by age forgets the fact you rely on
+ * ledger there was no other axis to sort on: the retired engine-local `WasmMemory.prune` tiered by
+ * `source` and then fell through to `t_created`, because "no writer ever sets `confidence`"
+ * (measured 2026-07-20 — every occurrence is `input.confidence ?? null` plumbing) left age as the
+ * only column with any spread in it. That method is gone; this file and `memory.ts`'s
+ * `forgetOverCap` replaced it. A store pruned mainly by age forgets the fact you rely on
  * every week and keeps the passage nobody has ever retrieved, which is the exact failure the
  * forgetting policy exists to avoid.
  *

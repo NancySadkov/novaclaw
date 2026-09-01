@@ -10,9 +10,8 @@ import { ProjectFileResolve } from "@novaclaw/core/project-file"
 import { testEffect } from "./lib/effect"
 
 /**
- * `todo/projects.md`: *"Resolve the nearest valid `novaclaw.json` at or above the session folder as
- * its Project root. A folder without one remains usable but is not silently registered as a
- * Project."*
+ * The nearest declaration inside the location's trusted root governs the folder. A folder without
+ * one remains usable but is not silently registered as a Project.
  *
  * Driven through the injected reader rather than a real tree: every case here is about WHICH file
  * wins and WHERE the walk stops, and a temp directory would add I/O to a question that is entirely
@@ -108,12 +107,57 @@ describe("resolving a project", () => {
     expect(result.root).toBe(root)
   })
 
-  test("a start outside the boundary terminates at the filesystem root rather than looping", () => {
-    // A session opened on another drive, or anywhere `boundary` is not an ancestor. The walk must
-    // still end — `path.dirname` is its own fixed point at a root, and that is the only stop left.
+  test.each([
+    ["valid", project({ name: "shared parent" })],
+    ["invalid", "{ broken"],
+  ])("a start outside the boundary never reads a %s file above the selected location root", (_kind, text) => {
     const elsewhere = path.resolve("/srv/scratch")
-    const result = ProjectFileResolve.walk({ from: elsewhere, boundary: root }, reader({}))
+    const parentFile = file(path.dirname(elsewhere))
+    const reads: string[] = []
+    const result = ProjectFileResolve.walk({ from: elsewhere, boundary: root }, (candidate) => {
+      reads.push(candidate)
+      return candidate === parentFile ? text : undefined
+    })
     expect(result.kind).toBe("none")
+    expect(reads).toEqual([file(elsewhere)])
+    expect(reads).not.toContain(parentFile)
+  })
+
+  test.skipIf(process.platform !== "win32")("a different drive clamps to the selected location", () => {
+    const elsewhere = String.raw`D:\work\external\child`
+    const parentFile = path.win32.join(path.win32.dirname(elsewhere), "novaclaw.json")
+    const reads: string[] = []
+    const result = ProjectFileResolve.walk({ from: elsewhere, boundary: String.raw`C:\Users\me` }, (candidate) => {
+      reads.push(candidate)
+      return candidate === parentFile ? project({ name: "drive root leak" }) : undefined
+    })
+    expect(result.kind).toBe("none")
+    expect(reads).toEqual([path.win32.join(elsewhere, "novaclaw.json")])
+  })
+
+  test.skipIf(process.platform !== "win32")("a different UNC share clamps to the selected location", () => {
+    const elsewhere = String.raw`\\server\projects\external\child`
+    const parentFile = path.win32.join(path.win32.dirname(elsewhere), "novaclaw.json")
+    const reads: string[] = []
+    const result = ProjectFileResolve.walk(
+      { from: elsewhere, boundary: String.raw`\\server\homes\me` },
+      (candidate) => {
+        reads.push(candidate)
+        return candidate === parentFile ? project({ name: "UNC leak" }) : undefined
+      },
+    )
+    expect(result.kind).toBe("none")
+    expect(reads).toEqual([path.win32.join(elsewhere, "novaclaw.json")])
+  })
+
+  test.skipIf(process.platform !== "win32")("Windows casing does not make a real boundary unreachable", () => {
+    const repo = String.raw`C:\Users\Me\Repo`
+    const result = ProjectFileResolve.walk(
+      { from: path.win32.join(repo, "child"), boundary: String.raw`c:\users\me\repo` },
+      reader({ [path.win32.join(repo, "novaclaw.json")]: project({ name: "case-folded" }) }),
+    )
+    expect(result.kind).toBe("project")
+    if (result.kind === "project") expect(result.info.name).toBe("case-folded")
   })
 
   test("an empty project file is a project — it declares the folder, not its settings", () => {
@@ -216,6 +260,42 @@ describe("resolving against the filesystem", () => {
       expect(result.failure).toBe("unreadable")
       expect(result.file).toBe(nearest)
       expect(result.detail).toContain("temporarily locked")
+      fs.rmSync(base, { recursive: true, force: true })
+    }),
+  )
+
+  it.effect("a real boundary alias is canonicalized with the selected folder", () =>
+    Effect.gen(function* () {
+      const base = tmp()
+      const real = path.join(base, "real")
+      const nested = path.join(real, "child")
+      const alias = path.join(base, "alias")
+      fs.mkdirSync(nested, { recursive: true })
+      fs.writeFileSync(path.join(real, "novaclaw.json"), project({ name: "canonical" }))
+      fs.symlinkSync(real, alias, process.platform === "win32" ? "junction" : "dir")
+      const result = yield* ProjectFileResolve.resolve(path.join(alias, "child"), alias)
+      expect(result.kind).toBe("project")
+      if (result.kind === "project") {
+        expect(result.root).toBe(real)
+        expect(result.info.name).toBe("canonical")
+      }
+      fs.rmSync(base, { recursive: true, force: true })
+    }),
+  )
+
+  it.effect("a symlink escape cannot make an outside parent govern the selected folder", () =>
+    Effect.gen(function* () {
+      const base = tmp()
+      const allowed = path.join(base, "allowed")
+      const outside = path.join(base, "outside")
+      const outsideChild = path.join(outside, "child")
+      const link = path.join(allowed, "link")
+      fs.mkdirSync(allowed)
+      fs.mkdirSync(outsideChild, { recursive: true })
+      fs.writeFileSync(path.join(outside, "novaclaw.json"), project({ name: "outside" }))
+      fs.symlinkSync(outside, link, process.platform === "win32" ? "junction" : "dir")
+      const result = yield* ProjectFileResolve.resolve(path.join(link, "child"), allowed)
+      expect(result.kind).toBe("none")
       fs.rmSync(base, { recursive: true, force: true })
     }),
   )

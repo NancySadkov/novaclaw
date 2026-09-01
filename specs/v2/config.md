@@ -11,7 +11,7 @@ This document breaks the legacy configuration schema into small review groups. W
 
 ## Schema Scope
 
-Use one v2 config schema for now. Some fields, such as `autoupdate`, are intended for global/user configuration, but there is not yet enough benefit to enforce that with separate global and location schemas. Revisit this if more scope-sensitive fields survive the review.
+Use one v2 config schema for now. There is not yet enough benefit to enforce separate global and location schemas. Revisit this if more scope-sensitive fields survive the review.
 
 ## Group 1: File Metadata
 
@@ -30,7 +30,6 @@ Settings that affect process startup, shell execution, or network serving. Revie
 | `shell`      | Default shell for terminal and shell tool execution | keep   | Port as effective config; shared shell choice is used throughout novaclaw.     |
 | `logLevel`   | Intended logging level configuration                | remove | Do not port: no config consumer exists and logging initializes from CLI input. |
 | `server`     | Hostname, port, mDNS, and CORS settings             | remove | Do not port: location config is loaded after the server is already running.    |
-| `autoupdate` | Automatic update or notification behavior           | keep   | Global-only user preference; keep `true`, `false`, and `"notify"`.             |
 
 ## Group 3: Commands And Project Resources
 
@@ -74,7 +73,7 @@ Keep named external context references as a v2 configuration capability, renamed
 {
   "references": {
     "design-system": { "path": "../ui-library" },
-    "sdk": { "repository": "github.com/example/sdk", "branch": "main" },
+    "sdk": { "repository": "git.example.test/example/sdk", "branch": "main" },
   },
 }
 ```
@@ -317,10 +316,10 @@ MCP timeouts have separate startup and request budgets, expressed in millisecond
   "mcp": {
     "timeout": { "startup": 30000, "request": 300000 },
     "servers": {
-      "github": {
+      "tracker": {
         "type": "local",
-        "command": ["npx", "-y", "@github/github-mcp-server"],
-        "environment": { "GITHUB_TOKEN": "{env:GITHUB_TOKEN}" },
+        "command": ["npx", "-y", "@example/tracker-mcp-server"],
+        "environment": { "SERVICE_TOKEN": "{env:SERVICE_TOKEN}" },
         "disabled": false,
         "timeout": { "startup": 60000 },
       },

@@ -100,7 +100,16 @@ export interface Row {
   readonly kind: "test" | "typecheck"
   readonly ok: boolean
   readonly ms: number
-  /** 1 for a whole run. A sharded peak is one shard's, which measures close to the whole. */
+  /**
+   * 1 for a whole run.
+   *
+   * ⚠️ **A sharded peak does NOT measure close to the whole — it measures HIGH.** Shards run
+   * sequentially, so the previous shard's memory is not yet reclaimed inside the next shard's
+   * window. For `core`: 18 whole runs median 10,235 MB / max 10,822, against 168 sharded runs
+   * median 12,936 / max 17,833. Never promote a `shards > 1` row into `peaks` —
+   * `test-baseline.json`'s `peaksNote` excludes them by rule, and feeding one back is what kept
+   * `core` permanently sharded.
+   */
   readonly shards: number
   /** Observed peak, or null when nothing believable was sampled. `peakStatus` says which. */
   readonly peakMb: number | null

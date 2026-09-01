@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Effect, Fiber, Stream } from "effect"
 import { LLMEvent, Model } from "@novaclaw/llm"
-import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
+import * as OpenAIChat from "@novaclaw/llm/protocols/openai-compatible-chat"
 import { make } from "../scheduler"
 import { generate } from "./short-answer"
 

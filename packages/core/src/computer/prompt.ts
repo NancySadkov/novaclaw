@@ -5,7 +5,6 @@ import { Schema } from "effect"
 import { JhExtract } from "../jh/extract"
 import { ComputerLedger } from "./ledger"
 import { ComputerProposal } from "./proposal"
-import { ComputerAccessibility } from "./accessibility"
 
 /**
  * Computer Use — every model role in the reducer's visual protocol.
@@ -31,8 +30,8 @@ import { ComputerAccessibility } from "./accessibility"
  * prediction is the one piece of model-authored text the adjudicator must see, and nothing stops a
  * planner writing *"after clicking New Game the options dialog appears"*. The harness leaks nothing;
  * the model may still leak its own plan into the only channel it has. `CONTRACT_LINES` pushes against
- * it (*"write what will be VISIBLE, not what you intended"*) and that is a prompt, which
- * `todo.md` says is not a constraint on this floor model. Treat a `predicted: yes` as the WEAK half
+ * it (*"write what will be VISIBLE, not what you intended"*) and that is a prompt, which is not a
+ * constraint on this floor model. Treat a `predicted: yes` as the WEAK half
  * of the ladder it already is — the strong direction is rung 1's unchanged region, which no wording
  * can talk its way past.
  *
@@ -74,7 +73,7 @@ export interface Prompt {
 }
 
 /**
- * Prompt tokens one 1280×800 PNG costs, MEASURED 2026-08-06 (`todo/computer-use.md`): a 20 KB
+ * Prompt tokens one 1280×800 PNG costs, MEASURED 2026-08-06: a 20 KB
  * screenshot came back as 1,052 prompt tokens on `holo3.1`, and the identical question without the
  * image cost essentially nothing.
  *
@@ -138,7 +137,6 @@ export function planner(input: {
   readonly goal: string
   readonly ledger: ComputerLedger.Ledger
   readonly image?: Image
-  readonly accessibility?: ReadonlyArray<ComputerAccessibility.Candidate>
   /** A repair re-prompt or a Guard refusal. Rendered last so the stable prefix stays stable. */
   readonly note?: string
 }): Prompt {
@@ -155,13 +153,6 @@ export function planner(input: {
 
   const user = [
     ...log,
-    ...(input.accessibility === undefined
-      ? []
-      : [
-          "",
-          "ACCESSIBILITY CANDIDATES — id, role, own name, x,y,width,height, actions:",
-          ComputerAccessibility.render(input.accessibility),
-        ]),
     "",
     ...PLANNER_QUESTION,
     ...(input.note === undefined || input.note.trim() === "" ? [] : ["", input.note]),

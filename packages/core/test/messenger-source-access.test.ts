@@ -233,7 +233,6 @@ const CAPS: Messenger.Capabilities = {
   listChats: "full",
   files: { up: false, down: false },
   edits: false,
-  typing: false,
   threads: false,
   moderation: { delete: false, ban: false, kick: false, mute: false, pin: false },
   format: "plain",

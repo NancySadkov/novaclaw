@@ -1,11 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type {
-  PermissionV2Request,
-  QuestionRequest,
-  SessionStatus,
-  SessionChangeDiff,
-  Todo,
-} from "@novaclaw/sdk/v2/client"
+import type { QuestionRequest, SessionStatus, SessionChangeDiff, Todo } from "@novaclaw/sdk/v2/client"
 import { dropSessionCaches, pickSessionCacheEvictions } from "./session-cache"
 
 describe("app session cache", () => {
@@ -14,13 +8,11 @@ describe("app session cache", () => {
       session_status: Record<string, SessionStatus | undefined>
       session_diff: Record<string, SessionChangeDiff[] | undefined>
       todo: Record<string, Todo[] | undefined>
-      permission: Record<string, PermissionV2Request[] | undefined>
       question: Record<string, QuestionRequest[] | undefined>
     } = {
       session_status: { ses_1: { type: "busy" } as SessionStatus },
       session_diff: { ses_1: [] },
       todo: { ses_1: [] as Todo[], ses_keep: [] as Todo[] },
-      permission: { ses_1: [] as PermissionV2Request[] },
       question: { ses_1: [] as QuestionRequest[] },
     }
 
@@ -29,7 +21,6 @@ describe("app session cache", () => {
     expect(store.todo.ses_1).toBeUndefined()
     expect(store.session_diff.ses_1).toBeUndefined()
     expect(store.session_status.ses_1).toBeUndefined()
-    expect(store.permission.ses_1).toBeUndefined()
     expect(store.question.ses_1).toBeUndefined()
     // untouched sessions survive
     expect(store.todo.ses_keep).toEqual([])

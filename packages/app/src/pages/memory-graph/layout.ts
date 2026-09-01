@@ -1,5 +1,5 @@
 // A dependency-free, DETERMINISTIC force-directed layout for the Memory graph viewer
-// (notes/kb-graph-plan.md §5 — the advanced node-link surface). No Sigma/graphology/d3: the memory
+// (the advanced node-link surface). No Sigma/graphology/d3: the memory
 // graph is small (tens–low-hundreds of nodes), local-first/airgap wants a self-contained bundle, and
 // the owner's steer is to NOT deepen npm coupling. Fruchterman–Reingold with NO randomness → the same
 // (nodes, edges, seed) always yields the same positions, which IS the "stable layout" crux: a re-open

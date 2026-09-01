@@ -4,15 +4,14 @@ import os from "node:os"
 import path from "node:path"
 import { Effect } from "effect"
 import { ExperimentalPaths } from "../../src/server/routes/instance/httpapi/groups/experimental"
-import { disposeAllInstances } from "../fixture/fixture"
+import { disposeAllInstances, tmpdirScoped } from "../fixture/fixture"
 import { testEffectShared } from "../lib/effect"
 import { httpApiLayer, requestInDirectory } from "./httpapi-layer"
 
 /**
  * **`GET /api/project` — what governs this folder, and why.**
  *
- * `todo/projects.md`: *"Never make a person infer project state from a hidden dotfile."* A
- * `novaclaw.json` can now NARROW a session's permissions, so a user whose tool call is refused needs
+ * A `novaclaw.json` can NARROW a session's permissions, so a user whose tool call is refused needs
  * somewhere to see which file did it, and an agent asked to explain the refusal needs the same.
  *
  * ⚠️ Driven over real HTTP against real directories. The resolution logic has its own unit tests; the
@@ -34,6 +33,20 @@ describe("GET /api/project", () => {
       const response = yield* requestInDirectory(ExperimentalPaths.project, directory)
       expect(response.status).toBe(200)
       expect(JSON.parse(yield* response.text)).toEqual({ kind: "none" })
+    }),
+  )
+
+  it.effect("never reports a valid or malformed file above a non-repository location root", () =>
+    Effect.gen(function* () {
+      for (const text of [JSON.stringify({ version: 1, name: "outside" }), "{ broken"]) {
+        const parent = tmp("outside-parent")
+        const directory = path.join(parent, "selected")
+        fs.mkdirSync(directory)
+        fs.writeFileSync(path.join(parent, "novaclaw.json"), text)
+        const response = yield* requestInDirectory(ExperimentalPaths.project, directory)
+        expect(response.status).toBe(200)
+        expect(JSON.parse(yield* response.text)).toEqual({ kind: "none" })
+      }
     }),
   )
 
@@ -225,7 +238,7 @@ describe("GET /api/project — the `tune` the folder puts in force", () => {
     Effect.gen(function* () {
       // A nested folder follows the file above it, and the panel names that file — so the tune it
       // reports has to be that file's, not an empty one because the leaf folder holds no `.json`.
-      const root = tmp("ancestor")
+      const root = yield* tmpdirScoped({ git: true })
       fs.writeFileSync(
         path.join(root, "novaclaw.json"),
         JSON.stringify({ version: 1, tune: { features: { affective: true } } }),

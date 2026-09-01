@@ -16,12 +16,10 @@ export const MAX_CHARS = 4_000
 /**
  * The readable text of one transcript entry, or `undefined`.
  *
- * 🔴 **These shapes are the real ones, and the first version INVENTED them.** It read
- * `message.role` and `message.parts[]`; the transcript has `message.type`, with `text` on the
- * user-ish members and a typed `content[]` on assistant turns. The unit tests used the same
- * invention, so they passed while proving nothing — the live sweep found no text in a three-message
- * conversation and reported `skipped: 1`. A fixture written from the same assumption as the code
- * under test agrees with it by construction.
+ * 🔴 **The shape is `message.type` with `text` on the user-ish members and a typed `content[]` on
+ * assistant turns — NOT `message.role` / `message.parts[]`.** Read it from the schema, never from a
+ * fixture: a fixture written from the same assumption as the code under test agrees with it by
+ * construction, and a suite built that way passes while extracting nothing.
  *
  * ⚠️ TEXT only. An assistant turn's `content[]` also carries `reasoning` and `tool` entries:
  * reasoning is the model talking to itself, and tool payloads are where a transcript's bulk lives —

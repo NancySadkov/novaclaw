@@ -19,13 +19,19 @@ export const InstanceIdentityTable = sqliteTable("instance_identity", {
    */
   public_key: text(),
   /**
-   * 🔴 The matching SECRET, encrypted with `CredentialCipher` — never the raw bytes.
+   * 🔴 The matching SECRET. **Stored in PLAINTEXT**, under OS account protection — this column
+   * is not encrypted at rest, and a reader deciding how to protect the state directory must start
+   * from that. Ruling 5 of `notes/reports/decisions-v0.2.0.md` settled it: no keyring exists in
+   * every run mode NovaClaw ships, and the key FILE that shipped instead bought none of a
+   * keyring's security while stranding `novaclaw serve`, the CLI and backup/restore.
+   * `sealSecret` in `instance-identity-store.ts` is consequently the identity function; legacy
+   * `nc1:` envelopes still OPEN through `openSecret`, so old rows are readable, but nothing new is
+   * written encrypted.
    *
-   * It rides the same key-file mechanism the credential store already uses rather than a second
-   * secret-at-rest scheme, and it deliberately does NOT live in `runtime_setting`: those rows ARE
-   * config keys, reachable through the agent-facing `PATCH /config` surface. Self-healing says
-   * operational facts belong in runtime-editable stores; a private key is not an operational fact,
-   * and an agent that could read it could impersonate the instance to the whole network.
+   * It still deliberately does NOT live in `runtime_setting`: those rows ARE config keys, reachable
+   * through the agent-facing `PATCH /config` surface. Self-healing says operational facts belong in
+   * runtime-editable stores; a private key is not an operational fact, and an agent that could read
+   * it could impersonate the instance to the whole network.
    */
   secret_key: text(),
   /**
@@ -37,7 +43,7 @@ export const InstanceIdentityTable = sqliteTable("instance_identity", {
    * first use, exactly as the identity keypair itself is backfilled.
    */
   sealing_public_key: text(),
-  /** Encrypted like `secret_key`, by the same cipher and with its own AAD. */
+  /** Plaintext, like `secret_key`, and for the same reason — see the note above. */
   sealing_secret_key: text(),
   ...Timestamps,
 })

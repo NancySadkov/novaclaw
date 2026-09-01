@@ -4,7 +4,7 @@ import { CommunityWork } from "@novaclaw/core/community/work"
 import { readFileSync } from "node:fs"
 
 /**
- * Community P5 — throttled broadcast search (`todo/community-p2p.md`).
+ * Community P5 — throttled broadcast search (`notes/spec/community-p2p.md`).
  *
  * 🔴 These are the three controls whose absence collapsed Gnutella in 2001. Each test below is a way
  * the network eats itself, so each removal has been checked to make the corresponding test fail.
@@ -234,12 +234,28 @@ describe("a hostile TTL", () => {
      * because two independent checks are exactly the state that let this happen — they agree until
      * somebody tunes one.
      */
+    /**
+     * ⚠️ **Re-pointed 2026-09-01 (RF-09-5), and it now asserts something STRONGER.** It used to
+     * require each dialler to contain `answerTooLarge(` — which both did, and `search.ts` still
+     * passed the 4 MB `sync/messages` default to it, so the guard was green while the drift it
+     * exists to catch was live. Sharing a CONSTANT that each caller may forget to pass is sharing it
+     * in name only.
+     *
+     * The dial itself now lives in `transport.ts` as `askPeerJson`, whose `ceilingBytes` is a
+     * REQUIRED field — so a dialler cannot omit the ceiling and cannot silently inherit a default
+     * derived for a different shape. This asserts the call, and that each caller states its own
+     * ceiling at the call site.
+     */
     const dialers = ["sync.ts", "search.ts"]
     for (const file of dialers) {
       const source = readFileSync(new URL(`../src/community/${file}`, import.meta.url), "utf8")
-      expect(source, `${file} reads a peer answer without the shared ceiling`).toContain("answerTooLarge(")
+      expect(source, `${file} reads a peer answer without the shared dial`).toContain("askPeerJson(")
+      expect(source, `${file} does not state its own ceiling`).toContain("ceilingBytes")
       // The ceiling must be the one in transport.ts, not a local copy that can drift.
       expect(source, `${file} declares its own copy of the limit`).not.toContain("MAX_PEER_RESPONSE_BYTES = ")
+      // 🔴 And the raw read must not come back: a second hand-rolled dial beside the shared one is
+      // exactly the state this test was written for.
+      expect(source, `${file} reads response.json directly again`).not.toContain("response.json")
     }
 
     // And the search answer is bounded by COUNT too — bytes do not bound how many names arrive.

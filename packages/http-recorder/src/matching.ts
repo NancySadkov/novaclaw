@@ -5,6 +5,13 @@ import type { HttpInteraction, RequestMatcher, RequestSnapshot } from "./types.j
 const JsonValue = Schema.fromJsonString(Schema.Unknown)
 export const decodeJson = Schema.decodeUnknownOption(JsonValue)
 
+/**
+ * 🔴 **Deliberately NOT `@novaclaw/schema/record` (RF-29-6, 2026-09-01): it is UNREACHABLE from
+ * here.** `packages/http-recorder/package.json` declares no `@novaclaw/*` dependency at all — like
+ * `packages/ui` — and this package is a dependency OF `@novaclaw/llm`, so the edge would also have
+ * to not create a cycle. Moving this line costs a manifest change plus a lockfile cycle, which is
+ * not a trade a three-line predicate earns. Same expression as the shared one; keep it that way.
+ */
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value)
 

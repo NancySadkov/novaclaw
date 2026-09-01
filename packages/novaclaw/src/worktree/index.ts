@@ -50,7 +50,7 @@ export const RemoveInput = Schema.Struct({
    * at the site that intends it rather than invisible in this module.
    *
    * The pre-2.0 HTTP surface had this as `force`, and answered `400 {forceRequired: true}` — the
-   * behaviour was lost in a migration rather than deliberately dropped (`todo/assorted.md`).
+   * behaviour was lost in a migration rather than deliberately dropped.
    */
   force: Schema.optional(Schema.Boolean),
 }).annotate({ identifier: "WorktreeRemoveInput" })
@@ -116,15 +116,6 @@ export type Error =
   | RemoveFailedError
   | ResetFailedError
   | ListFailedError
-
-function slugify(input: string) {
-  return input
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+/, "")
-    .replace(/-+$/, "")
-}
 
 function failedRemoves(...chunks: string[]) {
   return chunks.filter(Boolean).flatMap((chunk) =>
@@ -197,9 +188,13 @@ export const layer: Layer.Layer<
 
     const git = Effect.fnUntraced(
       function* (args: string[], opts?: { cwd?: string }) {
-        const result = yield* appProcess.run(
-          ChildProcess.make("git", args, { cwd: opts?.cwd, extendEnv: true, stdin: "ignore" }),
-        )
+        // `Git.spawn`, not a local `ChildProcess.make` and not a local flag list. This helper passed
+        // NO `-c` flags, so `worktree add` / `reset --hard` / `clean -ffdx` failed on Windows deep
+        // trees with git's "Filename too long" while the same operation through `Git.Service`
+        // succeeded — only `Git.CONFIG_ARGS` sets `core.longpaths=true`, and it is applied there.
+        // What stays HERE is the return shape and the catch arm below, which is the whole reason
+        // this helper still exists.
+        const result = yield* Git.spawn(appProcess, args, { cwd: opts?.cwd })
         return {
           code: result.exitCode,
           text: result.stdout.toString("utf8"),
@@ -278,7 +273,10 @@ export const layer: Layer.Layer<
       const root = pathSvc.join(Global.Path.data, "worktree", ctx.origin)
       yield* fs.makeDirectory(root, { recursive: true }).pipe(Effect.orDie)
 
-      return yield* candidate({ root, name: input?.name ? slugify(input.name) : "", detached: input?.detached })
+      // Slug.from's cap is load-bearing here: `name` becomes both a directory component under
+      // Global.Path.data and a `novaclaw/<name>` branch ref, and a caller-supplied name arrives over
+      // HTTP. A local copy of this function without the cap produced unbounded worktree paths.
+      return yield* candidate({ root, name: input?.name ? Slug.from(input.name) : "", detached: input?.detached })
     })
 
     const setup = Effect.fnUntraced(function* (info: Info) {
@@ -736,7 +734,7 @@ export const layer: Layer.Layer<
         (r) => new ResetFailedError({ message: reason(r, "Failed to clean submodules") }),
       )
 
-      const status = yield* git(["-c", "core.fsmonitor=false", "status", "--porcelain=v1"], { cwd: worktreePath })
+      const status = yield* git(["status", "--porcelain=v1"], { cwd: worktreePath })
       if (status.code !== 0) {
         return yield* new ResetFailedError({ message: reason(status, "Failed to read git status") })
       }

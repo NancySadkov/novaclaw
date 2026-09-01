@@ -12,65 +12,51 @@ import { ScheduleExecutionSettings } from "@novaclaw/core/schedule/execution-set
 import { InvalidRequestError } from "@novaclaw/protocol/errors"
 import { CalendarApi, handlerLayer } from "../handler-api"
 
-// Calendar / cron-session-creator handlers (notes/calendar-cron-plan.md). CalendarStore is the JhStore
+// Calendar / cron-session-creator handlers. CalendarStore is the JhStore
 // deps-taking shape (functions over `db`), so — unlike the service-backed messenger handler — this pulls
 // `db` from Database.Service and `now` from Clock itself. `now` is injected into create so the stored
 // next_fire_at is deterministic. Database.Service resolves to the SAME instance the poll loop uses, so a
 // schedule created here is immediately visible to CalendarScheduler's tick.
 
 /**
- * 🔴 NC-REL-027 — refuse execution settings that cannot run, WHERE THE USER CAN STILL FIX THEM.
+ * Refuse named execution settings that cannot run, while the user can still repair them.
  *
- * `agent` and `model` were free-text strings no write boundary resolved: a typo persisted happily
- * and failed hours later inside a detached session, on work nobody was present to retry. Scheduled
- * work is explicitly unattended, which is exactly why late validation is expensive here.
+ * The write endpoints carry location middleware, so an unpinned schedule is checked against the
+ * request's ambient roster and catalog. An explicit schedule folder is authoritative: its location
+ * graph replaces the ambient one for this lookup. That pin is not a snapshot of an unpinned
+ * schedule's eventual fire location; the scheduler still resolves colleague folder/home at fire
+ * time on purpose.
  *
- * ⚠️ **Both the roster and the catalog are LOCATION services** (`location-services.ts` lists
- * `AgentV2.node` and `Catalog.node`), and `calendar.*` carries no location middleware. Two wrong
- * versions of this preceded the right one, both green under `tsgo` and both 500 on every request:
- * resolving `AgentV2.Service` from this global handler, then falling back to `Location.Service`,
- * which is not ambient here either. `session.ts:624` had already recorded the rule — a global layer
- * consulting a location node "crosses a layer boundary the graph refuses to build".
- *
- * ⚠️ So the check runs in the ONE location a schedule actually pins: its own `location` field. It is
- * not a stand-in for the fire location — the scheduler resolves `schedule.location ?? colleague's
- * folder ?? home` at FIRE time, on purpose, so a colleague reassigned after the save fires in its new
- * folder. Validating against a folder chosen here would re-introduce exactly the save-time snapshot
- * that comment exists to prevent, and would refuse settings that are perfectly valid where they run.
- *
- * ⚠️ **Known narrowness, stated rather than hidden:** a schedule that names no location is not
- * checked at all. Its fire location is deliberately late-bound, and a project can contribute both
- * agents and models (`novaclaw.json`), so no location this handler could pick would give the same
- * answer. Widening it means giving `CalendarGroup` location middleware the way `makeSessionGroups`
- * and `makePermissionGroup` already take it — a protocol change, filed rather than smuggled in here.
- *
- * ⚠️ A lookup that FAILS does not refuse the write. The roster and catalog are consulted to help the
- * user; an instance mid-reload must not turn "I cannot check" into "your schedule is invalid",
- * trading a real save for a transient fault.
+ * A lookup failure does not refuse the write. The roster and catalog are advisory validation here;
+ * an instance mid-reload must not turn "I cannot check" into "your schedule is invalid". The fault
+ * is logged so an unchecked save is not indistinguishable from a successful check.
  */
 const refuseUnrunnable = Effect.fn("Calendar.refuseUnrunnable")(function* (
   settings: { readonly agent?: string | null; readonly model?: string | null },
-  directory: string | null | undefined,
+  pinnedDirectory: string | null | undefined,
 ) {
-  if (!directory) return
   if (!settings.agent && !settings.model) return
-  const located = (yield* LocationServiceMap.Service).get(
-    Location.Ref.make({ directory: AbsolutePath.make(directory) }),
-  )
-  const known = yield* Effect.gen(function* () {
+
+  const readKnown = Effect.gen(function* () {
     const roster = yield* AgentV2.Service.use((agent) => agent.all())
     const models = yield* Catalog.Service.use((catalog) => catalog.model.all())
     return {
       agents: new Set(roster.map((item) => String(item.id))),
       models: new Set(models.map((model) => `${model.providerID}/${model.id}`)),
     }
-  }).pipe(
-    Effect.provide(located),
+  })
+  const check = pinnedDirectory
+    ? readKnown.pipe(
+        Effect.provide(
+          (yield* LocationServiceMap.Service).get(Location.Ref.make({ directory: AbsolutePath.make(pinnedDirectory) })),
+        ),
+      )
+    : readKnown
+  const known = yield* check.pipe(
     Effect.catchCause((cause) =>
-      // ⚠️ LOGGED, not merely swallowed. The first live run of this check accepted a bogus agent and
-      // said nothing, because the failure and the "nothing wrong" answer were the same silence. A
-      // check that cannot report its own blindness is indistinguishable from one that passed.
-      Log.event("instance.calendar.settings.unchecked", { "instance.cause": Log.fault(cause) }).pipe(Effect.as(undefined)),
+      Log.event("instance.calendar.settings.unchecked", { "instance.cause": Log.fault(cause) }).pipe(
+        Effect.as(undefined),
+      ),
     ),
   )
   if (known === undefined) return
@@ -94,6 +80,8 @@ export const CalendarHandler = handlerLayer(
           Effect.fn(function* (ctx) {
             const { db } = yield* Database.Service
             const now = yield* Clock.currentTimeMillis
+            // No pin means the request's ambient location. A pin replaces it inside
+            // `refuseUnrunnable`; the stored value itself remains the scheduler's authority.
             yield* refuseUnrunnable(ctx.payload, ctx.payload.location)
             // The endpoint schema validated shape; narrow weekdays (number[] -> Weekday[]) at the boundary.
             return yield* CalendarStore.create(db, ctx.payload as unknown as CalendarStore.CreateInput, now)
@@ -104,17 +92,35 @@ export const CalendarHandler = handlerLayer(
           Effect.fn(function* (ctx) {
             const { db } = yield* Database.Service
             const now = yield* Clock.currentTimeMillis
-            // ⚠️ The UPDATE too, not only create. A schedule that was valid when written can be
-            // repointed at a retired colleague in one PATCH, and the fire that then fails is just as
-            // unattended as the first one.
-            yield* refuseUnrunnable(ctx.payload, ctx.payload.location ?? undefined)
+            const existing = yield* CalendarStore.get(db, ctx.params.id)
+            if (existing === undefined)
+              return yield* new InvalidRequestError({ message: `No such schedule: ${ctx.params.id}` })
+
+            // Validate only when the resulting execution placement/settings can change. A pause or
+            // title edit must remain possible even if a colleague was retired since the schedule was
+            // written. When validation is needed, omitted fields inherit the existing row: notably,
+            // an existing pinned folder stays authoritative, while `location: null` deliberately
+            // clears the pin and switches the check to the request's ambient location.
+            if (
+              ctx.payload.agent !== undefined ||
+              ctx.payload.model !== undefined ||
+              ctx.payload.location !== undefined
+            ) {
+              yield* refuseUnrunnable(
+                {
+                  agent: ctx.payload.agent === undefined ? existing.agent : ctx.payload.agent,
+                  model: ctx.payload.model === undefined ? existing.model : ctx.payload.model,
+                },
+                ctx.payload.location === undefined ? existing.location : ctx.payload.location,
+              )
+            }
             const updated = yield* CalendarStore.update(
               db,
               ctx.params.id,
               ctx.payload as unknown as CalendarStore.UpdateInput,
               now,
             )
-            // A missing schedule is a client error, not a 500 — the row may have been deleted meanwhile.
+            // A concurrent delete between the read and write is still a client error, not a 500.
             if (updated === undefined)
               return yield* new InvalidRequestError({ message: `No such schedule: ${ctx.params.id}` })
             return updated

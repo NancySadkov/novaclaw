@@ -17,7 +17,7 @@ import { TelegramDriver } from "./driver/telegram"
 import { TelegramUserDriver } from "./driver/telegram-user"
 import { TelegramUserMtcute } from "./driver/telegram-user-mtcute"
 
-// The static driver registry (notes/messenger-plan.md §1.5): one entry per platform — throwing a
+// The static driver registry: one entry per platform — throwing a
 // messenger in or out on demand IS editing this list. P1 shipped the Telegram bot driver (the
 // zero-dep, fake-testable path); P1.7 adds the PRODUCTION Telegram user-account driver (MTProto
 // via mtcute — the §2.2 owner decision; loaded lazily, never at boot); P7 adds Discord (gateway

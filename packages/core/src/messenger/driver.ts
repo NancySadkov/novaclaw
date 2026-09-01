@@ -4,7 +4,7 @@ import type { Effect, Scope, Stream } from "effect"
 import { Schema } from "effect"
 import type { Messenger } from "@novaclaw/schema/messenger"
 
-// The ONE driver contract every messenger platform implements (notes/messenger-plan.md §2).
+// The ONE driver contract every messenger platform implements.
 // Drivers are raw-protocol, zero-dependency, individually deletable files under
 // messenger/driver/ — the kernel never learns platform specifics beyond this interface. Pull
 // platforms (Telegram long-poll, IMAP, forum REST) implement connect() as a poll loop; push
@@ -187,7 +187,6 @@ export interface Connection {
   /** Recent messages of one chat, newest last — the tool's `history` op (conversation fetching). */
   readonly history?: (chatID: string, limit: number) => Effect.Effect<readonly HistoryEntry[], ConnectError>
   readonly downloadFile?: (ref: FileRef) => Effect.Effect<Uint8Array, FileError>
-  readonly typing?: (chatID: string, on: boolean) => Effect.Effect<void>
   readonly moderate?: (chatID: string, act: ModerationAct) => Effect.Effect<void, ModerationError>
 }
 

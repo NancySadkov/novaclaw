@@ -2,7 +2,7 @@ import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core"
 import { Timestamps } from "../database/schema.sql"
 
 /**
- * Community P3 — the contact list (`todo/community-p2p.md`).
+ * Community P3 — the contact list (`notes/spec/community-p2p.md`).
  *
  * 🔴 This table is the anti-shutdown property, in storage. The network survives an acquirer, or the
  * project's death, because **any one live peer is a complete entry point** and peer exchange supplies

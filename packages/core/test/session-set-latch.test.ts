@@ -53,8 +53,14 @@ describe("the runner latches it", () => {
     // for a 36-minute run, `asked: false`, `calls: 0`. Every steer admits a prompt and starts a NEW
     // drain with fresh locals — that run had three — so after compaction each new drain re-derived
     // from the compacted window and never latched. The lifetime has to outlive the drain.
-    expect(source).toContain(
-      "const setRequests = new Map<string, { readonly asked: boolean; readonly limit?: number }>()",
+    // ⚠️ Re-spelled 2026-08-31, when the latch grew `named` — the assigned slice a delegated child
+    // must be guarded against instead of its parent's whole corpus
+    // (`session-set-assigned-slice.test.ts`). The declaration is multi-line now; the property pinned
+    // here is unchanged and one field STRONGER: one map, keyed by session id, holding every fixed
+    // property of the request. A name re-derived after compaction is gone, so `named` has to latch
+    // beside the other two or the child's set widens back to the folder.
+    expect(source).toMatch(
+      /const setRequests = new Map<\s*string,\s*\{[\s\S]{0,2000}?readonly asked: boolean[\s\S]{0,2000}?readonly limit\?: number[\s\S]{0,2000}?readonly named\?: ReadonlyArray<string>\s*\}\s*>\(\)/,
     )
     expect(source).toContain("const askedForSet = setRequest?.asked ?? false")
     expect(source).toContain("const requested = setRequest?.limit")

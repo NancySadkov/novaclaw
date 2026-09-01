@@ -58,16 +58,12 @@ export function parse(input: string): Reference | undefined {
   const cleaned = normalizeInput(input)
   if (!cleaned) return
 
-  const githubPrefixed = cleaned.match(/^github:([^/\s]+)\/([^/\s]+)$/)
-  if (githubPrefixed) return buildRemote({ host: "github.com", segments: [githubPrefixed[1], githubPrefixed[2]] })
-
   if (!cleaned.includes("://")) {
     const scp = cleaned.match(/^(?:[^@/\s]+@)?([^:/\s]+):(.+)$/)
     if (scp) return buildRemote({ host: scp[1], segments: parts(scp[2]), remote: cleaned })
 
     const direct = parts(cleaned)
     if (direct.length >= 2 && hostLike(direct[0])) return buildRemote({ host: direct[0], segments: direct.slice(1) })
-    if (direct.length === 2) return buildRemote({ host: "github.com", segments: direct })
   }
 
   try {
@@ -77,7 +73,7 @@ export function parse(input: string): Reference | undefined {
     return buildRemote({
       host: url.host,
       segments,
-      remote: url.host === "github.com" ? githubRemote(segments.join("/")) : cleaned,
+      remote: cleaned,
       protocol: url.protocol,
     })
   } catch {
@@ -90,7 +86,7 @@ export function parseRemote(input: string): RemoteReference {
   if (!reference) {
     throw new InvalidReferenceError({
       repository: input,
-      message: "Repository must be a git URL, host/path reference, or GitHub owner/repo shorthand",
+      message: "Repository must be a git URL or host/path reference",
     })
   }
   if (!isRemote(reference)) {
@@ -161,16 +157,6 @@ function hostLike(input: string) {
   return input.includes(".") || input.includes(":") || input === "localhost"
 }
 
-function withSlash(input: string) {
-  return input.endsWith("/") ? input : `${input}/`
-}
-
-function githubRemote(pathname: string) {
-  const base = process.env.NOVACLAW_REPO_CLONE_GITHUB_BASE_URL
-  if (!base) return `https://github.com/${pathname}.git`
-  return new URL(`${pathname}.git`, withSlash(base)).href
-}
-
 function buildRemote(input: { host: string; segments: string[]; remote?: string; protocol?: string }) {
   const segments = input.segments.map(trimGitSuffix).filter(Boolean)
   if (!safeHost(input.host) || !segments.length || segments.some((segment) => !safeSegment(segment))) return
@@ -182,9 +168,8 @@ function buildRemote(input: { host: string; segments: string[]; remote?: string;
     segments,
     owner: segments.length === 2 ? segments[0] : undefined,
     repo: segments[segments.length - 1],
-    remote:
-      input.remote ?? (host === "github.com" ? githubRemote(repositoryPath) : `https://${host}/${repositoryPath}.git`),
-    label: host === "github.com" && segments.length === 2 ? repositoryPath : `${host}/${repositoryPath}`,
+    remote: input.remote ?? `https://${host}/${repositoryPath}.git`,
+    label: `${host}/${repositoryPath}`,
     protocol: input.protocol,
   } satisfies RemoteReference
 }

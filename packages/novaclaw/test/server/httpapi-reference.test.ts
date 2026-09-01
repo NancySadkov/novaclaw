@@ -19,7 +19,7 @@ describe("reference HttpApi", () => {
         formatter: false,
         references: {
           docs: "./docs",
-          effect: { repository: "Effect-TS/effect", branch: "main" },
+          effect: { repository: "git.example.test/Effect-TS/effect", branch: "main" },
           bad: "not-a-repo",
         },
       },
@@ -50,10 +50,10 @@ describe("reference HttpApi", () => {
       },
       {
         name: "effect",
-        path: path.join(Global.Path.repos, "github.com", "Effect-TS", "effect"),
+        path: path.join(Global.Path.repos, "git.example.test", "Effect-TS", "effect"),
         source: {
           type: "git",
-          repository: "Effect-TS/effect",
+          repository: "git.example.test/Effect-TS/effect",
           branch: "main",
         },
       },

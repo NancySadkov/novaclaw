@@ -15,7 +15,6 @@ import {
   useCommand,
   useWslServers,
 } from "@novaclaw/app"
-import type { UpdaterState } from "@novaclaw/app/updater"
 import type { AsyncStorage } from "@solid-primitives/storage"
 import { MemoryRouter } from "@solidjs/router"
 import { createEffect, createMemo, createResource, createSignal, onCleanup, onMount, Show } from "solid-js"
@@ -39,9 +38,6 @@ if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
 }
 
 void initI18n()
-
-const [updaterState, setUpdaterState] = createSignal<UpdaterState>({ status: "disabled" })
-void window.api.updater.subscribe(setUpdaterState)
 
 const deepLinkEvent = "novaclaw:deep-link"
 
@@ -153,12 +149,6 @@ const createPlatform = (): Platform => {
 
     storage,
 
-    updater: {
-      state: updaterState,
-      check: () => window.api.updater.check(),
-      install: () => window.api.updater.install(),
-    },
-
     exportDebugLogs: (serverDiagnostics) => window.api.exportDebugLogs(serverDiagnostics),
 
     recordFatalRendererError: (error) => window.api.recordFatalRendererError(error),
@@ -226,8 +216,6 @@ const createPlatform = (): Platform => {
       await window.api.setDisplayBackend(backend)
     },
 
-    parseMarkdown: (markdown: string) => window.api.parseMarkdownCommand(markdown),
-
     webviewZoom,
 
     getPinchZoomEnabled: () => window.api.getPinchZoomEnabled(),
@@ -253,7 +241,7 @@ const createPlatform = (): Platform => {
   }
 }
 
-// The boot timeline's renderer half (`todo/startup.md`). Installed before `render`, so a paint that
+// The boot timeline's renderer half. Installed before `render`, so a paint that
 // happens unusually early still has somewhere to report to.
 setBootPhaseReporter((phase) => window.api.markBootPhase(phase))
 

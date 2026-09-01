@@ -46,71 +46,9 @@ test("shows a pending question dock", async ({ page }) => {
   expect((await reply).postDataJSON()).toEqual({ answers: [["Minimal"]] })
 })
 
-test("shows a pending permission dock", async ({ page }) => {
-  await mockServer(page, {
-    permissions: [
-      {
-        id: "permission-request",
-        sessionID,
-        permission: "bash",
-        patterns: ["git status", "git diff"],
-        metadata: {},
-        always: [],
-      },
-    ],
-  })
-
-  await page.goto(`/${base64Encode(directory)}/session/${sessionID}`)
-  await expectSessionTitle(page, title)
-
-  const permission = page.locator('[data-component="dock-prompt"][data-kind="permission"]')
-  await expect(permission).toBeVisible()
-  await expect(permission.getByText("git status")).toBeVisible()
-  await expect(permission.getByText("git diff")).toBeVisible()
-  // 1K: six verdict-scope buttons (deny/allow x once/file/always) + the deny-reason input.
-  await expect(permission.locator('[data-slot="permission-footer-actions"] button')).toHaveCount(6)
-  await expect(permission.locator('[data-slot="permission-reason-input"]')).toHaveCount(1)
-  await expect(page.locator('[data-component="session-composer"]')).toHaveCount(0)
-
-  const reply = page.waitForRequest((request) => request.method() === "POST")
-  await permission.getByRole("button", { name: "Allow once" }).click()
-  const request = await reply
-  expect(new URL(request.url()).pathname).toBe(`/permission/permission-request/reply`)
-  expect(request.postDataJSON()).toEqual({ reply: "allow-once" })
-})
-
-test("deny with a reason sends the message on the reply", async ({ page }) => {
-  await mockServer(page, {
-    permissions: [
-      {
-        id: "permission-request",
-        sessionID,
-        permission: "edit",
-        patterns: ["config.yaml"],
-        metadata: {},
-        always: [],
-      },
-    ],
-  })
-
-  await page.goto(`/${base64Encode(directory)}/session/${sessionID}`)
-  await expectSessionTitle(page, title)
-
-  const permission = page.locator('[data-component="dock-prompt"][data-kind="permission"]')
-  await expect(permission).toBeVisible()
-  await permission.locator('[data-slot="permission-reason-input"]').fill("edit the template instead")
-
-  const reply = page.waitForRequest((request) => request.method() === "POST")
-  await permission.getByRole("button", { name: "Deny file" }).click()
-  const request = await reply
-  expect(new URL(request.url()).pathname).toBe(`/permission/permission-request/reply`)
-  expect(request.postDataJSON()).toEqual({ reply: "deny-file", message: "edit the template instead" })
-})
-
 async function mockServer(
   page: Page,
   requests: {
-    permissions?: unknown[] | (() => unknown[])
     questions?: unknown[] | (() => unknown[])
   },
 ) {
@@ -153,7 +91,6 @@ async function mockServer(
       },
     ],
     pageMessages: () => ({ items: [] }),
-    permissions: requests.permissions,
     questions: requests.questions,
   })
   await page.addInitScript(() => {

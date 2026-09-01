@@ -10,8 +10,14 @@ export const GUIDANCE =
 /** The stance, with the descriptor's declared fallback applied. */
 export const enabled = (stance: boolean | undefined): boolean => stanceOf("shortChat", stance)
 
-export const systemParts = (persona: string | undefined): string[] =>
-  [persona, GUIDANCE].filter((part): part is string => part !== undefined && part.length > 0)
+export const systemParts = (input: {
+  readonly persona?: string | undefined
+  readonly agentIdentity: string
+  readonly agentSystem?: string | undefined
+}): string[] =>
+  [input.persona, input.agentIdentity, input.agentSystem, GUIDANCE].filter(
+    (part): part is string => part !== undefined && part.length > 0,
+  )
 
 export const offered = (stance: boolean | undefined, toolName: string): boolean =>
   enabled(stance) ? toolName === UPGRADE_TOOL : toolName !== UPGRADE_TOOL

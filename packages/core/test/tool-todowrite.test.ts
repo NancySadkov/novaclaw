@@ -22,9 +22,8 @@ const assertions: PermissionV2.AssertInput[] = []
 /**
  * Set to make the permission gate fail. ⚠️ `assert`'s error channel is
  * `PermissionV2.Error | SessionV2.NotFoundError` — and `PermissionV2.Error` is the module's own
- * union (`DeniedError | RejectedError | CorrectedError`), NOT the global `Error`. `denialMessage`
- * answers all three of those, so `NotFoundError` is the only member it declines, which makes it the
- * one honest negative control available here. `todos.update` is `Effect<void>` (its DB errors are
+ * tagged `DeniedError`, NOT the global `Error`. `denialMessage` answers that error, so
+ * `NotFoundError` is the honest negative control available here. `todos.update` is `Effect<void>` (its DB errors are
  * `orDie`'d), so nothing else in the tool's block can reach the absorber at all.
  */
 let assertFailure: PermissionV2.Error | SessionV2.NotFoundError | undefined
@@ -40,10 +39,6 @@ const permission = Layer.succeed(
         if (assertFailure) yield* Effect.fail(assertFailure)
       }),
     ask: () => Effect.die("unused"),
-    reply: () => Effect.die("unused"),
-    get: () => Effect.die("unused"),
-    forSession: () => Effect.die("unused"),
-    list: () => Effect.die("unused"),
   }),
 )
 const it = testEffect(
@@ -133,13 +128,6 @@ describe("TodoWriteTool", () => {
         reason: "unattended-unanswerable",
       }),
       contains: "UNATTENDED",
-    },
-    { kind: "a plain user rejection", failure: new PermissionV2.RejectedError(), contains: "declined" },
-    {
-      // The clause `permission.ts` names by name: "including the user's optional reject feedback".
-      kind: "a rejection carrying user feedback",
-      failure: new PermissionV2.CorrectedError({ feedback: "leave the list alone for now" }),
-      contains: "leave the list alone for now",
     },
   ] as const
 

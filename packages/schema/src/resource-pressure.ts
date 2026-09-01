@@ -5,7 +5,7 @@ import { NonNegativeInt } from "./schema"
 
 /**
  * The `resource_pressure` config field: the two lines the Storage subsystem draws across memory and
- * disk headroom. `todo/resource-pressure.md`.
+ * disk headroom.
  *
  * WHY IT IS A CONFIG FIELD AND NOT A CONSTANT. The host running NovaClaw *will* run out of memory or
  * disk — twice already on the owner's own box (AGENTS.md pitfalls #1 and #8b) — and the right line is

@@ -39,7 +39,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { basename, join } from "node:path"
 import { parseArgs } from "node:util"
-import { KbAblationEval } from "../src/kb-graph/ablation-eval"
+import { KbAblationEval } from "./ablation-eval"
 import { KbAbsorb } from "../src/kb-graph/absorb"
 import { KbChunk } from "../src/kb-graph/chunk"
 import { KbClaim } from "../src/kb-graph/claim"

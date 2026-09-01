@@ -61,8 +61,8 @@ describe("one step is one line, always four columns", () => {
 // ------------------------------------------------------------------------------------------------
 
 describe("🔴 the model's own prose is stored but withheld from the prompt", () => {
-  // Measured on one frozen frame with mechanical ground truth (`computer-use-loop-plan.md` §7c and
-  // the 2026-08-07 follow-up): re-showing the acceptance run's own six ledger lines took the
+  // Measured 2026-08-07 on one frozen frame with mechanical ground truth: re-showing the
+  // acceptance run's own six ledger lines took the
   // grounder from 10/10 correct menu rows to 0/10, every miss reproducing the run's own
   // `New Game → Load Game` failure. Dropping BOTH prose columns returns it to 10/10 — dropping only
   // `expect` leaves 8/10 and only `observation` leaves 6/10, so neither is innocent.

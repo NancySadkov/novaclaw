@@ -1,9 +1,24 @@
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { AppProcess } from "@novaclaw/core/process"
-import { Effect, Layer, Context, Stream } from "effect"
+import { Effect, Layer, Context } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 
-const cfg = [
+/**
+ * THE git invocation prefix, applied by {@link spawn} and therefore by every module in this package
+ * that shells out to git.
+ *
+ * ⚠️ The divergence had a named cost. `--no-optional-locks` is the flag that stops
+ * `status`/`diff`/`ls-files` taking `index.lock`; `snapshot/` omitted it, and snapshot failures from
+ * a second session running `git` in the same worktree during a snapshot are a recorded symptom.
+ * `worktree/` passed no `-c` flags at all, so `worktree add`,
+ * `reset --hard` and `clean -ffdx` failed on Windows deep trees ("Filename too long") where the same
+ * operation through `Git.Service` succeeded, because only this list sets `core.longpaths=true`.
+ *
+ * Every flag is safe on write commands too — `--no-optional-locks` suppresses only the OPTIONAL
+ * index refresh lock, never the real `index.lock` a commit takes — which is why this one list can be
+ * unconditional rather than split per command.
+ */
+export const CONFIG_ARGS = [
   "--no-optional-locks",
   "-c",
   "core.autocrlf=false",
@@ -16,6 +31,53 @@ const cfg = [
   "-c",
   "core.quotepath=false",
 ] as const
+
+export interface SpawnOptions {
+  readonly cwd?: string
+  readonly env?: Record<string, string>
+  /** Data written to the child's stdin. Absent means the child gets `"ignore"`, never an open pipe. */
+  readonly stdin?: AppProcess.RunOptions["stdin"]
+  readonly maxOutputBytes?: number
+}
+
+/**
+ * 🔴 **THE git spawn for this package.** `Git.run`, `snapshot/`'s `git()`, `worktree/`'s `git()` and
+ * `snapshot/`'s raw `cat-file --batch` all come through here, so the executable name, {@link
+ * CONFIG_ARGS}, `extendEnv` and the stdio policy have exactly one definition.
+ *
+ * ⚠️ **The seam is deliberate, and it is NOT where a de-duplication naturally lands.** Each of the
+ * four callers keeps its own `Effect.catch` arm and its own return shape, because those are the two
+ * things that genuinely differ and each is argued at its own site: `Git.run` synthesises a `Result`
+ * with the error text in `stderr`; `snapshot`'s `git()` emits `snapshot.git.spawn.failed` and hands
+ * back an EMPTY `stderr` (ruling 2 — `stderr` is the child's own words, and a spawn that produced no
+ * process has none); `worktree`'s `git()` splits `childOutput` from `reason`. Two of those catch
+ * arms are also read AS SOURCE by `core/test/log-attributes.test.ts`, whose scanner only sees a
+ * `Log.event` with a LITERAL key — parameterising the event name would delete both sites from the
+ * fault-normalization ratchet without failing anything. So what is shared is the spawn; what is
+ * argued stays at the caller.
+ *
+ * ⚠️ **The prefix belongs HERE and not at the call sites, which is what the previous attempt got
+ * wrong.** Exporting `CONFIG_ARGS` and spreading it per call site left `snapshot/` with thirteen
+ * invocations carrying no flags at all (`init`, its eight `config` writes, both `rev-parse`s, `gc`,
+ * `write-tree`), so the divergence this list exists to close was still open. Prefixing here makes it
+ * structural. Measured on git 2.54.0.windows.1: those thirteen produce byte-identical stdout and the
+ * same exit code with and without the prefix, and `git init` does not persist a `-c` value, so the
+ * explicit `config` writes that follow it still decide the store's settings.
+ */
+export const spawn = (appProcess: AppProcess.Interface, args: readonly string[], opts?: SpawnOptions) =>
+  appProcess.run(
+    ChildProcess.make("git", [...CONFIG_ARGS, ...args], {
+      cwd: opts?.cwd,
+      env: opts?.env,
+      extendEnv: true,
+      // ⚠️ `"ignore"`, not the spawner's `"pipe"` default. A piped stdin that nothing writes and
+      // nothing closes never reaches EOF, so a subcommand that reads it would wait forever;
+      // `snapshot/` ran every one of its invocations that way. `AppProcess.run` replaces this with
+      // a real stream when `opts.stdin` is set.
+      stdin: "ignore",
+    }),
+    { maxOutputBytes: opts?.maxOutputBytes, stdin: opts?.stdin },
+  )
 
 const out = (result: { text(): string }) => result.text().trim()
 const nuls = (text: string) => text.split("\0").filter(Boolean)
@@ -70,7 +132,7 @@ export interface Options {
   readonly cwd: string
   readonly env?: Record<string, string>
   readonly maxOutputBytes?: number
-  readonly stdin?: ChildProcess.CommandInput
+  readonly stdin?: AppProcess.RunOptions["stdin"]
 }
 
 export interface Interface {
@@ -105,22 +167,10 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const appProcess = yield* AppProcess.Service
-    const encoder = new TextEncoder()
-    const stdin = (text: string) => Stream.make(encoder.encode(text))
 
     const run = Effect.fn("Git.run")(
       function* (args: string[], opts: Options) {
-        const result = yield* appProcess.run(
-          ChildProcess.make("git", [...cfg, ...args], {
-            cwd: opts.cwd,
-            env: opts.env,
-            extendEnv: true,
-            stdin: opts.stdin ?? "ignore",
-            stdout: "pipe",
-            stderr: "pipe",
-          }),
-          { maxOutputBytes: opts.maxOutputBytes },
-        )
+        const result = yield* spawn(appProcess, args, opts)
         return {
           exitCode: result.exitCode,
           text: () => result.stdout.toString("utf8"),
@@ -323,7 +373,7 @@ export const layer = Layer.effect(
     })
 
     const applyPatch = Effect.fn("Git.applyPatch")(function* (cwd: string, patch: string) {
-      return yield* run(["apply", "-"], { cwd, stdin: stdin(patch) })
+      return yield* run(["apply", "-"], { cwd, stdin: patch })
     })
 
     return Service.of({

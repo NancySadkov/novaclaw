@@ -1,8 +1,7 @@
 export * as MemoryRanking from "./ranking"
 
-import { KbClaim } from "./claim"
 
-// P8b′ — RECALL ORDERING (notes/kb-graph-plan.md P8). Retrieval finds candidates; this decides which
+// RECALL ORDERING. Retrieval finds candidates; this decides which
 // of them the model actually sees. The owner's requirement: a recent, authoritative statement must
 // outrank an old, low-authority musing that happens to use matching words.
 //
@@ -187,11 +186,3 @@ export function rankHits<T extends RankableHit>(
     .sort((a, b) => b.ranked - a.ranked || a.index - b.index)
     .map(({ hit, ranked }) => ({ ...hit, ranked }))
 }
-
-/** Is this hit a claim the user should be told needs checking? The tool surface renders the flag, so
- *  the predicate lives beside the weight rather than being re-spelled at each call site. */
-export const needsReview = (hit: RankableHit): boolean => hit.status === "needs_review"
-
-/** Re-exported so a caller ordering hits does not also have to import the lifecycle vocabulary to
- *  know which statuses it was allowed to see. */
-export const RECALL_STATUSES = KbClaim.RECALL_STATUSES

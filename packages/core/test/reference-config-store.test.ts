@@ -40,15 +40,15 @@ describe("ReferenceConfigStore", () => {
       expect(yield* store.isEmpty()).toBe(true)
 
       const layers: ConfigReference.Entry[] = [
-        "https://github.com/example/docs.git",
+        "https://git.example.test/example/docs.git",
         ConfigReference.Local.make({ path: "/opt/docs", description: "local override" }),
       ]
       yield* store.setLayers("docs", layers)
       expect(yield* store.isEmpty()).toBe(false)
       expect((yield* store.references()).docs).toEqual(layers)
 
-      yield* store.setLayers("docs", ["https://github.com/example/other.git"])
-      expect((yield* store.references()).docs).toEqual(["https://github.com/example/other.git"])
+      yield* store.setLayers("docs", ["https://git.example.test/example/other.git"])
+      expect((yield* store.references()).docs).toEqual(["https://git.example.test/example/other.git"])
 
       yield* store.removeReference("docs")
       expect(yield* store.isEmpty()).toBe(true)
@@ -62,7 +62,7 @@ describe("ReferenceConfigStore", () => {
     Effect.gen(function* () {
       const store = yield* ReferenceConfigStore.Service
       const { db } = yield* Database.Service
-      yield* store.setLayers("healthy", ["https://github.com/example/docs.git"])
+      yield* store.setLayers("healthy", ["https://git.example.test/example/docs.git"])
 
       // Valid JSON, invalid shape — what a Registry hand-edit or a schema skew actually produces.
       yield* db
@@ -72,7 +72,7 @@ describe("ReferenceConfigStore", () => {
         .pipe(Effect.orDie)
 
       const { value: references, warnings } = yield* withWarnings(store.references())
-      expect(references.healthy).toEqual(["https://github.com/example/docs.git"])
+      expect(references.healthy).toEqual(["https://git.example.test/example/docs.git"])
       expect(references.broken).toBeUndefined()
       expect(Object.keys(references)).toEqual(["healthy"])
 
@@ -100,8 +100,8 @@ describe("ReferenceConfigStore", () => {
       ),
     ).toEqual(ConfigReference.Local.make({ path: path.resolve("/proj", "../shared"), hidden: true }))
     // Git entries pass through untouched (string + object form).
-    expect(ReferenceConfigSeed.normalizeReferenceEntry("/proj", home, "https://github.com/example/docs.git")).toBe(
-      "https://github.com/example/docs.git",
+    expect(ReferenceConfigSeed.normalizeReferenceEntry("/proj", home, "https://git.example.test/example/docs.git")).toBe(
+      "https://git.example.test/example/docs.git",
     )
     return Effect.void
   })
@@ -117,7 +117,7 @@ describe("ReferenceConfigStore", () => {
         await fs.mkdir(globalDir, { recursive: true })
         await fs.writeFile(
           path.join(globalDir, "config.json"),
-          JSON.stringify({ references: { docs: "https://github.com/example/docs.git", "bad name": "./x" } }),
+          JSON.stringify({ references: { docs: "https://git.example.test/example/docs.git", "bad name": "./x" } }),
         )
         await fs.writeFile(
           path.join(globalDir, "novaclaw.jsonc"),
@@ -128,15 +128,15 @@ describe("ReferenceConfigStore", () => {
       yield* ReferenceConfigSeed.seedFromDirectory(globalDir, home)
       const first = yield* store.references()
       expect(first.docs).toEqual([
-        "https://github.com/example/docs.git",
+        "https://git.example.test/example/docs.git",
         ConfigReference.Local.make({ path: path.resolve(globalDir, "local-docs") }),
       ])
       expect(first["bad name"]).toBeUndefined() // invalid aliases never seed
 
       // A user edit after seeding must survive a re-seed (the isEmpty idempotence gate).
-      yield* store.setLayers("docs", ["https://github.com/example/edited.git"])
+      yield* store.setLayers("docs", ["https://git.example.test/example/edited.git"])
       yield* ReferenceConfigSeed.seedFromDirectory(globalDir, home)
-      expect((yield* store.references()).docs).toEqual(["https://github.com/example/edited.git"])
+      expect((yield* store.references()).docs).toEqual(["https://git.example.test/example/edited.git"])
     }),
   )
 })

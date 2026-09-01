@@ -7,42 +7,26 @@ import { Icon } from "@novaclaw/ui/v2/icon"
 import { NovaClawWordmark } from "@/components/brand"
 import { getDirectory, getFilename } from "@novaclaw/core/util/path"
 
-const MAIN_WORKTREE = "main"
-const CREATE_WORKTREE = "create"
 const ROOT_CLASS = "size-full flex flex-col"
 
-interface NewSessionViewProps {
-  worktree: string
-}
-
-export function NewSessionView(props: NewSessionViewProps) {
+export function NewSessionView() {
   const sync = useSync()
   const sdk = useSDK()
   const language = useLanguage()
 
-  // T3 (entities.md): no entity — the opened folder is the root; sandboxes died with it.
-  const sandboxes = createMemo(() => [] as string[])
-  const options = createMemo(() => [MAIN_WORKTREE, ...sandboxes(), CREATE_WORKTREE])
-  const current = createMemo(() => {
-    const selection = props.worktree
-    if (options().includes(selection)) return selection
-    return MAIN_WORKTREE
-  })
   const projectRoot = createMemo(() => sdk().directory)
-  const isWorktree = createMemo(() => false)
 
-  const label = (value: string) => {
-    if (value === MAIN_WORKTREE) {
-      if (isWorktree()) return language.t("session.new.worktree.main")
-      const branch = sync().data.vcs?.branch
-      if (branch) return language.t("session.new.worktree.mainWithBranch", { branch })
-      return language.t("session.new.worktree.main")
-    }
-
-    if (value === CREATE_WORKTREE) return language.t("session.new.worktree.create")
-
-    return getFilename(value)
-  }
+  // T3 (entities.md): no entity — the opened folder is the root, and sandboxes died with it. The
+  // worktree PICKER died with them: this view carried `sandboxes` (a constant `[]`), an `options`
+  // list built from it, an `isWorktree` that was a constant `false`, and `create`/filename arms that
+  // no value could reach — `newSessionWorktree` in `pages/session.tsx` is seeded "main" and only ever
+  // set back to "main". All that survived the folding is the branch line below. (RF-18-15, 2026-09-01)
+  const branchLabel = createMemo(() => {
+    const branch = sync().data.vcs?.branch
+    return branch
+      ? language.t("session.new.worktree.mainWithBranch", { branch })
+      : language.t("session.new.worktree.main")
+  })
 
   return (
     <div class={ROOT_CLASS}>
@@ -63,7 +47,7 @@ export function NewSessionView(props: NewSessionViewProps) {
             <div class="flex items-start justify-center gap-1.5 min-h-5">
               <Icon name="branch" size="normal" class="mt-0.5 shrink-0" />
               <div class="text-12-medium text-text-weak select-text leading-5 min-w-0 max-w-160 break-words text-center">
-                {label(current())}
+                {branchLabel()}
               </div>
             </div>
           </div>

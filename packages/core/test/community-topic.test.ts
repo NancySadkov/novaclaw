@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { CommunityTopic } from "@novaclaw/core/community/topic"
 
 /**
- * Community P4 — channel name ↔ topic (`todo/community-p2p.md`).
+ * Community P4 — channel name ↔ topic (`notes/spec/community-p2p.md`).
  *
  * A gossip network addresses by topic id; people speak in names. The hazard this module exists to
  * prevent is the one nobody sees: two spellings of a name hashing to two topics, so a user sits

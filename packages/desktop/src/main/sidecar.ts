@@ -86,7 +86,7 @@ async function start(command: StartCommand) {
     // import, and the absolute numbers track bundle size, so they rot every time the bundle moves.
     // This comment used to read a bare "681 -> 555 ms" with no date, which is how a stale measurement
     // ends up reading as current — the shipped bundle measured 818 -> 653 ms by the time anyone
-    // re-checked (roadmap `todo/startup.md`). Date any number you add here, or state the ratio.
+    // re-checked. Date any number you add here, or state the ratio.
     // Measured 681 -> 555 ms (undated, pre-2026-08); re-measured 818 -> 653 ms, 2026-08-18.
     // Never fatal — see compile-cache.ts.
     const cache = enableCompileCache()

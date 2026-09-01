@@ -3,7 +3,7 @@ import { Effect, Layer, Schema, Stream } from "effect"
 import { LLMClient, LLMEvent, Model, type LLMClientShape, type LLMError, type LLMRequest } from "@novaclaw/llm"
 import { runBounded } from "./bounded"
 import { asc, desc, eq } from "drizzle-orm"
-import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
+import * as OpenAIChat from "@novaclaw/llm/protocols/openai-compatible-chat"
 import { Database } from "@novaclaw/core/database/database"
 import { makeLocationNode } from "@novaclaw/core/effect/app-node"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
@@ -675,10 +675,6 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     PermissionV2.Service.of({
       assert: () => Effect.die("unused"),
       ask: () => Effect.die("unused"),
-      reply: () => Effect.die("unused"),
-      get: () => Effect.die("unused"),
-      forSession: () => Effect.die("unused"),
-      list: () => Effect.die("unused"),
     }),
   )
 

@@ -314,6 +314,28 @@ describe("layout workspace helpers", () => {
   test("extracts api error message and fallback", () => {
     expect(errorMessage({ data: { message: "boom" } }, "fallback")).toBe("boom")
     expect(errorMessage(new Error("broken"), "fallback")).toBe("broken")
-    expect(errorMessage("unknown", "fallback")).toBe("fallback")
+  })
+
+  // 🔴 This assertion used to read `errorMessage("unknown", "fallback")).toBe("fallback")`, and the code
+  // agreed with it. The code was wrong: a thrown string IS the message, and returning the caller's
+  // generic sentence instead is a fault folded into a default. The package already disagreed with itself
+  // about it — `context/file.tsx` carried its own copy of this helper that returned the string, so a file
+  // load error and a session error rendered the same throw two different ways. One helper now, and it
+  // keeps the branch that says more.
+  test("a thrown string is the message, not a reason to render the generic fallback", () => {
+    expect(errorMessage("disk is full", "fallback")).toBe("disk is full")
+    expect(errorMessage("", "fallback")).toBe("fallback")
+  })
+
+  // An Error with no message carries nothing, so THAT is what the fallback is for. The old code returned
+  // the empty string here and the caller rendered a blank line.
+  test("an Error with an empty message falls back rather than rendering blank", () => {
+    expect(errorMessage(new Error(""), "fallback")).toBe("fallback")
+  })
+
+  test("the server's own words win over a wrapper's generic message", () => {
+    expect(errorMessage({ message: "Request failed", data: { message: "session not found" } }, "fallback")).toBe(
+      "session not found",
+    )
   })
 })

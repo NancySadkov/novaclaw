@@ -3,7 +3,7 @@ export * as SessionReceipt from "./session-receipt"
 import { Schema } from "effect"
 
 /**
- * The wire shape of "What Nova checked" — `todo/verified-autonomy.md` V1.
+ * The wire shape of "What Nova checked" — the verified-autonomy receipt.
  *
  * ⚠️ Lives in `@novaclaw/schema` rather than beside the composer in core, because the protocol group
  * and the app both need it and neither may import core. The composer's own interfaces are the same
@@ -37,8 +37,8 @@ export const PlanItem = Schema.Struct({
 /**
  * One tool call a pre-action policy INTERVENED on. Never one per tool call.
  *
- * 🔴 **The wire half of *"bind every intervention to a receipt"* (`todo/projects.md` → typed
- * pre-action policies).** The composer has read these rows since the kernel landed, and until this
+ * 🔴 **The wire half of *"bind every intervention to a receipt"* — the typed pre-action policies of
+ * AGENTS.md design principle 13.** The composer has read these rows since the kernel landed, and until this
  * field existed the success schema dropped them on the way out — so an intervention was durable,
  * correct in every unit test, and invisible to every caller. A rewritten tool call the product
  * never tells anyone about is precisely what the receipt exists to prevent, so the absence was the

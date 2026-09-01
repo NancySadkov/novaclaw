@@ -328,7 +328,7 @@ describe("ConfigStoreWrite export→import round-trip (step 8)", () => {
           providers: { spark: { name: "Spark", models: { m1: { name: "M1" } } } },
           agents: { build: { description: "the builder" } },
           commands: { review: { template: "review it" } },
-          references: { docs: "https://github.com/example/docs.git" },
+          references: { docs: "https://git.example.test/example/docs.git" },
           skills: ["/opt/skills"],
         }),
       )

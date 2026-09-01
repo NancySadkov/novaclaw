@@ -82,12 +82,12 @@ describe("openai-chat — append-only tool discovery", () => {
           name: "tool_search",
           result: {
             kind: "tool-discovery",
-            tools: [{ name: "github_create_issue", input_schema: { type: "object" } }],
+            tools: [{ name: "tracker_create_issue", input_schema: { type: "object" } }],
           },
         }),
       ],
       tools: [resident, dispatcher],
-      callableTools: ["github_create_issue"],
+      callableTools: ["tracker_create_issue"],
     })
 
     const beforeBody = Effect.runSync(OpenAIChat.protocol.body.from(before))
@@ -102,7 +102,7 @@ describe("openai-chat — append-only tool discovery", () => {
     expect(OpenAIChat.protocol.stream.initial(after).allowedToolNames).toEqual([
       "tool_search",
       "tool_call",
-      "github_create_issue",
+      "tracker_create_issue",
     ])
   })
 })

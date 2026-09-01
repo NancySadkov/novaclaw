@@ -103,30 +103,11 @@ export function logo(pad?: string) {
   return result.join("").trimEnd()
 }
 
-export async function input(prompt: string): Promise<string> {
-  const readline = require("readline")
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  })
-
-  return new Promise((resolve) => {
-    rl.question(prompt, (answer: string) => {
-      rl.close()
-      resolve(answer.trim())
-    })
-  })
-}
-
 export function error(message: string) {
   if (message.startsWith("Error: ")) {
     message = message.slice("Error: ".length)
   }
   println(Style.TEXT_DANGER_BOLD + "Error: " + Style.TEXT_NORMAL + message)
-}
-
-export function markdown(text: string): string {
-  return text
 }
 
 export * as UI from "./ui"

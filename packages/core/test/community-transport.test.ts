@@ -11,7 +11,7 @@ import { Offline } from "@novaclaw/core/offline"
 import { testEffect } from "./lib/effect"
 
 /**
- * Community P2 — the transport seam (`todo/community-p2p.md`).
+ * Community P2 — the transport seam (`notes/spec/community-p2p.md`).
  *
  * The transport is now real — plain HTTPS to reachable instances — so these pin the states of an
  * instance that HAS one and still cannot send: nobody to dial, or airgap. Both are ordinary, and

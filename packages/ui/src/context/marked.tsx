@@ -1,9 +1,10 @@
-import { marked } from "marked"
+import { marked, type Tokens } from "marked"
 import markedShiki from "marked-shiki"
 import katex from "katex"
-import { bundledLanguages, type BundledLanguage } from "shiki"
+import { bundledLanguages, type BundledLanguage } from "shiki/langs"
 import { createSimpleContext } from "./helper"
 import { findMathSpans, render as renderMath } from "../util/math-latex"
+import { escapeHtml } from "../util/html"
 import { getSharedHighlighter, registerCustomTheme, ThemeRegistrationResolved } from "@pierre/diffs"
 
 export const NovaClawTheme = {
@@ -417,15 +418,6 @@ function renderMathInText(text: string): string {
 const katexRender = (tex: string, options: { displayMode: boolean; throwOnError: boolean }): string =>
   katex.renderToString(tex, options)
 
-/** HTML-safe text. Used on the give-up path, whose output lands inside an HTML string. */
-const escapeHtml = (value: string): string =>
-  value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;")
-
 function renderMathExpressions(html: string): string {
   // Split on code/pre/kbd tags to avoid processing their contents
   const codeBlockPattern = /(<(?:pre|code|kbd)[^>]*>[\s\S]*?<\/(?:pre|code|kbd)>)/gi
@@ -563,45 +555,70 @@ export type NativeMarkdownParser = (markdown: string) => Promise<string>
  */
 export type HostFileResolver = (href: string) => { readonly url: string; readonly image: boolean } | undefined
 
+/**
+ * The link and image renderers, lifted out of the context's `init` so they can be DRIVEN BY A TEST.
+ *
+ * 🔴 They build HTML strings by interpolation from MODEL output, which makes attribute escaping a
+ * security property rather than a tidiness one — and it had already gone wrong once here: `image`
+ * escaped its `title` while `link`, twenty-five lines above it in the same object, did not. A
+ * property that is only correct while somebody remembers it is not a property. `marked.test.ts`
+ * drives these through the real parser with a breakout payload.
+ */
+export const fileRenderer = (resolveFile?: HostFileResolver) => ({
+  link({ href, title, text }: Tokens.Link): string {
+    // 🔴 `title` arrives RAW from marked — measured against marked@17, not assumed:
+    // `[x](https://e.com "a\" onmouseover=\"alert(1)")` hands this renderer the literal
+    // `a" onmouseover="alert(1)`, which unescaped closes the attribute and becomes a live
+    // event handler. The `image` renderer below already escapes its title; this one did not,
+    // and the two are twenty-five lines apart in the same object.
+    //
+    // ⚠️ DOMPurify downstream strips the handler, so this was defence-in-depth rather than a
+    // live hole — but the sanitizer lives in another package, and this subsystem already
+    // documents one deliberate bypass of it (`markdown-html-embed.ts`). An HTML string built
+    // from MODEL output should be correct where it is built.
+    //
+    // ⚠️ `href` is deliberately NOT passed through `escapeAttribute`: marked already closes
+    // the quote vector there, and escaping again would turn a `&` in a query string into
+    // `&amp;` on top of whatever marked emitted.
+    const titleAttr = title ? ` title="${escapeAttribute(title)}"` : ""
+    // 🔴 A FILE THIS INSTANCE CAN SERVE — a colleague handing over what it made. `download`
+    // makes the click save it rather than navigate, and the attribute carries the file's own
+    // name so it does not land as the route's last segment.
+    const local = resolveFile?.(href)
+    if (local)
+      return `<a href="${escapeAttribute(local.url)}"${titleAttr} class="agent-file-link" download="${escapeAttribute(text || "")}" data-agent-file="true">${text}</a>`
+    return `<a href="${href}"${titleAttr} class="external-link" target="_blank" rel="noopener noreferrer">${text}</a>`
+  },
+  /**
+   * `![alt](path.png)` from a colleague renders INLINE.
+   *
+   * ⚠️ Only for a host file this instance can serve. A remote image URL stays an ordinary
+   * `<img>` with whatever the author wrote — rewriting those would make the chat fetch from
+   * wherever a model happened to name, which is egress the user did not ask for.
+   *
+   * ⚠️ **NO `loading="lazy"`, and this was measured.** The first version had it, and the
+   * image never appeared: an `<img>` with no intrinsic size lays out 0×0, and a lazy image
+   * with zero dimensions is never triggered even when it is squarely in the viewport —
+   * `complete` stayed false with the element visible and its URL answering 200. Setting
+   * `eager` on the live element loaded it at 320×120 immediately. Every ledger passed
+   * throughout, because they assert the resolver is called and the `src` is right; nothing
+   * about a correct `src` makes a browser fetch it.
+   */
+  image({ href, title, text }: Tokens.Image): string {
+    const titleAttr = title ? ` title="${escapeAttribute(title)}"` : ""
+    const alt = escapeAttribute(text || "")
+    const local = resolveFile?.(href)
+    const src = local?.image ? local.url : href
+    return `<img src="${escapeAttribute(src)}" alt="${alt}"${titleAttr} class="agent-file-image" />`
+  },
+})
+
 export const { use: useMarked, provider: MarkedProvider } = createSimpleContext({
   name: "Marked",
   init: (props: { nativeParser?: NativeMarkdownParser; resolveFile?: HostFileResolver }) => {
     const jsParser = marked.use(
       {
-        renderer: {
-          link({ href, title, text }) {
-            const titleAttr = title ? ` title="${title}"` : ""
-            // 🔴 A FILE THIS INSTANCE CAN SERVE — a colleague handing over what it made. `download`
-            // makes the click save it rather than navigate, and the attribute carries the file's own
-            // name so it does not land as the route's last segment.
-            const local = props.resolveFile?.(href)
-            if (local)
-              return `<a href="${escapeAttribute(local.url)}"${titleAttr} class="agent-file-link" download="${escapeAttribute(text || "")}" data-agent-file="true">${text}</a>`
-            return `<a href="${href}"${titleAttr} class="external-link" target="_blank" rel="noopener noreferrer">${text}</a>`
-          },
-          /**
-           * `![alt](path.png)` from a colleague renders INLINE.
-           *
-           * ⚠️ Only for a host file this instance can serve. A remote image URL stays an ordinary
-           * `<img>` with whatever the author wrote — rewriting those would make the chat fetch from
-           * wherever a model happened to name, which is egress the user did not ask for.
-           *
-           * ⚠️ **NO `loading="lazy"`, and this was measured.** The first version had it, and the
-           * image never appeared: an `<img>` with no intrinsic size lays out 0×0, and a lazy image
-           * with zero dimensions is never triggered even when it is squarely in the viewport —
-           * `complete` stayed false with the element visible and its URL answering 200. Setting
-           * `eager` on the live element loaded it at 320×120 immediately. Every ledger passed
-           * throughout, because they assert the resolver is called and the `src` is right; nothing
-           * about a correct `src` makes a browser fetch it.
-           */
-          image({ href, title, text }) {
-            const titleAttr = title ? ` title="${escapeAttribute(title)}"` : ""
-            const alt = escapeAttribute(text || "")
-            const local = props.resolveFile?.(href)
-            const src = local?.image ? local.url : href
-            return `<img src="${escapeAttribute(src)}" alt="${alt}"${titleAttr} class="agent-file-image" />`
-          },
-        },
+        renderer: fileRenderer(props.resolveFile),
       },
       markedMath(),
       markedShiki({

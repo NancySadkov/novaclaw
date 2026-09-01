@@ -3,7 +3,7 @@ import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core"
 /**
  * ─── what a pre-action POLICY did to a tool call, and which policy did it ──────────────────────
  *
- * 🔴 `todo/projects.md`: *"bind every intervention to a receipt."* An input patch that silently
+ * 🔴 *"Bind every intervention to a receipt."* An input patch that silently
  * rewrote a tool's arguments would be the product lying about what it did — the model asked to run
  * one thing, something else ran, and the transcript would show only the second. So an intervention
  * is not allowed to be invisible, and this table is the durable half of that promise (the other

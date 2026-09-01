@@ -11,7 +11,7 @@ import { testEffect } from "./lib/effect"
 import { cosignedRotation, forgedRotation, mintIdentity } from "./lib/community"
 
 /**
- * Community P1 — key rotation (`todo/community-p2p.md`).
+ * Community P1 — key rotation (`notes/spec/community-p2p.md`).
  *
  * A successor statement is the old key saying "the peer you knew as me is now this other key". What
  * these pin is that it proves exactly that and nothing more — and that it cannot be forged, replayed

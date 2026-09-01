@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { FileSystem, Integration, Permission, Reference, Session, Workspace } from "../src"
+import { FileSystem, Integration, Reference, Session, Workspace } from "../src"
 import { EventManifest } from "../src/event-manifest"
-import { IdeEvent } from "../src/ide-event"
 import { SessionEvent } from "../src/session-event"
 import { SessionTodo } from "../src/session-todo"
 import { SessionRecordEvent } from "../src/session-record-event"
@@ -11,10 +10,8 @@ describe("public event manifest", () => {
   test("owns the complete public event surface", () => {
     // 2026-08-02: six durable recovery events joined the manifest: three provider-attempt lifecycle
     // events and three storage-linear stream checkpoints. 2026-08-08: device, priority and control-
-    // binding switches joined as durable session-component projections. 2026-08-09: the Auto-mode
-    // permission card joined as a durable audit event: no user-ceiling write, no model-context replay,
-    // and one transcript projection. Keep the exact counts pinned so adding a public wire event always
-    // requires an explicit contract review here.
+    // binding switches joined as durable session-component projections. Keep the exact counts pinned
+    // so adding a public wire event always requires an explicit contract review here.
     //
     // 2026-08-19 — REVIEW PERFORMED, +1: `session.presence.updated` (`session-presence.ts`), added by
     // 86deddb58 without this review. The pin caught it; the review is recorded rather than the number
@@ -59,7 +56,7 @@ describe("public event manifest", () => {
       all: EventManifest.Definitions.length,
       latest: EventManifest.Latest.size,
       durable: EventManifest.Durable.size,
-    }).toEqual({ server: 81, all: 101, latest: 101, durable: 48 })
+    }).toEqual({ server: 79, all: 99, latest: 99, durable: 48 })
     // V1-nuke slice D: the record lifecycle events are native (Session.Info payloads, durable
     // v2); session.diff + command.executed died with the V1 wire schemas (no publishers).
     expect(SessionRecordEvent.Definitions).toEqual([
@@ -82,10 +79,7 @@ describe("public event manifest", () => {
     expect(EventManifest.Latest.get("todo.updated")).toBe(SessionTodo.Event.Updated)
     expect(FileSystem.Event.Definitions).toEqual([FileSystem.Event.Edited])
     expect(Integration.Event.Definitions).toEqual([Integration.Event.Updated, Integration.Event.ConnectionUpdated])
-    expect(Permission.Event.Definitions).toEqual([Permission.Event.Asked, Permission.Event.Replied])
     expect(Reference.Event.Definitions).toEqual([Reference.Event.Updated])
-    expect(EventManifest.Latest.has("ide.installed")).toBe(false)
-    expect(IdeEvent.Definitions).toEqual([IdeEvent.Installed])
     expect(EventManifest.Definitions).toContain(SessionRecordEvent.Error)
     expect(EventManifest.Latest.get("session.next.message.recorded")).toBe(SessionEvent.MessageRecorded)
     expect(EventManifest.Durable.get("session.next.message.recorded.1")).toBe(SessionEvent.MessageRecorded)

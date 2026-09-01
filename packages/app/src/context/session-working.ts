@@ -7,7 +7,7 @@ import type { SessionStatus } from "@novaclaw/sdk/v2/client"
  * `idle | busy | retry | exited` (`packages/schema/src/session-status-event.ts`) — and `exited` is
  * TERMINAL. Under the old `(type ?? "idle") !== "idle"` test an exited session read as working
  * FOREVER: its spinner never stopped, its composer stayed disabled, and Chats kept it in the
- * needs-attention set. Ported from https://github.com/NancySadkov/novaclaw/pull/10 by
+ * needs-attention set. Ported from outside contribution #10 by
  * @DassaultFalconKing.
  *
  * The allowlist is also the safer direction for a set that may grow. A future status this file has

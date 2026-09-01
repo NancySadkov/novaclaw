@@ -13,7 +13,7 @@ import { MessengerLogin } from "@novaclaw/core/messenger/login"
 import { MessengerStore } from "@novaclaw/core/messenger/store"
 import { testEffect } from "./lib/effect"
 
-// P1.7 gate (notes/messenger-plan.md §8): the login-attempt manager — begin → pending ticket,
+// P1.7 gate: the login-attempt manager — begin → pending ticket,
 // complete(code) → the session credential lands in the credential store under the per-account
 // synthetic integration id AND the account row points at it; a retryable miss keeps the attempt
 // pending; cancel closes it. Real store + credential services over the test DB; the driver is a
@@ -23,7 +23,6 @@ const CAPS: Messenger.Capabilities = {
   listChats: "full",
   files: { up: false, down: false },
   edits: false,
-  typing: false,
   threads: false,
   moderation: { delete: false, ban: false, kick: false, mute: false, pin: false },
   format: "plain",

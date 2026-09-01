@@ -5,8 +5,7 @@ import { PermissionSaved } from "@novaclaw/schema/permission-saved"
 import { Session } from "@novaclaw/schema/session"
 import { Context, Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiMiddleware, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
-import { PermissionNotFoundError, SessionNotFoundError } from "../errors"
-import { LocationQuery, locationQueryOpenApi } from "./location"
+import { SessionNotFoundError } from "../errors"
 
 export const makePermissionGroup = <
   LocationId extends HttpApiMiddleware.AnyId,
@@ -18,20 +17,6 @@ export const makePermissionGroup = <
   sessionLocationMiddleware: Context.Key<SessionLocationId, SessionLocationService>,
 ) =>
   HttpApiGroup.make("server.permission")
-    .add(
-      HttpApiEndpoint.get("permission.request.list", "/api/permission/request", {
-        query: LocationQuery,
-        success: Location.response(Schema.Array(Permission.Request)),
-      })
-        .annotateMerge(locationQueryOpenApi)
-        .annotateMerge(
-          OpenApi.annotations({
-            identifier: "v2.permission.request.list",
-            summary: "List pending permission requests",
-            description: "Retrieve pending permission requests for a location.",
-          }),
-        ),
-    )
     .add(
       HttpApiEndpoint.get("permission.saved.list", "/api/permission/saved", {
         query: Schema.Struct({ origin: Schema.String.pipe(Schema.optional) }),
@@ -79,57 +64,8 @@ export const makePermissionGroup = <
         .annotateMerge(
           OpenApi.annotations({
             identifier: "v2.session.permission.create",
-            summary: "Create permission request",
-            description: "Evaluate and, when approval is required, create a permission request for a session.",
-          }),
-        ),
-    )
-    .add(
-      HttpApiEndpoint.get("session.permission.list", "/api/session/:sessionID/permission", {
-        params: { sessionID: Session.ID },
-        success: Schema.Struct({ data: Schema.Array(Permission.Request) }),
-        error: SessionNotFoundError,
-      })
-        .middleware(sessionLocationMiddleware)
-        .annotateMerge(
-          OpenApi.annotations({
-            identifier: "v2.session.permission.list",
-            summary: "List session permission requests",
-            description: "Retrieve pending permission requests owned by a session.",
-          }),
-        ),
-    )
-    .add(
-      HttpApiEndpoint.get("session.permission.get", "/api/session/:sessionID/permission/:requestID", {
-        params: { sessionID: Session.ID, requestID: Permission.ID },
-        success: Schema.Struct({ data: Permission.Request }),
-        error: [SessionNotFoundError, PermissionNotFoundError],
-      })
-        .middleware(sessionLocationMiddleware)
-        .annotateMerge(
-          OpenApi.annotations({
-            identifier: "v2.session.permission.get",
-            summary: "Get permission request",
-            description: "Retrieve a pending permission request owned by a session.",
-          }),
-        ),
-    )
-    .add(
-      HttpApiEndpoint.post("session.permission.reply", "/api/session/:sessionID/permission/:requestID/reply", {
-        params: { sessionID: Session.ID, requestID: Permission.ID },
-        payload: Schema.Struct({
-          reply: Permission.Reply,
-          message: Schema.String.pipe(Schema.optional),
-        }),
-        success: HttpApiSchema.NoContent,
-        error: [SessionNotFoundError, PermissionNotFoundError],
-      })
-        .middleware(sessionLocationMiddleware)
-        .annotateMerge(
-          OpenApi.annotations({
-            identifier: "v2.session.permission.reply",
-            summary: "Reply to pending permission request",
-            description: "Respond to a pending permission request owned by a session.",
+            summary: "Evaluate permission",
+            description: "Evaluate the effective permission rules for a session action.",
           }),
         ),
     )

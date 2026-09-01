@@ -306,6 +306,10 @@ export const layer = Layer.effect(
       if (!check.ok) throw new Error(check.issues.join(" "))
 
       if (!(yield* Effect.promise(() => exists(paths.server)))) {
+        if (!selected.runtime.url)
+          throw new Error(
+            "The local AI engine source is not configured. Set its verified repository URL through NovaClaw's runtime configuration.",
+          )
         set({ stage: "downloading-runtime", message: "Downloading the local AI engine…" })
         yield* Download.toFile({
           url: selected.runtime.url,

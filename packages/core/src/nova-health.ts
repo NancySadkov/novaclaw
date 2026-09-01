@@ -3,7 +3,7 @@ export * as NovaHealth from "./nova-health"
 /**
  * One calm answer to *"is anything wrong?"*, composed from signals that already exist.
  *
- * `todo/adoption.md` asks for model-free checks across storage, database, provider reachability,
+ * Model-free checks across storage, database, provider reachability,
  * model capability, sidecar state, scheduler and update/telemetry — *"with calm repairs rather than
  * raw internals"*. All seven now have a reading
  * (`notes/reports/nova-health-inputs-2026-08-11.md`); this is the part that turns readings into

@@ -58,7 +58,8 @@ const document = (info: ConstructorParameters<typeof Config.Info>[0]) =>
 describe("HarnessConfig.derive", () => {
   test("an empty config yields the compiled defaults the runner used to hardcode", () => {
     const derived = HarnessConfig.derive([], { platform: "linux" })
-    expect(derived.persona).toContain("Nova")
+    expect(derived.persona).toContain("pragmatic")
+    expect(derived.persona).not.toContain("Nova")
     expect(derived.expertiseHint).toBeUndefined()
     expect(derived.quality.enabled).toBe(false)
     expect(derived.quality.cadence).toBe(2)
@@ -74,9 +75,9 @@ describe("HarnessConfig.derive", () => {
   test("every key is picked up, and later documents win (the `latest` fold)", () => {
     const derived = HarnessConfig.derive(
       [
-        document({ persona: { name: "Ignored" }, expertise: "developer", shell: "/bin/first" }),
+        document({ persona: { prompt: "Ignored style" }, expertise: "developer", shell: "/bin/first" }),
         document({
-          persona: { name: "Probe" },
+          persona: { prompt: "Probe style" },
           expertise: "normal",
           shell: "/bin/second",
           quality: { enabled: true, cadence: 7 },
@@ -186,7 +187,8 @@ describe("the harness derivation follows the settings store", () => {
 
             for (const key of HARNESS_KEYS) yield* store.remove(key)
             const before = yield* derive()
-            expect(before.persona).toContain("Nova")
+            expect(before.persona).toContain("pragmatic")
+            expect(before.persona).not.toContain("Nova")
             expect(before.expertiseHint).toBeUndefined()
             expect(before.quality.enabled).toBe(false)
             expect(before.shell).toBe("/bin/sh")
@@ -196,7 +198,7 @@ describe("the harness derivation follows the settings store", () => {
             expect(before.context).toBeUndefined()
             expect(before.toolRouting).toBeUndefined()
 
-            yield* store.set("persona", { name: "Probe" })
+            yield* store.set("persona", { prompt: "Probe style" })
             yield* store.set("expertise", "normal")
             yield* store.set("quality", { enabled: true, cadence: 7 })
             yield* store.set("shell", "/bin/harness-probe")
@@ -221,7 +223,8 @@ describe("the harness derivation follows the settings store", () => {
             // …and a REMOVAL falls back too, so this is read-through and not merely write-visible.
             for (const key of HARNESS_KEYS) yield* store.remove(key)
             const restored = yield* derive()
-            expect(restored.persona).toContain("Nova")
+            expect(restored.persona).toContain("pragmatic")
+            expect(restored.persona).not.toContain("Nova")
             expect(restored.expertiseHint).toBeUndefined()
             expect(restored.quality.enabled).toBe(false)
             expect(restored.shell).toBe("/bin/sh")

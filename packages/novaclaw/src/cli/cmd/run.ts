@@ -88,7 +88,7 @@ const ATTACH_FILE_MAX_BYTES = 10 * 1024 * 1024
 /**
  * The image MIME a file's own BYTES declare, or `undefined` when they declare none.
  *
- * ⚠️ Magic bytes, never the extension — the standing constraint in `todo/vision.md`, and the defect
+ * ⚠️ Magic bytes, never the extension — a standing constraint, and the defect
  * class that fills Claude Code's tracker. `FSUtil.mimeType` is `mime-types.lookup`, i.e. the
  * extension, so `screenshot.txt` holding a PNG would be announced as text and rejected, while a
  * `.png` holding anything at all would be announced as an image and rejected at the provider.
@@ -238,24 +238,20 @@ export const RunCommand = effectCmd({
       .option("password", {
         alias: ["p"],
         type: "string",
-        describe: "basic auth password (defaults to NOVACLAW_SERVER_PASSWORD)",
+        describe: "basic auth password for --attach (defaults to NOVACLAW_SERVER_PASSWORD)",
       })
       .option("username", {
         alias: ["u"],
         type: "string",
-        describe: "basic auth username (defaults to NOVACLAW_SERVER_USERNAME or 'novaclaw')",
+        describe: "basic auth username for --attach (defaults to NOVACLAW_SERVER_USERNAME or 'novaclaw')",
       })
       .option("dir", {
         type: "string",
         describe: "directory to run in, path on remote server if attaching",
       })
-      .option("port", {
-        type: "number",
-        describe: "port for the local server (defaults to random port if no value provided)",
-      })
       .option("variant", {
         type: "string",
-        describe: "model variant (provider-specific reasoning effort, e.g., high, max, minimal)",
+        describe: "model variant (requires --model unless running --command)",
       })
       .option("thinking", {
         type: "boolean",
@@ -300,6 +296,14 @@ export const RunCommand = effectCmd({
       )
       process.exit(2)
     }
+    if (args.variant && !args.model && !args.command) {
+      UI.error("--variant requires --model unless --command is used; no model was selected")
+      process.exit(2)
+    }
+    if (!args.attach && (args.password !== undefined || args.username !== undefined)) {
+      UI.error("--username and --password apply only with --attach")
+      process.exit(2)
+    }
 
     const local = args.attach
       ? undefined
@@ -308,10 +312,9 @@ export const RunCommand = effectCmd({
         )
     // 🔴 **Everything below runs in plain `async`, OUTSIDE the Effect fiber — so a fresh
     // `Effect.runPromise` in there starts with DEFAULT fiber references and silently loses
-    // `References.MinimumLogLevel`.** That is why `NOVACLAW_LOG_LEVEL=DEBUG` did nothing on this
-    // path: measured 2026-08-07 with a control three lines apart — a debug line emitted just above
-    // this boundary appears in the log, and the same line emitted via `Effect.runPromise` just below
-    // it does not.
+    // `References.MinimumLogLevel`.** Symptom when it is not captured: `NOVACLAW_LOG_LEVEL=DEBUG`
+    // does nothing on this path, and only on this path — a debug line three lines ABOVE the
+    // boundary still appears.
     //
     // ⚠️ Capturing the CONTEXT is the fix rather than passing the level explicitly: references live in
     // the context, so this restores everything the boundary drops, not just the one that was noticed.
@@ -386,20 +389,12 @@ export const RunCommand = effectCmd({
           }
 
           const content = await (async () => {
-            // 🔴 **This used to read `if (!args.attach) return`, and it broke `-f` on every LOCAL
-            // run** (measured 2026-08-20, owner: *"the cli should be fixed too"*). Without
-            // `--attach` the file was sent as a bare `file://` URL on the theory that a
-            // same-machine server can open the path itself — but nothing ever materializes one.
-            // `to-llm-message`'s `attachment()` says so in its own comment ("only data: URIs can be
-            // decoded in this pure function"), and the messenger, the only other producer of
-            // attachments, inlines a `data:` URI for exactly this reason.
-            //
-            // So the bytes never arrived and the shape died at the provider boundary:
-            // `nova-cli run "describe this" -f x.png` → **"OpenAI Chat media must contain valid
-            // base64"** (`protocols/shared.ts`), because `file:///C:/…png` is not base64. It was
-            // not image-specific either — a text attachment took the same path and failed as
-            // "does not support media type text/plain", since the text arm needs a data: URI to
-            // decode and falls through to media when it cannot.
+            // 🔴 **LOCAL and REMOTE both inline the bytes as a `data:` URI. There is no arm that
+            // sends a bare `file://` URL.** Nothing downstream materializes a path:
+            // `to-llm-message`'s `attachment()` decodes only `data:` URIs, and the messenger — the
+            // only other producer of attachments — inlines for the same reason. A `file://` URL
+            // therefore dies at the provider boundary, and not only for images: the text arm needs
+            // a `data:` URI to decode and falls through to media when it cannot.
             //
             // Reading is the same work the remote arm already did, under the same 10 MiB cap, and a
             // directory still takes the branch below rather than being slurped.
@@ -569,8 +564,9 @@ export const RunCommand = effectCmd({
          * costs one round trip and makes each run its own thread under an owner who can be pointed
          * at.
          *
-         * ⚠️ `test/cli/run/run-process.test.ts` is NOT in the fast gate (13 tests skipped in
-         * `novaclaw:server`). Run it by name after touching this.
+         * ⚠️ `test/cli/run/run-process.test.ts` is NOT in the fast gate. It lives under
+         * `test/cli/`, which no promoted unit scans (`novaclaw:server` runs `test/server/` and
+         * nothing else), so it executes only under `--full`. Run it by name after touching this.
          */
         const where = { directory: (directory ?? root) as never }
         const parent = await sdk.v2.session.create({ agent: RUN_AGENT, location: where })
@@ -693,17 +689,13 @@ export const RunCommand = effectCmd({
       const chosenAgent = (sdk: NovaclawClient) => (agentChoice ??= pickAgent(sdk))
 
       /**
-       * 🔴 **NC-CS-004 — the client must follow the SESSION, not the process.**
+       * 🔴 **The client must follow the SESSION, not the process.** A resumed run works in the
+       * session's stored directory; an sdk bound to the process's own directory subscribes to the
+       * wrong scope, and the failure is silent — the turn executes perfectly and the CLI receives
+       * exactly one event (`server.connected`), then waits to be killed.
        *
-       * A resumed run works in the session's stored directory, and `session()` has resolved that
-       * correctly since `2da95a1df`. What did not follow it was the CLIENT: the local path used the
-       * sdk bound to the process's own directory, so its subscription was scoped there while the
-       * turn ran in the session's location. The turn executed perfectly and the CLI saw exactly one
-       * event — `server.connected` — then waited to be killed. Measured 2026-08-28.
-       *
-       * ⚠️ ATTACH mode already did this (`directory ?? sess.directory ?? current(sdk)`), which is why
-       * the asymmetry survived: the case that was exercised was the one that worked. Both paths take
-       * the same rebind now, so a future reader cannot fix one and leave the other.
+       * ⚠️ LOCAL and ATTACH must take the SAME rebind. The asymmetry survived once because the
+       * exercised path was the working one; do not fix one and leave the other.
        */
       async function execute(sdk: NovaclawClient, rebind: (dir: string) => NovaclawClient) {
         const sess = await session(sdk)
@@ -797,12 +789,10 @@ export const RunCommand = effectCmd({
             UI.error(message)
           }
 
-          // ⚠️ This used to be a local `errorMessage(err, fallback)` closure — a SECOND formatter
-          // for the same faults the transcript renders, which is exactly the divergence the shared
-          // taxonomy exists to end (`@novaclaw/core/session/session-error`). It printed the raw
-          // wire text verbatim, so a powered-off model server read as
-          // `HTTP transport failed: fetch failed | cause: connect ECONNREFUSED 192.168.178.40:8000`
-          // here and as a calm sentence in the app — two answers to one question.
+          // ⚠️ **One formatter, shared with the transcript** (`@novaclaw/core/session/session-error`).
+          // A local `errorMessage(err, fallback)` closure here would be a SECOND answer to one
+          // question — a powered-off model server reading as raw wire text in the CLI and as a calm
+          // sentence in the app. That divergence is what the shared taxonomy exists to end.
           //
           // **The CLI keeps the errno, deliberately, as an extra indented line.** The taxonomy's
           // headline is the truthful description (ruling 2 satisfied) and the raw message is
@@ -941,13 +931,6 @@ export const RunCommand = effectCmd({
               break
             }
 
-            // ⚠️ The `permission.v2.asked` branch that stood here is GONE (2026-08-23), and it was
-            // dead twice over: `bf39088eb` stopped that event being emitted when ASK was removed as
-            // an outcome (principle 14 — a refusal is instant, nothing blocks on an absent human),
-            // and its only non-default arm was `--dangerously-skip-permissions`, which now refuses
-            // the run before this loop is reached. It also carried the string
-            // `"permission requested: …"` that `run-process.test.ts` was pinned against for three
-            // days, asserting a prompt no user could ever see.
           }
           return error
         }
@@ -1033,7 +1016,7 @@ export const RunCommand = effectCmd({
               .catch(() => undefined)
         }
         /**
-         * 🔴 **A REFUSED SWITCH IS NOT A FALLBACK** (`todo/codesleuth-mcp.md` NC-CS-002). This was
+         * 🔴 **A REFUSED SWITCH IS NOT A FALLBACK.** This was
          * `.catch(() => undefined)`: a run asked for `--agent codesleuth-auditor`, the switch was
          * refused, and it went on as whoever the session already belonged to — WITHOUT that
          * colleague's MCP grants — and exited zero. A run that silently did the work as the wrong

@@ -34,7 +34,6 @@ created the ImageMagick software.
 
 ## Reproducible acquisition
 
-The pinned version, download URL and SHA-256 live in
-`packages/desktop/scripts/prepare-imagemagick.ts`. Corresponding upstream source for the exact
-version is published by the project at
-<https://github.com/ImageMagick/ImageMagick/releases/tag/7.1.2-29>.
+The pinned version and SHA-256 live in `packages/desktop/scripts/prepare-imagemagick.ts`; build hosts
+stage the verified archive locally. Corresponding upstream source for the exact version is published
+in the project's official archive: <https://download.imagemagick.org/archive/releases/>.

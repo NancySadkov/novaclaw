@@ -7,8 +7,8 @@ import type { JhProcessRunner } from "./process-runner"
 import { JhEngine } from "./engine"
 import { JhTree } from "./tree"
 
-// ---- scripted-deps harness: introspect+correct pull from ONE reply queue (call order); executor and
-// runner (verify) pull from their own queues. LLM_FAIL makes a model call fail. ----
+// ---- scripted-deps harness: introspection pulls from one reply queue; executor and runner (verify)
+// pull from their own queues. LLM_FAIL makes a model call fail. ----
 const LLM_FAIL = "__LLM_FAIL__"
 
 function scriptedDeps(opts: {
@@ -43,7 +43,6 @@ function scriptedDeps(opts: {
   }
   const deps: JhEngine.Deps = {
     introspect: () => nextReply(),
-    correct: () => nextReply(),
     executor: {
       run: () =>
         Effect.succeed(observations.shift() ?? { ok: false, output: "no scripted observation", artifacts: new Map() }),
@@ -244,7 +243,6 @@ describe("JhEngine.runTask", () => {
     )
     const deps: JhEngine.Deps = {
       introspect: () => Effect.succeed(atomic), // ALWAYS atomic — the model refuses to plan, even under mustDecompose
-      correct: () => Effect.succeed(atomic),
       executor: { run: () => Effect.succeed({ ok: true, output: "o", artifacts: new Map<string, string>() }) },
       runner: { run: () => Effect.succeed({ exitCode: 1, output: "still failing", timedOut: false }) }, // the check NEVER passes
       artifacts: JhArtifact.memory(),
@@ -340,6 +338,28 @@ describe("JhEngine.runTask", () => {
     const rs = await run(split)
     expect(rs.status).toBe("done")
     expect(types(rs)).toContain("forced_split")
+  })
+
+  test("7a. sibling dependency density is measured from the live decomposition", async () => {
+    const d = scriptedDeps({
+      replies: [
+        reply(
+          compoundObj([
+            atomObj({ goal: "producer", produces: [{ id: "shared", type: "note" }] }),
+            atomObj({ goal: "consumer", consumes: [{ id: "shared", type: "note" }], produces: [] }),
+          ]),
+        ),
+        reply(atomObj({ goal: "producer", produces: [{ id: "shared", type: "note" }] })),
+        reply(atomObj({ goal: "consumer", consumes: [{ id: "shared", type: "note" }], produces: [] })),
+      ],
+      observations: [okObs({ shared: "x" }), okObs()],
+      trigger: { cardinality: 999, density: 1, margin: 1 },
+    })
+    const r = await run(d)
+    const advisories = r.state.log.filter((entry) => entry.type === "forced_split_advisory")
+    expect(advisories).toHaveLength(2)
+    expect(advisories.every((entry) => entry.density === 1)).toBe(true)
+    expect(r.status).toBe("done")
   })
 
   test("7b. improve5 P3.1: an armed force-split the model WON'T split degrades to ATOMIC (never cannot_split-blocks)", async () => {
@@ -991,7 +1011,6 @@ describe("JhEngine.runTask", () => {
         calls++
         return Effect.succeed(calls === 1 ? rootDecomp : solve)
       }, // 1st = root decompose, rest = atomic solves
-      correct: () => Effect.succeed(solve),
       executor: { run: () => Effect.succeed({ ok: true, output: "o", artifacts: new Map<string, string>() }) },
       runner: { run: () => Effect.succeed({ exitCode: 0, output: "", timedOut: false }) },
       artifacts: JhArtifact.memory(),

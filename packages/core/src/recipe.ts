@@ -3,8 +3,11 @@ export * as Recipe from "./recipe"
 import { constants, statSync } from "node:fs"
 import fs from "node:fs/promises"
 import path from "node:path"
+import { randomUUID } from "node:crypto"
+import { deflateRawSync, inflateRawSync } from "node:zlib"
 import { Global } from "./global"
 import { which } from "./util/which"
+import { Slug } from "./util/slug"
 
 /**
  * Recipes — "source code for the AI era" (AGENTS.md → *Recipes are source code for the AI era*).
@@ -67,7 +70,7 @@ export interface SaveInput {
    * The artifacts a SUCCESSFUL cook leaves in the work dir ("clean.csv", "chart.html"), written as a
    * single `produces:` line. The deterministic success artifact: `recipe-verify.ts` reads them after a
    * cook and returns a receipt a machine can act on, because a cook's verdict was prose until then and
-   * nothing could mechanically read its outcome (`todo/recipes.md`).
+   * nothing could mechanically read its outcome.
    *
    * ⚠️ **The second machine-read field, and it obeys the same ruling-14 shape as `needs` for the same
    * reason.** It states what the recipe PRODUCES — an observable fact about the author's own artifact,
@@ -106,17 +109,93 @@ export const rootIn = (dataDirectory: string) => path.join(dataDirectory, "recip
 
 const recipesRoot = (options?: Options) => options?.root ?? rootIn(Global.Path.data)
 
+/** One filesystem claim serializes the HTTP control plane and session-worker recipe tool. */
+const acquireSlugLease = async (root: string, slug: string): Promise<() => Promise<void>> => {
+  await fs.mkdir(root, { recursive: true })
+  const lock = path.join(root, `.${slug}.recipe-write`)
+  const owner = JSON.stringify({ pid: process.pid, token: randomUUID() })
+  while (true) {
+    const handle = await fs.open(lock, "wx").catch((error) => {
+      if (error instanceof Error && "code" in error && error.code === "EEXIST") return undefined
+      throw error
+    })
+    if (handle) {
+      try {
+        await handle.writeFile(owner, "utf8")
+      } catch (error) {
+        await handle.close().catch(() => undefined)
+        await fs.rm(lock, { force: true }).catch(() => undefined)
+        throw error
+      }
+      await handle.close()
+      // PID liveness alone is insufficient after a crash because operating systems reuse process
+      // ids. Refresh the claim while its owner is making progress; a lock whose heartbeat stopped
+      // becomes recoverable even if its old pid now belongs to an unrelated process.
+      const heartbeat = setInterval(() => {
+        const now = new Date()
+        void fs.utimes(lock, now, now).catch(() => undefined)
+      }, 5_000)
+      heartbeat.unref()
+      let released = false
+      return async () => {
+        if (released) return
+        released = true
+        clearInterval(heartbeat)
+        const current = await fs.readFile(lock, "utf8").catch(() => undefined)
+        if (current === owner) await fs.rm(lock, { force: true, maxRetries: 3, retryDelay: 10 })
+      }
+    }
+
+    const ownerState: "live" | "dead" | "invalid" = await fs.readFile(lock, "utf8").then(
+      (raw): "live" | "dead" | "invalid" => {
+        try {
+          const parsed: unknown = JSON.parse(raw)
+          if (typeof parsed !== "object" || parsed === null || !("pid" in parsed)) return "invalid"
+          const pid = parsed.pid
+          if (typeof pid !== "number" || !Number.isSafeInteger(pid) || pid <= 0) return "invalid"
+          try {
+            process.kill(pid, 0)
+            return "live"
+          } catch (error) {
+            return error instanceof Error && "code" in error && error.code === "ESRCH" ? "dead" : "live"
+          }
+        } catch {
+          return "invalid"
+        }
+      },
+      (): "invalid" => "invalid",
+    )
+    const heartbeatExpired = await fs.stat(lock).then(
+      (stat) => Date.now() - stat.mtimeMs > 30_000,
+      () => false,
+    )
+    const stale = ownerState === "dead" || heartbeatExpired
+    if (stale) {
+      const quarantine = `${lock}.stale-${randomUUID()}`
+      const moved = await fs.rename(lock, quarantine).then(
+        () => true,
+        () => false,
+      )
+      if (moved) await fs.rm(quarantine, { force: true }).catch(() => undefined)
+      continue
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+}
+
 // The slug doubles as the folder name, so it MUST stay traversal-proof — users and models both feed it.
+// The pattern's {0,63} and Slug.MAX are the same bound: 1 leading character + 63 more.
 const SLUG_PATTERN = /^[a-z0-9][a-z0-9-_]{0,63}$/
 export const isValidSlug = (slug: string) => SLUG_PATTERN.test(slug)
 
 /** Derive a folder-safe slug from a title ("Hello, C!" -> "hello-c"). */
-export const slugify = (name: string): string =>
-  name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 64)
+export const slugify = Slug.from
+
+/** Add a collision suffix without truncating the suffix away from a maximum-length slug. */
+const suffixedSlug = (base: string, index: number): string => {
+  const suffix = `-${index}`
+  return `${base.slice(0, Slug.MAX - suffix.length)}${suffix}`
+}
 
 // =============================================================================
 // recipe.md parsing (pure)
@@ -515,13 +594,18 @@ export async function update(
   if (patch.prompt !== undefined && patch.prompt.trim() === "")
     throw new Error("A recipe needs a prompt — that is the whole recipe")
   const root = recipesRoot(options)
-  const file = path.join(root, slug, RECIPE_FILE)
-  const raw = await fs.readFile(file, "utf8").catch(() => undefined)
-  if (raw === undefined) throw new Error(`No recipe named "${slug}"`)
-  await writeIfChanged(file, raw, edit(raw, patch))
-  const updated = await readOne(root, slug, options?.builtinSlugs ?? new Set())
-  if (!updated) throw new Error(`Recipe "${slug}" could not be read back after updating`)
-  return updated
+  const release = await acquireSlugLease(root, slug)
+  try {
+    const file = path.join(root, slug, RECIPE_FILE)
+    const raw = await fs.readFile(file, "utf8").catch(() => undefined)
+    if (raw === undefined) throw new Error(`No recipe named "${slug}"`)
+    await writeIfChanged(file, raw, edit(raw, patch))
+    const updated = await readOne(root, slug, options?.builtinSlugs ?? new Set())
+    if (!updated) throw new Error(`Recipe "${slug}" could not be read back after updating`)
+    return updated
+  } finally {
+    await release()
+  }
 }
 
 // =============================================================================
@@ -551,7 +635,7 @@ export async function update(
 //   · `test/tool-recipe.test.ts` pins the loaded record's key set EXACTLY
 //     (`Object.keys(loaded).sort()` === assets/builtin/description/name/prompt/slug/updatedAt), so a
 //     `needs` field on `Recipe` is a change to a suite this file does not own;
-//   · `todo/recipes.md` already sequences the promotion with `collection` and `level` — "one schema
+//   · the promotion is sequenced with `collection` and `level` — "one schema
 //     change, not two (three, counting the level)". A wire-visible `needs` needs a `packages/protocol`
 //     field to be worth anything, and that is that batch's work.
 // Reading the carried line at the point of use costs one regex and changes no stored byte. When the
@@ -1001,7 +1085,7 @@ export async function read(slug: string, options?: Options & { builtinSlugs?: Re
  *
  * A separate read rather than a field on `Recipe` on purpose: the record's key set is pinned exactly by
  * `test/tool-recipe.test.ts`, and a wire-visible `needs` wants a `packages/protocol` field that
- * `todo/recipes.md` sequences with `collection`. See the block comment above `parseNeeds`.
+ * Sequenced with `collection`. See the block comment above `parseNeeds`.
  *
  * An unreadable folder declares NOTHING rather than throwing: the caller has already resolved the
  * recipe, so this can only lose a race — and returning "no declarations" degrades to today's behaviour
@@ -1029,9 +1113,9 @@ export async function producesOf(slug: string, options?: Options): Promise<strin
  * "I could not open the file", because the first is a fact about the recipe and the second is a fact
  * about us — collapsing them shows a user a confident sentence about a file nobody read.
  *
- * Exists because the wire record carries the PROMPT (the body) and not the file: a person exporting a
- * recipe to send to somebody must get the author's own bytes — frontmatter, key order, line endings and
- * all — and not a re-rendering of the two fields this build happens to model.
+ * Exists because the wire record carries the PROMPT (the body) and not the file: reading or editing the
+ * prose must use the author's own bytes — frontmatter, key order, line endings and all — while complete
+ * sharing uses {@link exportArchive} so the rest of the folder is not lost.
  */
 export async function sourceOf(slug: string, options?: Options): Promise<string | undefined> {
   if (!isValidSlug(slug)) return undefined
@@ -1056,44 +1140,49 @@ export async function save(input: SaveInput, options?: Options): Promise<RecipeR
   if (!input.name.trim()) throw new Error("A recipe needs a name")
   if (!input.prompt.trim()) throw new Error("A recipe needs a prompt — that is the whole recipe")
   const root = recipesRoot(options)
-  const dir = path.join(root, slug)
-  await fs.mkdir(dir, { recursive: true })
-  const file = path.join(dir, RECIPE_FILE)
-  // ⚠️ **A save onto an EXISTING file is an edit of that file, not a re-render of it.** `SaveInput` carries
-  // only the fields the app edits, so regenerating the file drops everything else — which is why `render`
-  // was given the author's carried lines in the first place. But carrying the lines only preserved the
-  // LINES: the rewrite still normalised CRLF to LF, moved a rewritten `needs:` to the top of the block,
-  // dropped a BOM and re-terminated the file. `edit` changes the requested lines inside the author's own
-  // bytes, so this path is lossless on the FILE and not merely on the model (see the UPDATE section).
-  // `render` still owns CREATE, where there are no bytes to preserve.
-  const existing = await fs.readFile(file, "utf8").catch(() => undefined)
-  const markdown =
-    existing === undefined
-      ? render({
-          name: input.name.trim(),
-          ...(input.description ? { description: input.description.trim() } : {}),
-          frontmatter: withCarried(
-            withCarried([], "needs", NEEDS_LINE, input.needs),
-            "produces",
-            PRODUCES_LINE,
-            input.produces,
-          ),
-          prompt: input.prompt,
-        })
-      : edit(existing, {
-          name: input.name.trim(),
-          // `save` takes a WHOLE recipe, so an omitted description means the user cleared it — which is
-          // what this path already did (`render` simply did not emit the line). `update` is the verb whose
-          // `undefined` means "leave it alone"; conflating the two would make Save unable to clear a field.
-          description: input.description?.trim() || null,
-          prompt: input.prompt,
-          ...(input.needs === undefined ? {} : { needs: input.needs }),
-          ...(input.produces === undefined ? {} : { produces: input.produces }),
-        })
-  await writeIfChanged(file, existing, markdown)
-  const saved = await readOne(root, slug, input.builtin ? new Set([slug]) : new Set())
-  if (!saved) throw new Error(`Recipe "${slug}" could not be read back after saving`)
-  return saved
+  const release = await acquireSlugLease(root, slug)
+  try {
+    const dir = path.join(root, slug)
+    await fs.mkdir(dir, { recursive: true })
+    const file = path.join(dir, RECIPE_FILE)
+    // ⚠️ **A save onto an EXISTING file is an edit of that file, not a re-render of it.** `SaveInput` carries
+    // only the fields the app edits, so regenerating the file drops everything else — which is why `render`
+    // was given the author's carried lines in the first place. But carrying the lines only preserved the
+    // LINES: the rewrite still normalised CRLF to LF, moved a rewritten `needs:` to the top of the block,
+    // dropped a BOM and re-terminated the file. `edit` changes the requested lines inside the author's own
+    // bytes, so this path is lossless on the FILE and not merely on the model (see the UPDATE section).
+    // `render` still owns CREATE, where there are no bytes to preserve.
+    const existing = await fs.readFile(file, "utf8").catch(() => undefined)
+    const markdown =
+      existing === undefined
+        ? render({
+            name: input.name.trim(),
+            ...(input.description ? { description: input.description.trim() } : {}),
+            frontmatter: withCarried(
+              withCarried([], "needs", NEEDS_LINE, input.needs),
+              "produces",
+              PRODUCES_LINE,
+              input.produces,
+            ),
+            prompt: input.prompt,
+          })
+        : edit(existing, {
+            name: input.name.trim(),
+            // `save` takes a WHOLE recipe, so an omitted description means the user cleared it — which is
+            // what this path already did (`render` simply did not emit the line). `update` is the verb whose
+            // `undefined` means "leave it alone"; conflating the two would make Save unable to clear a field.
+            description: input.description?.trim() || null,
+            prompt: input.prompt,
+            ...(input.needs === undefined ? {} : { needs: input.needs }),
+            ...(input.produces === undefined ? {} : { produces: input.produces }),
+          })
+    await writeIfChanged(file, existing, markdown)
+    const saved = await readOne(root, slug, input.builtin ? new Set([slug]) : new Set())
+    if (!saved) throw new Error(`Recipe "${slug}" could not be read back after saving`)
+    return saved
+  } finally {
+    await release()
+  }
 }
 
 /**
@@ -1101,6 +1190,515 @@ export async function save(input: SaveInput, options?: Options): Promise<RecipeR
  * already a book, and the cap is here so an import cannot be the thing that fills a disk.
  */
 export const IMPORT_CAP = 1024 * 1024
+
+/**
+ * The folder transport is deliberately a small, closed ZIP subset. These are budgets for the archive
+ * itself, the bytes it may expand to, any one file, and the number of filesystem entries. Keeping the
+ * limits here makes every caller (HTTP, tests, and future local surfaces) use the same boundary.
+ */
+export const ARCHIVE_COMPRESSED_CAP = 32 * 1024 * 1024
+export const ARCHIVE_EXPANDED_CAP = 64 * 1024 * 1024
+export const ARCHIVE_FILE_CAP = 16 * 1024 * 1024
+export const ARCHIVE_ENTRY_CAP = 512
+
+const ZIP_LOCAL = 0x04034b50
+const ZIP_CENTRAL = 0x02014b50
+const ZIP_END = 0x06054b50
+const ZIP_UTF8 = 0x0800
+const ZIP_DESCRIPTOR = 0x0008
+const ZIP_DEFLATE_OPTIONS = 0x0006
+const ZIP_ALLOWED_FLAGS = ZIP_UTF8 | ZIP_DESCRIPTOR
+const ZIP64_EXTRA = 0x0001
+const CP437_HIGH = Array.from(
+  "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐" +
+    "└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■ ",
+)
+
+interface ArchiveEntry {
+  readonly name: string
+  readonly directory: boolean
+  readonly bytes: Uint8Array
+}
+
+const crcTable = (() => {
+  const table = new Uint32Array(256)
+  for (let value = 0; value < 256; value++) {
+    let crc = value
+    for (let bit = 0; bit < 8; bit++) crc = (crc & 1) === 1 ? 0xedb88320 ^ (crc >>> 1) : crc >>> 1
+    table[value] = crc >>> 0
+  }
+  return table
+})()
+
+const crc32 = (bytes: Uint8Array): number => {
+  let crc = 0xffffffff
+  for (const byte of bytes) crc = (crcTable[(crc ^ byte) & 0xff] ?? 0) ^ (crc >>> 8)
+  return (crc ^ 0xffffffff) >>> 0
+}
+
+const zipError = (message: string): Error => new Error(`That ZIP cannot be imported: ${message}`)
+
+const zipExtraHas = (bytes: Buffer, offset: number, length: number, wanted: number): boolean => {
+  const end = offset + length
+  let cursor = offset
+  while (cursor < end) {
+    if (cursor + 4 > end) throw zipError("an extra field is truncated")
+    const id = bytes.readUInt16LE(cursor)
+    const size = bytes.readUInt16LE(cursor + 2)
+    cursor += 4
+    if (cursor + size > end) throw zipError("an extra field is truncated")
+    if (id === wanted) return true
+    cursor += size
+  }
+  return false
+}
+
+const decodeZipName = (bytes: Buffer, flags: number): string => {
+  if ((flags & ZIP_UTF8) === 0) {
+    return [...bytes].map((byte) => (byte < 0x80 ? String.fromCharCode(byte) : CP437_HIGH[byte - 0x80]!)).join("")
+  }
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes)
+  } catch {
+    throw zipError("an entry name is not valid UTF-8")
+  }
+}
+
+const safeArchiveName = (raw: string, directory: boolean): { name: string; key: string } => {
+  if (raw.includes("\0") || raw.includes("\\")) throw zipError("entry names must use plain relative paths")
+  if (raw.startsWith("/") || /^[A-Za-z]:/.test(raw) || raw.startsWith("//"))
+    throw zipError(`absolute path refused: ${raw}`)
+  const name = directory && raw.endsWith("/") ? raw.slice(0, -1) : raw
+  const parts = name.split("/")
+  if (name === "" || parts.some((part) => part === "" || part === "." || part === ".."))
+    throw zipError(`path traversal refused: ${raw}`)
+  if (parts.length > 32 || Buffer.byteLength(raw, "utf8") > 1024)
+    throw zipError(`entry path is too deep or long: ${raw}`)
+  for (const part of parts) {
+    if (/[\x00-\x1f<>:"|?*]/.test(part) || /[ .]$/.test(part)) throw zipError(`entry name is not portable: ${raw}`)
+    const stem = part.split(".", 1)[0]?.toUpperCase()
+    if (stem && /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/.test(stem))
+      throw zipError(`entry name is reserved on Windows: ${raw}`)
+  }
+  return { name, key: parts.map((part) => part.normalize("NFC").toLowerCase()).join("/") }
+}
+
+interface ParsedCentralEntry {
+  readonly name: string
+  readonly key: string
+  readonly directory: boolean
+  readonly flags: number
+  readonly method: number
+  readonly crc: number
+  readonly compressedSize: number
+  readonly expandedSize: number
+  readonly localOffset: number
+}
+
+/** Decode and validate the complete archive before a single path is written. */
+const decodeArchive = (archive: Uint8Array): ArchiveEntry[] => {
+  if (archive.byteLength > ARCHIVE_COMPRESSED_CAP)
+    throw zipError(`it is over the ${ARCHIVE_COMPRESSED_CAP / 1024 / 1024} MB compressed limit`)
+  if (archive.byteLength < 22) throw zipError("it is not a complete ZIP file")
+  const bytes = Buffer.from(archive.buffer, archive.byteOffset, archive.byteLength)
+  const earliest = Math.max(0, bytes.length - 65_557)
+  let endOffset = -1
+  for (let cursor = bytes.length - 22; cursor >= earliest; cursor--) {
+    if (bytes.readUInt32LE(cursor) !== ZIP_END) continue
+    const candidateComment = bytes.readUInt16LE(cursor + 20)
+    if (cursor + 22 + candidateComment !== bytes.length) continue
+    const candidateCentralSize = bytes.readUInt32LE(cursor + 12)
+    const candidateCentralOffset = bytes.readUInt32LE(cursor + 16)
+    if (
+      candidateCentralSize !== 0xffffffff &&
+      candidateCentralOffset !== 0xffffffff &&
+      candidateCentralOffset + candidateCentralSize !== cursor
+    )
+      continue
+    const candidateEntries = bytes.readUInt16LE(cursor + 10)
+    if (
+      candidateEntries > 0 &&
+      candidateCentralOffset !== 0xffffffff &&
+      (candidateCentralOffset + 4 > cursor || bytes.readUInt32LE(candidateCentralOffset) !== ZIP_CENTRAL)
+    )
+      continue
+    endOffset = cursor
+    break
+  }
+  if (endOffset < 0) throw zipError("the end record is missing")
+  const commentLength = bytes.readUInt16LE(endOffset + 20)
+  if (endOffset + 22 + commentLength !== bytes.length) throw zipError("the end record is malformed")
+  const disk = bytes.readUInt16LE(endOffset + 4)
+  const centralDisk = bytes.readUInt16LE(endOffset + 6)
+  const diskEntries = bytes.readUInt16LE(endOffset + 8)
+  const totalEntries = bytes.readUInt16LE(endOffset + 10)
+  const centralSize = bytes.readUInt32LE(endOffset + 12)
+  const centralOffset = bytes.readUInt32LE(endOffset + 16)
+  if (disk !== 0 || centralDisk !== 0 || diskEntries !== totalEntries) throw zipError("multi-disk ZIPs are unsupported")
+  if (totalEntries === 0xffff || centralSize === 0xffffffff || centralOffset === 0xffffffff)
+    throw zipError("ZIP64 archives are unsupported")
+  if (totalEntries === 0) throw zipError("it contains no recipe")
+  if (totalEntries > ARCHIVE_ENTRY_CAP) throw zipError(`it has more than ${ARCHIVE_ENTRY_CAP} files and folders`)
+  if (centralOffset + centralSize !== endOffset) throw zipError("the central directory is malformed")
+
+  const entries: ParsedCentralEntry[] = []
+  const byKey = new Map<string, boolean>()
+  const componentSpellings = new Map<string, string>()
+  let centralCursor = centralOffset
+  let expandedTotal = 0
+  let compressedTotal = 0
+  for (let index = 0; index < totalEntries; index++) {
+    if (centralCursor + 46 > endOffset || bytes.readUInt32LE(centralCursor) !== ZIP_CENTRAL)
+      throw zipError("a central-directory entry is malformed")
+    const madeBy = bytes.readUInt16LE(centralCursor + 4)
+    const needed = bytes.readUInt16LE(centralCursor + 6)
+    const flags = bytes.readUInt16LE(centralCursor + 8)
+    const method = bytes.readUInt16LE(centralCursor + 10)
+    const crc = bytes.readUInt32LE(centralCursor + 16)
+    const compressedSize = bytes.readUInt32LE(centralCursor + 20)
+    const expandedSize = bytes.readUInt32LE(centralCursor + 24)
+    const nameLength = bytes.readUInt16LE(centralCursor + 28)
+    const extraLength = bytes.readUInt16LE(centralCursor + 30)
+    const entryCommentLength = bytes.readUInt16LE(centralCursor + 32)
+    const diskStart = bytes.readUInt16LE(centralCursor + 34)
+    const external = bytes.readUInt32LE(centralCursor + 38)
+    const localOffset = bytes.readUInt32LE(centralCursor + 42)
+    const entryEnd = centralCursor + 46 + nameLength + extraLength + entryCommentLength
+    if (entryEnd > endOffset || nameLength === 0) throw zipError("a central-directory entry is truncated")
+    if (diskStart !== 0) throw zipError("multi-disk ZIPs are unsupported")
+    if (needed > 20) throw zipError("this ZIP feature is unsupported")
+    if ((flags & 1) !== 0) throw zipError("encrypted entries are unsupported")
+    const allowedFlags = ZIP_ALLOWED_FLAGS | (method === 8 ? ZIP_DEFLATE_OPTIONS : 0)
+    if ((flags & ~allowedFlags) !== 0) throw zipError("this ZIP flag combination is unsupported")
+    if (method !== 0 && method !== 8) throw zipError(`compression method ${method} is unsupported`)
+    if (compressedSize === 0xffffffff || expandedSize === 0xffffffff || localOffset === 0xffffffff)
+      throw zipError("ZIP64 entries are unsupported")
+    if (zipExtraHas(bytes, centralCursor + 46 + nameLength, extraLength, ZIP64_EXTRA))
+      throw zipError("ZIP64 entries are unsupported")
+    if (method === 0 && compressedSize !== expandedSize) throw zipError("a stored entry has inconsistent sizes")
+
+    const rawName = decodeZipName(bytes.subarray(centralCursor + 46, centralCursor + 46 + nameLength), flags)
+    const unixPlatform = madeBy >>> 8
+    const unixType = (external >>> 16) & 0xf000
+    const dosType = external & 0xff
+    const directory = rawName.endsWith("/")
+    if (unixPlatform === 3 && unixType !== 0 && unixType !== 0x8000 && unixType !== 0x4000)
+      throw zipError(`links and special entries are unsupported: ${rawName}`)
+    if ((dosType & 0x08) !== 0) throw zipError(`special entries are unsupported: ${rawName}`)
+    if ((!directory && (unixType === 0x4000 || (dosType & 0x10) !== 0)) || (directory && unixType === 0x8000))
+      throw zipError(`directory metadata disagrees with its path: ${rawName}`)
+    if (directory && (compressedSize !== 0 || expandedSize !== 0))
+      throw zipError(`a directory carries file data: ${rawName}`)
+    const safe = safeArchiveName(rawName, directory)
+    const components = safe.name.split("/")
+    const keyComponents = safe.key.split("/")
+    for (let part = 0; part < components.length; part++) {
+      const componentKey = keyComponents.slice(0, part + 1).join("/")
+      const spelling = components[part]!
+      const prior = componentSpellings.get(componentKey)
+      if (prior !== undefined && prior !== spelling)
+        throw zipError(`duplicate or case-colliding path component: ${rawName}`)
+      componentSpellings.set(componentKey, spelling)
+    }
+    if (byKey.has(safe.key)) throw zipError(`duplicate or case-colliding path: ${rawName}`)
+    for (const [prior, priorDirectory] of byKey) {
+      if ((!priorDirectory && safe.key.startsWith(`${prior}/`)) || (!directory && prior.startsWith(`${safe.key}/`)))
+        throw zipError(`a file and folder collide: ${rawName}`)
+    }
+    byKey.set(safe.key, directory)
+    if (!directory) {
+      if (expandedSize > ARCHIVE_FILE_CAP)
+        throw zipError(`${rawName} is over the ${ARCHIVE_FILE_CAP / 1024 / 1024} MB per-file limit`)
+      expandedTotal += expandedSize
+      compressedTotal += compressedSize
+      if (expandedTotal > ARCHIVE_EXPANDED_CAP)
+        throw zipError(`it expands past the ${ARCHIVE_EXPANDED_CAP / 1024 / 1024} MB total limit`)
+      if (compressedTotal > ARCHIVE_COMPRESSED_CAP) throw zipError("its compressed entries exceed the archive limit")
+    }
+    entries.push({
+      name: safe.name,
+      key: safe.key,
+      directory,
+      flags,
+      method,
+      crc,
+      compressedSize,
+      expandedSize,
+      localOffset,
+    })
+    centralCursor = entryEnd
+  }
+  if (centralCursor !== endOffset) throw zipError("the central directory has trailing data")
+
+  const ordered = [...entries].sort((a, b) => a.localOffset - b.localOffset)
+  if (ordered[0]?.localOffset !== 0) throw zipError("prefixed or self-extracting ZIPs are unsupported")
+  const decoded = new Map<string, Uint8Array>()
+  for (let index = 0; index < ordered.length; index++) {
+    const entry = ordered[index]!
+    const offset = entry.localOffset
+    if (index > 0 && ordered[index - 1]!.localOffset === offset) throw zipError("entries share a local header")
+    if (offset + 30 > centralOffset || bytes.readUInt32LE(offset) !== ZIP_LOCAL)
+      throw zipError(`the local header for ${entry.name} is malformed`)
+    const flags = bytes.readUInt16LE(offset + 6)
+    const method = bytes.readUInt16LE(offset + 8)
+    const localCrc = bytes.readUInt32LE(offset + 14)
+    const localCompressed = bytes.readUInt32LE(offset + 18)
+    const localExpanded = bytes.readUInt32LE(offset + 22)
+    const nameLength = bytes.readUInt16LE(offset + 26)
+    const extraLength = bytes.readUInt16LE(offset + 28)
+    const dataOffset = offset + 30 + nameLength + extraLength
+    const dataEnd = dataOffset + entry.compressedSize
+    const nextOffset = ordered[index + 1]?.localOffset ?? centralOffset
+    if (dataEnd > nextOffset || dataOffset > centralOffset) throw zipError(`the data for ${entry.name} is truncated`)
+    if (flags !== entry.flags || method !== entry.method) throw zipError(`headers disagree for ${entry.name}`)
+    if (localCompressed === 0xffffffff || localExpanded === 0xffffffff) throw zipError("ZIP64 entries are unsupported")
+    const localName = decodeZipName(bytes.subarray(offset + 30, offset + 30 + nameLength), flags)
+    if (localName !== (entry.directory ? `${entry.name}/` : entry.name))
+      throw zipError(`headers disagree on the path for ${entry.name}`)
+    if (zipExtraHas(bytes, offset + 30 + nameLength, extraLength, ZIP64_EXTRA))
+      throw zipError("ZIP64 entries are unsupported")
+    if ((flags & ZIP_DESCRIPTOR) === 0) {
+      if (localCrc !== entry.crc || localCompressed !== entry.compressedSize || localExpanded !== entry.expandedSize)
+        throw zipError(`headers disagree on the size of ${entry.name}`)
+      if (dataEnd !== nextOffset) throw zipError(`unexpected data follows ${entry.name}`)
+    } else {
+      let descriptor = dataEnd
+      if (descriptor + 4 <= nextOffset && bytes.readUInt32LE(descriptor) === 0x08074b50) descriptor += 4
+      if (descriptor + 12 !== nextOffset) throw zipError(`the data descriptor for ${entry.name} is malformed`)
+      if (
+        bytes.readUInt32LE(descriptor) !== entry.crc ||
+        bytes.readUInt32LE(descriptor + 4) !== entry.compressedSize ||
+        bytes.readUInt32LE(descriptor + 8) !== entry.expandedSize
+      )
+        throw zipError(`the data descriptor for ${entry.name} disagrees with its header`)
+    }
+    if (entry.directory) {
+      decoded.set(entry.key, new Uint8Array())
+      continue
+    }
+    const compressed = bytes.subarray(dataOffset, dataEnd)
+    let content: Uint8Array
+    try {
+      content =
+        entry.method === 0
+          ? Uint8Array.from(compressed)
+          : Uint8Array.from(inflateRawSync(compressed, { maxOutputLength: entry.expandedSize || 1 }))
+    } catch {
+      throw zipError(`${entry.name} could not be decompressed within its declared size`)
+    }
+    if (content.byteLength !== entry.expandedSize || crc32(content) !== entry.crc)
+      throw zipError(`${entry.name} failed its size or checksum check`)
+    decoded.set(entry.key, content)
+  }
+  return entries.map((entry) => ({
+    name: entry.name,
+    directory: entry.directory,
+    bytes: decoded.get(entry.key) ?? new Uint8Array(),
+  }))
+}
+
+const zipDate = (mtimeMs: number): { date: number; time: number } => {
+  const date = new Date(mtimeMs)
+  const year = Math.min(2107, Math.max(1980, date.getFullYear()))
+  return {
+    date: ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate(),
+    time: (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2),
+  }
+}
+
+interface ExportEntry extends ArchiveEntry {
+  readonly mtimeMs: number
+}
+
+const collectArchiveEntries = async (root: string): Promise<ExportEntry[]> => {
+  const boundary = await fs.realpath(root)
+  const out: ExportEntry[] = []
+  let expanded = 0
+  const visit = async (dir: string, prefix: string): Promise<void> => {
+    const children = await fs.readdir(dir, { withFileTypes: true })
+    for (const child of children.sort((a, b) => a.name.localeCompare(b.name))) {
+      const source = childPath(dir, child.name)
+      const relative = prefix ? `${prefix}/${child.name}` : child.name
+      const stat = await fs.lstat(source)
+      const canonical = await fs.realpath(source)
+      if (!containsCanonical(boundary, canonical) || (!stat.isFile() && !stat.isDirectory()))
+        throw new Error(`Recipe entry cannot travel because it is a link or special file: ${relative}`)
+      safeArchiveName(relative + (stat.isDirectory() ? "/" : ""), stat.isDirectory())
+      if (out.length + 1 > ARCHIVE_ENTRY_CAP)
+        throw new Error(`That recipe has more than ${ARCHIVE_ENTRY_CAP} files and folders`)
+      if (stat.isDirectory()) {
+        out.push({ name: relative, directory: true, bytes: new Uint8Array(), mtimeMs: stat.mtimeMs })
+        await visit(source, relative)
+      } else {
+        if (stat.size > ARCHIVE_FILE_CAP)
+          throw new Error(`${relative} is over the ${ARCHIVE_FILE_CAP / 1024 / 1024} MB per-file limit`)
+        expanded += stat.size
+        if (expanded > ARCHIVE_EXPANDED_CAP)
+          throw new Error(`That recipe is over the ${ARCHIVE_EXPANDED_CAP / 1024 / 1024} MB expanded limit`)
+        out.push({ name: relative, directory: false, bytes: await fs.readFile(source), mtimeMs: stat.mtimeMs })
+      }
+    }
+  }
+  await visit(root, "")
+  return out
+}
+
+const encodeArchive = (entries: readonly ExportEntry[]): Uint8Array => {
+  const local: Buffer[] = []
+  const central: Buffer[] = []
+  let localOffset = 0
+  for (const entry of entries) {
+    const name = Buffer.from(entry.directory ? `${entry.name}/` : entry.name, "utf8")
+    const content = Buffer.from(entry.bytes)
+    const deflated = entry.directory ? Buffer.alloc(0) : deflateRawSync(content)
+    const compressed = !entry.directory && deflated.length < content.length ? deflated : content
+    const method = compressed === content ? 0 : 8
+    const crc = entry.directory ? 0 : crc32(content)
+    const stamp = zipDate(entry.mtimeMs)
+    const localHeader = Buffer.alloc(30)
+    localHeader.writeUInt32LE(ZIP_LOCAL, 0)
+    localHeader.writeUInt16LE(20, 4)
+    localHeader.writeUInt16LE(ZIP_UTF8, 6)
+    localHeader.writeUInt16LE(method, 8)
+    localHeader.writeUInt16LE(stamp.time, 10)
+    localHeader.writeUInt16LE(stamp.date, 12)
+    localHeader.writeUInt32LE(crc, 14)
+    localHeader.writeUInt32LE(compressed.length, 18)
+    localHeader.writeUInt32LE(content.length, 22)
+    localHeader.writeUInt16LE(name.length, 26)
+    local.push(localHeader, name, compressed)
+
+    const centralHeader = Buffer.alloc(46)
+    centralHeader.writeUInt32LE(ZIP_CENTRAL, 0)
+    centralHeader.writeUInt16LE((3 << 8) | 20, 4)
+    centralHeader.writeUInt16LE(20, 6)
+    centralHeader.writeUInt16LE(ZIP_UTF8, 8)
+    centralHeader.writeUInt16LE(method, 10)
+    centralHeader.writeUInt16LE(stamp.time, 12)
+    centralHeader.writeUInt16LE(stamp.date, 14)
+    centralHeader.writeUInt32LE(crc, 16)
+    centralHeader.writeUInt32LE(compressed.length, 20)
+    centralHeader.writeUInt32LE(content.length, 24)
+    centralHeader.writeUInt16LE(name.length, 28)
+    const unixMode = entry.directory ? 0o040755 : 0o100644
+    centralHeader.writeUInt32LE((((unixMode << 16) >>> 0) | (entry.directory ? 0x10 : 0)) >>> 0, 38)
+    centralHeader.writeUInt32LE(localOffset, 42)
+    central.push(centralHeader, name)
+    localOffset += localHeader.length + name.length + compressed.length
+  }
+  const centralSize = central.reduce((sum, chunk) => sum + chunk.length, 0)
+  const end = Buffer.alloc(22)
+  end.writeUInt32LE(ZIP_END, 0)
+  end.writeUInt16LE(entries.length, 8)
+  end.writeUInt16LE(entries.length, 10)
+  end.writeUInt32LE(centralSize, 12)
+  end.writeUInt32LE(localOffset, 16)
+  const archive = Buffer.concat([...local, ...central, end])
+  if (archive.length > ARCHIVE_COMPRESSED_CAP)
+    throw new Error(`That recipe's ZIP is over the ${ARCHIVE_COMPRESSED_CAP / 1024 / 1024} MB compressed limit`)
+  return archive
+}
+
+/** Export the whole recipe folder as a standard ZIP; every regular file is carried byte-for-byte. */
+export async function exportArchive(slug: string, options?: Options): Promise<Uint8Array> {
+  if (!isValidSlug(slug)) throw new Error(`Invalid recipe id: ${slug}`)
+  const root = recipesRoot(options)
+  const recipe = await readOne(root, slug, new Set())
+  if (!recipe) throw new Error(`No recipe named "${slug}"`)
+  const entries = await collectArchiveEntries(path.join(root, slug))
+  if (!entries.some((entry) => entry.name === RECIPE_FILE && !entry.directory))
+    throw new Error(`Recipe "${slug}" has no ${RECIPE_FILE}`)
+  return encodeArchive(entries)
+}
+
+interface SlugClaim {
+  readonly slug: string
+  readonly release: () => Promise<void>
+}
+
+const claimedSlug = async (root: string, wanted: string, firstIndex = 1): Promise<SlugClaim | undefined> => {
+  for (let index = firstIndex; index < 100; index++) {
+    const candidate = index === 1 ? wanted : suffixedSlug(wanted, index)
+    const target = path.join(root, candidate)
+    const release = await acquireSlugLease(root, candidate)
+    let taken: boolean
+    try {
+      taken = await fs.lstat(target).then(
+        () => true,
+        (error) => {
+          if (missing(error)) return false
+          throw error
+        },
+      )
+    } catch (error) {
+      await release()
+      throw error
+    }
+    if (taken) {
+      await release()
+      continue
+    }
+    return { slug: candidate, release }
+  }
+  return undefined
+}
+
+const requireClaimedSlug = async (root: string, wanted: string): Promise<SlugClaim> => {
+  const claim = await claimedSlug(root, wanted)
+  if (!claim) throw new Error(`Too many recipes named like "${wanted}"`)
+  return claim
+}
+
+/**
+ * Import one validated folder atomically. The free slug is reserved before extraction; extraction occurs
+ * in a hidden sibling and becomes visible only through the final rename. Every failure removes the
+ * staging folder and releases the reservation, so the recipe list never observes a half recipe.
+ */
+export async function importArchive(archive: Uint8Array, options?: Options & { slug?: string }): Promise<RecipeRecord> {
+  const entries = decodeArchive(archive)
+  const manifest = entries.find((entry) => entry.name === RECIPE_FILE && !entry.directory)
+  if (!manifest) throw zipError(`it must contain ${RECIPE_FILE} at the folder root`)
+  let markdown: string
+  try {
+    markdown = new TextDecoder("utf-8", { fatal: true }).decode(manifest.bytes)
+  } catch {
+    throw zipError(`${RECIPE_FILE} is not valid UTF-8 text`)
+  }
+  const parsed = parse(markdown)
+  if (parsed.prompt === "") throw zipError(`${RECIPE_FILE} has no prompt`)
+  const wanted = options?.slug?.trim() || slugify(parsed.name ?? "") || "imported-recipe"
+  if (!isValidSlug(wanted)) throw new Error(`Invalid recipe id: ${wanted}`)
+  const root = recipesRoot(options)
+  await fs.mkdir(root, { recursive: true })
+  const claim = await requireClaimedSlug(root, wanted)
+  const staging = path.join(root, `.${claim.slug}.recipe-stage-${randomUUID()}`)
+  const target = path.join(root, claim.slug)
+  let committed = false
+  try {
+    await fs.mkdir(staging)
+    for (const entry of entries.filter((entry) => entry.directory).sort((a, b) => a.name.length - b.name.length))
+      await fs.mkdir(path.join(staging, ...entry.name.split("/")), { recursive: true })
+    // The manifest is written last inside staging. This is not needed for visibility (the staging folder
+    // is hidden), but it also keeps the folder unreadable as a recipe if a debugger pauses mid-write.
+    const files = entries.filter((entry) => !entry.directory && entry.name !== RECIPE_FILE)
+    for (const entry of [...files, manifest]) {
+      const destination = path.join(staging, ...entry.name.split("/"))
+      await fs.mkdir(path.dirname(destination), { recursive: true })
+      await fs.writeFile(destination, entry.bytes, { flag: "wx" })
+    }
+    await fs.rename(staging, target)
+    committed = true
+    const imported = await readOne(root, claim.slug, new Set())
+    if (!imported) throw new Error(`Imported recipe "${claim.slug}" could not be read back`)
+    return imported
+  } catch (error) {
+    if (committed) await fs.rm(target, { recursive: true, force: true }).catch(() => undefined)
+    throw error
+  } finally {
+    await fs.rm(staging, { recursive: true, force: true }).catch(() => undefined)
+    await claim.release()
+  }
+}
 
 /**
  * Store a `recipe.md` that came from somewhere else — a colleague's message, a shared folder, a zip off
@@ -1131,38 +1729,41 @@ export async function importMarkdown(markdown: string, options?: Options & { slu
   if (!isValidSlug(wanted)) throw new Error(`Invalid recipe id: ${wanted}`)
   const root = recipesRoot(options)
   await fs.mkdir(root, { recursive: true })
-  let target = ""
-  for (let index = 1; index < 100; index++) {
-    const candidate = index === 1 ? wanted : `${wanted}-${index}`.slice(0, 64)
-    // `mkdir` without `recursive` IS the claim: it fails when the folder exists, so two imports racing
-    // each other cannot both decide the same name is free.
-    const claimed = await fs.mkdir(path.join(root, candidate)).then(
-      () => true,
-      () => false,
-    )
-    if (claimed) {
-      target = candidate
-      break
-    }
+  const claim = await requireClaimedSlug(root, wanted)
+  const target = path.join(root, claim.slug)
+  let created = false
+  try {
+    await fs.mkdir(target)
+    created = true
+    await fs.writeFile(path.join(target, RECIPE_FILE), markdown, "utf8")
+    const imported = await readOne(root, claim.slug, new Set())
+    if (!imported) throw new Error(`Imported recipe "${claim.slug}" could not be read back`)
+    return imported
+  } catch (error) {
+    if (created) await fs.rm(target, { recursive: true, force: true }).catch(() => undefined)
+    throw error
+  } finally {
+    await claim.release()
   }
-  if (!target) throw new Error(`Too many recipes named like "${wanted}"`)
-  await fs.writeFile(path.join(root, target, RECIPE_FILE), markdown, "utf8")
-  const imported = await readOne(root, target, new Set())
-  if (!imported) throw new Error(`Imported recipe "${target}" could not be read back`)
-  return imported
 }
 
 /** Remove a recipe folder and its assets. Returns whether it existed. */
 export async function remove(slug: string, options?: Options): Promise<boolean> {
   if (!isValidSlug(slug)) throw new Error(`Invalid recipe id: ${slug}`)
-  const dir = path.join(recipesRoot(options), slug)
-  const existed = await fs.stat(path.join(dir, RECIPE_FILE)).then(
-    () => true,
-    () => false,
-  )
-  if (!existed) return false
-  await fs.rm(dir, { recursive: true, force: true })
-  return true
+  const root = recipesRoot(options)
+  const release = await acquireSlugLease(root, slug)
+  try {
+    const dir = path.join(root, slug)
+    const existed = await fs.stat(path.join(dir, RECIPE_FILE)).then(
+      () => true,
+      () => false,
+    )
+    if (!existed) return false
+    await fs.rm(dir, { recursive: true, force: true })
+    return true
+  } finally {
+    await release()
+  }
 }
 
 /**
@@ -1173,31 +1774,30 @@ export async function duplicate(slug: string, options?: Options): Promise<Recipe
   const root = recipesRoot(options)
   const source = await readOne(root, slug, new Set())
   if (!source) throw new Error(`No recipe named "${slug}"`)
-  let target = ""
-  for (let index = 2; index < 100; index++) {
-    const candidate = `${slug}-${index}`.slice(0, 64)
-    const taken = await fs.stat(path.join(root, candidate)).then(
-      () => true,
-      () => false,
-    )
-    if (!taken) {
-      target = candidate
-      break
-    }
+  const claim = await claimedSlug(root, slug, 2)
+  if (!claim) throw new Error(`Too many copies of "${slug}"`)
+  const target = path.join(root, claim.slug)
+  let created = false
+  try {
+    await fs.cp(path.join(root, slug), target, { recursive: true, errorOnExist: true, force: false })
+    created = true
+    // `fs.cp` already made a byte copy, and the ONLY thing that may differ is the title — so the retitle is
+    // an EDIT of one line rather than a re-render of the file. Re-rendering re-emitted the author's carried
+    // lines correctly and still changed the copy's line endings, key order and trailing newline; now the
+    // copy differs from the original in exactly the name line, which is what this comment always claimed.
+    // Retitling itself is deliberate (the list must not show two identical names).
+    const copyFile = path.join(target, RECIPE_FILE)
+    const raw = await fs.readFile(copyFile, "utf8")
+    await writeIfChanged(copyFile, raw, edit(raw, { name: `${source.name} (copy)` }))
+    const copied = await readOne(root, claim.slug, new Set())
+    if (!copied) throw new Error(`Copy of "${slug}" could not be read back`)
+    return copied
+  } catch (error) {
+    if (created) await fs.rm(target, { recursive: true, force: true }).catch(() => undefined)
+    throw error
+  } finally {
+    await claim.release()
   }
-  if (!target) throw new Error(`Too many copies of "${slug}"`)
-  await fs.cp(path.join(root, slug), path.join(root, target), { recursive: true })
-  // `fs.cp` already made a byte copy, and the ONLY thing that may differ is the title — so the retitle is
-  // an EDIT of one line rather than a re-render of the file. Re-rendering re-emitted the author's carried
-  // lines correctly and still changed the copy's line endings, key order and trailing newline; now the
-  // copy differs from the original in exactly the name line, which is what this comment always claimed.
-  // Retitling itself is deliberate (the list must not show two identical names).
-  const copyFile = path.join(root, target, RECIPE_FILE)
-  const raw = await fs.readFile(copyFile, "utf8")
-  await writeIfChanged(copyFile, raw, edit(raw, { name: `${source.name} (copy)` }))
-  const copied = await readOne(root, target, new Set())
-  if (!copied) throw new Error(`Copy of "${slug}" could not be read back`)
-  return copied
 }
 
 /**

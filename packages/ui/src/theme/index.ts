@@ -52,7 +52,6 @@ export {
   draculaTheme,
   everforestTheme,
   flexokiTheme,
-  githubTheme,
   gruvboxTheme,
   kanagawaTheme,
   lucentOrngTheme,

@@ -98,12 +98,6 @@ describe("provider HttpApi", () => {
     projectOptions,
   )
 
-  // Deleted with the V1 plugin arm: "never serializes runtime auth options onto the provider wire
-  // shape". The condition it asserted against was CREATED by a plugin fixture whose auth loader
-  // returned a `fetch` — with the fixture gone the two `hasProviderWithFetch(...)===false` checks
-  // could not fail, and `/config/providers` serves no providers at all so its cost check could not
-  // pass. A test that cannot fail is worse than no test. The one live assertion it still carried
-  // (real model costs on `/provider`) survives below.
   it.instance(
     "serves real model costs on provider state",
     Effect.gen(function* () {
@@ -111,10 +105,7 @@ describe("provider HttpApi", () => {
 
       const headers = { "x-novaclaw-directory": directory }
       const provider = yield* providerStateWhenSeeded(headers)
-      const configResponse = yield* request("/config/providers", { headers })
-
       expect(provider.status).toBe(200)
-      expect(configResponse.status).toBe(200)
 
       // No "did the seed land?" assertion here on purpose: `providerStateWhenSeeded` only returns
       // once `google` models are present and otherwise FAILS with its own named message, so an

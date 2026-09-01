@@ -34,7 +34,7 @@ import { ProviderFailureClassification } from "./errors"
  *
  * **Semantics by provider**:
  *
- * - OpenAI Chat / Responses / Gemini / Bedrock: provider reports inclusive
+ * - OpenAI Chat / Responses / Gemini: provider reports inclusive
  *   `inputTokens` and an inclusive `outputTokens`; mapper subtracts to
  *   derive the breakdown.
  * - Anthropic: provider reports the breakdown natively (`input_tokens` is

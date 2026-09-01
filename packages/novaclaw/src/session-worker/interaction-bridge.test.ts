@@ -31,10 +31,6 @@ const base = {
 const unusedPermission = {
   ask: () => Effect.die("unused"),
   assert: () => Effect.void,
-  reply: () => Effect.die("unused"),
-  get: () => Effect.succeed(undefined),
-  forSession: () => Effect.succeed([]),
-  list: () => Effect.succeed([]),
 } as PermissionV2.Interface
 const unusedQuestion = {
   ask: () => Effect.succeed([["Yes"]]),

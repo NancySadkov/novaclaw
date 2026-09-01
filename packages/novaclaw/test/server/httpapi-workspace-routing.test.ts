@@ -24,7 +24,6 @@ import { Workspace } from "../../src/control-plane/workspace"
 import { WorkspaceTable } from "@novaclaw/core/control-plane/workspace.sql"
 import { Database } from "@novaclaw/core/database/database"
 import { Ripgrep } from "@novaclaw/core/ripgrep"
-import { WorkspacePaths } from "../../src/server/routes/instance/httpapi/groups/workspace"
 import {
   WorkspaceRoutingMiddleware,
   WorkspaceRoutingQuery,
@@ -230,10 +229,6 @@ const ProbeApi = HttpApi.make("workspace-routing-probe").add(
       HttpApiEndpoint.get("get", "/probe", { query: WorkspaceRoutingQuery, success: ProbeResult }),
       HttpApiEndpoint.patch("patch", "/probe", { query: WorkspaceRoutingQuery, success: Schema.Boolean }),
       HttpApiEndpoint.get("session", "/session", { query: WorkspaceRoutingQuery, success: ProbeResult }),
-      HttpApiEndpoint.get("workspace", WorkspacePaths.list, {
-        query: WorkspaceRoutingQuery,
-        success: ProbeResult,
-      }),
     )
     .middleware(WorkspaceRoutingMiddleware),
 )
@@ -247,8 +242,7 @@ const probeHandlers = HttpApiBuilder.group(ProbeApi, "probe", (handlers) =>
   handlers
     .handle("get", () => routeContextResponse)
     .handle("patch", () => Effect.succeed(false))
-    .handle("session", () => routeContextResponse)
-    .handle("workspace", () => routeContextResponse),
+    .handle("session", () => routeContextResponse),
 )
 
 const serveProbe = HttpApiBuilder.layer(ProbeApi).pipe(
@@ -528,29 +522,6 @@ describe("HttpApi workspace routing middleware", () => {
       yield* serveProbe
 
       const response = yield* HttpClient.get(`/session?workspace=${workspace.id}`)
-
-      expect(response.status).toBe(200)
-      expect(yield* response.json).toEqual({ directory: process.cwd(), workspaceID: workspace.id })
-    }),
-  )
-
-  it.live("keeps workspace control routes local even when workspace is selected", () =>
-    Effect.gen(function* () {
-      const dir = yield* tmpdirScoped({ git: true })
-      const origin = yield* resolveOrigin(dir)
-      const workspaceDir = path.join(dir, ".workspace-local")
-      const workspace = yield* createLocalWorkspace({
-        projectID: origin,
-        type: "workspace-control-plane-target",
-        directory: workspaceDir,
-      })
-
-      // Workspace CRUD/status routes manage the control plane itself. Selecting
-      // a workspace should preserve the selected id for handlers, but must not
-      // swap the route context to the workspace target directory.
-      yield* serveProbe
-
-      const response = yield* HttpClient.get(`${WorkspacePaths.list}?workspace=${workspace.id}`)
 
       expect(response.status).toBe(200)
       expect(yield* response.json).toEqual({ directory: process.cwd(), workspaceID: workspace.id })

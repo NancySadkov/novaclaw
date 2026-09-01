@@ -164,7 +164,7 @@ export const make = (dependencies: Dependencies) => {
     // The engine's one-shot completion (the judgeCompletion idiom). The budget is per-CALL and comes
     // from ConfigStrict: execution steps need a whole non-trivial source file of headroom (jh.md §3
     // "Measured": a C program is ~13-15k tokens; truncation is fatal), and reasoning steps need room
-    // to CLOSE their think block or they return empty (notes/jh-think-stage.md). The user owns both
+    // to CLOSE their think block or they return empty (notes/jh/think-stage.md). The user owns both
     // numbers because only they know what their served context can afford.
     const completeOnce = (system: string, user: string, maxTokens: number) =>
       Effect.gen(function* () {

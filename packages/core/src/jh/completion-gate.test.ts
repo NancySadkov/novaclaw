@@ -75,7 +75,6 @@ function harness(opts: GateOpts) {
         ? Effect.succeed(opts.goalCheck ?? `{"achieved": true, "missing": "", "evidence": "PROOF"}`)
         : Effect.succeed(steps[i++] ?? atom())
     },
-    correct: () => Effect.fail({ message: "no correct" }),
     executor: { run: () => Effect.succeed({ ok: true, output: "ran", artifacts: new Map<string, string>() }) },
     runner: { run: () => Effect.succeed({ exitCode: 0, output: "", timedOut: false }) },
     artifacts: JhArtifact.memory(),

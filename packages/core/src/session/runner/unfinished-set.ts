@@ -270,6 +270,93 @@ export const untouched = (coverage: Coverage): ReadonlyArray<string> => {
 }
 
 /**
+ * Anything shaped like a filename in the request's own words.
+ *
+ * ⚠️ Deliberately LOOSE, because it is not the filter. `scopeAvailable` intersects what this returns
+ * with the folder the harness enumerated, so a false match ("0.2.0", "e.g.", a sentence-ending word
+ * followed by an extension-shaped token) simply fails to appear in the listing and costs nothing. A
+ * precise pattern would instead start MISSING names, and a missed name silently widens a child's set
+ * back to its parent's whole corpus — the failure this exists to close.
+ *
+ * ⚠️ Paths are kept whole and reduced to their basename by `scopeAvailable`, for the same reason
+ * `untouched` compares by basename: the request writes whichever separator it likes.
+ *
+ * 🔴 **TOKENISED FIRST, THEN MATCHED ANCHORED — never a global scan.** Measured 2026-09-01: the
+ * unanchored form `[A-Za-z0-9_\-./\\]*[A-Za-z0-9_-]\.[A-Za-z0-9]{1,8}\b` took **5.7 seconds** on a
+ * 100 KB run of `a/`, because a failing match restarts one character later and rescans to the end —
+ * quadratic. A pasted directory tree is exactly that input, and this runs on the latch path of an
+ * ordinary turn. Splitting on the characters a filename cannot contain makes it linear: 164 KB of
+ * realistic prose measured 4.9 ms before and after.
+ */
+const NAME_SEPARATOR = /[^A-Za-z0-9_\-./\\]+/
+/** Anchored: a token is a name or it is not, with no restart position to explore. */
+const NAME_TOKEN = /^[A-Za-z0-9_\-./\\]*[A-Za-z0-9_-]\.[A-Za-z0-9]{1,8}$/
+
+/** The files the request NAMES, in the order it named them. */
+export const requestedNames = (userText: string): ReadonlyArray<string> => {
+  const found: string[] = []
+  const seen = new Set<string>()
+  for (const token of userText.split(NAME_SEPARATOR)) {
+    // ⚠️ Trailing punctuation is the sentence's, not the name's. A list ending "…, icon_100.png."
+    // is the ordinary shape of a request, and dropping its last file would leave one child short.
+    const candidate = token.replace(/[./\\]+$/, "")
+    if (!NAME_TOKEN.test(candidate)) continue
+    const name = leaf(candidate)
+    if (seen.has(name)) continue
+    seen.add(name)
+    found.push(candidate)
+  }
+  return found
+}
+
+/**
+ * 🔴 **THE SET IS WHAT THE REQUEST MAKES AUTHORITATIVE — the folder is only the fallback.**
+ *
+ * Measured 2026-08-31 on the ten-worker scheduler fan-out (`notes/reports/holo31-scheduler-cuda-crash-2026-08-31.md`):
+ * ten delegated children were each given ten of a hundred files, and every one of them was driven
+ * against **all one hundred**. The drive enumerates the modal directory the children read from, and
+ * that directory is their parent's whole corpus — so after global coverage reached 100/100, seven
+ * children were still being steered through work their siblings had already done. Delegation
+ * converted one traversal into ten, which is the opposite of the reason to delegate.
+ *
+ * ⚠️ **A COUNT is not an assignment, and that is the second half of the same defect.** `requestedLimit`
+ * was applied as `listing.slice(0, limit)` — a prefix. A child told "these ten files" got the
+ * alphabetically first ten, which is the correct slice for exactly one of ten children and wrong for
+ * the other nine. A prefix answers "how many", never "which".
+ *
+ * **The order of authority**, most specific first:
+ *
+ *  1. **The names the request carries**, intersected with the enumerated listing. The listing is
+ *     still the ground truth about what exists; the request decides which of it is this session's job.
+ *  2. **A count**, as before — the request said how many but not which, so the prefix is all there is.
+ *  3. **The whole listing** — nothing narrowed it, which is the ordinary single-session case and is
+ *     unchanged.
+ *
+ * ⚠️ **Two named files are the floor.** A request that mentions one file in passing has not
+ * enumerated a set, and `shouldContinue` already declines a set of one.
+ *
+ * ⚠️ **A count LARGER than the names means the names were examples.** *"Describe each of the 400 png
+ * files; start with icon_001.png and icon_002.png"* names two and asks for four hundred. Letting two
+ * example names shrink that request to two files would be this defect pointing the other way.
+ */
+export const scopeAvailable = (input: {
+  /** Every file the harness enumerated in the set's directory. */
+  readonly listing: ReadonlyArray<string>
+  /** Files the request named — `requestedNames` of the latched user text. */
+  readonly named: ReadonlyArray<string>
+  /** The count the request asked for, when it stated one — `requestedLimit`. */
+  readonly limit: number | undefined
+}): ReadonlyArray<string> => {
+  const named = new Set(input.named.map(leaf))
+  // Listing ORDER, not the order they were named: the steer reads better in the folder's own order,
+  // and the listing is the side that is ground truth.
+  const assigned = input.listing.filter((entry) => named.has(leaf(entry)))
+  if (assigned.length >= 2 && (input.limit === undefined || input.limit <= assigned.length)) return assigned
+  if (input.limit !== undefined) return input.listing.slice(0, input.limit)
+  return input.listing
+}
+
+/**
  * Should the harness steer the turn back to the rest of the set?
  *
  * Every clause is a case that must NOT fire:

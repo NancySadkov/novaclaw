@@ -272,7 +272,7 @@ export async function gitRemote(root: string) {
     root,
     source: work,
     remote: pathToFileURL(origin).href,
-    reference: { ...Repository.parseRemote("owner/repo"), remote: pathToFileURL(origin).href },
+    reference: { ...Repository.parseRemote("git.example.test/owner/repo"), remote: pathToFileURL(origin).href },
   }
 }
 

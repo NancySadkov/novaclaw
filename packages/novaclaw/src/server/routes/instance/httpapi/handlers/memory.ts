@@ -285,16 +285,8 @@ export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (h
           }),
         )
         /**
-         * NEVER RECALLED, oldest first.
-         *
-         * 🔴 The absence of a ledger row is the signal — nothing writes a zero row on ingest, so "no
-         * usage" and "never returned by a recall" are the same statement. That makes this an ANTI-JOIN
-         * across two stores, which is why it is bounded and says so: a page of the oldest short rows
-         * from the graph, minus everything the ledger has seen, hydrated for the handful that survive.
-         *
-         * ⚠️ `scanned` and `partial` are the honesty. If every one of the oldest rows HAS been
-         * recalled, this answers empty while never-used memories exist further along — and a viewer
-         * that could not tell would present "nothing to clean up" as a finding.
+         * Delete every memory in one scope. A destructive WRITE — the only one on this surface that
+         * takes no id and cannot be narrowed after the fact.
          */
         .handle(
           "clearScope",

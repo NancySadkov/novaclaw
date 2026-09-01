@@ -21,12 +21,6 @@ describe("externalDirectoryPermission — classed access (1I)", () => {
     })
   })
 
-  test("file scope persists concrete targets while always persists the directory wildcard", () => {
-    const request = LocationMutation.externalDirectoryPermission(auth, "write")
-    expect(PermissionV2.savedResources(request, "file")).toEqual(["C:/soft/w64devkit/bin/gcc.exe"])
-    expect(PermissionV2.savedResources(request, "always")).toEqual(["C:/soft/w64devkit/*"])
-  })
-
   test("write access maps to external_directory_write", () => {
     expect(LocationMutation.externalDirectoryPermission(auth, "write").action).toBe("external_directory_write")
   })
@@ -89,20 +83,6 @@ describe("denialMessage — denial as observation (1J)", () => {
     expect(message).not.toContain("UNATTENDED")
   })
 
-  test("CorrectedError carries the user's reason verbatim", () => {
-    const message = PermissionV2.denialMessage(
-      new PermissionV2.CorrectedError({ feedback: "w64devkit is a read-only toolchain — write under the project" }),
-    )!
-    expect(message).toContain("w64devkit is a read-only toolchain — write under the project")
-    expect(message).toContain("declined")
-  })
-
-  test("RejectedError becomes a redirect, not a dead end", () => {
-    const message = PermissionV2.denialMessage(new PermissionV2.RejectedError())!
-    expect(message).toContain("declined")
-    expect(message).toContain("Do not retry")
-  })
-
   test("non-permission errors pass through untouched", () => {
     expect(PermissionV2.denialMessage(new Error("ENOENT"))).toBeUndefined()
     expect(PermissionV2.denialMessage("string")).toBeUndefined()
@@ -110,7 +90,7 @@ describe("denialMessage — denial as observation (1J)", () => {
   })
 })
 
-// Attached-source protection, ported from https://github.com/NancySadkov/novaclaw/pull/9 by
+// Attached-source protection, ported from outside contribution #9 by
 // @DassaultFalconKing. The pure half: which mutation, against which canonical identity, is protected.
 // The evaluator half — placement against the mode overlay and saved rules, and deny-fast for an
 // unattended root — is driven end to end in `test/permission.test.ts`, because those are the parts

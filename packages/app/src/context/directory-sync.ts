@@ -2,22 +2,16 @@ import { Binary } from "@novaclaw/core/util/binary"
 import type { SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 import { createMemo } from "solid-js"
 import { produce, reconcile, type SetStoreFunction } from "solid-js/store"
-import type { createServerSdkContext } from "./server-sdk"
 import type { createServerSyncContextInner } from "./server-sync"
 import type { State } from "./global-sync/types"
-import { withRequestDeadline } from "@/utils/request-deadline"
 
-const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 const sessionFields = new Set(["session_status", "session_working", "session_diff", "todo", "permission", "question"])
 
 export const createDirSyncContext = (
   directory: string,
   serverSync: ReturnType<typeof createServerSyncContextInner>,
-  serverSDK: ReturnType<typeof createServerSdkContext>,
 ) => {
-  const client = serverSDK.createClient({ directory, throwOnError: true })
   const current = createMemo(() => serverSync.child(directory, { mcp: true }))
-  const absolute = (path: string) => (current()[0].path.directory + "/" + path).replace("//", "/")
   const data = new Proxy({} as State, {
     get(_, property: keyof State) {
       if (property === "session_working") return serverSync.session.data.session_working.bind(serverSync.session.data)
@@ -73,39 +67,10 @@ export const createDirSyncContext = (
       },
       diff: serverSync.session.diff,
       todo: serverSync.session.todo,
-      evict(sessionID: string) {
-        serverSync.session.evict(sessionID)
-      },
-      fetch: async (count = 10) => {
-        const [store, setStore] = current()
-        setStore("limit", (value) => value + count)
-        const response = await withRequestDeadline({
-          label: "Loading more sessions",
-          run: (signal) => client.v2.session.list(undefined, { signal }),
-        })
-        const sessions = [...(response.data?.data ?? [])]
-          .filter((session) => !!session?.id)
-          .sort((a, b) => cmp(a.id, b.id))
-          .slice(0, store.limit)
-        sessions.forEach(serverSync.session.remember)
-        setStore("session", reconcile(sessions, { key: "id" }))
-      },
-      more: createMemo(() => current()[0].session.length >= current()[0].limit),
-      archive: async (sessionID: string) => {
-        await serverSDK.client.v2.session.update({ sessionID, archived: Date.now() })
-        current()[1](
-          "session",
-          produce((draft) => {
-            const match = Binary.search(draft, sessionID, (session) => session.id)
-            if (match.found) draft.splice(match.index, 1)
-          }),
-        )
-      },
     },
     mcp: {
       toggle: (name: string) => serverSync.mcp.toggle(directory, name),
     },
-    absolute,
     get directory() {
       return current()[0].path.directory
     },

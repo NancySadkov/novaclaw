@@ -12,7 +12,7 @@ import { testEffect } from "./lib/effect"
 import { mintIdentity } from "./lib/community"
 
 /**
- * Community P0 — the routing table peer exchange fills (`todo/community-p2p.md`).
+ * Community P0 — the routing table peer exchange fills (`notes/spec/community-p2p.md`).
  *
  * This table is the anti-shutdown property in storage, and it is also the ONE store an attacker can
  * grow without holding a key or paying any proof-of-work: they need only answer a peer-exchange

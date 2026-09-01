@@ -227,7 +227,7 @@ const probeDocument = () => ({
       files: {
         type: "local",
         command: ["node", "server.js"],
-        environment: { PATH: "/usr/bin", GITHUB_TOKEN: CREDENTIALS.localEnv },
+        environment: { PATH: "/usr/bin", SERVICE_TOKEN: CREDENTIALS.localEnv },
       },
       // A server a user called `headers`. Nothing about it is secret.
       headers: { type: "remote", url: "https://named-headers.example/mcp" },
@@ -324,8 +324,8 @@ describe("the secret marker is the single source of truth", () => {
         mcp: { servers: { files: { environment: Record<string, unknown> } } }
       }
     ).mcp.servers.files.environment
-    expect(Object.keys(environment).sort()).toEqual(["GITHUB_TOKEN", "PATH"])
-    expect(environment.GITHUB_TOKEN).toBe(ConfigProjection.REDACTED)
+    expect(Object.keys(environment).sort()).toEqual(["PATH", "SERVICE_TOKEN"])
+    expect(environment.SERVICE_TOKEN).toBe(ConfigProjection.REDACTED)
   })
 
   test("the marker resolves whether it is applied inside or outside the optional wrapper", () => {
@@ -402,8 +402,8 @@ describe("the secret marker is the single source of truth", () => {
       "agents.build.request.headers.Authorization",
       "formatter.prettier.environment.NPM_TOKEN",
       "instances.0.token",
-      "mcp.servers.files.environment.GITHUB_TOKEN",
       "mcp.servers.files.environment.PATH",
+      "mcp.servers.files.environment.SERVICE_TOKEN",
       "mcp.servers.weather.headers.Authorization",
       "mcp.servers.weather.oauth.client_secret",
       "providers.spark-holo.api.settings.apiKey",

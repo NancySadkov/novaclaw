@@ -6,7 +6,7 @@ import { PermissionV2 } from "@novaclaw/core/permission"
 import { CommunityTool } from "@novaclaw/core/tool/community"
 
 /**
- * The `community` tool's fence (`todo/community-p2p.md`).
+ * The `community` tool's fence (`notes/spec/community-p2p.md`).
  *
  * 🔴 Channel messages are written by STRANGERS, and this tool feeds them to a model. That makes the
  * fence the security-carrying part of the whole tool: without it, a message shaped like an

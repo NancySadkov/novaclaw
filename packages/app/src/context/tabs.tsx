@@ -84,7 +84,6 @@ export const {
     const location = useLocation()
     const memory = createTabMemory(getOwner())
 
-    const closing = new Set<string>()
     let recentWrite = 0
     let recentValue: string | undefined
 
@@ -139,13 +138,24 @@ export const {
       navigate(href)
     }
 
-    const removeTab = (index: number) => {
+    /**
+     * @param stay Take the tab out of the strip and go NOWHERE.
+     *
+     * 🔴 The navigation below belongs to the CLOSE BUTTON — a user who shut a tab wants to land
+     * somewhere, and Home is the honest answer when nothing is left. It does NOT belong to
+     * reconciliation. `removeSessionTab` reaches here because the route discovered the chat is gone,
+     * and that route has a `SessionGoneCard` built for exactly this state — *"a normal lifecycle
+     * event in a multi-client OS, never a crash"* — with its own button to Home. Navigating on its
+     * behalf replaces that explanation with a silent jump to Home, which is the dead-end AGENTS.md
+     * forbids wearing a redirect's clothes. Let the card say what happened and let the user choose
+     * (owner, 2026-09-01: *"the app ends up on Home"*).
+     */
+    const removeTab = (index: number, stay = false) => {
       const tab = store[index]
       if (!tab) return
       const key = tabKey(tab)
       const draftID = tab.type === "draft" ? tab.draftID : undefined
       const nextTab = store[index + 1] ?? store[index - 1]
-      closing.add(key)
       void startTransition(() => {
         setStore(
           produce((tabs) => {
@@ -153,9 +163,10 @@ export const {
           }),
         )
         if (recent.key === key) setRecentKey(nextTab && tabKey(nextTab))
+        if (stay) return
         if (nextTab) navigateTab(nextTab)
         else navigate("/")
-      }).finally(() => closing.delete(key))
+      })
       memory.remove(key)
       if (draftID) removeDraftPersisted(draftID)
     }
@@ -339,11 +350,16 @@ export const {
         )
         if (index >= 0) removeTab(index)
       },
+      /**
+       * The chat behind an OPEN ROUTE turned out not to exist — drop its tab and STAY, so the route
+       * can render its own "this chat is gone" card. See `removeTab`'s `stay` parameter: this is a
+       * reconciliation, not a dismissal, and it must not navigate on the user's behalf.
+       */
       removeSessionTab(input: Omit<SessionTab, "type">) {
         const index = store.findIndex(
           (tab) => tab.type === "session" && tab.server === input.server && tab.sessionId === input.sessionId,
         )
-        if (index !== -1) removeTab(index)
+        if (index !== -1) removeTab(index, true)
       },
       removeServer(key: ServerConnection.Key) {
         const drafts = store.flatMap((tab) => (tab.type === "draft" && tab.server === key ? [tab.draftID] : []))

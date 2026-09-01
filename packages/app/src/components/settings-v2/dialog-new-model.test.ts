@@ -5,8 +5,8 @@ import { ConfigLocalRuntime } from "@novaclaw/core/config/local-runtime"
 import { dict as en } from "@/i18n/en"
 import { providerIDFromEndpoint } from "./dialog-new-model"
 
-// S0 — the Add-models dialog's half of the local-runtime probe (`todo/sidecar-inference.md` →
-// *Slice 0*). The classifier itself is pinned in `packages/core/test/config-local-runtime.test.ts`;
+// The Add-models dialog's half of the local-runtime probe.
+// The classifier itself is pinned in `packages/core/test/config-local-runtime.test.ts`;
 // what is left over here is the WIRING, and every one of these renders identically when it is wrong:
 //
 //   · a sweep hoisted to module scope, or to app boot, is a startup cost on every launch — and it

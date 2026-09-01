@@ -2,11 +2,12 @@ import { describe, expect, test } from "bun:test"
 import { Persona } from "./persona"
 
 describe("Persona.resolve", () => {
-  test("defaults to the canonical Nova prompt when config is absent", () => {
+  test("defaults to a role-neutral harness prompt when config is absent", () => {
     const result = Persona.resolve(undefined)
     expect(result).toBeDefined()
-    expect(result).toContain("Nova")
     expect(result).toContain("pragmatic")
+    expect(result).not.toContain("software engineer")
+    expect(result).not.toContain("Nova")
   })
 
   test("enabled: false disables the persona entirely (notes line included)", () => {
@@ -16,16 +17,6 @@ describe("Persona.resolve", () => {
   test("enabled: true and undefined behave the same (default on)", () => {
     expect(Persona.resolve({ enabled: true })).toBe(Persona.resolve(undefined))
     expect(Persona.resolve({})).toBe(Persona.resolve(undefined))
-  })
-
-  test("name swaps the persona name without forking the text", () => {
-    const result = Persona.resolve({ name: "Vega" })!
-    expect(result).toContain("Vega")
-    expect(result).not.toContain("Nova")
-  })
-
-  test("blank name falls back to the default", () => {
-    expect(Persona.resolve({ name: "  " })).toContain("Nova")
   })
 
   test("prompt overrides the canonical text wholesale", () => {

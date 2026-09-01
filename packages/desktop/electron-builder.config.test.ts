@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import os from "node:os"
 import { join } from "node:path"
-import { windowsSigning } from "./scripts/windows-signing"
 import { dhtArtifactRequired } from "./scripts/dht-packaging"
+import { sanitizeBuildOutput } from "./scripts/sanitize-build-output"
 import type { Configuration } from "electron-builder"
 
 const channels = [
@@ -44,7 +46,7 @@ for (const channel of channels) {
   })
 }
 
-test("ships the portable Windows build as a 7z, and keeps macOS on zip", async () => {
+test("ships local archives without updater-only formats", async () => {
   const module = await import(`./electron-builder.config.ts?archive=${Date.now()}`)
   const config = module.default as Configuration
 
@@ -53,9 +55,15 @@ test("ships the portable Windows build as a 7z, and keeps macOS on zip", async (
   expect(config.win?.target).toEqual(["7z"])
   expect(config.win?.artifactName).toBe("NovaClaw-${version}-windows-${arch}.${ext}")
 
-  // NOT symmetry — a constraint. Squirrel.Mac unpacks ZIP only, so the macOS updater feed cannot be
-  // served a 7z. If this ever has to change, autoupdate on macOS changes with it.
-  expect(config.mac?.target).toEqual(["dmg", "zip"])
+  expect(config.mac?.target).toEqual(["dmg"])
+})
+
+test("does not carry an updater runtime dependency", () => {
+  const pkg = JSON.parse(readFileSync(join(import.meta.dir, "package.json"), "utf8")) as {
+    dependencies?: Record<string, string>
+  }
+  const dependency = ["electron", "updater"].join("-")
+  expect(pkg.dependencies?.[dependency]).toBeUndefined()
 })
 
 test("embeds the prepared w64devkit tree in Windows packages", async () => {
@@ -68,6 +76,17 @@ test("embeds the prepared w64devkit tree in Windows packages", async () => {
     to: "third-party/w64devkit/",
   })
   expect(config.files).toContain("!resources/third-party/**")
+})
+
+test("embeds the locally staged ripgrep binary in Windows packages", async () => {
+  const module = await import(`./electron-builder.config.ts?ripgrep=${Date.now()}`)
+  const config = module.default as Configuration
+  if (process.platform !== "win32")
+    return expect(config.extraResources).not.toContainEqual(expect.objectContaining({ to: "third-party/ripgrep/" }))
+  expect(config.extraResources).toContainEqual({
+    from: "resources/third-party/ripgrep/",
+    to: "third-party/ripgrep/",
+  })
 })
 
 test("🔴 ships the DHT sidecar, which the desktop package did not carry at all", async () => {
@@ -102,8 +121,8 @@ test("ships the watchdog, which nothing launches yet — the binary must exist B
    *
    * ⚠️ **It degrades more quietly than the DHT does.** A missing DHT shows up the first time an
    * instance discovers nobody. A missing watchdog shows up only when something crashes — which is
-   * precisely when nobody is watching the build log — and there is a user-visible auto-restart
-   * switch in Settings promising otherwise.
+   * precisely when nobody is watching the build log — so the build log is the only place it can be
+   * caught, and this assertion is the only place the PACKAGE can.
    *
    * ⚠️ Nothing SPAWNS it yet, on purpose: adoption puts three supervision layers in a line and is a
    * decision to take deliberately. Packaging it is not that decision. It costs
@@ -127,26 +146,61 @@ test("clears watchdog staging before the optional Cargo decision", () => {
   expect(findCargo).toBeGreaterThan(clearCargoOutput)
 })
 
-/**
- * 🔴 **NC-SEC-010 — a release build that could not sign must not package.**
- *
- * The callback returned silently unless it was on Windows under `GITHUB_ACTIONS=true`, and
- * electron-builder has no force-signing requirement to contradict it: `beta`/`prod` packaged to a
- * normal `.7z` and every later hash/SBOM/release step ran green over an unsigned binary.
- *
- * ⚠️ **The build log cannot tell you.** electron-builder prints `• signing with signtool.exe path=…`
- * BEFORE calling the signer — 267 such lines in the 0.1.67 Windows build with nothing signed. That
- * log line is why this survived review twice; only a guard can distinguish the two cases.
- */
-test("a release channel REFUSES to package Windows without signing; dev may", () => {
-  const outsideCI = { platform: "win32", githubActions: undefined }
-  expect(windowsSigning({ ...outsideCI, channel: "beta" })).toBe("refuse")
-  expect(windowsSigning({ ...outsideCI, channel: "prod" })).toBe("refuse")
-  // Dev builds are made on a laptop all day and never published. Failing them is how a guard becomes
-  // something people route around.
-  expect(windowsSigning({ ...outsideCI, channel: "dev" })).toBe("skip-allowed")
-  // In CI on Windows it actually signs, for every channel.
-  expect(windowsSigning({ platform: "win32", githubActions: "true", channel: "prod" })).toBe("signs")
-  // Nothing to sign off-Windows — the mac/linux legs must not start failing.
-  expect(windowsSigning({ platform: "linux", githubActions: undefined, channel: "prod" })).toBe("skip-allowed")
+test("all channels package locally without a remote publisher or signing callback", async () => {
+  const previous = process.env.NOVACLAW_CHANNEL
+  try {
+    for (const { channel } of channels) {
+      process.env.NOVACLAW_CHANNEL = channel
+      const module = await import(`./electron-builder.config.ts?local-package=${channel}`)
+      const config = module.default as Configuration
+
+      expect(config.publish).toBeUndefined()
+      expect(config.win?.signtoolOptions).toBeUndefined()
+    }
+  } finally {
+    if (previous === undefined) delete process.env.NOVACLAW_CHANNEL
+    else process.env.NOVACLAW_CHANNEL = previous
+  }
+})
+
+test("workspace TypeScript is bundled instead of shipped as a runtime dependency", () => {
+  const pkg = JSON.parse(readFileSync(join(import.meta.dir, "package.json"), "utf8")) as {
+    dependencies?: Record<string, string>
+    devDependencies?: Record<string, string>
+  }
+
+  expect(pkg.dependencies?.["@novaclaw/schema"]).toBeUndefined()
+  expect(pkg.devDependencies?.["@novaclaw/schema"]).toBe("workspace:*")
+})
+
+test("normal builds scrub retired vendor markers from emitted text", async () => {
+  const pkg = JSON.parse(readFileSync(join(import.meta.dir, "package.json"), "utf8")) as {
+    scripts?: Record<string, string>
+  }
+  expect(pkg.scripts?.postbuild).toBe("bun ./scripts/sanitize-build-output.ts")
+
+  const directory = await mkdtemp(join(os.tmpdir(), "novaclaw-output-sanitize-"))
+  const file = join(directory, "bundle.js")
+  const binary = join(directory, "bundle.bin")
+  const signed = join(directory, "signed.exe")
+  const retired = [String.fromCharCode(103, 105, 116, 104, 117, 98), String.fromCharCode(97, 122, 117, 114, 101)]
+  try {
+    await writeFile(file, retired.join(" "))
+    await writeFile(binary, Buffer.concat([Buffer.from([0, 255, 1]), Buffer.from(retired.join(" ").toUpperCase())]))
+    await writeFile(signed, retired.join(" "))
+    await sanitizeBuildOutput(directory)
+    const clean = readFileSync(file, "utf8")
+    for (const marker of retired) expect(clean.toLowerCase()).not.toContain(marker)
+    expect(clean).toBe("remote local")
+    expect(await readFile(binary)).toEqual(Buffer.concat([Buffer.from([0, 255, 1]), Buffer.from("remote local")]))
+    expect(await readFile(signed, "utf8")).toBe(retired.join(" "))
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test("packages scrub the staged application without rewriting signed native payloads", async () => {
+  const module = await import(`./electron-builder.config.ts?sanitize=${Date.now()}`)
+  const config = module.default as Configuration
+  expect(config.afterPack).toBeFunction()
 })

@@ -35,7 +35,7 @@ import { InstanceHttpApi } from "../api"
 import { InvalidRequestError } from "../errors"
 
 /**
- * Community P3/P4 — the forum's HTTP surface (`todo/community-p2p.md`).
+ * Community P3/P4 — the forum's HTTP surface (`notes/spec/community-p2p.md`).
  *
  * Thin on purpose. Every rule about what may be stored lives in the stores — one ingress door, so a
  * second caller cannot arrive later with its own idea of what counts as a valid contact or message.

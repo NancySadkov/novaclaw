@@ -24,8 +24,6 @@ export const dict = {
 
   "command.palette": "Paleta komandi",
 
-
-
   "command.session.new": "Nova sesija",
   "command.file.open": "Otvori datoteku",
   "command.tab.close": "Zatvori karticu",
@@ -65,16 +63,10 @@ export const dict = {
   "palette.group.commands": "Komande",
   "palette.group.files": "Datoteke",
 
-
   "dialog.model.select.title": "Odaberi model",
   "dialog.model.search.placeholder": "Pretraži modele",
   "dialog.model.empty": "Nema rezultata za modele",
   "dialog.model.manage": "Upravljaj modelima",
-
-
-
-
-
 
   "model.tag.free": "Besplatno",
   "model.tag.latest": "Najnovije",
@@ -170,7 +162,6 @@ export const dict = {
   "dialog.mcp.title": "MCP-ovi",
   "dialog.mcp.description": "{{enabled}} od {{total}} omogućeno",
   "dialog.mcp.empty": "Nema konfigurisnih MCP-ova",
-
 
   "mcp.status.connected": "povezano",
   "mcp.status.failed": "neuspjelo",
@@ -271,9 +262,6 @@ export const dict = {
   "language.th": "ไทย",
   "language.tr": "Türkçe",
 
-
-
-
   "toast.permissions.autoaccept.on.title": "Automatsko prihvatanje dozvola",
   "toast.permissions.autoaccept.on.description": "Zahtjevi za dozvole će biti automatski odobreni",
   "toast.permissions.autoaccept.off.title": "Zaustavljeno automatsko prihvatanje dozvola",
@@ -288,19 +276,12 @@ export const dict = {
   "toast.context.noLineSelection.title": "Nema odabranih linija",
   "toast.context.noLineSelection.description": "Prvo odaberi raspon linija u kartici datoteke.",
 
-
-
   "toast.session.listFailed.title": "Neuspjelo učitavanje sesija za {{project}}",
-
-  "toast.update.action.installRestart": "Instaliraj i restartuj",
 
   "error.page.title": "Nešto je pošlo po zlu",
   "error.page.description": "Došlo je do greške prilikom učitavanja aplikacije.",
   "error.page.details.label": "Detalji greške",
   "error.page.action.restart": "Restartuj",
-  "error.page.action.checking": "Provjera...",
-  "error.page.action.checkUpdates": "Provjeri ažuriranja",
-  "error.page.action.updateTo": "Ažuriraj na {{version}}",
   "error.page.report.prefix": "Molimo prijavi ovu grešku NovaClaw timu",
   "error.page.report.discord": "na Discordu",
   "error.page.version": "Verzija: {{version}}",
@@ -335,10 +316,6 @@ export const dict = {
   "notification.session.responseReady.title": "Odgovor je spreman",
   "notification.session.error.title": "Greška sesije",
   "notification.session.error.fallbackDescription": "Došlo je do greške",
-
-  "home.recentProjects": "Nedavni projekti",
-  "home.empty.title": "Nema nedavnih projekata",
-  "home.empty.description": "Kreni tako što ćeš otvoriti lokalni projekat",
 
   "session.tab.session": "Sesija",
   "session.tab.review": "Pregled",
@@ -378,7 +355,6 @@ export const dict = {
   "session.new.title": "Napravi bilo šta",
   "session.new.worktree.main": "Glavna grana",
   "session.new.worktree.mainWithBranch": "Glavna grana ({{branch}})",
-  "session.new.worktree.create": "Kreiraj novi worktree",
   "session.new.lastModified": "Posljednja izmjena",
 
   "session.header.search.placeholder": "Pretraži {{project}}",
@@ -428,14 +404,10 @@ export const dict = {
   "common.moreOptions": "Više opcija",
   "common.learnMore": "Saznaj više",
   "common.rename": "Preimenuj",
-  "common.archive": "Arhiviraj",
   "common.delete": "Izbriši",
   "common.close": "Zatvori",
   "common.edit": "Uredi",
   "common.key.esc": "ESC",
-
-  "sidebar.project.recentSessions": "Nedavne sesije",
-
 
   "settings.section.desktop": "Desktop",
   "settings.section.server": "Server",
@@ -462,12 +434,6 @@ export const dict = {
   "settings.general.row.releaseNotes.title": "Bilješke o izdanju",
   "settings.general.row.releaseNotes.description": 'Prikaži iskačuće prozore "Šta je novo" nakon ažuriranja',
 
-  "settings.updates.row.check.title": "Provjeri ažuriranja",
-  "settings.updates.row.check.description": "Ručno provjeri ažuriranja i instaliraj ako su dostupna",
-  "settings.updates.action.checkNow": "Provjeri sada",
-  "settings.updates.action.checking": "Provjera...",
-  "settings.updates.toast.latest.title": "Sve je ažurno",
-  "settings.updates.toast.latest.description": "Koristiš najnoviju verziju NovaClaw-a.",
   "sound.option.none": "Nijedan",
   "sound.option.alert01": "Upozorenje 01",
   "sound.option.alert02": "Upozorenje 02",
@@ -549,8 +515,6 @@ export const dict = {
   "settings.shortcuts.group.prompt": "Upit",
 
   "settings.models.title": "Modeli",
-
-
 
   "settings.permissions.tool.read.title": "Čitanje",
   "settings.permissions.tool.read.description": "Čitanje datoteke (podudara se s putanjom datoteke)",

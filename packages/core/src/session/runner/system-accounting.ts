@@ -3,8 +3,7 @@ export * as SystemAccounting from "./system-accounting"
 import { Token } from "../../util/token"
 import { SystemCompose } from "./system-compose"
 
-// PER-BLOCK PROMPT ACCOUNTING (`todo/tool-scale.md`, adopted from
-// `notes/survey/agent-office-research.md` §1.2).
+// PER-BLOCK PROMPT ACCOUNTING (adopted from `notes/survey/agent-office-research.md` §1.2).
 //
 // 🔴 **The instrument this program has been arguing without.** Every prompt-size number on record is
 // a tool-wire capture, so "tools are 31.9% of the body" has no denominator anyone can break down —

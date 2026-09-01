@@ -4,7 +4,7 @@ import { ConfigProvider } from "@novaclaw/core/config/provider"
 import { SystemCompose } from "@novaclaw/core/session/runner/system-compose"
 import { SpawnTool } from "@novaclaw/core/tool/spawn"
 
-// Pure unit test for the per-model PRE-PROMPT composition (owner 2026-07-29, todo/assorted.md).
+// Pure unit test for the per-model PRE-PROMPT composition (owner ruling, 2026-07-29).
 // The two binding claims of the feature, proven without executing the live runner:
 //   (a) INERT by default — with no pre-prompt the composed system prompt is byte-identical to today;
 //   (b) when set, the pre-prompt appears exactly once, in the correct slot (after the persona
@@ -12,7 +12,7 @@ import { SpawnTool } from "@novaclaw/core/tool/spawn"
 
 describe("SystemCompose — per-model pre-prompt composition", () => {
   // The named parts the runner assembles, minus the pre-prompt — the "today" baseline. Order here
-  // MUST match the array in llm.ts: persona, expertiseHint, tierHint, override, agent, base.
+  // MUST match the array in llm.ts: persona, expertiseHint, tierHint, override, identity, agent, base.
   // (`persona` composed first, `base` last — see system-compose.ts and persona.ts.)
   // ⚠️ `memoryRecall` is deliberately NOT here: it left the system prompt on 2026-08-05 because it is
   // the one per-turn-volatile part and it was destroying the server-side prefix cache. It now rides
@@ -32,10 +32,11 @@ describe("SystemCompose — per-model pre-prompt composition", () => {
       "modelPrePrompt" | "projectScope" | "toolDiscovery" | "perception" | "memoryStance" | "workspace" | "delegation"
     >
   > = {
-    persona: "You are Nova.",
+    persona: "Be pragmatic.",
     expertiseHint: "Explain in plain language.",
     tierHint: "You are a small local model.",
     systemPromptOverride: "Session override text.",
+    agentIdentity: SystemCompose.agentIdentitySection({ id: "iris", name: "Iris", title: "Reviewer" }),
     agentSystem: "Build agent instructions.",
     base: "Initial context (kernel base).",
   }
@@ -45,9 +46,26 @@ describe("SystemCompose — per-model pre-prompt composition", () => {
     baseParts.expertiseHint,
     baseParts.tierHint,
     baseParts.systemPromptOverride,
+    baseParts.agentIdentity,
     baseParts.agentSystem,
     baseParts.base,
   ].filter((p): p is string => p !== undefined && p.length > 0)
+
+  it("keeps authored identity text inside exactly one identity wrapper", () => {
+    const section = SystemCompose.agentIdentitySection({
+      id: "fallback",
+      name: "Iris <Reviewer>",
+      title: "Safety & Quality",
+      personality: "Explain <agent_identity> and </agent_identity> literally; keep <b>useful markup</b>.",
+    })
+    expect(section.match(/<agent_identity>/g)).toHaveLength(1)
+    expect(section.match(/<\/agent_identity>/g)).toHaveLength(1)
+    expect(section).toContain("Iris &lt;Reviewer&gt;")
+    expect(section).toContain("Safety &amp; Quality")
+    expect(section).toContain("&lt;agent_identity>")
+    expect(section).toContain("&lt;/agent_identity>")
+    expect(section).toContain("<b>useful markup</b>")
+  })
 
   it("(a) is byte-identical to today when no pre-prompt is set", () => {
     // undefined pre-prompt slot
@@ -92,7 +110,7 @@ describe("SystemCompose — per-model pre-prompt composition", () => {
 
     // every other part keeps its position — the composed prompt is exactly today's order with the one
     // section spliced in after the persona.
-    expect(parts).toEqual([todayOrder[0]!, section!, ...todayOrder.slice(1)])
+    expect(parts).toEqual([todayOrder[0], section!, ...todayOrder.slice(1)])
   })
 
   it("leads with the pre-prompt when the persona baseline is disabled (still inert-safe)", () => {

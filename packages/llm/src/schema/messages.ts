@@ -276,8 +276,8 @@ export namespace ToolChoice {
  * `Omit`s `responseFormat` from its options by construction and forces the call with `toolChoice`.
  *
  * It was not merely unimplemented, it was a category error, and that is the part worth keeping:
- * *"call this tool"* is not a response FORMAT on any of the five protocols here — OpenAI Chat,
- * OpenAI Responses, Anthropic, Bedrock and Gemini all spell it `tool_choice`/`toolConfig`, which
+ * *"call this tool"* is not a response FORMAT on any of the four protocols here — OpenAI Chat,
+ * OpenAI Responses, Anthropic and Gemini all spell it `tool_choice`/`toolConfig`, which
  * `LLMRequest.toolChoice` already lowers. Reviving the member would therefore add a second way to say
  * what one field already says, which is the duplication ruling 6 exists to refuse. If a protocol ever
  * grows a genuine third *format*, add it here **and** give it a lowering —

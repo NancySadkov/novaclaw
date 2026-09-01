@@ -1,37 +1,31 @@
-## Usage
+# @novaclaw/app
 
-Dependencies for these templates are managed with [pnpm](https://pnpm.io) using `pnpm up -Lri`.
+The NovaClaw HTML UI — the whole product surface, rendered identically by the Electron desktop app
+and in a browser. Solid + Vite. It is a thin client: it reaches an instance by URL and credentials
+and never assumes it shares a process or a machine with the runtime.
 
-This is the reason you see a `pnpm-lock.yaml`. That said, any package manager will work. This file can safely be removed once you clone a template.
+## Run it
 
 ```bash
-$ npm install # or pnpm install or yarn install
+bun install                 # from the repo root
+bun --cwd packages/app run dev        # Vite alone, on :3000 — bring your own backend
+bun --cwd packages/app run dev:full   # Vite + a backend on :4096
 ```
 
-### Learn more on the [Solid Website](https://solidjs.com) and come chat with us on our [Discord](https://discord.com/invite/solidjs)
+⚠️ `dev:full` starts a backend **on the default home** and tree-kills it on exit, including one you
+started yourself. When the store matters — a seeded fixture, an isolated home, fault injection — run
+`dev` and start the backend yourself with `NOVACLAW_DB`, `XDG_DATA_HOME` and `XDG_CONFIG_HOME` all
+set. `bun run build` emits the static `dist/` the desktop packager embeds.
 
-## Available Scripts
+## Tests
 
-In the project directory, you can run:
-
-### `npm run dev` or `npm start`
-
-Runs the app in the development mode.<br>
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
-
-The page will reload if you make edits.<br>
-
-### `npm run build`
-
-Builds the app for production to the `dist` folder.<br>
-It correctly bundles Solid in production mode and optimizes the build for the best performance.
-
-The build is minified and the filenames include the hashes.<br>
-Your app is ready to be deployed!
+`bun run test` covers the unit suites (`src`, happy-dom) and the browser suites (`test-browser`).
+`bun run typecheck` runs tsgo.
 
 ## E2E Testing
 
-Playwright starts the Vite dev server automatically via `webServer`, and UI tests expect an novaclaw backend at `localhost:4096` by default.
+Playwright starts the Vite dev server automatically via `webServer`, and UI tests expect a NovaClaw
+backend at `localhost:4096` by default.
 
 ```bash
 bunx playwright install chromium
@@ -44,7 +38,3 @@ Environment options:
 - `PLAYWRIGHT_SERVER_HOST` / `PLAYWRIGHT_SERVER_PORT` (backend address, default: `localhost:4096`)
 - `PLAYWRIGHT_PORT` (Vite dev server port, default: `3000`)
 - `PLAYWRIGHT_BASE_URL` (override base URL, default: `http://localhost:<PLAYWRIGHT_PORT>`)
-
-## Deployment
-
-You can deploy the `dist` folder to any static host provider (netlify, surge, now, etc.)

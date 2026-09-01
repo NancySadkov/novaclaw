@@ -1,10 +1,12 @@
-import { Schema } from "effect"
+import { Context, Schema } from "effect"
 import { PermissionMode } from "@novaclaw/schema/session-message"
-import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup, HttpApiMiddleware, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
 import { InvalidRequestError } from "../errors"
 
-// The Calendar / cron-session-creator HTTP surface (notes/calendar-cron-plan.md). INSTANCE-GLOBAL
-// (schedules span locations, like messenger accounts — no location middleware). Backed by CalendarStore
+// The Calendar / cron-session-creator HTTP surface. Schedules and fire
+// history are INSTANCE-GLOBAL: listing, removal and history never acquire a location. The two write
+// endpoints do acquire the request's location so a named agent/model can be checked where the caller
+// is working when the schedule does not pin its own folder. Backed by CalendarStore
 // (core/schedule/store.ts); the CalendarScheduler poll loop fires due schedules into new goal-oriented
 // sessions. `recurrence` is a structured discriminated union (never a cron string — anti-obscurantist).
 
@@ -52,15 +54,7 @@ const CreateInput = Schema.Struct({
   agent: Schema.optional(Schema.String),
   model: Schema.optional(Schema.String),
   location: Schema.optional(Schema.String),
-  /**
-   * 🔴 **NC-REL-027 — the closed vocabulary, not free text.** This was `Schema.String`, so a schedule
-   * could be created with `permissionMode: "banana"`: it persisted, and the runner then fell back to
-   * its default. The user's stated RESTRICTION silently did not apply — a failed restriction
-   * reporting success, which is the one thing the permission surface may never do.
-   *
-   * `PermissionMode` is the kernel's own literal set (`schema/session-message.ts`), so this cannot
-   * drift from what the runner accepts the way a hand-copied union would.
-   */
+  /** The kernel's own literal set, so this cannot drift from what the runner accepts. */
   permissionMode: Schema.optional(PermissionMode),
   enabled: Schema.optional(Schema.Boolean),
 }).annotate({ identifier: "Calendar.CreateInput" })
@@ -80,68 +74,80 @@ const UpdateInput = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean),
 }).annotate({ identifier: "Calendar.UpdateInput" })
 
-export const CalendarGroup = HttpApiGroup.make("server.calendar")
-  .add(
-    HttpApiEndpoint.get("calendar.schedule.list", "/api/calendar/schedule", {
-      success: Schema.Array(Schedule),
-    }).annotateMerge(
-      OpenApi.annotations({
-        identifier: "v2.calendar.schedule.list",
-        summary: "List calendar schedules",
-        description: "Retrieve every scheduled agent-launch task with its next-fire time.",
-      }),
-    ),
-  )
-  .add(
-    HttpApiEndpoint.post("calendar.schedule.create", "/api/calendar/schedule", {
-      payload: CreateInput,
-      success: Schedule,
-      error: InvalidRequestError,
-    }).annotateMerge(
-      OpenApi.annotations({
-        identifier: "v2.calendar.schedule.create",
-        summary: "Create a calendar schedule",
-        description:
-          "Schedule a repeatable or one-shot agent launch. The recurrence is structured (once/daily/weekly/monthly/yearly); the fired session runs the given prompt.",
-      }),
-    ),
-  )
-  .add(
-    HttpApiEndpoint.patch("calendar.schedule.update", "/api/calendar/schedule/:id", {
-      params: { id: Schema.String },
-      payload: UpdateInput,
-      success: Schedule,
-      error: InvalidRequestError,
-    }).annotateMerge(
-      OpenApi.annotations({
-        identifier: "v2.calendar.schedule.update",
-        summary: "Update a calendar schedule",
-        description:
-          "Patch a scheduled agent-launch task — pause/resume it (enabled), or change its title, prompt, recurrence, model, folder, or permission mode. The next-fire time is recomputed; a disabled schedule has none.",
-      }),
-    ),
-  )
-  .add(
-    HttpApiEndpoint.delete("calendar.schedule.remove", "/api/calendar/schedule/:id", {
-      params: { id: Schema.String },
-      success: HttpApiSchema.NoContent,
-    }).annotateMerge(
-      OpenApi.annotations({
-        identifier: "v2.calendar.schedule.remove",
-        summary: "Remove a calendar schedule",
-        description: "Delete a scheduled agent-launch task by id.",
-      }),
-    ),
-  )
-  .add(
-    HttpApiEndpoint.get("calendar.fires.list", "/api/calendar/fires", {
-      success: Schema.Array(Fire),
-    }).annotateMerge(
-      OpenApi.annotations({
-        identifier: "v2.calendar.fires.list",
-        summary: "List recent schedule fires",
-        description: "Recent scheduled-launch fires across all schedules, newest first (the run history).",
-      }),
-    ),
-  )
-  .annotateMerge(OpenApi.annotations({ title: "calendar", description: "Scheduled + repeatable agent launches." }))
+/**
+ * The group is a factory because only its write endpoints need the concrete location middleware.
+ * Applying middleware to the completed group would incorrectly make instance-wide reads location
+ * scoped; leaving it off the writes would make their ambient fallback the server process directory.
+ */
+export const makeCalendarGroup = <LocationId extends HttpApiMiddleware.AnyId, LocationService>(
+  locationMiddleware: Context.Key<LocationId, LocationService>,
+) =>
+  HttpApiGroup.make("server.calendar")
+    .add(
+      HttpApiEndpoint.get("calendar.schedule.list", "/api/calendar/schedule", {
+        success: Schema.Array(Schedule),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.calendar.schedule.list",
+          summary: "List calendar schedules",
+          description: "Retrieve every scheduled agent-launch task with its next-fire time.",
+        }),
+      ),
+    )
+    .add(
+      HttpApiEndpoint.post("calendar.schedule.create", "/api/calendar/schedule", {
+        payload: CreateInput,
+        success: Schedule,
+        error: InvalidRequestError,
+      })
+        .middleware(locationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.calendar.schedule.create",
+            summary: "Create a calendar schedule",
+            description:
+              "Schedule a repeatable or one-shot agent launch. The recurrence is structured (once/daily/weekly/monthly/yearly); the fired session runs the given prompt.",
+          }),
+        ),
+    )
+    .add(
+      HttpApiEndpoint.patch("calendar.schedule.update", "/api/calendar/schedule/:id", {
+        params: { id: Schema.String },
+        payload: UpdateInput,
+        success: Schedule,
+        error: InvalidRequestError,
+      })
+        .middleware(locationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.calendar.schedule.update",
+            summary: "Update a calendar schedule",
+            description:
+              "Patch a scheduled agent-launch task — pause/resume it (enabled), or change its title, prompt, recurrence, model, folder, or permission mode. The next-fire time is recomputed; a disabled schedule has none.",
+          }),
+        ),
+    )
+    .add(
+      HttpApiEndpoint.delete("calendar.schedule.remove", "/api/calendar/schedule/:id", {
+        params: { id: Schema.String },
+        success: HttpApiSchema.NoContent,
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.calendar.schedule.remove",
+          summary: "Remove a calendar schedule",
+          description: "Delete a scheduled agent-launch task by id.",
+        }),
+      ),
+    )
+    .add(
+      HttpApiEndpoint.get("calendar.fires.list", "/api/calendar/fires", {
+        success: Schema.Array(Fire),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.calendar.fires.list",
+          summary: "List recent schedule fires",
+          description: "Recent scheduled-launch fires across all schedules, newest first (the run history).",
+        }),
+      ),
+    )
+    .annotateMerge(OpenApi.annotations({ title: "calendar", description: "Scheduled + repeatable agent launches." }))

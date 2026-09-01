@@ -1,11 +1,15 @@
 import { describe, expect, test } from "bun:test"
 import { Effect, Fiber } from "effect"
+import { eq } from "drizzle-orm"
+import { AgentV2 } from "@novaclaw/core/agent"
+import { Database } from "@novaclaw/core/database/database"
 import { LLMError, LLMEvent, InvalidRequestReason, TransportReason } from "@novaclaw/llm"
 import { Stream } from "effect"
 import { EventV2 } from "@novaclaw/core/event"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionEvent } from "@novaclaw/core/session/event"
 import { Prompt } from "@novaclaw/core/session/prompt"
+import { SessionTable } from "@novaclaw/core/session/sql"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { HARNESS_SESSION, drive, makeLatch, makeRunnerHarness, userTexts } from "./fixture/runner-harness"
 import { fragmentFixture } from "./fixture/fragments"
@@ -33,6 +37,36 @@ import { fragmentFixture } from "./fixture/fragments"
  * so the fixture recognises it by its durable user-message marker rather than system-prompt shape.)
  */
 
+const identifyHarnessSession = Effect.gen(function* () {
+  const agents = yield* AgentV2.Service
+  yield* agents.transform((editor) =>
+    editor.update(AgentV2.ID.make("reviewer"), (agent) => {
+      agent.name = "Iris"
+      agent.title = "Reviewer"
+      agent.personality = "Compaction identity marker."
+      agent.system = "Compaction standing job brief."
+      agent.mode = "primary"
+    }),
+  )
+  const { db } = yield* Database.Service
+  yield* db
+    .update(SessionTable)
+    .set({ agent: "reviewer" })
+    .where(eq(SessionTable.id, HARNESS_SESSION))
+    .run()
+    .pipe(Effect.orDie)
+})
+
+const expectCurrentIdentity = (request: { readonly system?: ReadonlyArray<{ readonly text: string }> }) => {
+  const parts = (request.system ?? []).map((part) => part.text)
+  const text = parts.join("\n")
+  expect(text.split("Iris")).toHaveLength(2)
+  expect(text.split("Compaction identity marker.")).toHaveLength(2)
+  expect(parts.indexOf("Compaction standing job brief.")).toBeGreaterThan(
+    parts.findIndex((part) => part.includes("<agent_identity>")),
+  )
+}
+
 describe("SessionRunnerLLM — compaction", () => {
   test("manual compact runs a compact-only cycle with reason manual and drains no turn", async () => {
     // A MANUAL compact is not a turn. It summarises and stops — no model turn follows, because nothing
@@ -50,14 +84,17 @@ describe("SessionRunnerLLM — compaction", () => {
         fragmentFixture("text", "t2", ["Second answer"]).completeEvents,
         fragmentFixture("text", "t3", ["Third answer"]).completeEvents,
         fragmentFixture("text", "text-manual-summary", ["## Goal\n- Manual summary"]).completeEvents,
+        fragmentFixture("text", "text-after-manual", ["Continued after manual compaction"]).completeEvents,
       ],
     })
 
-    const context = await drive(
+    const { contextAfterCompact, manualRequests, afterRequests } = await drive(
       harness,
       Effect.gen(function* () {
+        yield* identifyHarnessSession
         const session = yield* SessionV2.Service
         const events = yield* EventV2.Service
+        const store = yield* SessionStore.Service
 
         for (const text of ["First question ", "Second question ", "Third question "]) {
           yield* session.prompt({
@@ -90,7 +127,22 @@ describe("SessionRunnerLLM — compaction", () => {
         yield* Effect.promise(() => started.promise)
         yield* Effect.promise(() => ended.promise)
 
-        return yield* (yield* SessionStore.Service).context(HARNESS_SESSION)
+        const manualRequests = [...harness.requests]
+        const contextAfterCompact = yield* store.context(HARNESS_SESSION)
+        harness.requests.length = 0
+        // The deliberately tiny model above exists only to force the manual summary fixture. Restore
+        // ordinary headroom before checking the next real turn, or this continuation starts a second,
+        // automatic compaction and overwrites the event evidence this claim is meant to pin.
+        harness.controls.currentModel = harness.makeModel("after-manual", { context: 64_000, output: 512 })
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Continue after manual compaction" }),
+          resume: false,
+        })
+        yield* session.resume(HARNESS_SESSION)
+        const afterRequests = [...harness.requests]
+
+        return { contextAfterCompact, manualRequests, afterRequests }
       }),
       "claim — manual compact is a compact-only cycle",
     )
@@ -99,10 +151,12 @@ describe("SessionRunnerLLM — compaction", () => {
     expect(endedData?.reason).toBe("manual")
     expect(endedData?.text).toBe("## Goal\n- Manual summary")
     // Exactly ONE provider request: the summary. No turn followed it.
-    expect(harness.requests, "a manual compact must not drain a turn as well").toHaveLength(1)
-    expect(userTexts(harness.requests[0]!)[0]).toContain("anchored summary")
-    expect(JSON.stringify(harness.requests[0]!.system)).toContain("reasoning budget")
-    expect(context[0]).toMatchObject({ type: "compaction", summary: "## Goal\n- Manual summary" })
+    expect(manualRequests, "a manual compact must not drain a turn as well").toHaveLength(1)
+    expect(userTexts(manualRequests[0]!)[0]).toContain("anchored summary")
+    expect(JSON.stringify(manualRequests[0]!.system)).toContain("reasoning budget")
+    expect(contextAfterCompact[0]).toMatchObject({ type: "compaction", summary: "## Goal\n- Manual summary" })
+    expect(afterRequests).toHaveLength(1)
+    expectCurrentIdentity(afterRequests[0]!)
   })
 
   test("automatically compacts into a completed summary and retained recent turn", async () => {
@@ -129,6 +183,7 @@ describe("SessionRunnerLLM — compaction", () => {
     const { firstRound, secondRound, contextAfterFirst, contextAfterSecond } = await drive(
       harness,
       Effect.gen(function* () {
+        yield* identifyHarnessSession
         const session = yield* SessionV2.Service
         const store = yield* SessionStore.Service
 
@@ -175,6 +230,7 @@ describe("SessionRunnerLLM — compaction", () => {
     expect(userTexts(firstRound[1]!)).toHaveLength(1)
     expect(userTexts(firstRound[1]!)[0]).toContain("<summary>\n## Goal\n- Preserve the task\n</summary>")
     expect(userTexts(firstRound[1]!)[0]).toContain(`[User]: ${"Recent exact request ".repeat(180)}`)
+    expectCurrentIdentity(firstRound[1]!)
     expect(contextAfterFirst.map((message) => message.type)).toEqual(["compaction", "assistant"])
     expect(contextAfterFirst[0]).toMatchObject({ type: "compaction", summary: "## Goal\n- Preserve the task" })
     expect(contextAfterFirst[1]).toMatchObject({
@@ -189,6 +245,7 @@ describe("SessionRunnerLLM — compaction", () => {
       "an iterative compaction must build on the previous summary, not re-derive from scratch",
     ).toContain("<previous-summary>\n## Goal\n- Preserve the task\n</previous-summary>")
     expect(userTexts(secondRound[0]!)[0]).toContain("Recent exact request")
+    expectCurrentIdentity(secondRound[1]!)
     expect(contextAfterSecond[0]).toMatchObject({
       type: "compaction",
       summary: "## Goal\n- Preserve the updated task",

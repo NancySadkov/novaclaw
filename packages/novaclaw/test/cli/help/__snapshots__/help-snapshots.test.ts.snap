@@ -52,16 +52,14 @@ Options:
                                       provided)                                             [string]
       --attach                        attach to a running novaclaw server (e.g.,
                                       http://localhost:4096)                                [string]
-  -p, --password                      basic auth password (defaults to NOVACLAW_SERVER_PASSWORD)
-                                                                                            [string]
-  -u, --username                      basic auth username (defaults to NOVACLAW_SERVER_USERNAME or
-                                      'novaclaw')                                           [string]
+  -p, --password                      basic auth password for --attach (defaults to
+                                      NOVACLAW_SERVER_PASSWORD)                             [string]
+  -u, --username                      basic auth username for --attach (defaults to
+                                      NOVACLAW_SERVER_USERNAME or 'novaclaw')               [string]
       --dir                           directory to run in, path on remote server if attaching
                                                                                             [string]
-      --port                          port for the local server (defaults to random port if no value
-                                      provided)                                             [number]
-      --variant                       model variant (provider-specific reasoning effort, e.g., high,
-                                      max, minimal)                                         [string]
+      --variant                       model variant (requires --model unless running --command)
+                                                                                            [string]
       --thinking                      show thinking blocks                                 [boolean]
       --dangerously-skip-permissions  REMOVED — it cannot work; configure the agent's permissions
                                       and use --agent instead             [boolean] [default: false]"
@@ -257,7 +255,6 @@ Commands:
   nova-cli models [provider]   list all available models
   nova-cli stats               show token usage and cost statistics
   nova-cli export [sessionID]  export session data as JSON
-  nova-cli pr <number>         fetch and checkout a GitHub PR branch, then run novaclaw
   nova-cli session             manage sessions
   nova-cli db                  database tools
 
@@ -277,24 +274,6 @@ Options:
                                                                 [string] [default: "novaclaw.local"]
       --cors         additional domains to allow for CORS                      [array] [default: []]
 "
-`;
-
-exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw pr --help 1`] = `
-"nova-cli pr <number>
-
-fetch and checkout a GitHub PR branch, then run novaclaw
-
-Positionals:
-  number  PR number to checkout                                                  [number] [required]
-
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]
-      --home        instance home directory — config, data, state and cache all live here
-                    (NOVACLAW_HOME)                                                         [string]"
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw session --help 1`] = `

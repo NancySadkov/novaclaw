@@ -23,9 +23,6 @@ import { Global } from "./global"
 import { checkUrl, loadPolicy } from "./offline"
 
 export const DEFAULT_VERSION = "2.55.0.2"
-export const DEFAULT_URL = `https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.2/PortableGit-${DEFAULT_VERSION}-64-bit.7z.exe`
-// Published in the git-for-windows v2.55.0.windows.2 release notes.
-export const DEFAULT_SHA256 = "b20d42da3afa228e9fa6174480de820282667e799440d655e308f700dfa0d0df"
 
 const MANIFEST_NAME = "bundle.json"
 
@@ -163,9 +160,13 @@ export async function provision(options: ProvisionOptions = {}): Promise<Resolve
     throw new ProvisionError(
       "bundled-shell provisioning is Windows-only — POSIX hosts already have a system bash; install git with the OS package manager.",
     )
-  const url = options.url ?? process.env.NOVACLAW_SHELL_BUNDLE_URL ?? DEFAULT_URL
-  const sha256 =
-    options.sha256 ?? process.env.NOVACLAW_SHELL_BUNDLE_SHA256 ?? (url === DEFAULT_URL ? DEFAULT_SHA256 : undefined)
+  const url = options.url ?? process.env.NOVACLAW_SHELL_BUNDLE_URL
+  if (!url)
+    throw new ProvisionError(
+      "no shell bundle source is configured; provide a local repository URL through the runtime configuration",
+    )
+  const sha256 = options.sha256 ?? process.env.NOVACLAW_SHELL_BUNDLE_SHA256
+  if (!sha256) throw new ProvisionError("the configured shell bundle has no SHA-256; refusing to download it")
 
   const policy = loadPolicy({ configDir: options.configDir ?? Global.Path.config, env: options.env })
   const verdict = checkUrl(url, policy)

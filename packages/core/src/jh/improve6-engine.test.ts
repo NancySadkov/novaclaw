@@ -7,7 +7,7 @@ import type { JhProcessRunner } from "./process-runner"
 import { JhEngine } from "./engine"
 
 // jh-improve6 — the harm-removal corrections, ENGINE integration. Two permanent fixtures encode the wave-5
-// transcript evidence (the senior re-diagnosis in notes/jh-improve5-report.md):
+// transcript evidence (the senior re-diagnosis in notes/jh/improve5-report.md):
 //  · run104: the tx gate ran the recorded COMPOUND (build+TEST) as its "object compile" and rejected an
 //    edit that compiled and passed 13/15 tests, 73×, with the FALSE message "does not compile". The gate
 //    must run ONLY the compile segment; test-red edits LAND and report honestly.
@@ -133,7 +133,6 @@ function harness(opts: {
         ? Effect.succeed(`{"achieved": false}`)
         : Effect.succeed(replies[i++] ?? idle)
     },
-    correct: () => Effect.fail({ message: "x" }),
     executor: opts.world.executor,
     runner: opts.world.runner,
     artifacts: JhArtifact.memory(),

@@ -255,18 +255,16 @@ const SPECIFIER_PATTERNS: readonly RegExp[] = [
  * only way a path-keyed ratchet can tell a move from a migration, and it costs one line.
  */
 /**
- * `ui/src/components/*.tsx` was 45, then 38 (2026-07-31), 36 (`switch.tsx`, 2026-08-07), 33
- * (`keybind.tsx`, `progress-circle.tsx`, `diff-changes.tsx`), 32 after `toast.tsx` (2026-08-07), and
- * is **31** after `dialog.tsx` went (2026-08-08). A bound rather than
- * a name list, because ruling 13 pins the FORK and a v1-only widget forks nothing — see the header.
- * It may fall freely; raising it means adding a v1 component under a ruling that says new work is
- * v2, so raise it only with a reason written next to it.
+ * A CEILING on `ui/src/components/*.tsx`, not a name list — ruling 13 pins the FORK, and a v1-only
+ * widget forks nothing (see the header). It may fall freely; RAISING it means adding a v1 component
+ * under a ruling that says new work is v2, so raise it only with a reason written beside it.
  *
- * ⚠️ **A ceiling that is not re-tightened stops ratcheting, and this one had already slipped.** It
- * read 38 while the tree held 37 — one component had been deleted without the pin following, so a
- * new v1 component could have been added for free. Lower it in the same commit as any deletion.
+ * ⚠️ **Lower it in the same commit as any deletion.** A ceiling that is not re-tightened stops
+ * ratcheting: this one has already sat above the tree once, and every component of slack is a free
+ * slot for the next v1 widget. Do not narrate the history of the number here — that is what made
+ * this comment claim 31 while the constant said 24; `git log -S V1_COMPONENT_CEILING` has it.
  */
-const V1_COMPONENT_CEILING = 25
+const V1_COMPONENT_CEILING = 24
 
 // ---------------------------------------------------------------------------------------------
 // The sweep. Pure functions first so the negative controls can drive them without touching disk.

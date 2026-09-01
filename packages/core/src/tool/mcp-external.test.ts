@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { DateTime, Effect } from "effect"
 import { Model, type ToolContent } from "@novaclaw/llm"
-import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
+import * as OpenAIChat from "@novaclaw/llm/protocols/openai-compatible-chat"
 import { ModelV2 } from "../model"
 import { ProviderV2 } from "../provider"
 import { SessionMessage } from "../session/message"

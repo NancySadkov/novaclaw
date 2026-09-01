@@ -82,14 +82,13 @@ import { HarnessConfig } from "./harness-config"
 import { StrictDrain } from "./strict-drain"
 import { createLLMEventPublisher } from "./publish-llm-event"
 import { SessionExecutionAttempt } from "../execution-attempt"
-import { attachmentModality, needsCapabilityEvidence, toLLMMessages, unreadableTurnAttachments } from "./to-llm-message"
+import { attachmentModality, toLLMMessages, unreadableTurnAttachments } from "./to-llm-message"
 import { AdhocGuidance } from "../../adhoc-tools/guidance"
 import { Affective } from "./affective"
 import { SessionDrive } from "./drive"
 import { FinishRecovery } from "./finish-recovery"
 import { UtilityCap } from "./utility-cap"
 import { UtilityPass } from "./utility-pass"
-import { ContextPack } from "./context-pack"
 import { PromptEstimate } from "./prompt-estimate"
 import { ModelRouteProfileStore } from "./model-route-profile-store"
 import { TruncationDetection } from "./truncation-detection"
@@ -399,7 +398,7 @@ export const layer = Layer.effect(
       check: { readonly label: string; readonly command: string; readonly timeoutMs?: number },
     ) {
       /**
-       * The DURABLE record of this run — `todo/verified-autonomy.md` V1's only new write.
+       * The DURABLE record of this run — verified autonomy's only new write.
        *
        * ⚠️ Best-effort, and that is a contract rather than laziness: this is bookkeeping inside a
        * drain step whose own header says *"a broken check command must never break the drain it
@@ -708,48 +707,6 @@ export const layer = Layer.effect(
       yield* Log.event("session.introspection.interject", { "session.id": sessionID })
       yield* SessionInput.steer(db, events, sessionID, interjection)
     })
-    // Auto-title (owner directive): runs right AFTER the drain settles — the user is busy
-    // reading the response, the model is idle — because the title grounds BOTH the user (the
-    // chat list) and the model across compactions (the title survives them). Fires only while
-    // the title is still a creation default, so a user rename is never clobbered and a failed
-    // attempt simply retries at the next drain end. Seeds from the first REAL user message
-    // (harness steers carry the 1N provenance prefix and never title a session).
-    // Utility calls ask for a short string or a JSON array — never for extended reasoning. Left
-    // unconstrained, reasoning models frequently spend the ENTIRE token
-    // budget reasoning and return EMPTY content, which parses to "nothing to record" and silently
-    // no-ops the whole pass.
-    //
-    // MEASURED 2026-07-20 against `dgx-spark/qwen3.6-35b` (the PrismaQuant-4.75bit build), shipped
-    // extraction prompt:
-    //   max_tokens= 512 -> finish=stop,   completion= 348, content 132 chars (valid JSON)
-    //   max_tokens=2048 -> finish=length, completion=2048, content 0 chars
-    //   max_tokens=4096 -> finish=length, completion=4096, content 0 chars
-    // That table was read as an INVERSION — "a bigger output limit is WORSE (a runaway thinking
-    // loop)".
-    //
-    // ⚠️ RE-MEASURED 2026-08-06 against `holo3.1` (Hcompany/Holo-3.1-35B-A3B-NVFP4, the current test
-    // model per AGENTS.md), same prompt, temperature 0. **THE INVERSION DID NOT SURVIVE.** Above the
-    // cliff a bigger cap is NEUTRAL, not worse — the model stops on its own and the answers are
-    // byte-identical:
-    //   thinking ENABLED (no chat_template_kwargs):     <=384 -> finish=length, 0 content chars
-    //                                                    512/2048/4096 -> finish=stop, 260-310 completion, valid JSON
-    //   thinking DISABLED (the NO_THINKING overlay):     64 -> finish=length
-    //                                                    128..4096 -> finish=stop, ~126 completion, valid JSON
-    // So the real mechanism is a CLIFF, not an inversion: a reasoner cut off mid-think returns
-    // NOTHING rather than something partial, and where the cliff sits depends entirely on whether it
-    // is reasoning. The 2026-07-20 runaway was a property of that BUILD, not of reasoning models.
-    // ⚠️ Do not re-derive "bigger is worse" from the first table — it is kept for provenance, not as
-    // current behaviour. Any change here needs a fresh table naming the build it was taken on.
-    // ⚠️ `enable_thinking:false` IS honoured by holo3.1 (reasoning chars drop to 0 and latency
-    // roughly halves, ~3.5s -> ~1.7s). That is a per-model fact and not a guarantee — the standing
-    // ruling that the HARNESS enforces no-thinking itself exists precisely because a growing class of
-    // models ignores the flag. It stays a cheap first line, never the only one.
-    //
-    // Auto-title therefore uses the provider-neutral stages of the shared
-    // ReasoningBudget controller first: observe reasoning tokens, stop at checkpoints, and nudge the
-    // model toward its tiny answer. Its final mechanical backstop remains the best-effort
-    // `chat_template_kwargs` switch for providers that support it. The other utility passes still use
-    // that direct switch and should migrate through the same controller independently.
     const failInterruptedTools = Effect.fn("SessionRunner.failInterruptedTools")(function* (
       sessionID: SessionSchema.ID,
       faultMessage = "Tool execution interrupted",
@@ -799,7 +756,7 @@ export const layer = Layer.effect(
      * and a rule for forgetting it when the server moves. A cap learned here is worth exactly one
      * process lifetime — it saves every later turn in the session one rejected request, and a
      * restart re-learns it at the price of a single 400 that costs no prefill. Promoting it to the
-     * capability store is `todo/vision.md` work; guessing a default for a stranger's endpoint is not.
+     * capability store is unlanded work; guessing a default for a stranger's endpoint is not.
      */
     const discoveredImageLimits = new Map<string, number>()
     /**
@@ -816,7 +773,20 @@ export const layer = Layer.effect(
      * from the compacted window each time and never fired. Same lifetime as `discoveredImageLimits`
      * above: this process, no schema, and a restart simply re-derives while the prompt is still there.
      */
-    const setRequests = new Map<string, { readonly asked: boolean; readonly limit?: number }>()
+    const setRequests = new Map<
+      string,
+      {
+        readonly asked: boolean
+        readonly limit?: number
+        /**
+         * 🔴 Latched for the same reason `limit` is, and it matters MORE here. A delegated child's
+         * assignment lives only in the spawn prompt that created it; once compaction takes that
+         * message, re-deriving the names returns nothing and the child's set silently widens back to
+         * its parent's whole corpus. See `UnfinishedSet.scopeAvailable`.
+         */
+        readonly named?: ReadonlyArray<string>
+      }
+    >()
     /**
      * Every file this SESSION has opened for the current set request, accumulated across drains.
      *
@@ -1533,9 +1503,14 @@ export const layer = Layer.effect(
         affectiveGeneration = Affective.toSampling(
           mood,
           {
-            // `|| undefined`: a config temperature of 0 means "cleared from the settings tab"
-            // (updateGlobal can't remove keys over the wire), not a real 0 baseline.
-            temperature: defaults?.temperature ?? (harness.affective?.temperature || undefined),
+            // ⚠️ `??`, not `||` — and the difference is a real temperature of 0. This
+            // read used to be `|| undefined`, because the Affective settings tab wrote `0` to mean
+            // "cleared" on the argument that keys could not be removed over the wire. They can:
+            // `POST /api/config/remove` is the deletion verb, the tab now uses it, and an absent
+            // temperature arrives here as `undefined` on its own. So `0` is what it says it is —
+            // `precise`, the first named preset — and swallowing it would silently ignore a setting
+            // the user can now deliberately choose.
+            temperature: defaults?.temperature ?? harness.affective?.temperature,
             topP: defaults?.topP,
             topK: defaults?.topK,
             frequencyPenalty: defaults?.frequencyPenalty,
@@ -1559,20 +1534,29 @@ export const layer = Layer.effect(
           if (!AgentJail.attendedRoot(rootType)) yield* SessionInput.steer(db, events, session.id, nudge)
         }
       }
+      // The resolved profile is the ONE identity source the model sees. It precedes the standing job
+      // brief in both postures; Short Chat changes tools/memory/project reach, never who the officer is.
+      const agentIdentity = SystemCompose.agentIdentitySection({
+        id: String(agent.id),
+        name: agent.info?.name,
+        title: agent.info?.title,
+        personality: agent.info?.personality,
+      })
       // 🔴 ONE assembly, two configurations — so both postures are measurable in the same vocabulary.
-      // The Chat posture used to build its own `[persona, GUIDANCE]` array; expressed as named blocks
-      // it is `persona` + `base`, which `composeSystemParts` emits in that order, so the prompt is
-      // byte-identical (`short-chat.test.ts` pins it). What it buys is that
-      // `SystemAccounting` can now count a chit-chat role's prompt and an engineering one's on the
-      // same scale — the comparison `notes/named-agents.md` asks for and had no instrument to make.
       const promptParts: SystemCompose.SystemPromptParts = ShortChat.enabled(config.shortChat)
-        ? { ...(harness.chatPersona === undefined ? {} : { persona: harness.chatPersona }), base: ShortChat.GUIDANCE }
+        ? {
+            ...(harness.chatPersona === undefined ? {} : { persona: harness.chatPersona }),
+            agentIdentity,
+            agentSystem: agent.info?.system,
+            base: ShortChat.GUIDANCE,
+          }
         : {
             persona: harness.persona,
             modelPrePrompt,
             expertiseHint: harness.expertiseHint,
             tierHint,
             systemPromptOverride: config.systemPromptOverride,
+            agentIdentity,
             agentSystem: agent.info?.system,
             // The tool list the model is about to receive is `toolMaterialization.definitions`; the
             // catalogue it CANNOT see is `.deferred`. Saying how many there are is the whole point —
@@ -3080,6 +3064,7 @@ export const layer = Layer.effect(
                 ...(UnfinishedSet.requestedLimit(firstText) === undefined
                   ? {}
                   : { limit: UnfinishedSet.requestedLimit(firstText) }),
+                named: UnfinishedSet.requestedNames(firstText),
               })
           }
           // 1E doom-loop break: only while the model is still acting (made a tool call).
@@ -3277,6 +3262,7 @@ export const layer = Layer.effect(
                 ...(UnfinishedSet.requestedLimit(realUserText) === undefined
                   ? {}
                   : { limit: UnfinishedSet.requestedLimit(realUserText) }),
+                named: UnfinishedSet.requestedNames(realUserText),
               })
             const setRequest = setRequests.get(input.sessionID)
             const askedForSet = setRequest?.asked ?? false
@@ -3369,7 +3355,16 @@ export const layer = Layer.effect(
               // silently widen the job to the whole folder, or narrow it to nothing.
               const requested = setRequest?.limit
               const setCoverage = {
-                available: requested === undefined ? allNames : allNames.slice(0, requested),
+                // 🔴 The request's own NAMES outrank both the count and the folder — see
+                // `UnfinishedSet.scopeAvailable`. Without this a delegated child assigned ten of a
+                // hundred files is driven against all hundred (measured 2026-08-31, ten children,
+                // seven still working after global coverage hit 100/100), and a count is applied as
+                // an alphabetical PREFIX, which is the right ten for one child in ten.
+                available: UnfinishedSet.scopeAvailable({
+                  listing: allNames,
+                  named: setRequest?.named ?? [],
+                  limit: requested,
+                }),
                 // ⚠️ The accumulated set, never `openedThisTurn` — that is one window's worth and it
                 // shrinks under compaction. See `setOpened`.
                 opened: [...opened],

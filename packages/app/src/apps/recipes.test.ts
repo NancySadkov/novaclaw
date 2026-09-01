@@ -636,24 +636,32 @@ describe("import — a stranger's file, previewed before it lands", () => {
 })
 
 // ═════════════════════════════════════════════════════════════════════════════════════════════════
-describe("export — the file, and an honest statement of what it leaves out", () => {
+describe("export — the complete portable folder", () => {
   test("🔴 the filename comes from the SLUG, never from the author's name", () => {
     // The name is a stranger's string and this one becomes a path on the user's disk.
-    expect(exportFilename("hello-c")).toBe("hello-c.recipe.md")
+    expect(exportFilename("hello-c")).toBe("hello-c.recipe.zip")
     expect(exportFilename("../../etc/passwd")).not.toContain("..")
     expect(exportFilename("../../etc/passwd")).not.toContain("/")
-    expect(exportFilename("")).toBe("recipe.recipe.md")
+    expect(exportFilename("")).toBe("recipe.recipe.zip")
   })
 
-  test("a recipe with assets says the assets are NOT included", () => {
+  test("a recipe with assets says the complete folder and every byte are included", () => {
     const text = describeExport(toView(recipe({ assets: ["data.csv", "logo.png"] })))
-    expect(text).toMatch(/does NOT include/i)
-    expect(text).toContain("data.csv")
-    expect(text).toContain("logo.png")
+    expect(text).toMatch(/complete recipe folder/i)
+    expect(text).toMatch(/2 assets/i)
+    expect(text).toMatch(/every byte preserved/i)
+    expect(text).not.toMatch(/does NOT include/i)
   })
 
-  test("a recipe with no assets does not warn about assets it does not have", () => {
-    expect(describeExport(toView(recipe({ assets: [] })))).not.toMatch(/does NOT include/i)
+  test("a prose-only recipe still exports a ZIP containing its recipe.md", () => {
+    expect(describeExport(toView(recipe({ assets: [] })))).toMatch(/ZIP.*recipe\.md/i)
+  })
+
+  test("the page offers ZIP upload and labels markdown paste as asset-free", () => {
+    const page = fs.readFileSync(path.join(import.meta.dir, "..", "pages", "recipes.tsx"), "utf8")
+    expect(page).toContain('accept=".zip,application/zip"')
+    expect(page).toContain("Paste carries recipe.md only — no assets")
+    expect(page).toContain("Import pasted markdown (no assets)")
   })
 })
 

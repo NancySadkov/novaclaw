@@ -210,9 +210,6 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   adhoc_tools: "privileged",
   // Markdown that BECOMES a system prompt, plus each agent's own permission ruleset and tool list.
   agents: "privileged",
-  // Governs whether this instance downloads and runs new binaries; AGENTS.md gates the switch behind
-  // Developer mode.
-  autoupdate: "privileged",
   // Markdown that becomes a prompt (slash commands).
   commands: "privileged",
   // Selection is authorship here: the default agent decides the system prompt AND the permission

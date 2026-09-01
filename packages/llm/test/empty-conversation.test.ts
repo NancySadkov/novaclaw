@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { LLM } from "../src"
 import * as Protocols from "../src/protocols"
-import { OpenRouter } from "../src/providers"
 import { Auth, LLMClient } from "../src/route"
 import type { Protocol } from "../src/route/protocol"
 import { LLMError, type LLMRequest } from "../src/schema"
@@ -63,14 +62,10 @@ const hasProtocol = (value: unknown): value is { readonly protocol: AnyProtocol 
 
 // Enumerated from the module's own exports rather than hand-listed, so a protocol added to
 // `protocols/index.ts` is covered on the day it lands instead of the day someone remembers.
-// `providers/openrouter.ts` is appended by name because it declares a protocol from OUTSIDE that
-// barrel — a fact this task discovered only because the REQUIRED `conversation` field refused to
-// compile without it, and a hand-written list would have missed it exactly as `grep` did.
 const entries: Entry[] = [
   ...Object.entries(Protocols).flatMap(([name, value]) =>
     hasProtocol(value) ? [{ export: name, protocol: value.protocol }] : [],
   ),
-  { export: "OpenRouter", protocol: OpenRouter.protocol },
 ]
 
 /**
@@ -82,19 +77,13 @@ const entries: Entry[] = [
  * changed both sides at once and the test stayed green. A mutation sweep caught it. An expectation
  * derived from its subject is not an expectation.
  *
- * `refusedBy` is the id that appears in the message, which is **not** always the entry's own id:
- * `openrouter-chat` builds its body by delegating to `OpenAIChat.protocol.body.from`, which
- * `Protocol.make` already wrapped, so the inner guard refuses first and names `openai-chat`. That
- * is the correct attribution — the openai-chat lowering is what produced nothing — and pinning it
- * here means a future openrouter that stops delegating turns this red instead of silently changing
- * which subsystem the user is told about (ruling 2).
+ * `refusedBy` is the protocol id that appears in the diagnostic message.
  */
 const EXPECTED: Record<string, { readonly field: string; readonly refusedBy: string }> = {
   OpenAIChat: { field: "messages", refusedBy: "openai-chat" },
   OpenAIResponses: { field: "input", refusedBy: "openai-responses" },
   AnthropicMessages: { field: "messages", refusedBy: "anthropic-messages" },
   Gemini: { field: "contents", refusedBy: "gemini" },
-  OpenRouter: { field: "messages", refusedBy: "openai-chat" },
 }
 
 const refusalOf = (protocol: AnyProtocol, request: LLMRequest) =>
@@ -103,13 +92,12 @@ const refusalOf = (protocol: AnyProtocol, request: LLMRequest) =>
 describe("no protocol sends an empty conversation (the guard's own check)", () => {
   test("the enumeration really found protocols — a zero-length loop proves nothing", () => {
     // Without this the two loops below are vacuous the day the barrel is renamed.
-    expect(entries.length).toBeGreaterThanOrEqual(5)
+    expect(entries.length).toBeGreaterThanOrEqual(4)
     expect(entries.map((entry) => entry.export).sort()).toEqual([
       "AnthropicMessages",
       "Gemini",
       "OpenAIChat",
       "OpenAIResponses",
-      "OpenRouter",
     ])
   })
 

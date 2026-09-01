@@ -56,7 +56,7 @@ const sampleState = (): JhEngine.State => {
       { type: "task_started", goal: "root goal", seq: 0 },
       { type: "committed", step: "root", seq: 1 },
     ],
-    telemetry: new Map([["root", { attempts: 2, verifierFails: 1, correctorCalls: 1, parseFails: 0 }]]),
+    telemetry: new Map([["root", { attempts: 2, verifierFails: 1, parseFails: 0 }]]),
   }
 }
 
@@ -518,7 +518,6 @@ function mkDeps(
   }
   return {
     introspect: next,
-    correct: next,
     executor: { run: () => Effect.succeed(oq.shift() ?? { ok: false, output: "none", artifacts: new Map() }) },
     runner: { run: () => Effect.succeed({ exitCode: 0, output: "", timedOut: false }) },
     artifacts,

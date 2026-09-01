@@ -28,7 +28,7 @@ import { MessengerPace } from "./pace"
 import { MessengerPipeline } from "./pipeline"
 import { MessengerStore } from "./store"
 
-// The Messenger gateway (notes/messenger-plan.md §3.2): the ONE instance-global service owning
+// The Messenger gateway: the ONE instance-global service owning
 // every live platform connection. UI and runtime need never be colocated (the P2P stance), so
 // connections live HERE, server-side — the phone remote-control use case works with the desktop
 // closed. Scope (P0 + P1): account lifecycle + status machine (airgap-honest), reconnect backoff,
@@ -57,12 +57,9 @@ export const DAILY_NEW_CONVERSATION_CAP = 20
 // parity rule (a spawn seam must ship with a rate cap; SessionSpawner carries the same number).
 // Human-typed `Nova, …` prompts land far under it; a paste-flood gets a legible refusal.
 //
-// ✅ The guard asymmetry is CLOSED: `dispatch` goes through `sessions.spawn({parentID})`, so a
-// dispatched child now also faces `MAX_SPAWN_DEPTH` and `MAX_SPAWN_CHILDREN`. Before that it SPENT
-// those quotas without checking them — the spawner counts by `parent_id`, so 16 live dispatched tasks
-// made the agent's own next `spawn` refuse with `reason: "children"`.
-//
-// ⚠️ Which leaves this cap as a per-CHAT pre-check, not the durable one. It is worth keeping for
+// ⚠️ **This is a per-CHAT pre-check, not the durable one.** `dispatch` goes through
+// `sessions.spawn({parentID})`, so a dispatched child faces `MAX_SPAWN_DEPTH` and
+// `MAX_SPAWN_CHILDREN` like any other. This cap is worth keeping for
 // exactly one reason: it refuses in the chat's own words before a spawn is spent. The DURABLE rate
 // cap is the spawner's `MAX_SPAWNS_PER_MINUTE` (a DB count, per parent, survives a restart); this
 // map is per chat and a restart forgets it. Do not read the matching number as one mechanism.
@@ -101,17 +98,12 @@ const INBOUND_WINDOW_MS = 60_000
  * even find out whether we were allowed to" are different facts and the model acts differently on
  * each (`refused` → try something else; `unavailable` → tell the user, retrying won't help).
  *
- * ⚠️ **The discriminant is `kind`, and it used to be `ok: boolean`. Renaming it IS the mechanism.**
- * `Hostility` could safely grow a third value in place because its consumers already went through
- * one collapse function; here every consumer wrote `if (!outcome.ok)` for itself, and adding a
- * third *value* to `ok` would have been strictly worse than the two-state lie it replaced —
- * `ok: "unknown"` is TRUTHY, so
- * `!outcome.ok` is false for it and the tool would have gone on to report "Sent (paced at human
- * typing speed)." for a message that was never sent. No `boolean`-shaped discriminant can carry a
- * third state safely, and no comment can stop a truthiness test being written. Renaming the field
- * makes every existing fold a COMPILE error, so each of them had to be looked at once — which is
- * what a mechanical check is (ruling 1). `Effect.catch` on a driver `SendError` still produces the
- * `refused` arm; only the shape of the answer changed.
+ * 🔴 **The discriminant is `kind`, and it may never become a boolean.** No `boolean`-shaped
+ * discriminant can carry a third state safely: consumers write `if (!outcome.ok)` for themselves,
+ * `ok: "unknown"` is TRUTHY, and the tool would report *"Sent (paced at human typing speed)."* for
+ * a message that was never sent. No comment can stop a truthiness test being written — the field's
+ * SHAPE is the only thing that can, because it makes every fold a compile error (ruling 1).
+ * `Effect.catch` on a driver `SendError` produces the `refused` arm.
  *
  * ⚠️ `refused` has several producers per method (no connection · cold start · daily cap · the
  * driver's own verdict) and that is fine — each states a fact we established. `unavailable` has
@@ -128,12 +120,12 @@ export type SendOutcome =
  * must be invited to write first.) Three-valued for the same reason `Hostility` is: the two inputs
  * are database reads, and a read can fail.
  *
- *  · `invited` — we have heard from this chat, or a session is bound to it;
+ *  · `invited` — a claimed inbound message exists, or a session is durably bound to the exact chat;
  *  · `cold`    — both facts were read and neither holds: a genuine new conversation;
  *  · `unknown` — at least one of them was never read, so `cold` is a claim nothing supports.
  *
  * ⚠️ A DEFINITE `invited` beats an unread second input, exactly as a found hostile binding beats an
- * unread chain link in `host-exec.ts`. If the seen-cache says we have heard from this chat, the
+ * unread chain link in `host-exec.ts`. If the inbound ledger says we have heard from this chat, the
  * binding table's health cannot change that — and degrading a perfectly answerable question to
  * "unavailable" because an unrelated table faulted would take the agent's voice away for no gain.
  */
@@ -142,8 +134,8 @@ export type Invitation = "invited" | "cold" | "unknown"
 /** The ONE place the two tri-state reads collapse into an invitation, deliberately in one function
  *  rather than repeated at `send` and `sendFile` — two copies is how two call sites come to answer
  *  the same question differently (ruling 6). Pinned by a ledger in messenger-gateway.test.ts. */
-export const invitationOf = (seen: boolean | "unknown", bound: boolean | "unknown"): Invitation =>
-  seen === true || bound === true ? "invited" : seen === "unknown" || bound === "unknown" ? "unknown" : "cold"
+export const invitationOf = (inbound: boolean | "unknown", bound: boolean | "unknown"): Invitation =>
+  inbound === true || bound === true ? "invited" : inbound === "unknown" || bound === "unknown" ? "unknown" : "cold"
 
 /**
  * The reason an outbound message did not go out when the instance's own database could not answer
@@ -296,20 +288,17 @@ export interface Interface {
    * conversation is refused unless the caller passes `initiate`, and then capped by the daily
    * new-conversation bucket.
    *
-   * ✅ **BOTH HALVES OF AGENTS.md #9(b) ARE NOW PRESENT (2026-07-31).** The rule is *never
-   * cold-start … and starting a new conversation needs **explicit permission** and its own stricter
-   * rate limit*. The default refusal below is the first clause; `DAILY_NEW_CONVERSATION_CAP` is the
-   * rate limit; and the permission — which this comment once described while it **existed nowhere in
-   * the tree** — is now `messenger.initiate`, asserted by the `messenger` tool before it may pass
+   * 🔴 **Both halves of AGENTS.md #9(b) are load-bearing** — *never cold-start … and starting a
+   * new conversation needs **explicit permission** and its own stricter rate limit*. The default
+   * refusal below is the first clause; `DAILY_NEW_CONVERSATION_CAP` is the rate limit; the
+   * permission is `messenger.initiate`, asserted by the `messenger` tool before it may pass
    * `initiate` at all.
    *
-   * **Why it could not ship earlier, and what unblocked it.** A `messenger.initiate` permission that
-   * actually *asks* by default was impossible while the agent baseline opened with a catch-all
-   * `{ action: "*", resource: "*", effect: "allow" }`: the gate would have granted itself, which is a
-   * false promise, and ruling 2 forbids that more strongly than it minds a known gap. v0.2.0 **B4c**
-   * removed the catch-all — `plugin/agent.ts` opens with `PermissionV2.AMBIENT_SAFE_BASELINE`, which
-   * names nothing beginning `messenger.`, so the action falls through to `evaluate`'s `ask` default.
-   * `test/permission-baseline.test.ts` pins that for the `messenger.*` family.
+   * ⚠️ That permission only means anything while the agent baseline does NOT open with a catch-all
+   * `{ action: "*", resource: "*", effect: "allow" }` — with one, the gate grants itself and the
+   * promise is false (ruling 2). `plugin/agent.ts` opens with `PermissionV2.AMBIENT_SAFE_BASELINE`,
+   * which names nothing beginning `messenger.`, so the action falls through to `evaluate`'s `ask`
+   * default; `test/permission-baseline.test.ts` pins that for the `messenger.*` family.
    *
    * ⚠️ **This method is still the ENFORCEMENT point, not the gate.** The permission, and the refusal
    * that keeps an untrusted correspondent from triggering it, live in `tool/messenger.ts`
@@ -320,12 +309,10 @@ export interface Interface {
    * a human said yes; the tool is the only product caller, and `messenger-tool.test.ts` holds that
    * ledger.
    *
-   * ⚠️ **The daily bucket's STORAGE is no longer here, and that is the 2026-07-31 fix.** It was a
-   * `{ day, count }` object on this service's heap, i.e. per gateway INSTANCE — so a restart handed
-   * the day a fresh twenty, and this product's supervisor restarts a crashed server on purpose. The
-   * count now lives in `messenger_initiation` and is spent through `MessengerStore.chargeInitiation`,
-   * one atomic upsert that rolls the UTC day, tests the cap and increments together. The decision
-   * (when to spend, what a refusal says, what an unreadable budget means) stays in this method.
+   * ⚠️ **The daily bucket's STORAGE is DURABLE and must stay so** — `messenger_initiation`, spent
+   * through `MessengerStore.chargeInitiation` (one atomic upsert that rolls the UTC day, tests the
+   * cap and increments together). The reason is in that table's header. The DECISION — when to
+   * spend, what a refusal says, what an unreadable budget means — stays in this method.
    *
    * ⚠️ **A successful initiation does NOT mark the chat as seen, deliberately.** It would make every
    * follow-up an ordinary reply — no card, no slot — and a string of unanswered DMs to somebody who
@@ -423,10 +410,9 @@ const build = (options: Options) =>
     >()
     // Last `/sessions` listing per operator chat, so `/use N` indexes exactly what they saw.
     const listings = new Map<string, string[]>()
-    // The daily cold-start bucket (traffic rules §2.3) is NOT here any more, and its absence is the
-    // point: it was `{ day, count }` on this heap until 2026-07-31, i.e. per gateway instance, so
-    // every restart handed the day a fresh twenty. It now lives in `messenger_initiation` — see
-    // `store.chargeInitiation` and the charge site in `send`.
+    // ⚠️ The daily cold-start bucket (traffic rules §2.3) is deliberately NOT one of these maps: a
+    // rate limit on this heap is per gateway INSTANCE. See `messenger_initiation` and the charge
+    // site in `send`.
     // §0.1.5 dispatcher: chatKey -> recent task-spawn timestamps (the per-chat rate guard).
     const dispatchRate = new Map<string, number[]>()
     // §0.1.5 dispatcher: dispatched sessionID -> the last narration already relayed to its chat, so
@@ -488,9 +474,12 @@ const build = (options: Options) =>
      *  absence they can mistake for "no". */
     const invitation = (accountID: Messenger.AccountID, chatID: string): Effect.Effect<Invitation> =>
       Effect.gen(function* () {
-        const seen = yield* MessengerStore.attempted(store.hasChat(accountID, chatID))
+        const inbound = yield* MessengerStore.attempted(store.hasInbound(accountID, chatID))
         const bound = yield* MessengerStore.attempted(store.bindingForChat(accountID, chatID))
-        return invitationOf(seen.read ? seen.value : "unknown", bound.read ? bound.value !== undefined : "unknown")
+        return invitationOf(
+          inbound.read ? inbound.value : "unknown",
+          bound.read ? bound.value !== undefined : "unknown",
+        )
       })
 
     // Per-account typing speed (§2.3, user-tunable in Settings → Messengers): recorded per live
@@ -498,15 +487,6 @@ const build = (options: Options) =>
     // call site. Set when the connection opens (attempt); the WeakMap drops it when the connection
     // is GC'd. The global serialization ("one hand") is unaffected — only the per-message delay.
     const connectionPace = new WeakMap<Connection, MessengerPace.PaceOptions>()
-
-    // Every outbound message — command replies, relayed assistant text, proactive tool sends —
-    // goes through the pacer, so nothing ever bursts or posts instantly.
-    const paceSend = (connection: Connection, chatID: string, text: string, replyTo?: string) =>
-      pacer.paced(
-        text,
-        connection.send(chatID, { text, ...(replyTo === undefined ? {} : { replyTo }) }),
-        connectionPace.get(connection),
-      )
 
     /**
      * 🔴 **NC-REL-036 — a challenge raised by an outbound op reads as a challenge.**
@@ -523,6 +503,30 @@ const build = (options: Options) =>
     /** One sentence for either arm — the two errors carry differently-named fields. */
     const sendFailureText = (error: MessengerDriverContract.SendError | MessengerDriverContract.ChallengeError) =>
       isChallenge(error) ? `verification required — ${error.message}` : error.reason
+
+    /** One bounded retry for a transport hiccup, while the original global pacing permit remains
+     * held. Challenges and permanent provider refusals never retry. A second failure is final. */
+    const retrySendOnce = <A, R>(
+      attempt: Effect.Effect<A, MessengerDriverContract.SendError | MessengerDriverContract.ChallengeError, R>,
+    ): Effect.Effect<A, MessengerDriverContract.SendError | MessengerDriverContract.ChallengeError, R> =>
+      attempt.pipe(
+        Effect.catch((error) =>
+          isChallenge(error) || !error.retryable
+            ? Effect.fail(error)
+            : Effect.sleep("1 second").pipe(Effect.andThen(attempt)),
+        ),
+      )
+
+    // Every outbound message — command replies, relayed assistant text, proactive tool sends —
+    // goes through one pacer permit, including its one possible retry, so nothing bursts.
+    const paceOperation = <A, R>(
+      connection: Connection,
+      text: string,
+      attempt: Effect.Effect<A, MessengerDriverContract.SendError | MessengerDriverContract.ChallengeError, R>,
+    ) => pacer.paced(text, retrySendOnce(attempt), connectionPace.get(connection))
+
+    const paceSend = (connection: Connection, chatID: string, text: string, replyTo?: string) =>
+      paceOperation(connection, text, connection.send(chatID, { text, ...(replyTo === undefined ? {} : { replyTo }) }))
 
     const setStatus = (accountID: Messenger.AccountID, entry: Entry, status: Messenger.AccountStatus) =>
       Effect.gen(function* () {
@@ -1583,8 +1587,9 @@ const build = (options: Options) =>
           }
           const listed = yield* live().pipe(Effect.orElseSucceed(() => undefined))
           if (listed === undefined) return { ok: true, chats: cached } satisfies ChatsOutcome
-          // Seed the seen-cache: a conversation that EXISTS in the account is a known chat — the
-          // traffic-rules cold-start guard must never treat replying there as cold outreach.
+          // Refresh DISCOVERY metadata only. A conversation being addressable in an account proves
+          // neither that somebody initiated nor that the shareholder approved first contact, so this
+          // path must remain structurally separate from `claimInbound` and binding creation.
           const now = yield* Clock.currentTimeMillis
           for (const chat of listed) {
             yield* store
@@ -1755,24 +1760,23 @@ const build = (options: Options) =>
             } satisfies SendOutcome
           // Paced like any outbound (the one hand), but send errors surface — an oversized or
           // refused upload must come back legible, never vanish.
-          return yield* pacer
-            .paced(
-              `${input.file.name} ${input.caption ?? ""}`,
-              entry.connection.send(input.chatID, {
-                file: input.file,
-                ...(input.caption === undefined || input.caption.length === 0 ? {} : { text: input.caption }),
+          return yield* paceOperation(
+            entry.connection,
+            `${input.file.name} ${input.caption ?? ""}`,
+            entry.connection.send(input.chatID, {
+              file: input.file,
+              ...(input.caption === undefined || input.caption.length === 0 ? {} : { text: input.caption }),
+            }),
+          ).pipe(
+            Effect.map(() => ({ kind: "sent" }) satisfies SendOutcome),
+            Effect.catch((error) =>
+              Effect.gen(function* () {
+                if (isChallenge(error))
+                  yield* setStatus(input.accountID, entry, { state: "challenge", message: error.message })
+                return { kind: "refused", reason: sendFailureText(error) } satisfies SendOutcome
               }),
-            )
-            .pipe(
-              Effect.map(() => ({ kind: "sent" }) satisfies SendOutcome),
-              Effect.catch((error) =>
-                Effect.gen(function* () {
-                  if (isChallenge(error))
-                    yield* setStatus(input.accountID, entry, { state: "challenge", message: error.message })
-                  return { kind: "refused", reason: sendFailureText(error) } satisfies SendOutcome
-                }),
-              ),
-            )
+            ),
+          )
         }),
       attachment: (input) =>
         Effect.gen(function* () {

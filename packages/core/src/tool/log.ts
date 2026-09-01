@@ -13,12 +13,13 @@ import { Tool } from "./tool"
 import { Tools } from "./tools"
 
 /**
- * **The `log` tool — the self-healing law reaching the logs.** `todo/logging.md` 3g.
+ * **The `log` tool — the self-healing law reaching the logs.**
  *
  * AGENTS.md states the law in one sentence: *as long as at least one working model remains, the
  * system must be restorable to a working state by asking an agent* — and asks of every feature *"if
  * this breaks while the vendor is asleep, can an agent inside the OS repair it?"* **An agent that
- * cannot read the error cannot repair it.** Phases 1 and 2 built the log this tool reads: a stable
+ * cannot read the error cannot repair it.** The keyed-event contract and the writer built the log
+ * this tool reads: a stable
  * `event=` key (so a query is a query, not a bet on a string literal), a level declared with the
  * key, classified attributes, and a bounded on-disk history. This is the surface that turns all of
  * that into an answer.
@@ -42,7 +43,7 @@ import { Tools } from "./tools"
  *
  * ── why ONE tool with three ops ─────────────────────────────────────────────────────────────────
  *
- * Tool-count pressure is live (`todo/tool-scale.md`: reported degradation from 30–50 tools, and we
+ * Tool-count pressure is live (reported degradation from 30–50 tools, and we
  * are past it), so a log surface costing three schema slots would be paying the tax this repo is
  * trying to stop paying. The house pattern is `kb`'s closed op vocabulary, followed by `docs`
  * (`list`/`read`/`search`) and by `configure` — which answered the same question by gaining a fourth

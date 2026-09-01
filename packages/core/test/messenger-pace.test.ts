@@ -3,7 +3,7 @@ import { Effect, Ref } from "effect"
 import { MessengerPace } from "@novaclaw/core/messenger/pace"
 import { it } from "./lib/effect"
 
-// P1.5 gate (notes/messenger-plan.md §2.3): the traffic-rules pacer — a pure human-typing delay,
+// P1.5 gate: the traffic-rules pacer — a pure human-typing delay,
 // clamped, monotonic; and a GLOBAL serialization so NovaClaw types "with one hand" (never two
 // chats at once), the core anti-ban property.
 

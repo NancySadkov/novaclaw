@@ -46,19 +46,15 @@ export const deadChildMessage = (childID: string, state: string | undefined): st
 
 export const name = "wait"
 /**
- * Milliseconds, because `SessionJoin` crosses the worker protocol and a Duration does not.
+ * The bound, and its measurement, now live with the join itself — `SessionJoin.JOIN_TIMEOUT_MS`.
  *
- * 🔴 **Raised from 2 minutes on 2026-08-20, because 2 minutes is shorter than one child's TURN.**
- * Measured: a child asked only to reply "BANANA" settled **121.7 seconds** after `wait` started —
- * and `wait` had given up 1.6 seconds earlier. Nothing was wrong; parent and child share one local
- * model server, so the child's single inference queued behind the parent's own. A join whose timeout
- * is the same order as one inference reports a false negative on a healthy run, which is exactly
- * what a supervisor must never do.
- *
- * ⚠️ The timeout is still an ANSWER, not a failure — it must stay bounded so a wedged child cannot
- * hold a parent forever. Ten minutes is well past a slow local turn and still well short of a hang.
+ * ⚠️ **They moved because a SECOND join was carrying the falsified 2-minute value** (RF-03-1).
+ * `SessionV2.wait`, behind `POST /api/session/:id/wait`, was a hand-rolled poll whose comment claimed
+ * *"same semantics as the wait TOOL"* while it had neither this transport nor this bound — so the
+ * HTTP door reported "operation unavailable" on healthy children the tool path was fixed for on
+ * 2026-08-20. One constant, so that cannot happen again.
  */
-const WAIT_TIMEOUT_MS = 10 * 60_000
+const WAIT_TIMEOUT_MS = SessionJoin.JOIN_TIMEOUT_MS
 
 export const Input = Schema.Struct({
   sessionID: Schema.String.annotate({ description: "The child session id to wait for (returned by a prior spawn)." }),

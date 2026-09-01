@@ -24,8 +24,6 @@ export const dict = {
 
   "command.palette": "Kommandopalette",
 
-
-
   "command.session.new": "Ny session",
   "command.file.open": "Åbn fil",
   "command.tab.close": "Luk fane",
@@ -65,15 +63,10 @@ export const dict = {
   "palette.group.commands": "Kommandoer",
   "palette.group.files": "Filer",
 
-
   "dialog.model.select.title": "Vælg model",
   "dialog.model.search.placeholder": "Søg modeller",
   "dialog.model.empty": "Ingen modeller fundet",
   "dialog.model.manage": "Administrer modeller",
-
-
-
-
 
   "model.tag.free": "Gratis",
   "model.tag.latest": "Nyeste",
@@ -169,7 +162,6 @@ export const dict = {
   "dialog.mcp.title": "MCP'er",
   "dialog.mcp.description": "{{enabled}} af {{total}} aktiveret",
   "dialog.mcp.empty": "Ingen MCP'er konfigureret",
-
 
   "mcp.status.connected": "forbundet",
   "mcp.status.failed": "mislykkedes",
@@ -270,13 +262,10 @@ export const dict = {
   "language.th": "ไทย",
   "language.tr": "Türkçe",
 
-
-
   "toast.permissions.autoaccept.on.title": "Accepterer tilladelser automatisk",
   "toast.permissions.autoaccept.on.description": "Anmodninger om tilladelse godkendes automatisk",
   "toast.permissions.autoaccept.off.title": "Stoppet med at acceptere tilladelser automatisk",
   "toast.permissions.autoaccept.off.description": "Anmodninger om tilladelse vil kræve godkendelse",
-
 
   "toast.model.none.title": "Ingen model valgt",
   "toast.model.none.description": "Forbind en udbyder for at opsummere denne session",
@@ -287,18 +276,12 @@ export const dict = {
   "toast.context.noLineSelection.title": "Ingen linjevalg",
   "toast.context.noLineSelection.description": "Vælg først et linjeinterval i en filfane.",
 
-
   "toast.session.listFailed.title": "Kunne ikke indlæse sessioner for {{project}}",
-
-  "toast.update.action.installRestart": "Installer og genstart",
 
   "error.page.title": "Noget gik galt",
   "error.page.description": "Der opstod en fejl under indlæsning af applikationen.",
   "error.page.details.label": "Fejldetaljer",
   "error.page.action.restart": "Genstart",
-  "error.page.action.checking": "Tjekker...",
-  "error.page.action.checkUpdates": "Tjek for opdateringer",
-  "error.page.action.updateTo": "Opdater til {{version}}",
   "error.page.report.prefix": "Rapporter venligst denne fejl til NovaClaw-teamet",
   "error.page.report.discord": "på Discord",
   "error.page.version": "Version: {{version}}",
@@ -333,10 +316,6 @@ export const dict = {
   "notification.session.responseReady.title": "Svar klar",
   "notification.session.error.title": "Sessionsfejl",
   "notification.session.error.fallbackDescription": "Der opstod en fejl",
-
-  "home.recentProjects": "Seneste projekter",
-  "home.empty.title": "Ingen seneste projekter",
-  "home.empty.description": "Kom i gang ved at åbne et lokalt projekt",
 
   "session.tab.session": "Session",
   "session.tab.review": "Gennemgang",
@@ -374,7 +353,6 @@ export const dict = {
   "session.new.title": "Byg hvad som helst",
   "session.new.worktree.main": "Hovedgren",
   "session.new.worktree.mainWithBranch": "Hovedgren ({{branch}})",
-  "session.new.worktree.create": "Opret nyt worktree",
   "session.new.lastModified": "Sidst ændret",
 
   "session.header.search.placeholder": "Søg {{project}}",
@@ -419,13 +397,11 @@ export const dict = {
   "common.moreOptions": "Flere muligheder",
   "common.learnMore": "Lær mere",
   "common.rename": "Omdøb",
-  "common.archive": "Arkivér",
   "common.delete": "Slet",
   "common.close": "Luk",
   "common.edit": "Rediger",
 
   "common.key.esc": "ESC",
-  "sidebar.project.recentSessions": "Seneste sessioner",
 
   "settings.section.desktop": "Desktop",
   "settings.section.server": "Server",
@@ -451,13 +427,6 @@ export const dict = {
 
   "settings.general.row.releaseNotes.title": "Udgivelsesnoter",
   "settings.general.row.releaseNotes.description": 'Vis "Hvad er nyt"-popups efter opdateringer',
-
-  "settings.updates.row.check.title": "Tjek for opdateringer",
-  "settings.updates.row.check.description": "Tjek manuelt for opdateringer og installer, hvis tilgængelig",
-  "settings.updates.action.checkNow": "Tjek nu",
-  "settings.updates.action.checking": "Tjekker...",
-  "settings.updates.toast.latest.title": "Du er opdateret",
-  "settings.updates.toast.latest.description": "Du kører den nyeste version af NovaClaw.",
 
   "sound.option.none": "Ingen",
   "sound.option.alert01": "Alarm 01",
@@ -539,8 +508,6 @@ export const dict = {
   "settings.shortcuts.group.prompt": "Prompt",
 
   "settings.models.title": "Modeller",
-
-
 
   "settings.permissions.tool.read.title": "Læs",
   "settings.permissions.tool.read.description": "Læsning af en fil (matcher filstien)",

@@ -52,13 +52,9 @@ const recording = (into: Asserted[]) =>
       }),
   })
 
-// ⚠️ `RejectedError`, not a global `Error`. `PermissionV2.Interface.assert` fails with
-// `PermissionV2.Error | SessionV2.NotFoundError`, and that first `Error` is the module's OWN tagged
-// union (Rejected · Corrected · Denied), not JavaScript's — so `new Error(...)` does not typecheck
-// even though it runs. Rejected is also the honest one for "the user said no": Denied is the
-// evaluator refusing by rule, Rejected is a human declining an ask.
+// `PermissionV2.Interface.assert` fails with its own tagged policy denial, not JavaScript's Error.
 const denying = Layer.mock(PermissionV2.Service, {
-  assert: () => Effect.fail(new PermissionV2.RejectedError()),
+  assert: () => Effect.fail(new PermissionV2.DeniedError({ rules: [] })),
 })
 
 /**
@@ -66,8 +62,7 @@ const denying = Layer.mock(PermissionV2.Service, {
  * than a mock's opinion. The permission layer is a parameter because two suites here disagree about it
  * on purpose.
  *
- * ⚠️ The denial arm FAILS synchronously rather than answering `ask`. An `ask` with nobody to answer it
- * parks on a Deferred forever and no test timeout reaps it.
+ * The denial arm fails synchronously through the same enforcement surface used by production tools.
  */
 const withTool = <A, E, R>(
   permission: Layer.Layer<PermissionV2.Service>,

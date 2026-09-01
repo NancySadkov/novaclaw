@@ -82,7 +82,7 @@ type SchemaDocument = {
 /**
  * Every request-body field the wire contract lets a caller send as `null`, by name.
  *
- * Four of these seven are the point of the ledger. `PATCH /api/session/{sessionID}`'s `archived` and
+ * All four are the point of the ledger. `PATCH /api/session/{sessionID}`'s `archived` and
  * the three `POST /api/session/{sessionID}/…` overrides are `Schema.NullOr`, and `null` is the value
  * that CLEARS the override so the session inherits from its parent chain — architecture.md's keystone,
  * reachable over HTTP. Until 2026-07-31 the original fields were typed non-nullable in the generated client and a
@@ -93,9 +93,6 @@ type SchemaDocument = {
  * disappearing on its own means the transform has started eating nulls again.
  */
 const NULLABLE_REQUEST_FIELDS = [
-  "POST /experimental/workspace branch (optional)",
-  "POST /experimental/workspace extra (optional)",
-  "POST /experimental/workspace/warp id",
   "PATCH /api/session/{sessionID} archived (optional)",
   "PATCH /api/session/{sessionID} device (optional)",
   "POST /api/session/{sessionID}/strict strict",
@@ -106,11 +103,11 @@ const NULLABLE_REQUEST_FIELDS = [
 /**
  * A floor, not a pin, over the WHOLE document — request bodies, responses and components alike.
  *
- * 41 required-and-nullable properties on 2026-07-31, up from 0 before the transform was fixed. The
- * ledger above names the seven that carry semantics a human can check; this number catches the case
- * the ledger cannot — a regression that eats nulls everywhere EXCEPT the seven pinned by name.
+ * 38 required-and-nullable properties remain after the legacy workspace routes were deleted. The
+ * ledger above names the four that carry semantics a human can check; this number catches the case
+ * the ledger cannot — a regression that eats nulls everywhere EXCEPT the four pinned by name.
  */
-const NULLABLE_REQUIRED_FLOOR = 41
+const NULLABLE_REQUIRED_FLOOR = 38
 
 /** The arms of a union with nested unions flattened, matching how the transform reasons about them. */
 function unionOptions(schema: Schema | undefined): Schema[] | undefined {
@@ -244,7 +241,7 @@ const GENERATE_TIMEOUT_MS = 60_000
 // ⚠️ The same warning still stands, and applies to this entry too: set-identity is what makes the
 // re-pin safe. A fingerprint change that ADDS, REMOVES or REPOINTS a `source -> emitted` pair is a
 // public API change and must be reviewed as one, not re-pinned by copying the received hash.
-const SCHEMA_NAME_FINGERPRINT = "e55db25ddabb19774f0ccbac9a79c340ae07f5644e0a2df2226ba88be89af5d2"
+const SCHEMA_NAME_FINGERPRINT = "5ee03a4c68e187f895d15cef410edbeed8bc59721967f5859c6ef8b4dd76b570"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

@@ -10,6 +10,7 @@ import {
 } from "@novaclaw/llm"
 import { Effect, JsonSchema, Schema } from "effect"
 import type { AgentV2 } from "../agent"
+import { PermissionV2 } from "../permission"
 import type { SessionMessage } from "../session/message"
 import type { SessionSchema } from "../session/schema"
 import type { ToolCatalogue } from "../tool-catalogue"
@@ -23,9 +24,7 @@ export interface Context {
   /** Server-owned Working receipt. `begin` returns the exact close handle, so parallel tool spans
    * cannot close one another merely because they share a phase name. */
   readonly timing?: {
-    readonly begin: (
-      phase: SessionMessage.TurnPhase,
-    ) => Effect.Effect<() => Effect.Effect<void>>
+    readonly begin: (phase: SessionMessage.TurnPhase) => Effect.Effect<() => Effect.Effect<void>>
   }
   /** Canonical paths of the files the user attached, resolved once for this provider turn.
    *  A mutation tool passes these to `permission.assert` so overwriting the user's own source
@@ -390,8 +389,7 @@ export const withDeferred = <Input extends SchemaType<any>, Output extends Schem
  */
 export const permission = (tool: AnyTool, name: string) => runtimeOf(tool).permission ?? name
 export const isDeferred = (tool: AnyTool) => runtimeOf(tool).deferred === true
-export const definition = (name: string, tool: AnyTool, variant?: string) =>
-  runtimeOf(tool).definition(name, variant)
+export const definition = (name: string, tool: AnyTool, variant?: string) => runtimeOf(tool).definition(name, variant)
 export const sideEffect = (tool: AnyTool) => runtimeOf(tool).sideEffect
 export const outputPreview = (tool: AnyTool) => runtimeOf(tool).outputPreview ?? "balanced"
 export const settle = (tool: AnyTool, call: ToolCall, context: Context) => {
@@ -404,6 +402,49 @@ export const settle = (tool: AnyTool, call: ToolCall, context: Context) => {
     return Effect.fail(new ToolFailure({ message: truncatedArgsResult(call.name, truncated) }))
   return runtimeOf(tool).settle(call, context)
 }
+
+/**
+ * **THE tool error absorber (1J).** Lower a tool's error channel into the `ToolFailure` its contract
+ * declares, *without destroying a permission refusal on the way*.
+ *
+ * 🔴 **Why this is a function and not a shape people copy.** Twenty tools in this directory carried a
+ * byte-similar three-arm version of it, and four had drifted into absorbers that never consult
+ * `denialMessage` at all. Measured 2026-09-01 by constructing a real
+ * `PermissionV2.DeniedError({rules: [{action: "js", resource: "*", effect: "deny"}], reason:
+ * "ask-removed"})` and running each site's expression over it:
+ *
+ * - `denialMessage` → the crafted deny-fast paragraph ("…retrying will not change it…").
+ * - `js.ts`'s `error instanceof Error ? error.message : String(error)` → **`""`**. `DeniedError`
+ *   declares only `rules` and `reason` (`permission.ts:152`), so it carries no message and the model
+ *   was handed an EMPTY string.
+ * - `computer.ts`'s `` `computer: ${String(error)}` `` → **`"computer: PermissionV2.DeniedError"`**.
+ * - `skill.ts`'s `Unable to load skill <name>` → the same sentence a MISSING skill produces, so a
+ *   refusal and a not-found were indistinguishable.
+ *
+ * `todowrite.ts` records the cost of exactly this collapse: a refusal that reads like a transient
+ * fault is *"therefore worth retrying, which is exactly the loop the deny-fast text exists to stop"*.
+ * In Analyze mode `MODE_RULES.plan` hard-denies `js`, so that loop was reachable in the product.
+ *
+ * ⚠️ **Order is the whole point.** An already-shaped `ToolFailure` passes through untouched (a tool
+ * that failed on purpose has already said what it means); then `denialMessage`, so a refusal keeps
+ * its identity including the user's reject feedback and a `novaclaw.json` exclusion's own wording;
+ * only then the tool's fallback. A fallback consulted first is the defect, every time.
+ *
+ * `fallback` may be a string or a function of the error, because several tools legitimately want to
+ * quote the underlying fault ("Unable to trash <path>: <why>"). It is only ever reached for errors
+ * `denialMessage` does not answer.
+ *
+ * The guard against re-drift is `tool/absorb-ledger.test.ts`: every tool module that calls
+ * `permission.assert` must reach `denialMessage`, via this helper or its own `mapError`.
+ */
+export const absorb =
+  (fallback: string | ((error: unknown) => string)) =>
+  (error: unknown): ToolFailure => {
+    if (error instanceof ToolFailure) return error
+    const denial = PermissionV2.denialMessage(error)
+    if (denial) return new ToolFailure({ message: denial })
+    return new ToolFailure({ message: typeof fallback === "function" ? fallback(error) : fallback, error })
+  }
 
 function runtimeOf(tool: AnyTool) {
   const runtime = runtimes.get(tool)

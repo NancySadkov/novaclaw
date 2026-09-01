@@ -25,11 +25,12 @@ const buildTree = (draft: JhStep.StepDraft): JhTree.Tree => {
 }
 
 describe("JhDataflow.validate (law 7)", () => {
-  test("fixture root decomposition: zero errors, one unused_produce warning (verdict)", () => {
+  // The fixture's `verdict` produce is consumed by no later sibling — which used to raise an
+  // `unused_produce` warning, removed 2026-09-01 (RF-05-13) because nothing read it. The assertion
+  // that survives is the one that matters and always did: the fixture decomposition is CLEAN.
+  test("fixture root decomposition: no issues at all", () => {
     const issues = JhDataflow.validate(JhFixtures.piTree.substeps!, new Set())
-    expect(issues.filter((i) => i.severity === "error")).toEqual([])
-    const warnings = issues.filter((i) => i.severity === "warning")
-    expect(warnings).toEqual([{ severity: "warning", code: "unused_produce", step: 5, artifact: "verdict" }])
+    expect(issues).toEqual([])
   })
 
   test("dangling: a child consuming an unproduced artifact → error with step index + artifact", () => {

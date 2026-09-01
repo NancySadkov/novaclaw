@@ -24,8 +24,6 @@ export const dict = {
 
   "command.palette": "คำสั่งค้นหา",
 
-
-
   "command.session.new": "เซสชันใหม่",
   "command.file.open": "เปิดไฟล์",
   "command.tab.close": "ปิดแท็บ",
@@ -65,16 +63,10 @@ export const dict = {
   "palette.group.commands": "คำสั่ง",
   "palette.group.files": "ไฟล์",
 
-
   "dialog.model.select.title": "เลือกโมเดล",
   "dialog.model.search.placeholder": "ค้นหาโมเดล",
   "dialog.model.empty": "ไม่พบผลลัพธ์โมเดล",
   "dialog.model.manage": "จัดการโมเดล",
-
-
-
-
-
 
   "model.tag.free": "ฟรี",
   "model.tag.latest": "ล่าสุด",
@@ -170,7 +162,6 @@ export const dict = {
   "dialog.mcp.title": "MCPs",
   "dialog.mcp.description": "{{enabled}} จาก {{total}} ที่เปิดใช้งาน",
   "dialog.mcp.empty": "ไม่มี MCP ที่กำหนดค่า",
-
 
   "mcp.status.connected": "เชื่อมต่อแล้ว",
   "mcp.status.failed": "ล้มเหลว",
@@ -270,9 +261,6 @@ export const dict = {
   "language.th": "ไทย",
   "language.tr": "Türkçe",
 
-
-
-
   "toast.permissions.autoaccept.on.title": "กำลังยอมรับสิทธิ์โดยอัตโนมัติ",
   "toast.permissions.autoaccept.on.description": "คำขอสิทธิ์จะได้รับการอนุมัติโดยอัตโนมัติ",
   "toast.permissions.autoaccept.off.title": "หยุดยอมรับสิทธิ์โดยอัตโนมัติแล้ว",
@@ -287,19 +275,12 @@ export const dict = {
   "toast.context.noLineSelection.title": "ไม่มีการเลือกบรรทัด",
   "toast.context.noLineSelection.description": "เลือกช่วงบรรทัดในแท็บไฟล์ก่อน",
 
-
-
   "toast.session.listFailed.title": "ไม่สามารถโหลดเซสชันสำหรับ {{project}}",
-
-  "toast.update.action.installRestart": "ติดตั้งและรีสตาร์ท",
 
   "error.page.title": "เกิดข้อผิดพลาด",
   "error.page.description": "เกิดข้อผิดพลาดระหว่างการโหลดแอปพลิเคชัน",
   "error.page.details.label": "รายละเอียดข้อผิดพลาด",
   "error.page.action.restart": "รีสตาร์ท",
-  "error.page.action.checking": "กำลังตรวจสอบ...",
-  "error.page.action.checkUpdates": "ตรวจสอบการอัปเดต",
-  "error.page.action.updateTo": "อัปเดตเป็น {{version}}",
   "error.page.report.prefix": "โปรดรายงานข้อผิดพลาดนี้ให้ทีม NovaClaw",
   "error.page.report.discord": "บน Discord",
   "error.page.version": "เวอร์ชัน: {{version}}",
@@ -332,10 +313,6 @@ export const dict = {
   "notification.session.responseReady.title": "การตอบสนองพร้อม",
   "notification.session.error.title": "ข้อผิดพลาดเซสชัน",
   "notification.session.error.fallbackDescription": "เกิดข้อผิดพลาด",
-
-  "home.recentProjects": "โปรเจกต์ล่าสุด",
-  "home.empty.title": "ไม่มีโปรเจกต์ล่าสุด",
-  "home.empty.description": "เริ่มต้นโดยเปิดโปรเจกต์ในเครื่อง",
 
   "session.tab.session": "เซสชัน",
   "session.tab.review": "ตรวจสอบ",
@@ -374,7 +351,6 @@ export const dict = {
   "session.new.title": "สร้างอะไรก็ได้",
   "session.new.worktree.main": "สาขาหลัก",
   "session.new.worktree.mainWithBranch": "สาขาหลัก ({{branch}})",
-  "session.new.worktree.create": "สร้าง worktree ใหม่",
   "session.new.lastModified": "แก้ไขล่าสุด",
 
   "session.header.search.placeholder": "ค้นหา {{project}}",
@@ -417,14 +393,10 @@ export const dict = {
   "common.moreOptions": "ตัวเลือกเพิ่มเติม",
   "common.learnMore": "เรียนรู้เพิ่มเติม",
   "common.rename": "เปลี่ยนชื่อ",
-  "common.archive": "จัดเก็บ",
   "common.delete": "ลบ",
   "common.close": "ปิด",
   "common.edit": "แก้ไข",
   "common.key.esc": "ESC",
-
-  "sidebar.project.recentSessions": "เซสชันล่าสุด",
-
 
   "settings.section.desktop": "เดสก์ท็อป",
   "settings.section.server": "เซิร์ฟเวอร์",
@@ -450,13 +422,6 @@ export const dict = {
 
   "settings.general.row.releaseNotes.title": "บันทึกการอัปเดต",
   "settings.general.row.releaseNotes.description": "แสดงป๊อปอัพ What's New หลังจากอัปเดต",
-
-  "settings.updates.row.check.title": "ตรวจสอบการอัปเดต",
-  "settings.updates.row.check.description": "ตรวจสอบการอัปเดตด้วยตนเองและติดตั้งหากมี",
-  "settings.updates.action.checkNow": "ตรวจสอบทันที",
-  "settings.updates.action.checking": "กำลังตรวจสอบ...",
-  "settings.updates.toast.latest.title": "คุณเป็นเวอร์ชันล่าสุดแล้ว",
-  "settings.updates.toast.latest.description": "คุณกำลังใช้งาน NovaClaw เวอร์ชันล่าสุด",
 
   "sound.option.none": "ไม่มี",
   "sound.option.alert01": "เสียงเตือน 01",
@@ -538,8 +503,6 @@ export const dict = {
   "settings.shortcuts.group.prompt": "พร้อมท์",
 
   "settings.models.title": "โมเดล",
-
-
 
   "settings.permissions.tool.read.title": "อ่าน",
   "settings.permissions.tool.read.description": "อ่านไฟล์ (ตรงกับเส้นทางไฟล์)",

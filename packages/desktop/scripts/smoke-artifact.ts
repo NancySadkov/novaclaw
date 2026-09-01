@@ -360,6 +360,20 @@ async function readToastSelection(wsUrl: string) {
   return JSON.parse(String(raw)) as Record<string, string>
 }
 
+/** The root ErrorBoundary is a rendered failure, even when the sidecar remains perfectly healthy. */
+async function readRendererErrorPage(wsUrl: string) {
+  const raw = await cdpEvaluate(
+    wsUrl,
+    `(() => {
+      const page = document.querySelector('[data-component="error-page"]')
+      if (!page) return JSON.stringify({ present: false })
+      return JSON.stringify({ present: true, text: (page.textContent || "").trim().slice(0, 500) })
+    })()`,
+    15_000,
+  )
+  return JSON.parse(String(raw)) as { present: boolean; text?: string }
+}
+
 // ── HTTP ────────────────────────────────────────────────────────────────────────────────────────
 
 function authHeader(credentials: Credentials): Record<string, string> {
@@ -517,7 +531,6 @@ function childEnv(home: string): Record<string, string> {
     delete env[key]
   env.NOVACLAW_HOME = home
   // A portable/dev build has no update feed; checking for one only produces noise in a smoke.
-  env.NOVACLAW_DISABLE_AUTOUPDATE = "1"
   return env
 }
 
@@ -846,7 +859,10 @@ async function run() {
   // The failing click was the home prompt bar, which creates a folder-less agent at the scratch
   // directory (`<data>/scratch`), i.e. the one path most directly downstream of the poisoned data dir.
   try {
-    const payload = scratchDir ? { location: { directory: scratchDir } } : {}
+    // Root chats are owned components, so the current API requires the governing agent explicitly.
+    // A throwaway smoke home has no existing Nova chat, making this the same first-chat path the UI
+    // exercises without weakening the one-chat-per-agent invariant.
+    const payload = scratchDir ? { agent: "nova", location: { directory: scratchDir } } : { agent: "nova" }
     const res = await request(credentials, "POST", "/api/session", payload)
     const created = (res.json as { data?: { id?: string } } | undefined)?.data?.id
     check(
@@ -957,6 +973,20 @@ async function run() {
     )
   } catch (error) {
     check(false, "memory-enabled", `GET /memory/stats failed: ${String(error)}`)
+  }
+
+  // A healthy sidecar does not imply a usable app. This caught a real packaged build where
+  // HighlightsProvider initialized outside ServerSDKProvider: every HTTP assertion above passed,
+  // while the only thing the user could see was the root error page.
+  try {
+    const errorPage = await readRendererErrorPage(renderer.wsUrl)
+    check(
+      !errorPage.present,
+      "renderer-no-error-page",
+      `the packaged renderer reached its root error boundary: ${errorPage.text || "no visible detail"}`,
+    )
+  } catch (error) {
+    check(false, "renderer-no-error-page", `could not inspect the packaged renderer: ${String(error)}`)
   }
 }
 

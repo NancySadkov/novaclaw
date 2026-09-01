@@ -7,7 +7,7 @@ import { UserClientError } from "@novaclaw/core/messenger/driver/telegram-user"
 import type { InboundEvent } from "@novaclaw/core/messenger/driver"
 import { it } from "./lib/effect"
 
-// P1.7 gate (notes/messenger-plan.md §8): the Telegram USER-account driver against a FAKE
+// P1.7 gate: the Telegram USER-account driver against a FAKE
 // UserClient — the login flow (code → session; wrong code retryable; 2FA both arms), the
 // user-account self-echo policy (Saved Messages is the phone-remote channel), send chunking with
 // sent-tracking, and dialogs mapping. mtcute itself sits behind the same seam in production

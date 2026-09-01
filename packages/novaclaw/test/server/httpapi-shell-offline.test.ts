@@ -90,7 +90,7 @@ describe("shell/offline HttpApi", () => {
       const coldBody = yield* json(cold)
       expect(coldBody.enabled).toBe(false)
       expect(coldBody.active).toBe(0)
-      expect(coldBody.total).toBe(9)
+      expect(coldBody.total).toBe(8)
 
       // Publish an AIRGAPPED policy into the process-wide ref exactly the way a layer build does,
       // from a throwaway source…
@@ -99,14 +99,14 @@ describe("shell/offline HttpApi", () => {
       )
       yield* Effect.scoped(Layer.build(Offline.layerWith({ configDir: dir, env: {}, dbFile: path.join(dir, "no.db") })))
       // …and then destroy the source. From here the ref is the ONLY place the policy exists: a
-      // handler that re-derives it from config/sqlite per request now sees nothing and says 0/9.
+      // handler that re-derives it from config/sqlite per request now sees nothing and says 0/8.
       fs.rmSync(dir, { recursive: true, force: true })
 
       const hot = yield* requestInDirectory(OFFLINE_PATH, tmp.directory)
       expect(hot.status).toBe(200)
       const hotBody = yield* json(hot)
       expect(hotBody.enabled).toBe(true)
-      expect(hotBody.active).toBe(9)
+      expect(hotBody.active).toBe(8)
       expect(hotBody.layers.every((layer) => layer.active)).toBe(true)
     }).pipe(Effect.ensuring(Effect.sync(() => Offline.resetPolicy()))),
   )

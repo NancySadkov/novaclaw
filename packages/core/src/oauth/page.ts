@@ -75,6 +75,8 @@ export function bootstrap(options: BootstrapOptions) {
 
 export * as OauthCallbackPage from "./page"
 
+import { escapeHtml } from "../util/html"
+
 type Status = "pending" | "success" | "error"
 
 function renderCard(input: { status: Status; headline: string; message: string; detail?: string; footnote: string }) {
@@ -135,15 +137,6 @@ var TOKEN_URL=new URL(${scriptString(options.tokenPath)},window.location.origin)
 
 function scriptString(value: string) {
   return JSON.stringify(value).replaceAll("<", "\\u003c")
-}
-
-function escapeHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;")
 }
 
 // Curated subset of the brand tokens (packages/ui/src/styles/theme.css). Default is

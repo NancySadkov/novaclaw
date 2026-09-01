@@ -8,8 +8,7 @@ import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useGlobal } from "@/context/global"
 import { ReleaseNotesStatusLine } from "@/context/highlights"
 import { useLanguage } from "@/context/language"
-import { useExpertise, PERMISSION_MODE_MIN_LEVEL } from "@/context/expertise"
-import { usePermission } from "@/context/permission"
+import { useExpertise } from "@/context/expertise"
 import { usePlatform } from "@/context/platform"
 import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
@@ -23,13 +22,13 @@ import { SettingsPoliciesSection } from "./policies"
 // still types the shell-BUNDLE row's own fetch, which stays in this tab because it has a control.
 import { useSettings } from "@/context/settings"
 import { offlineStatus, shellProvision, shellStatus, type OfflineStatus, type ShellStatus } from "@/utils/fs-api"
-import { useUpdaterAction } from "../updater-action"
 import { Link } from "../link"
 import { DialogExpertise } from "./dialog-expertise"
 import { DialogTelemetryStatus, type TelemetryStatus } from "./dialog-telemetry-status"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import { SettingsExplainV2 } from "./explain"
+import { scopedDirectory } from "@/utils/routing-directory"
 
 type ShellOption = {
   path: string
@@ -58,36 +57,12 @@ export const SettingsGeneralV2: Component<{
   const language = useLanguage()
   const settings = useSettings()
   const expertise = useExpertise()
-  const permission = usePermission()
   const platform = usePlatform()
   const dialog = useDialog()
   const serverSync = useServerSync()
   const serverSdk = useServerSDK()
   const mobile = createMediaQuery("(max-width: 767px)")
 
-  const updater = useUpdaterAction()
-
-  const dir = createMemo(() => {
-    if (!props.sessionID) return undefined
-    return serverSync().session.lineage.peek(props.sessionID)?.session.location.directory
-  })
-  const accepting = createMemo(() => {
-    const value = dir()
-    if (!value || !props.sessionID) return false
-    return permission.isAutoAccepting(props.sessionID, value)
-  })
-
-  const toggleAccept = (checked: boolean) => {
-    const value = dir()
-    if (!value || !props.sessionID) return
-
-    if (checked) {
-      permission.enableAutoAccept(props.sessionID, value)
-      return
-    }
-
-    permission.disableAutoAccept(props.sessionID, value)
-  }
   const desktop = createMemo(() => platform.platform === "desktop")
 
   const [shells] = createResource(
@@ -135,8 +110,12 @@ export const SettingsGeneralV2: Component<{
     const conn = shellConn()
     if (!conn) return undefined
     const ctx = globalCtx.ensureServerCtx(conn)
-    const p = ctx.sync.data.path as { directory?: string; home?: string } | undefined
-    return p?.directory || p?.home || undefined
+    // ⚠️ `|| undefined`, not `|| ""`, is the one variation in the eighteen sites that is NOT the
+    // order — this memo gates a `createResource` on truthiness and its consumer types the directory
+    // as `string | undefined`. `scopedDirectory` answers `""` for the same absence, so the coalesce
+    // stays here rather than being pushed into the shared helper, where it would make every other
+    // caller's `!directory()` check read a different value for the same condition.
+    return scopedDirectory(ctx.sync.data.path) || undefined
   })
   const [provisioning, setProvisioning] = createSignal(false)
   const [bundle, { refetch: refetchBundle }] = createResource(
@@ -166,7 +145,7 @@ export const SettingsGeneralV2: Component<{
     }
   }
 
-  // OFF-C — the N/9 airgap-layer indicator (refetches when offline mode is toggled).
+  // OFF-C — the N/8 airgap-layer indicator (refetches when offline mode is toggled).
   const offlineEnabled = createMemo(() => (serverSync().data.config as { offline?: boolean }).offline === true)
   const [offline] = createResource(
     () =>
@@ -204,22 +183,25 @@ export const SettingsGeneralV2: Component<{
   })
 
   const autoOption = { id: "auto", value: "", label: language.t("settings.general.row.shell.autoDefault") }
-  // 1K: the default-permission-mode options reuse the composer droplist's labels. Expertise-gated
-  // (uix.md §6.4) — Normal sees plan/ask, Advanced +surgical, Developer +bypass/yolo — but a stored
-  // value above the level stays listed so the picker reflects the truth (the honesty valve nudges review).
-  const permissionModeOptions = createMemo(() => {
-    const current = settings.general.defaultPermissionMode()
-    return (["plan", "ask", "surgical", "bypass", "yolo"] as const)
-      .filter((mode) => mode === current || expertise.atLeast(PERMISSION_MODE_MIN_LEVEL[mode] ?? "normal"))
-      .map((mode) => ({ id: mode, label: language.t(`prompt.permissionMode.${mode}`) }))
-  })
-  // Honesty valve (uix.md §6.5): a "run without asking" mode is active but its picker option would be
-  // hidden at this level — surface a one-liner rather than silently masking a safety-relevant choice.
-  const hiddenDangerMode = createMemo(() => {
-    const current = settings.general.defaultPermissionMode()
-    const min = PERMISSION_MODE_MIN_LEVEL[current] ?? "normal"
-    return !expertise.atLeast(min)
-  })
+  // 1K: the default-permission-mode options reuse the composer droplist's labels.
+  //
+  // Every mode is offered at EVERY expertise level, and that is a standing decision, not an omission.
+  // Permission modes escalate in danger, but only ONE of them leaves the project folder. External
+  // writes are guarded independently of the mode (agent baseline asks; an unattended chain is
+  // hard-denied — config-resolve.ts §UNATTENDED CONFINEMENT), so plan/ask/surgical/bypass all stay
+  // INSIDE the folder and are safe to offer at any level. Gating `bypass` to Developer hid the one
+  // mode most users actually want ("work in my project without asking me every time") and left Normal
+  // with two options, which read as a broken picker. `yolo` is ungated for the same reason (owner
+  // 2026-07-25 named all three postures as the set a normal user picks from): hiding the escape hatch
+  // does not make it safer, it makes the honest one unreachable. What carries the weight is the LABEL
+  // — "Admin" reads with the hint "Write access to the ENTIRE computer, not just this project". The
+  // real containment work is tracked for v0.2.0 (jail bash in every non-YOLO mode, Windows included).
+  const permissionModeOptions = createMemo(() =>
+    (["plan", "ask", "surgical", "bypass", "yolo"] as const).map((mode) => ({
+      id: mode,
+      label: language.t(`prompt.permissionMode.${mode}`),
+    })),
+  )
   const currentShell = createMemo(() => serverSync().data.config.shell ?? "")
 
   const shellOptions = createMemo<ShellSelectOption[]>(() => {
@@ -343,16 +325,6 @@ export const SettingsGeneralV2: Component<{
             />
           </SettingsRowV2>
         </Show>
-
-        <SettingsRowV2
-          minLevel="advanced"
-          title={language.t("command.permissions.autoaccept.enable")}
-          description={language.t("toast.permissions.autoaccept.on.description")}
-        >
-          <div data-action="settings-auto-accept-permissions">
-            <Switch checked={accepting()} disabled={!dir()} onChange={toggleAccept} />
-          </div>
-        </SettingsRowV2>
 
         <SettingsRowV2
           minLevel="developer"
@@ -544,19 +516,6 @@ export const SettingsGeneralV2: Component<{
           </SettingsRowV2>
         </Show>
 
-        {/* Honesty valve (uix.md §6.5): a "run without asking" default is active while its option is
-            hidden at this level — one quiet line so an active safety-relevant choice is never masked. */}
-        <Show when={hiddenDangerMode()}>
-          <SettingsRowV2
-            title={language.t("settings.expertise.activeHidden.title")}
-            description={language.t("settings.expertise.activeHidden.description")}
-          >
-            <ButtonV2 size="normal" variant="outline" onClick={openExpertise}>
-              {language.t("settings.expertise.change")}
-            </ButtonV2>
-          </SettingsRowV2>
-        </Show>
-
         {/* One discoverability affordance (uix.md §6.5): a quiet nudge to the next level; gone at
             Developer. No scattered lock icons. */}
         <Show when={!expertise.atLeast("developer")}>
@@ -652,22 +611,6 @@ export const SettingsGeneralV2: Component<{
             />
           </div>
         </SettingsRowV2>
-
-        {/* Desktop-only, and ONLY this row (2026-07-28). `platform.updater` is supplied by the Electron
-            renderer, so on web `updaterAction(undefined)` leaves this button permanently disabled with
-            nothing on screen to say why — a dead control, which is the obscurantism the vision forbids.
-            A web instance updates when the instance serving it does; there is nothing here to press.
-            The release-notes row above is deliberately NOT gated — see the note at the render site. */}
-        <Show when={desktop()}>
-          <SettingsRowV2
-            title={language.t("settings.updates.row.check.title")}
-            description={language.t(updater.refusal() ?? "settings.updates.row.check.description")}
-          >
-            <ButtonV2 size="normal" variant="neutral" disabled={!updater.action().run} onClick={updater.run}>
-              {language.t(updater.action().label)}
-            </ButtonV2>
-          </SettingsRowV2>
-        </Show>
       </SettingsListV2>
     </div>
   )
@@ -758,8 +701,7 @@ export const SettingsGeneralV2: Component<{
         {/* And directly after Project, because it is the THIRD answer to the same question those two
             raise — not "what boxes the agent in" or "what does this folder narrow", but "what looks
             at each tool call before it happens". A pre-action policy could already refuse a call,
-            rewrite its arguments or hold it for approval, and no screen anywhere said one existed
-            (`todo/projects.md`). */}
+            rewrite its arguments or hold it for approval, and no screen anywhere said one existed. */}
         <SettingsPoliciesSection />
 
         <NotificationsSection />

@@ -3,7 +3,7 @@ import { MessengerPipeline } from "@novaclaw/core/messenger/pipeline"
 import { SessionOrigin } from "@novaclaw/core/session/origin"
 import type { InboundEvent } from "@novaclaw/core/messenger/driver"
 
-// P1/P6 gate (notes/messenger-plan.md §8): the structured-origin constructor (a driver event → a
+// P1/P6 gate: the structured-origin constructor (a driver event → a
 // kernel Prompt.origin) and the /sessions↔/use index contract. The MODEL-facing rendering (header +
 // untrusted framing) now lives in the kernel renderer session/origin.ts (tested there); the pipeline
 // only builds the structured value.

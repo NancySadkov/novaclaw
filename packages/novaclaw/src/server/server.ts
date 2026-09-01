@@ -1,4 +1,3 @@
-import "./init-projectors"
 import { armBodyIdle } from "./body-idle"
 
 import { NodeHttpServer } from "@effect/platform-node"
@@ -20,13 +19,13 @@ import type { CorsOptions } from "@novaclaw/server/cors"
 import { lazy } from "@/util/lazy"
 import { Log } from "@novaclaw/schema/log"
 
-// @ts-ignore This global is needed to prevent ai-sdk from logging warnings to stdout https://github.com/vercel/ai/blob/2dc67e0ef538307f21368db32d5a12345d98831b/packages/ai/src/logger/log-warnings.ts#L85
+// @ts-ignore This global is needed to prevent ai-sdk from logging warnings to stdout.
 globalThis.AI_SDK_LOG_WARNINGS = false
 
 // ⚠️ This file is the ONE shared boot path of both entry points: `cli/cmd/serve.ts` reaches it by
 // dynamic import, and the Electron sidecar reaches the same `Server.listen` through
 // `virtual:novaclaw-server` → `src/node.ts`. Every mark below is therefore measured twice over —
-// once per entry point — with no second harness. (`todo/startup.md` Phase 1.)
+// once per entry point — with no second harness.
 BootProfile.mark("server:module-loaded")
 
 export type Listener = {

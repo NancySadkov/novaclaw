@@ -95,31 +95,21 @@ describe("OFF-C egress env (layer 9)", () => {
   })
 })
 
-describe("offline layer manifest (N/9 indicator)", () => {
-  test("disabled → 0/9 active", () => {
+describe("offline layer manifest (N/8 indicator)", () => {
+  test("disabled → 0/8 active", () => {
     const manifest = layerManifest(disabledPolicy)
     expect(manifest.enabled).toBe(false)
     expect(manifest.active).toBe(0)
-    expect(manifest.total).toBe(9)
+    expect(manifest.total).toBe(8)
     expect(manifest.layers.every((l) => !l.active)).toBe(true)
   })
 
-  test("enabled → 9/9 active, layer 9 is the process guard", () => {
+  test("enabled → 8/8 active, layer 8 is the process guard", () => {
     const manifest = layerManifest({ enabled: true, allowedHosts: new Set(["x.lan"]) })
-    expect(manifest.active).toBe(9)
-    expect(manifest.layers[8]!.layer).toBe(9)
-    expect(manifest.layers[8]!.name).toMatch(/process egress/i)
-    expect(manifest.layers[8]!.active).toBe(true)
-  })
-
-  test("the updater layer names the controller gate that consumes this manifest", () => {
-    const enabled = layerManifest({ enabled: true, allowedHosts: new Set() }).layers[5]!
-    const disabled = layerManifest(disabledPolicy).layers[5]!
-
-    expect(enabled).toMatchObject({ layer: 6, name: "auto-update", active: true })
-    expect(enabled.detail).toMatch(/updater controller refuses check\/download/i)
-    expect(disabled).toMatchObject({ layer: 6, name: "auto-update", active: false })
-    expect(disabled.detail).toMatch(/updater controller permits checks/i)
+    expect(manifest.active).toBe(8)
+    expect(manifest.layers[7]!.layer).toBe(8)
+    expect(manifest.layers[7]!.name).toMatch(/process egress/i)
+    expect(manifest.layers[7]!.active).toBe(true)
   })
 })
 
@@ -300,7 +290,7 @@ describe("loadPolicy store sourcing", () => {
 // The defect these tests pin: `Offline.layer` computed the policy ONCE and captured it in
 // `check`/`egressEnv`/`manifest`, so flipping airgap ON through Settings blocked NOTHING until the
 // process restarted — while `/shell/offline`, which re-reads the same stores on every request,
-// reported 9/9 layers active. The guard was off while the status surface said it was on
+// reported 8/8 layers active. The guard was off while the status surface said it was on
 // (v0.2.0 ruling 3: *a fault is never described falsely*).
 //
 // So the gate has to be end-to-end and it has to be over the REAL graph: the real store layers,
@@ -360,7 +350,7 @@ describe("A3: a config write engages the airgap without a restart", () => {
         // A provider the airgap must keep reachable, written the way Settings writes it.
         yield* ConfigStoreWrite.apply(decodeInfo(provider("spark", "http://192.168.178.40:8000/v1")))
 
-        // Airgap OFF: the WAN is open, OFF-C touches no child env, and the N/9 indicator agrees.
+        // Airgap OFF: the WAN is open, OFF-C touches no child env, and the N/8 indicator agrees.
         expect(offline.policy.enabled).toBe(false)
         expect(offline.check("https://api.openai.com/v1/chat").allowed).toBe(true)
         expect(offline.egressEnv()).toBeUndefined()
@@ -379,11 +369,11 @@ describe("A3: a config write engages the airgap without a restart", () => {
         // …while the configured provider and loopback stay reachable.
         expect(offline.check("http://192.168.178.40:8000/v1/chat/completions").allowed).toBe(true)
         expect(offline.check("http://127.0.0.1:4096/global/health").allowed).toBe(true)
-        // OFF-C (layer 9) follows on the same call, and the status surface now agrees with the guard.
+        // OFF-C (layer 8) follows on the same call, and the status surface now agrees with the guard.
         expect(offline.egressEnv()?.HTTP_PROXY).toBe(PROXY_SINK)
         expect(offline.egressEnv()?.NO_PROXY).toContain("192.168.178.40")
         expect(offline.manifest().enabled).toBe(true)
-        expect(offline.manifest().active).toBe(9)
+        expect(offline.manifest().active).toBe(8)
 
         expect(frozen.enabled).toBe(false)
         expect(checkUrl("https://api.openai.com/v1/chat", frozen).allowed).toBe(true)

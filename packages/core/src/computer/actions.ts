@@ -14,8 +14,9 @@ import type { ComputerCoordinates } from "./coordinates"
  * inherits). Emitting argv keeps the text one opaque element that no shell ever parses.
  *
  * ⚠️ **So this module returns `string[][]` and the caller must exec it AS argv.** If it is ever
- * joined into a string to fit an existing seam, every property below is void. See the gap note at
- * the bottom: `host-exec` has no plain-argv shape today, and closing that is P1's real prerequisite.
+ * joined into a string to fit an existing seam, every property below is void. `host-exec` grew a
+ * plain-argv shape on 2026-08-06 (`{kind:"argv", argv}`), so that prerequisite is CLOSED — the rule
+ * it left behind, and the two wrong answers that are still one line away, are on `build` below.
  *
  * **Validated live, and the validation earned its keep.** Every form below was executed against a
  * real Xvfb in the P2 substrate on 2026-08-06 — including the rejection cases — rather than being
@@ -53,7 +54,7 @@ export type Action =
    * ⚠️ **`region` is the verifier's answer to an animated screen, not a cropping convenience.**
    * A whole-frame digest carries NO signal when anything on screen animates — an attract loop, a
    * video, a clock — which is exactly what a game presents, and it left P3's loop unable to verify a
-   * single step (`todo/computer-use.md`). Measured 2026-08-06 in the substrate: with a static target
+   * single step. Measured 2026-08-06 in the substrate: with a static target
    * inside the region and a change made well OUTSIDE it, the REGION digest was byte-identical across
    * both captures while the full-frame digest changed. So comparing a region around the acted-on
    * point restores the signal the animation guard removes.
@@ -145,6 +146,25 @@ const point = (p: Point): Invalid | undefined => {
  * Returns a LIST of argv arrays because some actions are genuinely two commands — a click at a point
  * is a move then a click. Keeping them separate (rather than `xdotool mousemove X Y click 1`, which
  * also works) means a failure names which half failed, and the caller can interleave a screenshot.
+ *
+ * ⚠️ **Everything this builds must stay ARGV, and must reach the host through `HostExec.plan`.**
+ * `Shape` is `{kind:"shell-command", …}` · `{kind:"runtime-eval", …}` · **`{kind:"argv", argv}`**
+ * (`host-exec.ts:73`). `argvOf` returns that third member untouched, and `plan()` routes it to the
+ * **exec** arm in both postures — raw exec of `argv[0]`, or wrapped by `AgentJail.wrapArgv` when
+ * confined — with an empty argv DENIED rather than exec'ing the empty string. `tool/computer.ts`
+ * already hands every array this module builds to `HostExec.plan` in exactly that shape, and
+ * `DISPLAY` rides `EnvRequest.overlay`.
+ *
+ * **The two wrong answers are one line away, which is why they stay named:**
+ *  · Join the argv into a shell string to fit `shell-command`. That reintroduces exactly the
+ *    injection this module exists to prevent, on text a model chose.
+ *  · Exec argv directly and skip the gate. That is the second call site ruling 6 forbids, and it is
+ *    the mechanism that produced the COMSPEC divergence.
+ *
+ * Both are guarded mechanically rather than by this prose: `plan()` refuses to let an argv shape
+ * fall through to the `via:"shell"` arm, and `computer/one-exec-gate.test.ts` fails if anything in
+ * the computer path starts a process itself. (Moved here 2026-09-01 from a `REQUIRES_ARGV_SHAPE =
+ * true` constant that existed only to anchor it — RF-06-15.)
  */
 export const build = (action: Action, options: Options): Built => {
   // The display travels in `env`, not in argv — `xdotool` has no `--display` flag (measured).
@@ -273,27 +293,3 @@ export const build = (action: Action, options: Options): Built => {
   }
 }
 
-/**
- * ✅ **THE GAP THIS MODULE COULD NOT CLOSE ON ITS OWN — CLOSED 2026-08-06. The rule it left behind
- * is what this note is now for.**
- *
- * ⚠️ **An earlier version of this comment said `host-exec.ts` has "no plain-argv shape". It does,
- * and has since 2026-08-06** — `Shape` is `{kind:"shell-command", …}` · `{kind:"runtime-eval", …}` ·
- * **`{kind:"argv", argv}`** (`host-exec.ts:73`). `argvOf` returns that third member untouched, and
- * `plan()` routes it to the **exec** arm in both postures — raw exec of `argv[0]`, or wrapped by
- * `AgentJail.wrapArgv` when confined — with an empty argv DENIED rather than exec'ing the empty
- * string. `tool/computer.ts` already hands every array this module builds to `HostExec.plan` in
- * exactly that shape, and `DISPLAY` rides `EnvRequest.overlay`, so no new env mechanism was needed
- * either.
- *
- * **The two wrong answers are still one line away, which is why they stay named:**
- *  · Join the argv into a shell string to fit `shell-command`. That reintroduces exactly the
- *    injection this module exists to prevent, on text a model chose.
- *  · Exec argv directly and skip the gate. That is the second call site ruling 6 forbids, and it is
- *    the mechanism that produced the COMSPEC divergence.
- *
- * Both are now guarded mechanically rather than by this prose: `plan()` refuses to let an argv shape
- * fall through to the `via:"shell"` arm, and `computer/one-exec-gate.test.ts` fails if anything in
- * the computer path starts a process itself.
- */
-export const REQUIRES_ARGV_SHAPE = true

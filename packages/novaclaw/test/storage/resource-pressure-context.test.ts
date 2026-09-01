@@ -4,7 +4,7 @@ import { ResourcePressureContext } from "@novaclaw/core/resource-pressure-contex
 import { Effect, Layer, Logger, References } from "effect"
 import { Pressure } from "@/storage/pressure"
 import { StorageResourcePressureContext } from "@/storage/resource-pressure-context"
-import { Storage } from "@/storage/storage"
+import { HostPressure } from "@/storage/host-pressure"
 
 const GIB = 1024 ** 3
 const thresholds: Pressure.Thresholds = Pressure.DEFAULT_THRESHOLDS
@@ -153,7 +153,7 @@ describe("StorageResourcePressureContext", () => {
         return yield* context.lines()
       }).pipe(
         Effect.provide(StorageResourcePressureContext.layer),
-        Effect.provide(Layer.mock(Storage.Service, { pressure: () => Effect.die("probe exploded") })),
+        Effect.provide(Layer.mock(HostPressure.Service, { pressure: () => Effect.die("probe exploded") })),
         Effect.provide(Logger.layer([capture], { mergeWithExisting: false })),
         Effect.provideService(References.MinimumLogLevel, "Info"),
       ),

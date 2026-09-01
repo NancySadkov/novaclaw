@@ -6,7 +6,7 @@ import { FinishReason } from "@novaclaw/llm"
 import { FinishRecovery } from "./finish-recovery"
 import { applySteerProvenance, isSteerText, STEER_PROVENANCE_PREFIX } from "../steer-provenance"
 
-// F2 — output-token truncation recovery, ported from GitHub PR #4 (@DassaultFalconKing).
+// F2 — output-token truncation recovery, ported from outside contribution #4 (@DassaultFalconKing).
 //
 // The decision is tiny; what has to be pinned is the BOUND. Upstream's version read
 // `state.recoveries === 0` and nothing ever wrote `state.recoveries`, so the "stop" arm was dead

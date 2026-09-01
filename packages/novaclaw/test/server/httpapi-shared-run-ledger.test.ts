@@ -161,9 +161,13 @@ describe("the sweep", () => {
   test("reaches the files that compose the layer, and the one that defines it", () => {
     const consumers = new Set(sources.filter(consumesHttpApiLayer).map((file) => file.name))
     for (const name of [
-      "packages/novaclaw/test/server/httpapi-workspace.test.ts",
       "packages/novaclaw/test/server/httpapi-event.test.ts",
       "packages/novaclaw/test/server/httpapi-sync.test.ts",
+      // `httpapi-workspace.test.ts` was here until 2026-09-01. Deleted, not moved: the refactor
+      // sweep's RF-13-9 removed the seven `/workspace/*` routes (`groups/workspace.ts`) as legacy
+      // with no caller in the app, the CLI, the SDK or any rig, and the test went with the surface
+      // it exercised.
+      //
       // `project-copy.test.ts` was here until 2026-08-06. Deleted, not moved: it exercised
       // `/project/{id}/directories` and `/experimental/project/{id}/copy`, an API surface the T2/T3
       // project-entity kill removed entirely — it even asserted a `forceRequired` field that exists

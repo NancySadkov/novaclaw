@@ -1,3 +1,6 @@
+import { AgentModelFit } from "@novaclaw/core/agent/model-fit"
+import { Model } from "@novaclaw/schema/model"
+
 // WHICH MODEL a colleague thinks with, and whether it is up to the job it was given.
 //
 // 🔴 **The model belongs to the COLLEAGUE, not to the chat** (owner: the picker moves into the
@@ -9,22 +12,25 @@
 // that this colleague's mind may be too small for the job it was handed. It WARNS and never refuses
 // — a small model doing a big job badly is the user's call to make, and sometimes the right one.
 
-/** The capability ladder, smallest first (`ModelV2.Tier`). */
-export const TIERS = ["micro", "tiny", "small", "medium", "large", "frontier"] as const
+/**
+ * The capability ladder, smallest first — `AgentModelFit.LADDER`, not a copy of it.
+ *
+ * The ORDER cannot come from the schema (`ModelV2.Tier` is a union of strings and says nothing about
+ * which is stronger), so it is hand-kept once, in the module that reasons about it. There used to be
+ * a second spelling 39 lines below this one and a third in the tier dialog; a tier added to the
+ * schema and to only one of them is a floor the user cannot choose, or a warning that fires on the
+ * wrong models.
+ */
+export const TIERS = AgentModelFit.LADDER
 export type Tier = (typeof TIERS)[number]
 
 export const isTier = (value: unknown): value is Tier => TIERS.includes(value as Tier)
 
-/** How the model is written in config: `providerID/modelID`. */
-export const modelRef = (input: { readonly providerID: string; readonly modelID: string }): string =>
-  `${input.providerID}/${input.modelID}`
-
-export const parseModelRef = (value: string | undefined): { providerID: string; modelID: string } | undefined => {
-  if (value === undefined) return undefined
-  const slash = value.indexOf("/")
-  if (slash <= 0 || slash === value.length - 1) return undefined
-  return { providerID: value.slice(0, slash), modelID: value.slice(slash + 1) }
-}
+// How the model is written in config: `providerID/id`. Both directions live in @novaclaw/schema next to
+// Model.Ref — this file's copies spelled the key `modelID`, so every call site had to rename `id` to
+// `modelID` on the way in and back on the way out, and the runner's identical parser could not be reused.
+export const modelRef = Model.formatRef
+export const parseModelRef = Model.parseRef
 
 /**
  * Is this colleague's brief bigger than its mind?
@@ -38,18 +44,15 @@ export const parseModelRef = (value: string | undefined): { providerID: string; 
  * would teach the user to ignore the ones that mean something.
  */
 /**
- * The tier ladder as the config dialog offers it, weakest first.
+ * The tier ladder as the config dialog offers it, weakest first — an ALIAS of `TIERS`, kept as a
+ * name because the dialog reads better for it and 39 lines of separation is exactly how the two
+ * spellings drifted apart in the first place.
  *
  * ⚠️ **Here rather than in the dialog**, for the reason `agent-option.ts` records: a `.tsx` imports
  * solid's client-only rendering APIs, so `bun test` cannot load it, and a rule about which tier
  * outranks which would only ever be checkable by reading the source.
- *
- * ⚠️ It cannot be derived from the schema — `ModelV2.Tier` is a union of strings and says nothing
- * about which is stronger — so it is a hand-kept copy of an ORDER, pinned against
- * `AgentModelFit.LADDER` by `agent-config-tier.test.ts`. A tier added to the schema and not here is a
- * floor the user cannot choose; one reordered here is a warning that fires on the wrong models.
  */
-export const TIER_CHOICES = ["micro", "tiny", "small", "medium", "large", "frontier"] as const
+export const TIER_CHOICES = TIERS
 
 export const briefTooBigForTier = (input: {
   readonly brief: string | undefined

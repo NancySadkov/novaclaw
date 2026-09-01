@@ -23,18 +23,17 @@ import { InstallationChannel, InstallationVersion } from "../installation/versio
  * central promise broken, and per ruling 1 the filter that prevents it ships with a machine behind
  * it rather than a code review.
  *
- * ── what already existed, and what this file adds ───────────────────────────────────────────────
+ * ── where the decision actually lives ───────────────────────────────────────────────
  *
- * The CLASSIFICATION was already done and is stronger than a scrubber: `schema/log-events.ts:139`
- * declares an `egress: true|false` class per attribute, so *"may this field leave the machine?"* is
- * answered at authoring time rather than by a filter run over a log that already captured a prompt.
- * The consent field already existed too (`config.ts` `telemetry: { enabled }`), as did its
- * Developer-gated switch (app `ea1c3a3dd`, `settings-v2/general.tsx`, `minLevel="developer"`).
+ * 🔴 **The CLASSIFICATION is not done here, and that is stronger than any scrubber.**
+ * `schema/log-events.ts` declares an `egress: true|false` class per attribute, so *"may this field
+ * leave the machine?"* is answered at AUTHORING time rather than by a filter run over a log that has
+ * already captured a prompt. Consent (`config.ts` `telemetry: { enabled }`) and its Developer-gated
+ * switch (`settings-v2/general.tsx`, `minLevel="developer"`) live in their own places too.
  *
- * What was missing was the consumer: a payload shape, the gates, and the transport. That is this
- * file, and it is deliberately **pure up to the last function**: `build` is a total function from
- * inputs to a refusal or an envelope, so every claim below is assertable without a server, a
- * network, or a running instance.
+ * This file is only the consumer: a payload shape, the gates, and the transport — deliberately
+ * **pure up to the last function**. `build` is a total function from inputs to a refusal or an
+ * envelope, so every claim below is assertable without a server, a network, or a running instance.
  *
  * ── the four gates, and why they are four ───────────────────────────────────────────────────────
  *
@@ -82,32 +81,29 @@ import { InstallationChannel, InstallationVersion } from "../installation/versio
  * No error message. No stack text. No file path. No hostname, username, machine id, session id,
  * project name or working directory. No wall-clock timestamp of the build.
  *
- * 🔴 **One clause of that sentence was FALSE when it was written, and `todo/logging.md` 1e is what
- * made it true.** *"no … session id"* was a promise this file could not keep: a session id was class
- * `id`, `id` was egress-safe, and 38 keys carrying one were declared `content: "none"` — so gate 4
- * passed them and {@link filterAttributes} kept the field. Exercised 2026-08-07 rather than inferred:
- * `build` with `event: "session.drain.exit"` and `{"session.id": "ses_…"}` returned `ok: true` with
- * the id in `envelope.attributes` and `dropped: []`. Per ruling 2 the prose does not get to describe
- * the subsystem falsely, and the fix belonged in the type rather than in a filter here: a session id
- * is now class `correlate` (`content: "correlated"`), which makes those events `mayEgress === false`
- * and refuses them at gate 4 — one rung earlier than the attribute pass.
- * ⭐ Worth keeping as a lesson: **an absence stated in prose is the one claim nothing tests.** Every
- * positive field in this file is walked by `telemetry.test.ts`; the sentence listing what is *not*
+ * 🔴 **A session id is class `correlate` (`content: "correlated"`), and THAT is what keeps the
+ * "no session id" clause true.** Do not weaken it to `id`: `correlate` makes those events
+ * `mayEgress === false` and refuses them at gate 4, one rung EARLIER than the attribute pass. The
+ * clause was once false precisely because the class was `id` and `id` was egress-safe — gate 4
+ * passed the event and {@link filterAttributes} kept the field. The TYPE is the enforcement; a
+ * filter in this file is not.
+ * ⭐ The lesson that generalises: **an absence stated in prose is the one claim nothing tests.**
+ * Every positive field here is walked by `telemetry.test.ts`; the sentence listing what is *not*
  * sent was the only assertion in the module with no machine behind it, and it was the one that was
- * wrong. `telemetry.test.ts` now drives that exact envelope and demands a refusal.
+ * wrong. `telemetry.test.ts` now drives that envelope and demands a refusal.
  *
- * ⚠️ **That last one is a threat model, not tidiness**, and it is stolen in spirit from Kiro Crew's
- * disclosure (`todo/subsystem-residues.md`, A16.3): a build stamp like `-nightly.20260731t065756`
- * is near-unique and would identify one machine, so {@link releaseLine} strips everything after
- * `major.minor.patch`. A crash signature that fingerprints the reporter is a data-plane leak wearing
- * a maintenance-plane label.
+ * ⚠️ **The build-stamp rule is a threat model, not tidiness.** A stamp like
+ * `-nightly.20260731t065756` is near-unique and would identify one machine, so {@link releaseLine}
+ * strips everything after `major.minor.patch`. A crash signature that fingerprints the reporter is a
+ * data-plane leak wearing a maintenance-plane label.
  *
  * ── one manifest, so the disclosure cannot drift from the payload ───────────────────────────────
  *
  * `CRASH_FIELDS` carries each field's `meaning` and `condition` next to its class, and `preview` IS
- * `build` — the same reference, pinned by a test. Kiro Crew's open issue #1037 is that their prose
- * disclosure is a fourth hand-written copy that schema changes can silently falsify; the fix they
- * are now facing is to author the manifest first, so it is authored first here.
+ * `build` — the same reference, pinned by a test. ⚠️ **Never hand-write the user-facing
+ * disclosure.** A prose copy of the payload is a second source of truth that a schema change
+ * falsifies silently, and a disclosure that is quietly wrong is worse than none — it IS the promise,
+ * not documentation of it. The manifest is authored first and the prose derives from it.
  */
 export * as Telemetry from "./telemetry"
 
@@ -122,7 +118,7 @@ export * as Telemetry from "./telemetry"
  * resulting set. Widening the set is a decision someone makes on purpose in two files, not a side
  * effect of one.
  *
- * ⚠️ **The `correlate` class added by `todo/logging.md` 1e is excluded by this computation and by
+ * ⚠️ **The `correlate` class is excluded by this computation and by
  * nothing else.** It was not added to a list here, and there is no list here to add it to — a
  * session id is `content: "correlated"`, so `extends "none"` is false and the class is not
  * expressible in {@link CRASH_FIELDS}. That is the property this derivation exists for.

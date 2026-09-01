@@ -5,8 +5,8 @@ import type { Reading } from "./worker-commit"
 /**
  * WHO, IF ANYONE, SHOULD BE SHED — the whole decision, as one pure function.
  *
- * 🔴 **One mechanism, not two.** `todo/resource-pressure.md` says it plainly: the EMERGENCY floor and
- * `test-speed.md`'s kill-on-breach are the same shape with the same false-kill hazard, and must not be
+ * 🔴 **One mechanism, not two.** The EMERGENCY floor and
+ * the test gate's kill-on-breach are the same shape with the same false-kill hazard, and must not be
  * designed twice. This is that shape, kept pure so both callers can share it and so the rule that
  * decides whether a process dies is readable without running anything.
  *

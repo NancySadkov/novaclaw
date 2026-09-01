@@ -1,7 +1,7 @@
 import type { ServerConnection } from "@/context/server"
 import { instanceFetch } from "@/utils/instance-fetch"
 
-// The graph-memory `/memory/*` endpoints (notes/kb-graph-plan.md §5, P5) — the read/edit surface
+// The graph-memory `/memory/*` endpoints — the read/edit surface
 // the Memory settings tab + the (later) advanced viewer bind to.
 //
 // ⚠️ Base URL, auth, and fault decoding live in `utils/instance-fetch.ts`.

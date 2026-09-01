@@ -7,7 +7,7 @@ import { MessengerFormat } from "@novaclaw/core/messenger/format"
 import type { InboundEvent } from "@novaclaw/core/messenger/driver"
 import { it } from "./lib/effect"
 
-// P7 gate (notes/messenger-plan.md §8): the IRC driver against a FAKE socket — registration
+// P7 gate: the IRC driver against a FAKE socket — registration
 // handshake, PING/PONG, NickServ identify + channel joins after 001, PRIVMSG normalization
 // (channel vs DM chats, self-echo by nick, CTCP dropped), nick-in-use as a legible ConnectError,
 // and the DEGRADATION FLOOR: byte-budgeted line sends that never sever a UTF-8 code point.

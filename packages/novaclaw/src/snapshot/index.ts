@@ -1,10 +1,11 @@
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { ChangesetBudget } from "@novaclaw/core/changeset-budget"
 import { Duration, Effect, Layer, Schedule, Schema, Semaphore, Context } from "effect"
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
+import { ChildProcessSpawner } from "effect/unstable/process"
 import { formatPatch, structuredPatch } from "diff"
 import path from "path"
 import { AppProcess } from "@novaclaw/core/process"
+import { Git } from "@/git"
 import { InstanceState } from "@/effect/instance-state"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { Hash } from "@novaclaw/core/util/hash"
@@ -24,9 +25,13 @@ export type FileDiff = typeof FileDiff.Type
 
 const prune = "7.days"
 const limit = 2 * 1024 * 1024
-const core = ["-c", "core.longpaths=true", "-c", "core.symlinks=true"]
-const cfg = ["-c", "core.autocrlf=false", ...core]
-const quote = [...cfg, "-c", "core.quotepath=false"]
+// ⚠️ No local flag list, and no per-call-site spread of a shared one. This module kept three nested
+// arrays (`core` / `cfg` / `quote`) applied by hand, none of which carried `--no-optional-locks` —
+// the flag that stops `status`/`diff`/`ls-files` taking `index.lock`, and therefore the reason a
+// second session running `git` in this worktree could fail a snapshot. Aliasing all three to
+// `Git.CONFIG_ARGS` did NOT close that: thirteen invocations here spread none of them, so `init`,
+// the eight `config` writes, both `rev-parse`s, `gc` and `write-tree` still ran bare. `Git.spawn`
+// applies the list, so the guarantee is structural instead of a thing every call site remembers.
 interface GitResult {
   readonly code: ChildProcessSpawner.ExitCode
   readonly text: string
@@ -82,10 +87,7 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
 
         const git = Effect.fnUntraced(
           function* (cmd: string[], opts?: { cwd?: string; env?: Record<string, string>; stdin?: string }) {
-            const result = yield* appProcess.run(
-              ChildProcess.make("git", cmd, { cwd: opts?.cwd, env: opts?.env, extendEnv: true }),
-              { stdin: opts?.stdin },
-            )
+            const result = yield* Git.spawn(appProcess, cmd, opts)
             return {
               code: ChildProcessSpawner.ExitCode(result.exitCode),
               text: result.stdout.toString("utf8"),
@@ -129,7 +131,6 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
           const checkIgnorePaths = files.map((item) => (item.startsWith(":") ? `./${item}` : item))
           const check = yield* git(
             [
-              ...quote,
               "--git-dir",
               path.join(state.worktree, ".git"),
               "--work-tree",
@@ -156,10 +157,7 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
         const drop = Effect.fnUntraced(function* (files: string[]) {
           if (!files.length) return
           yield* git(
-            [
-              ...cfg,
-              ...args(["rm", "--cached", "-f", "--ignore-unmatch", "--pathspec-from-file=-", "--pathspec-file-nul"]),
-            ],
+            args(["rm", "--cached", "-f", "--ignore-unmatch", "--pathspec-from-file=-", "--pathspec-file-nul"]),
             {
               cwd: state.worktree,
               stdin: encodeTopLevelLiteralPathspecs(files),
@@ -170,7 +168,7 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
         const stage = Effect.fnUntraced(function* (files: string[]) {
           if (!files.length) return
           const result = yield* git(
-            [...cfg, ...args(["add", "--all", "--sparse", "--pathspec-from-file=-", "--pathspec-file-nul"])],
+            args(["add", "--all", "--sparse", "--pathspec-from-file=-", "--pathspec-file-nul"]),
             {
               cwd: state.worktree,
               stdin: encodeTopLevelLiteralPathspecs(files),
@@ -260,10 +258,10 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
           yield* sync()
           const [diff, other] = yield* Effect.all(
             [
-              git([...quote, ...args(["diff-files", "--name-only", "-z", "--", "."])], {
+              git(args(["diff-files", "--name-only", "-z", "--", "."]), {
                 cwd: state.directory,
               }),
-              git([...quote, ...args(["ls-files", "--full-name", "--others", "--exclude-standard", "-z", "--", "."])], {
+              git(args(["ls-files", "--full-name", "--others", "--exclude-standard", "-z", "--", "."]), {
                 cwd: state.directory,
               }),
             ],
@@ -378,12 +376,9 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
           return yield* locked(
             Effect.gen(function* () {
               yield* add()
-              const result = yield* git(
-                [...quote, ...args(["diff", "--cached", "--no-ext-diff", "--name-only", hash, "--", "."])],
-                {
-                  cwd: state.directory,
-                },
-              )
+              const result = yield* git(args(["diff", "--cached", "--no-ext-diff", "--name-only", hash, "--", "."]), {
+                cwd: state.directory,
+              })
               if (result.code !== 0) {
                 yield* Log.event("snapshot.patch.list.failed", {
                   "snapshot.hash": hash,
@@ -414,9 +409,9 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
           return yield* locked(
             Effect.gen(function* () {
               yield* Log.event("snapshot.restore.run", { "snapshot.hash": snapshot })
-              const result = yield* git([...core, ...args(["read-tree", snapshot])], { cwd: state.worktree })
+              const result = yield* git(args(["read-tree", snapshot]), { cwd: state.worktree })
               if (result.code === 0) {
-                const checkout = yield* git([...core, ...args(["checkout-index", "-a", "-f"])], {
+                const checkout = yield* git(args(["checkout-index", "-a", "-f"]), {
                   cwd: state.worktree,
                 })
                 if (checkout.code === 0) return
@@ -458,11 +453,11 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
                   "snapshot.file": op.file,
                   "snapshot.hash": op.hash,
                 })
-                const result = yield* git([...core, ...args(["checkout", op.hash, "--", op.file])], {
+                const result = yield* git(args(["checkout", op.hash, "--", op.file]), {
                   cwd: state.worktree,
                 })
                 if (result.code === 0) return
-                const tree = yield* git([...core, ...args(["ls-tree", op.hash, "--", op.rel])], {
+                const tree = yield* git(args(["ls-tree", op.hash, "--", op.rel]), {
                   cwd: state.worktree,
                 })
                 if (tree.code === 0 && tree.text.trim()) {
@@ -501,7 +496,7 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
                 }
 
                 const tree = yield* git(
-                  [...core, ...args(["ls-tree", "--name-only", first.hash, "--", ...run.map((item) => item.rel)])],
+                  args(["ls-tree", "--name-only", first.hash, "--", ...run.map((item) => item.rel)]),
                   {
                     cwd: state.worktree,
                   },
@@ -532,12 +527,9 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
                     "snapshot.hash": first.hash,
                     count: list.length,
                   })
-                  const result = yield* git(
-                    [...core, ...args(["checkout", first.hash, "--", ...list.map((item) => item.file)])],
-                    {
-                      cwd: state.worktree,
-                    },
-                  )
+                  const result = yield* git(args(["checkout", first.hash, "--", ...list.map((item) => item.file)]), {
+                    cwd: state.worktree,
+                  })
                   if (result.code !== 0) {
                     yield* Log.event("snapshot.revert.checkout.fallback", {
                       "snapshot.hash": first.hash,
@@ -570,7 +562,7 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
           return yield* locked(
             Effect.gen(function* () {
               yield* add()
-              const result = yield* git([...quote, ...args(["diff", "--cached", "--no-ext-diff", hash, "--", "."])], {
+              const result = yield* git(args(["diff", "--cached", "--no-ext-diff", hash, "--", "."]), {
                 cwd: state.worktree,
               })
               if (result.code !== 0) {
@@ -606,23 +598,15 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
               const show = Effect.fnUntraced(function* (row: Row) {
                 if (row.binary) return ["", ""]
                 if (row.status === "added") {
-                  return [
-                    "",
-                    yield* git([...cfg, ...args(["show", `${to}:${row.file}`])]).pipe(Effect.map((item) => item.text)),
-                  ]
+                  return ["", yield* git(args(["show", `${to}:${row.file}`])).pipe(Effect.map((item) => item.text))]
                 }
                 if (row.status === "deleted") {
-                  return [
-                    yield* git([...cfg, ...args(["show", `${from}:${row.file}`])]).pipe(
-                      Effect.map((item) => item.text),
-                    ),
-                    "",
-                  ]
+                  return [yield* git(args(["show", `${from}:${row.file}`])).pipe(Effect.map((item) => item.text)), ""]
                 }
                 return yield* Effect.all(
                   [
-                    git([...cfg, ...args(["show", `${from}:${row.file}`])]).pipe(Effect.map((item) => item.text)),
-                    git([...cfg, ...args(["show", `${to}:${row.file}`])]).pipe(Effect.map((item) => item.text)),
+                    git(args(["show", `${from}:${row.file}`])).pipe(Effect.map((item) => item.text)),
+                    git(args(["show", `${to}:${row.file}`])).pipe(Effect.map((item) => item.text)),
                   ],
                   { concurrency: 2 },
                 )
@@ -644,13 +628,15 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
                   })
                   if (!refs.length) return new Map<string, { before: string; after: string }>()
 
-                  const batch = yield* appProcess.run(
-                    ChildProcess.make("git", [...cfg, ...args(["cat-file", "--batch"])], {
-                      cwd: state.directory,
-                      extendEnv: true,
-                    }),
-                    { stdin: refs.map((item) => item.ref).join("\n") + "\n" },
-                  )
+                  // Not `git()` — this one needs the raw `stdout` Buffer, because `cat-file --batch`
+                  // interleaves headers with byte-counted blob payloads and a utf8 decode of the
+                  // whole stream would move the offsets. That it wants a DIFFERENT return shape from
+                  // its own module's helper is why the shared thing is `Git.spawn` and not a shared
+                  // `GitResult`: the spawn is common, the shape never was.
+                  const batch = yield* Git.spawn(appProcess, args(["cat-file", "--batch"]), {
+                    cwd: state.directory,
+                    stdin: refs.map((item) => item.ref).join("\n") + "\n",
+                  })
                   if (batch.exitCode !== 0) {
                     yield* Log.event("snapshot.diff.load.fallback", {
                       "snapshot.stderr": batch.stderr.toString("utf8"),
@@ -729,7 +715,7 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
               const status = new Map<string, "added" | "deleted" | "modified">()
 
               const statuses = yield* git(
-                [...quote, ...args(["diff", "--no-ext-diff", "--name-status", "--no-renames", from, to, "--", "."])],
+                args(["diff", "--no-ext-diff", "--name-status", "--no-renames", from, to, "--", "."]),
                 { cwd: state.directory },
               )
 
@@ -741,7 +727,7 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
               }
 
               const numstat = yield* git(
-                [...quote, ...args(["diff", "--no-ext-diff", "--no-renames", "--numstat", from, to, "--", "."])],
+                args(["diff", "--no-ext-diff", "--no-renames", "--numstat", from, to, "--", "."]),
                 {
                   cwd: state.directory,
                 },

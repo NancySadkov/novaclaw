@@ -10,8 +10,8 @@ import type { JhStep } from "./step"
 import type { JhTree } from "./tree"
 
 export interface Issue {
-  readonly severity: "error" | "warning"
-  readonly code: "dangling_consumes" | "duplicate_produce" | "unused_produce"
+  readonly severity: "error"
+  readonly code: "dangling_consumes" | "duplicate_produce"
   readonly step: number // index into the children array
   readonly artifact: string
 }
@@ -20,9 +20,23 @@ export interface Issue {
  * Law 7 over ONE decomposition. `available` = artifact ids provided by ancestors or already-committed
  * work. A child's `consumes` must be in `available` OR produced by an EARLIER sibling (order matters —
  * a sibling cannot consume a later sibling's output). `duplicate_produce`: two siblings, or a sibling
- * and `available`, produce the same id → error. `unused_produce`: a produce consumed by no later
- * sibling → WARNING (it may be a task output — the harness can't decide locally). A compound child's
- * produces are its own declared produces (its own attach re-validates internally).
+ * and `available`, produce the same id → error. A compound child's produces are its own declared
+ * produces (its own attach re-validates internally).
+ *
+ * 🔴 **WHO READS WHAT, because the two codes have different consumers and only one of them blocks.**
+ *  · `dangling_consumes` — the ENGINE. `engine.ts:1251` filters to exactly this code, so it is the
+ *    only issue that can block a decomposition.
+ *  · `duplicate_produce` — the RIG, not the engine. `tests/jh-expander-smoke.ts:103,110` (outer repo)
+ *    filters on `severity === "error"`, which takes both codes, and reports the count as
+ *    `dataflowErrors`. The engine deliberately tolerates it (the artifact store is latest-wins) —
+ *    `engine.test.ts:709` pins that tolerance.
+ *
+ * ⚠️ So do not "simplify" this by dropping `duplicate_produce`: it is invisible to the engine and to
+ * a `packages/`-only grep, and removing it would silently change a measured number the rig has been
+ * reporting. A third code, `unused_produce` (a `warning`), was removed on 2026-09-01 (RF-05-13) —
+ * that one genuinely had no reader: the engine filters it out, the rig's `severity` filter excludes
+ * warnings, and it cost an O(children² × refs) second pass with a fresh `slice` per element on every
+ * decomposition.
  */
 export function validate(
   children: ReadonlyArray<JhStep.StepDraft>,
@@ -44,14 +58,6 @@ export function validate(
         issues.push({ severity: "error", code: "duplicate_produce", step: i, artifact: p.id })
       }
       if (!producedByEarlier.has(p.id)) producedByEarlier.set(p.id, i)
-    }
-  }
-
-  // unused_produce: a sibling's produce consumed by no LATER sibling.
-  for (let i = 0; i < children.length; i++) {
-    for (const p of children[i]!.produces ?? []) {
-      const consumedLater = children.slice(i + 1).some((sib) => (sib.consumes ?? []).some((c) => c.id === p.id))
-      if (!consumedLater) issues.push({ severity: "warning", code: "unused_produce", step: i, artifact: p.id })
     }
   }
 

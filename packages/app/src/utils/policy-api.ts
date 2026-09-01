@@ -4,7 +4,7 @@ import { instanceFetch } from "./instance-fetch"
 /**
  * The pre-action policies installed in this NovaClaw, and what the routed folder asks for.
  *
- * `todo/projects.md`: *"Policies have no management surface … Settings cannot list or toggle them."*
+ * The gap: *"policies have no management surface … Settings cannot list or toggle them."*
  * A policy can refuse a tool call, rewrite its arguments or hold it for approval, and until this
  * route existed there was no way to find out which guards were installed or whether the one your
  * folder declared was even running.

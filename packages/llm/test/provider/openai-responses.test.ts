@@ -1,10 +1,8 @@
 import { describe, expect } from "bun:test"
-import { ConfigProvider, Effect, Layer, Stream } from "effect"
-import { Headers, HttpClientRequest } from "effect/unstable/http"
+import { ConfigProvider, Effect } from "effect"
+import { HttpClientRequest } from "effect/unstable/http"
 import { LLM, LLMError, Message, Model, ToolCallPart, Usage } from "../../src"
-import { Auth, LLMClient, RequestExecutor, WebSocketExecutor } from "../../src/route"
-import * as Azure from "../../src/providers/azure"
-import * as OpenAI from "../../src/providers/openai"
+import { Auth, LLMClient, type AuthShape } from "../../src/route"
 import * as OpenAIResponses from "../../src/protocols/openai-responses"
 import * as ProviderShared from "../../src/protocols/shared"
 import { continuationRequest, nativeOpenAIResponsesContinuation } from "../continuation-scenarios"
@@ -15,6 +13,18 @@ import { sseEvents } from "../lib/sse"
 const model = OpenAIResponses.route
   .with({ endpoint: { baseURL: "https://api.openai.test/v1/" }, auth: Auth.bearer("test") })
   .model({ id: "gpt-4.1-mini" })
+
+const responsesModel = (
+  id: string,
+  options: { readonly auth?: AuthShape; readonly providerOptions?: Record<string, Record<string, unknown>> } = {},
+) =>
+  OpenAIResponses.route
+    .with({
+      endpoint: { baseURL: "https://api.openai.test/v1/" },
+      auth: options.auth ?? Auth.bearer("test"),
+      providerOptions: options.providerOptions,
+    })
+    .model({ id })
 
 const request = LLM.request({
   id: "req_1",
@@ -158,90 +168,6 @@ describe("OpenAI Responses route", () => {
     }),
   )
 
-  it.effect("prepares OpenAI Responses WebSocket target", () =>
-    Effect.gen(function* () {
-      const prepared = yield* LLMClient.prepare(
-        LLM.updateRequest(request, {
-          model: OpenAIResponses.webSocketRoute
-            .with({ endpoint: { baseURL: "https://api.openai.test/v1/" }, auth: Auth.bearer("test") })
-            .model({ id: "gpt-4.1-mini" }),
-        }),
-      )
-
-      expect(prepared.route).toBe("openai-responses-websocket")
-      expect(prepared.protocol).toBe("openai-responses")
-      expect(prepared.metadata).toEqual({ transport: "websocket-json" })
-      expect(prepared.body).toMatchObject({ model: "gpt-4.1-mini", store: false, stream: true })
-    }),
-  )
-
-  it.effect("streams OpenAI Responses over WebSocket", () =>
-    Effect.gen(function* () {
-      const sent: string[] = []
-      const opened: Array<{ readonly url: string; readonly authorization: string | undefined }> = []
-      let closed = false
-      const deps = Layer.mergeAll(
-        Layer.succeed(
-          RequestExecutor.Service,
-          RequestExecutor.Service.of({
-            execute: () => Effect.die("unexpected HTTP request"),
-          }),
-        ),
-        Layer.succeed(
-          WebSocketExecutor.Service,
-          WebSocketExecutor.Service.of({
-            open: (input) =>
-              Effect.succeed({
-                sendText: (message) =>
-                  Effect.sync(() => {
-                    opened.push({ url: input.url, authorization: input.headers.authorization })
-                    sent.push(message)
-                  }),
-                messages: Stream.fromArray([
-                  ProviderShared.encodeJson({ type: "response.output_text.delta", item_id: "msg_1", delta: "Hi" }),
-                  ProviderShared.encodeJson({ type: "response.completed", response: { id: "resp_ws" } }),
-                ]),
-                close: Effect.sync(() => {
-                  closed = true
-                }),
-              }),
-          }),
-        ),
-      )
-      const response = yield* LLMClient.generate(
-        LLM.request({
-          model: OpenAI.configure({ baseURL: "https://api.openai.test/v1/", apiKey: "test" }).responsesWebSocket(
-            "gpt-4.1-mini",
-          ),
-          prompt: "Say hello.",
-        }),
-      ).pipe(Effect.provide(LLMClient.layer.pipe(Layer.provide(deps))))
-
-      expect(response.text).toBe("Hi")
-      expect(opened).toEqual([{ url: "wss://api.openai.test/v1/responses", authorization: "Bearer test" }])
-      expect(closed).toBe(true)
-      expect(sent).toHaveLength(1)
-      expect(JSON.parse(sent[0])).toEqual({
-        type: "response.create",
-        model: "gpt-4.1-mini",
-        input: [{ role: "user", content: [{ type: "input_text", text: "Say hello." }] }],
-        store: false,
-      })
-    }),
-  )
-
-  it.effect("fails immediately when WebSocket is already closed", () =>
-    Effect.gen(function* () {
-      const error = yield* WebSocketExecutor.fromWebSocket(
-        // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- fromWebSocket reads readyState before touching WebSocket methods on this branch.
-        { readyState: globalThis.WebSocket.CLOSED } as globalThis.WebSocket,
-        { url: "wss://api.openai.test/v1/responses", headers: Headers.empty },
-      ).pipe(Effect.flip)
-
-      expect(error.message).toContain("closed before opening")
-    }),
-  )
-
   it.effect("adds native query params to the Responses URL", () =>
     Effect.gen(function* () {
       yield* LLMClient.generate(
@@ -264,38 +190,10 @@ describe("OpenAI Responses route", () => {
     }),
   )
 
-  it.effect("uses Azure api-key header for static OpenAI Responses keys", () =>
-    Effect.gen(function* () {
-      yield* LLMClient.generate(
-        LLM.updateRequest(request, {
-          model: Azure.configure({
-            baseURL: "https://novaclaw-test.openai.azure.com/openai/v1/",
-            apiKey: "azure-key",
-            headers: { authorization: "Bearer stale" },
-          }).responses("gpt-4.1-mini"),
-        }),
-      ).pipe(
-        Effect.provide(
-          dynamicResponse((input) =>
-            Effect.gen(function* () {
-              const web = yield* HttpClientRequest.toWeb(input.request).pipe(Effect.orDie)
-              expect(web.url).toBe("https://novaclaw-test.openai.azure.com/openai/v1/responses?api-version=v1")
-              expect(web.headers.get("api-key")).toBe("azure-key")
-              expect(web.headers.get("authorization")).toBeNull()
-              return input.respond(sseEvents({ type: "response.completed", response: {} }), {
-                headers: { "content-type": "text/event-stream" },
-              })
-            }),
-          ),
-        ),
-      )
-    }),
-  )
-
   it.effect("loads OpenAI default auth from Effect Config", () =>
     LLMClient.generate(
       LLM.updateRequest(request, {
-        model: OpenAI.configure({ baseURL: "https://api.openai.test/v1/" }).responses("gpt-4.1-mini"),
+        model: responsesModel("gpt-4.1-mini", { auth: Auth.config("OPENAI_API_KEY").bearer() }),
       }),
     ).pipe(
       configEnv({ OPENAI_API_KEY: "env-key" }),
@@ -316,10 +214,7 @@ describe("OpenAI Responses route", () => {
   it.effect("lets explicit auth override OpenAI default API key auth", () =>
     LLMClient.generate(
       LLM.updateRequest(request, {
-        model: OpenAI.configure({
-          baseURL: "https://api.openai.test/v1/",
-          auth: Auth.bearer("oauth-token"),
-        }).responses("gpt-4.1-mini"),
+        model: responsesModel("gpt-4.1-mini", { auth: Auth.bearer("oauth-token") }),
       }),
     ).pipe(
       Effect.provide(
@@ -550,7 +445,7 @@ describe("OpenAI Responses route", () => {
     Effect.gen(function* () {
       const prepared = yield* LLMClient.prepare<OpenAIResponses.OpenAIResponsesBody>(
         LLM.request({
-          model: OpenAI.configure({ baseURL: "https://api.openai.test/v1/", apiKey: "test" }).model("gpt-5.2"),
+          model: responsesModel("gpt-5.2"),
           prompt: "think",
           providerOptions: {
             openai: {
@@ -558,6 +453,7 @@ describe("OpenAI Responses route", () => {
               reasoningEffort: "high",
               reasoningSummary: "auto",
               include: ["reasoning.encrypted_content"],
+              textVerbosity: "low",
             },
           },
         }),
@@ -640,48 +536,13 @@ describe("OpenAI Responses route", () => {
     }),
   )
 
-  it.effect("requests encrypted reasoning by default for GPT-5 reasoning models", () =>
-    Effect.gen(function* () {
-      // The native OpenAI facade configures GPT-5 stateless (store: false) with
-      // reasoningSummary: "auto" by default. Without `include`, a follow-up
-      // turn cannot replay reasoning state, so the facade also opts into
-      // `reasoning.encrypted_content` automatically.
-      const prepared = yield* LLMClient.prepare<OpenAIResponses.OpenAIResponsesBody>(
-        LLM.request({
-          model: OpenAI.configure({ baseURL: "https://api.openai.test/v1/", apiKey: "test" }).responses("gpt-5.2"),
-          prompt: "hi",
-        }),
-      )
-
-      expect(prepared.body.store).toBe(false)
-      expect(prepared.body.include).toEqual(["reasoning.encrypted_content"])
-      expect(prepared.body.reasoning).toEqual({ effort: "medium", summary: "auto" })
-    }),
-  )
-
-  it.effect("lets callers opt out of the GPT-5 default include", () =>
-    Effect.gen(function* () {
-      const prepared = yield* LLMClient.prepare<OpenAIResponses.OpenAIResponsesBody>(
-        LLM.request({
-          model: OpenAI.configure({ baseURL: "https://api.openai.test/v1/", apiKey: "test" }).responses("gpt-5.2"),
-          prompt: "hi",
-          providerOptions: { openai: { include: [] } },
-        }),
-      )
-
-      expect(prepared.body.include).toBeUndefined()
-    }),
-  )
-
   it.effect("request OpenAI provider options override route defaults", () =>
     Effect.gen(function* () {
       const prepared = yield* LLMClient.prepare<OpenAIResponses.OpenAIResponsesBody>(
         LLM.request({
-          model: OpenAI.configure({
-            baseURL: "https://api.openai.test/v1/",
-            apiKey: "test",
+          model: responsesModel("gpt-4.1-mini", {
             providerOptions: { openai: { promptCacheKey: "model_cache" } },
-          }).model("gpt-4.1-mini"),
+          }),
           prompt: "no cache",
           providerOptions: { openai: { promptCacheKey: "request_cache" } },
         }),

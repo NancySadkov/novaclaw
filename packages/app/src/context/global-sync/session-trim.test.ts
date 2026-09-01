@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { PermissionV2Request, SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
+import type { SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 import { trimSessions } from "./session-trim"
 
 const session = (input: { id: string; parentID?: string; created: number; updated?: number; archived?: number }) =>
@@ -24,32 +24,24 @@ describe("trimSessions", () => {
       session({ id: "e", created: now - 60_000, archived: now - 10 }),
     ]
 
-    const result = trimSessions(list, { limit: 2, permission: {}, now })
+    const result = trimSessions(list, { limit: 2, now })
     expect(result.map((x) => x.id)).toEqual(["a", "b", "c", "d"])
   })
 
-  test("keeps children when root is kept, permission exists, or child is recent", () => {
+  test("keeps children when root is kept or the child is recent", () => {
     const now = 1_000_000
     const list = [
       session({ id: "root-1", created: now - 1000 }),
       session({ id: "root-2", created: now - 2000 }),
       session({ id: "z-root", created: now - 30_000_000 }),
       session({ id: "child-kept-by-root", parentID: "root-1", created: now - 20_000_000 }),
-      session({ id: "child-kept-by-permission", parentID: "z-root", created: now - 20_000_000 }),
       session({ id: "child-kept-by-recency", parentID: "z-root", created: now - 500 }),
       session({ id: "child-trimmed", parentID: "z-root", created: now - 20_000_000 }),
     ]
 
-    const result = trimSessions(list, {
-      limit: 2,
-      permission: {
-        "child-kept-by-permission": [{ id: "perm-1" } as PermissionV2Request],
-      },
-      now,
-    })
+    const result = trimSessions(list, { limit: 2, now })
 
     expect(result.map((x) => x.id)).toEqual([
-      "child-kept-by-permission",
       "child-kept-by-recency",
       "child-kept-by-root",
       "root-1",

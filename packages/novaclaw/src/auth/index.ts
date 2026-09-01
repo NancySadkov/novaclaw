@@ -52,7 +52,7 @@ export const layer = Layer.effect(
     const decode = Schema.decodeUnknownOption(Info)
 
     /**
-     * 🔴 The unwind of app-managed encryption, continued (`todo/code-review.md`, NC-REL-030).
+     * 🔴 The unwind of app-managed encryption, continued.
      *
      * Decision §5 of `decisions-v0.2.0.md` — recorded after the cipher landed unexplained — says
      * secrets stay plaintext under OS account protection, because no keyring exists in every run

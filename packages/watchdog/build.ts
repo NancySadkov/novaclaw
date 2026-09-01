@@ -16,10 +16,10 @@
  * with nobody noticing while every test on the build machine was green. The failure here is quieter
  * still — nothing is broken until something crashes, which is exactly when nobody is watching.
  *
- * 🔴 **AND THERE IS A PROMISE ATTACHED TO THIS BINARY THAT THE DHT HAS NO EQUIVALENT OF.** Settings
- * carries a user-visible auto-restart row. A build without this binary leaves that switch offering
- * something the install cannot do, which is worse than a missing feature because the user has been
- * told otherwise. Skipping the build is legitimate; leaving the switch promising is not.
+ * ⚠️ **Nothing launches this binary yet, and no surface promises that anything does.**
+ * `electron-builder.config.ts` records the same position. Do not add a Settings row for it before
+ * adoption: a switch that offers what the install cannot do is worse than a missing feature,
+ * because the user has been told otherwise. Skipping the build is legitimate; promising is not.
  */
 import { existsSync, mkdirSync, rmSync } from "node:fs"
 import path from "node:path"

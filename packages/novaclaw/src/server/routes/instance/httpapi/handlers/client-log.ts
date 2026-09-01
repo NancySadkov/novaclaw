@@ -3,7 +3,7 @@ export * as ClientLog from "./client-log"
 import { RESERVED_ATTRIBUTES } from "@novaclaw/schema/log-events"
 
 /**
- * **What `POST /log` accepts, and what it refuses.** `todo/logging.md` 1g.
+ * **What `POST /log` accepts, and what it refuses.**
  *
  * ── what the route is FOR ───────────────────────────────────────────────────────────────────────
  *

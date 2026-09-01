@@ -1,9 +1,9 @@
 /**
  * What the packaged desktop startup actually costs, phase by phase.
  *
- * `todo/startup.md`: *instrument the packaged desktop path from process start through sidecar ready,
+ * The brief: *instrument the packaged desktop path from process start through sidecar ready,
  * server health, renderer interactive, and first chat token; attribute time and per-process memory.*
- * Until this exists every startup claim in the roadmap is an opinion — including the one written the
+ * Until this existed every startup claim was an opinion — including the one written the
  * same week about retiring native dependencies to make boot faster.
  *
  * Deliberately free of Electron: the clock, the process-start instant and the memory reader are all

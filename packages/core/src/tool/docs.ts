@@ -12,7 +12,7 @@ import { Tools } from "./tools"
  * The `docs` tool — the shipped NovaClaw manual, reachable by the agent (v0.2.0 batch plan 4.2).
  *
  * **Why ONE tool with a closed op vocab, and not three tools.** Tool-count pressure is a live
- * constraint (`todo/tool-scale.md`: degradation is reported from 30–50 tools and we are already past
+ * constraint (degradation is reported from 30–50 tools and we are already past
  * it), so a docs surface that costs three schema slots would be paying the tax this repo is trying to
  * stop paying. The house answer is `kb`'s: one agentic tool, a small closed op set the model CHAINS,
  * with the engine owning resolution. `list` → `read` → `search` is that same shape, and every op's

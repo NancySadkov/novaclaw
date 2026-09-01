@@ -9,7 +9,7 @@ import type { EventV2 } from "@novaclaw/core/event"
 import type { SessionMessage } from "@novaclaw/core/session/message"
 import type { SessionSchema } from "@novaclaw/core/session/schema"
 import { LLM, LLMEvent, Model, type LLMRequest } from "@novaclaw/llm"
-import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
+import * as OpenAIChat from "@novaclaw/llm/protocols/openai-compatible-chat"
 import { DateTime, Effect, Stream } from "effect"
 
 // A2-a — `prune()`, the non-LLM reclaim lost in the V1 nuke (todo/adoption.md §A2).
@@ -216,7 +216,6 @@ describe("prune erases older tool results, and only the output", () => {
     expect(part.state.status === "completed" && part.state.structured).toEqual({})
     expect(part.state.status === "completed" && part.state.result).toBeUndefined()
     expect(part.time.pruned).toEqual(AT)
-    expect(CompactionPrune.isPruned(part)).toBe(true)
     // The CALL and its arguments survive — the model must still see what it asked for.
     expect(part.name).toBe("read")
     expect(part.state.status === "completed" && part.state.input).toEqual({ filePath: "/repo/src/thing.ts" })

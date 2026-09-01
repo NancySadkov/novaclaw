@@ -11,7 +11,7 @@ import {
 } from "./project-policies"
 
 /**
- * `todo/projects.md` — the folder-policy surface's decision logic, tested away from the DOM.
+ * The folder-policy surface's decision logic, tested away from the DOM.
  *
  * 🔴 **Every rule here fails SILENTLY when it is wrong**, which is why it is a module and not three
  * `.filter(…)` chains in a JSX body:

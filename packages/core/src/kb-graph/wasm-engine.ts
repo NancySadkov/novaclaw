@@ -21,7 +21,7 @@ import { EngineFault } from "./engine-fault"
 import { GraphSnapshot } from "./snapshot"
 
 // The in-process Ladybug graph-memory engine (WASM) — the single engine that runs EVERYWHERE
-// (notes/kb-graph-plan.md §2.0, the 2026-07-19 pivot). The native addon can't run in a phone app and
+// (the 2026-07-19 pivot). The native addon can't run in a phone app and
 // segfaults under Bun; the WASM build runs in-process under Bun/Node (and, later, the browser) with
 // vector + FTS BUILT-IN — no sidecar, no native binary, no extension vendoring. This module owns the
 // graph in-process and IS the single-writer (§4.1).
@@ -332,17 +332,11 @@ let effectiveRoot: string | undefined
 /**
  * Strip a leading `C:` so a Windows path becomes ROOT-ANCHORED but keeps all its segments.
  *
- * ⚠️ This is the whole fix, and it exists because the previous investigation stopped one measurement
- * short. It established that the engine rejects a drive letter, and concluded that the path therefore
- * had to be a single root-level name (`/novaclaw-kbmem`) with a junction pointing home. It never tried
- * the shape in between. Measured 2026-07-30 against the real engine:
- *   • `/novaclaw-kbmem`                          → opens, and IS the drive root (the litter)
- *   • `/Users/<u>/.cache/novaclaw/kbmem`         → **opens, and the bytes land in HOME**
- *   • `C:/Users/<u>/.cache/novaclaw/kbmem`       → `in current_path: call to getcwd failed`
- * So the constraint was never "one segment"; it was only "no drive letter". A root-anchored path
+ * 🔴 **The engine's constraint is "no drive letter", NOT "one segment".** A root-anchored path
  * resolves against the process's CURRENT DRIVE, so with home and cwd on the same drive — every normal
- * install — this reaches exactly the same directory the junction pointed at, with nothing created
- * outside the home at all.
+ * install — this reaches exactly the home directory, with nothing created outside it. Do not
+ * re-derive the single-root-name rule: it was measured wrong once. The tables are in
+ * `notes/reports/kb-graph-scratch-path-and-rel-scope-2026-07-30.md`.
  */
 const stripDriveLetter = (p: string): string => p.replace(/^[A-Za-z]:/, "").replaceAll("\\", "/")
 
@@ -357,31 +351,23 @@ const SCRATCH_ALIAS_WIN32 = "/novaclaw-kbmem"
 /**
  * Where the scratch bytes REALLY live: under the instance home, like every other file we write.
  *
- * ⚠️ On POSIX this is simply used as-is — a real path under `$XDG_CACHE_HOME/novaclaw` already IS a
- * root-anchored path with no drive letter, which is all the engine needs. **The previous code put
- * the scratch at `/novaclaw-kbmem` on every platform, which on Linux means the FILESYSTEM ROOT and
- * fails with EACCES for any non-root user.** That went unnoticed because this is a Windows-only
- * development box.
+ * ⚠️ On POSIX this is used as-is — a real path under `$XDG_CACHE_HOME/novaclaw` already IS a
+ * root-anchored path with no drive letter, which is all the engine needs. 🔴 **Never hand this engine
+ * a bare root-level name on POSIX: `/novaclaw-kbmem` is the FILESYSTEM ROOT there and fails with
+ * EACCES for any non-root user.** It shipped that way once and went unnoticed, because development
+ * happens on a Windows box.
  */
 export const scratchHome = (): string => path.join(Global.Path.cache, "kbmem")
 
 /**
  * The path handed to the ENGINE. On POSIX it is `scratchHome()` itself.
  *
- * ⚠️ On Windows it cannot be, and this was measured four ways on 2026-07-28 rather than assumed:
- *   • `/novaclaw-kbmem`            → works, but resolves to the drive ROOT (the reported bug)
- *   • `C:/Users/.../kbmem`         → `filesystem error: in current_path: call to getcwd failed`
- *   • `FS.mount(NODEFS, {root})`   → **silently BYPASSED** — the engine wrote to `C:\<mountpoint>`
- *   • a path relative to `cwd`     → the same `getcwd` failure
- * The engine's `current_path()` fails for anything carrying a drive letter, and it ignores
- * emscripten's VFS mounts, so no *mount* moves the bytes.
- *
- * ⚠️ **But the conclusion drawn from those four — that the name must therefore be a single root-level
- * segment plus a junction — was wrong, and the junction is gone (2026-07-30).** A fifth measurement
- * the original set skipped: a MULTI-segment root-anchored path, `/Users/<u>/.cache/novaclaw/kbmem`,
- * opens cleanly and puts the bytes in the home. The constraint was only ever "no drive letter", so
- * simply stripping `C:` gives the engine a path it accepts that already IS the home directory, and
- * nothing is created outside the home at all. See `stripDriveLetter`.
+ * 🔴 On Windows it cannot be: the engine's `current_path()` fails for **anything carrying a drive
+ * letter**, and it ignores emscripten's VFS mounts, so no `FS.mount` moves the bytes either — it
+ * silently writes to `C:\<mountpoint>` instead. Stripping `C:` gives it a path it accepts that
+ * already IS the home directory. See `stripDriveLetter`; the measurements, including the one the
+ * first investigation skipped, are in
+ * `notes/reports/kb-graph-scratch-path-and-rel-scope-2026-07-30.md`.
  */
 export const SCRATCH_ROOT: string = process.platform === "win32" ? stripDriveLetter(scratchHome()) : scratchHome()
 
@@ -761,23 +747,14 @@ export class WasmMemory {
          embedding FLOAT[${this.dim}], PRIMARY KEY(id))`,
     )
     /**
-     * 🔴 **`Rel` NO LONGER STORES A SCOPE, and the derivation went with it.**
+     * 🔴 **`Rel` carries NO scope, and must not grow one.** An edge's reach is a pure function of
+     * its two endpoints, so a stored copy is a second spelling of a fact the nodes already hold — and
+     * the copy is the one that goes stale (`moveScope` retargets a cabinet with one `SET m.scope` and
+     * would never update it). A claim's reach is the CLAIM NODE's scope, which is exactly why a claim
+     * is a node rather than an edge property.
      *
-     * Measured 2026-08-25 and re-measured here before removing it: `neighbors`, `path` and `graph` all
-     * filter on NODE scopes, and no query in the tree ever selected `r.scope`. So the column was a
-     * value nothing could read — which also means nothing could keep it honest, and it was already
-     * dishonest: `moveScope` retargets a whole cabinet with one `SET m.scope`, leaving every edge
-     * still carrying the scope its endpoints had before the retirement.
-     *
-     * Under narrowest-derivation the stored value was a pure function of the two endpoints, so it was
-     * a second copy of a fact the endpoints already held — and the copy is the one that goes stale.
-     * The claim lifecycle did not change that: a claim's reach is the CLAIM NODE's scope, which is
-     * exactly why the claim is a node rather than an edge property.
-     *
-     * ⚠️ **What did NOT go away is the refusal.** `addEdge` still rejects a pair no scope contains,
-     * and still REPORTS the narrower endpoint — computed at write time and returned to the caller,
-     * where a reader and a test can both check it. The rule moved from an unreadable column into a
-     * value on the result.
+     * ⚠️ **The refusal did NOT go away with the column** — see `addEdge`. Full argument and the
+     * measurement in `notes/reports/kb-graph-scratch-path-and-rel-scope-2026-07-30.md`.
      */
     await this.ddl(
       `CREATE REL TABLE Rel(
@@ -932,11 +909,10 @@ export class WasmMemory {
    * between them widens one of them. `ok: false` comes back rather than a silent no-op — a relation
    * that quietly did not happen is how a model learns to believe a graph that is not there.
    *
-   * ⚠️ **The narrower endpoint is COMPUTED AND RETURNED, and no longer stored.** It used to be written
-   * into a `Rel.scope` column that no query in the tree ever read, and that `moveScope` never updated
-   * — so it was a second copy of the endpoints' truth, unobservable and already stale. Returning it
-   * puts the same value where a caller, a user-facing message and a test can all check it, which is
-   * the only form in which a rule stays honest. See `ensureSchema` for the full argument.
+   * ⚠️ **The narrower endpoint is COMPUTED AND RETURNED, never stored.** Returning it puts the
+   * value where a caller, a user-facing message and a test can all check it, which is the only form
+   * in which a rule stays honest — an edge column holding the same thing was unreadable and already
+   * stale. See `ensureSchema`.
    */
   addEdge(input: EdgeInput & { readonly scopes?: readonly string[] }): Promise<{ ok: boolean; scope?: string }> {
     return this.serialize(() => this._addEdge(input))
@@ -1629,8 +1605,6 @@ export class WasmMemory {
     })
   }
 
-  /** Enumerate memories (for the viewer/editor), newest first, filterable by scope/kind/validity and
-   *  paginated. Unlike `search` this needs no query — it's the "show me everything" list. */
   /**
    * Fetch full rows for ids the caller already selected — BY PRIMARY KEY, one at a time.
    *
@@ -1662,6 +1636,8 @@ export class WasmMemory {
     return out
   }
 
+  /** Enumerate memories (for the viewer/editor), newest first, filterable by scope/kind/validity and
+   *  paginated. Unlike `search` this needs no query — it's the "show me everything" list. */
   list(opts: ListInput = {}): Promise<MemoryRow[]> {
     return this.serialize(async () => {
       const validity = opts.includeInvalid ? `` : `AND m.t_invalid IS NULL`
@@ -1907,39 +1883,11 @@ export class WasmMemory {
     })
   }
 
-  /** Forgetting / decay (§1.3.5, §4.7) — bound unbounded growth so noise never crowds out real facts
-   *  in retrieval. Curated `core` memories are NEVER forgotten; among still-valid `staged` memories in
-   *  the scope, once the count exceeds `maxStaged` the LOWEST-importance ones are invalidated (bitemporal
-   *  — kept in history, dropped from search), lowest-importance first. Importance = confidence (nulls
-   *  lowest), tie-broken by age (oldest first). Returns the number forgotten. Best-effort, off the turn
-   *  hot-path (the background fiber calls it beside consolidation). Access-recency weighting is a future
-   *  enhancement (needs a `last_accessed` column). */
-  /** Forgetting / decay (§1.3.5, §4.7): cap unbounded growth by superseding the LEAST valuable staged
-   *  memories once a scope exceeds `maxStaged`. `core` is never touched.
-   *
-   *  ⚠️ Eviction is IMPORTANCE-TIERED, not FIFO. Measured 2026-07-20: no writer ever sets `confidence`
-   *  (every occurrence is `input.confidence ?? null` plumbing), so ordering by confidence-then-age
-   *  collapsed to pure AGE — the naive policy §1.3.5 exists to avoid. That became a real hazard once
-   *  document ingestion landed: one ingested manual is hundreds of global staged passages, which under
-   *  FIFO would evict the user's deliberately-remembered facts first.
-   *
-   *  Tiers, evicted worst-first, using signals that already exist (no schema change):
-   *    0 `ingest`       bulk document passages — highest volume AND re-derivable (re-ingest is
-   *                     idempotent by content hash), so the cheapest thing to lose.
-   *    1 `auto-extract` model-guessed episodes — noisy and unreviewed.
-   *    2 everything else — a deliberate `kb remember`; the user chose to save it, so it dies last.
-   *  Age remains the tiebreak WITHIN a tier. */
-  /**
-   * Every scope beginning with `prefix` that currently holds staged memories.
-   *
-   * 🔴 Exists so each colleague's cabinet can be capped SEPARATELY. A single cap over `agent:%` as a
-   * whole would let one talkative officer evict another's memories — the same reasoning the
-   * colleague rate window follows ("one loud colleague never spends another's allowance"), and the
-   * reason this returns scopes rather than pruning by prefix in one pass.
-   */
   /** How many still-valid `staged` memories a scope holds — the cheap check that decides whether the
-   *  forgetting pass has anything to do at all. Kept separate from `prune` so a ledger-aware policy
-   *  can ask the same question without paying for a candidate scan first. */
+   *  forgetting pass has anything to do at all. Deliberately a COUNT and nothing more, so the pass can
+   *  ask "is there anything to do?" without paying for a candidate scan; a scope inside its cap costs
+   *  one aggregate and stops there. The policy that decides who is evicted lives in `prune-policy.ts`
+   *  and the wiring in `memory.ts`'s `forgetOverCap` — never here. */
   stagedCount(scope?: string): Promise<number> {
     return this.serialize(async () => {
       const scopeFilter = scope ? `AND m.scope = $scope` : ``
@@ -1951,6 +1899,14 @@ export class WasmMemory {
     })
   }
 
+  /**
+   * Every scope beginning with `prefix` that currently holds staged memories.
+   *
+   * 🔴 Exists so each colleague's cabinet can be capped SEPARATELY. A single cap over `agent:%` as a
+   * whole would let one talkative officer evict another's memories — the same reasoning the
+   * colleague rate window follows ("one loud colleague never spends another's allowance"), and the
+   * reason this returns scopes rather than pruning by prefix in one pass.
+   */
   async stagedScopes(prefix: string): Promise<string[]> {
     const rows = await this.rows(
       `MATCH (m:Memory)
@@ -2015,39 +1971,6 @@ export class WasmMemory {
   /** Full rows for ids the caller already chose — the public door onto `hydrate`. */
   byIds(ids: readonly string[]): Promise<MemoryRow[]> {
     return this.serialize(async () => this.hydrate(ids))
-  }
-
-  prune(opts: { scope?: string; maxStaged?: number } = {}): Promise<number> {
-    return this.serialize(async () => {
-      const cap = Math.max(0, Math.floor(opts.maxStaged ?? 5000))
-      const scopeFilter = opts.scope ? `AND m.scope = $scope` : ``
-      const params = opts.scope ? { scope: opts.scope } : {}
-      const countRows = await this.rows(
-        `MATCH (m:Memory) WHERE m.t_invalid IS NULL AND m.relation = 'staged' ${scopeFilter} RETURN count(m) AS n`,
-        params,
-      )
-      const n = Number(countRows[0]?.n ?? 0)
-      if (n <= cap) return 0
-      const excess = n - cap
-      const victims = await this.rows(
-        `MATCH (m:Memory) WHERE m.t_invalid IS NULL AND m.relation = 'staged' ${scopeFilter}
-         RETURN m.id AS id
-         ORDER BY (CASE
-                     WHEN m.source = 'ingest' THEN 0
-                     WHEN m.source = 'auto-extract' THEN 1
-                     ELSE 2
-                   END) ASC,
-                  (CASE WHEN m.confidence IS NULL THEN 0.0 ELSE m.confidence END) ASC,
-                  m.t_created ASC
-         LIMIT ${excess}`,
-        params,
-      )
-      for (const v of victims) {
-        await this.q(`MATCH (m:Memory {id: $id}) SET m.t_invalid = current_timestamp()`, { id: String(v.id) })
-      }
-      if (victims.length > 0) this.touch()
-      return victims.length
-    })
   }
 
   /** The backfill queue for the embed drain: still-valid memories that have NO vector yet — stored

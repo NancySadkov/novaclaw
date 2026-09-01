@@ -76,7 +76,7 @@ type Document = { paths: Record<string, Record<string, unknown>> }
 
 /**
  * **The legacy paths, pinned as of 2026-08-07.** Grouped by first segment with its count so the
- * shape is readable at a glance: 24 families, 82 paths. This list may only ever get SHORTER.
+ * shape is readable at a glance: 23 families, 69 paths. This list may only ever get SHORTER.
  *
  * There is no production module that owns this set — it is a property of the union of two route
  * trees — so the ledger lives here, next to the assertions that read it.
@@ -94,24 +94,15 @@ export const LEGACY_PATHS: readonly string[] = [
   "/auth/{providerID}",
   // /command — 1
   "/command",
-  // /config — 2
+  // /config — 1
   "/config",
-  "/config/providers",
   // /event — 1
   "/event",
-  // /experimental — 12
+  // /experimental — 2
   "/experimental/control-plane/move-session",
-  "/experimental/resource",
-  "/experimental/tool",
-  "/experimental/tool/ids",
-  "/experimental/workspace",
-  "/experimental/workspace/adapter",
-  "/experimental/workspace/status",
-  "/experimental/workspace/sync-list",
-  "/experimental/workspace/warp",
-  "/experimental/workspace/{id}",
+  // The new-session composer calls this operation directly. Its 2026-09-01 removal was a false
+  // shrink exposed by the app typecheck, not a legitimate widening of the legacy surface.
   "/experimental/worktree",
-  "/experimental/worktree/reset",
   // /file — 7
   "/file",
   "/file/content",
@@ -123,8 +114,6 @@ export const LEGACY_PATHS: readonly string[] = [
   // /find — 2
   "/find",
   "/find/file",
-  // /formatter — 1
-  "/formatter",
   // /global — 6
   "/global/config",
   "/global/discovery",
@@ -177,10 +166,9 @@ export const LEGACY_PATHS: readonly string[] = [
   "/shell/offline",
   "/shell/provision",
   "/shell/status",
-  // /sync — 4
+  // /sync — 3
   "/sync/history",
   "/sync/replay",
-  "/sync/start",
   "/sync/steal",
   // /vcs — 5
   "/vcs",
@@ -191,8 +179,8 @@ export const LEGACY_PATHS: readonly string[] = [
 ]
 
 /**
- * Legacy OPERATIONS (method + path), measured 2026-08-07: GET 43, POST 41, DELETE 5, PUT 2,
- * PATCH 2 — 93 in total.
+ * Legacy OPERATIONS (method + path), measured 2026-09-01: GET 34, POST 36, DELETE 3, PUT 2,
+ * PATCH 2 — 77 in total.
  *
  * ⚠️ The line above used to read "measured 2026-07-31: GET 47, POST 42, DELETE 6, PUT 3, PATCH 2",
  * which sums to 100 against a pin of 94: prose that was never re-measured when the pin moved. These
@@ -203,7 +191,7 @@ export const LEGACY_PATHS: readonly string[] = [
  * legacy route on an already-pinned path, which is the same widening under a different name. This
  * number closes that seam without a second 102-line list.
  */
-const LEGACY_OPERATION_COUNT = 93
+const LEGACY_OPERATION_COUNT = 77
 
 const PINNED = new Set(LEGACY_PATHS)
 
@@ -326,11 +314,11 @@ describe("every legacy path is on the ledger, and the ledger can only shrink", (
     // Pinned as a MEASUREMENT, not a preference: the honest answer to "how big is the legacy surface
     // right now". Removing a legacy route is supposed to fail here — that failure IS the ratchet
     // clicking, and lowering these numbers is how the removal gets recorded.
-    expect(LEGACY_PATHS.length, "the ledger's own length moved — recount and update this pin").toBe(82)
+    expect(LEGACY_PATHS.length, "the ledger's own length moved — recount and update this pin").toBe(69)
     expect(
       SPEC_LEGACY_PATHS.length,
       "the spec's legacy path count moved — reconcile LEGACY_PATHS and update this pin",
-    ).toBe(82)
+    ).toBe(69)
     expect(
       legacyOperations(DOCUMENT).length,
       [

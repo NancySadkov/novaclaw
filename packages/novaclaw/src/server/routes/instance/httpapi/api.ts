@@ -25,7 +25,6 @@ import { QuestionApi } from "./groups/question"
 import { RegistryApi } from "./groups/registry"
 import { ShellApi } from "./groups/shell"
 import { SyncApi } from "./groups/sync"
-import { WorkspaceApi } from "./groups/workspace"
 import { makeApi } from "@novaclaw/protocol/api"
 import { LocationMiddleware } from "@novaclaw/server/location"
 import { SessionLocationMiddleware } from "@novaclaw/server/middleware/session-location"
@@ -80,7 +79,6 @@ export const InstanceHttpApi = HttpApi.make("novaclaw-instance")
   .addHttpApi(ProviderApi)
   .addHttpApi(ShellApi)
   .addHttpApi(SyncApi)
-  .addHttpApi(WorkspaceApi)
   .middleware(ExperimentalSchemaErrorMiddleware)
 
 // OpenAPI generation reads the runtime groups below. Widen the exported declaration so adding a

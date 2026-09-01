@@ -9,27 +9,13 @@
     "url": "git+https://novaclaw.app.git",
     "directory": "packages/http-recorder"
   },
-  "homepage": "https://novaclaw.app",
-  "bugs": "https://novaclaw.app/issues",
-  "keywords": [
-    "effect",
-    "http",
-    "recording",
-    "replay",
-    "testing",
-    "vcr"
-  ],
   "engines": {
     "node": ">=22"
-  },
-  "publishConfig": {
-    "access": "public"
   },
   "scripts": {
     "test": "bun test --timeout 30000 --only-failures",
     "typecheck": "bun ../../script/tsgo.ts -b",
-    "build": "bun ./script/build.ts",
-    "verify:package": "bun ./script/verify-package.ts"
+    "build": "bun ./script/build.ts"
   },
   "exports": {
     ".": "./src/index.ts",
@@ -50,7 +36,7 @@
     "typescript": "catalog:"
   },
   "dependencies": {
-    "@effect/platform-node": "4.0.0-beta.83"
+    "@effect/platform-node": "catalog:"
   },
   "peerDependencies": {
     "effect": "4.0.0-beta.83"

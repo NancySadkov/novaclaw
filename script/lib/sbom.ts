@@ -33,11 +33,17 @@ export interface Component {
 /**
  * Split `@scope/name@1.2.3` into its parts.
  *
- * ⚠️ The leading `@` of a scope is not a separator, so the version delimiter is the LAST `@` — and
- * a naive `split("@")` gets every scoped package wrong, which is most of this tree.
+ * ⚠️ The leading `@` of a scope is not a separator, and neither is an `@` inside a VERSION — a git
+ * spec carries both (`x@git+ssh://git@github.com/o/r#sha`). So the delimiter is the first `@` after
+ * the scope's `/`, or the first `@` at all when there is no scope. A naive `split("@")` gets every
+ * scoped package wrong; a `lastIndexOf("@")` gets every git spec wrong, which is the shape an SBOM
+ * consumer most needs named correctly because it is the one component that is not an audited
+ * registry artifact.
  */
 export function parseIdent(ident: string): { readonly name: string; readonly version: string } | undefined {
-  const at = ident.lastIndexOf("@")
+  const from = ident.startsWith("@") ? ident.indexOf("/") + 1 : 0
+  if (from === 0 && ident.startsWith("@")) return undefined // a scope with no name
+  const at = ident.indexOf("@", from)
   if (at <= 0) return undefined
   const name = ident.slice(0, at)
   const version = ident.slice(at + 1)
@@ -45,9 +51,30 @@ export function parseIdent(ident: string): { readonly name: string; readonly ver
   return { name, version }
 }
 
-/** `pkg:npm/@scope%2Fname@version` — the scope separator is percent-encoded, per the purl spec. */
+/** `github:owner/repo#ref` / `git+<url>#ref` — what bun writes in place of a registry version. */
+const GIT_SPEC = /^(?:github:([^/]+)\/([^#]+)|git\+[^#]+)(?:#(.*))?$/
+
+/**
+ * `pkg:npm/@scope%2Fname@version` — the scope separator is percent-encoded, per the purl spec.
+ *
+ * ⚠️ A git-resolved dependency is NOT an npm component. Emitting `pkg:npm/x@github:o/r#sha` is
+ * malformed twice over: `#` is the purl SUBPATH separator, so a consumer reads the ref as a subpath,
+ * and the type claims npm for something npm never served. `github:` specs become `pkg:github/o/r@ref`;
+ * anything else git-shaped keeps its type but has its version percent-encoded so the `#` cannot be
+ * read as structure.
+ *
+ * ⚠️ There is currently NO git dependency in this tree (`ghostty-web` moved to the registry), so this
+ * branch is exercised only by `sbom.test.ts`. That is deliberate: the bug was silent-wrong output in a
+ * compliance artifact, and the next git dependency must not re-introduce it.
+ */
 export function purlOf(name: string, version: string): string {
-  return `pkg:npm/${name.replace("/", "%2F")}@${version}`
+  const git = GIT_SPEC.exec(version)
+  if (git) {
+    const [, owner, repo, ref] = git
+    if (owner && repo) return `pkg:github/${owner}/${repo.replace(/\.git$/, "")}${ref ? `@${ref}` : ""}`
+    return `pkg:generic/${encodeURIComponent(name)}@${encodeURIComponent(version)}`
+  }
+  return `pkg:npm/${name.replace("/", "%2F")}@${encodeURIComponent(version)}`
 }
 
 export function componentsFrom(packages: Readonly<Record<string, LockEntry>>): Component[] {

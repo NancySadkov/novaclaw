@@ -6,7 +6,6 @@ const agent = (name = "build") =>
   ({
     name,
     mode: "primary",
-    permission: {},
     options: {},
   }) as Agent
 

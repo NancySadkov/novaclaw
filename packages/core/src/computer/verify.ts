@@ -6,7 +6,7 @@ import type { ComputerActions } from "./actions"
  * Did the action actually DO anything? — the half of P3's loop that the substrate run proved is
  * load-bearing rather than a nicety.
  *
- * 🔴 **The measurement this exists for (2026-08-06, `todo/computer-use.md`).** Driving Master of
+ * 🔴 **The measurement this exists for (2026-08-06).** Driving Master of
  * Magic in the substrate, a click on a correctly-grounded menu item did nothing. DOSBox ships
  * `autolock=true`, so its first click CAPTURES the mouse and switches to relative motion; after that
  * `xdotool` moved the X pointer exactly where told — `getmouselocation` confirmed the coordinates —

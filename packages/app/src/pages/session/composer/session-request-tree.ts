@@ -1,4 +1,4 @@
-import type { PermissionV2Request, QuestionRequest, SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
+import type { QuestionRequest, SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 
 function sessionTreeRequest<T>(
   session: Session[],
@@ -31,15 +31,6 @@ function sessionTreeRequest<T>(
   const id = ids.find((id) => request[id]?.some(include))
   if (!id) return
   return request[id]?.find(include)
-}
-
-export function sessionPermissionRequest(
-  session: Session[],
-  request: Record<string, PermissionV2Request[] | undefined>,
-  sessionID?: string,
-  include?: (item: PermissionV2Request) => boolean,
-) {
-  return sessionTreeRequest(session, request, sessionID, include)
 }
 
 export function sessionQuestionRequest(

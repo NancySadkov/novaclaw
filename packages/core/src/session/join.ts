@@ -26,6 +26,29 @@ import type { SessionSchema } from "./schema"
  * took `Stream.runHead` with a timeout — the FIRST completion or nothing. Forwarding a live stream
  * across the worker protocol would have been a far larger job for a value nobody reads.
  */
+/**
+ * **THE bound on a join, for every door into it.**
+ *
+ * 🔴 **Raised from 2 minutes on 2026-08-20 because 2 minutes is shorter than one child's TURN.**
+ * Measured: a child asked only to reply "BANANA" settled **121.7 seconds** after `wait` started, and
+ * `wait` had given up 1.6 seconds earlier. Nothing was wrong; parent and child share one local model
+ * server, so the child's single inference queued behind the parent's own. A join whose timeout is the
+ * same order as one inference reports a false negative on a healthy run, which is exactly what a
+ * supervisor must never do.
+ *
+ * ⚠️ It still has to be BOUNDED, so a wedged child cannot hold a caller forever. Ten minutes is well
+ * past a slow local turn and well short of a hang.
+ *
+ * ⚠️ **It lives here because there were TWO joins and only one of them learned this** (RF-03-1).
+ * `tool/wait.ts` owned the measurement above; `SessionV2.wait` — the `POST /api/session/:id/wait`
+ * door — was a separate hand-rolled 2000ms×60 poll that still carried the falsified 2-minute bound,
+ * under a comment claiming *"same semantics as the wait TOOL"*. Two doors onto one question must not
+ * be able to answer it differently, so there is now one implementation and one constant.
+ *
+ * Milliseconds, because this crosses the worker protocol and a `Duration` does not.
+ */
+export const JOIN_TIMEOUT_MS = 10 * 60_000
+
 export interface Outcome {
   readonly completed: boolean
   /** The child's `exit(result)` payload, rendered. Absent when it timed out. */

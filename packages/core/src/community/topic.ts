@@ -3,7 +3,7 @@ export * as CommunityTopic from "./topic"
 import { createHash } from "node:crypto"
 
 /**
- * Community P4 — the channel name ↔ topic mapping (`todo/community-p2p.md`).
+ * Community P4 — the channel name ↔ topic mapping (`notes/spec/community-p2p.md`).
  *
  * A gossip network addresses by TOPIC, a fixed-width id, while people speak in names. Every comment
  * in this program has said "the topic id is derived from it by hashing" and nothing has done it —

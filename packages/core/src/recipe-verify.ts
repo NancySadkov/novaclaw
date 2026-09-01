@@ -5,7 +5,7 @@ import path from "node:path"
 import { UnknownReason } from "@novaclaw/schema/unknown-reason"
 
 /**
- * **The deterministic success artifact for a cook** (`todo/recipes.md` → *Health-check recipes*).
+ * **The deterministic success artifact for a cook** — the health-check recipes' verdict.
  *
  * AGENTS.md calls the bundled set *the install's health check* — *"a user can tell in one click whether
  * THEIR NovaClaw is actually working, a diagnostic that reads as a feature, not a test suite"*. Until now
@@ -38,14 +38,14 @@ import { UnknownReason } from "@novaclaw/schema/unknown-reason"
  *     own recipe NOT WORKING).
  *  2. **The owner already drew this line for a second field.** Ruling 14's referred-questions block adds
  *     `collection` and says outright: *"This does not touch ruling 14: a collection is where a recipe
- *     lives, not what it is granted."* Same test, same answer. (`todo/recipes.md` likewise sequences
- *     `needs`' promotion to a modelled key *with* `collection` and `level` — the frontmatter was always
+ *     lives, not what it is granted."* Same test, same answer. (`needs`' promotion to a modelled key
+ *     is likewise sequenced *with* `collection` and `level` — the frontmatter was always
  *     expected to grow; what may never grow is the grant surface.)
  *  3. **Ruling 14 itself demands this feature.** Its justification quotes AGENTS.md's promise that a user
  *     can tell in one click whether their NovaClaw works, and rules: *"prose cannot keep it — prose is
  *     only legible after the model has already tried and failed."* It applied that to the pre-flight
- *     (`needs`); the identical argument applies to the post-condition, and `todo/recipes.md` files the
- *     gap in the same words — *"a cook's verdict is prose today, so nothing mechanical can read its
+ *     (`needs`); the identical argument applies to the post-condition, and the gap was filed in the
+ *     same words — *"a cook's verdict is prose today, so nothing mechanical can read its
  *     outcome."* Leaving it prose is the ruling unenforced, not the ruling respected.
  *
  * So the count moves from one to two and the LAW is untouched. If a third field is ever proposed, the
@@ -89,12 +89,12 @@ import { UnknownReason } from "@novaclaw/schema/unknown-reason"
  * process existed". A check that inspects a file without running anything has no command and no exit
  * code, so storing one there would mean inventing a command string that never ran — fabricated evidence
  * on an evidence document, which is the exact failure that table's own header warns about. That store
- * belongs to `todo/verified-autonomy.md`; this receipt is computed on demand and is a pure function of
+ * belongs to the session receipt; this one is computed on demand and is a pure function of
  * the folder, so it needs no store at all: re-running it is cheaper than trusting a stale row.
  *
  * ── THE OUTCOMES: three, plus a fourth that is not a failure ───────────────────────────────────────
  *
- * `todo/recipes.md` requires that the receipt keep NOT WORKING (the instance is broken) apart from NOT
+ * The receipt must keep NOT WORKING (the instance is broken) apart from NOT
  * AVAILABLE (the model cannot do that), *"or the check blames the install for a model capability"*, and
  * ruling 2 requires that *"I could not check this"* never be collapsed into either. So:
  *
@@ -468,7 +468,7 @@ export const verify = async (input: Input): Promise<Receipt> => {
   // ── NOT AVAILABLE ─────────────────────────────────────────────────────────────────────────────────
   // A model that cannot call tools cannot have written a file, so every declaration is unmeasurable
   // rather than unmet. This arm exists so the health check never blames the install for a model limit
-  // (`todo/recipes.md`), and it is checked FIRST because its answer makes the filesystem irrelevant.
+  // and it is checked FIRST because its answer makes the filesystem irrelevant.
   if (input.model !== undefined && !input.model.tools)
     return {
       ...base,

@@ -81,11 +81,10 @@ interface Pending {
   readonly expected: ReadonlySet<Reply["type"]>
   readonly resolve: (reply: Reply) => void
   readonly reject: (error: Error) => void
-  readonly detachAbort?: () => void
 }
 
 export interface Client {
-  readonly request: (message: Request, signal?: AbortSignal) => Promise<Reply>
+  readonly request: (message: Request) => Promise<Reply>
   /** Returns false for lifecycle/control messages that belong to the worker entrypoint. */
   readonly accept: (message: SessionWorkerProtocol.HostMessage) => boolean
   readonly close: (reason?: Error) => void
@@ -93,7 +92,22 @@ export interface Client {
 }
 
 /** Correlates worker RPCs without granting the child any host-owned authority. Identity is checked on
- * both directions, response kinds are paired to request kinds, and teardown rejects every waiter. */
+ * both directions, response kinds are paired to request kinds, and teardown rejects every waiter.
+ *
+ * 🔴 **`request` takes NO `AbortSignal`, and that is load-bearing rather than an omission.** Every
+ * method here and on `Capabilities` carried an optional `signal?` until 2026-09-01 (RF-15-13). No
+ * production caller ever supplied one — interruption in the worker travels through Effect
+ * (`session-worker-node.ts`'s `runtime.runPromise(..., { signal })`), not through these — and the
+ * path it enabled was actively harmful: `abort` deleted the pending entry while the HOST was still
+ * processing that RPC, so the eventual reply arrived for a requestID no longer pending, and
+ * `accept`'s unknown-id branch below `close()`s the transport. One cancelled call became a dead
+ * worker, failing every other in-flight RPC with it.
+ *
+ * ⚠️ **So the unknown-id `close()` in `accept` is only sound BECAUSE nothing can abort.** With no
+ * abort, a reply for an unknown id genuinely is a protocol violation and tearing down is right.
+ * Re-introduce cancellation and that stops being true — `accept` would first need to distinguish
+ * "aborted, ignore the late reply" from "the host invented an id", which is state this client does
+ * not keep. Do not add the signal back without adding that. */
 export function make(input: {
   readonly lease: SessionExecutionAttempt.Lease
   readonly send: (message: Request) => void
@@ -105,37 +119,24 @@ export function make(input: {
     if (closed) return
     closed = reason
     for (const item of pending.values()) {
-      item.detachAbort?.()
       item.reject(reason)
     }
     pending.clear()
   }
 
-  const request = (message: Request, signal?: AbortSignal) => {
+  const request = (message: Request) => {
     if (closed) return Promise.reject(closed)
     if (!SessionWorkerProtocol.owns(input.lease, message))
       return Promise.reject(new Error("worker attempted a stale RPC request"))
     if (pending.has(message.requestID))
       return Promise.reject(new Error(`duplicate worker RPC id: ${message.requestID}`))
-    if (signal?.aborted) return Promise.reject(signal.reason)
 
     return new Promise<Reply>((resolve, reject) => {
-      const abort = () => {
-        pending.delete(message.requestID)
-        reject(signal?.reason ?? new Error("worker RPC aborted"))
-      }
-      if (signal) signal.addEventListener("abort", abort, { once: true })
-      pending.set(message.requestID, {
-        expected: replyTypes[message.type],
-        resolve,
-        reject,
-        ...(signal === undefined ? {} : { detachAbort: () => signal.removeEventListener("abort", abort) }),
-      })
+      pending.set(message.requestID, { expected: replyTypes[message.type], resolve, reject })
       try {
         input.send(message)
       } catch (error) {
         pending.delete(message.requestID)
-        if (signal) signal.removeEventListener("abort", abort)
         reject(error instanceof Error ? error : new Error("failed to send worker RPC"))
       }
     })
@@ -157,7 +158,6 @@ export function make(input: {
       return true
     }
     pending.delete(message.requestID)
-    item.detachAbort?.()
     item.resolve(message as Reply)
     return true
   }

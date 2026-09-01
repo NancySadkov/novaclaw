@@ -2,7 +2,7 @@ import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core"
 import { Timestamps } from "../database/schema.sql"
 
 /**
- * Community P4 — channel subscriptions and the message log (`todo/community-p2p.md`).
+ * Community P4 — channel subscriptions and the message log (`notes/spec/community-p2p.md`).
  *
  * 🔴 Gossip delivers to whoever is ONLINE. A forum whose messages vanish for anyone who was away is
  * not a forum, so history is not a later feature — it is the half of P4 that gossip does not

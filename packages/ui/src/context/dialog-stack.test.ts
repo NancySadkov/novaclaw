@@ -7,7 +7,7 @@ import { createDialogScope, createDialogStack, DIALOG_CLOSE_MS, nextDialogID } f
  *
  * `dialog.show` mounts under `createRoot`, which is DETACHED: Solid hands the root the caller's
  * context and never links it to the caller's lifetime, so unmounting the component that opened a
- * dialog disposes nothing. Measured consequence (`todo/projects.md`): the composer's Tuning panel
+ * dialog disposes nothing. Measured consequence: the composer's Tuning panel
  * survived a route change to another folder, kept rendering the previous chat's state, and
  * "Save as folder default" CREATED `novaclaw.json` in the folder the user had already left.
  *

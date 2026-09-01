@@ -6,7 +6,6 @@ import { getLogger } from "./logging"
 import { getUserShell, loadShellEnv } from "./shell-env"
 import { getStore } from "./store"
 import { DEFAULT_SERVER_URL_KEY } from "./store-keys"
-import { updaterAirgapFromManifest } from "./updater-airgap"
 import {
   initialSuperviseState,
   livenessDecision,
@@ -257,7 +256,7 @@ export async function spawnLocalServer(
 // Dependability P3 (uix-dependability-plan): the sidecar SUPERVISOR — "the instance heals itself".
 // Wraps spawnLocalServer: a child that exits after becoming ready (a crash, an OOM kill) is
 // respawned with backoff; a crash loop gives up gracefully (the renderer's P2 banner reports the
-// outage — never a dead dialog). An intentional stop (updater/app-quit via listener.stop) sets the
+// outage — never a dead dialog). An intentional stop (app quit via listener.stop) sets the
 // `stopping` latch so the respawner never fights a shutdown. Each respawn goes through
 // spawnLocalServer itself, so every child gets FRESH exit/health plumbing. The returned shape is
 // spawnLocalServer's own — callers hold ONE stable listener whose stop() always targets the live
@@ -456,30 +455,6 @@ export async function superviseLocalServer(
   }
 }
 
-// Is the updater's named airgap layer active? Asks the sidecar's offline-status route and reads
-// layer 6 rather than re-deriving policy in Electron. `undefined` means the answer is unavailable:
-// the controller treats that as a refusal, because a dead or older sidecar is not proof of consent
-// to contact the update host.
-export async function checkUpdaterAirgap(
-  url: string,
-  password: string,
-  directory: string,
-): Promise<boolean | undefined> {
-  try {
-    const target = new URL("/shell/offline", url)
-    target.searchParams.set("directory", directory)
-    const auth = Buffer.from(`novaclaw:${password}`).toString("base64")
-    const res = await fetch(target, {
-      headers: { authorization: `Basic ${auth}` },
-      signal: AbortSignal.timeout(3000),
-    })
-    if (!res.ok) return undefined
-    return updaterAirgapFromManifest(await res.json())
-  } catch {
-    return undefined
-  }
-}
-
 export async function checkHealth(url: string, password?: string | null): Promise<boolean> {
   let healthUrl: URL
   try {
@@ -514,6 +489,7 @@ function createSidecarEnv(): Record<string, string> {
   if (process.platform === "linux") delete env.LD_PRELOAD
   if (!app.isPackaged) env.NOVACLAW_DISABLE_CHANNEL_DB = "1"
   if (process.platform === "win32" && app.isPackaged) {
+    env.NOVACLAW_RIPGREP_PATH = join(process.resourcesPath, "third-party", "ripgrep", "rg.exe")
     env.NOVACLAW_W64DEVKIT_PATH = join(process.resourcesPath, "third-party", "w64devkit")
     // The embedded `magick` (owner, 2026-08-23). Same shape and the same reason as the line above:
     // `shell.ts` puts it on the agent's PATH, and without this the binary ships and is unreachable —

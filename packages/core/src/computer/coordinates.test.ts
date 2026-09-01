@@ -4,7 +4,7 @@ import { ComputerCoordinates as CC } from "./coordinates"
 // The anchor for this whole file is a REAL measurement, not an invented example. On 2026-08-06 a
 // synthetic 1280x800 dialog was drawn with exact button rects and sent to holo3.1; the model's
 // replies and the true boxes are reproduced here so the conversion is pinned to observed behaviour
-// rather than to my arithmetic. Full table: todo/computer-use.md.
+// rather than to my arithmetic. The full table is reproduced in `coordinates.ts`'s module note.
 const VIEWPORT = { width: 1280, height: 800 }
 
 const TARGETS = [

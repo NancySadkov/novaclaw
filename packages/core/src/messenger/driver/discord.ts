@@ -73,7 +73,6 @@ const CAPS: Messenger.Capabilities = {
   listChats: "full", // guilds → text channels; DMs join via the seen-cache
   files: { up: true, down: true, maxBytes: 8_000_000 },
   edits: true,
-  typing: true,
   threads: true,
   moderation: { delete: true, ban: true, kick: true, mute: true, pin: true, lock: true, approve: false },
   format: "markdown",

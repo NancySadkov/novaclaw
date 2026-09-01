@@ -38,8 +38,8 @@ import type { ComputerProposal } from "./proposal"
  * ---
  *
  * 🔴 **WHAT IS STORED AND WHAT IS RE-SHOWN ARE DIFFERENT SETS, and that separation is a MEASURED fix
- * rather than a preference (2026-08-07).** The acceptance run (`computer-use-loop-plan.md` §7b) missed
- * a menu row by ~40 normalized units against a 45-unit pitch, and §7c took it to measurement on one
+ * rather than a preference (2026-08-07).** The acceptance run missed
+ * a menu row by ~40 normalized units against a 45-unit pitch, and the follow-up took it to measurement on one
  * frozen frame with mechanical ground truth, varying ONLY the ledger inside the run's own
  * reconstructed planner prompt:
  *

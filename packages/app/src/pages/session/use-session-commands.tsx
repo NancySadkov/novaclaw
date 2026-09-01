@@ -6,7 +6,6 @@ import { useFile, selectionFromLines, type FileSelection, type SelectedLineRange
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useLocal } from "@/context/local"
-import { usePermission } from "@/context/permission"
 import { usePrompt } from "@/context/prompt"
 import { useServerSync } from "@/context/server-sync"
 import { useSDK } from "@/context/sdk"
@@ -55,7 +54,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const file = useFile()
   const language = useLanguage()
   const local = useLocal()
-  const permission = usePermission()
   const prompt = usePrompt()
   const sdk = useSDK()
   const sync = useSync()
@@ -133,13 +131,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const viewCommand = withCategory(language.t("command.category.view"))
   const terminalCommand = withCategory(language.t("command.category.terminal"))
   const mcpCommand = withCategory(language.t("command.category.mcp"))
-  const permissionsCommand = withCategory(language.t("command.category.permissions"))
-
-  const isAutoAcceptActive = () => {
-    const sessionID = params.id
-    if (sessionID) return permission.isAutoAccepting(sessionID, sdk().directory)
-    return permission.isAutoAcceptingDirectory(sdk().directory)
-  }
   const write = async (value: string) => {
     const body = typeof document === "undefined" ? undefined : document.body
     if (body) {
@@ -206,24 +197,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       () => import("@/components/dialog-select-mcp"),
       (x) => dialog.show(() => <x.DialogSelectMcp />),
     )
-  }
-
-  const toggleAutoAccept = () => {
-    const sessionID = params.id
-    if (sessionID) permission.toggleAutoAccept(sessionID, sdk().directory)
-    else permission.toggleAutoAcceptDirectory(sdk().directory)
-
-    const active = sessionID
-      ? permission.isAutoAccepting(sessionID, sdk().directory)
-      : permission.isAutoAcceptingDirectory(sdk().directory)
-    showToast({
-      title: active
-        ? language.t("toast.permissions.autoaccept.on.title")
-        : language.t("toast.permissions.autoaccept.off.title"),
-      description: active
-        ? language.t("toast.permissions.autoaccept.on.description")
-        : language.t("toast.permissions.autoaccept.off.description"),
-    })
   }
 
   /**
@@ -435,18 +408,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     }),
   ]
 
-  const permissionsCmds = () => [
-    permissionsCommand({
-      id: "permissions.autoaccept",
-      title: isAutoAcceptActive()
-        ? language.t("command.permissions.autoaccept.disable")
-        : language.t("command.permissions.autoaccept.enable"),
-      keybind: "mod+shift+a",
-      disabled: false,
-      onSelect: toggleAutoAccept,
-    }),
-  ]
-
   command.register("session", () => [
     ...sessionCmds(),
     ...fileCmds(),
@@ -455,6 +416,5 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     ...terminalCmds(),
     ...messageCmds(),
     ...mcpCmds(),
-    ...permissionsCmds(),
   ])
 }

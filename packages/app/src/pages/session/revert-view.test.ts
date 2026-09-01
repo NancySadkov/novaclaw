@@ -14,7 +14,7 @@ import {
  * `session.tsx` makes), so they look like `msg_fab7060160010s31FhIt13gZGs` and are monotonically
  * ascending. Hand-written ids (`msg_probe1`, `msg_1`) sort ABOVE every generated id, which silently
  * turns any ordering assertion into a tautology — that is exactly how one diagnosis of this bug was
- * invalidated (todo/session-ui.md, 2026-07-29). Do not replace these with literals.
+ * invalidated (measured 2026-07-29). Do not replace these with literals.
  */
 const id = () => Identifier.ascending("message")
 

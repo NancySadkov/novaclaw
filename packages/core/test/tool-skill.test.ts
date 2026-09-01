@@ -51,10 +51,6 @@ describe("SkillTool", () => {
                   Effect.andThen(deny ? Effect.fail(new PermissionV2.DeniedError({ rules: [] })) : Effect.void),
                 ),
               ask: () => Effect.die("unused"),
-              reply: () => Effect.die("unused"),
-              get: () => Effect.die("unused"),
-              forSession: () => Effect.die("unused"),
-              list: () => Effect.die("unused"),
             }),
           )
           const skills = Layer.succeed(
@@ -115,13 +111,23 @@ describe("SkillTool", () => {
               }),
             ).toEqual({ type: "error", value: "Unable to load skill missing" })
             deny = true
-            expect(
-              yield* executeTool(registry, {
-                sessionID,
-                ...toolIdentity,
-                call: { type: "tool-call", id: "call-denied-skill", name: "skill", input: { name: "effect" } },
-              }),
-            ).toEqual({ type: "error", value: "Unable to load skill effect" })
+            // 🔴 **RE-POINTED 2026-09-01 (RF-04-6), and the old expectation was pinning the DEFECT.**
+            // It asserted `"Unable to load skill effect"` — the same sentence the MISSING-skill case
+            // three lines above produces. A refusal and a not-found were literally indistinguishable
+            // to the model, so a model that could not have the skill was told to look for a file
+            // that is right there, and retried. `skill.ts` now maps its error channel with
+            // `Tool.absorb`, which consults `PermissionV2.denialMessage` before the fallback.
+            //
+            // The assertion is not weakened: it is stronger, because it now pins the two apart
+            // rather than pinning them together.
+            const denied = yield* executeTool(registry, {
+              sessionID,
+              ...toolIdentity,
+              call: { type: "tool-call", id: "call-denied-skill", name: "skill", input: { name: "effect" } },
+            })
+            expect(denied.type).toBe("error")
+            expect(denied.value).toContain("Permission denied")
+            expect(denied.value).not.toBe("Unable to load skill effect")
             deny = false
             const flat = SkillV2.Info.make({
               name: "public",

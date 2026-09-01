@@ -4,6 +4,7 @@ import { DateTime } from "luxon"
 import { filter, firstBy, flat, groupBy, mapValues, pipe, uniqueBy, values } from "remeda"
 import { createSimpleContext } from "@novaclaw/ui/context"
 import { useProviders } from "@/hooks/use-providers"
+import type { Tier } from "@/apps/agent-model"
 import { pruneCovers } from "./models-covers"
 import { Persist, persisted } from "@/utils/persist"
 
@@ -13,7 +14,9 @@ type Visibility = "show" | "hide"
 // Rough capability class (by parameter count) the user assigns — or "guess" to let NovaClaw
 // estimate it later by probing (see notes/guesstimation.md). Kept client-side like `variant`;
 // wiring it into the system prompt is future work.
-export type ModelTier = "guess" | "micro" | "tiny" | "small" | "medium" | "large" | "frontier"
+// The ladder itself is `AgentModelFit.LADDER` (re-exported as `TIERS`), never re-spelled: a fifth
+// hand-kept copy of the same order is a tier the schema knows and this screen cannot show.
+export type ModelTier = "guess" | Tier
 type User = ModelKey & { visibility: Visibility; favorite?: boolean }
 type Store = {
   user: User[]

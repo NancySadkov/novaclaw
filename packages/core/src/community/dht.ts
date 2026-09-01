@@ -47,10 +47,32 @@ export const MAX_DHT_PEERS = 8
  * Where the sidecar lives. An explicit override wins so a packaged build can point at its own copy,
  * which is the same escape hatch `packages/host` gives its compiler.
  */
+/**
+ * The sidecar's file name. Exported because the RELEASE BUILD needs the same answer: it resolves
+ * `../dht/build/<name>` to decide whether a target ships with a DHT, and when that lookup misses it
+ * only WARNS. So a rename that reached the Rust crate and one of its two readers would produce a
+ * release that is silently discovery-less — the exact failure the comments in `binaryPath` below
+ * were written about, arriving through the build instead of through the runtime.
+ *
+ * ⚠️ **`packages/dht/protocol.ts` has its own copy and that one cannot be merged away.** It is the
+ * TS shim beside a cargo crate: `packages/dht` declares no dependencies and publishes no `exports`
+ * map, so nothing can import it and it can import nothing. Its consumers (`dht/build.ts`,
+ * `desktop/scripts/dht-packaging.ts`) reach it by relative path for that reason. Giving a Rust
+ * crate a workspace edge and a published TS surface to save one ternary is the wrong trade; the two
+ * copies name each other instead.
+ *
+ * ⚠️ **`core/test/community-dht.test.ts` spells the name a third time ON PURPOSE — do not "fix" it.**
+ * It writes a fixture file with that literal name and asserts `binaryPath()` finds it. Importing
+ * this function there would make the test construct and then find whatever name the code currently
+ * says, which is a test that cannot fail on a rename — the one thing it exists to catch.
+ */
+export const dhtExecutableName = (platform: NodeJS.Platform = process.platform): string =>
+  platform === "win32" ? "novaclaw-dht.exe" : "novaclaw-dht"
+
 export const binaryPath = (): string => {
   const override = process.env["NOVACLAW_DHT_BINARY"]
   if (override !== undefined && override !== "") return override
-  const exe = process.platform === "win32" ? "novaclaw-dht.exe" : "novaclaw-dht"
+  const exe = dhtExecutableName()
 
   /**
    * 🔴 BESIDE THE EXECUTABLE FIRST, then the dev tree — the same order `packages/host` uses, and

@@ -11,7 +11,7 @@ import { Effect } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { MessengerApi, handlerLayer } from "../handler-api"
 
-// P0 handlers (notes/messenger-plan.md §5): driver discovery + account CRUD. Secrets go through
+// P0 handlers: driver discovery + account CRUD. Secrets go through
 // the credential store under a PER-ACCOUNT synthetic integration id — Credential.create replaces
 // any credential for an integration, so two accounts on one platform must not share one id. The
 // gateway reloads after every mutation so status reflects the store immediately. P1.7 adds the

@@ -2,6 +2,13 @@
  * SerializeAddon - Serialize terminal buffer contents
  *
  * Port of xterm.js addon-serialize for ghostty-web.
+ *
+ * Derived from @xterm/addon-serialize:
+ *   Copyright (c) 2017-2019, The xterm.js authors (https://github.com/xtermjs/xterm.js)
+ *   Copyright (c) 2014-2016, SourceLair Private Company (https://www.sourcelair.com)
+ *   Copyright (c) 2012-2013, Christopher Jeffrey (https://github.com/chjj/)
+ *   SPDX-License-Identifier: MIT
+ * Full license text: licenses/xterm-LICENSE-MIT.txt (also listed in NOTICE).
  * Enables serialization of terminal contents to a string that can
  * be written back to restore terminal state.
  *
@@ -62,6 +69,14 @@ type TerminalBuffers = {
   alternate?: IBuffer
 }
 
+/**
+ * 🔴 **Deliberately NOT `@novaclaw/schema/record` (RF-29-6, 2026-09-01): this one has no array
+ * guard.** The shared predicate rejects arrays; this one accepts them, and the only caller is the
+ * duck-typed `isBuffer` below, which then requires `length`/`cursorX`/`cursorY` to be numbers — so
+ * an array is rejected one line later on its shape rather than its type. Swapping in the shared
+ * predicate would change what narrows here, which is a behaviour change wearing a de-duplication's
+ * clothes. `packages/schema/src/record.test.ts` pins this difference as a control.
+ */
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null
 }

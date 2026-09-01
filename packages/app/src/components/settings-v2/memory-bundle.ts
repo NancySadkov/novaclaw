@@ -1,6 +1,6 @@
 import type { MemoryRow } from "@/utils/memory-api"
 
-// The portable memory backup format (notes/kb-graph-plan.md §4.11 / §5) — a lay "Export / Import my
+// The portable memory backup format — a lay "Export / Import my
 // memory" bundle, distinct from the Developer whole-config Export/Import. Pure + versioned so the
 // serialize/parse logic is unit-testable independent of the network and the UI.
 //

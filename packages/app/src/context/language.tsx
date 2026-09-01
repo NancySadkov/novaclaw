@@ -5,26 +5,12 @@ import { createSimpleContext } from "@novaclaw/ui/context"
 import { Persist, persisted } from "@/utils/persist"
 import { dict as en } from "@/i18n/en"
 import { dict as uiEn } from "@novaclaw/ui/i18n/en"
+// THE locale table + matcher, in the leaf package, because the desktop shell needs the same one
+// (`packages/desktop/src/renderer/i18n/index.ts`). Its own 16-entry copy was two short.
+import { LOCALES, detectLocale, normalizeLocale, type Locale } from "@novaclaw/schema/locale"
 
-export type Locale =
-  | "en"
-  | "zh"
-  | "zht"
-  | "ko"
-  | "de"
-  | "es"
-  | "fr"
-  | "da"
-  | "ja"
-  | "pl"
-  | "ru"
-  | "uk"
-  | "ar"
-  | "no"
-  | "br"
-  | "th"
-  | "bs"
-  | "tr"
+export type { Locale }
+export { LOCALES, detectLocale, normalizeLocale }
 
 type RawDictionary = typeof en & typeof uiEn
 type Dictionary = i18n.Flatten<RawDictionary>
@@ -58,7 +44,9 @@ export type Translator = (key: TranslationKey, params?: TranslationParams) => st
  * is genuinely impossible.
  *
  * Every use is pinned by `src/i18n/key-typing.test.ts`, a SHRINK-ONLY ledger: adding a site fails
- * the suite by name. Two sites are pinned today.
+ * the suite by name. ⚠️ Read the count off `LEDGER` there, never from a sentence here — a
+ * hand-maintained number beside a mechanically-checked ledger is stale the first time the ledger
+ * shrinks, and it has been.
  */
 export function dynamicKey(key: string): TranslationKey {
   return key as TranslationKey
@@ -67,27 +55,6 @@ export function dynamicKey(key: string): TranslationKey {
 function cookie(locale: Locale) {
   return `oc_locale=${encodeURIComponent(locale)}; Path=/; Max-Age=31536000; SameSite=Lax`
 }
-
-const LOCALES: readonly Locale[] = [
-  "en",
-  "zh",
-  "zht",
-  "ko",
-  "de",
-  "es",
-  "fr",
-  "da",
-  "ja",
-  "pl",
-  "ru",
-  "uk",
-  "bs",
-  "ar",
-  "no",
-  "br",
-  "th",
-  "tr",
-]
 
 const INTL: Record<Locale, string> = {
   en: "en",
@@ -196,24 +163,6 @@ const localeMatchers: Array<{ locale: Locale; match: (language: string) => boole
   { locale: "tr", match: (language) => language.startsWith("tr") },
 ]
 
-function detectLocale(): Locale {
-  if (typeof navigator !== "object") return "en"
-
-  const languages = navigator.languages?.length ? navigator.languages : [navigator.language]
-  for (const language of languages) {
-    if (!language) continue
-    const normalized = language.toLowerCase()
-    const match = localeMatchers.find((entry) => entry.match(normalized))
-    if (match) return match.locale
-  }
-
-  return "en"
-}
-
-export function normalizeLocale(value: string): Locale {
-  return LOCALES.includes(value as Locale) ? (value as Locale) : "en"
-}
-
 function readStoredLocale() {
   if (typeof localStorage !== "object") return
   try {
@@ -249,27 +198,16 @@ export const { use: useLanguage, provider: LanguageProvider, context: LanguageCo
       initialValue: dicts.get(initial) ?? base,
     })
 
-    // `Translator` is key-typed (`keyof Dictionary`, a ~1862-key union), so a key that is not in
-    // `en.ts` + the ui bundle is a COMPILE ERROR. That was not always true: until 2026-07-29
-    // `packages/ui`'s `en` was annotated `Record<string, string>`, and its index signature swallowed
-    // the app's literal keys in the `typeof en & typeof uiEn` intersection — `keyof Dictionary`
-    // collapsed to `string` and the app's `t` was never key-checked at all. Removing that annotation
-    // made the union real; this cast then reported 14 pre-existing sites, all now fixed:
-    //   · ONE key that did not exist — `mcp.status.needs_client_registration`, a live bug that
-    //     rendered the raw key at the user in `dialog-select-mcp.tsx`. (The other four `mcp.status.*`
-    //     keys were already in `en.ts`; only that one was missing, in all 19 bundles.)
-    //   · Two "dynamic" keys that were nothing of the sort — a `createMemo` returning a widened
-    //     object literal, and a field list annotated `label: string`. Both are closed sets and are
-    //     now literal unions, so they are checked rather than excused.
-    //   · Eleven consumers declaring `(key: string) => string`, which a key-typed `t` cannot satisfy
-    //     because parameters are contravariant. They import this `Translator` alias now.
-    // A separate sweep then closed 19 PRE-EXISTING `as Parameters<typeof language.t>[0]` casts that
-    // were harmless no-ops while `t` took a `string` and became live bypasses the moment it did not.
-    // 17 were fixed by narrowing the source; 2 genuinely cannot be and go through `dynamicKey()`,
-    // ledgered in `src/i18n/key-typing.test.ts`.
+    // 🔴 `Translator` is key-typed (`keyof Dictionary`), so a key that is not in `en.ts` + the ui
+    // bundle is a COMPILE ERROR. It is fragile in one specific way: annotating either bundle as
+    // `Record<string, string>` makes the index signature swallow the other's literal keys in the
+    // `typeof en & typeof uiEn` intersection, `keyof Dictionary` collapses to `string`, and `t` is
+    // silently never checked again. That has happened, and it shipped a raw key to a user.
     // ⚠️ The cast itself remains because `@solid-primitives/i18n`'s `translator` types params
     // per-key from the template string; we take one uniform param bag. Do NOT widen `key` back to
     // `string` — that is the whole check, and `en.ts` is the only place to add a key.
+    // `src/i18n/key-typing.test.ts` asserts both declarations by exact text, because the bypass
+    // ratchet beside it would go green over a translator that checks nothing.
     const t = i18n.translator(() => dict() ?? base, i18n.resolveTemplate) as Translator
 
     const label = (value: Locale) => t(LABEL_KEY[value])

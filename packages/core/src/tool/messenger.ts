@@ -23,7 +23,7 @@ import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
 
-// The `messenger` tool (notes/messenger-plan.md §4) — the model-facing surface of the Messenger
+// The `messenger` tool — the model-facing surface of the Messenger
 // module. ONE tool, a closed op vocab (kb.ts is the template): `status` → `chats` → `history` are
 // reads; `send` is governed by the traffic rules (§2.3 — paced, cold-start-guarded) and
 // permission-gated. Results are LINEARIZED text lines, never nested JSON; a miss settles as
@@ -817,6 +817,8 @@ export const layer = Layer.effectDiscard(
                   case "connect": {
                     const resolved = yield* resolveAccount(input.account)
                     if (resolved.account === undefined) return resolved.miss
+                    const chatID = input.chat.trim()
+                    const resource = `${resolved.account.id}:${chatID}`
                     // Bypass-bind warning (§3.4): wiring an UNTRUSTED client/audience chat into a
                     // session that auto-approves every tool call (bypass/yolo) hands a stranger an
                     // agent with no consent gate. Refuse unless the model confirms with the user and
@@ -836,11 +838,14 @@ export const layer = Layer.effectDiscard(
                       if (refusal !== undefined) return { outcome: "failed", message: refusal } satisfies Output
                     }
                     // Binding a chat to a session shapes where the agent listens — gated so a hostile
-                    // client can't wire the agent into an arbitrary chat. Resource = the chat.
+                    // client can't wire the agent into an arbitrary chat. Persist only the exact
+                    // account+chat resource the card names: a wildcard saved from one approval would
+                    // let the model bind a second conversation without the shareholder ever seeing it,
+                    // and a binding is itself invitation evidence for the cold-start governor.
                     yield* permission.assert({
                       action: "messenger.connect",
-                      resources: [`${resolved.account.id}:${input.chat.trim()}`],
-                      save: ["*"],
+                      resources: [resource],
+                      save: [resource],
                       sessionID: context.sessionID,
                       agent: context.agent,
                       source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
@@ -848,7 +853,7 @@ export const layer = Layer.effectDiscard(
                     const binding = yield* store
                       .createBinding({
                         accountID: resolved.account.id,
-                        chatID: input.chat.trim(),
+                        chatID,
                         sessionID: context.sessionID,
                         trust: input.trust,
                       })
@@ -860,7 +865,7 @@ export const layer = Layer.effectDiscard(
                       } satisfies Output
                     return {
                       outcome: "ok",
-                      message: `Bound this session to chat ${input.chat.trim()} as "${input.trust}". Its incoming messages will now become your turns.`,
+                      message: `Bound this session to chat ${chatID} as "${input.trust}". Its incoming messages will now become your turns.`,
                     } satisfies Output
                   }
                   case "upload": {

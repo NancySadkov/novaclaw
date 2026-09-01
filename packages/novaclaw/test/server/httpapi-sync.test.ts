@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, mock } from "bun:test"
 import { Context, Effect, Layer } from "effect"
-import { Flag } from "@novaclaw/core/flag/flag"
 import { SyncPaths } from "../../src/server/routes/instance/httpapi/groups/sync"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
 import { resetDatabase, seedSessionRow } from "../fixture/db"
@@ -10,13 +9,11 @@ import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { testEffectShared } from "../lib/effect"
 import { httpApiLayer, requestInDirectory } from "./httpapi-layer"
 
-const originalWorkspaces = Flag.NOVACLAW_EXPERIMENTAL_WORKSPACES
 const context = Context.empty() as Context.Context<unknown>
 const it = testEffectShared(Layer.mergeAll(Database.defaultLayer, EventV2.defaultLayer, httpApiLayer))
 
 afterEach(async () => {
   mock.restore()
-  Flag.NOVACLAW_EXPERIMENTAL_WORKSPACES = originalWorkspaces
   await disposeAllInstances()
   await resetDatabase()
 })
@@ -26,14 +23,9 @@ describe("sync HttpApi", () => {
     "serves sync routes",
     () =>
       Effect.gen(function* () {
-        Flag.NOVACLAW_EXPERIMENTAL_WORKSPACES = true
         const tmp = yield* TestInstance
         const headers = { "x-novaclaw-directory": tmp.directory, "content-type": "application/json" }
         const session = yield* seedSessionRow({ title: "sync" })
-
-        const started = yield* requestInDirectory(SyncPaths.start, tmp.directory, { method: "POST", headers })
-        expect(started.status).toBe(200)
-        expect(yield* started.json).toBe(true)
 
         const history = yield* requestInDirectory(SyncPaths.history, tmp.directory, {
           method: "POST",

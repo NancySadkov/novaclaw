@@ -20,7 +20,7 @@ import {
 } from "./log"
 
 /**
- * `todo/logging.md` 3f — **`POST /api/log/read`**, exercised.
+ * **`POST /api/log/read`**, exercised.
  *
  * Three claims are under test and each one is a claim about the WIRE, not about a helper:
  *

@@ -9,7 +9,7 @@ import { ProjectFileCache } from "./project-file-cache"
 /**
  * `novaclaw.json`'s `exclude` section, ENFORCED.
  *
- * `todo/projects.md`: *"Files/Project settings shows what Nova must not read … Keep model read
+ * The requirement: *"Files/Project settings shows what Nova must not read … Keep model read
  * eligibility distinct from watcher/build ignores and enforce it below all agentic file tools."*
  *
  * 🔴 **This existed as a promise before it existed as a mechanism.** The section was declared in
@@ -53,8 +53,8 @@ import { ProjectFileCache } from "./project-file-cache"
  *
  * `filesystem/ignore.ts` answers a different question — *"is this worth watching / worth indexing"*
  * — and its answer is a performance judgement about `node_modules`, `dist` and `.DS_Store`. This
- * answers *"did the user forbid this"*, and its answer is a privacy promise. `todo/projects.md`
- * requires they stay distinct, and they must: folding them together would make a build-output tweak
+ * answers *"did the user forbid this"*, and its answer is a privacy promise. The two
+ * must stay distinct: folding them together would make a build-output tweak
  * silently widen or narrow what Nova is allowed to see, and would make the exclusion list unable to
  * say `node_modules is fine to read here`.
  */
@@ -62,7 +62,7 @@ import { ProjectFileCache } from "./project-file-cache"
 /**
  * ## Pattern semantics — decided here, per principle 10
  *
- * **gitignore-style globs**, because `todo/projects.md` requires importing a `.gitignore` and a
+ * **gitignore-style globs**, because the product imports a `.gitignore` and a
  * format that reinterpreted the lines it imported would be a trap. Concretely:
  *
  * - A pattern is matched against the target's path **relative to the directory holding the

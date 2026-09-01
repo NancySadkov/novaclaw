@@ -15,7 +15,7 @@ import { EmailImapSmtp } from "@novaclaw/core/messenger/driver/email-imap-smtp"
 import type { ConnectContext } from "@novaclaw/core/messenger/driver"
 import { testEffect } from "./lib/effect"
 
-// P9 gate (notes/messenger-plan.md §8): the email driver's LOGIC — OAuth device-code login flow,
+// P9 gate: the email driver's LOGIC — OAuth device-code login flow,
 // IMAP-poll → thread-mapped inbound, durable UID cursor (+ UIDVALIDITY reset), and SMTP reply
 // building — all against fake transport + OAuth seams. The raw IMAP/SMTP wire + the Microsoft HTTP
 // calls are the live-gated factories (email-imap-smtp.ts / email-oauth.ts).

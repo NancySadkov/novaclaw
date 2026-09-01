@@ -22,8 +22,7 @@ let respond = (_request: HttpClientRequest.HttpClientRequest) =>
 /**
  * Set to make the permission gate fail. ⚠️ `assert`'s error channel is
  * `PermissionV2.Error | SessionV2.NotFoundError` — and `PermissionV2.Error` is the module's own
- * union (`DeniedError | RejectedError | CorrectedError`), NOT the global `Error`. `denialMessage`
- * answers all three of those, so `NotFoundError` is the only member it declines, which makes it the
+ * tagged `DeniedError`, NOT the global `Error`. `denialMessage` answers it, so `NotFoundError` is the
  * one honest negative control available here.
  */
 let assertFailure: PermissionV2.Error | SessionV2.NotFoundError | undefined
@@ -48,10 +47,6 @@ const permission = Layer.succeed(
         if (assertFailure) yield* Effect.fail(assertFailure)
       }),
     ask: () => Effect.die("unused"),
-    reply: () => Effect.die("unused"),
-    get: () => Effect.die("unused"),
-    forSession: () => Effect.die("unused"),
-    list: () => Effect.die("unused"),
   }),
 )
 const toolLayer = (replacements: LayerNode.Replacements = []) =>

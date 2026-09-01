@@ -24,6 +24,7 @@ import { terminalDiagnosis } from "@/pages/terminal-diagnosis"
 import { findMatches, stepMatch } from "@/pages/terminal-search"
 import { InstallationVersion } from "@novaclaw/core/installation/version"
 import { showToast } from "@/utils/toast"
+import { resolveInstanceGlobalDirectory } from "@/utils/routing-directory"
 
 /** A terminal belongs to the selected NovaClaw instance, not to the renderer machine. Resolve that
  * instance's home as the PTY working directory, then reuse the exact directory-scoped PTY transport
@@ -37,15 +38,9 @@ export function TerminalPage() {
     const selected = conn()
     return selected ? global.ensureServerCtx(selected) : undefined
   })
-  const [directory] = createResource(ctx, async (selected) => {
-    const known = selected.sync.data.path
-    if (known && (known.home || known.directory)) return known.home || known.directory
-    const fetched = await selected.sdk.client.path
-      .get()
-      .then((response) => response.data)
-      .catch(() => undefined)
-    return fetched?.home || fetched?.directory || ""
-  })
+  // A pty is instance-global; `directory` is only request routing. The read is
+  // `utils/routing-directory.ts`, shared verbatim with trash.tsx and registry.tsx.
+  const [directory] = createResource(ctx, resolveInstanceGlobalDirectory)
 
   return (
     <RequiresLevel

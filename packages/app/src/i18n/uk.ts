@@ -24,8 +24,6 @@ export const dict = {
 
   "command.palette": "Палітра команд",
 
-
-
   "command.session.new": "Нова сесія",
   "command.file.open": "Відкрити файл",
   "command.tab.close": "Закрити вкладку",
@@ -65,16 +63,10 @@ export const dict = {
   "palette.group.commands": "Команди",
   "palette.group.files": "Файли",
 
-
   "dialog.model.select.title": "Вибрати модель",
   "dialog.model.search.placeholder": "Пошук моделей",
   "dialog.model.empty": "Немає результатів моделей",
   "dialog.model.manage": "Керувати моделями",
-
-
-
-
-
 
   "model.tag.free": "Безкоштовно",
   "model.tag.latest": "Остання",
@@ -172,7 +164,6 @@ export const dict = {
   "dialog.mcp.title": "MCP",
   "dialog.mcp.description": "{{enabled}} з {{total}} увімкнено",
   "dialog.mcp.empty": "MCP не налаштовано",
-
 
   "mcp.status.connected": "підключено",
   "mcp.status.failed": "помилка",
@@ -286,9 +277,6 @@ export const dict = {
   "language.th": "ไทย",
   "language.tr": "Türkçe",
 
-
-
-
   "toast.permissions.autoaccept.on.title": "Автоматичне прийняття дозволів",
   "toast.permissions.autoaccept.on.description": "Запити дозволів будуть автоматично схвалюватися",
   "toast.permissions.autoaccept.off.title": "Автоматичне прийняття дозволів зупинено",
@@ -303,20 +291,13 @@ export const dict = {
   "toast.context.noLineSelection.title": "Не вибрано рядків",
   "toast.context.noLineSelection.description": "Спочатку виберіть діапазон рядків у вкладці файлу.",
 
-
-
   "toast.session.listFailed.title": "Не вдалося завантажити сесії для {{project}}",
   "toast.project.reloadFailed.title": "Не вдалося перезавантажити {{project}}",
-
-  "toast.update.action.installRestart": "Встановити та перезапустити",
 
   "error.page.title": "Щось пішло не так",
   "error.page.description": "Під час завантаження програми сталася помилка.",
   "error.page.details.label": "Деталі помилки",
   "error.page.action.restart": "Перезапустити",
-  "error.page.action.checking": "Перевірка...",
-  "error.page.action.checkUpdates": "Перевірити оновлення",
-  "error.page.action.updateTo": "Оновити до {{version}}",
   "error.page.circular": "[Циклічне]",
   "error.page.report.prefix": "Будь ласка, повідомте про цю помилку команді NovaClaw",
   "error.page.report.discord": "на Discord",
@@ -358,10 +339,6 @@ export const dict = {
   "notification.session.responseReady.title": "Відповідь готова",
   "notification.session.error.title": "Помилка сесії",
   "notification.session.error.fallbackDescription": "Сталася помилка",
-
-  "home.recentProjects": "Нещодавні проєкти",
-  "home.empty.title": "Немає нещодавніх проєктів",
-  "home.empty.description": "Почніть, відкривши локальний проєкт",
 
   "session.tab.session": "Сесія",
   "session.tab.review": "Огляд",
@@ -408,7 +385,6 @@ export const dict = {
   "session.new.title": "Створити що завгодно",
   "session.new.worktree.main": "Основна гілка",
   "session.new.worktree.mainWithBranch": "Основна гілка ({{branch}})",
-  "session.new.worktree.create": "Створити нове робоче дерево",
   "session.new.lastModified": "Востаннє змінено",
 
   "session.header.search.placeholder": "Пошук {{project}}",
@@ -472,7 +448,6 @@ export const dict = {
   "common.moreOptions": "Більше опцій",
   "common.learnMore": "Дізнатися більше",
   "common.rename": "Перейменувати",
-  "common.archive": "Архівувати",
   "common.delete": "Видалити",
   "common.close": "Закрити",
   "common.edit": "Редагувати",
@@ -498,8 +473,6 @@ export const dict = {
   "common.time.hoursAgo.short": "{{count}} год тому",
   "common.time.daysAgo.short": "{{count}} дн тому",
 
-  "sidebar.project.recentSessions": "Нещодавні сесії",
-
   "debugBar.ariaLabel": "Діагностика продуктивності розробки",
   "debugBar.na": "н/д",
   "debugBar.nav.label": "NAV",
@@ -523,7 +496,6 @@ export const dict = {
   "debugBar.mem.label": "MEM",
   "debugBar.mem.tipUnavailable": "Використана купа JS проти ліміту купи. Тільки Chromium.",
   "debugBar.mem.tip": "Використана купа JS проти ліміту купи. {{used}} з {{limit}}.",
-
 
   "settings.section.desktop": "Робочий стіл",
   "settings.section.server": "Сервер",
@@ -552,16 +524,9 @@ export const dict = {
   "settings.general.row.uiFont.title": "Шрифт інтерфейсу",
   "settings.general.row.uiFont.description": "Налаштуйте шрифт, який використовується в інтерфейсі",
 
-
   "settings.general.row.releaseNotes.title": "Нотатки до релізу",
   "settings.general.row.releaseNotes.description": 'Показувати спливаючі вікна "Що нового" після оновлень',
 
-  "settings.updates.row.check.title": "Перевірити оновлення",
-  "settings.updates.row.check.description": "Вручну перевірити наявність оновлень і встановити, якщо доступні",
-  "settings.updates.action.checkNow": "Перевірити зараз",
-  "settings.updates.action.checking": "Перевірка...",
-  "settings.updates.toast.latest.title": "У вас актуальна версія",
-  "settings.updates.toast.latest.description": "Ви використовуєте останню версію NovaClaw.",
   "sound.option.none": "Немає",
   "sound.option.alert01": "Alert 01",
   "sound.option.alert02": "Alert 02",
@@ -643,8 +608,6 @@ export const dict = {
   "settings.shortcuts.group.prompt": "Запит",
 
   "settings.models.title": "Моделі",
-
-
 
   "settings.permissions.tool.read.title": "Читання",
   "settings.permissions.tool.read.description": "Читання файлу (відповідає шляху файлу)",

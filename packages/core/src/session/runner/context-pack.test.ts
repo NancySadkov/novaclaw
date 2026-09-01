@@ -2,8 +2,9 @@ import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import path from "node:path"
 import { LLM, Message, Model, SystemPart, ToolDefinition } from "@novaclaw/llm"
-import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
+import * as OpenAIChat from "@novaclaw/llm/protocols/openai-compatible-chat"
 import { SessionInput } from "../input"
+import { PromptEstimate } from "./prompt-estimate"
 import {
   budget,
   demoteSystemMessages,
@@ -15,7 +16,6 @@ import {
   packRequest,
   CATEGORY_RECLAMATION_BAND_TOKENS,
   DEFAULT_CONTEXT_SIZE,
-  MIN_RESPONSE_RESERVE,
 } from "./context-pack"
 
 const user = (text: string) => Message.user(text)
@@ -57,7 +57,7 @@ describe("budget", () => {
   test("subtracts system, tools, and the shared response reserve", () => {
     const value = budget({ contextSize: 64_000, system: noSystem, tools: noTools })
     // reserve = max(64000/8, 8192) = 8192
-    expect(value).toBe(expectedBudget(64_000, MIN_RESPONSE_RESERVE))
+    expect(value).toBe(expectedBudget(64_000, PromptEstimate.MIN_RESPONSE_RESERVE))
   })
 
   test("reserve scales with the window for big contexts", () => {

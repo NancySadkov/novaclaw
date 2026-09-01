@@ -32,7 +32,7 @@ export const ResolveInput = Schema.Struct({
    * Pass `false` only for an operation that writes without reading — `write`, `write_hex`, `trash`,
    * a bash redirect target, a working-directory classification. `edit` and `apply_patch` read
    * before they write and must take the default. The list is *"Never read"*, not *"never touch"*:
-   * `todo/projects.md` scopes this to **model read eligibility**, and refusing writes as well would
+   * The exclusion list is scoped to **model read eligibility**, and refusing writes as well would
    * be a second, unrequested promise that also breaks generating a file the user excluded on purpose.
    */
   readsContent: Schema.optional(Schema.Boolean),
@@ -191,7 +191,8 @@ export const layer = Layer.effect(
       // on-disk casing — measured: `…/SECRETS/key.txt` comes back as `…/Secrets/Key.TXT`. Screening
       // the canonical path is therefore screening the FILE, not a spelling of it, which is what
       // makes "prove exclusions cannot be bypassed through alternate tools or path aliases"
-      // (`todo/projects.md`) a property of this one call site rather than a checklist per tool.
+      // a property of this one call site rather than a checklist per tool. The alias vectors and
+      // what each one measured are in `notes/reports/projects-program-2026-08-18.md`.
       //
       // The declaration is looked up from the TARGET's directory, so a nested project, an absolute
       // path into this project from outside it, and a path into a different project all get the

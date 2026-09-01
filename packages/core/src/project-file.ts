@@ -1,7 +1,6 @@
 export * as ProjectFileResolve from "./project-file"
 
 import path from "node:path"
-import os from "node:os"
 import { Effect } from "effect"
 import { ProjectFile } from "@novaclaw/schema/project-file"
 import { FSUtil } from "./fs-util"
@@ -9,12 +8,11 @@ import { FSUtil } from "./fs-util"
 /**
  * Find the `novaclaw.json` that governs a session's working folder.
  *
- * `todo/projects.md`: *"Resolve the nearest valid `novaclaw.json` at or above the session folder as
- * its Project root. A folder without one remains usable but is not silently registered as a
- * Project."*
+ * The nearest declaration inside the location's trusted containment root governs the folder. A
+ * folder without one remains usable but is not silently registered as a Project.
  *
- * ⚠️ Still not an entity. This answers a question about a directory; nothing is persisted, and
- * `core/src/project.ts`'s VCS-root derivation is unrelated and unchanged.
+ * ⚠️ Still not an entity. This answers a question about a directory; nothing is persisted. The
+ * shared cache supplies `core/src/project.ts`'s derived worktree only as the trusted walk boundary.
  */
 
 export const FILENAME = "novaclaw.json"
@@ -49,14 +47,40 @@ export interface WalkOptions {
   /** Absolute directory to start from. */
   readonly from: string
   /**
-   * Where to stop, inclusive. Defaults to the user's home directory.
+   * The trusted containment root, inclusive. This is deliberately required: a resolver that does
+   * not know the selected working/repository root has no authority to inspect arbitrary ancestors.
    *
-   * ⚠️ NOT the filesystem root. Walking past home reaches `C:\Users` or `/`, where a stray
-   * `novaclaw.json` — or one belonging to a different user — would silently govern every session on
-   * the machine. `snapshot.ts` already treats home as the boundary for the same reason.
+   * If it is not an ancestor of `from`, the effective boundary is `from` itself. That fallback is
+   * the selected location root, never the filesystem root or a common string ancestor.
    */
-  readonly boundary?: string
+  readonly boundary: string
 }
+
+export interface LocationBoundary {
+  /** The selected working folder. */
+  readonly directory: string
+  /** The derived VCS/path root. */
+  readonly root: string
+  /** Present only when `root` is a repository boundary trusted by location resolution. */
+  readonly vcs?: { readonly type: "git" }
+}
+
+/**
+ * One definition of a location's project-file boundary for the cache and HTTP presentation path.
+ * Outside a repository, `Location.root` is a volume root, so the selected directory is the only
+ * trusted boundary. Inside a repository, the discovered worktree is the trusted shared root.
+ */
+export function trustedBoundary(location: LocationBoundary): string {
+  return location.vcs === undefined ? location.directory : location.root
+}
+
+function bounded(options: WalkOptions): { readonly from: string; readonly boundary: string } {
+  const from = path.resolve(FSUtil.windowsPath(options.from))
+  const requested = path.resolve(FSUtil.windowsPath(options.boundary))
+  return { from, boundary: FSUtil.contains(requested, from) ? requested : from }
+}
+
+const samePath = (left: string, right: string) => path.relative(left, right) === ""
 
 /**
  * The walk, with reading injected so it can be tested without a filesystem.
@@ -67,8 +91,9 @@ export interface WalkOptions {
 export type ReadResult = string | undefined | { readonly kind: "unreadable"; readonly detail: string }
 
 export function walk(options: WalkOptions, read: (file: string) => ReadResult): Resolution {
-  const boundary = path.resolve(options.boundary ?? os.homedir())
-  let dir = path.resolve(options.from)
+  const plan = bounded(options)
+  const boundary = plan.boundary
+  let dir = plan.from
   for (;;) {
     const file = path.join(dir, FILENAME)
     const text = read(file)
@@ -91,13 +116,13 @@ export function walk(options: WalkOptions, read: (file: string) => ReadResult): 
         detail: parsed.detail,
       }
     }
-    // The boundary is checked AFTER reading, so a `novaclaw.json` in the boundary directory itself
-    // still counts. A user who puts one at `~` meant it; what they cannot have meant is one above.
-    if (dir === boundary) return { kind: "none" }
+    // The boundary is checked AFTER reading, so a `novaclaw.json` in the trusted root itself counts;
+    // one in its parent never does.
+    if (samePath(dir, boundary)) return { kind: "none" }
     const parent = path.dirname(dir)
-    // `path.dirname` is its own fixed point at a filesystem root, which is the only stop condition
-    // available when `from` is outside the boundary entirely (a session opened on another drive).
-    if (parent === dir) return { kind: "none" }
+    // Defensive fixed-point guard. `bounded` makes the trusted boundary reachable first, but this
+    // keeps a platform path quirk from turning a security check into an infinite loop.
+    if (samePath(parent, dir)) return { kind: "none" }
     dir = parent
   }
 }
@@ -109,14 +134,30 @@ export function walk(options: WalkOptions, read: (file: string) => ReadResult): 
  * file and remains distinguishable from malformed bytes: a temporary lock or ACL error must never
  * erase the constraints the nearest project file may contain.
  */
-export const resolve = Effect.fn("ProjectFile.resolve")(function* (from: string, boundary?: string) {
+export const resolve = Effect.fn("ProjectFile.resolve")(function* (from: string, boundary: string) {
   const fs = yield* FSUtil.Service
   const texts = new Map<string, ReadResult>()
+  // Compare what the paths NAME ON DISK, not their spellings. This folds symlinks/junctions,
+  // mapped drives, UNC aliases, 8.3 names and on-disk casing. If canonicalisation itself is denied,
+  // the safe fallback is still the selected folder alone; a failed realpath may never widen a walk.
+  const canonical = (value: string) => {
+    try {
+      return { path: FSUtil.canonical(value), trusted: true } as const
+    } catch {
+      return { path: path.resolve(FSUtil.windowsPath(value)), trusted: false } as const
+    }
+  }
+  const start = canonical(from)
+  const requested = canonical(boundary)
+  const plan = bounded({
+    from: start.path,
+    boundary: start.trusted && requested.trusted ? requested.path : start.path,
+  })
   // Two passes: collect the candidate paths, read them, then run the pure walk over what was read.
   // The alternative — an Effect-shaped loop — would put the interesting logic somewhere it cannot be
   // tested without a filesystem, which is where it was easiest to get wrong.
-  let dir = path.resolve(from)
-  const limit = path.resolve(boundary ?? os.homedir())
+  let dir = plan.from
+  const limit = plan.boundary
   for (;;) {
     const file = path.join(dir, FILENAME)
     texts.set(
@@ -128,10 +169,10 @@ export const resolve = Effect.fn("ProjectFile.resolve")(function* (from: string,
         }),
       ),
     )
-    if (dir === limit) break
+    if (samePath(dir, limit)) break
     const parent = path.dirname(dir)
     if (parent === dir) break
     dir = parent
   }
-  return walk({ from, boundary }, (file) => texts.get(file))
+  return walk(plan, (file) => texts.get(file))
 })

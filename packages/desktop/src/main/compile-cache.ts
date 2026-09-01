@@ -3,7 +3,7 @@ import module from "node:module"
 /**
  * Turn on Node's on-disk V8 compile cache before the big `import()`.
  *
- * **Measured on the shipped bundle (`todo/startup.md`): 681 → 555 ms to import `novaclaw-server.js`,
+ * **Measured on the shipped bundle: 681 → 555 ms to import `novaclaw-server.js`,
  * stable across two warm runs.** The very first run pays ~+90 ms to populate the cache and every run
  * after it is faster — which is the right trade for a desktop app that starts far more often than it
  * installs. Startup speed is a first-class product concern here, and this is the cheapest ~125 ms on

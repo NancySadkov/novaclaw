@@ -112,7 +112,7 @@
  * run rather than asserted). It asserts no permission for the same reason `read` does not — plus a
  * stronger one: it touches no stored value at all, so there is nothing in its reply to redact.
  *
- * ⚠️ **It is a new OP, never a new tool.** `todo/tool-scale.md` puts reported degradation at 30–50
+ * ⚠️ **It is a new OP, never a new tool.** Reported degradation starts at 30–50
  * tools and we are past it; the closed-op-vocabulary shape (`kb`, `docs`) is the house pattern, and
  * `configure` is a DEFERRED core tool, so this costs **nothing** in the resident prompt — the
  * `location-layer.test.ts` ratchet measures the resident set and this is not in it.

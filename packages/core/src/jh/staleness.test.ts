@@ -426,7 +426,6 @@ function fsHarness(opts: {
       const r = replies.shift()
       return r === undefined ? Effect.fail({ message: "reply queue dry" }) : Effect.succeed(r)
     },
-    correct: () => Effect.fail({ message: "no correct queue" }),
     executor,
     runner,
     artifacts: JhArtifact.memory(),

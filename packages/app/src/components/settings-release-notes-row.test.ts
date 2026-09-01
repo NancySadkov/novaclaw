@@ -20,7 +20,7 @@ import path from "node:path"
 // file was written against currently has nothing to drift between. `distinct.size === 1` over a
 // one-element set is TRUE for free — a green assertion that proves nothing is worse than no assertion,
 // because a reader counts it. What carries the invariant now is the per-panel rule below, which pins
-// each panel's gate to a DECIDED value (`[]` for the row, `["desktop()"]` for the update check)
+// each panel's gate to a DECIDED value (`[]` for the row)
 // rather than to its neighbour: agreement between N panels follows from N panels each matching one
 // literal, and it keeps working the moment `PANELS` grows again — which the renderer census forces to
 // be a declared act.
@@ -335,11 +335,8 @@ export function soleIndex(source: string, needle: string): number {
   return first
 }
 
-/** The shared status line, and the update-check row that shares the Updates section with it. */
-const ROW = {
-  releaseNotes: "<ReleaseNotesStatusLine />",
-  updateCheck: `language.t("settings.updates.row.check.title")`,
-} as const
+/** The shared status line whose reachability this test pins. */
+const ROW = "<ReleaseNotesStatusLine />"
 
 // ── The fixtures the gate rules are negative-controlled against ───────────────────────────────────
 //
@@ -356,7 +353,6 @@ export const Panel: Component = () => {
       <SettingsRowV2 description={<ReleaseNotesStatusLine />}>
         <div data-action="settings-release-notes" />
       </SettingsRowV2>
-      <SettingsRowV2 title={language.t("settings.updates.row.check.title")} />
     </SettingsListV2>
   )
 
@@ -380,17 +376,7 @@ const SECTION_GATE = `      <Show when={desktop()}>
         <UpdatesSection />
       </Show>`
 
-const CHECK_ROW = `      <SettingsRowV2 title={language.t("settings.updates.row.check.title")} />`
-
 const OPEN_SECTION = substitute(GATED_SECTION, SECTION_GATE, `      <UpdatesSection />`)
-
-const SPLIT_SECTION = substitute(
-  OPEN_SECTION,
-  CHECK_ROW,
-  `      <Show when={desktop()}>
-  ${CHECK_ROW}
-      </Show>`,
-)
 
 const RENDERED_TWICE = substitute(
   GATED_SECTION,
@@ -403,8 +389,7 @@ describe("both Settings panels gate the release-notes row identically", () => {
     const source = read(panel)
     return {
       panel,
-      releaseNotes: gatePath(source, soleIndex(source, ROW.releaseNotes)),
-      updateCheck: gatePath(source, soleIndex(source, ROW.updateCheck)),
+      releaseNotes: gatePath(source, soleIndex(source, ROW)),
     }
   })
 
@@ -426,15 +411,8 @@ describe("both Settings panels gate the release-notes row identically", () => {
       // by default. A gate here leaves a web user with a live outbound request they cannot switch off
       // and no answer to "did the release notes work?", which is the silence ruling 2 forbids and the
       // obscurantism AGENTS.md forbids. Any gate at all hides the row from somebody; the row exists
-      // precisely so nobody gets silence. Only the update-CHECK row beside it is desktop-only.
+      // precisely so nobody gets silence.
       expect(releaseNotes, `the release-notes row is gated on ${JSON.stringify(releaseNotes)}`).toEqual([])
-    })
-
-    test(`${panel}: the update-check row is desktop-only`, () => {
-      // The other half of the split. `platform.updater` exists only in the Electron renderer, so on web
-      // this button is permanently disabled with nothing to say why — a dead control. A web instance
-      // updates when the instance serving it updates; there is nothing here to press.
-      expect(paths.find((p) => p.panel === panel)!.updateCheck).toEqual(["desktop()"])
     })
   }
 
@@ -443,7 +421,7 @@ describe("both Settings panels gate the release-notes row identically", () => {
     // two hops away, on the render site of the section that contains it. A scan that asked "is this row
     // inside a Show?" answers "no" — which is the answer the previous guard effectively gave, and why
     // the bug shipped. The resolver must answer "desktop()".
-    const target = soleIndex(GATED_SECTION, ROW.releaseNotes)
+    const target = soleIndex(GATED_SECTION, ROW)
     const lexicallyInsideAShow = /<Show\b[^>]*>[\s\S]*<ReleaseNotesStatusLine \/>/.test(
       GATED_SECTION.slice(0, GATED_SECTION.indexOf("</Show>")),
     )
@@ -452,26 +430,17 @@ describe("both Settings panels gate the release-notes row identically", () => {
   })
 
   test("negative control — the agreement rule bites on the divergence that shipped", () => {
-    const gated = gatePath(GATED_SECTION, soleIndex(GATED_SECTION, ROW.releaseNotes))
-    const open = gatePath(OPEN_SECTION, soleIndex(OPEN_SECTION, ROW.releaseNotes))
+    const gated = gatePath(GATED_SECTION, soleIndex(GATED_SECTION, ROW))
+    const open = gatePath(OPEN_SECTION, soleIndex(OPEN_SECTION, ROW))
     expect(gated).toEqual(["desktop()"])
     expect(open).toEqual([])
     expect(gated, "one panel gated and the other not must not compare equal").not.toEqual(open)
   })
 
-  test("negative control — the split is a real distinction, not two rules that always agree", () => {
-    // If the update-check rule could be satisfied by the same shape that satisfies the release-notes
-    // rule, the "split" would be a description rather than a constraint. In `OPEN_SECTION` both rows
-    // are ungated, so the check rule fails there; only `SPLIT_SECTION` satisfies both.
-    expect(gatePath(OPEN_SECTION, soleIndex(OPEN_SECTION, ROW.updateCheck))).toEqual([])
-    expect(gatePath(SPLIT_SECTION, soleIndex(SPLIT_SECTION, ROW.releaseNotes))).toEqual([])
-    expect(gatePath(SPLIT_SECTION, soleIndex(SPLIT_SECTION, ROW.updateCheck))).toEqual(["desktop()"])
-  })
-
   test("negative control — an unresolvable gate throws instead of reporting no gate", () => {
     // The failure mode that made the old guard useless was answering "fine" when it meant "I did not
     // look". A section rendered from two places has no single gate, so the resolver must say so.
-    expect(() => gatePath(RENDERED_TWICE, soleIndex(RENDERED_TWICE, ROW.releaseNotes))).toThrow(/rendered in 2 places/)
+    expect(() => gatePath(RENDERED_TWICE, soleIndex(RENDERED_TWICE, ROW))).toThrow(/rendered in 2 places/)
   })
 
   test("negative control — comments and strings cannot fake a gate", () => {
@@ -481,6 +450,6 @@ describe("both Settings panels gate the release-notes row identically", () => {
       "  const UpdatesSection = () => (",
       '  // <Show when={desktop()}> and a "quoted <Show when={mobile()}>" string\n  const UpdatesSection = () => (',
     )
-    expect(gatePath(commented, soleIndex(commented, ROW.releaseNotes))).toEqual(["desktop()"])
+    expect(gatePath(commented, soleIndex(commented, ROW))).toEqual(["desktop()"])
   })
 })

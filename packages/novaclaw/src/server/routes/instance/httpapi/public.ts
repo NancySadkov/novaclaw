@@ -55,22 +55,47 @@ type OpenApiResponse = {
 // Query schemas describe decoded Effect values, but the generated SDK needs the
 // public call shape. These keep SDK callers passing numbers/booleans while the
 // server still decodes string query params at runtime.
+// ⚠️ Ten further entries were ablated 2026-09-01 (RF-13-15) — the same measurement
+// `applyLegacySchemaOverrides` below already applied to itself. Nine named paths absent from the
+// emitted document (`GET /experimental/session` ×5, `GET /session` ×3, `GET /session/{sessionID}/message`),
+// and `GET /api/session start` named a query parameter that operation no longer has (it carries
+// `workspace`, `roots`, `limit`, `order`). Every key here must name a path AND a parameter that the
+// generated spec actually emits, or it is a silent no-op pretending to be a compatibility guarantee.
+/**
+ * 🔴 **This table is the ONLY place the numeric-ness of a query parameter can be re-supplied, and
+ * that is a framework constraint rather than a shortcut.** `Schema.NumberFromString` decodes a number
+ * at runtime, but `OpenApi.fromApi` emits its ENCODED side — probed on effect@4.0.0-beta.83, a
+ * `NumberFromString` field and a genuine string field are byte-identical in the document
+ * (`{"anyOf":[{"type":"string"},{"type":"null"}]}`), so nothing downstream can tell them apart. And
+ * the schema cannot re-supply it either: that version's `JsonSchema` exposes no override or annotate
+ * hook. So a "derive it from the AST" rewrite is not available — the information is gone by the time
+ * any transform runs.
+ *
+ * ⚠️ **Therefore every `NumberFromString` query field MUST have a row here**, or it ships advertised
+ * as a string. Completed 2026-09-01 (RF-24-4): seven were missing, and the gap was visible as one
+ * decoder advertised two ways — `/api/session?limit=` said `number` while `/history?limit=`, the
+ * same `NumberFromString`, said `string`. Worse, `packages/sdk/js/script/emitter.ts` carried a
+ * hard-coded special case for `v2.session.history` alone, so the SDK's types CONTRADICTED our own
+ * published spec on that one route. That special case is deleted; the emitter now reads this table's
+ * result out of the spec, which makes this the single answer instead of the first of three.
+ *
+ * ⚠️ Bounds are stated only where they were verified against the decoder. A row with no bounds is
+ * `{type:"number"}` deliberately — inventing a range that the runtime does not enforce would put a
+ * different lie in the contract.
+ */
 const QueryParameterSchemas: Record<string, OpenApiSchema> = {
-  "GET /experimental/session start": { type: "number" },
-  "GET /experimental/session roots": QueryBooleanOpenApi,
-  "GET /experimental/session archived": QueryBooleanOpenApi,
   "GET /find/file limit": { type: "integer", minimum: 1, maximum: 200 },
-  "GET /experimental/session cursor": { type: "number" },
-  "GET /experimental/session limit": { type: "number" },
-  "GET /session start": { type: "number" },
-  "GET /session roots": QueryBooleanOpenApi,
-  "GET /session limit": { type: "number" },
-  "GET /session/{sessionID}/message limit": { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
   "GET /vcs/diff context": { type: "integer", minimum: 0 },
   "GET /api/session limit": { type: "number" },
-  "GET /api/session start": { type: "number" },
   "GET /api/session roots": QueryBooleanOpenApi,
   "GET /api/session/{sessionID}/message limit": { type: "number" },
+  "GET /api/session/{sessionID}/history limit": { type: "number" },
+  "GET /api/session/{sessionID}/history after": { type: "number" },
+  "GET /api/session/{sessionID}/event after": { type: "number" },
+  "GET /api/fs/find limit": { type: "number" },
+  "GET /memory/list limit": { type: "number" },
+  "GET /memory/graph limit": { type: "number" },
+  "GET /registry/rows limit": { type: "number" },
 }
 
 const LegacyComponentDescriptions: Record<string, string> = {
@@ -375,8 +400,14 @@ function legacyErrorResponse(description: string, name: "BadRequestError" | "Not
  * generation bug where annotated union arms that share AST nodes with other
  * endpoints produce `{"$ref":"#/components/schemas/X"}` as the definition of X.
  *
- * Resolves by finding the actual schema from a parent union's `anyOf`/`oneOf`
- * that references the broken component, then inlining that schema.
+ * Resolves by generating the spec a second time WITHOUT the transform that breaks these components,
+ * and copying the correct definition across for each name that came back self-referencing.
+ *
+ * ⚠️ An earlier attempt to resolve them from a parent union's `anyOf`/`oneOf` sat here until
+ * 2026-09-01 (RF-13-15) as a `for` loop whose body, after its `continue` guard, was fourteen lines of
+ * comment reasoning its own way to "just delete the broken component" — and then doing nothing. It
+ * iterated every schema to no effect on every call. `git log -S fixSelfReferencingComponents` has it
+ * if the union approach is ever wanted.
  */
 function fixSelfReferencingComponents(spec: OpenApiSpec) {
   const schemas = spec.components?.schemas
@@ -386,26 +417,7 @@ function fixSelfReferencingComponents(spec: OpenApiSpec) {
     if (schema.$ref === `#/components/schemas/${name}`) selfRefs.add(name)
   }
   if (selfRefs.size === 0) return
-  // Find a parent union component whose anyOf/oneOf contains a $ref to the
-  // broken component — that parent was generated correctly and holds the inline
-  // schema we need.
-  for (const [, schema] of Object.entries(schemas)) {
-    for (const member of schema.anyOf ?? schema.oneOf ?? []) {
-      const ref = member.$ref?.replace("#/components/schemas/", "")
-      if (!ref || !selfRefs.has(ref)) continue
-      // This member's $ref points to a self-referencing component. The member
-      // itself is just {$ref:...}, so the actual schema must be resolved from
-      // the union. Since the union component was generated before the
-      // deduplicator broke things, the inline version lives elsewhere. Generate
-      // a fresh spec without the transform to get the correct schema.
-      // Simpler approach: look through all paths for an endpoint that uses this
-      // schema as a payload (it would have been expanded by the ref-expansion
-      // logic above if we ran after that, but we run before). Instead, just
-      // delete the broken component — if it's referenced via $ref elsewhere,
-      // the ref expansion in the request body loop will inline it anyway.
-    }
-  }
-  // Simplest fix: generate the raw spec (without transform) to get correct schemas
+  // Generate the raw spec (without the transform) to get the correct schemas.
   const raw: OpenApiSpec = OpenApi.fromApi(NovaClawHttpApi)
   const rawSchemas = raw.components?.schemas
   if (!rawSchemas) return

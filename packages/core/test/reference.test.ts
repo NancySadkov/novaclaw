@@ -40,8 +40,8 @@ describe("Reference", () => {
   it.effect("derives Git paths without exposing cache operations", () =>
     Effect.gen(function* () {
       const references = yield* Reference.Service
-      const repository = Repository.parseRemote("owner/repo")
-      const source = Reference.GitSource.make({ type: "git", repository: "owner/repo", branch: "main" })
+      const repository = Repository.parseRemote("git.example.test/owner/repo")
+      const source = Reference.GitSource.make({ type: "git", repository: "git.example.test/owner/repo", branch: "main" })
       yield* references.transform((editor) => editor.add("sdk", source))
 
       expect(yield* references.list()).toEqual([
@@ -57,10 +57,10 @@ describe("Reference", () => {
   it.effect("preserves configured Git descriptions", () =>
     Effect.gen(function* () {
       const references = yield* Reference.Service
-      const repository = Repository.parseRemote("owner/repo")
+      const repository = Repository.parseRemote("git.example.test/owner/repo")
       const source = Reference.GitSource.make({
         type: "git",
-        repository: "owner/repo",
+        repository: "git.example.test/owner/repo",
         description: "Use for SDK implementation details",
       })
       yield* references.transform((editor) => editor.add("sdk", source))

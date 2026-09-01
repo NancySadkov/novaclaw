@@ -3,19 +3,10 @@ import { Wildcard } from "@novaclaw/core/util/wildcard"
 import os from "os"
 import { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
 
-// ⚠️ **The permission SERVICE was deleted from this file 2026-08-06** — `Interface`, `Service`,
-// `layer`, `defaultLayer` and `node`, plus the two graph registrations that were its only references
-// (`effect/app-runtime.ts`, `server/routes/instance/httpapi/server.ts`). It was constructed at boot in
-// both graphs and obtained by nothing. The LIVE gate is `packages/core/src/permission.ts`, a different
-// module with the same name — that is the one to read, and the one not to confuse this with.
-//
-// `modeRuleset(mode)` — the V1-coarse permission-MODE overlay — was DELETED here (todo.md *"we
-// discard all the cruft"*, v0.2.0-prep Wave 4 §5). It had zero production callers: V2 resolves a
-// mode through `core/src/permission.ts`'s `MODE_RULES`, whose action vocabulary is finer than V1's
-// (the comment it carried admitted `surgical` was inexpressible in it). Its only caller anywhere was
-// the test that asserted its table back to it. The V1 `/permission` HTTP routes went in the same
-// commit; what remains in this file is the ruleset algebra that IS still live —
-// `evaluate` (skill filtering), `fromConfig`/`merge` (agent defaults).
+// 🔴 **THIS IS NOT THE PERMISSION GATE.** The live gate is `packages/core/src/permission.ts`, a
+// different module with the same name — that is the one to read, and the one not to confuse this
+// with. What lives here is only the ruleset ALGEBRA: `evaluate` (skill filtering) and
+// `fromConfig`/`merge` (agent defaults). Nothing here decides whether a tool call may run.
 
 export const Event = PermissionRuleset.Event
 

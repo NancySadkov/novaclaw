@@ -354,7 +354,7 @@ export default function Page() {
   const recoveryChanges = createMemo(() => recoveryChangesNote(info()?.summary))
 
   /**
-   * The banner's third affordance — what `todo/session-recovery.md`'s gate called `reconcile`.
+   * The banner's third affordance — what the session-recovery gate called `reconcile`.
    *
    * ⚠️ It is deliberately NOT a third verb. The gate named a word that appeared nowhere in the
    * product, and the honest reading of it is *make the record agree with what actually happened* —
@@ -1173,7 +1173,7 @@ export default function Page() {
                   </Show>
                 </Match>
                 <Match when={true}>
-                  <NewSessionView worktree={newSessionWorktree()} />
+                  <NewSessionView />
                 </Match>
               </Switch>
             </div>

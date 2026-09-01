@@ -107,7 +107,14 @@ export const layer = Layer.effectDiscard(
                   directory,
                   output: toModelOutput(skill, files),
                 }
-              }).pipe(Effect.mapError((error) => unableToLoad(input.name, error)))
+                // 🔴 1J. This was `Effect.mapError((error) => unableToLoad(input.name, error))`,
+                // which gave a permission REFUSAL the same sentence as a MISSING skill file — two
+                // different situations, one of which the model can act on and one of which it
+                // cannot. `permission.assert` is the only thing inside this block that can be
+                // denied, so putting `denialMessage` ahead of the fallback is the whole fix; the
+                // "Unable to load skill" wording still covers a genuine load failure (the glob, a
+                // vanished file) and the not-found arm above is untouched.
+              }).pipe(Effect.mapError(Tool.absorb(() => `Unable to load skill ${input.name}`)))
             }),
         }),
       })

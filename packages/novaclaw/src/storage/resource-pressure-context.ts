@@ -2,18 +2,13 @@ export * as StorageResourcePressureContext from "./resource-pressure-context"
 
 import { Effect, Layer } from "effect"
 import { ResourcePressureContext } from "@novaclaw/core/resource-pressure-context"
+import { Bytes } from "@novaclaw/core/util/bytes"
 import { makeGlobalNode } from "@novaclaw/core/effect/app-node"
 import { Log } from "@novaclaw/schema/log"
-import { Storage } from "./storage"
+import { HostPressure } from "./host-pressure"
 import { Pressure } from "./pressure"
 
-const GIB = 1024 ** 3
-const MIB = 1024 ** 2
-
-export function formatBytes(value: number): string {
-  if (value >= GIB) return `${(value / GIB).toFixed(1)} GiB`
-  return `${(value / MIB).toFixed(value >= 10 * MIB ? 0 : 1)} MiB`
-}
+export const formatBytes = Bytes.binary
 
 const levelLine = (level: Pressure.Level): string => {
   if (level === "warning") return "Resource pressure: warning — plan memory- and disk-intensive work conservatively."
@@ -62,7 +57,7 @@ export function details(report: Pressure.Report): ReadonlyArray<string> {
 const urgency = (level: Pressure.Level) => (level === "floor" ? "critically low" : "low")
 
 /** Whole MiB. The model is being asked to make a judgement call, and it needs a number to make it. */
-const mib = (bytes: number) => `${Math.round(bytes / MIB)} MB`
+const mib = (bytes: number) => `${Math.round(bytes / Bytes.MIB)} MB`
 
 /**
  * Exception-only ambient context. Healthy and unmeasurable probes say nothing: normal headroom is the
@@ -120,7 +115,7 @@ export function capacity(report: Pressure.Report): ResourcePressureContext.Commi
 export const layer = Layer.effect(
   ResourcePressureContext.Service,
   Effect.gen(function* () {
-    const storage = yield* Storage.Service
+    const storage = yield* HostPressure.Service
     const measure = storage.pressure()
     return ResourcePressureContext.Service.of({
       lines: () =>
@@ -157,5 +152,5 @@ export const layer = Layer.effect(
 export const node = makeGlobalNode({
   service: ResourcePressureContext.Service,
   layer,
-  deps: [Storage.node],
+  deps: [HostPressure.node],
 })

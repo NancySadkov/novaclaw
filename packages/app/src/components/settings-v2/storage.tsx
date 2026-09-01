@@ -159,8 +159,8 @@ export const SettingsStorageV2: Component = () => {
         </For>
       </SettingsListV2>
 
-      {/* ── Activity log (todo/logging.md 3a–3e) ─────────────────────────────────────────────────
-          3a says to put log retention BESIDE storage rather than in a new tab, and this is that row.
+      {/* ── Activity log ─────────────────────────────────────────────────────────────────────────
+          Log retention belongs BESIDE storage rather than in a new tab, and this is that row.
 
           ⚠️ **Which knob this is, and which it deliberately is not.** This is the LOCAL log: it never
           leaves the machine, and the self-healing loop reads it — *"an agent asked to repair an

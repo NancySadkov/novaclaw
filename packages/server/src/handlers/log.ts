@@ -8,7 +8,7 @@ import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { LogApi, handlerLayer } from "../handler-api"
 
 /**
- * **`POST /api/log/read` — the server half of the Debug app's log panel** (`todo/logging.md` 3f).
+ * **`POST /api/log/read` — the server half of the Debug app's log panel.**
  *
  * The contract, the plane ruling and every refusal are argued in
  * `packages/protocol/src/groups/log.ts`; this file is the wiring plus the three 400s a schema cannot

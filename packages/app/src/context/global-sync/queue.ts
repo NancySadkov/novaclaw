@@ -1,13 +1,11 @@
 type QueueInput = {
   paused: () => boolean
-  bootstrap: () => Promise<void>
   bootstrapInstance: (directory: string) => Promise<void> | void
   key?: (directory: string) => string
 }
 
 export function createRefreshQueue(input: QueueInput) {
   const queued = new Map<string, string>()
-  let root = false
   let running = false
   let timer: ReturnType<typeof setTimeout> | undefined
 
@@ -41,24 +39,12 @@ export function createRefreshQueue(input: QueueInput) {
     schedule()
   }
 
-  const refresh = () => {
-    root = true
-    if (input.paused()) return
-    schedule()
-  }
-
   async function drain() {
     if (running) return
     running = true
     try {
       while (true) {
         if (input.paused()) return
-        if (root) {
-          root = false
-          await input.bootstrap()
-          await tick()
-          continue
-        }
         const dirs = take(2)
         if (dirs.length === 0) return
         await Promise.all(dirs.map((dir) => input.bootstrapInstance(dir)))
@@ -68,13 +54,12 @@ export function createRefreshQueue(input: QueueInput) {
       running = false
       // oxlint-disable-next-line no-unsafe-finally -- intentional: early return skips schedule() when paused
       if (input.paused()) return
-      if (root || queued.size) schedule()
+      if (queued.size) schedule()
     }
   }
 
   return {
     push,
-    refresh,
     clear(directory: string) {
       queued.delete(key(directory))
     },

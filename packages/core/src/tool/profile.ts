@@ -77,7 +77,7 @@ export const layer = Layer.effectDiscard(
     // The practical half, which is what settles it: `hasContent` is the condition that flips OFTEN
     // and INCIDENTALLY — a user typing their name in Settings — and every flip rewrites the
     // advertised tool array mid-conversation, invalidating the whole prompt-prefix cache
-    // (todo/tool-scale.md T2: discovery must be append-only for exactly this reason). The switch
+    // (tool discovery must be append-only for exactly this reason). The switch
     // flips rarely and deliberately, and making it apply *now* is the entire point of ruling 3. So
     // the horizon churns only where churn is the feature. Sharing stays OPT-OUT (`!== false`) so a
     // profile filled in before the switch existed keeps working.

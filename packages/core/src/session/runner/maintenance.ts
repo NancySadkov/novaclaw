@@ -97,15 +97,26 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2
 /**
  * When post-drain housekeeping stops being background and starts being a wait.
  *
- * Measured 2026-08-11 against `holo3.1`: **642 ms** with a title already set (changes 16 ms, title a
- * 3 ms no-op, memory 623 ms) and **1285 ms** on a session's first turn, where the title pass is a
- * real model call (643 ms). Two utility model calls, one after the other.
+ * ⚠️ **Read the WINDOW before the numbers.** `total` is `Date.now() - started` over the AWAITED
+ * passes only, and memory extraction is forked (see `postRun`), so it is outside this measurement
+ * entirely. What is timed is `changes` + `title`.
  *
- * ⚠️ **Why it is worth a threshold at all, given those numbers are small.** This runs INSIDE the
- * drain — after the idle status is published, so no spinner shows, but before the lease is released
- * — so the next prompt waits behind it. That is invisible by design and fine at ~1 s; it stops being
- * fine if an embedding stalls or a device is contended, and nothing would have said so. The
- * threshold sits well above the measured range so it fires on a fault, not on a Tuesday.
+ * Measured 2026-08-11 against `holo3.1`, decomposed: changes **16 ms**, title **3 ms** when it is a
+ * no-op and **643 ms** on a session's first turn where it is a real model call. So this window is
+ * ~20 ms in the steady state and ~660 ms on a first turn. 5 s is roughly 8× that worst case —
+ * headroom enough that it fires on a fault, not on a Tuesday.
+ *
+ * ⚠️ **Why a threshold at all, given those numbers are small.** This runs INSIDE the drain — after
+ * the idle status is published, so no spinner shows, but before the lease is released — so the next
+ * prompt waits behind it.
+ *
+ * 🔴 **What this threshold does NOT cover, stated because the old version of this comment implied
+ * otherwise.** The same 2026-08-11 run measured memory at **623 ms of a 642 ms `postRun`** — 97% of
+ * it — and the case originally worried about was *"an embedding stalls or a device is contended"*.
+ * That pass is exactly the one that has since moved out of the window, so a stalled embedder is now
+ * timed by NOTHING. It is joinable (`outstanding`), so closing this means timing the fiber in its
+ * observer, not widening the number here. Do not re-derive a bound for the memory pass from the
+ * figures above: 623 ms is a measurement of a pass this constant no longer watches.
  */
 const POSTRUN_SLOW_MS = 5_000
 

@@ -20,7 +20,7 @@ import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
 
-// The `kb` tool — the model-facing surface of the graph MEMORY tier (notes/kb-graph-plan.md §3; the
+// The `kb` tool — the model-facing surface of the graph MEMORY tier (the
 // KB is now the Ladybug in-process graph, not the KB-V doc store). ONE tool, a closed op vocab the
 // model CHAINS: `search` (find memories) → `neighbors` (what's linked) plus the deliberate writes
 // `remember` / `forget`. The measured KB-E/KB-V rules carry over: results are LINEARIZED text lines,

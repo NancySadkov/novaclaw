@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { createHomeTileClickGuard } from "./home-tile-click-guard"
 
-// Ported from https://github.com/NancySadkov/novaclaw/pull/11 by @DassaultFalconKing, which
+// Ported from outside contribution #11 by @DassaultFalconKing, which
 // extracted this decision out of `home-screen.tsx`'s pointer listeners so it could be tested at
 // all. The upstream tests are kept; the last two are added here.
 

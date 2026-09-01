@@ -89,7 +89,7 @@ export const planClone = (input: {
     // have been written into a string field.
     if (key === "model") {
       const model = value as { readonly providerID?: string; readonly id?: string; readonly variant?: string }
-      if (model.providerID && model.id) fragment["model"] = modelRef({ providerID: model.providerID, modelID: model.id })
+      if (model.providerID && model.id) fragment["model"] = modelRef({ providerID: model.providerID, id: model.id })
       // The variant rides INSIDE the model on the API shape and is its own field in config.
       if (model.variant) fragment["variant"] = model.variant
       continue

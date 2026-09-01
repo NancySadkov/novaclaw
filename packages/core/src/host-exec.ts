@@ -1,7 +1,7 @@
 export * as HostExec from "./host-exec"
 
 /**
- * THE host-execution gate (v0.2.0 ruling 6 — `todo/v0.2.0-prep.md`).
+ * THE host-execution gate (v0.2.0 ruling 6).
  *
  * Containment, the jail decision, shell resolution, environment composition and the egress overlay
  * live HERE, in one module, and every kernel call site that starts a host process consumes it:

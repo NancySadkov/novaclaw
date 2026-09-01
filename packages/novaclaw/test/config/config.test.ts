@@ -18,7 +18,6 @@ import { EffectFlock } from "@novaclaw/core/util/effect-flock"
 import { InstanceRef } from "../../src/effect/instance-ref"
 import type { InstanceContext } from "../../src/project/instance-context"
 import { FSUtil } from "@novaclaw/core/fs-util"
-import { Env } from "../../src/env"
 import { TestInstance, tmpdir, tmpdirScoped, provideInstanceEffect, testInstanceStoreLayer } from "../fixture/fixture"
 import { CrossSpawnSpawner } from "@novaclaw/core/cross-spawn-spawner"
 import { testEffect } from "../lib/effect"
@@ -55,7 +54,6 @@ const testFlock = EffectFlock.defaultLayer
 const configLayer = () =>
   Config.layer.pipe(
     Layer.provide(testFlock),
-    Layer.provide(Env.defaultLayer),
     Layer.provideMerge(infra),
     Layer.provide(NpmTest.noop),
     Layer.provideMerge(FSUtil.defaultLayer),
@@ -467,19 +465,16 @@ it.instance("managed settings override store provider filters", () =>
     yield* withStores(
       Effect.gen(function* () {
         const settings = yield* SettingsConfigStore.Service
-        yield* settings.set("autoupdate", true)
         yield* settings.set("disabled_providers", [])
       }),
     )
     yield* Config.use.invalidate()
     yield* writeManagedSettingsEffect({
       $schema: "https://novaclaw.app/config.json",
-      autoupdate: false,
       disabled_providers: ["openai"],
     })
 
     const config = yield* Config.use.get()
-    expect(config.autoupdate).toBe(false)
     expect(config.disabled_providers).toEqual(["openai"])
   }),
 )
@@ -845,7 +840,6 @@ test("parseManagedPlist parses server settings", async () => {
         JSON.stringify({
           $schema: "https://novaclaw.app/config.json",
           server: { hostname: "127.0.0.1", mdns: false },
-          autoupdate: true,
         }),
       ),
       "test:mobileconfig",
@@ -854,7 +848,6 @@ test("parseManagedPlist parses server settings", async () => {
   )
   expect(config.server?.hostname).toBe("127.0.0.1")
   expect(config.server?.mdns).toBe(false)
-  expect(config.autoupdate).toBe(true)
 })
 
 test("parseManagedPlist parses permission rules", async () => {

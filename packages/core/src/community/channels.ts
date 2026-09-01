@@ -12,7 +12,7 @@ import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
 
 /**
- * Community P4 — channel subscriptions and the durable log (`todo/community-p2p.md`).
+ * Community P4 — channel subscriptions and the durable log (`notes/spec/community-p2p.md`).
  *
  * The half of a channel that gossip does not provide. Gossip reaches whoever is online; this is what
  * makes a channel readable by someone who was away, and it is why every instance is a partial

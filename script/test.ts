@@ -15,42 +15,25 @@
  *
  *   bun run test              # typecheck every package, then the fast tier: kernel, schemas, LLM, SDK,
  *                             #   UI, desktop, server, HTTP contract
- *   bun run test --full       # + the rest of novaclaw, run PER-SUBDIR (see note below)
+ *   bun run test --full       # + the rest of novaclaw (see the note below)
  *   bun run test --only=core
  *   bun run test --only=typecheck   # just: does the tree compile (~52 s)
  *
  * ⚠️ novaclaw is `--full`: everything not promoted runs as ONE unit, plus a unit per file that cannot
- * share a process (`SOLO_TEST_FILES`). It used to be one unit PER SUBDIR because those tests "hang when
- * run together" under an undisposed InstanceStore/serve handle leak. Measured 2026-08-24: they do not.
- * 71 files ran together in one process and exited cleanly; the leak was fixed and the workaround
- * outlived it, at ~25 process startups and ~200 s of every release gate.
+ * share a process (`SOLO_TEST_FILES`). Why it is no longer one unit per subdir is recorded on
+ * `subUnits` below, which is the code that decides it.
  *
- * ─── WHY A GREEN RUN MEANS SOMETHING (v0.2.0 PREP → Wave 0, 2026-07-27) ────────────────────────────
+ * ─── WHY A GREEN RUN MEANS SOMETHING ───────────────────────────────────────────────────────────────
  * The binding ruling is todo.md → Standing architecture decisions: *"a check that reads as coverage
- * while being none is worse than its absence"*. Four things this file used to get wrong, and the
- * mechanism that fixes each:
+ * while being none is worse than its absence"*. Two constraints follow that the code cannot state:
  *
- *  1. **`packages/desktop` and `packages/server` were not run units at all.** Ten test files had never
- *     executed — and, because desktop's tsconfig excluded `src/**\/*.test.ts`, had never typechecked
- *     either. BOTH shipped packaging bugs (v0.0.1 and v0.1.0, AGENTS.md → Known pitfalls #0) lived in
- *     `packages/desktop`. They are run units now.
- *  2. **The HTTP/contract suites were `--full`-only**, i.e. never run day-to-day. They do not spawn
- *     servers (grepped: zero `Bun.spawn`/`spawnSync`/`spawn(` under `test/{server,v2,config,tool}`), so
- *     the hang that justifies novaclaw's `--full` gate does not apply to them. They are promoted below
- *     via PROMOTED_NOVACLAW_SUBDIRS — one list, consumed by both the fast-tier entries and `subUnits`,
- *     so a promoted subdir can never be run twice under `--full`.
- *  3. **The child's stderr was thrown away.** `stdio: "inherit"` gave live output and left the summary
- *     with nothing but `exit <n>`, which is why core's intermittent `exit 3` (~1 run in 3) was never
- *     root-caused. We now capture stderr, echo it, and put an excerpt on the summary line.
- *  4. **Skips were invisible.** Several suites are platform-gated (e.g. `core/test/session-runner.test.ts`
- *     is win32-skipped, so `runner/llm.ts` is never executed on this box) and nothing said so. The
+ *  1. **The child's stderr is CAPTURED, never inherited.** `stdio: "inherit"` gives live output and
+ *     leaves the summary with nothing but `exit <n>`, which is why core's intermittent `exit 3`
+ *     (~1 run in 3) went un-root-caused for as long as it did. We capture stderr, echo it, and put an
+ *     excerpt on the summary line. ⚠️ Do not "simplify" this back to `inherit` for the streaming.
+ *  2. **A skip must be VISIBLE.** Several suites are platform-gated and nothing said so. The
  *     `── skipped ──` ledger below is asserted against a committed baseline, so a newly-skipped suite
  *     is a visible diff instead of a silent hole.
- *  5. **The tree was never checked to COMPILE** (added 2026-07-28, todo/test-speed.md). Bun type-strips,
- *     so a file can pass every assertion while failing `tsgo` — and on 2026-07-28 this suite was 21/21
- *     green with two uncompilable test files in the tree. `bun run typecheck` now runs as a run unit per
- *     workspace package, FIRST and one at a time; see `lib/typecheck-units.ts` for what is discovered and
- *     why it is discovered rather than listed.
  *
  * ⚠️ **Trade-off you will notice:** bun's test reporter writes to **stderr**, and `spawnSync` cannot tee.
  * Capturing stderr therefore means a run unit's output appears in one burst when that unit FINISHES
@@ -1069,10 +1052,14 @@ if (peakVerdicts.length) {
 
 /**
  * ─── the SKIPPED ledger ────────────────────────────────────────────────────────────────────────────
- * A skipped test is coverage the suite claims and does not have, and until now nothing said how much of
- * it there was. todo.md's ruling: the ledger is asserted against a COMMITTED baseline, so adding a skip
- * (a new `describe.skipIf`, a platform gate, an `it.todo`) is a visible diff in review rather than a
- * silent hole. Only units that actually RAN are compared, so `--only=` and `--full` stay usable.
+ * A skipped test is coverage the suite claims and does not have, and nothing used to say how much
+ * of it there was. The ledger is asserted against a COMMITTED baseline, so adding a skip (a new
+ * `describe.skipIf`, a platform gate) is a visible diff in review rather than a silent hole. Only
+ * units that actually RAN are compared, so `--only=` and `--full` stay usable.
+ *
+ * ⚠️ **It counts what bun prints as `skip`, and nothing else.** The scan is a `\d+ skip` match
+ * over each unit's own summary line, so a `todo` line is NOT in this number — `it.todo` is a hole
+ * this ledger cannot see. Widen the pattern before claiming otherwise.
  *
  * Seeding: the baseline ships with an empty `units` map because the counts can only be learned by
  * running the suite. While it is empty the ledger prints what it observed, says so, and does NOT affect

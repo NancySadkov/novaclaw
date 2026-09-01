@@ -39,7 +39,6 @@ import { LanguageProvider, type Locale, useLanguage } from "@/context/language"
 import { LayoutProvider } from "@/context/layout"
 import { ModelsProvider } from "@/context/models"
 import { NotificationProvider, useNotification } from "@/context/notification"
-import { PermissionProvider } from "@/context/permission"
 import { usePlatform } from "@/context/platform"
 import { useSupervisorPhase } from "@/hooks/use-supervisor-phase"
 import { PromptProvider } from "@/context/prompt"
@@ -199,13 +198,31 @@ function ResolvedTargetSessionRoute() {
   const directory = createMemo(() => current()?.session.location.directory)
   const targetDirectory = () => directory()!
 
+  /**
+   * 🔴 **The ONE-TAB-PER-COLLEAGUE rule reaches this door too** (owner, 2026-09-01: *"picking a
+   * colleague in Contacts that already has an open tab does not switch to it"*). A roster row is a
+   * plain `<A href={sessionHref(…)}>`, so Contacts arrives HERE — and this call used to hand
+   * `addSessionTab` no `agent` at all, which makes the rule structurally inert: `findAgentTab`
+   * returns -1 for `undefined` **by design**, so a colleague whose tab holds a different session of
+   * theirs got a SECOND tab rather than being switched to.
+   *
+   * ⚠️ And the return value is load-bearing — `addSessionTab`'s own docblock says so: *"a caller
+   * that ignored the result and navigated to its own session id would put the route and the strip on
+   * two different chats."* This effect ignored it. When the store hands back the colleague's
+   * standing tab, go THERE; that is what "switch to it" means.
+   *
+   * The navigation terminates: the second pass resolves the tab's own session, `addSessionTab`
+   * matches it by key and returns it unchanged, and the ids agree.
+   */
   createEffect(() => {
     const session = current()
     if (!session) return
-    tabs.addSessionTab({
+    const opened = tabs.addSessionTab({
       server: serverKey(),
       sessionId: session.root.id,
+      ...(session.root.agent === undefined ? {} : { agent: session.root.agent }),
     })
+    if (opened.type === "session" && opened.sessionId !== session.root.id) tabs.select(opened)
   })
 
   return (
@@ -247,7 +264,9 @@ function SelectedServerProviders(props: ParentProps) {
   return (
     <ServerKey>
       <ServerSDKProvider>
-        <ServerSyncProvider>{props.children}</ServerSyncProvider>
+        <HighlightsProvider>
+          <ServerSyncProvider>{props.children}</ServerSyncProvider>
+        </HighlightsProvider>
       </ServerSDKProvider>
     </ServerKey>
   )
@@ -362,9 +381,7 @@ function SharedProviders(props: ParentProps) {
     <>
       <BodyDesignClass />
       <AppThemeEffect />
-      <CommandProvider>
-        <HighlightsProvider>{props.children}</HighlightsProvider>
-      </CommandProvider>
+      <CommandProvider>{props.children}</CommandProvider>
     </>
   )
 }
@@ -377,11 +394,9 @@ type ServerScopedShellProps = ParentProps<{
 
 function ServerScopedProviders(props: ServerScopedShellProps) {
   return (
-    <PermissionProvider directory={props.directory}>
-      <LayoutProvider>
-        <ModelsProvider directory={props.directory}>{props.children}</ModelsProvider>
-      </LayoutProvider>
-    </PermissionProvider>
+    <LayoutProvider>
+      <ModelsProvider directory={props.directory}>{props.children}</ModelsProvider>
+    </LayoutProvider>
   )
 }
 
@@ -397,10 +412,10 @@ function NewAppLayout(props: ParentProps) {
 
 function TargetServerScopedProviders(props: ServerScopedShellProps) {
   return (
-    <PermissionProvider directory={props.directory}>
+    <>
       <MarkSessionNotificationsViewed sessionID={props.sessionID} />
       <ModelsProvider directory={props.directory}>{props.children}</ModelsProvider>
-    </PermissionProvider>
+    </>
   )
 }
 
@@ -637,9 +652,7 @@ function ConnectionError(props: { onRetry?: () => void; onServerSelected?: (key:
             </p>
           }
         >
-          <p class="mt-1 text-12-regular text-text-weak max-w-80">
-            {language.t("app.connection.stopped.description")}
-          </p>
+          <p class="mt-1 text-12-regular text-text-weak max-w-80">{language.t("app.connection.stopped.description")}</p>
           <button
             type="button"
             class="mt-3 px-3 py-1 rounded-md text-12-regular bg-surface-strong text-text-strong border border-border-weak-base hover:bg-surface-hover disabled:opacity-60"

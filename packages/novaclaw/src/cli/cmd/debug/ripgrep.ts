@@ -17,10 +17,6 @@ const FilesCommand = effectCmd({
   describe: "list files using ripgrep",
   builder: (yargs) =>
     yargs
-      .option("query", {
-        type: "string",
-        description: "Filter files by query",
-      })
       .option("glob", {
         type: "string",
         description: "Glob pattern to match files",
@@ -55,8 +51,8 @@ const SearchCommand = effectCmd({
         description: "Search pattern",
       })
       .option("glob", {
-        type: "array",
-        description: "File glob patterns",
+        type: "string",
+        description: "File glob pattern",
       })
       .option("limit", {
         type: "number",
@@ -70,7 +66,7 @@ const SearchCommand = effectCmd({
       .grep({
         cwd: ctx.directory,
         pattern: args.pattern,
-        include: args.glob?.[0],
+        include: args.glob,
         limit: args.limit ?? 10_000,
       })
       .pipe(Effect.orDie)

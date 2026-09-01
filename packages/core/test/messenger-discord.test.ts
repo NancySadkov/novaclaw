@@ -6,7 +6,7 @@ import type { DiscordSocket, DiscordSocketFactory } from "@novaclaw/core/messeng
 import type { InboundEvent } from "@novaclaw/core/messenger/driver"
 import { it } from "./lib/effect"
 
-// P7 gate (notes/messenger-plan.md §8): the Discord driver against a FAKE gateway + REST — the
+// P7 gate: the Discord driver against a FAKE gateway + REST — the
 // token gate, HELLO→IDENTIFY with intents, READY persists the resume cursor, RESUME when a
 // cursor exists, MESSAGE_CREATE normalization (guild vs DM, attachments as CDN-url FileRefs,
 // isSelf), 2000-char chunked sends, multipart file sends, and guild→channel listChats.

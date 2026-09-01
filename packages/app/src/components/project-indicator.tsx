@@ -8,7 +8,7 @@ import { PROJECT_DETAIL_LABELS, projectSummary, type ProjectScope, type ProjectS
 /**
  * **The Project indicator, shared by Chats and Files.**
  *
- * `todo/projects.md`: *"Never make a person infer project state from a hidden dotfile."* This is the
+ * The rule: *"never make a person infer project state from a hidden dotfile."* This is the
  * at-a-glance half — a chip that states what governs the folder — plus one compact detail block that
  * names the file. It is deliberately NOT a second Settings → Project panel: it reports, it does not
  * edit, and every sentence it shows comes from `project-summary.ts`.

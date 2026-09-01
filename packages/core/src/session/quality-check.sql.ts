@@ -3,7 +3,7 @@ import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core"
 /**
  * ─── which quality checks RAN, and what they returned ──────────────────────────────────────────
  *
- * 🔴 `todo/verified-autonomy.md` V1: *"`checks` are LOG EVENTS, not evidence."* The whole program
+ * 🔴 The finding: *"`checks` are LOG EVENTS, not evidence."* The whole program
  * rests on *mechanical evidence is authoritative*, and until now the only record that a check had run
  * was `session.quality.check.passed/failed/refused/errored` in the rotating text log. A receipt built
  * over log scraping would make its central claim the least trustworthy part of it — the log rotates,
@@ -20,8 +20,8 @@ import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core"
  *   `failed` would let a receipt report the user's own posture as a defect.
  * · **`exit_code` is nullable and that null MEANS something** — there was no process. `refused` never
  *   ran one, and `errored` failed before or during spawn. A receipt reading this must distinguish
- *   "exited 0" from "never started", which a `0` default would destroy (`todo/verified-autonomy.md`'s
- *   *explicit unknowns* half, arrived at from the write side).
+ *   "exited 0" from "never started", which a `0` default would destroy (the *explicit unknowns*
+ *   half of verified autonomy, arrived at from the write side).
  * · **`command` is stored**, because a check's label is a name the user chose and the command is what
  *   actually ran. A receipt that names `typecheck` without saying what `typecheck` was is not
  *   evidence, and provisioned commands change.

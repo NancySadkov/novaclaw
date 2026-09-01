@@ -3,7 +3,7 @@ export * as CommunityReconcile from "./reconcile"
 import { createHash } from "node:crypto"
 
 /**
- * Community P4 — reconciling two instances' logs (`todo/community-p2p.md`).
+ * Community P4 — reconciling two instances' logs (`notes/spec/community-p2p.md`).
  *
  * 🔴 The largest design risk in the program: **gossip delivers to whoever is ONLINE**, so a forum
  * whose messages vanish for anyone who was away is not a forum. Every instance keeping its own log

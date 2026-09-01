@@ -1,7 +1,7 @@
 import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core"
 import { Timestamps } from "../database/schema.sql"
 
-// Calendar / cron-session creator (notes/calendar-cron-plan.md, P1). A HOT operational store — schedules +
+// Calendar / cron-session creator. A HOT operational store — schedules +
 // their fire ledger — NOT the durable KB (two-DB discipline). `recurrence_json` holds a structured
 // `Recurrence` (schedule/recurrence.ts), never a cron string. `next_fire_at` is denormalised for a cheap
 // ticker scan; `calendar_fire` is the idempotency + history ledger (unique per occurrence).

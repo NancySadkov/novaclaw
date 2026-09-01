@@ -234,7 +234,7 @@ export const layer = Layer.effectDiscard(
               // ⚠️ Honest about what this is: an INFORMATIONAL lever, and the pitfall this repo
               // keeps re-learning is that informational levers engage while mechanical ones convert.
               // The mechanical fix — an image is not ELIDABLE until its description is in the
-              // transcript — is `todo/vision.md` work. This is measured against that failure, not
+              // transcript — is not built. This is measured against that failure, not
               // assumed to fix it.
               { type: "text", text: IMAGE_NOTE },
               { type: "file", data: output.content, mime: output.mime, name: input.path },

@@ -15,7 +15,7 @@ const NAMES = ["config.json", "novaclaw.json", "novaclaw.jsonc"]
 const DECODE_OPTIONS = { errors: "all", onExcessProperty: "ignore", propertyOrder: "original" } as const
 const decodeInfo = Schema.decodeUnknownOption(Config.Info, DECODE_OPTIONS)
 
-// Models-primary P2 (notes/models-primary-plan.md): a model's endpoint URL HOST is its internal
+// Models-primary: a model's endpoint URL HOST is its internal
 // provider group. The host carries no "/", so the pervasive `providerID/modelID` addressing stays
 // intact, and grouping-by-endpoint aligns with per-endpoint credentials (P5). URL-less or
 // malformed → the model is its own singleton provider (id = model id).

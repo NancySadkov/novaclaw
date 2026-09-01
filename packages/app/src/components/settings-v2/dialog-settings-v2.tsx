@@ -222,7 +222,7 @@ export const DialogSettings: Component<{
                 <SettingsAppearanceV2 />
               </TabsV2.Content>
               <TabsV2.Content value="shortcuts" class="settings-v2-panel">
-                <SettingsKeybinds v2 />
+                <SettingsKeybinds />
               </TabsV2.Content>
               <TabsV2.Content value="servers" class="settings-v2-panel">
                 <SettingsServersV2 />

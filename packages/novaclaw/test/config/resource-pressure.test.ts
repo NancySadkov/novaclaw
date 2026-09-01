@@ -2,10 +2,8 @@ import { describe, expect, test } from "bun:test"
 import { spawnSync } from "node:child_process"
 import path from "node:path"
 import { Effect, Layer } from "effect"
-import { FSUtil } from "@novaclaw/core/fs-util"
-import { Git } from "@/git"
 import { Pressure } from "@/storage/pressure"
-import { Storage } from "@/storage/storage"
+import { HostPressure } from "@/storage/host-pressure"
 import { testEffect } from "../lib/effect"
 import { settingsStub, type SettingsState } from "../storage/settings-stub"
 
@@ -369,24 +367,16 @@ describe("Pressure — this machine", () => {
 const settings: SettingsState = { current: {} }
 
 // `Layer.fresh` because Effect memoizes a layer by its INNER reference (AGENTS.md pitfall -1): without
-// it this build would resolve to whatever Storage another suite already built.
-const it = testEffect(
-  Layer.fresh(
-    Storage.layer.pipe(
-      Layer.provide(FSUtil.defaultLayer),
-      Layer.provide(Git.defaultLayer),
-      Layer.provide(settingsStub(settings)),
-    ),
-  ),
-)
+// it this build would resolve to whatever HostPressure another suite already built.
+const it = testEffect(Layer.fresh(HostPressure.layer.pipe(Layer.provide(settingsStub(settings)))))
 
-describe("Storage.pressure", () => {
+describe("HostPressure.pressure", () => {
   it.live(
     "picks up a threshold change with NO layer rebuild — a settings change is not a reboot",
     () =>
       Effect.gen(function* () {
         settings.current = {}
-        const svc = yield* Storage.Service
+        const svc = yield* HostPressure.Service
 
         const before = yield* svc.pressure()
         expect(before.thresholds.floor.diskFreeBytes).toBe(Pressure.DEFAULT_THRESHOLDS.floor.diskFreeBytes)
@@ -410,7 +400,7 @@ describe("Storage.pressure", () => {
     () =>
       Effect.gen(function* () {
         settings.current = {}
-        const svc = yield* Storage.Service
+        const svc = yield* HostPressure.Service
         const result = yield* svc.pressure()
 
         expect(result.disks.length).toBeGreaterThan(0)

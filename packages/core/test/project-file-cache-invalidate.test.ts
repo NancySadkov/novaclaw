@@ -2,8 +2,11 @@ import { describe, expect, test } from "bun:test"
 import fs from "fs"
 import os from "os"
 import path from "path"
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
+import { FSUtil } from "@novaclaw/core/fs-util"
+import { ProjectV2 } from "@novaclaw/core/project"
 import { ProjectFileCache } from "@novaclaw/core/project-file-cache"
+import { AbsolutePath } from "@novaclaw/core/schema"
 
 /**
  * ─── the cache must not serve the file WE just replaced ──────────────────────────────────────────
@@ -20,8 +23,26 @@ import { ProjectFileCache } from "@novaclaw/core/project-file-cache"
  * assertion is that the second read differs, which is only possible if the entry was actually dropped.
  */
 
-const run = <A>(effect: Effect.Effect<A, never, ProjectFileCache.Service>) =>
-  Effect.runPromise(effect.pipe(Effect.provide(ProjectFileCache.defaultLayer)))
+const repositoryLayer = (root: string) =>
+  Layer.succeed(
+    ProjectV2.Service,
+    ProjectV2.Service.of({
+      resolve: () =>
+        Effect.succeed({
+          id: ProjectV2.ID.global,
+          directory: AbsolutePath.make(root),
+          vcs: { type: "git" as const, store: AbsolutePath.make(path.join(root, ".git")) },
+        }),
+    }),
+  )
+
+const cacheLayer = (root?: string) =>
+  root === undefined
+    ? ProjectFileCache.defaultLayer
+    : ProjectFileCache.layer.pipe(Layer.provide(FSUtil.defaultLayer), Layer.provide(repositoryLayer(root)))
+
+const run = <A>(effect: Effect.Effect<A, never, ProjectFileCache.Service>, repositoryRoot?: string) =>
+  Effect.runPromise(effect.pipe(Effect.provide(cacheLayer(repositoryRoot))))
 
 const tempRoot = () => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pfc-")))
 
@@ -47,6 +68,7 @@ describe("ProjectFileCache.invalidate", () => {
         const after = yield* cache.read(root)
         return { before: firstAction(before), after: firstAction(after) }
       }),
+      root,
     )
     expect(seen.before).toBe("bash")
     // Stale ON PURPOSE in this case: it proves the cache is real, so the next test is not vacuous.
@@ -87,6 +109,7 @@ describe("ProjectFileCache.invalidate", () => {
         const after = yield* cache.read(sub)
         return { before: firstAction(before), after: firstAction(after) }
       }),
+      root,
     )
     expect(seen.before).toBe("bash")
     expect(seen.after).toBe("webfetch")
@@ -151,6 +174,30 @@ describe("ProjectFileCache.invalidate", () => {
       }),
     )
     expect(seen).toBe("webfetch")
+  })
+})
+
+describe("ProjectFileCache containment", () => {
+  test("the shared cache uses the resolved repository worktree as its one trusted ancestor", async () => {
+    const root = tempRoot()
+    const nested = path.join(root, "packages", "core")
+    fs.mkdirSync(nested, { recursive: true })
+    writeProject(root, "bash")
+    const entry = await run(Effect.flatMap(ProjectFileCache.Service, (cache) => cache.read(nested)), root)
+    expect(entry.kind).toBe("project")
+    expect(firstAction(entry)).toBe("bash")
+  })
+
+  test.each([
+    ["valid", JSON.stringify({ version: 1, name: "outside" })],
+    ["invalid", "{ broken"],
+  ])("a non-repository location does not inherit a %s file from an untrusted parent", async (_kind, text) => {
+    const parent = tempRoot()
+    const selected = path.join(parent, "selected")
+    fs.mkdirSync(selected)
+    fs.writeFileSync(path.join(parent, "novaclaw.json"), text)
+    const entry = await run(Effect.flatMap(ProjectFileCache.Service, (cache) => cache.read(selected)))
+    expect(entry.kind).toBe("none")
   })
 })
 

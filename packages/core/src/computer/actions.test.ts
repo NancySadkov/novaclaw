@@ -17,7 +17,7 @@ const why = (built: CA.Built) => {
 }
 
 // The command FORMS below are not invented: each ran inside the P2 substrate on 2026-08-06 before
-// this module existed (todo/computer-use.md). These tests pin the mapping to what was observed to
+// this module existed. These tests pin the mapping to what was observed to
 // work, so a "tidy-up" that changes a flag has to argue with a measurement.
 describe("the argv matches what was proven live in the substrate", () => {
   test("screenshot writes to the given path, overwriting", () => {

@@ -15,7 +15,6 @@ import {
   GenerateCommand,
   McpCommand,
   ModelsCommand,
-  PrCommand,
   ProvidersCommand,
   RunCommand,
   ServeCommand,
@@ -106,7 +105,6 @@ const cli = yargs(args)
   .command(ModelsCommand)
   .command(StatsCommand)
   .command(ExportCommand)
-  .command(PrCommand)
   .command(SessionCommand)
   .command(DbCommand)
   .fail((msg, err) => {

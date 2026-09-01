@@ -1,5 +1,4 @@
 import { Config as ConfigV2 } from "@novaclaw/core/config"
-import { ProviderCatalogResult } from "@/provider/catalog-result"
 import { Effect } from "effect"
 import type { HttpServerRequest } from "effect/unstable/http"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
@@ -150,7 +149,7 @@ export const rejectUnknownConfigKeys = (request: HttpServerRequest.HttpServerReq
     // Capped for the same reason `middleware/schema-error.ts` caps its reason: a 4xx must never
     // mirror an unbounded request back into the response body and the log file.
     // ⚠️ `String(named)` and `String(hidden)` were an array and a NUMBER flattened into two `text`
-    // columns (`todo/logging.md` 1h): the count could not be compared and the key list could not be
+    // columns: the count could not be compared and the key list could not be
     // read back. A list is a list and a count is a count.
     yield* Log.event("config.patch.key.unknown", { "config.keys": named, "config.hidden": hidden })
     yield* Effect.fail(
@@ -248,16 +247,6 @@ export const ConfigApi = HttpApi.make("config")
             identifier: "config.update",
             summary: "Update configuration",
             description: "Update NovaClaw configuration settings and preferences.",
-          }),
-        ),
-        HttpApiEndpoint.get("providers", `${root}/providers`, {
-          query: WorkspaceRoutingQuery,
-          success: described(ProviderCatalogResult.ListResult, "List of providers"),
-        }).annotateMerge(
-          OpenApi.annotations({
-            identifier: "config.providers",
-            summary: "List config providers",
-            description: "Get a list of all configured AI providers and their default models.",
           }),
         ),
       )

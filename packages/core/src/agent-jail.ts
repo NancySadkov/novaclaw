@@ -1,5 +1,5 @@
 /**
- * Agent Jail P0 — confine execution, don't classify it (notes/agent-jail-plan.md).
+ * Agent Jail P0 — confine execution, don't classify it.
  *
  * A prompt-injected shell command cannot be stopped by matching the command STRING (the
  * GuardFall lesson — see the boundary notes in `util/wildcard.ts` and `permission.ts`). Real
@@ -30,7 +30,7 @@
  *    restoration, not a new posture (see `decideBash`).
  *  · HOSTILE INPUT (an untrusted messenger correspondent drives the turn, or the trust question
  *    could not be answered) → unchanged in every case. That arm answers a different adversary —
- *    *untrusted text arriving as data* (todo/jail.md's surviving threat model, AGENTS.md principle
+ *    *untrusted text arriving as data* (the jail's surviving threat model, AGENTS.md principle
  *    9(c)) — and the owner's rationale ("the model can't do useful work") does not apply to it: a
  *    stranger's turn being unable to run raw shell blocks nobody's work but the stranger's.
  *
@@ -45,7 +45,7 @@ import { readFileSync } from "node:fs"
 import { attendedRoot, type SessionType } from "./session/config-resolve"
 
 /**
- * The platform sandbox families the probe can report (notes/agent-jail-plan.md §2.2).
+ * The platform sandbox families the probe can report.
  *
  * ⚠️ Declared as a RUNTIME tuple rather than a bare type union, and that is load-bearing rather than
  * stylistic. The posture surface (Settings → General → *How this machine is confined*) has to be able
@@ -81,11 +81,11 @@ export const NAMESPACES: BackendInfo = { kind: "namespaces", fs: true, net: true
  *     failure modes — has never been produced by anything but a test fixture. `decideBash` reads
  *     `fs && net` and collapses a partial backend to the same answer as none.
  *  2. **`BashDecision` has no "confine the filesystem, keep egress" arm.** `raw | confined | deny`
- *     cannot express it, which is why todo/jail.md's B4 correction says the real work is reshaping
+ *     cannot express it, which is why the real work is reshaping
  *     the decision into `{fs, net, allow?}` BEFORE any backend lands. A Windows backend bolted onto
  *     today's enum would either claim egress control it does not have (ruling 2 — a fault described
  *     falsely) or throw away the FS containment it does.
- *  3. **`decideBash` takes no permission MODE.** todo/jail.md's standing owner item is *"confine
+ *  3. **`decideBash` takes no permission MODE.** The standing owner item is *"confine
  *     bash in EVERY non-YOLO mode, attended included"*, and that predicate cannot be written here:
  *     the input does not carry the mode, and widening on attendance alone would kill `npm install`
  *     for every attended Linux session. `safeMode` below is a per-session switch, NOT that mode
@@ -272,7 +272,7 @@ export { attendedRoot }
  * ⚠️ A runtime tuple for the third time, and for the same reason as `BACKEND_KINDS` and
  * `CONFINEMENT_REASONS`: the posture surface renders one phrase per decision, and the wire schema
  * that carries them has to enumerate them. A `type`-only union can be extended with nothing noticing.
- * (todo/jail.md B4 already plans to reshape this into `{fs, net}` for v0.3.0 — when that happens,
+ * (the plan is to reshape this into `{fs, net}` for v0.3.0 — when that happens,
  * every consumer that must be updated is reachable from this array.)
  */
 export const BASH_DECISIONS = ["raw", "confined", "deny"] as const
@@ -308,7 +308,7 @@ export function decideBash(input: {
    * The session's resolved **safe mode** (the Tuning switch, `SessionConfig.safeMode`): restore the
    * pre-2026-07-30 containment for the one arm the owner's directive loosened. `undefined`/`false`
    * = the default posture (unattended commands run). It is deliberately NOT a second attendance
-   * flag: it cannot make an ATTENDED chain contained (that is todo/jail.md's separate, still-open
+   * flag: it cannot make an ATTENDED chain contained (that is the separate, still-open
    * mode-predicate item), and it cannot RELAX anything — every arm it can reach is a refusal.
    */
   readonly safeMode?: boolean
@@ -533,7 +533,7 @@ export function denyMessage(rootType: SessionType, hostileInput?: boolean, safeM
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // THE ENCLOSURE — is this instance already inside a container or a VM?
 //
-// `todo/jail.md`: *"Report whether the instance is inside a container or VM using measured host
+// The requirement: *"report whether the instance is inside a container or VM using measured host
 // capabilities."* It sits beside the posture rather than in its own module because it answers the
 // other half of one question a user actually asks — *how boxed in is this thing?* The posture says
 // what confinement this host can IMPOSE on a child; this says what already encloses US.

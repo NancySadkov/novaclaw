@@ -102,4 +102,33 @@ describe("the owned OpenAPI emitter", () => {
     expect(sdk).toContain('const query = { "directory": parameters?.["query_directory"] }')
     expect(sdk).toContain('const body = { "directory": parameters?.["body_directory"] }')
   })
+
+  test("keeps binary request bodies raw and emits their declared media type", async () => {
+    const root = await output()
+    await emit(
+      {
+        components: { schemas: {} },
+        paths: {
+          "/archive": {
+            post: {
+              operationId: "archive.import",
+              requestBody: {
+                required: true,
+                content: {
+                  "application/zip": { schema: { type: "string", format: "binary" } },
+                },
+              },
+              responses: { 204: {} },
+            },
+          },
+        },
+      } as any,
+      root,
+    )
+    const types = await Bun.file(path.join(root, "types.gen.ts")).text()
+    const sdk = await Bun.file(path.join(root, "sdk.gen.ts")).text()
+    expect(types).toContain("body: Blob | File")
+    expect(sdk).toContain("bodySerializer: null")
+    expect(sdk).toContain('headers: { "Content-Type": "application/zip", ...options?.headers }')
+  })
 })

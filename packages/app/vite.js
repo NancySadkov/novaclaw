@@ -6,6 +6,8 @@ import tailwindcss from "@tailwindcss/vite"
 import { fileURLToPath } from "url"
 
 const theme = fileURLToPath(new URL("./public/oc-theme-preload.js", import.meta.url))
+const slimShiki = fileURLToPath(new URL("./src/vendor/slim-shiki.js", import.meta.url))
+const customThemesOnly = fileURLToPath(new URL("./src/vendor/custom-syntax-themes.js", import.meta.url))
 
 const channel = (() => {
   const raw = process.env.NOVACLAW_CHANNEL
@@ -18,6 +20,19 @@ const channel = (() => {
  * @type {import("vite").PluginOption}
  */
 export default [
+  {
+    // NovaClaw supplies one custom syntax theme. The umbrella entry points also advertise every
+    // third-party theme as a dynamic import, making Vite emit an unused asset for every one. Keep
+    // the language catalogue and highlighter engines, but give the renderer no bundled themes.
+    name: "novaclaw:syntax-theme-boundary",
+    // Dependency export resolution otherwise wins before this hook for imports originating inside
+    // @pierre/diffs, leaving its full third-party theme catalogue in the production renderer.
+    enforce: "pre",
+    resolveId(source) {
+      if (source === "shiki") return slimShiki
+      if (source === "@pierre/theming/themes") return customThemesOnly
+    },
+  },
   {
     name: "novaclaw-desktop:config",
     config() {

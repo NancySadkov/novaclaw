@@ -1,5 +1,5 @@
 /*
-  1. Prevent padding and border from affecting element width. (https://github.com/mozdevs/cssremedy/issues/4)
+  1. Prevent padding and border from affecting element width.
   2. Remove default margins and padding
   3. Reset all borders.
 */
@@ -208,8 +208,8 @@ menu {
 }
 
 /*
-  1. Make replaced elements `display: block` by default. (https://github.com/mozdevs/cssremedy/issues/14)
-  2. Add `vertical-align: middle` to align replaced elements more sensibly by default. (https://github.com/jensimmons/cssremedy/issues/14#issuecomment-634934210)
+  1. Make replaced elements `display: block` by default.
+  2. Add `vertical-align: middle` to align replaced elements more sensibly by default.
       This can trigger a poorly considered lint error in some tools but is included by design.
 */
 
@@ -226,7 +226,7 @@ object {
 }
 
 /*
-  Constrain images and videos to the parent width and preserve their intrinsic aspect ratio. (https://github.com/mozdevs/cssremedy/issues/14)
+  Constrain images and videos to the parent width and preserve their intrinsic aspect ratio.
 */
 
 img,
@@ -283,7 +283,7 @@ textarea,
 }
 
 /*
-  Reset the default placeholder opacity in Firefox. (https://github.com/tailwindlabs/tailwindcss/issues/3300)
+  Reset the default placeholder opacity in Firefox.
 */
 
 ::placeholder {
@@ -292,7 +292,7 @@ textarea,
 
 /*
   Set the default placeholder color to a semi-transparent version of the current text color in browsers that do not
-  crash when using `color-mix(…)` with `currentcolor`. (https://github.com/tailwindlabs/tailwindcss/issues/17194)
+  crash when using `color-mix(…)` with `currentcolor`.
 */
 
 @supports (not (-webkit-appearance: -apple-pay-button)) /* Not Safari */ or (contain-intrinsic-size: 1px)
@@ -357,7 +357,7 @@ textarea {
 }
 
 /*
-  Center dropdown marker shown on inputs with paired `<datalist>`s in Chrome. (https://github.com/tailwindlabs/tailwindcss/issues/18499)
+  Center dropdown marker shown on inputs with paired `<datalist>`s in Chrome.
 */
 
 ::-webkit-calendar-picker-indicator {
@@ -365,7 +365,7 @@ textarea {
 }
 
 /*
-  Remove the additional `:invalid` styles in Firefox. (https://github.com/mozilla/gecko-dev/blob/2f9eacd9d3d995c937b4251a5557d95d494c9be1/layout/style/res/forms.css#L728-L737)
+  Remove the additional `:invalid` styles in Firefox.
 */
 
 :-moz-ui-invalid {

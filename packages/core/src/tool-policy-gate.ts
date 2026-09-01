@@ -25,20 +25,15 @@ import { SessionPolicyDecisionTable } from "./tool-policy.sql"
  * decision diverge at the one nobody exercises (ruling 6), and the whole reason the gate sits under
  * the dispatcher rather than inside the tools is that a tool added later inherits it.
  *
- * ── AN APPROVAL IS THE EXISTING ASK, NOT A SECOND ONE ─────────────────────────────────────────
+ * ── AN APPROVAL USES THE EXISTING PERMISSION EVALUATOR ────────────────────────────────────────
  *
  * 🔴 An `approve` outcome is spent through `PermissionV2.assert` with `minimumEffect: "ask"`, which
  * is the field that already exists for *"require at least this verdict even when ordinary policy
- * would be more permissive"*. Everything that hangs off the permission service therefore applies
- * unchanged and for free: the consent card the UI already renders, the durable
- * `permission_pending` row that survives a restart, saved answers, the deny-cascade on session
- * delete — and, critically, the deny-fast arm that refuses an unanswerable ask under an UNATTENDED
- * chain instead of parking on a card nobody will answer. A second approval mechanism would have had
- * to re-derive all of that, and the standing warning in this repo is that a second pending-ask store
- * splits the state of the first.
+ * would be more permissive"*. The permission service resolves the request immediately from the
+ * effective rules; it has no pending approval store or UI side channel.
  *
- * ⚠️ It also means a policy approval can be DENIED by ordinary permission rules before any human
- * sees it — `minimumEffect` raises the floor, it does not lower the ceiling. That is the correct
+ * ⚠️ It also means a policy approval can be DENIED by ordinary permission rules — `minimumEffect`
+ * raises the floor, it does not lower the ceiling. That is the correct
  * direction: a policy may add a gate, never remove one.
  */
 

@@ -83,7 +83,7 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
   ): Effect.Effect<void, PermissionV2.Error | SessionV2.NotFoundError> =>
     Effect.tryPromise({
       try: () => capabilities.assertPermission(request),
-      catch: () => new PermissionV2.RejectedError(),
+      catch: () => new PermissionV2.DeniedError({ rules: [] }),
     }).pipe(
       Effect.flatMap((result): Effect.Effect<void, PermissionV2.Error | SessionV2.NotFoundError> => {
         switch (result.outcome) {
@@ -96,12 +96,10 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
                 ...(Schema.is(PermissionV2.DenialReason)(result.reason) ? { reason: result.reason } : {}),
               }),
             )
-          case "corrected":
-            return Effect.fail(new PermissionV2.CorrectedError({ feedback: result.feedback ?? "Action declined" }))
           case "session-missing":
             return Effect.fail(new SessionV2.NotFoundError({ sessionID: request.sessionID }))
           case "rejected":
-            return Effect.fail(new PermissionV2.RejectedError())
+            return Effect.fail(new PermissionV2.DeniedError({ rules: [] }))
         }
       }),
     )
@@ -109,10 +107,6 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
   const permission: PermissionV2.Interface = {
     ask: () => Effect.die(unavailable("permission request inspection")),
     assert: assertPermission,
-    reply: () => Effect.die(unavailable("permission reply")),
-    get: () => Effect.die(unavailable("permission request lookup")),
-    forSession: () => Effect.die(unavailable("permission request listing")),
-    list: () => Effect.die(unavailable("permission request listing")),
   }
 
   const question: QuestionV2.Interface = {

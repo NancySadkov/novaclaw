@@ -1,5 +1,5 @@
 /**
- * TG-EEVDF — Turn-Granular EEVDF with cache-affinity hysteresis (notes/scheduler.md).
+ * TG-EEVDF — Turn-Granular EEVDF with cache-affinity hysteresis (notes/reports/scheduler-synthesis-2026-07-03.md).
  *
  * The device picker for agent-session turns against ONE LLM device. EEVDF (the Linux
  * 6.6+ fair scheduler) adapted to non-preemptible LLM turns:

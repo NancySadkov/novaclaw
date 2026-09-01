@@ -23,7 +23,7 @@ import {
 /**
  * **Settings → Project → the rules this folder adds, beside the two other places rules come from.**
  *
- * `todo/projects.md`: *"Make Permissions expose the Project defaults loaded from `novaclaw.json`,
+ * The brief: *"make Permissions expose the Project defaults loaded from `novaclaw.json`,
  * distinguish them from personal and session rules, and save Project-default edits back to only the
  * Permissions section."*
  *
@@ -423,7 +423,7 @@ export const WriteReceipt: Component<{
 /**
  * **Settings → Project → editing "Never read".**
  *
- * `todo/projects.md`: *"`.gitignore` import and writing the exclusion section back"* — this is the
+ * *"`.gitignore` import and writing the exclusion section back"* — this is the
  * write-back half, and it is separate from the import because an import-only control is a ONE-WAY
  * DOOR. Someone who imported a `.gitignore` and then found Nova unable to read a file it should could
  * only fix it by hand-editing JSON, which is the "poke memory bytes" this product refuses
@@ -562,7 +562,7 @@ export const ProjectExcludeSection: Component<ProjectPermissionsProps> = (props)
 /**
  * **Settings → Project → "Never read" ← `.gitignore`.**
  *
- * `todo/projects.md`: *"`.gitignore` import and writing the exclusion section back"*, plus *"Read
+ * *"`.gitignore` import and writing the exclusion section back"*, plus *"read
  * eligibility stays distinct from watcher/build ignores."*
  *
  * 🔴 **A suggestion, never a sync, and the copy says why rather than assuming.** A `.gitignore`

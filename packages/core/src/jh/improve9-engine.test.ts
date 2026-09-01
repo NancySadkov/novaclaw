@@ -7,7 +7,7 @@ import type { JhProcessRunner } from "./process-runner"
 import { JhEngine } from "./engine"
 
 // jh-improve9 — the oracle speaks WHEN IT KNOWS. Fixtures encode the run136 anatomy
-// (notes/jh-improve9.md): the oracle scored 1.0 with done=false ("fix the PRINTING") at event [287]
+// (notes/jh/improve9.md): the oracle scored 1.0 with done=false ("fix the PRINTING") at event [287]
 // and the verdict was never delivered (root completion never ran); the run then ended mid-library-
 // surgery with trailing UNVERIFIED edits invisible to the score.
 
@@ -112,7 +112,6 @@ function harness(opts: {
         ? Effect.succeed(`{"achieved": false}`)
         : Effect.succeed(replies[i++] ?? idle)
     },
-    correct: () => Effect.fail({ message: "x" }),
     executor: opts.world.executor,
     runner: opts.world.runner,
     artifacts: JhArtifact.memory(),

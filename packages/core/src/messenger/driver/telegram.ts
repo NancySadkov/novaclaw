@@ -21,7 +21,6 @@ const CAPS: Messenger.Capabilities = {
   listChats: "seen", // bots cannot enumerate their chats; the gateway's seen-cache is the list.
   files: { up: true, down: true, maxBytes: 20_000_000 },
   edits: true,
-  typing: true,
   threads: false,
   moderation: { delete: true, ban: true, kick: true, mute: true, pin: true },
   format: "html", // we send HTML (escape-first is injection-safe); markdown downgrades to it.

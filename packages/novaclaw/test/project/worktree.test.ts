@@ -2,6 +2,7 @@ import { afterEach, describe, expect } from "bun:test"
 import path from "path"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { FSUtil } from "@novaclaw/core/fs-util"
+import { Slug } from "@novaclaw/core/util/slug"
 import { Cause, Deferred, Effect, Exit, Fiber } from "effect"
 import { GlobalBus, type GlobalEvent } from "../../src/bus/global"
 import { Git } from "../../src/git"
@@ -109,6 +110,23 @@ describe("Worktree", () => {
           const info = yield* svc.makeWorktreeInfo({ name: "My Feature Branch!" })
 
           expect(info.name).toBe("my-feature-branch")
+        }),
+      { git: true },
+    )
+
+    // The name arrives over HTTP and becomes BOTH a directory component under the instance data dir and
+    // a `novaclaw/<name>` branch ref, so an uncapped name is an unbounded path (Windows MAX_PATH is 260
+    // for the whole path). This is the join: the cap lives in Slug.from, and what nothing tested is that
+    // worktree naming actually goes through it.
+    it.instance(
+      "caps a long provided name so the directory stays a legal path component",
+      () =>
+        Effect.gen(function* () {
+          const svc = yield* Worktree.Service
+          const info = yield* svc.makeWorktreeInfo({ name: "Very Long Feature ".repeat(40) })
+
+          expect(info.name.length).toBe(Slug.MAX)
+          expect(info.branch).toBe(`novaclaw/${info.name}`)
         }),
       { git: true },
     )

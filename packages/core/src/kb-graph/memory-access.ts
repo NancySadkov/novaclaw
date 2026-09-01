@@ -54,13 +54,6 @@ export const system = (): MemoryAccess => ({ scopes: undefined, as: "system" })
 /** A model turn: exactly the scopes that session may see. */
 export const of = (scopes: readonly string[]): MemoryAccess => ({ scopes: [...scopes], as: "session" })
 
-/** Is `scope` inside this access? Unrestricted access admits everything. */
-export const admits = (access: MemoryAccess, scope: string): boolean =>
-  access.scopes === undefined || access.scopes.includes(scope)
-
-/** Unrestricted callers pass no filter; restricted ones always do, even when the list is empty. */
-export const isUnrestricted = (access: MemoryAccess): boolean => access.scopes === undefined
-
 /**
  * The NARROWEST of two scopes, for an edge joining them.
  *

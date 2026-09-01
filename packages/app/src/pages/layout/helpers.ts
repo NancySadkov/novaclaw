@@ -113,12 +113,30 @@ export function projectForSession<T extends { id?: string; worktree: string; san
   )
 }
 
+/**
+ * THE renderer for a caught error in this package. Three copies of it existed — this one, one in
+ * `prompt-input/submit.ts` and one in `context/file.tsx` — and they disagreed about which messages are
+ * worth showing, so the same fault read differently depending on which surface caught it.
+ *
+ * 🔴 **Each branch below exists because dropping it renders a generic sentence over a message we were
+ * handed.** `data.message` is the server's own words for a NamedError body decoded off the result-tuple
+ * path; a bare thrown string is the message; and an `Error` with an empty message carries nothing, so
+ * that one really is the caller's fallback. This is the pattern-1 rule (an empty result and a failed
+ * one must not look alike) applied to the sentence the user actually reads.
+ *
+ * ⚠️ It is deliberately NOT shared with `novaclaw/src/util/error.ts`'s `errorMessage`, which serves the
+ * CLI's stderr. Measured 2026-09-01 over every error shape this tree produces — an SDK
+ * `wrapClientError` output, a protocol `TaggedErrorClass`, a plain `Error`, a decoded NamedError POJO —
+ * the two agree on all of them; they differ only on shapes nothing constructs. Evidence:
+ * `notes/reports/refactor-sweep-2026-08-31/29-deps-duplication.md`, RF-29-11.
+ */
 export const errorMessage = (err: unknown, fallback: string) => {
   if (err && typeof err === "object" && "data" in err) {
     const data = (err as { data?: { message?: string } }).data
     if (data?.message) return data.message
   }
-  if (err instanceof Error) return err.message
+  if (err instanceof Error && err.message) return err.message
+  if (typeof err === "string" && err) return err
   return fallback
 }
 

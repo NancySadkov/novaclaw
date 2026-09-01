@@ -7,7 +7,6 @@ import { CommandList } from "@novaclaw/core/command/list"
 import { GlobalBus } from "@/bus/global"
 import { Command } from "@/command"
 import * as InstanceState from "@/effect/instance-state"
-import { Format } from "@/format"
 import { AppRegistry } from "@novaclaw/core/app-registry"
 import { Global } from "@novaclaw/core/global"
 import { DatabasePath } from "@novaclaw/core/database/db-path"
@@ -30,7 +29,7 @@ import { ConfigProviderPreset } from "@novaclaw/core/config/provider-preset"
 import { Offline } from "@novaclaw/core/offline"
 import { Config } from "@/config/config"
 import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
-import { Storage } from "@/storage/storage"
+import { HostPressure } from "@/storage/host-pressure"
 import { Effect, Layer } from "effect"
 import fs from "fs/promises"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
@@ -62,7 +61,6 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
   Effect.gen(function* () {
     const locations = yield* LocationServiceMap.Service
     const config = yield* Config.Service
-    const format = yield* Format.Service
     const vcs = yield* Vcs.Service
     const settingsStore = yield* SettingsConfigStore.Service
 
@@ -179,10 +177,6 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       )
     })
 
-    const getFormatter = Effect.fn("InstanceHttpApi.formatter")(function* () {
-      return yield* format.status()
-    })
-
     const listApp = Effect.fn("InstanceHttpApi.appList")(function* () {
       return yield* Effect.tryPromise(() => AppRegistry.listApps()).pipe(Effect.orDie)
     })
@@ -215,7 +209,7 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
           // Every reading degrades to `unknown` instead of failing the request. This is the screen a
           // person opens when they already suspect trouble -- a 500 here tells them nothing and
           // takes away the rows that WERE readable.
-          const storage = yield* Storage.Service
+          const storage = yield* HostPressure.Service
           const pressure = yield* storage.pressure().pipe(Effect.orElseSucceed(() => ({ level: "unknown" as const })))
 
           const { db } = yield* Database.Service
@@ -354,7 +348,6 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       .handle("vcsApply", applyVcs)
       .handle("command", getCommand)
       .handle("agent", getAgent)
-      .handle("formatter", getFormatter)
       .handle("appList", listApp)
       .handle("appRegister", registerApp)
   }),

@@ -34,7 +34,6 @@ const VALID: Record<string, unknown> = {
   instructions: ["AGENTS.md"],
   disabled_providers: ["openai"],
   enabled_providers: ["dgx-spark"],
-  autoupdate: "notify",
   username: "nancy",
   server: {},
   snapshots: false,
