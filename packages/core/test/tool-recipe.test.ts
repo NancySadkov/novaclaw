@@ -53,8 +53,13 @@ const recording = (into: Asserted[]) =>
   })
 
 // `PermissionV2.Interface.assert` fails with its own tagged policy denial, not JavaScript's Error.
+// ⚠️ Denies with a REAL rule, not `rules: []`. `denialMessage` names the action and resource it was
+// given, so an empty ruleset renders "action 'unknown' on 'unknown'" — a sentence no production
+// denial can produce, and asserting against it would pin the degenerate rendering rather than the
+// guidance a model actually receives.
 const denying = Layer.mock(PermissionV2.Service, {
-  assert: () => Effect.fail(new PermissionV2.DeniedError({ rules: [] })),
+  assert: () =>
+    Effect.fail(new PermissionV2.DeniedError({ rules: [{ action: "recipe", resource: "*", effect: "deny" }] })),
 })
 
 /**
@@ -370,7 +375,17 @@ describe("ruling 2: a failed write says so", () => {
         // invented, which proved only that some error propagated; asserting the kernel's own text
         // proves the tool surfaces the real guidance (and that the failure was not re-wrapped into
         // something less useful on the way out).
-        expect(textOf(result)).toContain("The user declined permission for this action")
+        //
+        // ⚠️ **The sentence changed on 2026-09-01 and the old one can no longer be produced.** It
+        // read "The user declined permission for this action", which belonged to `RejectedError` —
+        // a user declining an interactive prompt. Asking was removed (owner 2026-08-20), so
+        // `PermissionV2.Error` is now `DeniedError` alone and both `RejectedError` and
+        // `CorrectedError` are gone. A denial is a POLICY refusal now, and the wording says so.
+        expect(textOf(result)).toContain("Permission denied by policy")
+        // It must still name what was refused — the guidance is only actionable if the model can
+        // see which action to stop retrying.
+        expect(textOf(result)).toContain("recipe")
+        expect(textOf(result), "a degenerate rendering, not the real one").not.toContain("'unknown'")
         expect(fs.existsSync(path.join(root, "denied"))).toBe(false)
       }),
     ),

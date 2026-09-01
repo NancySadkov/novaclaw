@@ -17,15 +17,21 @@ import { SessionID } from "./session-id"
 // rest (`session/runner/todo-reminder.ts`'s `STATUS_ORDER`), which is the shape to copy.
 // If this ever becomes closed, it becomes `Schema.Literals([...])` and the hygiene test changes
 // with it — never a description that claims a constraint the type does not carry.
+//
+// ⚠️ **Kept SHORT deliberately, and there is a ratchet behind it.** These two strings are resident
+// in every full agent's `todowrite` schema, so they are paid on every turn of every working session
+// — twice each, because the struct appears twice in the tool's shape. The first version of this
+// correction spelled the openness out in prose and cost **400 bytes**, which put
+// `location-layer.test.ts`'s resident-tool budget over its ceiling (34,948 against 34,700). The
+// meaning survives the trim intact: *any string*, and the canonical set by name. **Say it in the
+// fewest bytes that still say it** — that budget's own rule is to trim before asking to raise it.
 export const Info = Schema.Struct({
   content: Schema.String.annotate({ description: "Brief description of the task" }),
   status: Schema.String.annotate({
-    description:
-      "Current status of the task. Any string is accepted; the canonical values are pending, in_progress, completed and cancelled, and anything else is passed through unchanged.",
+    description: "Task status; any string. Canonical: pending, in_progress, completed, cancelled.",
   }),
   priority: Schema.String.annotate({
-    description:
-      "Priority level of the task. Any string is accepted; the canonical values are high, medium and low, and anything else is passed through unchanged.",
+    description: "Task priority; any string. Canonical: high, medium, low.",
   }),
 }).annotate({ identifier: "Todo" })
 export interface Info extends Schema.Schema.Type<typeof Info> {}

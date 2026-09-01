@@ -179,8 +179,21 @@ export interface Interface {
    * The project-file state governing `directory`. Never fails: expected faults are values, retained
    * as `invalid`, `future-version`, or `unreadable` so presentation can recover and agentic consumers
    * can fail closed. Only `none` means there was genuinely no project constraint to inherit.
+   *
+   * 🔴 **`boundary` is the CALLER's trusted root — the session's selected working folder — and it is
+   * required.** `directory` is the folder being asked about, which is very often BELOW it: the
+   * exclusion screen asks about the target file's folder, and instruction discovery asks about each
+   * candidate's folder. The resolver walks upward from `directory` and must be allowed to leave it,
+   * or a `novaclaw.json` at the session root governs nothing but the root itself.
+   *
+   * ⚠️ **This used to be inferred and the inference was wrong.** The boundary was derived from
+   * `directory` alone, so outside a repository it collapsed onto the folder being queried and the
+   * upward walk could never start — the exact climb `invalidate` below documents as the reason it
+   * must clear descendants. Inside a repository it happened to work, because the boundary came from
+   * the discovered worktree instead. **The two callers that ask about a folder they are not rooted
+   * in are the ones it broke, and they are also the enforcement path.**
    */
-  readonly read: (directory: string) => Effect.Effect<Entry>
+  readonly read: (directory: string, boundary: string) => Effect.Effect<Entry>
   /**
    * Drop what we cached for `directory` and everything under it, because WE just changed the file
    * there.
@@ -203,6 +216,14 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/ProjectFileCache") {}
 
+/**
+ * The cache key. A NUL cannot occur in a path on any platform we run on, so the two halves can
+ * never be confused for one another however either is spelled.
+ */
+const KEY_SEP = String.fromCharCode(0)
+const cacheKey = (directory: string, boundary: string) => `${directory}${KEY_SEP}${boundary}`
+const keyDirectory = (key: string) => key.slice(0, key.indexOf(KEY_SEP))
+
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -215,15 +236,19 @@ export const layer = Layer.effect(
     const cache = new Map<string, { readonly at: number; readonly entry: Entry }>()
 
     return Service.of({
-      read: Effect.fn("ProjectFileCache.read")(function* (directory: string) {
+      read: Effect.fn("ProjectFileCache.read")(function* (directory: string, boundary: string) {
         const now = Date.now()
-        const held = cache.get(directory)
+        // ⚠️ Keyed by the PAIR, not by `directory`. Two sessions can legitimately get different
+        // answers for the same folder — one rooted above a `novaclaw.json` and one rooted below it
+        // — so a directory-only key would serve the first session's verdict to the second.
+        const key = cacheKey(directory, boundary)
+        const held = cache.get(key)
         if (held && now - held.at < TTL_MS) return held.entry
         const location = yield* project.resolve(AbsolutePath.make(directory))
         const entry = yield* ProjectFileResolve.resolve(
           directory,
           ProjectFileResolve.trustedBoundary({
-            directory,
+            directory: boundary,
             root: location.directory,
             vcs: location.vcs,
           }),
@@ -260,8 +285,8 @@ export const layer = Layer.effect(
         )
         // Delete-then-set so a refreshed key moves to the end of the insertion order and the
         // eviction below drops the least recently READ entry rather than the oldest key.
-        cache.delete(directory)
-        cache.set(directory, { at: now, entry })
+        cache.delete(key)
+        cache.set(key, { at: now, entry })
         if (cache.size > MAX_ENTRIES) {
           const oldest = cache.keys().next()
           if (!oldest.done) cache.delete(oldest.value)
@@ -271,7 +296,8 @@ export const layer = Layer.effect(
       invalidate: Effect.fn("ProjectFileCache.invalidate")(function* (directory: string) {
         const target = comparable(directory)
         for (const key of [...cache.keys()]) {
-          const held = comparable(key)
+          // The key is a PAIR; only its directory half is what a write under `directory` affects.
+          const held = comparable(keyDirectory(key))
           // `${target}/` and not merely `startsWith(target)`: without the separator, invalidating
           // `…/app` would also clear `…/app-legacy`, a different folder that shares a prefix.
           if (held === target || held.startsWith(`${target}/`)) cache.delete(key)
@@ -326,7 +352,8 @@ export const localLayer = Layer.effect(
   Effect.gen(function* () {
     const location = yield* Location.Service
     const cache = yield* Service
-    return LocalService.of({ entry: Effect.suspend(() => cache.read(location.directory)) })
+    // The location IS its own boundary here: this asks about the folder the session is rooted in.
+    return LocalService.of({ entry: Effect.suspend(() => cache.read(location.directory, location.directory)) })
   }),
 )
 

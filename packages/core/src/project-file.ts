@@ -1,5 +1,6 @@
 export * as ProjectFileResolve from "./project-file"
 
+import os from "node:os"
 import path from "node:path"
 import { Effect } from "effect"
 import { ProjectFile } from "@novaclaw/schema/project-file"
@@ -67,11 +68,46 @@ export interface LocationBoundary {
 
 /**
  * One definition of a location's project-file boundary for the cache and HTTP presentation path.
- * Outside a repository, `Location.root` is a volume root, so the selected directory is the only
- * trusted boundary. Inside a repository, the discovered worktree is the trusted shared root.
+ * Inside a repository the discovered worktree is the trusted shared root; where there is no project
+ * root at all, the user's HOME directory is the floor.
+ *
+ * 🔴 **This tests whether `root` IS a volume root, rather than inferring it from the absence of a
+ * VCS — and the difference was a real regression.** The rule was `vcs === undefined ? directory :
+ * root`, whose reasoning was *"outside a repository, `Location.root` is a volume root"*. That premise
+ * is true for `Project.resolve`'s own fallback (`path.parse(input).root`) and FALSE whenever a
+ * project root was established by other means — a location constructed with an explicit project
+ * directory has a perfectly good non-repository root. Using the VCS flag as a PROXY for "the root is
+ * meaningless" therefore collapsed the boundary onto the selected folder for every such location, and
+ * a `novaclaw.json` one directory up governed nothing.
+ *
+ * ⚠️ **A proxy for a premise is only as good as the premise, and this one is cheap to test
+ * directly:** a path is a volume root exactly when it is its own `path.parse().root`. So the check
+ * now says what the comment always claimed.
+ *
+ * 🔴 **Outside a repository the floor is HOME, and this was re-derived the hard way.** The rule
+ * briefly became "the selected folder" — which does not tighten the feature, it switches it off: a
+ * project file governs the folders BENEATH it, so bounding at the selected folder leaves it
+ * governing only its own. Three pre-existing tests say so, across two units and at two levels —
+ * `httpapi-project-write-invalidates.test.ts` (a session in `<root>/sub` picks up a file written at
+ * `<root>`), `skill-invocation-command-list.test.ts`, and the exclusion suite.
+ *
+ * ⚠️ **Home is the floor because of what is ABOVE it, not what is below.** Walking past home reaches
+ * \`C:\\Users` or `/`, where one stray `novaclaw.json` would govern every session on the
+ * machine. `snapshot.ts` draws the same line for the same reason. Principle 13 is why the remaining
+ * exposure is tolerable rather than lax: a project file may only ever NARROW, so the worst a
+ * surprising ancestor can do is take capability away.
+ *
+ * ⚠️ `bounded()` clamps a boundary that is not an ancestor of the start folder back to that folder,
+ * so a directory outside home stays bounded by itself rather than by nothing.
  */
 export function trustedBoundary(location: LocationBoundary): string {
-  return location.vcs === undefined ? location.directory : location.root
+  return isVolumeRoot(location.root) ? os.homedir() : location.root
+}
+
+/** `C:\`, `\server\share\`, `/` — a boundary that would trust the entire volume. */
+function isVolumeRoot(candidate: string): boolean {
+  const resolved = path.resolve(FSUtil.windowsPath(candidate))
+  return samePath(resolved, path.parse(resolved).root)
 }
 
 function bounded(options: WalkOptions): { readonly from: string; readonly boundary: string } {

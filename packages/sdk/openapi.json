@@ -27971,11 +27971,11 @@
           },
           "status": {
             "type": "string",
-            "description": "Current status of the task. Any string is accepted; the canonical values are pending, in_progress, completed and cancelled, and anything else is passed through unchanged."
+            "description": "Task status; any string. Canonical: pending, in_progress, completed, cancelled."
           },
           "priority": {
             "type": "string",
-            "description": "Priority level of the task. Any string is accepted; the canonical values are high, medium and low, and anything else is passed through unchanged."
+            "description": "Task priority; any string. Canonical: high, medium, low."
           }
         },
         "required": ["content", "status", "priority"],

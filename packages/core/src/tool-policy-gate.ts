@@ -286,7 +286,7 @@ export const layer = Layer.effect(
 
     const screen: Interface["screen"] = Effect.fn("ToolPolicyGate.screen")(function* (input) {
       const directory = yield* directoryOf(input.sessionID)
-      const project = yield* projects.read(directory)
+      const project = yield* projects.read(directory, directory)
       const projectFault = ProjectFileCache.fault(project)
       if (projectFault !== undefined)
         return {

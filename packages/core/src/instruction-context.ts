@@ -8,6 +8,7 @@ import { Global } from "./global"
 import { Location } from "./location"
 import { ProjectExclusion } from "./project-exclusion"
 import { ProjectFileCache } from "./project-file-cache"
+import { ProjectFileResolve } from "./project-file"
 import { AbsolutePath } from "./schema"
 import { SystemContext } from "./system-context/index"
 import { SystemContextRegistry } from "./system-context/registry"
@@ -66,7 +67,11 @@ export const layer = Layer.effectDiscard(
       const screened = yield* Effect.forEach(
         [...discovered],
         (candidate) =>
-          ProjectExclusion.declarationFor(dirname(candidate)).pipe(
+          // ⚠️ The trust root is THIS LOCATION's, not `dirname(candidate)`. Candidates are found by
+          // walking, so most of them sit above the selected folder; anchoring the boundary on each
+          // candidate's own folder would mean a project file could only ever screen a file sitting
+          // directly beside it — including the `stop` root this very walk started from.
+          ProjectExclusion.declarationFor(dirname(candidate), ProjectFileResolve.trustedBoundary(location)).pipe(
             Effect.provideService(ProjectFileCache.Service, projects),
             Effect.map((declaration) => {
               if (declaration === undefined) return candidate

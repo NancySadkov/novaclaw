@@ -189,7 +189,9 @@ export const layer = Layer.effect(
       // No session means no folder, and the chain walk below returns an empty chain — so the answer
       // is the shipped defaults. Resolving anyway (rather than short-circuiting) keeps this method's
       // result identical to what the readers computed before, for a session that vanished mid-turn.
-      const found = session ? yield* projects.read(session.location.directory) : ProjectFileCache.EMPTY
+      const found = session
+        ? yield* projects.read(session.location.directory, session.location.directory)
+        : ProjectFileCache.EMPTY
       // 🔴 The COLLEAGUE's standing choices, folded UNDER the folder (see `agent-defaults.ts` for why
       // that order is a security decision, not a preference). Read from the store rather than from
       // the live roster so this resolves the same way on a headless turn as in the app.

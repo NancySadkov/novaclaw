@@ -7,6 +7,7 @@ import { FSUtil } from "./fs-util"
 import { Location } from "./location"
 import { ProjectExclusion } from "./project-exclusion"
 import { ProjectFileCache } from "./project-file-cache"
+import { ProjectFileResolve } from "./project-file"
 
 export const Kind = Schema.Literals(["file", "directory"])
 export type Kind = typeof Kind.Type
@@ -97,6 +98,10 @@ export interface Interface {
    * The `novaclaw.json` exclusion list governing a canonical directory, for the two tools that
    * ENUMERATE rather than name (`glob`, `grep`). `resolve` speaks for their search root; only they
    * can speak for their rows. Everyone else should be using `resolve` and nothing else.
+   *
+   * ⚠️ Takes the directory only. The containment boundary the lookup climbs to is THIS location's
+   * folder, supplied here rather than accepted from the caller — a boundary a caller could pass is
+   * a boundary a caller could widen.
    */
   readonly exclusionsFor: (
     directory: string,
@@ -130,8 +135,10 @@ export const layer = Layer.effect(
     // leaving the requirement to be discharged at call time pushes it into this service's R, which
     // must be `never`.
     const projects = yield* ProjectFileCache.Service
-    const exclusionsFor = (directory: string) =>
-      ProjectExclusion.declarationFor(directory).pipe(Effect.provideService(ProjectFileCache.Service, projects))
+    const exclusionsFor = (directory: string, boundary: string) =>
+      ProjectExclusion.declarationFor(directory, boundary).pipe(
+        Effect.provideService(ProjectFileCache.Service, projects),
+      )
     // Same boot tolerance as the FileSystem layer: a location whose directory was deleted
     // must still boot far enough to serve DB-only requests (e.g. deleting its sessions).
     const locationRoot = yield* fs
@@ -225,7 +232,14 @@ export const layer = Layer.effect(
       if (input.readsContent !== false) {
         const screenDirectory = FSUtil.normalizePath(resolved.directory)
         const screenCanonical = path.resolve(screenDirectory, path.relative(resolved.directory, resolved.canonical))
-        const declaration = yield* exclusionsFor(screenDirectory)
+        // ⚠️ The boundary is folded by the SAME rule as the two operands above, and for the same
+        // reason. `locationRoot` is already a realpath, but a `subst` drive is not resolved by
+        // `realpath` — so an unfolded boundary would fail `FSUtil.contains` against a folded
+        // `screenDirectory` and `walk` would silently fall back to the queried folder, which is
+        // exactly the collapse this call is fixing. A boundary that does not fold is a boundary
+        // that quietly is not one.
+        const screenBoundary = FSUtil.normalizePath(ProjectFileResolve.trustedBoundary(location))
+        const declaration = yield* exclusionsFor(screenDirectory, screenBoundary)
         if (declaration) {
           const verdict = ProjectExclusion.screen(declaration, screenCanonical, resolved.type === "Directory")
           if (verdict.excluded && verdict.pattern !== undefined)
@@ -257,7 +271,14 @@ export const layer = Layer.effect(
       } satisfies Target
     })
 
-    return Service.of({ resolve, exclusionsFor })
+    return Service.of({
+      resolve,
+      // ⚠️ The public method takes the directory ONLY. `glob` and `grep` ask about their search
+      // root, and the trust root is this location's own folder — which is ours to supply, not
+      // theirs to know. Handing the boundary to callers would let a caller widen it.
+      exclusionsFor: (directory: string) =>
+        exclusionsFor(directory, FSUtil.normalizePath(ProjectFileResolve.trustedBoundary(location))),
+    })
   }),
 )
 

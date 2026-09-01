@@ -36,17 +36,43 @@ describe("GET /api/project", () => {
     }),
   )
 
-  it.effect("never reports a valid or malformed file above a non-repository location root", () =>
+  // 🔴 **This asserted the OPPOSITE until 2026-09-01, and the reversal is deliberate.** It read
+  // "never reports a valid or malformed file above a non-repository location root" and expected
+  // `none`. It arrived in the same change as `trustedBoundary`, whose boundary outside a repository
+  // was the selected folder — which does not tighten the feature so much as switch it off, because a
+  // project file exists to govern the folders BENEATH it. Three tests that PREDATE that change say
+  // so, including `httpapi-project-write-invalidates.test.ts` one directory away, which requires a
+  // session in `<root>/sub` to pick up a file written at `<root>`. A test added alongside the
+  // behaviour it pins cannot referee a conflict with the behaviour that was already shipped.
+  //
+  // The floor outside a repository is HOME, which is where the rule stood before and what the real
+  // containment claim is about: a file ABOVE home would otherwise govern every session on the
+  // machine. `project-file-cache-invalidate.test.ts` drives that boundary directly.
+  it.effect("reports a file in the PARENT of a non-repository folder — that is what a project file is for", () =>
     Effect.gen(function* () {
-      for (const text of [JSON.stringify({ version: 1, name: "outside" }), "{ broken"]) {
-        const parent = tmp("outside-parent")
-        const directory = path.join(parent, "selected")
-        fs.mkdirSync(directory)
-        fs.writeFileSync(path.join(parent, "novaclaw.json"), text)
-        const response = yield* requestInDirectory(ExperimentalPaths.project, directory)
-        expect(response.status).toBe(200)
-        expect(JSON.parse(yield* response.text)).toEqual({ kind: "none" })
-      }
+      const parent = tmp("outside-parent")
+      const directory = path.join(parent, "selected")
+      fs.mkdirSync(directory)
+      fs.writeFileSync(path.join(parent, "novaclaw.json"), JSON.stringify({ version: 1, name: "outside" }))
+      const response = yield* requestInDirectory(ExperimentalPaths.project, directory)
+      expect(response.status).toBe(200)
+      const body: Record<string, unknown> = JSON.parse(yield* response.text)
+      expect(body["kind"]).toBe("project")
+      expect(body["root"]).toBe(parent)
+    }),
+  )
+
+  it.effect("a malformed file in that parent is reported as a FAULT, never flattened to `none`", () =>
+    Effect.gen(function* () {
+      // Ruling 2's shape at the presentation layer: a file we could not read is said out loud, because
+      // "no project here" and "your project file is broken" send a reader to different places.
+      const parent = tmp("outside-parent-bad")
+      const directory = path.join(parent, "selected")
+      fs.mkdirSync(directory)
+      fs.writeFileSync(path.join(parent, "novaclaw.json"), "{ broken")
+      const response = yield* requestInDirectory(ExperimentalPaths.project, directory)
+      expect(response.status).toBe(200)
+      expect(JSON.parse(yield* response.text)["kind"]).toBe("invalid")
     }),
   )
 

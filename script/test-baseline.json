@@ -1,10 +1,11 @@
 {
   "note": "Baseline for `bun run test`. `units` = tests bun reported SKIPPED per run unit; `failing` = failures PINNED as known, by name. Both are ratchets: any change fails the run and prints what moved. Pin only failures that are understood and filed — never to make a red go away. Seeded 2026-07-27 (v0.2.0 PREP Wave 0).",
   "reasons": {
+    "llm": "28 as of 2026-09-01, lowered from 29. The refactor sweep deleted the unused provider surface and its tests (`test/exports.test.ts`, `test/provider/cloudflare.test.ts`, `test/provider/openrouter.test.ts` and others); one of those files carried a skipped test, so the skip left with the file it lived in. A skip count that drops because tests were REMOVED is a ratchet working, not a regression — but it is lowered deliberately and in the same commit, never left to drift.",
     "novaclaw:server": "NO pins — this unit is expected FULLY GREEN, and any failure is drift. The empty `failing` entry is documentary: it is inert to the matcher (a pin needs a non-empty set) and exists only so this reason has a unit to hang on. ⚠️ A flake belongs in quarantine, never here — this unit has produced different new failures on consecutive runs under memory pressure, and an environmental failure pinned as expected is an expectation that can never come true."
   },
   "units": {
-    "llm": 29,
+    "llm": 28,
     "core": 9,
     "novaclaw:server": 13,
     "novaclaw:v2": 3,

@@ -15,7 +15,8 @@
  *
  *   bun run test              # typecheck every package, then the fast tier: kernel, schemas, LLM, SDK,
  *                             #   UI, desktop, server, HTTP contract
- *   bun run test --full       # + the rest of novaclaw (see the note below)
+ *   bun run test --full       # RELEASE TIER ONLY (16-25 min) — a release cut, or a failure you
+ *                             #   cannot explain from the diff. Not part of the dev loop.
  *   bun run test --only=core
  *   bun run test --only=typecheck   # just: does the tree compile (~52 s)
  *
@@ -75,6 +76,17 @@ const enforceTestMemory = (label: string) =>
 enforceTestMemory("the test suite")
 
 const FULL = process.argv.includes("--full")
+// ⚠️ Owner directive 2026-09-02: `--full` is OFF the development loop — a release cut, or a failure
+// you cannot explain from the diff and cannot reproduce in its own unit. Nothing here refuses the
+// flag; the point is that the rule is visible where it is actually being spent, not only in a doc
+// nobody re-reads mid-session (AGENTS.md principle 12: the mechanism ships with the rule).
+if (FULL) {
+  console.log("")
+  console.log("  --full is the RELEASE tier (16-25 min). Off the development loop by owner directive:")
+  console.log("  run it to cut a release, or for a failure you cannot explain from the diff.")
+  console.log("  Otherwise `--only=<unit>` plus `--only=typecheck` is what a commit or a push needs.")
+  console.log("")
+}
 const ONLY = process.argv.find((a) => a.startsWith("--only="))?.slice("--only=".length)
 
 const PER_TEST_TIMEOUT_MS = 15_000

@@ -532,7 +532,9 @@ export const layer = Layer.effect(
       return session?.location.directory ?? location.directory
     })
     const projectEntry = EffectRuntime.fnUntraced(function* (sessionID: SessionV2.ID) {
-      return yield* projects.read(yield* sessionDirectory(sessionID))
+      // The session's own folder is both the question and the trust root here.
+      const directory = yield* sessionDirectory(sessionID)
+      return yield* projects.read(directory, directory)
     })
 
     const autoGrants = yield* SessionAutoGrant.Service

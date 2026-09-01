@@ -33,7 +33,7 @@ export const policyHandlers = HttpApiBuilder.group(InstanceHttpApi, "policy", (h
         const gate = yield* ToolPolicyGate.Service
         const projects = yield* ProjectFileCache.Service
         const installed = yield* gate.list()
-        const project = yield* projects.read(directory)
+        const project = yield* projects.read(directory, directory)
         const requested = project.policies
         const byID = new Map(installed.map((entry) => [entry.id, entry] as const))
         return {

@@ -280,10 +280,19 @@ export interface Declaration {
  * own project from outside it, and a path into a different project entirely. Anchoring on the
  * session folder instead would make the answer depend on how the caller spelled the path — which is
  * precisely the bypass class this is here to close.
+ *
+ * ⚠️ **`boundary` is a DIFFERENT axis and does not weaken that.** `directory` is where the search
+ * STARTS; `boundary` is how far up it may climb — the caller's own trusted root, the session's
+ * selected working folder. The start stays anchored on the target, so none of the three shapes above
+ * changes; the boundary only decides whether a `novaclaw.json` at the session root is allowed to
+ * govern a file in a subfolder. It must be, and outside a git repository it previously was not.
  */
-export const declarationFor = Effect.fn("ProjectExclusion.declarationFor")(function* (directory: string) {
+export const declarationFor = Effect.fn("ProjectExclusion.declarationFor")(function* (
+  directory: string,
+  boundary: string,
+) {
   const projects = yield* ProjectFileCache.Service
-  const entry = yield* projects.read(directory)
+  const entry = yield* projects.read(directory, boundary)
   // Empty exclusion fields on a fault are a presentation fallback, never an authorization. Every
   // path-taking agentic tool passes through this declaration seam, so failing it closes reads,
   // enumerations and mutations together without duplicating the classification in each tool.

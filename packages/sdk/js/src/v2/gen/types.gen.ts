@@ -177,11 +177,11 @@ export type Todo = {
    */
   content: string
   /**
-   * Current status of the task. Any string is accepted; the canonical values are pending, in_progress, completed and cancelled, and anything else is passed through unchanged.
+   * Task status; any string. Canonical: pending, in_progress, completed, cancelled.
    */
   status: string
   /**
-   * Priority level of the task. Any string is accepted; the canonical values are high, medium and low, and anything else is passed through unchanged.
+   * Task priority; any string. Canonical: high, medium, low.
    */
   priority: string
 }

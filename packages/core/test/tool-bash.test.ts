@@ -71,6 +71,26 @@ const permission = Layer.succeed(
 const appProcess = Layer.succeed(
   AppProcess.Service,
   AppProcess.Service.of({
+    /**
+     * ⚠️ **`run` answers "not a repository", and it is not padding.** The comment below is still
+     * true of BashJobs — it consumes `spawn` — but the project-exclusion cases reach
+     * `ProjectV2.resolve` on the way, which shells out to git through `AppProcess.run`. A mock
+     * without it fails with `proc.run is not a function` from inside `git.ts`, which reads as a
+     * product fault and is a fixture gap.
+     *
+     * A non-zero exit is the HONEST answer for these fixtures: they are bare temp directories, so
+     * discovery finding nothing is what really happens. That also puts the exclusion tests on the
+     * non-repository arm of the boundary rule, which is the arm they are about.
+     */
+    run: (command: ChildProcess.Command) =>
+      Effect.succeed({
+        command: command._tag === "StandardCommand" ? command.command : "",
+        exitCode: 1,
+        stdout: Buffer.alloc(0),
+        stderr: Buffer.alloc(0),
+        stdoutTruncated: false,
+        stderrTruncated: false,
+      }),
     // BashJobs consumes AppProcess.spawn (a streaming handle), not run: stream the mocked
     // output through `all` and settle `exitCode` from `result`. `hang` leaves exitCode pending
     // so BashJobs.wait times out (the long-running-job path).

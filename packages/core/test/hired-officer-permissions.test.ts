@@ -173,8 +173,23 @@ describe("a colleague the user hired", () => {
       // privilege-escalation move, so the floor's own denies have to survive the copy.
       expect(effectFor(roster.get("theron")!, "plan_enter")).toBe("deny")
       // Principle 14: a colleague that needs a decision says so in its REPLY. It never opens a side
-      // channel and waits — so the action stays denied even for the agents a person chats with.
-      expect(effectFor(roster.get("theron")!, "question")).toBe("deny")
+      // channel and waits — so the action stays refused even for the agents a person chats with.
+      //
+      // ⚠️ **`ask`, not `deny`, and the mechanism changing is the point.** This asserted a literal
+      // `deny` rule until 2026-09-01, when the floor's `question` rule was removed along with the
+      // FOUR re-allows that had been sitting under it — six rules over an action with no tool behind
+      // it (`bf39088eb` retired the ask outcome and took the tool off the horizon), where the comment
+      // claimed a prohibition the file below reversed four times. With no rule, the action falls
+      // through to the evaluator's default exactly as `spawn` does above, and that default is a
+      // refusal: `permission.ts` rewrites an unresolved `ask` into deny rules with reason
+      // `ask-removed`.
+      //
+      // 🔴 So this now asserts the PROPERTY rather than the rule that used to carry it — the
+      // assertion below is what would fail if anyone ever made `question` reachable. Principle 14
+      // calls itself structural rather than a policy toggle, and a floor entry for a tool that does
+      // not exist is the toggle, not the structure.
+      expect(effectFor(roster.get("theron")!, "question")).toBe("ask")
+      expect(effectFor(roster.get("theron")!, "question")).not.toBe("allow")
       expect(PermissionV2.catchAllAllowRules(roster.get("theron")!)).toEqual([])
     }),
   )
