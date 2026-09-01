@@ -66,3 +66,18 @@ describe("Model Configure — identity and connection", () => {
       for (const suffix of ["name", "desc"]) expect(`settings.models.config.${key}.${suffix}` in en).toBe(true)
   })
 })
+
+describe("Model Configure — recovery", () => {
+  test("offers named recovery postures and explains the longest outage window", () => {
+    for (const [word, attempts] of [
+      ["once", 1],
+      ["quickRecovery", 3],
+      ["patientRecovery", 5],
+      ["persistentRecovery", 10],
+    ] as const) {
+      expect(source).toContain(`{ word: "${word}", num: ${attempts} }`)
+      expect(`settings.models.config.preset.${word}` in en).toBe(true)
+    }
+    expect(en["settings.models.config.retryAttempts.desc"]).toContain("about three minutes")
+  })
+})

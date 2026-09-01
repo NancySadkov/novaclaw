@@ -95,6 +95,10 @@ type PresetWord =
   | "gentle"
   | "moderate"
   | "disabled"
+  | "once"
+  | "quickRecovery"
+  | "patientRecovery"
+  | "persistentRecovery"
 type RawPreset = { num?: number; word?: PresetWord; size?: string }
 const PRESETS: Record<FieldKey, RawPreset[]> = {
   temperature: [
@@ -195,10 +199,10 @@ const PRESETS: Record<FieldKey, RawPreset[]> = {
     { size: "32K", num: 32768 },
   ],
   retryAttempts: [
-    { size: "1", num: 1 },
-    { size: "3", num: 3 },
-    { size: "5", num: 5 },
-    { size: "10", num: 10 },
+    { word: "once", num: 1 },
+    { word: "quickRecovery", num: 3 },
+    { word: "patientRecovery", num: 5 },
+    { word: "persistentRecovery", num: 10 },
   ],
 }
 
