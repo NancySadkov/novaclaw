@@ -43,6 +43,12 @@ describe("the instance graph carries the fleet watcher", () => {
 })
 
 describe("a worker's registration matches its life", () => {
+  test("execution admission runs before a process can start", () => {
+    expect(execution).toContain('from "./admission"')
+    expect(execution).toContain("return yield* workerAdmission.run(")
+    expect(execution.indexOf("workerAdmission.run")).toBeLessThan(execution.indexOf("SessionWorkerSupervisor.spawn"))
+  })
+
   test("execution registers the spawned worker", () => {
     expect(execution).toContain("WorkerRegistry.register(")
     expect(execution).toContain("pid: spawned.value.pid")
@@ -56,9 +62,9 @@ describe("a worker's registration matches its life", () => {
   })
 
   test("NEGATIVE CONTROL: the reader would notice if the release went away", () => {
-    expect(/Effect\.ensuring\(Effect\.sync\(releaseWorker\)\)/.test("Effect.ensuring(Effect.sync(releaseWorker))")).toBe(
-      true,
-    )
+    expect(
+      /Effect\.ensuring\(Effect\.sync\(releaseWorker\)\)/.test("Effect.ensuring(Effect.sync(releaseWorker))"),
+    ).toBe(true)
     expect(/Effect\.ensuring\(Effect\.sync\(releaseWorker\)\)/.test("outcome = yield* Effect.promise(...)")).toBe(false)
   })
 })

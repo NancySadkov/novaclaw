@@ -59,6 +59,10 @@ type PresetWord =
   | "gentle"
   | "moderate"
   | "disabled"
+  | "once"
+  | "quickRecovery"
+  | "patientRecovery"
+  | "persistentRecovery"
 export type RawPreset = { num?: number; word?: PresetWord; size?: string }
 export const PRESETS: Record<FieldKey, RawPreset[]> = {
   temperature: [
@@ -158,11 +162,14 @@ export const PRESETS: Record<FieldKey, RawPreset[]> = {
     { size: "16K", num: 16384 },
     { size: "32K", num: 32768 },
   ],
+  // ⚠️ NAMED, not bare counts — principle 12(c), and it arrived from the other line of work while
+  // this table was being lifted out of `dialog-model-config.tsx`. "3 attempts" asks the reader to
+  // know what three buys them; "quickRecovery" says it.
   retryAttempts: [
-    { size: "1", num: 1 },
-    { size: "3", num: 3 },
-    { size: "5", num: 5 },
-    { size: "10", num: 10 },
+    { word: "once", num: 1 },
+    { word: "quickRecovery", num: 3 },
+    { word: "patientRecovery", num: 5 },
+    { word: "persistentRecovery", num: 10 },
   ],
 }
 

@@ -1540,7 +1540,16 @@ export const layer = Layer.effect(
         // the two agree, and re-reading it costs one row rather than a subscription.
         const existing = yield* result.get(sessionID)
         if (existing.result !== undefined) return
-        const joined = yield* SessionJoin.fromEvents(events).awaitCompletion({
+        // ⚠️ `fromParts`, and built from what this layer ALREADY holds — never `yield* SessionJoin.Service`.
+        // `join.ts` records why: resolving that tag inside a per-request scope forced its layer to
+        // build there and abandoned every tool-call turn. The parts are the same three the join's own
+        // layer passes, and `sequence` is what makes this join the CURRENT epoch rather than the first
+        // completion in the child's lifetime — replaying from zero returned the first answer forever.
+        const joined = yield* SessionJoin.fromParts({
+          events,
+          session: (childID) => store.get(childID),
+          sequence: (childID) => EventV2.latestSequence(db, childID),
+        }).awaitCompletion({
           childID: sessionID,
           timeoutMs: SessionJoin.JOIN_TIMEOUT_MS,
         })

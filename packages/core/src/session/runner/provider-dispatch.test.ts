@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { Effect, Stream } from "effect"
+import { Effect, Layer, Stream } from "effect"
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import fs from "node:fs"
 import path from "node:path"
 import {
@@ -14,7 +15,8 @@ import {
   Usage,
   type LLMRequest,
 } from "@novaclaw/llm"
-import * as OpenAIChat from "@novaclaw/llm/protocols/openai-compatible-chat"
+import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
+import { RequestExecutor } from "@novaclaw/llm/route"
 import { SessionSchema } from "../schema"
 import type { SessionMessage } from "@novaclaw/schema/session-message"
 import { Token } from "../../util/token"
@@ -434,6 +436,49 @@ describe("ProviderDispatch", () => {
     // `test/session-scheduler-concurrency.test.ts`.
     expect(calls).toEqual(["admit", "report:12", "release", "release"])
     expect(timing).toEqual(["queued", "admitted", "start:1", "end:1:retry", "start:2", "end:2:completed"])
+  })
+
+  test("the configured runner budget is the exact HTTP wire-request budget", async () => {
+    const sessionID = "ses_exact_wire_budget" as SessionSchema.ID
+    let wireRequests = 0
+    const scheduler = {
+      admit: () => Effect.void,
+      release: () => Effect.void,
+      report: () => Effect.void,
+    } as never
+    const httpLayer = Layer.succeed(
+      HttpClient.HttpClient,
+      HttpClient.make((request) =>
+        Effect.sync(() => {
+          wireRequests++
+          return HttpClientResponse.fromWeb(
+            request,
+            new Response("server restarting", { status: 503, headers: { "retry-after-ms": "0" } }),
+          )
+        }),
+      ),
+    )
+    const executorLayer = RequestExecutor.layer.pipe(Layer.provide(httpLayer))
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const executor = yield* RequestExecutor.Service
+        return yield* ProviderDispatch.run({
+          events,
+          scheduler,
+          sessionID,
+          slot: { sessionID, deviceKey: "device", sessionClass: "interactive" },
+          maxAttempts: 3,
+          hasOutput: () => false,
+          attempt: executor
+            .execute(HttpClientRequest.get("https://provider.test/v1/chat"))
+            .pipe(Effect.asVoid),
+        })
+      }).pipe(Effect.provide(executorLayer)),
+    )
+
+    expect(result._tag).toBe("Failure")
+    expect(wireRequests).toBe(3)
   })
 
   test("publishes server-owned live timing at scheduler and provider boundaries", async () => {

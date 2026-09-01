@@ -2,7 +2,7 @@ export * as SessionMaintenance from "./maintenance"
 
 import { LLM, LLMEvent, Message, SystemPart, type FinishReason } from "@novaclaw/llm"
 import { SessionRecall } from "./recall"
-import { Context, DateTime, Duration, Effect, Fiber, FiberSet, Layer, Stream } from "effect"
+import { Context, DateTime, Deferred, Duration, Effect, Fiber, FiberSet, Layer, Stream } from "effect"
 import { Log } from "@novaclaw/schema/log"
 import { Database } from "../../database/database"
 import { EventV2 } from "../../event"
@@ -167,7 +167,7 @@ export const layer = Layer.effect(
      * two instances of this service are two independent guards, i.e. the duplicate model call the
      * guard exists to prevent.
      */
-    const titling = new Set<string>()
+    const titling = new Map<string, Deferred.Deferred<void>>()
 
     /**
      * Detached memory organisation lives here, not in the drain.
@@ -236,12 +236,33 @@ export const layer = Layer.effect(
       )
     })
 
-    /** `generateTitle`, but at most one pass per session at a time — the guard always clears. */
+    /**
+     * `generateTitle`, but at most one pass per session at a time — and every overlapping caller
+     * JOINS that pass.
+     *
+     * Production executes one drain in a disposable worker runtime. The 30 s pass can cross the
+     * drain-end boundary: if `postRun` merely observes a boolean "already running" guard and returns,
+     * worker disposal interrupts the detached fiber and the session keeps its placeholder title.
+     * A Deferred makes the in-flight pass part of drain settlement without duplicating its model call.
+     */
     const generateTitleOnce = (sessionID: SessionSchema.ID) =>
       Effect.suspend(() => {
-        if (titling.has(sessionID)) return Effect.void
-        titling.add(sessionID)
-        return generateTitle(sessionID).pipe(Effect.ensuring(Effect.sync(() => titling.delete(sessionID))))
+        const active = titling.get(sessionID)
+        if (active) return Deferred.await(active)
+        const completed = Deferred.makeUnsafe<void>()
+        titling.set(sessionID, completed)
+        return generateTitle(sessionID).pipe(
+          Effect.ensuring(
+            Deferred.succeed(completed, undefined).pipe(
+              Effect.andThen(
+                Effect.sync(() => {
+                  if (titling.get(sessionID) === completed) titling.delete(sessionID)
+                }),
+              ),
+              Effect.asVoid,
+            ),
+          ),
+        )
       })
 
     // Auto-extraction (kb-graph §1.3.3): after the drain settles, a model pass reads the latest REAL

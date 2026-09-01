@@ -1,6 +1,5 @@
 import { describe, expect } from "bun:test"
-import { Effect, Fiber, Layer, Random, Ref } from "effect"
-import * as TestClock from "effect/testing/TestClock"
+import { Effect, Layer, Ref } from "effect"
 import { Headers, HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import { EgressBlocked, LLM, LLMError } from "../src"
 import { LLMClient, RequestExecutor } from "../src/route"
@@ -58,11 +57,6 @@ const countedResponsesLayer = (attempts: Ref.Ref<number>, responses: ReadonlyArr
       ),
     ),
   )
-
-const randomMidpoint = {
-  nextDoubleUnsafe: () => 0.5,
-  nextIntUnsafe: () => 0,
-}
 
 /**
  * A client that refuses the request the way a LOCAL egress policy does — byte-for-byte the shape
@@ -282,21 +276,26 @@ describe("RequestExecutor", () => {
     ),
   )
 
-  it.effect("retries retryable status responses before returning the stream", () =>
+  it.effect("classifies a retryable response without issuing a hidden second request", () =>
     Effect.gen(function* () {
-      const executor = yield* RequestExecutor.Service
-      const response = yield* executor.execute(request)
+      const attempts = yield* Ref.make(0)
+      return yield* Effect.gen(function* () {
+        const executor = yield* RequestExecutor.Service
+        const error = yield* executor.execute(request).pipe(Effect.flip)
 
-      expect(response.status).toBe(200)
-      expect(yield* response.text).toBe("ok")
-    }).pipe(
-      Effect.provide(
-        responsesLayer([
-          new Response("busy", { status: 503, headers: { "retry-after-ms": "0" } }),
-          new Response("ok", { status: 200 }),
-        ]),
-      ),
-    ),
+        expectLLMError(error)
+        expect(error.reason).toMatchObject({ _tag: "ProviderInternal", status: 503 })
+        expect(error.retryable).toBe(true)
+        expect(yield* Ref.get(attempts)).toBe(1)
+      }).pipe(
+        Effect.provide(
+          countedResponsesLayer(attempts, [
+            new Response("busy", { status: 503, headers: { "retry-after-ms": "0" } }),
+            new Response("must remain unused", { status: 200 }),
+          ]),
+        ),
+      )
+    }),
   )
 
   it.effect("marks 504 and 529 status responses retryable", () =>
@@ -311,16 +310,12 @@ describe("RequestExecutor", () => {
           expect(error.retryable).toBe(true)
         }).pipe(
           Effect.provide(
-            responsesLayer(
-              Array.from(
-                { length: 3 },
-                () =>
-                  new Response("retry", {
-                    status,
-                    headers: { "retry-after-ms": "0" },
-                  }),
-              ),
-            ),
+            responsesLayer([
+              new Response("retry", {
+                status,
+                headers: { "retry-after-ms": "0" },
+              }),
+            ]),
           ),
         )
 
@@ -389,74 +384,25 @@ describe("RequestExecutor", () => {
     ),
   )
 
-  it.effect("honors Retry-After delta seconds before retrying", () =>
+  it.effect("preserves Retry-After for the runner without sleeping or retrying", () =>
     Effect.gen(function* () {
       const attempts = yield* Ref.make(0)
       return yield* Effect.gen(function* () {
         const executor = yield* RequestExecutor.Service
-        const fiber = yield* executor.execute(request).pipe(Effect.forkChild)
+        const error = yield* executor.execute(request).pipe(Effect.flip)
 
-        yield* Effect.yieldNow
+        expectLLMError(error)
+        expect(error.retryAfterMs).toBe(2_000)
         expect(yield* Ref.get(attempts)).toBe(1)
-
-        yield* TestClock.adjust(1_999)
-        yield* Effect.yieldNow
-        expect(yield* Ref.get(attempts)).toBe(1)
-
-        yield* TestClock.adjust(1)
-        const response = yield* Fiber.join(fiber)
-
-        expect(response.status).toBe(200)
-        expect(yield* Ref.get(attempts)).toBe(2)
       }).pipe(
         Effect.provide(
           countedResponsesLayer(attempts, [
             new Response("busy", { status: 503, headers: { "retry-after": "2" } }),
-            new Response("ok", { status: 200 }),
+            new Response("must remain unused", { status: 200 }),
           ]),
         ),
       )
     }),
-  )
-
-  it.effect("uses exponential jittered delay when retry-after is absent", () =>
-    Effect.gen(function* () {
-      const attempts = yield* Ref.make(0)
-      return yield* Effect.gen(function* () {
-        const executor = yield* RequestExecutor.Service
-        const fiber = yield* executor.execute(request).pipe(Effect.flip, Effect.forkChild)
-
-        yield* Effect.yieldNow
-        expect(yield* Ref.get(attempts)).toBe(1)
-
-        yield* TestClock.adjust(499)
-        yield* Effect.yieldNow
-        expect(yield* Ref.get(attempts)).toBe(1)
-
-        yield* TestClock.adjust(1)
-        yield* Effect.yieldNow
-        expect(yield* Ref.get(attempts)).toBe(2)
-
-        yield* TestClock.adjust(999)
-        yield* Effect.yieldNow
-        expect(yield* Ref.get(attempts)).toBe(2)
-
-        yield* TestClock.adjust(1)
-        const error = yield* Fiber.join(fiber)
-
-        expectLLMError(error)
-        expect(error.reason).toMatchObject({ _tag: "ProviderInternal" })
-        expect(yield* Ref.get(attempts)).toBe(3)
-      }).pipe(
-        Effect.provide(
-          countedResponsesLayer(attempts, [
-            new Response("busy", { status: 503 }),
-            new Response("still busy", { status: 503 }),
-            new Response("done retrying", { status: 503 }),
-          ]),
-        ),
-      )
-    }).pipe(Effect.provideService(Random.Random, randomMidpoint)),
   )
 
   it.effect("does not retry after a successful response reaches stream parsing", () =>

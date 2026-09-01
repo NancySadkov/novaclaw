@@ -1,7 +1,7 @@
 import { createInterface } from "node:readline"
 import childProcess from "node:child_process"
 import { SessionWorkerProtocol } from "@novaclaw/core/session/execution/worker-protocol"
-import type { SessionSchema } from "@novaclaw/core/session/schema"
+import { SessionSchema } from "@novaclaw/core/session/schema"
 
 const mode = process.argv[2] ?? "settle"
 const input = createInterface({ input: process.stdin })
@@ -15,6 +15,10 @@ let identity:
   | undefined
 let acknowledgements = 0
 let deviceStage = 0
+let joinedChildren = 0
+let generationReleased = false
+let maintenanceReleased = false
+let maintenanceID: string | undefined
 
 const emit = (message: SessionWorkerProtocol.WorkerMessage) =>
   process.stdout.write(SessionWorkerProtocol.encodeLine(message))
@@ -87,13 +91,14 @@ input.on("line", (line) => {
         })
       return
     }
-    if (mode === "device" || mode === "device-batch") {
+    if (mode === "device" || mode === "device-batch" || mode === "device-maintenance-overlap") {
       emit({
         ...identity,
         type: "device-admit",
         requestID: "rpc_admit",
         deviceKey: "provider/model",
         sessionClass: mode === "device" ? "interactive" : "auto-prompting",
+        ...(mode === "device-maintenance-overlap" ? { concurrency: 1 } : {}),
       })
       return
     }
@@ -104,6 +109,19 @@ input.on("line", (line) => {
         requestID: "rpc_permission",
         input: { sessionID: message.sessionID, action: "read", resources: ["README.md"] },
       })
+      return
+    }
+    if (mode === "await-parallel") {
+      for (const [requestID, childID] of [
+        ["rpc_wait_1", SessionSchema.ID.make("ses_worker_child_one")],
+        ["rpc_wait_2", SessionSchema.ID.make("ses_worker_child_two")],
+      ] as const)
+        emit({
+          ...identity,
+          type: "await-child",
+          requestID,
+          input: { childID, timeoutMs: 1_000 },
+        })
       return
     }
     // `silent` stays alive but sends no heartbeat. This is a non-blocking hang fixture: it exercises
@@ -118,6 +136,25 @@ input.on("line", (line) => {
   }
   if (message.type === "device-admitted" && deviceStage === 0) {
     deviceStage = 1
+    if (mode === "device-maintenance-overlap") {
+      // Deliberately ask for maintenance before returning the generation lease. With a one-slot
+      // scheduler the admission must wait, while the independent release must still reach the host.
+      emit({
+        ...identity,
+        type: "device-maintenance-admit",
+        requestID: "rpc_maintenance_admit",
+        deviceKey: "provider/model",
+        task: "session-title",
+        concurrency: 1,
+      })
+      emit({
+        ...identity,
+        type: "device-release",
+        requestID: "rpc_release",
+        deviceKey: "provider/model",
+      })
+      return
+    }
     emit({
       ...identity,
       type: "device-report",
@@ -135,6 +172,21 @@ input.on("line", (line) => {
     })
   } else if (message.type === "device-released" && deviceStage === 2) {
     emit({ ...identity, type: "settled" })
+  } else if (mode === "device-maintenance-overlap" && message.type === "device-released") {
+    generationReleased = true
+    if (maintenanceReleased) emit({ ...identity, type: "settled" })
+  } else if (mode === "device-maintenance-overlap" && message.type === "device-maintenance-admitted") {
+    maintenanceID = message.maintenanceID
+    emit({
+      ...identity,
+      type: "device-maintenance-release",
+      requestID: "rpc_maintenance_release",
+      deviceKey: "provider/model",
+      maintenanceID,
+    })
+  } else if (mode === "device-maintenance-overlap" && message.type === "device-maintenance-released") {
+    maintenanceReleased = true
+    if (generationReleased) emit({ ...identity, type: "settled" })
   }
   if (message.type === "permission-result" && message.outcome === "allowed") {
     emit({
@@ -148,5 +200,9 @@ input.on("line", (line) => {
     })
   } else if (message.type === "question-result" && message.outcome === "answered") {
     emit({ ...identity, type: "settled" })
+  }
+  if (message.type === "await-child-result") {
+    joinedChildren++
+    if (joinedChildren === 2) emit({ ...identity, type: "settled" })
   }
 })

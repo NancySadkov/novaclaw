@@ -200,13 +200,9 @@ export const floor = (input: {
   // REMOVED (owner ruling 2026-08-20), so every `ask` now resolves to a denial. The capability was
   // not gated, it was gone, for Nova as much as anyone.
   //
-  // ⚠️ **`inherit`, not `*`, and the difference is the whole safety argument.** `"inherit"` is the
-  // literal resource `tool/spawn.ts` asserts when the call names no agent, which means the child runs
-  // as THIS agent and therefore under this exact ruleset. So the grant creates a session and not one
-  // unit of authority: AGENTS.md's *"sub-agents inherit their officer's scope, narrowed, never
-  // widened"* holds by construction rather than by a check. Spawning as a DIFFERENT agent keeps its
-  // old verdict, so "may spawn `plan` helpers but not `build` ones" is still a deliberate grant —
-  // that is the door through which authority could widen, and it stays shut.
+  // ⚠️ **`inherit`, not `*`, and the difference is the whole safety argument.** The model-facing
+  // tool asserts only this literal and cannot name another agent. The child therefore runs under
+  // this exact ruleset: the grant creates a session and not one unit of authority.
   //
   // ⚠️ The other two bounds are untouched and are the real containment: `permissionMode` narrows
   // through `moreRestrictive` so a child cannot out-rank its parent, and the fork-bomb quotas are
@@ -337,7 +333,8 @@ export const Plugin = define({
             // each other AND spawn the nameless sub-agents"*. Nova takes the non-officer floor (it is
             // seeded in code, before any roster exists) and re-allows its own job here, exactly as it
             // does for `colleague` above. `inherit` only — the child runs as Nova, under Nova's
-            // ruleset, so this creates a worker and not a privilege.
+            // ruleset, so this creates a worker and not a privilege. The spawn tool has no named-agent
+            // override; changing roles remains an operator/org-chart operation.
             { action: "spawn", resource: "inherit", effect: "allow" },
           ]),
         )

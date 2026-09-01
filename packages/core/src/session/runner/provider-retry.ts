@@ -7,8 +7,9 @@
 //     (5xx), and RateLimit (429, honoring retry-after).
 //   - InvalidProviderOutput is retryable only before useful output. Once output exists,
 //     the runner accepts the partial turn as broken and starts a continuation request.
-//   - A bounded, per-model attempt cap — a DEAD endpoint must fail after seconds,
-//     not loop forever. The configured value is clamped here.
+//   - A bounded, per-model attempt cap — the default fails a dead endpoint quickly, while the
+//     explicit maximum can bridge a server restart lasting several minutes. The configured value
+//     is clamped here.
 //   - The runner additionally only replays attempts that failed before durable assistant
 //     output, so a retry can never duplicate partially-streamed text or tool actions.
 //
@@ -29,7 +30,7 @@ export function maxAttempts(configured: number | undefined): number {
 /** Ceiling for a provider-supplied retry-after, so a hostile header can't stall a turn. */
 export const MAX_RETRY_DELAY_MS = 30_000
 
-const BACKOFF_MS = [1_000, 3_000, 9_000]
+const BACKOFF_MS = [1_000, 3_000, 9_000, 30_000]
 
 /**
  * True when retrying the SAME request can plausibly succeed. `Transport` is retryable

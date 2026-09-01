@@ -1,7 +1,14 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync, readdirSync } from "node:fs"
 import { join } from "node:path"
-import { PACKAGES, scanRoots, type Pkg } from "./run-units"
+import {
+  novaclawSubUnits,
+  PACKAGES,
+  PROMOTED_NOVACLAW_SUBDIRS,
+  scanRoots,
+  SOLO_NOVACLAW_TEST_FILES,
+  type Pkg,
+} from "./run-units"
 import { workspacePackageDirs } from "./typecheck-units"
 
 /**
@@ -220,5 +227,29 @@ describe("the check itself can fail", () => {
     ])
     expect(scanRoots({ name: "x", dir: "d", args: [] })).toEqual([""])
     expect(scanRoots({ name: "x", dir: "d", args: ["test/server/"] })).toEqual(["test/server"])
+  })
+})
+
+describe("NovaClaw full-tier process boundaries", () => {
+  test("every solo file runs exactly once and never shares the bulk process", () => {
+    const units = novaclawSubUnits(join(ROOT, "packages/novaclaw"), new Set(PROMOTED_NOVACLAW_SUBDIRS))
+    const bulk = units.find((unit) => unit.unit === "test/*")
+    expect(bulk, "the full tier lost its bulk unit and therefore most of its composition signal").toBeDefined()
+
+    const allArgs = units.flatMap((unit) => unit.args)
+    for (const file of SOLO_NOVACLAW_TEST_FILES) {
+      expect(
+        units.find((unit) => unit.unit === file)?.args,
+        `${file} is declared solo but has no dedicated unit`,
+      ).toEqual([file])
+      expect(bulk!.args, `${file} still runs inside the memory-contended bulk process`).not.toContain(file)
+      expect(allArgs.filter((arg) => arg === file), `${file} must run exactly once`).toHaveLength(1)
+    }
+  })
+
+  test("the subprocess-heavy CLI smoke keeps its measured wall-clock margin", () => {
+    const unit = PACKAGES.find((candidate) => candidate.name === "novaclaw")
+    expect(unit, "the full-tier NovaClaw unit vanished").toBeDefined()
+    expect(unit!.subdirWallclockMs?.["test/cli/run/run-process.test.ts"]).toBe(300_000)
   })
 })

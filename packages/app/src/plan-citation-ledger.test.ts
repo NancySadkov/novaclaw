@@ -86,7 +86,7 @@ const LEDGER: Record<string, { paths: number; ids: number }> = {
   host: { paths: 0, ids: 0 },
   "http-recorder": { paths: 0, ids: 1 },
   llm: { paths: 0, ids: 2 },
-  novaclaw: { paths: 15, ids: 13 },
+  novaclaw: { paths: 14, ids: 13 },
   plugin: { paths: 0, ids: 0 },
   protocol: { paths: 0, ids: 0 },
   schema: { paths: 2, ids: 2 },

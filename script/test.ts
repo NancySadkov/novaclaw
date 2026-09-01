@@ -44,7 +44,7 @@
  * report is not worth per-line liveness.
  */
 import { spawnSync } from "node:child_process"
-import { readdirSync, readFileSync } from "node:fs"
+import { readFileSync } from "node:fs"
 import { join } from "node:path"
 
 import { enforce, hostCommitPct, memoryHeadroom, topConsumers } from "./lib/heavy-guard"
@@ -56,7 +56,7 @@ import * as PeakSeries from "./lib/peak-series"
 import { readFailingNames, stripAnsi } from "./lib/test-output"
 import { isUpstreamWatcherCrash } from "./lib/upstream-crash"
 import { typecheckUnits } from "./lib/typecheck-units"
-import { PACKAGES, PROMOTED_NOVACLAW_SUBDIRS } from "./lib/run-units"
+import { novaclawSubUnits, PACKAGES, PROMOTED_NOVACLAW_SUBDIRS } from "./lib/run-units"
 
 /**
  * Refuse to run alongside a build, local inference server or another suite, or on a machine whose
@@ -706,46 +706,6 @@ function run(name: string, kind: Kind, dir: string, argv: string[], wallclockMs:
  * passes alone and fails together. An entry added on suspicion costs a process every release gate
  * forever, which is exactly the bill this list replaced.
  */
-const SOLO_TEST_FILES = ["test/cli/lazy-command.test.ts", "test/mcp/config-reload.test.ts"] as const
-
-/**
- * The `--full` tier's run units for a per-subdir package: ONE bulk unit, plus a unit per file that
- * cannot share a process.
- *
- * 🔴 **This was one unit PER SUBDIR, and the reason had expired.** The comment at the top of this
- * file said novaclaw's cli/server/instance subdirs "each pass alone but HANG when run together in one
- * process (an undisposed InstanceStore/serve handle leak)". Measured 2026-08-24: all 18 non-promoted
- * subdirs plus the 8 top-level files — 71 files, 655 tests — ran together in ONE process and exited
- * cleanly in 291 s. No hang. The leak was fixed at some point and the workaround outlived it.
- *
- * What it cost: ~25 process startups on every release gate, about 500 s, against 273 s for the same
- * content in one process. Half the extra tier's wall clock, spent on a defect that was gone.
- *
- * ⚠️ If a hang ever returns, this is where to split again — but split on a MEASUREMENT, and prefer
- * naming the file in `SOLO_TEST_FILES` over re-isolating every subdir.
- */
-function subUnits(dir: string, promoted: ReadonlySet<string>): { unit: string; args: string[] }[] {
-  const root = `${dir}/test`
-  const paths: string[] = []
-  for (const entry of readdirSync(root, { withFileTypes: true })) {
-    if (entry.isDirectory()) {
-      if (promoted.has(entry.name)) continue
-      for (const found of readdirSync(`${root}/${entry.name}`, { recursive: true })) {
-        const name = String(found).replaceAll("\\", "/")
-        if (name.endsWith(".test.ts")) paths.push(`test/${entry.name}/${name}`)
-      }
-    } else if (entry.name.endsWith(".test.ts")) {
-      paths.push(`test/${entry.name}`)
-    }
-  }
-  const solo = SOLO_TEST_FILES.filter((file) => paths.includes(file))
-  const bulk = paths.filter((file) => !solo.includes(file as (typeof SOLO_TEST_FILES)[number]))
-  return [
-    ...(bulk.length > 0 ? [{ unit: "test/*", args: bulk }] : []),
-    ...solo.map((file) => ({ unit: file, args: [file] })),
-  ]
-}
-
 const promotedSubdirs = new Set<string>(PROMOTED_NOVACLAW_SUBDIRS)
 
 /**
@@ -786,7 +746,7 @@ for (const pkg of PACKAGES) {
   const perTest = pkg.timeoutMs ?? PER_TEST_TIMEOUT_MS
   const argv = (args: string[]) => ["test", ...args, `--timeout=${perTest}`]
   if (pkg.perSubdir) {
-    for (const sub of subUnits(pkg.dir, promotedSubdirs))
+    for (const sub of novaclawSubUnits(pkg.dir, promotedSubdirs))
       run(`${pkg.name} ${sub.unit}`, "test", pkg.dir, argv(sub.args), pkg.subdirWallclockMs?.[sub.unit] ?? wallclock)
   } else {
     run(pkg.name, "test", pkg.dir, argv(pkg.args), wallclock)

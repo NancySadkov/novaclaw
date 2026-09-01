@@ -119,8 +119,8 @@ function applyItem(draft: AgentDraft, agentID: AgentV2.ID, item: ConfigAgent.Inf
       // executive agents who can communicate with each other and spawn the nameless sub-agents" is
       // the metaphor's own sentence, both halves. Config-defined SUB-agents are nameless staff and
       // get the floor without either, so staff cannot staff. Hiring stays Nova's regardless
-      // (`tool/colleague.ts` → mayStaff), and spawning as a DIFFERENT agent is still not granted
-      // here — that is the form that could widen authority.
+      // (`tool/colleague.ts` → mayStaff). The model-facing spawn tool cannot name a different agent;
+      // operator-side session creation remains a separate, explicit authority surface.
       const officer = (item.mode ?? agent.mode) === "primary"
       // ⚠️ `scratchDirsFor(agentID)`, not the shared `SCRATCH_DIRS`: a colleague's OWN workspace is
       // part of its floor, so assigning it to a project does not take away the place it keeps notes

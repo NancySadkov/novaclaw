@@ -454,6 +454,16 @@ export const layer = Layer.effectDiscard(
           delivery: event.data.delivery,
           timeCreated: event.data.timestamp,
         })
+        // A terminal session may accept another prompt. That starts a NEW join epoch, so its old
+        // result cannot remain current while the follow-up is queued/running; otherwise `wait`
+        // returns the previous answer before the new turn has even begun. Completion writes the
+        // next result back through the projector above.
+        yield* db
+          .update(SessionTable)
+          .set({ result: null })
+          .where(eq(SessionTable.id, event.data.sessionID))
+          .run()
+          .pipe(Effect.orDie)
       }),
     )
     yield* events.project(SessionEvent.ContextUpdated, (event) => run(db, event))

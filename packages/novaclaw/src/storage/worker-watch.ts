@@ -1,6 +1,5 @@
 export * as WorkerWatch from "./worker-watch"
 
-import os from "node:os"
 import { Effect, Layer, Schedule } from "effect"
 import { makeGlobalNode } from "@novaclaw/core/effect/app-node"
 import { Log } from "@novaclaw/schema/log"
@@ -29,8 +28,6 @@ import { WorkerRegistry } from "./worker-registry"
  * idle instance pays a `Map` read every tick and no more.
  */
 
-const GIB = 1024 * 1024 * 1024
-
 /** How often to look. Slow on purpose: this is a trend, and a sample is a process on Windows. */
 export const TICK = "5 seconds"
 
@@ -39,8 +36,7 @@ export const TICK = "5 seconds"
  * A defended one has to come from a measured healthy distribution, which is what the warnings are
  * for gathering.
  */
-export const fleetLimitBytes = (totalBytes = os.totalmem()): number =>
-  Math.max(2 * GIB, Math.floor(totalBytes / 3))
+export const fleetLimitBytes = WorkerBudget.fleetLimitBytes
 
 /** How many consecutive breaching samples before this would shed, once shedding is armed. */
 export const CONSECUTIVE = 3

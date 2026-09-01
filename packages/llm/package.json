@@ -13,7 +13,8 @@
     ".": "./src/index.ts",
     "./route": "./src/route/index.ts",
     "./protocols/anthropic-messages": "./src/protocols/anthropic-messages.ts",
-    "./protocols/openai-compatible-chat": "./src/protocols/openai-compatible-chat.ts",
+    "./protocols/openai-chat": "./src/protocols/openai-chat.ts",
+  "./protocols/openai-compatible-chat": "./src/protocols/openai-compatible-chat.ts",
     "./protocols/openai-responses": "./src/protocols/openai-responses.ts"
   },
   "devDependencies": {

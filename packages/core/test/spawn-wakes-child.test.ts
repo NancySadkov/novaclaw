@@ -258,6 +258,31 @@ describe("wait — a durable, owned join", () => {
     }),
   )
 
+  it.live("repairs one unambiguous copied-id typo without widening beyond direct children", () =>
+    Effect.gen(function* () {
+      const location = yield* workspace
+      const session = yield* SessionV2.Service
+      const events = yield* EventV2.Service
+      const parent = yield* session.create({ location, agent: rootAgent })
+      const child = yield* session.create({ location, agent: rootAgent, parentID: parent.id })
+      const original = String(child.id)
+      const index = original.length - 3
+      const replacement = original[index] === "a" ? "b" : "a"
+      const mistyped = SessionV2.ID.make(original.slice(0, index) + replacement + original.slice(index + 1))
+
+      yield* events.publish(SessionEvent.Completed, {
+        sessionID: child.id,
+        timestamp: yield* DateTime.now,
+        result: "joined after one copied-id typo",
+      })
+
+      const settlement = yield* settleWait(location, parent.id, mistyped)
+      expect(settlement.result.type).not.toBe("error")
+      expect(JSON.stringify(settlement.result)).toContain("joined after one copied-id typo")
+      expect(JSON.stringify(settlement.result)).toContain(String(child.id))
+    }),
+  )
+
   it.live("refuses a grandchild instead of allowing arbitrary session observation", () =>
     Effect.gen(function* () {
       const location = yield* workspace
@@ -571,8 +596,18 @@ describe("both wait doors are the same bounded join", () => {
     expect(waitTool).toContain("SessionJoin.JOIN_TIMEOUT_MS")
     expect(kernel).toContain("SessionJoin.JOIN_TIMEOUT_MS")
     // And the poll is gone: the kernel's `wait` no longer sleeps in a loop.
-    const wait = kernel.slice(kernel.indexOf('Effect.fn("V2Session.wait")'))
-    expect(wait.slice(0, 2000)).not.toContain("Effect.sleep")
-    expect(wait.slice(0, 2000)).toContain("awaitCompletion")
+    //
+    // ⚠️ Bounded by the NEXT method, not by a character count. This read `slice(0, 2000)` until
+    // 2026-09-02, when adding four lines of comment inside `wait` pushed `awaitCompletion` past
+    // character 2000 and turned this red — for a function whose behaviour had not changed at all. A
+    // window measured in characters is a guard that fires on prose, and prose is the thing this
+    // repository asks for most.
+    const from = kernel.indexOf('Effect.fn("V2Session.wait")')
+    expect(from, "the kernel no longer defines V2Session.wait — this scan is looking at nothing").toBeGreaterThan(0)
+    const next = kernel.indexOf('Effect.fn("', from + 1)
+    const wait = next === -1 ? kernel.slice(from) : kernel.slice(from, next)
+    expect(wait.length, "the slice is empty or absurdly short — the boundary marker moved").toBeGreaterThan(200)
+    expect(wait).not.toContain("Effect.sleep")
+    expect(wait).toContain("awaitCompletion")
   })
 })

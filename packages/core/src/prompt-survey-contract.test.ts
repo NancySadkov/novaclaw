@@ -4,7 +4,7 @@ import { Persona } from "./persona"
 import { SessionCompaction } from "./session/compaction"
 import { SystemCompose } from "./session/runner/system-compose"
 
-const providerBrand = /\b(?:anthropic|claude|codex|grok|ollama|openai|sglang|vllm|xai)\b/i
+const providerBrand = /\b(?:anthropic|claude|codex|grok|openai|sglang|vllm|xai)\b/i
 
 describe("survey-derived standing prompt contracts", () => {
   test("universal blocks are deterministic, provider-neutral, and deliberately bounded", () => {

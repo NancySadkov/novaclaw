@@ -7,6 +7,10 @@ import { dict as en } from "@/i18n/en"
 
 const source = fs.readFileSync(path.join(import.meta.dir, "dialog-model-config.tsx"), "utf8")
 const caller = fs.readFileSync(path.join(import.meta.dir, "models.tsx"), "utf8")
+/** ⚠️ The preset TABLE now lives here, not in the dialog: it was lifted into a shared module so the
+ *  Affective settings tab could sell temperature the same way. The recovery test below scans this
+ *  file, because scanning the dialog would silently pass on a file that no longer holds the table. */
+const presets = fs.readFileSync(path.join(import.meta.dir, "parts", "preset-value.ts"), "utf8")
 
 describe("Model Configure — identity and connection", () => {
   test("shows the connection name, resolved API path, wire model ID, and friendly name", () => {
@@ -64,5 +68,20 @@ describe("Model Configure — identity and connection", () => {
   test("has human labels for all identity fields", () => {
     for (const key of ["providerName", "apiPath", "modelID", "modelName"])
       for (const suffix of ["name", "desc"]) expect(`settings.models.config.${key}.${suffix}` in en).toBe(true)
+  })
+})
+
+describe("Model Configure — recovery", () => {
+  test("offers named recovery postures and explains the longest outage window", () => {
+    for (const [word, attempts] of [
+      ["once", 1],
+      ["quickRecovery", 3],
+      ["patientRecovery", 5],
+      ["persistentRecovery", 10],
+    ] as const) {
+      expect(presets).toContain(`{ word: "${word}", num: ${attempts} }`)
+      expect(`settings.models.config.preset.${word}` in en).toBe(true)
+    }
+    expect(en["settings.models.config.retryAttempts.desc"]).toContain("about three minutes")
   })
 })

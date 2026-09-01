@@ -1,4 +1,4 @@
-import { Cause, Context, Effect, Layer, Random } from "effect"
+import { Cause, Context, Effect, Layer } from "effect"
 import { readBoundedText } from "@novaclaw/schema/bounded-stream"
 import {
   FetchHttpClient,
@@ -36,9 +36,6 @@ export interface Interface {
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/LLM/RequestExecutor") {}
 
 const BODY_LIMIT = 16_384
-const MAX_RETRIES = 2
-const BASE_DELAY_MS = 500
-const MAX_DELAY_MS = 10_000
 const REDACTED = "<redacted>"
 
 // One source of truth for what counts as a sensitive name across headers,
@@ -437,27 +434,6 @@ const toHttpError =
     })
   }
 
-const retryDelay = (error: LLMError, attempt: number) => {
-  if (error.retryAfterMs !== undefined) return Effect.succeed(Math.min(error.retryAfterMs, MAX_DELAY_MS))
-  return Random.nextBetween(
-    Math.min(BASE_DELAY_MS * 2 ** attempt * 0.8, MAX_DELAY_MS),
-    Math.min(BASE_DELAY_MS * 2 ** attempt * 1.2, MAX_DELAY_MS),
-  ).pipe(Effect.map((delay) => Math.round(delay)))
-}
-
-const retryStatusFailures = <A, R>(
-  effect: Effect.Effect<A, LLMError, R>,
-  retries = MAX_RETRIES,
-  attempt = 0,
-): Effect.Effect<A, LLMError, R> =>
-  Effect.catchTag(effect, "LLM.Error", (error): Effect.Effect<A, LLMError, R> => {
-    if (!error.retryable || retries <= 0) return Effect.fail(error)
-    return retryDelay(error, attempt).pipe(
-      Effect.flatMap((delay) => Effect.sleep(delay)),
-      Effect.flatMap(() => retryStatusFailures(effect, retries - 1, attempt + 1)),
-    )
-  })
-
 export const layer: Layer.Layer<Service, never, HttpClient.HttpClient> = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -473,7 +449,11 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient> = Layer.e
           )
       })
     return Service.of({
-      execute: (request) => retryStatusFailures(executeOnce(request)),
+      // One wire request, one classified result. Full-request retry belongs to the session runner,
+      // which alone knows whether assistant output or a tool side effect has already made replay
+      // ambiguous. Keeping transport retries here multiplied the model's configured attempt budget
+      // and hid the real recovery window from both the user and the runner.
+      execute: executeOnce,
     })
   }),
 )

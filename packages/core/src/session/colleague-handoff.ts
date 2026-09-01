@@ -405,7 +405,7 @@ const notifyOriginator = (
  * service that is not already in the location graph inside this per-request handler abandons every
  * tool-call turn" — and this seam walked straight into it: the first live hand-off left the sender's
  * tool call `running` forever, with nothing in the log, because the handler never returned. Measured
- * 2026-08-21. `SessionJoin.fromEvents` is the same shape for the same reason.
+ * 2026-08-21. `SessionJoin.fromParts` is the same shape for the same reason.
  */
 export const fromParts = (input: {
   readonly db: Database.Interface["db"]

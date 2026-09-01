@@ -24,7 +24,7 @@ import path from "node:path"
  * Nothing made that true and nothing kept it true, which is exactly the shape ruling 1 exists for.
  *
  * **The rule:** a capability added to the interaction bridge is either built from a value the handler
- * ALREADY HOLDS (the `SessionJoin.fromEvents(events)` shape), or resolved from a service on the
+ * ALREADY HOLDS (the `SessionJoin.fromParts(...)` shape), or resolved from a service on the
  * allow-list below. Adding a name to that list is a claim that the location graph builds it for every
  * session regardless of this handler — check it, do not assume it.
  */
@@ -81,7 +81,7 @@ describe("the interaction handler resolves only services the location graph alre
             `${name}.Service is resolved inside onInteractionRequest. If the location graph does not ` +
             `already build it, this abandons every tool-call turn in the instance (silently — it ` +
             `type-checks and every unit test passes). Build it from a value the handler already holds, ` +
-            `the way SessionJoin.fromEvents(events) does, or add it to ALREADY_IN_THE_GRAPH with the ` +
+            `the way SessionJoin.fromParts(...) does, or add it to ALREADY_IN_THE_GRAPH with the ` +
             `evidence that the graph constructs it for every session.`,
         ),
     ).toEqual([])
@@ -99,9 +99,9 @@ describe("the interaction handler resolves only services the location graph alre
   })
 
   test("⚠️ SessionJoin specifically must NOT come back as a resolution", () => {
-    // The exact regression: it is supplied as `SessionJoin.fromEvents(events)` and must stay that way.
+    // The exact regression: it is assembled from already-held parts and must stay that way.
     expect(resolvedServices(source)).not.toContain("SessionJoin")
-    expect(source).toContain("SessionJoin.fromEvents(events)")
+    expect(source).toContain("SessionJoin.fromParts({")
   })
 
   test("the extractor bites (negative control)", () => {
