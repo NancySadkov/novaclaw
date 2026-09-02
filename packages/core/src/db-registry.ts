@@ -103,6 +103,41 @@ const CONFIG_BACKED_TABLES: ReadonlySet<string> = new Set([
 ])
 
 /**
+ * The permission kernel's OWN state. An agent may browse it and may never write it.
+ *
+ * 🔴 **This is the hole `CONFIG_BACKED_TABLES` was created to close, one table over.** That set
+ * protects the *tiers* `configure` enforces; these two tables hold the **verdicts the evaluator
+ * reads**, and they are not config-backed, so nothing above stopped a row write:
+ *  - `permission` (`permission/sql.ts`) is the durable saved-grant table `PermissionSaved.list`
+ *    selects and `evaluate` folds in with `findLast`. One inserted row —
+ *    `{origin: <copied from a live row>, action: "*", resource: "*", effect: "allow"}` — lands
+ *    AFTER the agent ruleset and the mode overlay, so from the next turn every action that is not a
+ *    hard mode deny resolves `allow`: `configure_privileged`, `provision`, `messenger.send`,
+ *    `spawn`, every MCP tool. `insertRow` whitelists column names against `pragma_table_info` and
+ *    binds the values, so the write is perfectly well-formed — the guard was simply not there.
+ *  - `session_auto_grant` (`session/sql.ts`) is the Auto-mode ceiling `tool/permission.ts` guards.
+ *
+ * ⚠️ **Why a REFUSAL and not a consent card.** Everywhere else the answer to "this write deserves
+ * consent" is to ask. Here asking is circular: the row being written is what decides the answer to
+ * every later permission question, including the one that would have asked about this write. A gate
+ * cannot govern its own rewriting, which is the same shape as `READ_ONLY_TABLES` above — that one
+ * removes the instance's ability to BOOT, this one removes its ability to be GOVERNED.
+ *
+ * ⚠️ **Agent-only, like {@link CONFIG_BACKED_TABLES}** — the Developer-mode Registry app is a human
+ * editing their own grants on their own machine, which is ruling 5's trust boundary working as
+ * designed, and revoking a bad saved rule by hand is a legitimate repair.
+ *
+ * ⚠️ EXACT names. `permission_pending` is deliberately absent: migration
+ * `20260901051852_crazy_sheva_callister` DROPS that table, so naming it here would be a guard on
+ * nothing — and `db-registry.test.ts` checks each name against the live schema for exactly that
+ * reason.
+ */
+const PERMISSION_KERNEL_TABLES: ReadonlySet<string> = new Set(["permission", "session_auto_grant"])
+
+/** Exported for the ledger test that pins this set against the live schema. */
+export const permissionKernelTables = (): ReadonlySet<string> => PERMISSION_KERNEL_TABLES
+
+/**
  * Who is asking. The Registry has two callers with genuinely different standing, and conflating them
  * would either strand the operator or hand the agent a permission bypass.
  *
@@ -122,6 +157,15 @@ const assertWritable = (table: string, writer: Writer = "developer") =>
           `"${name}" is read-only: it is the schema-migration journal, and writing to it replays or ` +
           `skips a migration on the next boot, which can leave this instance unable to start. ` +
           `Browsing it is fine.`,
+      })
+    if (writer === "agent" && PERMISSION_KERNEL_TABLES.has(name))
+      return yield* new RegistryError({
+        message:
+          `"${name}" is the permission kernel's own state — the saved grants the evaluator reads and ` +
+          `the Auto-mode ceiling — so no agent may write it. A row here decides the answer to every ` +
+          `later permission question, including the one that would have asked about this write, which ` +
+          `is why this is a refusal and not a consent card. If you need an action you do not have, ` +
+          `say so in your reply and let the user grant it. Browsing it is fine.`,
       })
     if (writer === "agent" && CONFIG_BACKED_TABLES.has(name))
       return yield* new RegistryError({

@@ -2,6 +2,7 @@ export * as DbRegistryTool from "./db-registry"
 
 import { ToolFailure } from "@novaclaw/llm"
 import { Effect, Layer, Schema } from "effect"
+import { ConfigProjection } from "../config-projection"
 import { Database } from "../database/database"
 import { DbRegistry } from "../db-registry"
 import { makeLocationNode } from "../effect/app-node"
@@ -28,11 +29,35 @@ import { Tools } from "./tools"
  *
  * What differs is only WHO is asking, expressed as `DbRegistry.Writer`:
  *  · the app writes as `developer` — a human on their own machine, past an expertise gate;
- *  · this tool writes as `agent`, and config-backed tables are REFUSED, pointing at `configure`.
+ *  · this tool writes as `agent`, and config-backed tables are REFUSED, pointing at `configure`,
+ *    as are the two permission-kernel tables, which point at the chat.
  * ⚠️ That refusal is not tidiness. Every config key carries a tier (`config-tier.ts`) enforced at the
  * `configure` seam, so a raw `runtime_setting` row-write would let a model denied a privileged card
  * simply write the row instead. The one guard both writers share is the migration journal, because
  * corrupting it removes the instance's ability to boot and therefore to repair itself.
+ *
+ * ── the READ path is redacted, and that is a SECOND guard, not the same one ─────────────────────
+ *
+ * 🔴 **A refused write does not make a read safe, and for a while this module behaved as though it
+ * did.** `assertWritable` is reached only from `insertRow`/`updateRow`/`deleteRow`; `DbRegistry.rows`
+ * calls `assertTable`, which checks existence and nothing else — and the write refusal's own message
+ * ends *"Browsing it is fine."* So `{op:"rows",table:"runtime_setting"}` returned `server.password`
+ * (this instance's own incoming API token) and every `instances[].token` (ruling 5:
+ * *account-equivalent*) in plaintext, one layer under the redaction `configure`'s `read` op applies —
+ * whose header states the invariant verbatim: *"`read` is ungated precisely BECAUSE it is redacted."*
+ *
+ * ⚠️ **Redacted here, not in `core/db-registry.ts`.** The Developer-mode Registry app shares those
+ * functions and must keep showing real values: a human repairing their own credential row needs to
+ * see it, and ruling 5 makes the instance the trust boundary. The asymmetry is the same one the
+ * write path already draws, at the same seam.
+ *
+ * ⚠️ **A CLASS, never one table.** {@link CONFIG_ROUTES} lifts each config-backed table's payload
+ * back into the `Config.Info` shape `ConfigProjection.redact` walks, so the schema's own
+ * `ConfigAnnotation.secret` markers are the single source of truth for those eight tables — no second
+ * redactor to drift. {@link SECRET_COLUMNS} covers the four tables whose secrets are whole COLUMNS
+ * rather than config values. `tool-db-registry.test.ts` is the ledger: every config-backed table must
+ * have a route, and every column in the live schema whose NAME reads as a credential must be
+ * declared — so a table or column added later fails a test instead of leaking quietly.
  *
  * ── deferred, and why ───────────────────────────────────────────────────────────────────────────
  *
@@ -110,8 +135,172 @@ export const description = [
   "{op:'rows',table,limit?,offset?} — a page of rows, each with the `rowid` the write ops take;",
   "{op:'insert',table,values} · {op:'update',table,rowid,values} · {op:'delete',table,rowid}.",
   "Configuration tables are read-only here — change settings with `configure`, which applies their",
-  "permission rules. The schema-migration journal is read-only to everyone.",
+  "permission rules. The permission kernel's own tables (`permission`, `session_auto_grant`) are",
+  "read-only too: if you need an action you do not have, ask for it in your reply. The",
+  "schema-migration journal is read-only to everyone.",
+  "Stored credentials come back redacted — passwords, API tokens, peer tokens and signing keys are",
+  "replaced with a placeholder, so a value you read here is never one you can use.",
 ].join("\n")
+
+// ── redaction ─────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The stand-in for a stored credential.
+ *
+ * ⚠️ **Deliberately NOT `ConfigProjection.REDACTED`**, which reads *"configure can WRITE this value,
+ * it will not read one back"*. That sentence is true of a config key and false of `credential.value`
+ * or `instance_identity.secret_key` — `configure` cannot write any of them — and ruling 2 forbids
+ * describing a fault falsely. Two different facts get two sentences; the config tables below keep
+ * `ConfigProjection.REDACTED` verbatim, so on that surface there is still exactly one vocabulary.
+ */
+export const SECRET_CELL = "(redacted — a stored credential; this tool will not read one back)"
+
+/**
+ * Tables whose secrets are whole COLUMNS rather than config values.
+ *
+ * Each entry is a decision, and the tables left OUT are decisions too:
+ *  · `messenger_account` — its own schema header says it: *"Secrets NEVER live here: an account row
+ *    points at the credential store via credential_id."* `settings` is driver configuration and
+ *    `credential_id` is a reference, so redacting it would hide a repair target and protect nothing.
+ *  · `community_peer` / `community_contact` — `routes` are ADDRESSES, and AGENTS.md accepts
+ *    enumerability by name: *"Being findable is the price."* A peer's address is not a secret; the
+ *    only secret in that subsystem is our own signing key, which is `instance_identity` below.
+ *  · `instance_identity.public_key` / `sealing_public_key` — public halves, published by design.
+ *
+ * ⚠️ A hand-kept list like this goes stale silently, so it is not left to a comment: the ledger test
+ * scans the LIVE schema and fails when a column whose name reads as a credential is not declared
+ * here (see {@link SECRET_COLUMN_PATTERN}). `credential.value` is the entry that pattern cannot
+ * find, which is precisely why the declaration exists as well as the scan.
+ */
+const SECRET_COLUMNS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ["credential", new Set(["value"])],
+  ["instance_identity", new Set(["secret_key", "sealing_secret_key"])],
+  ["account", new Set(["access_token", "refresh_token"])],
+  ["control_account", new Set(["access_token", "refresh_token"])],
+])
+
+/** Exported for the ledger test that scans the live schema against it. */
+export const secretColumns = (): ReadonlyMap<string, ReadonlySet<string>> => SECRET_COLUMNS
+
+/**
+ * A column name that reads as a credential. The mechanical half of {@link SECRET_COLUMNS}: the
+ * ledger test requires every LIVE column matching this to be declared above, so a new
+ * `oauth_secret` on a new table fails a test rather than landing in a transcript.
+ *
+ * ⚠️ Narrow on purpose. `token` alone would match `tokens_input`, `tokens_reasoning` and
+ * `token_expiry` — LLM accounting and an expiry stamp, none of them secret — and a ratchet that
+ * cries wolf gets an allowlist bolted to it until it means nothing. It matches what it can name.
+ */
+export const SECRET_COLUMN_PATTERN =
+  /(^|_)(secret|password|passwd|access_token|refresh_token|api_key|private_key|auth_token)(_|$)/
+
+/**
+ * How each config-backed table's payload lifts back into the `Config.Info` shape
+ * `ConfigProjection.redact` walks. The lift is exact, not approximate:
+ *  · `entry` — `(key, value)` rows ARE a `Config.Info` overlay one pair at a time; `{[key]: value}`
+ *    is literally what `SettingsConfigStore.all()` hands `ConfigStoreWrite.overlay`, which is what
+ *    `configure`'s `read` op redacts. Same bytes, same walk.
+ *  · `layers` — `(name, layers[])` rows hold fragments of one record entry, so a layer of
+ *    `catalog_provider` lifts to `{providers: {<id>: layer}}`, and `Config.Info.providers` is
+ *    `Record<string, ConfigProvider.Info>`. That is the table that matters most: a provider's
+ *    `request.headers` is where an Authorization token lives, and `request.body.apiKey` with it.
+ *
+ * `skill_config` is `(source, timestamps)` — there is no payload to walk, and `none` says so
+ * explicitly rather than leaving the table unlisted, because an unlisted config table FAILS CLOSED
+ * below and would strand a reader on a table that never held a secret.
+ */
+export type ConfigRoute =
+  | { readonly kind: "entry"; readonly key: string; readonly value: string }
+  | { readonly kind: "layers"; readonly name: string; readonly value: string; readonly field: string }
+  | { readonly kind: "none" }
+
+const CONFIG_ROUTES: ReadonlyMap<string, ConfigRoute> = new Map<string, ConfigRoute>([
+  ["runtime_setting", { kind: "entry", key: "key", value: "value" }],
+  ["catalog_setting", { kind: "entry", key: "key", value: "value" }],
+  ["agent_setting", { kind: "entry", key: "key", value: "value" }],
+  ["catalog_provider", { kind: "layers", name: "id", value: "layers", field: "providers" }],
+  ["agent_config", { kind: "layers", name: "name", value: "layers", field: "agents" }],
+  ["command_config", { kind: "layers", name: "name", value: "layers", field: "commands" }],
+  ["reference_config", { kind: "layers", name: "name", value: "layers", field: "references" }],
+  ["skill_config", { kind: "none" }],
+])
+
+/** Exported for the ledger test that pins this against `DbRegistry.configBackedTables()`. */
+export const configRoutes = (): ReadonlyMap<string, ConfigRoute> => CONFIG_ROUTES
+
+/**
+ * The top-level config keys that carry a credential ANYWHERE beneath them, from the schema's own
+ * markers. Used only for the fail-closed arm: a stored value that will not parse cannot be walked,
+ * so under one of these keys it is blanked whole rather than passed through.
+ *
+ * Lazy, not a module constant: `config-projection.ts` records a real initialization-order fault at
+ * its own head, and nothing here needs the answer before the first call.
+ */
+let secretKeyCache: ReadonlySet<string> | undefined
+const secretTopLevelKeys = (): ReadonlySet<string> => {
+  if (secretKeyCache === undefined)
+    secretKeyCache = new Set(ConfigProjection.secretPaths().map((path) => path.split(".")[0]!))
+  return secretKeyCache
+}
+
+const PARSE_FAILED = Symbol("parse-failed")
+const parseJson = (raw: string): unknown => {
+  try {
+    return JSON.parse(raw) as unknown
+  } catch {
+    return PARSE_FAILED
+  }
+}
+
+/** One `(key, value)` config row's value, redacted through the schema walk `configure` uses. */
+const redactEntryCell = (key: unknown, raw: unknown): unknown => {
+  if (typeof raw !== "string" || typeof key !== "string") return raw
+  const parsed = parseJson(raw)
+  // Fail CLOSED: an unparseable value under a key that declares a secret is blanked whole. Passing
+  // it through would be the one case where "we could not tell" is answered by handing it over.
+  if (parsed === PARSE_FAILED) return secretTopLevelKeys().has(key) ? ConfigProjection.REDACTED : raw
+  const redacted = (ConfigProjection.redact({ [key]: parsed }) as Record<string, unknown>)[key]
+  return JSON.stringify(redacted)
+}
+
+/** One `(name, layers[])` config row's layers, each lifted into its record slot and walked. */
+const redactLayersCell = (field: string, name: unknown, raw: unknown): unknown => {
+  if (typeof raw !== "string") return raw
+  const parsed = parseJson(raw)
+  if (parsed === PARSE_FAILED) return ConfigProjection.REDACTED
+  const slot = typeof name === "string" ? name : "unnamed"
+  const one = (layer: unknown): unknown => {
+    const walked = ConfigProjection.redact({ [field]: { [slot]: layer } }) as Record<string, unknown>
+    const record = walked[field]
+    // The walk preserves keys, so the slot is always there. If it somehow is not, the shape this
+    // function assumed is wrong and the honest answer is the blank, never the original bytes.
+    if (record === null || typeof record !== "object") return ConfigProjection.REDACTED
+    return (record as Record<string, unknown>)[slot] ?? ConfigProjection.REDACTED
+  }
+  return JSON.stringify(Array.isArray(parsed) ? parsed.map(one) : one(parsed))
+}
+
+/**
+ * A page of rows with every stored credential replaced.
+ *
+ * Exported so the test asserts on the same value `formatPage` renders, rather than on a string it
+ * has to parse back out of the model's message.
+ */
+export const redactPage = (page: DbRegistry.TablePage): DbRegistry.TablePage => {
+  const columns = SECRET_COLUMNS.get(page.table)
+  const route = CONFIG_ROUTES.get(page.table)
+  if (columns === undefined && route === undefined) return page
+  const rows = page.rows.map((row) => {
+    const values = { ...row.values }
+    if (columns !== undefined)
+      for (const column of columns) if (column in values) values[column] = SECRET_CELL
+    if (route?.kind === "entry") values[route.value] = redactEntryCell(values[route.key], values[route.value])
+    if (route?.kind === "layers")
+      values[route.value] = redactLayersCell(route.field, values[route.name], values[route.value])
+    return DbRegistry.TableRow.make({ rowid: row.rowid, values })
+  })
+  return DbRegistry.TablePage.make({ table: page.table, columns: page.columns, rowCount: page.rowCount, rows })
+}
 
 /** One cell, rendered short and unambiguous. `null` is a value and must not read as an empty string. */
 const cell = (value: unknown): string => {
@@ -160,12 +349,23 @@ export const run = Effect.fn("DbRegistryTool.run")(function* (input: typeof Inpu
     }
     case "rows": {
       const offset = Math.max(0, Math.floor(input.offset ?? 0))
+      // FAIL CLOSED, before a single byte is read. A config-backed table with no redaction route is
+      // a table whose secrets nothing here knows how to find, and the ledger test exists so this
+      // arm never fires — but if a new store lands without a route, refusing to read it is the only
+      // answer that is not a guess. `configure` reads the same bytes, redacted by the schema.
+      if (DbRegistry.configBackedTables().has(input.table) && !CONFIG_ROUTES.has(input.table))
+        return yield* new DbRegistry.RegistryError({
+          message:
+            `"${input.table}" holds configuration and this tool has no redaction route for it, so it ` +
+            `will not read it back. Use \`configure\` — {"op":"read"} shows what this instance stores, ` +
+            `with credentials redacted.`,
+        })
       const page = yield* DbRegistry.rows({
         table: input.table,
         limit: clamp(input.limit, DEFAULT_LIMIT, MAX_LIMIT),
         offset,
       })
-      return { ok: true, message: formatPage(page, offset) }
+      return { ok: true, message: formatPage(redactPage(page), offset) }
     }
     case "insert": {
       yield* DbRegistry.insertRow({ table: input.table, values: input.values, writer: "agent" })
