@@ -18,7 +18,6 @@ import { canDisposeDirectory, pickDirectoriesToEvict } from "./eviction"
 import { useQuery } from "@tanstack/solid-query"
 import { QueryOptionsApi } from "../server-sync"
 import { directoryKey, type DirectoryKey } from "./utils"
-import { NormalizedProviderListResponse } from "@novaclaw/session-ui/context"
 import type { ServerScope } from "@/utils/server-scope"
 import type { Translator } from "@/context/language"
 
@@ -33,9 +32,10 @@ export function createChildStoreManager(input: {
   onDispose: (directory: string) => void
   translate: Translator
   queryOptions: QueryOptionsApi
-  global: {
-    provider: NormalizedProviderListResponse
-  }
+  // 🔴 No `global` catalog here, and that absence is the fix. See the `provider` getter below:
+  // whatever this manager were handed would be READ ONCE at construction, so a reactive catalog
+  // would arrive frozen at whatever it held before it loaded. An input a caller can only snapshot
+  // is an input no caller should have.
 }) {
   const children: Record<string, [Store<State>, SetStoreFunction<State>]> = {}
   const vcsCache = new Map<string, VcsCache>()
@@ -195,10 +195,31 @@ export function createChildStoreManager(input: {
             get provider_ready() {
               return !providerQuery.isLoading
             },
+            /**
+             * 🔴 **This directory's OWN catalog, exactly as its server answered — empty included.**
+             *
+             * There used to be a second rule here: *"if this directory's catalog came back empty and
+             * the instance-wide one is not, serve that instead."* It could never run. The
+             * instance-wide list reached this manager as a plain property read in an object literal
+             * (`global: { provider: globalStore.provider }`), evaluated once at construction — a
+             * hundred lines after its query was created and before anything had awaited it, so the
+             * value captured was the loading placeholder and `size > 0` was `false` forever. The
+             * file read as if it degraded gracefully and did not degrade at all.
+             *
+             * It is gone rather than repaired, because the rule it duplicated is already live one
+             * layer up: `hooks/provider-catalog.ts` prefers this catalog only once it is ready AND
+             * lists a connected provider, and otherwise returns the instance-wide one — read
+             * reactively, at the point of use, by the single accessor (`useProviders`) every
+             * consumer of this field goes through. That rule strictly subsumes the one deleted here
+             * (an empty catalog has no connected providers), so nothing loses its fallback.
+             *
+             * What this field owes its one reader is the truth about THIS directory. Substituting
+             * another directory's answer inside the store would make `provider_ready &&
+             * connected.length > 0` describe a catalog this directory never served.
+             */
             get provider() {
               const EMPTY = { all: new Map(), models: new Map(), connected: [], default: {} }
               if (providerQuery.isLoading) return EMPTY
-              if (providerQuery.data?.all.size === 0 && input.global.provider.all.size > 0) return input.global.provider
               return providerQuery.data ?? EMPTY
             },
             config: {},

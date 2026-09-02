@@ -81,11 +81,27 @@ export function SessionTodoDock(props: {
   const full = createMemo(() => Math.max(78, store.height))
   let contentRef: HTMLDivElement | undefined
 
+  /**
+   * The dock's expanded height, MEASURED — in both directions.
+   *
+   * 🔴 This used to be `Math.max(height, el.scrollHeight)`, which is not a measurement: a value
+   * folded into the running maximum of every value before it can only ever report growth. Tick a
+   * todo off, let the agent replace a twelve-item plan with a three-item one, or open the dock on a
+   * long list and then switch to a session with a short one — the list shrank, the tray's
+   * `max-height` did not, and the dock kept a band of empty background that nothing on screen
+   * explained. The high-water mark also never resets, so the taller list a session showed once
+   * dictated the dock for the rest of the tab's life.
+   *
+   * The measurement is safe to take in both directions because nothing in the loop feeds back into
+   * it: `DockTray` is a block with `overflow: clip`, so clipping the tray does not change the
+   * content's own `scrollHeight`, and the collapsed list keeps its box (`visibility: hidden`, never
+   * `display: none`). `full()` still floors the result at the 78px collapsed bar.
+   */
   createEffect(() => {
     const el = contentRef
     if (!el) return
     const update = () => {
-      setStore("height", (height) => Math.max(height, el.scrollHeight))
+      setStore("height", el.scrollHeight)
     }
     update()
     createResizeObserver(el, update)

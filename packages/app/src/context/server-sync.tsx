@@ -230,9 +230,6 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     },
     translate: language.t,
     queryOptions: queryOptionsApi,
-    global: {
-      provider: globalStore.provider,
-    },
   })
 
   async function loadSessions(directory: string, options?: { limit?: number }) {
@@ -549,6 +546,10 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
 
   return {
     data: globalStore,
+    // Which instance this sync context speaks for. Exposed so a consumer that persists something
+    // derived from `data`/`child()` can key its storage on the SAME instance those answers came
+    // from, instead of reaching for a second source of the scope and hoping the two agree.
+    scope: serverSDK.scope,
     set,
     get ready() {
       return globalStore.ready

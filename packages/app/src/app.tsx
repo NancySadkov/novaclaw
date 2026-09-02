@@ -54,7 +54,12 @@ import { WslServersProvider } from "@/wsl/context"
 import { DirectoryDataProvider, decodeDirectory } from "@/pages/directory-layout"
 import NewLayout from "@/pages/layout-new"
 import { ErrorPage } from "./pages/error"
-import { useCheckServerHealth } from "./utils/server-health"
+import {
+  type ServerReachability,
+  connectionErrorCopy,
+  serverReachability,
+  useCheckServerHealth,
+} from "./utils/server-health"
 import { legacySessionServer, requireServerKey, selectSessionLineage, sessionHref } from "./utils/session-route"
 import { isSessionNotFoundError } from "./utils/server-errors"
 import { showToast } from "@/utils/toast"
@@ -500,17 +505,28 @@ function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean }>) {
   const [checkMode, setCheckMode] = createSignal<"blocking" | "background">("blocking")
 
   // Repeated health check with a grace period for non-http connections; fails instantly otherwise.
+  //
+  // 🔴 The loop carries the CLASSIFICATION, not a boolean. `checkServerHealth` already separates a
+  // 401/403 (the server answered and refused the credentials) from an outage, and this function
+  // used to read `res.healthy` and throw that distinction away — so a user with a rotated token was
+  // told their instance was unreachable and sent to restart a service that was fine. A rejection
+  // ends the grace loop immediately: no amount of waiting turns a wrong password into a right one.
   const healthLoop = () =>
     Effect.gen(function* () {
-      if (!server.current) return false
+      if (!server.current) return "unreachable" as ServerReachability
       const { http, type } = server.current
 
       while (true) {
-        const res = yield* Effect.promise(() => checkServerHealth(http))
-        if (res.healthy) return true
-        if (checkMode() === "background" || type === "http") return false
+        const reach = serverReachability(yield* Effect.promise(() => checkServerHealth(http)))
+        if (reach !== "unreachable") return reach
+        if (checkMode() === "background" || type === "http") return reach
       }
-    }).pipe(Effect.timeoutOrElse({ duration: "10 seconds", orElse: () => Effect.succeed(false) }))
+    }).pipe(
+      Effect.timeoutOrElse({
+        duration: "10 seconds",
+        orElse: () => Effect.succeed("unreachable" as ServerReachability),
+      }),
+    )
 
   const [startupHealthCheck, healthCheckActions] = createResource(() =>
     Effect.gen(function* () {
@@ -520,8 +536,8 @@ function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean }>) {
       // dead-ends the whole app on the root ErrorPage. This check ignores disableHealthCheck (it
       // guards a render invariant, not liveness); ConnectionError's retry tick re-runs it, so the
       // screen clears by itself the moment an instance appears.
-      if (!server.current) return false
-      if (props.disableHealthCheck) return true
+      if (!server.current) return "unreachable" as ServerReachability
+      if (props.disableHealthCheck) return "ok" as ServerReachability
       return yield* healthLoop()
     }).pipe(
       // checkMode flips to background on EVERY outcome (including the no-server path) — the retry
@@ -549,9 +565,10 @@ function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean }>) {
       }
     >
       <Show
-        when={startupHealthCheck.latest}
+        when={startupHealthCheck.latest === "ok"}
         fallback={
           <ConnectionError
+            reachability={startupHealthCheck.latest ?? "unreachable"}
             onRetry={() => {
               if (checkMode() === "background") void healthCheckActions.refetch()
             }}
@@ -599,7 +616,11 @@ function ClientErrorLogDrain() {
   return null
 }
 
-function ConnectionError(props: { onRetry?: () => void; onServerSelected?: (key: ServerConnection.Key) => void }) {
+function ConnectionError(props: {
+  reachability?: ServerReachability
+  onRetry?: () => void
+  onServerSelected?: (key: ServerConnection.Key) => void
+}) {
   const language = useLanguage()
   const server = useServer()
   const platform = usePlatform()
@@ -608,10 +629,21 @@ function ConnectionError(props: { onRetry?: () => void; onServerSelected?: (key:
   const others = () => server.list.filter((s) => ServerConnection.key(s) !== server.key)
   const name = createMemo(() => server.name || server.key)
   const serverToken = "\u0000server\u0000"
-  const unreachable = createMemo(() => language.t("app.server.unreachable", { server: serverToken }).split(serverToken))
+  // The whole copy + probe-cadence decision comes from ONE total function, so a rejected
+  // credential cannot pick the outage sentence back up the next time this screen is edited.
+  const copy = createMemo(() =>
+    connectionErrorCopy({
+      hasServer: !!server.current,
+      reachability: props.reachability ?? "unreachable",
+      supervisorGaveUp: !!supervisorGaveUp(),
+    }),
+  )
+  const headline = createMemo(() => language.t(copy().headline, { server: serverToken }).split(serverToken))
 
-  const timer = setInterval(() => props.onRetry?.(), 1000)
-  onCleanup(() => clearInterval(timer))
+  createEffect(() => {
+    const timer = setInterval(() => props.onRetry?.(), copy().probeEveryMs)
+    onCleanup(() => clearInterval(timer))
+  })
 
   return (
     <div class="h-dvh w-screen flex flex-col items-center justify-center bg-background-base gap-6 p-6">
@@ -622,20 +654,16 @@ function ConnectionError(props: { onRetry?: () => void; onServerSelected?: (key:
           draggable={false}
           class="w-14 h-14 mb-4 opacity-80 select-none"
         />
-        <Show
-          when={server.current}
-          fallback={
-            // Dependability P1: the no-instance state (sidecar failed / server list emptied) gets
-            // honest copy instead of "could not reach <internal key>".
-            <p class="text-14-regular text-text-base">{language.t("app.server.none")}</p>
-          }
-        >
-          <p class="text-14-regular text-text-base">
-            {unreachable()[0]}
+        {/* Dependability P1: the no-instance state (sidecar failed / server list emptied) gets
+            honest copy instead of "could not reach <internal key>". Ruling 2: a REJECTED instance
+            gets the credential sentence rather than an outage it is not having. */}
+        <p class="text-14-regular text-text-base">
+          {headline()[0]}
+          <Show when={server.current}>
             <span class="text-text-strong font-medium">{name()}</span>
-            {unreachable()[1]}
-          </p>
-        </Show>
+          </Show>
+          {headline()[1]}
+        </p>
         {/* 🔴 "Retrying automatically..." is a PROMISE, and it was false whenever the supervisor's
             bounded ladder had already stopped. Measured in the packaged app 2026-08-18: reloading
             mid-outage with the phase at `gave-up` showed this screen still promising a rescue nobody
@@ -644,15 +672,8 @@ function ConnectionError(props: { onRetry?: () => void; onServerSelected?: (key:
             The phase comes from the same shared hook ConnectionBanner uses, so the two surfaces
             cannot disagree about whether the instance is coming back (they never co-render: the gate
             picks one). An absent supervisor stays `undefined` and keeps the calm copy. */}
-        <Show
-          when={supervisorGaveUp() && server.current}
-          fallback={
-            <p class="mt-1 text-12-regular text-text-weak">
-              {server.current ? language.t("app.server.retrying") : language.t("app.server.noneHint")}
-            </p>
-          }
-        >
-          <p class="mt-1 text-12-regular text-text-weak max-w-80">{language.t("app.connection.stopped.description")}</p>
+        <p class="mt-1 text-12-regular text-text-weak max-w-80">{language.t(copy().detail)}</p>
+        <Show when={copy().detail === "app.connection.stopped.description"}>
           <button
             type="button"
             class="mt-3 px-3 py-1 rounded-md text-12-regular bg-surface-strong text-text-strong border border-border-weak-base hover:bg-surface-hover disabled:opacity-60"

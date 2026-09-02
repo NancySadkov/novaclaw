@@ -1,6 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import type { AsyncStorage } from "@solid-primitives/storage"
-import { createResource, createRoot } from "solid-js"
+import { createMemo, createResource, createRoot } from "solid-js"
 import { createStore } from "solid-js/store"
 
 // ui-arch-hardening P1 — the readiness CONTRACT: `ready()` is the reactive boolean and
@@ -103,5 +103,114 @@ describe("persisted readiness contract (P1)", () => {
     await second.ready.promise
     expect(second.state.v).toBe(7)
     second.dispose()
+  })
+})
+
+/**
+ * **A STORE THAT COULD NOT BE READ.**
+ *
+ * 🔴 Every reader of `ready` sat outside an `ErrorBoundary` and both halves of it threw on a
+ * rejected load. `ready()` returned `ready.latest`, whose getter **re-throws** a stored error
+ * whenever `resolved` is set — and `initialValue` sets `resolved`, so the spelling that reads like
+ * the guarded one was the one that threw. `ready.promise` was `init.then(() => true)` with no
+ * rejection arm, so every resource built over it errored (their accessors throw in turn) and every
+ * `void ready.promise` caller raised an unhandled rejection. On desktop the trigger is ordinary:
+ * `readCurrentAsync` awaits `storage.setItem` whenever a stored value is rewritten by
+ * `normalize`/`migrate`, and the `store-set` IPC handler — unlike `store-get` — has no `try`/`catch`,
+ * so a locked or full config file replaced the entire UI with the fatal error page.
+ *
+ * ⚠️ **A "did not throw" assertion alone would be satisfied by a store that never loads at all**,
+ * so each case below pins the OUTCOME too: `ready()` settles `true` on the defaults, and the
+ * failure is carried as the `false` that `ready.promise` resolves with. The successful case in the
+ * same block is the control — it proves the promise is not simply hard-coded to report a failure,
+ * and it is the reading these three assertions would produce if the fix were a swallow.
+ */
+describe("a persisted read that REJECTS settles instead of throwing", () => {
+  const rejecting = (): AsyncStorage => ({
+    getItem: async () => {
+      throw new Error("electron-store: EACCES, config is locked")
+    },
+    setItem: async () => undefined,
+    removeItem: async () => undefined,
+    clear: async () => undefined,
+    key: async () => null,
+    getLength: async () => 0,
+    length: Promise.resolve(0),
+  })
+
+  const healthy = (value: unknown): AsyncStorage => {
+    const backing = new Map<string, string>([["p1-outcome", JSON.stringify(value)]])
+    return {
+      getItem: async (key) => backing.get(key) ?? null,
+      setItem: async (key, next) => {
+        backing.set(key, next)
+      },
+      removeItem: async (key) => {
+        backing.delete(key)
+      },
+      clear: async () => undefined,
+      key: async () => null,
+      getLength: async () => 0,
+      length: Promise.resolve(0),
+    }
+  }
+
+  const settle = async (ready: () => boolean) => {
+    for (let i = 0; i < 50 && !ready(); i++) await new Promise((r) => setTimeout(r, 10))
+  }
+
+  test("the rejection is carried by ready.promise and never thrown", async () => {
+    mode = { platform: "desktop", storage: rejecting }
+    const { state, ready, dispose } = createRoot((dispose) => {
+      const [state, , , ready] = persisted<{ v: number }>("p1-outcome", createStore({ v: 0 }))
+      return { state, ready, dispose }
+    })
+
+    // THE symptom, first: this used to reject, which is what errored the composer's resource.
+    await expect(ready.promise).resolves.toBe(false)
+    await settle(ready)
+    // Settled, on the defaults the store already holds — not parked at "still loading" forever.
+    expect(ready()).toBe(true)
+    expect(state.v).toBe(0)
+    dispose()
+  })
+
+  test("CONTROL — the same three readings on a store that loads", async () => {
+    mode = { platform: "desktop", storage: () => healthy({ v: 42 }) }
+    const { state, ready, dispose } = createRoot((dispose) => {
+      const [state, , , ready] = persisted<{ v: number }>("p1-outcome", createStore({ v: 0 }))
+      return { state, ready, dispose }
+    })
+
+    await expect(ready.promise).resolves.toBe(true)
+    await settle(ready)
+    expect(ready()).toBe(true)
+    expect(state.v).toBe(42)
+    dispose()
+  })
+
+  test("a resource over ready.promise — the composer's own expression — does not error", async () => {
+    mode = { platform: "desktop", storage: rejecting }
+    const { res, ready, dispose } = createRoot((dispose) => {
+      const [, , , ready] = persisted<{ v: number }>("p1-outcome", createStore({ v: 0 }))
+      // Character-for-character what `components/prompt-input.tsx` builds over `prompt.ready`.
+      const [res] = createResource(
+        () => ready.promise,
+        async (promise) => (await promise) === true,
+      )
+      return { res, ready, dispose }
+    })
+
+    for (let i = 0; i < 50 && res.state === "pending"; i++) await new Promise((r) => setTimeout(r, 10))
+    // "errored" is the pre-fix reading, and it is the state whose ACCESSOR throws — from a bare
+    // comma-expression in JSX, which is why one failed write took the whole application down.
+    expect(res.state).toBe("ready")
+    expect(res.error).toBeUndefined()
+    // False, not undefined: the composer can tell "your draft did not load" from "still loading".
+    expect(res()).toBe(false)
+    // And the boolean half — `ready.latest`, the other pre-fix throw — is readable from a TRACKING
+    // scope, which is the only place it is ever read in the app.
+    expect(createRoot((d) => (createMemo(() => ready())(), d(), true))).toBe(true)
+    dispose()
   })
 })

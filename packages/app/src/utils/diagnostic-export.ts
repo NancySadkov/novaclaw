@@ -25,7 +25,10 @@ export async function fetchInstanceDiagnostics(
     async (response) => {
       const limit = options.maxBytes ?? MAX_INSTANCE_DIAGNOSTIC_BYTES
       const reader = response.body?.getReader()
-      if (!reader) return ""
+      // A 2xx that promised diagnostics and sent none. Returning "" writes a debug-log file whose
+      // instance section is empty and reports success. The one caller already degrades to
+      // "exporting desktop records only" on a throw, which is the honest outcome.
+      if (!reader) throw new Error("The instance answered the diagnostics export with an empty body")
       const decoder = new TextDecoder()
       let total = 0
       let text = ""

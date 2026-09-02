@@ -525,6 +525,32 @@ export function persisted<T>(
 
   const legacyStorageNames = config.legacyStorageNames ?? []
 
+  /**
+   * 🔴 **Set when the backing store could not be READ. It is the only thing that must survive a
+   * storage fault — everything else about one is an empty store, which this app already handles.**
+   *
+   * A read that throws used to travel: `makePersisted` calls `storage.getItem` and, for the async
+   * (desktop) adapter, attaches `init.then(data => …)` with **no rejection arm**
+   * (`@solid-primitives/storage/dist/persisted.js:38`), so the rejection escaped as an unhandled
+   * one before any of our own code saw it — and the same rejection then errored the readiness
+   * resource below, whose accessor re-throws, from memos and effects that sit outside every
+   * `ErrorBoundary` in this app. On the sync (web) adapter it was worse: `getItem` is called
+   * synchronously inside `persisted()`, so a `localStorage` that throws (a Safari private window, a
+   * blocked-cookies profile, a quota error during migration) took the caller's whole component
+   * down at construction.
+   *
+   * The guards below stop it at the adapter, which is the only place all three exits are one
+   * expression: **a store we could not read is an EMPTY store**, and `null` is exactly how this
+   * interface already spells that. The FACT is not lost — `ready.promise` resolves `false` instead
+   * of `true`, which is how a caller tells "nothing was saved" from "we could not look", and the
+   * composer prints the difference.
+   *
+   * ⚠️ Writes are deliberately NOT guarded here. A failed write is a different question with a
+   * different answer (`reportedWrite` and ruling 2's first half), and folding it into this flag
+   * would make "your draft did not load" appear on a store that loaded perfectly.
+   */
+  let readFailed = false
+
   const storage = (() => {
     if (!isDesktop) {
       const current = currentStorage as SyncStorage
@@ -533,17 +559,22 @@ export function persisted<T>(
 
       const api: SyncStorage = {
         getItem: (key) => {
-          const value = readCurrent({ storage: current, key, defaults, migrate: config.migrate })
-          if (value !== undefined) return value
-          return migrateLegacy({
-            current,
-            legacyStore,
-            stores: legacyStores,
-            keys: legacy,
-            key,
-            defaults,
-            migrate: config.migrate,
-          })
+          try {
+            const value = readCurrent({ storage: current, key, defaults, migrate: config.migrate })
+            if (value !== undefined) return value
+            return migrateLegacy({
+              current,
+              legacyStore,
+              stores: legacyStores,
+              keys: legacy,
+              key,
+              defaults,
+              migrate: config.migrate,
+            })
+          } catch {
+            readFailed = true
+            return null
+          }
         },
         setItem: (key, value) => {
           current.setItem(key, value)
@@ -564,17 +595,22 @@ export function persisted<T>(
 
     const api: AsyncStorage = {
       getItem: async (key) => {
-        const value = await readCurrentAsync({ storage: current, key, defaults, migrate: config.migrate })
-        if (value !== undefined) return value
-        return migrateLegacyAsync({
-          current,
-          legacyStore,
-          stores: legacyStores,
-          keys: legacy,
-          key,
-          defaults,
-          migrate: config.migrate,
-        })
+        try {
+          const value = await readCurrentAsync({ storage: current, key, defaults, migrate: config.migrate })
+          if (value !== undefined) return value
+          return await migrateLegacyAsync({
+            current,
+            legacyStore,
+            stores: legacyStores,
+            keys: legacy,
+            key,
+            defaults,
+            migrate: config.migrate,
+          })
+        } catch {
+          readFailed = true
+          return null
+        }
       },
       setItem: async (key, value) => {
         await current.setItem(key, value)
@@ -590,10 +626,43 @@ export function persisted<T>(
   const [state, setState, init] = makePersisted(store, { name: config.key, storage })
 
   const isAsync = init instanceof Promise
+  /**
+   * 🔴 **A store that could not be LOADED is still settled, and neither half of the readiness
+   * contract may throw.**
+   *
+   * The rejection path was live in both halves and neither was guarded:
+   *
+   * - `ready()` read `ready.latest`, and `.latest` **re-throws** the fetcher's error whenever
+   *   `resolved` is set — which `initialValue` sets, so the spelling that reads like the safe one
+   *   is the one that throws. Every `ready()` in this app is called from a memo or an effect
+   *   outside any local `ErrorBoundary`, so one rejected load replaced the whole application with
+   *   the root error page.
+   * - `ready.promise` was `init.then(() => true)` with no rejection handler, so it rejected too:
+   *   the resources built over it errored (their accessors then throw in turn), and the callers
+   *   that merely `void ready.promise` raised an unhandled rejection.
+   *
+   * The `readFailed` guard on the adapter is what makes `init` unable to reject at all, so both of
+   * those are unreachable rather than merely handled. The `try` here is the second belt: it means
+   * a future adapter that DOES reject cannot resurrect the throwing branch of `.latest` — a
+   * safety that depends on a branch being unreachable is one refactor from not being safe.
+   *
+   * ⚠️ **`ready()` becomes `true` on a failed load, on purpose.** It answers *"has the persisted
+   * read settled?"*, and after a rejection it has: `makePersisted` leaves the store holding its
+   * defaults, which is a usable, empty state. Reporting `false` forever would park every gate gated
+   * on it — the composer's autofocus, the tab restore — in a spinner that nothing can end. The
+   * FAILURE is not swallowed: it is the `false` that `ready.promise` resolves with, which is how a
+   * reader tells "loaded" from "settled on defaults" and can say so.
+   */
   const [ready] = createResource(
     () => init,
     async (initValue) => {
-      if (initValue instanceof Promise) await initValue
+      if (initValue instanceof Promise) {
+        try {
+          await initValue
+        } catch {
+          // Settled, on defaults. See the note above: `ready.promise` carries the fact.
+        }
+      }
       return true
     },
     { initialValue: !isAsync },
@@ -604,7 +673,13 @@ export function persisted<T>(
     setState,
     init,
     Object.assign(() => (ready.loading ? false : ready.latest === true), {
-      promise: init instanceof Promise ? init.then(() => true as const) : Promise.resolve(true as const),
+      promise:
+        init instanceof Promise
+          ? init.then(
+              () => !readFailed,
+              () => false,
+            )
+          : Promise.resolve(!readFailed),
     }),
   ]
 }

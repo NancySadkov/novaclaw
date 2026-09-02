@@ -736,9 +736,27 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const providersLoading = () => props.controls.model.loading
   const providersShouldFadeIn = createMemo<boolean>((prev) => prev ?? providersLoading())
 
+  /**
+   * Whether the persisted draft for this chat LOADED.
+   *
+   * Two jobs, and the second is why this is still a plain `createResource`: reading it below is
+   * what enrols the composer in the layout's `Suspense`, so the chat does not paint an empty
+   * message box that the restored draft then overwrites under the user's cursor. A
+   * `createSettledResource` cannot do that — it never reads the underlying accessor in the pending
+   * state, which is precisely the read `Suspense` counts.
+   *
+   * 🔴 It is nonetheless safe now, and not because of anything written here. `ready.promise` used
+   * to REJECT on a failed persisted read, which errored this resource, and Solid's accessor
+   * re-throws from an error stored that way — from a bare comma-expression in JSX, outside any
+   * local `ErrorBoundary`, so a single failed `store-set` replaced the whole application with the
+   * fatal error page. That is closed at its source in `utils/persist.ts`: the promise resolves
+   * `false` instead of rejecting, and `ready()` cannot throw either. Here the `false` is a value
+   * like any other, and the composer says so rather than pretending it restored a draft it never
+   * read.
+   */
   const [promptReady] = createResource(
     () => prompt.ready.promise,
-    (p) => p,
+    async (promise) => (await promise) === true,
   )
 
   // P3 one-view-host invariant: every live composer registers per session so a steady-state
@@ -814,7 +832,18 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }))
   return (
     <div class="relative size-full flex flex-col gap-0">
+      {/* The bare read is the Suspense enrolment — see the resource above. It stays a statement so
+          the notice below is free to be a `Show`, which is a different (memoised) read. */}
       {(promptReady(), null)}
+      <Show when={promptReady() === false}>
+        <div
+          data-slot="prompt-draft-unavailable"
+          role="status"
+          class="px-1 pb-1.5 text-[12px] leading-4 text-v2-text-text-faint"
+        >
+          {language.t("prompt.draft.unavailable")}
+        </div>
+      </Show>
       <PromptPopover
         popover={store.popover}
         setSlashPopoverRef={(el) => (slashPopoverRef = el)}

@@ -223,9 +223,41 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
   const formattedError = () => formatError(props.error, language.t)
   const [showDetails, setShowDetails] = createSignal(false)
   let recordedFatalError: Promise<void> | undefined
+  /**
+   * 🔴 **A recovery action's failure is SPLIT — a sentence for the page, the chain for the
+   * disclosure — because this is the one screen where a stack trace must not be the body text.**
+   *
+   * The page already got this right for the fault that brought the user here: `errorDescriptionKey`
+   * writes a plain headline and `formatError`'s output — which deliberately emits `error.stack` and
+   * walks `error.cause` under `Caused by` rules — sits behind "Show technical details". The action
+   * handler then wrote that same output straight into `actionError`, which rendered uncollapsed, in
+   * danger red, under the buttons. So pressing "Export Logs" on the crash screen and having it fail
+   * answered a frightened non-technical user with a multi-frame stack trace.
+   *
+   * AGENTS.md: the UI *"never crashes to a dead-end … a calm 'connection lost — reconnecting…',
+   * never a stack trace or a white screen"*. That rule is at its strongest here, because everybody
+   * who reads this page arrives already knowing something broke.
+   *
+   * ⚠️ **The detail is not discarded — it is MOVED.** It joins the existing disclosure under its own
+   * separator, so a developer, a support request and the copy button all still reach it; only the
+   * default view changes. Deleting it would trade one failure of this page for another.
+   */
   const [store, setStore] = createStore({
-    actionError: undefined as string | undefined,
+    actionError: undefined as { readonly message: string; readonly detail: string } | undefined,
   })
+
+  /**
+   * What "Show technical details" reveals: the fault itself, plus whatever a recovery action added.
+   *
+   * ⚠️ One field rather than a second disclosure — the user has already been told where the detail
+   * is, and a page that grows a new collapsed box per failed button is a worse answer than a longer
+   * one in the box they were pointed at.
+   */
+  const detailsText = () => {
+    const problem = store.actionError
+    if (!problem) return formattedError()
+    return `${formattedError()}\n${CHAIN_SEPARATOR}${language.t("error.page.details.actionFailure")}\n${problem.detail}`
+  }
 
   function ensureFatalErrorRecorded() {
     recordedFatalError ??=
@@ -250,7 +282,12 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
       .then(() => exportLogs())
       .then(() => setStore("actionError", undefined))
       .catch((err) => {
-        setStore("actionError", formatError(err, language.t))
+        // ⚠️ The failure is still REPORTED — ruling 2's first half, a failed mutation never reports
+        // success. What changed is which half of it the page reads out loud.
+        setStore("actionError", {
+          message: language.t("error.page.action.exportLogs.failed"),
+          detail: formatError(err, language.t),
+        })
       })
   }
 
@@ -278,7 +315,7 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
           </button>
           <Show when={showDetails()}>
             <TextField
-              value={formattedError()}
+              value={detailsText()}
               readOnly
               copyable
               multiline
@@ -304,7 +341,11 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
           </Show>
         </div>
         <Show when={store.actionError}>
-          {(message) => <p class="text-xs text-v2-state-fg-danger text-center max-w-2xl">{message()}</p>}
+          {(problem) => (
+            <p class="text-xs text-v2-state-fg-danger text-center max-w-2xl" data-slot="error-page-action-error">
+              {problem().message}
+            </p>
+          )}
         </Show>
         <div class="flex flex-col items-center gap-2">
           <div class="flex items-center justify-center gap-1">

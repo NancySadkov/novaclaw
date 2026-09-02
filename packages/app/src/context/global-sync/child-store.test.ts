@@ -5,6 +5,8 @@ import type { NormalizedProviderListResponse } from "@novaclaw/session-ui/contex
 import type { State } from "./types"
 import type { QueryOptionsApi } from "../server-sync"
 import { ServerScope } from "@/utils/server-scope"
+import { selectProviderCatalog } from "@/hooks/provider-catalog"
+import { directoryKey } from "./utils"
 
 let createChildStoreManager: typeof import("./child-store").createChildStoreManager
 const querySingles: Array<() => { queryKey?: unknown[]; enabled?: boolean }> = []
@@ -23,6 +25,17 @@ const provider = {
   connected: [],
   default: {},
 } satisfies NormalizedProviderListResponse
+
+/** A one-provider catalog, distinguishable from every other by the id it carries. */
+const catalogOf = (id: string): NormalizedProviderListResponse => ({
+  all: new Map([[id, { id, name: id, api: { type: "native", settings: {} }, request: { headers: {}, body: {} } }]]),
+  models: new Map(),
+  connected: [id],
+  default: { [id]: `${id}-model` },
+})
+
+/** What the mocked per-directory `providers` query answers with. Unlisted directories get `provider`. */
+const providerByDirectory = new Map<string, NormalizedProviderListResponse>()
 
 const queryOptionsApi = {
   globalConfig: () => ({ queryKey: ["globalConfig"], queryFn: async () => ({}) }),
@@ -64,7 +77,8 @@ beforeAll(async () => {
         get data() {
           if (options().queryKey?.[1] === "path") throw new Error("pending path data read")
           if (options().queryKey?.[1] === "mcp") return options().enabled ? { demo: { status: "disabled" } } : undefined
-          if (options().queryKey?.[1] === "providers") return provider
+          if (options().queryKey?.[1] === "providers")
+            return providerByDirectory.get(String(options().queryKey?.[0])) ?? provider
           return undefined
         },
       }
@@ -94,7 +108,6 @@ describe("createChildStoreManager", () => {
       onDispose() {},
       translate: (key) => key,
       queryOptions: queryOptionsApi,
-      global: { provider },
     })
 
     Array.from({ length: 30 }, (_, index) => `/pinned-${index}`).forEach((directory) => {
@@ -127,7 +140,6 @@ describe("createChildStoreManager", () => {
         onDispose() {},
         translate: (key) => key,
         queryOptions: queryOptionsApi,
-        global: { provider },
       })
     })
 
@@ -159,7 +171,6 @@ describe("createChildStoreManager", () => {
         onDispose() {},
         translate: (key) => key,
         queryOptions: queryOptionsApi,
-        global: { provider },
       })
     })
 
@@ -192,7 +203,6 @@ describe("createChildStoreManager", () => {
         onDispose() {},
         translate: (key) => key,
         queryOptions: queryOptionsApi,
-        global: { provider },
       })
     })
 
@@ -229,7 +239,6 @@ describe("createChildStoreManager", () => {
         onDispose() {},
         translate: (key) => key,
         queryOptions: queryOptionsApi,
-        global: { provider },
       })
     })
 
@@ -253,5 +262,102 @@ describe("createChildStoreManager", () => {
     } finally {
       dispose()
     }
+  })
+})
+
+/**
+ * 🔴 **WHICH CATALOG A DIRECTORY ANSWERS WITH — and where that question is allowed to be answered.**
+ *
+ * There were two rules. One lived in the child store's `provider` getter (*"if my catalog is empty
+ * and the instance-wide one is not, serve that instead"*) and could never run: the instance-wide
+ * list arrived as a value read once at construction, while its query was still loading, so the
+ * comparison it guarded on was `0 > 0` on every evaluation the app would ever make. A branch that
+ * cannot be taken still reads like a promise, and this one promised graceful degradation.
+ *
+ * The other lives in `selectProviderCatalog`, is reactive, and is what every consumer of this field
+ * actually goes through. It strictly subsumes the dead one — an empty catalog lists no connected
+ * providers — so the dead rule is gone rather than repaired.
+ *
+ * ⚠️ Both halves are asserted here, on the same store instance, because each half already had its
+ * own passing test and the JOIN is what nothing exercised: `child-store.test.ts` asserted a branch
+ * the only production caller could not reach, and `provider-catalog.test.ts` asserted the selector
+ * against hand-built catalogs it never got from a child store.
+ */
+describe("which catalog a directory answers with", () => {
+  const withManager = (run: (manager: ReturnType<typeof createChildStoreManager>) => void) => {
+    let manager: ReturnType<typeof createChildStoreManager> | undefined
+    const dispose = createOwner((owner) => {
+      manager = createChildStoreManager({
+        owner,
+        scope: ServerScope.local,
+        persist,
+        isBooting: () => false,
+        isLoadingSessions: () => false,
+        onBootstrap() {},
+        onMcp() {},
+        onDispose() {},
+        translate: (key) => key,
+        queryOptions: queryOptionsApi,
+      })
+    })
+    try {
+      if (!manager) throw new Error("manager required")
+      run(manager)
+    } finally {
+      dispose()
+      providerByDirectory.clear()
+    }
+  }
+
+  test("🔴 an EMPTY per-directory catalog is reported as empty — the store never substitutes another answer", () => {
+    // The condition the deleted branch claimed to handle. The store's job is to say what THIS
+    // directory's server returned; the decision about what to show instead is not its to make.
+    withManager((manager) => {
+      const [store] = manager.child("/empty-catalog", { bootstrap: false })
+      expect(store.provider_ready).toBe(true)
+      expect(store.provider.all.size).toBe(0)
+      expect(store.provider.connected).toEqual([])
+    })
+  })
+
+  test("NEGATIVE CONTROL: a directory that HAS a catalog reports it, so the getter is not simply empty", () => {
+    // Without this, a `provider` getter hardwired to EMPTY would pass the test above.
+    withManager((manager) => {
+      providerByDirectory.set(directoryKey("/served"), catalogOf("directory"))
+      const [store] = manager.child("/served", { bootstrap: false })
+      expect([...store.provider.all.keys()]).toEqual(["directory"])
+      expect(store.provider.connected).toEqual(["directory"])
+    })
+  })
+
+  test("🔴 the surviving fallback is REACHABLE: an empty child catalog resolves to the instance-wide one", () => {
+    // Fed the real store's real output — not a hand-built empty literal — the live rule takes the
+    // fallback. This is the assertion the dead branch was pretending to make.
+    withManager((manager) => {
+      const global = catalogOf("global")
+      const [store] = manager.child("/empty-catalog", { bootstrap: false })
+      const selected = selectProviderCatalog({
+        directory: "/empty-catalog",
+        catalog: { ready: store.provider_ready, providers: store.provider },
+        global,
+      })
+      expect(selected).toBe(global)
+      expect([...selected.all.keys()]).toEqual(["global"])
+    })
+  })
+
+  test("NEGATIVE CONTROL: a directory that serves its own connected providers keeps them", () => {
+    // Without this, a selector that always returned `global` would pass the test above and every
+    // directory in the app would silently show the instance-wide catalog.
+    withManager((manager) => {
+      providerByDirectory.set(directoryKey("/served"), catalogOf("directory"))
+      const [store] = manager.child("/served", { bootstrap: false })
+      const selected = selectProviderCatalog({
+        directory: "/served",
+        catalog: { ready: store.provider_ready, providers: store.provider },
+        global: catalogOf("global"),
+      })
+      expect([...selected.all.keys()]).toEqual(["directory"])
+    })
   })
 })

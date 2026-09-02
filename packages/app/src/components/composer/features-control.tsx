@@ -87,6 +87,21 @@ export type ComposerRemoteBinding = {
 export type ComposerRemoteChatChoice = { chatID: string; title: string }
 
 export type ComposerRemoteChatState = {
+  /**
+   * Whether the two lists below could be READ at all — and it is REQUIRED, so that a second
+   * builder of this state cannot omit it and land back on the empty-means-none reading.
+   *
+   * 🔴 `accounts: []` and `binding: undefined` are the values a healthy, unconfigured instance
+   * produces AND the values an unreachable one produces, and this section renders the first as
+   * *"No messenger accounts yet — add one in Settings"* and the second as *"this chat drives
+   * nothing"*. Both are false sentences over a request that never landed, which is ruling 2's
+   * second half exactly. The controller has carried this reading since it was built; it is read
+   * here — a state nothing renders is a state that does not exist.
+   *
+   * Precedence is the helpers' own: **failed > loading > ready**. `ready` is a settled answer and
+   * says nothing about whether it was empty.
+   */
+  availability: "ready" | "loading" | "failed"
   /** false for a draft — there is no sessionID to bind yet (edge #15). */
   bindable: boolean
   accounts: readonly ComposerRemoteAccount[]
@@ -210,8 +225,13 @@ const REMOTE_DOT: Record<string, string> = {
   airgapped: "bg-v2-icon-icon-muted",
 }
 
-/** The Remote-chat picker: messaging app → chat → the required access-level step (§0.1). */
-function RemoteChatSection(props: { remote: ComposerRemoteChatState }) {
+/**
+ * The Remote-chat picker: messaging app → chat → the required access-level step (§0.1).
+ *
+ * Exported so a render test can mount THIS, rather than the 400-line panel and the eight contexts
+ * it needs, to assert which of its four states it prints. The panel below is its only caller.
+ */
+export function RemoteChatSection(props: { remote: ComposerRemoteChatState }) {
   const language = useLanguage()
   const [stage, setStage] = createSignal<"idle" | "account" | "chat" | "trust">("idle")
   const [account, setAccount] = createSignal<ComposerRemoteAccount | undefined>(undefined)
@@ -265,6 +285,46 @@ function RemoteChatSection(props: { remote: ComposerRemoteChatState }) {
   const row =
     "flex items-start justify-between gap-3 rounded-md border border-transparent px-2.5 py-1.5 text-left hover:bg-v2-background-bg-layer-02"
 
+  /**
+   * 🔴 **What to say when there is no account list to show — and it is THREE answers, not one.**
+   *
+   * An empty `accounts` is what a healthy instance with no messengers returns; it is ALSO what the
+   * state holds when the request never landed, and *"No messenger accounts yet — add one in
+   * Settings"* then sends a user who has three configured accounts to a Settings screen to hunt
+   * for a fault that is not there. `availability` is the controller's own reading of whether the
+   * lists could be read at all — it has been computed since the messenger reads were converted,
+   * and nothing rendered it, which is the same as not having it.
+   *
+   * ⚠️ `loading` is consulted only once the list is EMPTY, deliberately: the section refetches on
+   * every `messenger.*` event, and a re-read in flight over accounts we already hold must not
+   * blank a picker the user is standing in.
+   */
+  const noAccountList = () => (
+    <Switch
+      fallback={
+        <button
+          type="button"
+          data-action="remote-open-settings"
+          class="self-start text-[13px] text-v2-text-text-base underline decoration-dotted hover:text-v2-text-text-base"
+          onClick={() => props.remote.openSettings()}
+        >
+          {language.t("prompt.remote.none")}
+        </button>
+      }
+    >
+      <Match when={props.remote.availability === "failed"}>
+        <span data-slot="remote-unavailable" role="status" class="text-[12px] leading-4 text-v2-text-text-faint">
+          {language.t("prompt.remote.unavailable")}
+        </span>
+      </Match>
+      <Match when={props.remote.availability === "loading"}>
+        <span data-slot="remote-checking" role="status" class="text-[12px] leading-4 text-v2-text-text-faint">
+          {language.t("prompt.remote.checking")}
+        </span>
+      </Match>
+    </Switch>
+  )
+
   return (
     <div class="flex flex-col gap-1.5" data-section="remote-chat">
       <span class="text-[13px] font-[560] text-v2-text-text-base">{language.t("prompt.remote.title")}</span>
@@ -278,17 +338,8 @@ function RemoteChatSection(props: { remote: ComposerRemoteChatState }) {
             }
           >
             <Show
-              when={props.remote.accounts.length > 0}
-              fallback={
-                <button
-                  type="button"
-                  data-action="remote-open-settings"
-                  class="self-start text-[13px] text-v2-text-text-base underline decoration-dotted hover:text-v2-text-text-base"
-                  onClick={() => props.remote.openSettings()}
-                >
-                  {language.t("prompt.remote.none")}
-                </button>
-              }
+              when={props.remote.availability !== "failed" && props.remote.accounts.length > 0}
+              fallback={noAccountList()}
             >
               <Show
                 when={stage() !== "idle"}

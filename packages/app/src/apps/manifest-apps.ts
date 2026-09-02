@@ -8,6 +8,7 @@ import { usePlatform } from "@/context/platform"
 import { ServerConnection, useServer } from "@/context/server"
 import { useTabs } from "@/context/tabs"
 import { appName, appSubtitle, type Translate } from "./app-label"
+import { unshadowedManifests } from "./manifest-shadow"
 import { loadPersistedApps, persistedManifests, type AppManifest } from "./persisted"
 import type { HomeApp } from "./registry"
 import { scopedDirectory } from "@/utils/routing-directory"
@@ -65,7 +66,7 @@ export function useManifestApps(): () => HomeApp[] {
   }
 
   return () =>
-    persistedManifests().map((manifest): HomeApp => {
+    unshadowedManifests(persistedManifests()).map((manifest): HomeApp => {
       const subtitle = appSubtitle(t, manifest.id, manifest.subtitle)
       const icon = manifest.icon && isIconName(manifest.icon) ? manifest.icon : undefined
       return {

@@ -9,6 +9,11 @@
   [data-slot="image-preview-container"] {
     position: relative;
     z-index: 50;
+    /* The dialog LAYER is `pointer-events: none` so the page behind stays click-through, and that
+       inherits. Every other dialog root restores it on its own container (dialog-v2, menu-v2,
+       select-v2, toast-v2); this one never did, so the preview rendered perfectly and was inert to
+       every click — the close button included. */
+    pointer-events: auto;
     width: min(calc(100vw - 32px), 90vw);
     max-width: 1200px;
     height: min(calc(100vh - 32px), 90vh);

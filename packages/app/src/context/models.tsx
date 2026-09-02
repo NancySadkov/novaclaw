@@ -4,9 +4,11 @@ import { DateTime } from "luxon"
 import { filter, firstBy, flat, groupBy, mapValues, pipe, uniqueBy, values } from "remeda"
 import { createSimpleContext } from "@novaclaw/ui/context"
 import { useProviders } from "@/hooks/use-providers"
+import { useServerSync } from "@/context/server-sync"
 import type { Tier } from "@/apps/agent-model"
 import { pruneCovers } from "./models-covers"
-import { Persist, persisted } from "@/utils/persist"
+import { modelStoreTarget } from "./models-store"
+import { persisted } from "@/utils/persist"
 
 export type ModelKey = { providerID: string; modelID: string }
 
@@ -37,9 +39,30 @@ export const { use: useModels, provider: ModelsProvider, context: ModelsContext 
   gate: false,
   init: (props: { directory?: Accessor<string | undefined> } = {}) => {
     const providers = useProviders(props.directory)
+    const serverSync = useServerSync()
 
+    /**
+     * 🔴 **PER INSTANCE, because everything in it is an answer ABOUT one instance's catalog.**
+     *
+     * This was `Persist.global`, one store shared by every configured instance, while every rule
+     * that reads or writes it is scoped to the selected one: `removed` is pruned against
+     * `availableAll()`, which is *this* instance's catalog. Delete a model on instance A, switch to
+     * instance B — which does not serve it — and B's catalog loads, the prune below sees the key
+     * unlisted, and the cover is dropped. Switch back to A and the deleted model is in the Models
+     * tab and in every agent's Tune dialog again. A destructive write, performed on one instance's
+     * data by a different instance, with nothing on any screen saying it happened.
+     *
+     * `user` (visibility), `recent`, `variant` and `tier` are the same kind of claim — a model id
+     * only means anything next to the instance that serves it — so the whole store moves, not just
+     * `removed`.
+     *
+     * ⚠️ The scope comes from the same context the catalog does, deliberately: `useProviders` reads
+     * `useServerSync()` too, so there is no second source of "which instance is this" for the two to
+     * disagree about. `modelStoreTarget` carries the rest, including why the local instance's stored
+     * data survives the change untouched.
+     */
     const [store, setStore, _, ready] = persisted(
-      Persist.global("model", ["model.v1"]),
+      modelStoreTarget(serverSync().scope),
       createStore<Store>({
         user: [],
         recent: [],
@@ -67,8 +90,8 @@ export const { use: useModels, provider: ModelsProvider, context: ModelsContext 
     /**
      * 🔴 **A REMOVED KEY IS A COVER, NOT A TOMBSTONE — drop it once the server agrees.**
      *
-     * `remove()` only ever APPENDED, and this store is `Persist.global`, so deleting a model wrote a
-     * key that nothing on any path ever cleared. Re-adding that exact model then did nothing visible:
+     * `remove()` only ever APPENDED, and nothing on any path ever cleared a key, so deleting a model
+     * wrote a permanent tombstone. Re-adding that exact model then did nothing visible:
      * the server had it, `availableAll()` carried it, and this filter hid it forever — in the Models
      * tab AND in the agent's Tune dialog, because both read `available()`. The only escape was
      * resetting UI preferences, which the comment above offers as a feature and is really the

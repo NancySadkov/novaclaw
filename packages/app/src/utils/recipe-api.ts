@@ -123,34 +123,96 @@ export interface RecipeArchiveTransferOptions {
   readonly timeoutMs?: number
 }
 
-const readBoundedArchive = async (response: Response): Promise<Uint8Array<ArrayBuffer>> => {
-  const declared = Number(response.headers.get("content-length"))
-  if (Number.isFinite(declared) && declared > MAX_RECIPE_ARCHIVE_BYTES) {
-    await response.body?.cancel("recipe archive exceeded its byte budget")
-    throw new Error(`That recipe ZIP is over ${MAX_RECIPE_ARCHIVE_BYTES / 1024 / 1024} MB`)
+/** Why a transfer that reached this client still carries no recipe. */
+export type RecipeArchiveFault =
+  /** Zero bytes arrived — an absent body, or one that read empty. */
+  | "empty"
+  /** Bytes arrived, but they are not a ZIP (a proxy's HTML notice, a JSON fault page). */
+  | "not-a-zip"
+
+/**
+ * A download that SUCCEEDED at the HTTP level and carried no recipe.
+ *
+ * 🔴 **The failure this exists to stop is not an unreported one — it is a MATERIALISED one.** The
+ * previous reader answered an absent body with `new Uint8Array()`, and zero bytes is a well-formed
+ * empty archive as far as every downstream step is concerned: the export path blobbed it, named it
+ * `<slug>.recipe.zip`, saved it and said *"Saved"*. The user learns their share is empty by opening
+ * it later, on another machine, with nothing to compare it against — which is strictly worse than an
+ * error, because a failure the product renders as a plausible artifact stops looking like a failure.
+ * The whole point of the ZIP transport is that a share carries every byte; this was the one way it
+ * could carry none and report success.
+ *
+ * So the invariant is at the READER, not the caller: **bytes that are not an archive never leave this
+ * module**, and the only thing an export path can do with a failed transfer is name it.
+ */
+export class RecipeArchiveError extends Error {
+  /** The recipe the transfer was for. Empty when an upload named no slug — the file is the subject. */
+  readonly slug: string
+  readonly fault: RecipeArchiveFault
+  /** Which way the bytes were travelling, because the two failures are the user's and the instance's. */
+  readonly direction: "download" | "upload"
+
+  constructor(slug: string, fault: RecipeArchiveFault, direction: "download" | "upload" = "download") {
+    const named = slug === "" ? "" : ` for “${slug}”`
+    super(
+      direction === "download"
+        ? fault === "empty"
+          ? `The instance sent no ZIP${named} — nothing was saved.`
+          : `The instance sent something that is not a ZIP${named} — nothing was saved.`
+        : fault === "empty"
+          ? "That file is empty, so it carries no recipe."
+          : "That file is not a ZIP, so it carries no recipe folder.",
+    )
+    this.name = "RecipeArchiveError"
+    this.slug = slug
+    this.fault = fault
+    this.direction = direction
   }
-  const reader = response.body?.getReader()
-  if (!reader) return new Uint8Array()
-  const chunks: Uint8Array[] = []
-  let total = 0
-  while (true) {
-    const next = await reader.read()
-    if (next.done) break
-    total += next.value.byteLength
-    if (total > MAX_RECIPE_ARCHIVE_BYTES) {
-      await reader.cancel("recipe archive exceeded its byte budget")
+}
+
+/**
+ * Every ZIP begins `PK`, whatever it holds — an empty archive is the 22-byte end-of-central-directory
+ * record `PK\x05\x06…`, and a populated one opens with a local file header `PK\x03\x04`. Checking the
+ * two letters and not the third byte is deliberate: it separates *an archive* from *an HTML login
+ * page or a JSON fault a proxy answered 200 with*, which is the distinction that decides whether a
+ * file lands on the user's disk, without this client claiming to know the ZIP variants a future
+ * engine may write.
+ */
+const looksLikeZip = (bytes: Uint8Array): boolean => bytes[0] === 0x50 && bytes[1] === 0x4b
+
+const readBoundedArchive =
+  (slug: string) =>
+  async (response: Response): Promise<Uint8Array<ArrayBuffer>> => {
+    const declared = Number(response.headers.get("content-length"))
+    if (Number.isFinite(declared) && declared > MAX_RECIPE_ARCHIVE_BYTES) {
+      await response.body?.cancel("recipe archive exceeded its byte budget")
       throw new Error(`That recipe ZIP is over ${MAX_RECIPE_ARCHIVE_BYTES / 1024 / 1024} MB`)
     }
-    chunks.push(next.value)
+    const reader = response.body?.getReader()
+    const chunks: Uint8Array[] = []
+    let total = 0
+    // ⚠️ An absent body is NOT a special case with its own early return — that is exactly how the
+    // empty archive was born. It falls through to the same emptiness check every short read meets.
+    while (reader) {
+      const next = await reader.read()
+      if (next.done) break
+      total += next.value.byteLength
+      if (total > MAX_RECIPE_ARCHIVE_BYTES) {
+        await reader.cancel("recipe archive exceeded its byte budget")
+        throw new Error(`That recipe ZIP is over ${MAX_RECIPE_ARCHIVE_BYTES / 1024 / 1024} MB`)
+      }
+      chunks.push(next.value)
+    }
+    if (total === 0) throw new RecipeArchiveError(slug, "empty")
+    const archive = new Uint8Array(total)
+    let offset = 0
+    for (const chunk of chunks) {
+      archive.set(chunk, offset)
+      offset += chunk.byteLength
+    }
+    if (!looksLikeZip(archive)) throw new RecipeArchiveError(slug, "not-a-zip")
+    return archive
   }
-  const archive = new Uint8Array(total)
-  let offset = 0
-  for (const chunk of chunks) {
-    archive.set(chunk, offset)
-    offset += chunk.byteLength
-  }
-  return archive
-}
 
 export const listRecipes = (server: ServerConnection.HttpBase) => call<Recipe[]>(server, "GET", "api/recipe")
 
@@ -167,7 +229,14 @@ export const updateRecipe = (server: ServerConnection.HttpBase, slug: string, pa
 export const importRecipe = (server: ServerConnection.HttpBase, input: { markdown: string; slug?: string }) =>
   call<Recipe>(server, "POST", "api/recipe/import", input)
 
-/** Download the complete folder transport: recipe.md plus every nested binary/text asset. */
+/**
+ * Download the complete folder transport: recipe.md plus every nested binary/text asset.
+ *
+ * ⚠️ **Resolves with an archive or not at all.** A non-2xx is the seam's `InstanceFetchError`; a 2xx
+ * that carried nothing usable is a {@link RecipeArchiveError}. Nothing here ever answers with bytes a
+ * caller would have to inspect before deciding whether the download worked — see the class comment
+ * for why that shape cost a user their share.
+ */
 export const recipeArchive = async (
   server: ServerConnection.HttpBase,
   slug: string,
@@ -182,7 +251,7 @@ export const recipeArchive = async (
       signal: options.signal,
       timeoutMs: options.timeoutMs ?? RECIPE_ARCHIVE_TIMEOUT_MS,
     },
-    readBoundedArchive,
+    readBoundedArchive(slug),
   )
 }
 
@@ -194,6 +263,11 @@ export const importRecipeArchive = (
 ) => {
   if (archive.byteLength > MAX_RECIPE_ARCHIVE_BYTES)
     return Promise.reject(new Error(`That recipe ZIP is over ${MAX_RECIPE_ARCHIVE_BYTES / 1024 / 1024} MB`))
+  // The same refusal as the download, facing the other way: an empty or non-ZIP file is named here
+  // rather than uploaded so the server can name it. One vocabulary for "that is not a recipe
+  // archive", whichever direction the bytes were travelling.
+  if (archive.byteLength === 0) return Promise.reject(new RecipeArchiveError(options.slug ?? "", "empty", "upload"))
+  if (!looksLikeZip(archive)) return Promise.reject(new RecipeArchiveError(options.slug ?? "", "not-a-zip", "upload"))
   return instanceFetch<Recipe>(server, {
     method: "POST",
     route: "api/recipe/archive",

@@ -69,41 +69,39 @@ export type CommunityTransportState =
   | { readonly kind: "online"; readonly peers: number }
 
 /**
- * 🔴 **A READ that fails degrades in place; it does not take the app down** (review 1.15).
+ * 🔴 **NOTHING IN THIS FILE SWALLOWS A FAILURE — reads and actions alike.**
  *
- * Every community resource read through a bare `instanceFetch`, which throws on any non-2xx — and a
- * throw inside a `createResource` read propagates to the nearest ErrorBoundary, which here is the
- * ROOT one. So a single 500 from any of about fifteen endpoints replaced the whole application with
- * `ErrorPage`: the user loses their chats, their sessions and their settings because a peer list did
- * not load. AGENTS.md is explicit that the UI *"never crashes to a dead-end"* and *"degrades and
- * recovers"*.
+ * The first repair of *"one failed read took the whole application down"* put a `softRead` helper
+ * here: it caught, `console.warn`ed and returned a fallback (`[]`, or `undefined as never`). That
+ * stopped the root `ErrorBoundary` crash and bought a second, quieter defect in exchange — the
+ * fallback is **the same value a successful empty answer produces**, so an instance that could not
+ * be asked rendered as a community with nobody in it. Its own comment said as much (*"an empty panel
+ * with nothing in the console is indistinguishable from an empty community"*) and then answered it
+ * in the console, which is not a surface a user reads.
  *
- * ⚠️ READS ONLY, and the asymmetry is the point. A read that fails can show nothing and let the user
- * carry on; a WRITE that fails must be reported, because silently swallowing "your message was not
- * posted" is a worse lie than any error screen. Every action in this file still throws.
+ * ⚠️ **It was worse than a wrong count.** `communityParticipation`'s fallback was `undefined`, and
+ * the panel's door gate read `undefined` as *joined* — so a failed read showed the full community
+ * panel, with a "Turn off" button, to an instance that had never joined. AGENTS.md: **joining is a
+ * decision, not a default.** A helper that returns a plausible value on failure cannot avoid picking
+ * one of these lies; the only fix is to stop producing a value at all.
  *
- * ⚠️ It warns rather than going silent: an empty panel with nothing in the console is
- * indistinguishable from an empty community, which is a confusion this subsystem keeps having to undo.
+ * **So a rejection travels, and the CALLER classifies it.** `utils/settled-resource.ts` is the one
+ * place that turns a rejection into a reading a screen can render — `failed` distinct from `empty`,
+ * with an accessor that still cannot throw, which is what kept the ErrorBoundary crash closed. Every
+ * read here is consumed through `createSettledResource` in `pages/home-screen/community-network.tsx`
+ * (the only consumer of these reads), and `community-api.test.ts` is what keeps it that way.
+ *
+ * ⚠️ **Do not reintroduce a `.catch` here, in either direction.** A read that swallows hides the
+ * outage from `failed`; an action that swallows tells the user their message was posted when it was
+ * not. Ruling 2 (`notes/reports/decisions-v0.2.0.md`) forbids both halves.
  */
-const softRead = async <T>(what: string, fallback: T, read: () => Promise<T>): Promise<T> => {
-  try {
-    return await read()
-  } catch (error) {
-    console.warn(`community: could not read ${what} — showing nothing. ${String(error)}`)
-    return fallback
-  }
-}
 
 export function communityTransportState(server: ServerConnection.HttpBase) {
-  return softRead("transport state", undefined as never, () =>
-    instanceFetch<CommunityTransportState>(server, { route: "api/community/transport" }),
-  )
+  return instanceFetch<CommunityTransportState>(server, { route: "api/community/transport" })
 }
 
 export function communityContacts(server: ServerConnection.HttpBase) {
-  return softRead("contacts", [] as never, () =>
-    instanceFetch<CommunityContact[]>(server, { route: "api/community/contact" }),
-  )
+  return instanceFetch<CommunityContact[]>(server, { route: "api/community/contact" })
 }
 
 export function communityAddContact(
@@ -151,9 +149,7 @@ export function communityForgetContact(server: ServerConnection.HttpBase, networ
 }
 
 export function communityChannels(server: ServerConnection.HttpBase) {
-  return softRead("channels", [] as never, () =>
-    instanceFetch<CommunityChannel[]>(server, { route: "api/community/channel" }),
-  )
+  return instanceFetch<CommunityChannel[]>(server, { route: "api/community/channel" })
 }
 
 export function communityJoinChannel(server: ServerConnection.HttpBase, name: string) {
@@ -241,9 +237,7 @@ export interface CommunityServiceOffer {
 
 /** Model servers other people offer, each verified against its signer. */
 export function communityOffers(server: ServerConnection.HttpBase) {
-  return softRead("offers", [] as never, () =>
-    instanceFetch<CommunityServiceOffer[]>(server, { route: "api/community/offers" }),
-  )
+  return instanceFetch<CommunityServiceOffer[]>(server, { route: "api/community/offers" })
 }
 
 /**
@@ -268,8 +262,7 @@ export type CommunityRefusal = "never_consented" | "switched_off" | "airgap"
  * neither because flipping community settings would not change it.
  */
 export function communityParticipation(server: ServerConnection.HttpBase) {
-  return softRead("participation", undefined as never, () =>
-    instanceFetch<{
+  return instanceFetch<{
     readonly participating: boolean
     readonly consented: boolean
     readonly enabled: boolean
@@ -289,8 +282,7 @@ export function communityParticipation(server: ServerConnection.HttpBase) {
     readonly announceConfirmed?: boolean
     /** `no-sidecar` when this build has no directory helper, `refused` when one tried and failed. */
     readonly announceReason?: string
-  }>(server, { route: "api/community/participation" }),
-  )
+  }>(server, { route: "api/community/participation" })
 }
 
 /**
@@ -322,11 +314,9 @@ export function communitySetParticipation(
 }
 
 export function communityMyOffer(server: ServerConnection.HttpBase) {
-  return softRead("my offer", undefined as never, () =>
-    instanceFetch<{ readonly offer?: CommunityServiceOffer; readonly servable: boolean }>(server, {
+  return instanceFetch<{ readonly offer?: CommunityServiceOffer; readonly servable: boolean }>(server, {
     route: "api/community/offer/mine",
-  }),
-  )
+  })
 }
 
 /** Offer a model server to the network. `price` is free text — no rails behind it. */
@@ -361,9 +351,7 @@ export interface CommunityDirectMessage {
 
 /** Everyone there is a conversation with. */
 export function communityConversations(server: ServerConnection.HttpBase) {
-  return softRead("conversations", [] as never, () =>
-    instanceFetch<string[]>(server, { route: "api/community/direct" }),
-  )
+  return instanceFetch<string[]>(server, { route: "api/community/direct" })
 }
 
 /** One conversation, most recent first. Plaintext from this instance's own store. */
@@ -389,9 +377,7 @@ export function communitySendDirect(server: ServerConnection.HttpBase, networkID
 
 /** Words the user chose not to read. Their own — never anything an agent or a channel supplied. */
 export function communityFilters(server: ServerConnection.HttpBase) {
-  return softRead("filters", [] as never, () =>
-    instanceFetch<string[]>(server, { route: "api/community/filter" }),
-  )
+  return instanceFetch<string[]>(server, { route: "api/community/filter" })
 }
 
 export function communityAddFilter(server: ServerConnection.HttpBase, pattern: string) {
@@ -404,11 +390,9 @@ export function communityRemoveFilter(server: ServerConnection.HttpBase, pattern
 
 /** Channels this instance left but still holds messages for. */
 export function communityArchivedChannels(server: ServerConnection.HttpBase) {
-  return softRead("archived channels", [] as never, () =>
-    instanceFetch<{ readonly name: string; readonly messages: number }[]>(server, {
+  return instanceFetch<{ readonly name: string; readonly messages: number }[]>(server, {
     route: "api/community/channel/archived",
-  }),
-  )
+  })
 }
 
 /**
@@ -441,9 +425,7 @@ export function communityListChannel(server: ServerConnection.HttpBase, name: st
 
 /** Channels the instances we can reach advertise — one hop, not the whole network. */
 export function communityNearbyChannels(server: ServerConnection.HttpBase) {
-  return softRead("nearby channels", [] as never, () =>
-    instanceFetch<string[]>(server, { route: "api/community/nearby" }),
-  )
+  return instanceFetch<string[]>(server, { route: "api/community/nearby" })
 }
 
 export function communityPost(server: ServerConnection.HttpBase, channel: string, body: string) {

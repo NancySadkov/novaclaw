@@ -71,6 +71,35 @@ describe("what counts as a file on this machine", () => {
     expect(hostFile("/")).toBeUndefined()
     expect(hostFile("/tmp/")).toBeUndefined()
   })
+
+  test("🔴 a path rooted on ANOTHER MACHINE is not a host file", () => {
+    // The href decides which host the INSTANCE opens a connection to, and in the chat log the href
+    // was written by a model repeating untrusted content. Every spelling of the same destination:
+    for (const href of [
+      "//attacker.example/share/chart.png",
+      String.raw`\\attacker.example\share\chart.png`,
+      "file://///attacker.example/share/chart.png",
+      "///attacker.example/share/chart.png",
+    ])
+      expect({ href, file: hostFile(href) }).toEqual({ href, file: undefined })
+  })
+
+  test("the refusal is about the ROOT, not the words — a local path with the same name resolves", () => {
+    // Negative control: without this the test above would pass on a parser that had stopped
+    // recognising files at all.
+    expect(hostFile("/share/chart.png")).toEqual({ directory: "/share", name: "chart.png", image: true })
+    expect(hostFile("C:/share/chart.png")?.name).toBe("chart.png")
+  })
+
+  test("a share is readable when the CALLER says the user chose it", () => {
+    // The Files browser opts in; nothing that reads model output does. The option is what makes the
+    // distinction a property of the call site rather than of a string.
+    expect(hostFile("//fileserver/team/q3.pdf", { remote: true })).toEqual({
+      directory: "//fileserver/team",
+      name: "q3.pdf",
+      image: false,
+    })
+  })
 })
 
 describe("the URL that serves it", () => {
@@ -81,7 +110,9 @@ describe("the URL that serves it", () => {
       image: true,
     })
     // ⚠️ Unencoded, the drive colon truncates the query and the space breaks the segment.
-    expect(url).toBe("http://127.0.0.1:4096/api/fs/read/a%20chart.svg?location%5Bdirectory%5D=C%3A%2Fmy%20data%2Fscratch")
+    expect(url).toBe(
+      "http://127.0.0.1:4096/api/fs/read/a%20chart.svg?location%5Bdirectory%5D=C%3A%2Fmy%20data%2Fscratch",
+    )
   })
 
   test("a trailing slash on the base does not double up", () => {
@@ -138,5 +169,14 @@ describe("addressing the instance the colleague runs on", () => {
 
   test("a path it cannot parse yields an empty href rather than a broken one", () => {
     expect(fileDownloadHref("not-a-path")).toBe("")
+  })
+
+  test("🔴 the chat resolver refuses a remote root; the files browser, where the user chose it, does not", () => {
+    setInstanceBase("http://127.0.0.1:4096")
+    // The one place the two surfaces are DELIBERATELY not the same question, and the asymmetry is the
+    // point: one side's input is a row the user opened, the other side's is a string a model wrote.
+    expect(resolveAgentFile("//fileserver/team/q3.pdf")).toBeUndefined()
+    expect(fileDownloadHref("//fileserver/team/q3.pdf")).toContain("%2F%2Ffileserver%2Fteam")
+    setInstanceBase("")
   })
 })

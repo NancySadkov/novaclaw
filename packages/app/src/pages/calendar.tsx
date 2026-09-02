@@ -115,6 +115,32 @@ export function CalendarPage() {
     const path = rosterCtx()?.sync.data.path
     return scopedDirectory(path)
   })
+  /**
+   * 🔴 **A disabled control that gives no reason is a broken form.**
+   *
+   * Add task, Pause and Resume all need a directory to route their write, and `routingDirectory()`
+   * is `""` both while `GET /path` is still in flight and if it never lands — so three controls
+   * greyed themselves out with nothing on screen to say why, and the only reading available to the
+   * user was *"this page is broken"*. `debug.tsx` sets the standard: name the capability that is
+   * missing, beside the control that needs it.
+   *
+   * ⚠️ Two sentences, because they are two situations and only one of them is the user's to fix. No
+   * connection at all is a different problem from a connected instance that has not yet said which
+   * folder it works in.
+   *
+   * ⚠️ The controls stay DISABLED rather than firing and failing. The write genuinely cannot be
+   * routed, and a button that submits into an early `return` is the silent-failure half of ruling 2
+   * — worse than a disabled one, not better. What was missing was never the button; it was the
+   * sentence. Delete (`del`) is deliberately not gated on this and stays live.
+   */
+  const directoryProblem = createMemo(() => {
+    if (routingDirectory()) return ""
+    if (!conn()) return "Not connected to an instance, so scheduled tasks cannot be added or paused from here."
+    return (
+      "Waiting for this instance to say which folder it works in — Add task, Pause and Resume need it" +
+      " and stay disabled until it answers."
+    )
+  })
   // 🔴 The server context's ONE shared roster (review D8), not a second `listAgents` resource.
   // Two reasons, and the first is the severe one: a rejected `createResource` read from an eager memo
   // reaches the root ErrorBoundary, so a single failed roster fetch replaced the WHOLE UI with the
@@ -413,6 +439,12 @@ export function CalendarPage() {
               ({schedules().length})
             </Show>
           </div>
+          {/* Beside the Pause/Resume buttons it explains, not only beside the form. */}
+          <Show when={directoryProblem()}>
+            <div class="mb-2 text-sm text-v2-text-text-muted" data-slot="calendar-directory-problem">
+              {directoryProblem()}
+            </div>
+          </Show>
           <Switch fallback={<div class="text-sm text-v2-text-text-muted">Loading your scheduled tasks…</div>}>
             <Match when={scheduleListing().kind === "failed"}>
               <div class="text-sm text-v2-state-fg-danger" data-slot="calendar-schedules-failed">
@@ -694,6 +726,12 @@ export function CalendarPage() {
 
           <Show when={error()}>
             <div class="text-sm text-v2-state-fg-danger">{error()}</div>
+          </Show>
+
+          <Show when={directoryProblem()}>
+            <div class="text-sm text-v2-text-text-muted" data-slot="calendar-directory-problem-form">
+              {directoryProblem()}
+            </div>
           </Show>
 
           <div class="flex items-center gap-3">

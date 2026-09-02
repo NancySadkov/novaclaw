@@ -20,6 +20,7 @@ import { requireServerKey } from "@/utils/session-route"
 import type { ServerScope } from "@/utils/server-scope"
 import { sessionExecutions } from "@/utils/session-execution-api"
 import { terminalAttention } from "@/apps/roster-live"
+import { withTransientOwner } from "@/utils/transient-owner"
 
 type NotificationBase = {
   directory?: string
@@ -337,15 +338,26 @@ function createServerNotificationState(input: {
     })
   }
 
-  const lookup = async (directory: string, sessionID?: string) => {
-    if (!sessionID) return undefined
-    const sync = serverSync().ensureDirSyncContext(directory)
-    const session = sync.session.get(sessionID)
-    if (session) return session
-    return sync.session
-      .sync(sessionID)
-      .then(() => sync.session.get(sessionID))
-      .catch(() => undefined)
+  // 🔴 This runs from the SSE flush (`event.listen` -> setTimeout), where NO Solid owner is
+  // current. `ensureDirSyncContext` is refcounted and registers its DECREMENT with `onCleanup`, so
+  // called from here it used to increment a count nothing could ever bring back down: every
+  // idle/exited status and every session error for a directory pinned one more reference, and the
+  // real UI consumer unmounting then decremented to N instead of 0 — so `disableMcp(dir)` never
+  // ran and the directory's sync context was never released. A transient owner disposed when the
+  // lookup settles is the only owner this call site can have; the tab strip's prefetch reached the
+  // same conclusion independently, which is why this is now one named helper rather than two.
+  const lookup = (directory: string, sessionID?: string) => {
+    if (!sessionID) return Promise.resolve(undefined)
+    return withTransientOwner(async () => {
+      // Acquired in the SYNCHRONOUS prefix, before any await — that is what the owner covers.
+      const sync = serverSync().ensureDirSyncContext(directory)
+      const session = sync.session.get(sessionID)
+      if (session) return session
+      return sync.session
+        .sync(sessionID)
+        .then(() => sync.session.get(sessionID))
+        .catch(() => undefined)
+    }).catch(() => undefined)
   }
 
   const viewedInCurrentSession = (directory: string, sessionID?: string) => {

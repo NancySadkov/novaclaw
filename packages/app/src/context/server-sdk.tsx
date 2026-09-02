@@ -10,6 +10,7 @@ import { ServerConnection, useServer } from "./server"
 import { createRefCountMap } from "@/utils/refcount"
 import { useGlobal } from "./global"
 import { ServerScope } from "@/utils/server-scope"
+import { reconnectDelayMs } from "@/utils/reconnect-schedule"
 
 const isAbortError = (error: unknown) =>
   error !== null && typeof error === "object" && "name" in error && error.name === "AbortError"
@@ -60,7 +61,6 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
   type Queued = QueuedServerEvent
   const FLUSH_FRAME_MS = 16
   const STREAM_YIELD_MS = 8
-  const RECONNECT_DELAY_MS = 250
 
   let queue: Queued[] = []
   let buffer: Queued[] = []
@@ -103,6 +103,9 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
   let run: Promise<void> | undefined
   let started = false
   let generation = 0
+  /** Consecutive failures since this stream last DELIVERED anything — the input to the bounded
+   *  retry schedule. Reset by a received item and by an explicit start(), never by a retry. */
+  let reconnectAttempt = 0
   const HEARTBEAT_TIMEOUT_MS = 15_000
   let lastEventAt = Date.now()
   let heartbeat: ReturnType<typeof setTimeout> | undefined
@@ -122,6 +125,9 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
   const start = () => {
     if (started) return run
     started = true
+    // An explicit start (mount, or a pageshow resume the user is watching) is a fresh intent, not a
+    // retry: probe immediately rather than inheriting the previous outage's backed-off delay.
+    reconnectAttempt = 0
     setStreamStatus((s) => (s === "connected" ? s : "connecting"))
     const active = ++generation
     const previous = run
@@ -161,6 +167,7 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
           for await (const event of events.stream) {
             if (!receivedAny) {
               receivedAny = true
+              reconnectAttempt = 0
               setStreamStatus("connected")
             }
             resetHeartbeat()
@@ -192,9 +199,14 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
         }
 
         if (abort.signal.aborted || !started || generation !== active) return
-        // P2: the stream dropped (or never delivered) and retries continue.
+        // P2: the stream dropped (or never delivered) and retries continue — but on a BOUNDED
+        // schedule. A stream that will never be allowed to connect (rotated token, an auth proxy
+        // answering 401, a server that is down because it is overloaded) used to be re-requested
+        // ~4x/s per configured instance, forever; it now settles at the 30s cap. The status stays
+        // "reconnecting" so the banner still escalates its copy by wall clock, which is the honest
+        // measure of a long outage — the retry cadence never was.
         setStreamStatus("reconnecting")
-        await wait(RECONNECT_DELAY_MS)
+        await wait(reconnectDelayMs(reconnectAttempt++))
       }
     })().finally(() => {
       if (run !== current) return

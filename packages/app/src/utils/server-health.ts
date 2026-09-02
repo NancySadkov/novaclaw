@@ -14,6 +14,73 @@ export type ServerHealth = {
   auth?: { required: boolean; source: "stored" | "launcher" | "open" }
 }
 
+/**
+ * The three answers a health probe can give, as ONE value.
+ *
+ * `rejected` is not a degree of `unreachable`: the instance ANSWERED and refused the credentials.
+ * It is fixed with a password and never by waiting, retrying or restarting, so a surface that
+ * collapses the two sends the user to repair a service that is perfectly healthy. Keeping the
+ * distinction in a tagged return rather than in a `reason === "auth"` string compare at each call
+ * site is what stops the next caller from re-collapsing it silently.
+ */
+export type ServerReachability = "ok" | "rejected" | "unreachable"
+
+/** Total over `ServerHealth`: an absent result is an absent answer, i.e. unreachable. */
+export function serverReachability(health: ServerHealth | undefined): ServerReachability {
+  if (!health) return "unreachable"
+  if (health.healthy) return "ok"
+  return health.reason === "auth" ? "rejected" : "unreachable"
+}
+
+/** The i18n key the connection gate's headline uses. */
+export type ConnectionErrorHeadline = "app.server.none" | "app.server.unreachable" | "app.server.rejected"
+
+/** The i18n key the connection gate's subline uses. */
+export type ConnectionErrorDetail =
+  | "app.server.noneHint"
+  | "app.server.retrying"
+  | "app.server.rejectedHint"
+  | "app.connection.stopped.description"
+
+/** How often the gate re-probes while it is showing an outage. */
+export const GATE_PROBE_MS = 1_000
+/** How often it re-probes a REJECTION — slow enough not to hammer, fast enough to clear itself. */
+export const GATE_PROBE_REJECTED_MS = 15_000
+
+/**
+ * The connection gate's whole copy decision, pure — so the combinations are assertable without a
+ * DOM, and so "which sentence does a 401 get" has exactly one answer.
+ *
+ * The retry CADENCE is part of the same decision on purpose. This screen re-probes on a timer, and
+ * a refused credential does not heal by probing: an instance that answered 401 and is asked again
+ * every second is the same self-inflicted hammer as an unbounded reconnect, pointed at a server
+ * that has already given us its answer. So a rejection drops the "Retrying automatically…" promise
+ * and slows the probe to a human-scale interval in ONE step — the sentence and the behaviour cannot
+ * drift apart. It is slowed rather than stopped because the credential may be repaired on the
+ * server side, and this screen must still clear by itself when it is.
+ */
+export function connectionErrorCopy(input: {
+  readonly hasServer: boolean
+  readonly reachability: ServerReachability
+  readonly supervisorGaveUp: boolean
+}): { headline: ConnectionErrorHeadline; detail: ConnectionErrorDetail; probeEveryMs: number } {
+  if (!input.hasServer)
+    return { headline: "app.server.none", detail: "app.server.noneHint", probeEveryMs: GATE_PROBE_MS }
+  if (input.reachability === "rejected")
+    return {
+      headline: "app.server.rejected",
+      detail: "app.server.rejectedHint",
+      probeEveryMs: GATE_PROBE_REJECTED_MS,
+    }
+  if (input.supervisorGaveUp)
+    return {
+      headline: "app.server.unreachable",
+      detail: "app.connection.stopped.description",
+      probeEveryMs: GATE_PROBE_MS,
+    }
+  return { headline: "app.server.unreachable", detail: "app.server.retrying", probeEveryMs: GATE_PROBE_MS }
+}
+
 interface CheckServerHealthOptions {
   timeoutMs?: number
   signal?: AbortSignal

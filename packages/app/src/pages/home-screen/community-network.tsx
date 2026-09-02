@@ -1,6 +1,6 @@
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
-import { For, Show, createEffect, createMemo, createResource, createSignal, type Component } from "solid-js"
+import { For, Match, Show, Switch, createEffect, createMemo, createSignal, type Component } from "solid-js"
 import { CommunityAddress } from "@novaclaw/core/community/address"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useGlobal } from "@/context/global"
@@ -39,6 +39,8 @@ import {
   communityTransportState,
 } from "@/utils/community-api"
 import { instanceIdentity } from "@/utils/identity-api"
+import { createSettledResource } from "@/utils/settled-resource"
+import { createListState } from "@/utils/list-state"
 
 /**
  * The instance-hosted community — `notes/spec/community-p2p.md`.
@@ -58,6 +60,36 @@ import { instanceIdentity } from "@/utils/identity-api"
  */
 
 const DEFAULT_CHANNEL = "#NovaClaw"
+
+/**
+ * 🔴 **"We could not ask" is its own sentence, and it is never the empty one.**
+ *
+ * Ruling 2 (`notes/reports/decisions-v0.2.0.md`): *an unavailable subsystem names itself instead of
+ * rendering empty.* Every list on this panel used to answer a failed read with the words it uses for
+ * a real absence — *"People you know (0)"*, an offers section saying nobody is offering anything, a
+ * channel switcher with no channels in it. All of those are claims about the community; none of them
+ * was known.
+ *
+ * ⚠️ It says "not the same as having none" out loud rather than leaving the reader to infer it. The
+ * whole confusion this closes is that the two look identical, so the sentence that separates them
+ * has to be the one on screen.
+ *
+ * ⚠️ Danger red and a retry, because it is actionable: the endpoints here are all on the user's own
+ * instance, so the usual cause is an older build or a subsystem that has not started, and asking
+ * again is the first thing worth doing.
+ */
+const Unreadable: Component<{ readonly what: string; readonly retry?: () => void }> = (props) => (
+  <div class="flex flex-wrap items-center gap-2" data-slot="community-unreadable">
+    <span class="text-[11px] leading-snug text-v2-state-fg-danger">
+      Could not read {props.what} from this instance — which is not the same as having none.
+    </span>
+    <Show when={props.retry}>
+      <ButtonV2 variant="ghost" size="small" onClick={() => props.retry?.()}>
+        Try again
+      </ButtonV2>
+    </Show>
+  </div>
+)
 
 export const CommunityNetwork: Component = () => {
   const server = useServer()
@@ -81,9 +113,9 @@ export const CommunityNetwork: Component = () => {
   const activeSync = () => serverCtx()?.sync ?? sync()
   const scratchDir = createMemo(() => (activeSync().data.path as { scratchDir?: string } | undefined)?.scratchDir)
 
-  const [identity] = createResource(connection, (value) => instanceIdentity(value.http))
-  const [contacts, contactActions] = createResource(connection, (value) => communityContacts(value.http))
-  const [channels, channelActions] = createResource(connection, (value) => communityChannels(value.http))
+  const [identity] = createSettledResource(connection, (value) => instanceIdentity(value.http))
+  const [contacts, contactActions] = createSettledResource(connection, (value) => communityContacts(value.http))
+  const [channels, channelActions] = createSettledResource(connection, (value) => communityChannels(value.http))
   /**
    * Channels the user left, whose messages this instance still holds.
    *
@@ -92,7 +124,7 @@ export const CommunityNetwork: Component = () => {
    * their own disk. Discovering channels never seen before is a different problem and needs the
    * network; this is the half already here.
    */
-  const [archived, archivedActions] = createResource(connection, (value) =>
+  const [archived, archivedActions] = createSettledResource(connection, (value) =>
     communityArchivedChannels(value.http),
   )
   /**
@@ -102,7 +134,7 @@ export const CommunityNetwork: Component = () => {
    * answer an unknown topic exactly like an empty one so nobody can map an instance's rooms, and
    * this must not undo that through another door.
    */
-  const [nearby, nearbyActions] = createResource(connection, (value) => communityNearbyChannels(value.http))
+  const [nearby, nearbyActions] = createSettledResource(connection, (value) => communityNearbyChannels(value.http))
 
   /**
    * 1:1 chat.
@@ -114,10 +146,10 @@ export const CommunityNetwork: Component = () => {
    * the connection.
    */
   const [talkingTo, setTalkingTo] = createSignal("")
-  const [conversations, conversationActions] = createResource(connection, (value) =>
+  const [conversations, conversationActions] = createSettledResource(connection, (value) =>
     communityConversations(value.http),
   )
-  const [dms, dmActions] = createResource(
+  const [dms, dmActions] = createSettledResource(
     () => {
       const value = connection()
       const peer = talkingTo()
@@ -134,7 +166,7 @@ export const CommunityNetwork: Component = () => {
    * exists, serves what it says, or will still be there in an hour. Those are separate questions and
    * nothing here answers them.
    */
-  const [offers, offerActions] = createResource(connection, (value) => communityOffers(value.http))
+  const [offers, offerActions] = createSettledResource(connection, (value) => communityOffers(value.http))
   /**
    * 🔴 What the USER is currently offering. Found missing by publishing one and watching the panel
    * not change: `offers` lists what PEERS advertise and deliberately excludes our own, so a user
@@ -147,7 +179,7 @@ export const CommunityNetwork: Component = () => {
    * must not be shown the same way — never asked deserves the warning, switched-off deserves a
    * switch, and airgapped deserves neither, because flipping a community setting would not change it.
    */
-  const [participation, participationActions] = createResource(connection, (value) =>
+  const [participation, participationActions] = createSettledResource(connection, (value) =>
     communityParticipation(value.http),
   )
   const [switching, setSwitching] = createSignal(false)
@@ -194,7 +226,7 @@ export const CommunityNetwork: Component = () => {
     await setParticipation({ announce: typed })
   }
 
-  const [myOffer, myOfferActions] = createResource(connection, (value) => communityMyOffer(value.http))
+  const [myOffer, myOfferActions] = createSettledResource(connection, (value) => communityMyOffer(value.http))
   const [offerEndpoint, setOfferEndpoint] = createSignal("")
   const [offerModels, setOfferModels] = createSignal("")
   const [offerPrice, setOfferPrice] = createSignal("")
@@ -268,7 +300,7 @@ export const CommunityNetwork: Component = () => {
    * tool cannot reach these in either direction — not to write one, and not to read which words to
    * avoid.
    */
-  const [filters, filterActions] = createResource(connection, (value) => communityFilters(value.http))
+  const [filters, filterActions] = createSettledResource(connection, (value) => communityFilters(value.http))
   const [filterDraft, setFilterDraft] = createSignal("")
 
   const addFilter = async () => {
@@ -330,7 +362,7 @@ export const CommunityNetwork: Component = () => {
     return joined[0]?.name ?? DEFAULT_CHANNEL
   })
 
-  const [history, historyActions] = createResource(
+  const [history, historyActions] = createSettledResource(
     () => {
       const value = connection()
       return value === undefined ? undefined : ([value, channel()] as const)
@@ -346,7 +378,10 @@ export const CommunityNetwork: Component = () => {
    * the same absence, disagreeing. The page read 200 either way; what happened to them afterwards is
    * the other line's job.
    */
-  const pageRead = createMemo(() => (history()?.messages.length ?? 0) + (history()?.hidden ?? 0))
+  // ⚠️ `?.messages?.length`, not `?.messages.length`. `?? 0` guards a missing HISTORY; it does
+  // nothing for a history whose `messages` is absent, and the throw is in the RENDER, which is the
+  // one place left that can still reach the root ErrorBoundary now that the reads reject cleanly.
+  const pageRead = createMemo(() => (history()?.messages?.length ?? 0) + (history()?.hidden ?? 0))
 
   /**
    * 🔴 Catch up on what the channel held before we got here.
@@ -376,7 +411,22 @@ export const CommunityNetwork: Component = () => {
       })
   })
 
-  const [transport] = createResource(connection, (value) => communityTransportState(value.http))
+  const [transport] = createSettledResource(connection, (value) => communityTransportState(value.http))
+
+  /**
+   * 🔴 The five-arm reading each list on this panel renders from — `idle | loading | failed | empty
+   * | loaded`, where `[]` is the ONLY spelling of empty.
+   *
+   * ⚠️ Every one of these lists previously rendered `resource() ?? []`, and every `?? []` in a viewer
+   * is the defect written out: it maps "the read failed" onto the value that means "there is nothing
+   * here", and the sentence underneath then states the second as a fact. The reading is computed
+   * once, here, so a branch below cannot invent a sixth answer.
+   */
+  const contactListing = createListState(contacts)
+  const channelListing = createListState(channels)
+  const offerListing = createListState(offers)
+  const filterListing = createListState(filters)
+  const conversationListing = createListState(conversations)
 
   /**
    * ⚠️ Read from the instance, never asserted here. This copy used to say "still being built"
@@ -392,6 +442,10 @@ export const CommunityNetwork: Component = () => {
    */
   const status = createMemo(() => {
     const state = transport()
+    // 🔴 A failed read is NOT a slow one. `undefined` used to cover both, so an instance that could
+    // not answer sat on "Checking…" for as long as the panel was open — a spinner-shaped claim that
+    // an answer is still coming, next to a grey dot that reads as "not connected yet".
+    if (transport.failed) return "Could not check the connection."
     if (state === undefined) return language.t("community.status.checking")
     /**
      * 🔴 "Known", not "Connected" — because that is what the number IS. `state()` counts distinct
@@ -459,6 +513,13 @@ export const CommunityNetwork: Component = () => {
    */
   const emptyReason = createMemo(() => {
     const state = transport()
+    // ⚠️ Every branch below names a state the instance REPORTED. When it reported nothing, saying
+    // any of them would be inventing the reason — the one thing this memo exists not to do.
+    if (transport.failed)
+      return (
+        "This instance did not say whether its network is running, so there is no reason to give" +
+        " for an empty room."
+      )
     if (state?.kind === "online") return language.t("community.empty.online")
     if (state?.kind === "off" && state.reason === "airgap")
       return language.t("community.empty.airgap")
@@ -838,9 +899,60 @@ export const CommunityNetwork: Component = () => {
       </section>
   )
 
+  /**
+   * 🔴 **THE DOOR, and it now has four answers instead of two.**
+   *
+   * The gate was `participation() === undefined || participation()?.participating`, and `undefined`
+   * was doing two incompatible jobs: *the read has not landed yet* and — because the api layer
+   * swallowed rejections into `undefined` — *the read failed*. Both took the JOINED branch, so an
+   * instance that could not be asked was shown the full community panel with a **"Turn off"** button
+   * on it. AGENTS.md: **joining is a decision, not a default**, and a screen that says you joined is
+   * making that decision on the user's behalf and then reporting it back to them as history.
+   *
+   * ⚠️ The `failed` arm does not fall back to the consent screen either. Telling somebody they have
+   * not joined is the same size of claim as telling them they have; what is true is that we asked
+   * and got nothing, so that is what it says, with the one control that can change the answer.
+   *
+   * ⚠️ `loading` is its own arm for the same reason — a panel offering "Turn off" for the half second
+   * before the answer arrives is a smaller version of the same lie, and it was the shape of the
+   * original early-`return` bug this gate was written to fix.
+   */
   return (
-    <Show when={participation() === undefined || participation()?.participating} fallback={notJoined()}>
-    <section class="flex flex-col gap-3" data-slot="community-network">
+    <Switch fallback={notJoined()}>
+    <Match when={participation.failed}>
+      <section class="flex flex-col gap-3" data-slot="community-network-unreadable">
+        <div class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-v2-text-text-base">{language.t("community.title")}</span>
+          <span class="text-[12px] leading-snug text-v2-state-fg-danger">
+            This instance did not answer when asked whether it has joined the community, so nothing here can
+            describe it. Nothing has been joined, switched on, or announced on your behalf.
+          </span>
+          <span class="mt-1 text-[11px] leading-snug text-v2-text-text-muted">
+            An instance older than this app does not have these endpoints at all, which is the usual reason.
+          </span>
+          <div class="mt-2 flex items-center gap-2">
+            <ButtonV2 appearance="base" onClick={() => void participationActions.refetch()}>
+              Try again
+            </ButtonV2>
+          </div>
+        </div>
+      </section>
+    </Match>
+    <Match when={participation.loading || participation.idle}>
+      <section class="flex flex-col gap-3" data-slot="community-network-checking">
+        <div class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-v2-text-text-base">{language.t("community.title")}</span>
+          <span class="text-[12px] leading-snug text-v2-text-text-muted">
+            Checking whether this instance has joined…
+          </span>
+        </div>
+      </section>
+    </Match>
+    <Match when={participation()?.participating}>
+    {/* ⚠️ Its OWN slot. The not-joined screen is also `data-slot="community-network"`, so the two
+        opposite answers were indistinguishable to anything selecting on the panel — including a
+        test asserting this instance is not being described as a member. */}
+    <section class="flex flex-col gap-3" data-slot="community-network-joined">
       <div class="flex flex-col gap-1">
         <span class="text-sm font-medium text-v2-text-text-base">{language.t("community.title")}</span>
         <span class="text-[12px] leading-snug text-v2-text-text-muted">
@@ -879,24 +991,50 @@ export const CommunityNetwork: Component = () => {
       <div class="flex flex-col gap-1 rounded-xl bg-v2-background-bg-layer-02 px-3 py-3">
         <span class="text-[12px] font-medium text-v2-text-text-base">{language.t("community.key.title")}</span>
         {/* Selectable, because the only thing a user does with this is hand it to someone. */}
-        <span class="select-text break-all font-mono text-[11px] text-v2-text-text-muted">
-          {identity()?.networkID ?? "…"}
-        </span>
+        {/* ⚠️ The ellipsis is a LOADING mark and nothing else. A failed identity read left it on
+            screen for ever, so the one value a person is here to copy looked like it was still on
+            its way — and there is no wrong-but-harmless version of this field, because whatever
+            they copy out of it is what a peer will use to reach them. */}
+        <Show
+          when={!identity.failed}
+          fallback={
+            <span class="text-[11px] leading-snug text-v2-state-fg-danger" data-slot="community-key-unreadable">
+              Could not read this instance's key. Do not hand out anything from this box until it loads.
+            </span>
+          }
+        >
+          <span class="select-text break-all font-mono text-[11px] text-v2-text-text-muted">
+            {identity()?.networkID ?? "…"}
+          </span>
+        </Show>
         <span class="text-[11px] leading-snug text-v2-text-text-muted">
           {language.t("community.key.explain")}
         </span>
       </div>
 
       <div class="flex flex-col gap-2">
+        {/* 🔴 The count is only printed when it was ANSWERED. "People you know (0)" over a failed
+            read is the headline lie of this panel: a number is the most believed thing on a screen,
+            and this one was computed from `?? []`. */}
         <span class="text-[12px] font-medium text-v2-text-text-base">
-          People you know ({contacts()?.length ?? 0})
+          People you know
+          <Show when={contactListing().kind === "loaded" || contactListing().kind === "empty"}>
+            {` (${contacts()?.length ?? 0})`}
+          </Show>
         </span>
         <Show
-          when={(contacts()?.length ?? 0) > 0}
+          when={contactListing().kind === "loaded"}
           fallback={
-            <span class="text-[11px] leading-snug text-v2-text-text-muted">
-              {language.t("community.contacts.empty")}
-            </span>
+            <Switch>
+              <Match when={contactListing().kind === "failed"}>
+                <Unreadable what="the people you know" retry={() => void contactActions.refetch()} />
+              </Match>
+              <Match when={contactListing().kind === "empty"}>
+                <span class="text-[11px] leading-snug text-v2-text-text-muted">
+                  {language.t("community.contacts.empty")}
+                </span>
+              </Match>
+            </Switch>
           }
         >
           <For each={contacts() ?? []}>
@@ -1146,11 +1284,18 @@ export const CommunityNetwork: Component = () => {
       <div class="flex flex-col gap-1 rounded-xl bg-v2-background-bg-layer-02 px-3 py-3">
         <span class="text-[12px] font-medium text-v2-text-text-base">{language.t("community.offers.title")}</span>
         <Show
-          when={(offers() ?? []).length > 0}
+          when={offerListing().kind === "loaded"}
           fallback={
-            <span class="text-[11px] leading-snug text-v2-text-text-muted">
-              {language.t("community.offers.empty")}
-            </span>
+            <Switch>
+              <Match when={offerListing().kind === "failed"}>
+                <Unreadable what="what people are offering" retry={() => void offerActions.refetch()} />
+              </Match>
+              <Match when={offerListing().kind === "empty"}>
+                <span class="text-[11px] leading-snug text-v2-text-text-muted">
+                  {language.t("community.offers.empty")}
+                </span>
+              </Match>
+            </Switch>
           }
         >
           <For each={offers() ?? []}>
@@ -1212,9 +1357,22 @@ export const CommunityNetwork: Component = () => {
           {/* ⚠️ Stated BEFORE the controls. Read from the OWNER's endpoint: reading the peer door
               here meant an airgap or a stricter rule silently turned "you are offering X" into "you
               are not offering anything", which is a different sentence and a false one. */}
+          {/* ⚠️ The same trap as the panel door, one section down: `myOffer()` was `undefined` both
+              when this instance offers nothing and when it could not be asked, and the fallback
+              states the first as fact. "You are not offering anything" to somebody who IS offering
+              their machine is the exact failure this endpoint was added to close. */}
           <Show
-            when={myOffer()?.offer}
-            fallback={<span class="text-[11px] text-v2-text-text-muted">{language.t("community.offers.mineEmpty")}</span>}
+            when={!myOffer.failed && myOffer()?.offer}
+            fallback={
+              <Show
+                when={myOffer.failed}
+                fallback={
+                  <span class="text-[11px] text-v2-text-text-muted">{language.t("community.offers.mineEmpty")}</span>
+                }
+              >
+                <Unreadable what="what you are offering" retry={() => void myOfferActions.refetch()} />
+              </Show>
+            }
           >
             {(mine) => (
               <Show
@@ -1281,6 +1439,14 @@ export const CommunityNetwork: Component = () => {
         </div>
       </div>
 
+      {/* ⚠️ A failed conversation read used to remove the whole DM section from the page. A section
+          that is not there says "you have never messaged anyone" more strongly than any sentence
+          could, and it is the one claim on this panel a user can check and find wrong. */}
+      <Show when={conversationListing().kind === "failed"}>
+        <div class="rounded-xl bg-v2-background-bg-layer-02 px-3 py-3">
+          <Unreadable what="your conversations" retry={() => void conversationActions.refetch()} />
+        </div>
+      </Show>
       <Show when={(conversations() ?? []).length > 0 || talkingTo() !== ""}>
         <div class="flex flex-col gap-1 rounded-xl bg-v2-background-bg-layer-02 px-3 py-3">
           <span class="text-[12px] font-medium text-v2-text-text-base">{language.t("community.dm.title")}</span>
@@ -1298,6 +1464,11 @@ export const CommunityNetwork: Component = () => {
             </For>
           </div>
           <Show when={talkingTo() !== ""}>
+            {/* ⚠️ An unread conversation is not a blank one. Rendering nothing here would tell the
+                user this person has never written to them, over a history sitting on this disk. */}
+            <Show when={dms.failed}>
+              <Unreadable what="this conversation" retry={() => void dmActions.refetch()} />
+            </Show>
             <For each={dms() ?? []}>
               {(message) => (
                 <div class="flex flex-col gap-0.5 border-t border-white/5 pt-2 first:border-0 first:pt-0">
@@ -1340,6 +1511,13 @@ export const CommunityNetwork: Component = () => {
           exactly one room forever is a mailing list — the whole point of a name being nothing but a
           hash is that anyone can make a room without asking us for it.
         */}
+        {/* 🔴 With no channel list, `channel()` falls back to `#NovaClaw` and the switcher renders
+            no buttons — a screen that states, in layout rather than in words, that this instance is
+            in exactly one room. Said out loud instead, because the fallback below it is still what
+            the user is looking at. */}
+        <Show when={channelListing().kind === "failed"}>
+          <Unreadable what="the channels you are in" retry={() => void channelActions.refetch()} />
+        </Show>
         <div class="flex flex-wrap items-center gap-1">
           <For each={channels() ?? []}>
             {(entry) => (
@@ -1382,11 +1560,18 @@ export const CommunityNetwork: Component = () => {
           </Show>
         </div>
         <Show
-          when={(history()?.messages.length ?? 0) > 0}
+          when={!history.failed && (history()?.messages?.length ?? 0) > 0}
           fallback={
             /* ⚠️ Says WHY it is empty, in the INSTANCE's terms. "No messages" would read as a
-               broken screen, and a hardcoded reason would misreport an airgapped instance. */
-            <span class="text-[11px] leading-snug text-v2-text-text-muted">{emptyReason()}</span>
+               broken screen, and a hardcoded reason would misreport an airgapped instance.
+               🔴 And it only says it when the room ANSWERED — a failed history read reaching this
+               branch borrowed a reason for a silence it never established. */
+            <Show
+              when={history.failed}
+              fallback={<span class="text-[11px] leading-snug text-v2-text-text-muted">{emptyReason()}</span>}
+            >
+              <Unreadable what={`the messages in ${channel()}`} retry={() => void historyActions.refetch()} />
+            </Show>
           }
         >
           <For each={history()?.messages ?? []}>
@@ -1440,6 +1625,12 @@ export const CommunityNetwork: Component = () => {
         <div class="mt-2 flex flex-col gap-1 border-t border-white/5 pt-2">
           <div class="flex flex-wrap items-center gap-1">
             <span class="text-[11px] text-v2-text-text-muted">{language.t("community.filters.title")}</span>
+            {/* ⚠️ These are the user's OWN rules, and an unread list renders as no rules at all —
+                so a person could add a word they have already hidden, or believe a rule they set
+                was lost. */}
+            <Show when={filterListing().kind === "failed"}>
+              <Unreadable what="the words you have hidden" retry={() => void filterActions.refetch()} />
+            </Show>
             <For each={filters() ?? []}>
               {(pattern) => (
                 <ButtonV2 variant="ghost" size="small" onClick={() => void removeFilter(pattern)}>
@@ -1471,6 +1662,20 @@ export const CommunityNetwork: Component = () => {
           what discovery missed rather than the front door. These are rooms whose messages are on
           this disk right now — the user has already met them.
         */}
+        {/* ⚠️ Both discovery lists are hidden when empty, which is right — and identical to being
+            hidden when the read failed, which is not. One line covers the pair: what is withheld
+            here is a route back into rooms whose messages are already on this disk. */}
+        <Show when={nearby.failed || archived.failed}>
+          <div class="mt-2 border-t border-white/5 pt-2">
+            <Unreadable
+              what="the channels you could rejoin"
+              retry={() => {
+                void nearbyActions.refetch()
+                void archivedActions.refetch()
+              }}
+            />
+          </div>
+        </Show>
         <Show when={(nearby() ?? []).length > 0}>
           <div class="mt-2 flex flex-col gap-1 border-t border-white/5 pt-2">
             <span class="text-[11px] text-v2-text-text-muted">
@@ -1525,6 +1730,7 @@ export const CommunityNetwork: Component = () => {
         </span>
       </div>
     </section>
-    </Show>
+    </Match>
+    </Switch>
   )
 }

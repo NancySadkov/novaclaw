@@ -109,7 +109,6 @@ const LEDGER: { resources: Record<string, number>; folds: Record<string, number>
     "pages/debug.tsx": 5,
     "pages/directory-layout.tsx": 1,
     "pages/files.tsx": 3,
-    "pages/home-screen/community-network.tsx": 13,
     "pages/memory-graph.tsx": 3,
     "pages/new-session.tsx": 1,
     "pages/recipes.tsx": 1,
@@ -343,7 +342,14 @@ describe("the settled-resource ledger", () => {
     expect(Object.keys(found.resources).length).toBeGreaterThan(10)
     expect(Object.keys(found.folds).length).toBeGreaterThan(5)
     // The six viewers this ledger opened with are converted, and must stay converted.
-    for (const converted of ["pages/trash.tsx", "pages/calendar.tsx", "pages/notes.tsx"])
+    for (const converted of [
+      "pages/trash.tsx",
+      "pages/calendar.tsx",
+      "pages/notes.tsx",
+      // The largest single conversion in the tree — thirteen bare reads in one file, every one of
+      // them behind an api helper that swallowed its own rejection into a plausible empty value.
+      "pages/home-screen/community-network.tsx",
+    ])
       expect(found.resources[converted], `${converted} went back to a bare createResource`).toBeUndefined()
   })
 })

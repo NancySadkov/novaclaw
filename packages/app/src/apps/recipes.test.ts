@@ -199,7 +199,10 @@ describe("toView over every state the list and detail have to render", () => {
   })
 
   test("search and sort work on the words a person can actually see", () => {
-    const views = sortViews([toView(recipe({ slug: "b", name: "Zebra" })), toView(recipe({ slug: "a", name: "Apple" }))])
+    const views = sortViews([
+      toView(recipe({ slug: "b", name: "Zebra" })),
+      toView(recipe({ slug: "a", name: "Apple" })),
+    ])
     expect(views.map((view) => view.name)).toEqual(["Apple", "Zebra"])
     expect(filterViews(views, "zeb").map((view) => view.name)).toEqual(["Zebra"])
     expect(filterViews(views, "")).toHaveLength(2)
@@ -368,11 +371,16 @@ describe("what a finished run is judged on", () => {
 
 // ═════════════════════════════════════════════════════════════════════════════════════════════════
 describe("THE FOUR VERDICTS — and keeping them apart is the feature", () => {
-  const of = (verdict: Verdict, checks: VerifyResultInfo["checks"] = []) => describeVerdict(receipt({ verdict, checks }))
+  const of = (verdict: Verdict, checks: VerifyResultInfo["checks"] = []) =>
+    describeVerdict(receipt({ verdict, checks }))
 
   const all = () => [
-    of("working", [{ declared: "pi.txt", outcome: "met", path: "pi.txt", checked: "exists and is not blank", bytes: 120 }]),
-    of("not-working", [{ declared: "pi.txt", outcome: "unmet", path: "pi.txt", checked: "there is nothing at that name" }]),
+    of("working", [
+      { declared: "pi.txt", outcome: "met", path: "pi.txt", checked: "exists and is not blank", bytes: 120 },
+    ]),
+    of("not-working", [
+      { declared: "pi.txt", outcome: "unmet", path: "pi.txt", checked: "there is nothing at that name" },
+    ]),
     of("not-available", [
       { declared: "pi.txt", outcome: "unknown", reason: "not-applicable", checked: "gemma cannot call tools" },
     ]),
@@ -586,6 +594,58 @@ describe("import — a stranger's file, previewed before it lands", () => {
   test("the YAML block form of a declaration is read too", () => {
     const preview = previewImport(["---", "produces:", "  - a.csv", "  - b.csv", "---", "", "body"].join("\n"))
     expect(preview.produces).toEqual(["a.csv", "b.csv"])
+    // 🔴 Half a control until this line: asserting only `produces` let the SAME two lines be reported
+    // as unused on the same screen. A preview that reads a line must not also disown it.
+    expect(preview.unmodelled).toEqual([])
+  })
+
+  test("🔴 a line the preview READ is never also listed as one it does not use", () => {
+    // The failing shape, stated against the INPUT rather than against a second derivation: every
+    // fact the screen shows as a need or a product came from a line of this file, so no line that
+    // produced one may appear in the sentence that names what NovaClaw ignores.
+    const preview = previewImport(
+      [
+        "---",
+        "name: Blocked at the door",
+        "needs:",
+        "  - gcc",
+        "  - python3",
+        "produces:",
+        "  - out.txt",
+        "author: someone else",
+        "---",
+        "",
+        "Build the thing.",
+      ].join("\n"),
+    )
+    expect(preview.needs).toEqual(["gcc", "python3"])
+    expect(preview.produces).toEqual(["out.txt"])
+    // Written as a relation, not a literal: it fails for any value that is claimed twice.
+    const claimed = [...preview.needs, ...preview.produces]
+    for (const fact of claimed) expect(preview.unmodelled.join(" · ")).not.toContain(fact)
+    // …and the one line that genuinely is unused is still reported, so this is not green by silence.
+    expect(preview.unmodelled).toEqual(["author: someone else"])
+  })
+
+  test("a block under a field this build does NOT model stays reported, item lines and all", () => {
+    // The mirror of the case above: consumption is per-field, so `- alice` under `authors:` is not
+    // consumed by anything and is exactly the kind of line the sentence exists to name.
+    const preview = previewImport(
+      ["---", "authors:", "  - alice", "  - bob", "needs: gcc", "---", "", "body"].join("\n"),
+    )
+    expect(preview.needs).toEqual(["gcc"])
+    expect(preview.unmodelled).toEqual(["authors:", "- alice", "- bob"])
+  })
+
+  test("a mid-block line that is not an item closes the block, and both spellings compose", () => {
+    const preview = previewImport(
+      ["---", "needs: make", "produces:", "  - one.txt", "description: d", "  - stray", "---", "", "body"].join("\n"),
+    )
+    expect(preview.needs).toEqual(["make"])
+    expect(preview.produces).toEqual(["one.txt"])
+    expect(preview.description).toBe("d")
+    // `description: d` closed the block, so the orphaned item belongs to nothing and is said.
+    expect(preview.unmodelled).toEqual(["- stray"])
   })
 
   test("a file with no frontmatter at all is a valid recipe", () => {

@@ -583,6 +583,11 @@ export const dict = {
   "app.server.none": "No instance connected",
   "app.server.noneHint":
     "NovaClaw's instance isn't running yet. It usually starts by itself — this screen will clear as soon as it comes up.",
+  // A 401/403 is an ANSWER, not an outage. Saying "could not reach" here sent people to restart an
+  // instance that was running perfectly and only wanted a different password.
+  "app.server.rejected": "Could not sign in to {{server}}",
+  "app.server.rejectedHint":
+    "The instance is running, but it refused the saved username or password. Update the credentials for this instance, or pick another one below.",
   "app.connection.reconnecting": "Connection lost — reconnecting…",
   "app.connection.stillTrying": "Still trying. Your work is safe; this clears by itself once the instance is back.",
   "app.connection.restored": "Reconnected",
@@ -775,6 +780,12 @@ export const dict = {
   "error.page.action.retry": "Try again",
   "error.page.action.restart": "Restart",
   "error.page.action.exportLogs": "Export Logs",
+  // A recovery action that fails answers in a sentence. The chain it produced — stack frames and all
+  // — goes into the "Show technical details" box instead of into the body of the page, because this
+  // is the screen a person reaches after something has already broken.
+  "error.page.action.exportLogs.failed":
+    "Could not export the logs. Open Show technical details below for what went wrong.",
+  "error.page.details.actionFailure": "While exporting the logs:",
   "error.page.circular": "[Circular]",
   "error.page.report.prefix": "Please report this error to the NovaClaw team",
   "error.page.report.discord": "on Discord",
@@ -3112,4 +3123,13 @@ export const dict = {
   "skills.sources.title": "Extra sources",
   "skills.sources.note":
     "This list decides which skills exist at all; each skill's own switches decide when it is offered.",
+
+  // The composer, when a read it depends on did not answer. Each of these replaces a sentence that
+  // would otherwise be false: an empty message box that looks like "you had no draft", and a
+  // messenger section that says "you have no accounts" over a request that never landed.
+  "prompt.draft.unavailable":
+    "Your saved draft for this chat could not be read, so the box starts empty. Anything you type here is still saved as usual.",
+  "prompt.remote.unavailable":
+    "NovaClaw could not reach the messenger service, so it cannot say which chat drives this one. Nothing has changed — try again in a moment.",
+  "prompt.remote.checking": "Checking your messenger accounts…",
 }

@@ -431,7 +431,8 @@ export function createPromptInputController(input: {
    * ⚠️ This exists so the section's empty state and its outage stay two different facts. The panel
    * renders `accounts.length === 0` as *"No messenger accounts yet — add one in Settings"*, which is
    * a false sentence when the request never landed — and the same is true of an absent `binding`,
-   * which would claim this chat drives nothing when we simply could not ask.
+   * which would claim this chat drives nothing when we simply could not ask. `RemoteChatSection`
+   * branches on this reading before it reaches either sentence.
    *
    * `remoteDrivers` is deliberately NOT counted: a missing driver list costs a display NAME, and
    * `remoteDriverName` already falls back to the id, so its failure is a degradation and not a lie.
@@ -441,7 +442,9 @@ export function createPromptInputController(input: {
     if (remoteAccounts.loading || remoteBindings.loading) return "loading"
     return "ready"
   }
-  const remoteCurrent = (): ComposerRemoteChatState & { readonly availability: "ready" | "loading" | "failed" } => {
+  // `availability` is part of `ComposerRemoteChatState` itself now — the panel reads it, so the
+  // intersection that used to widen the return type here is gone and the field is checked.
+  const remoteCurrent = (): ComposerRemoteChatState => {
     const id = input.sessionID()
     const accountRows = remoteAccounts() ?? []
     const bindingRows = remoteBindings() ?? []
