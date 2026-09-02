@@ -93,6 +93,17 @@ const makeSessionMock = () => {
           ? Effect.succeed({ id: "ses_alpha", title: "Fix the login bug", location: { directory: "." } } as never)
           : Effect.fail({ _tag: "Session.NotFoundError" } as never),
       ),
+    // `revert` is a nested OBJECT on the service, not a method, so the partial-mock inference that
+    // stubs absent functions cannot supply it — omitting it is a type error, not a silent hole.
+    // Declared rather than cast away with `as never` (which is how the sibling suite escapes it), so
+    // that a member added to `revert` later is a typecheck failure here instead of a mock that
+    // quietly answers for a surface it no longer covers. Nothing in this file touches it; if
+    // something starts to, it dies loudly rather than returning a plausible value.
+    revert: {
+      stage: () => Effect.die("account-safety: revert.stage is not part of this test"),
+      clear: () => Effect.die("account-safety: revert.clear is not part of this test"),
+      commit: () => Effect.die("account-safety: revert.commit is not part of this test"),
+    } as never,
   })
   return { prompts, layer }
 }
@@ -261,7 +272,15 @@ const ircSession = (factory: IrcSocketFactory, push: (...lines: string[]) => voi
       const ids: string[] = []
       yield* connection.inbound.pipe(
         Stream.take(count),
-        Stream.runForEach((event) => Effect.sync(() => ids.push(event.messageID))),
+        // `InboundEvent` is a union and only some arms carry an id — a `member` or `presence` event
+        // has none. Narrowing rather than casting keeps this honest: if the driver ever emits a
+        // non-message arm here the count assertion fails loudly instead of collecting `undefined`.
+        Stream.runForEach((event) =>
+          Effect.sync(() => {
+            if (event.kind === "message" || event.kind === "edited" || event.kind === "deleted")
+              ids.push(event.messageID)
+          }),
+        ),
       )
       return ids
     }),

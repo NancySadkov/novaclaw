@@ -1451,6 +1451,25 @@ export const EVENTS = {
     content: "none",
     file: "packages/core/src/messenger/gateway.ts",
   },
+  /**
+   * A stranger sent a command and was answered with SILENCE rather than a refusal.
+   *
+   * Principle 9(b) — never cold-start — makes a reply to someone we have no binding with an
+   * outbound we did not owe, and a refusal is still an outbound: it is what let one stranger
+   * looping a slash command hold the single global hand and stop every other account's traffic.
+   * `/pair` is the one exception and does not reach here.
+   */
+  "messenger.command.stranger.ignored": {
+    level: "info",
+    message: "messenger: a command from a stranger was ignored — answering one is still an outbound",
+    attributes: {
+      "messenger.account": "id",
+      "messenger.chat": "text",
+      "messenger.command": "text",
+    },
+    content: "user",
+    file: "packages/core/src/messenger/gateway.ts",
+  },
   /** An inbound message is refused because the durable route could not be read. */
   "messenger.inbound.route.rejected": {
     level: "warn",
