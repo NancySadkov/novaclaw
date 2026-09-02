@@ -1,5 +1,3 @@
-import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
-import { Icon } from "@novaclaw/ui/v2/icon"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
 import { Popover } from "@novaclaw/ui/popover"
@@ -9,71 +7,10 @@ import { ServerConnection, useServer } from "@/context/server"
 import { useServerSDK } from "@/context/server-sdk"
 import { useSync } from "@/context/sync"
 import { useGlobal } from "@/context/global"
+import { STATUS_DOT_CLASS, statusDotTone } from "./status-popover-dot"
 
 const Body = lazy(() => import("./status-popover-body").then((x) => ({ default: x.StatusPopoverBody })))
 const ServerBody = lazy(() => import("./status-popover-body").then((x) => ({ default: x.StatusPopoverServerBody })))
-
-export function StatusPopover() {
-  const language = useLanguage()
-  const server = useServer()
-  const global = useGlobal()
-  const sync = useSync()
-  const [shown, setShown] = createSignal(false)
-  const ready = createMemo(() => global.servers.health[server.key]?.healthy === false || sync().data.mcp_ready)
-  const mcpIssue = createMemo(() => {
-    const mcp = Object.values(sync().data.mcp ?? {})
-    const failed = mcp.some((item) => item.status === "failed" || item.status === "needs_client_registration")
-    const warn = mcp.some((item) => item.status === "needs_auth")
-    if (failed) return "critical" as const
-    if (warn) return "warning" as const
-  })
-  const serverHealthy = () => global.servers.health[server.key]?.healthy === true
-  const healthy = createMemo(() => global.servers.health[server.key]?.healthy === true && !mcpIssue())
-
-  return (
-    <Popover
-      open={shown()}
-      onOpenChange={setShown}
-      triggerAs={ButtonV2}
-      triggerProps={{
-        variant: "ghost",
-        class: "titlebar-icon w-8 h-6 p-0 box-border",
-        "aria-label": language.t("status.popover.trigger"),
-        style: { scale: 1 },
-      }}
-      trigger={
-        <div class="relative size-4">
-          <div class="badge-mask-tight size-4 flex items-center justify-center">
-            <Icon name={shown() ? "status-active" : "status"} size="normal" />
-          </div>
-          <div
-            classList={{
-              "absolute -top-px -right-px size-1.5 rounded-full": true,
-              "bg-icon-success-base": ready() && healthy(),
-              "bg-icon-warning-base": ready() && serverHealthy() && mcpIssue() === "warning",
-              "bg-icon-critical-base": serverHealthy() || (ready() && serverHealthy() && mcpIssue() === "critical"),
-              "bg-border-weak-base": serverHealthy() || !ready(),
-            }}
-          />
-        </div>
-      }
-      class="[&_[data-slot=popover-body]]:p-0 w-[360px] max-w-[calc(100vw-40px)] bg-transparent border-0 shadow-none rounded-xl"
-      gutter={4}
-      placement="bottom-end"
-      shift={-168}
-    >
-      <Show when={shown()}>
-        <Suspense
-          fallback={
-            <div class="w-[360px] h-14 rounded-xl bg-background-strong shadow-[var(--shadow-lg-border-base)]" />
-          }
-        >
-          <Body shown={shown} />
-        </Suspense>
-      </Show>
-    </Popover>
-  )
-}
 
 export function StatusPopoverV2(props: { scope?: "server" }) {
   if (props.scope === "server") return <ServerStatusPopover />
@@ -118,11 +55,9 @@ function DirectoryStatusPopover() {
   const language = useLanguage()
   const [shown, setShown] = createSignal(false)
   const { serverHealth, mcpIssue, ready } = useDirectoryStatusFacts()
-  const healthy = createMemo(() => serverHealth() === true && !mcpIssue())
   const state = createMemo<StatusPopoverState>(() => ({
     shown: shown(),
     ready: ready(),
-    healthy: healthy(),
     serverHealth: serverHealth(),
     issue: mcpIssue(),
     label: language.t("status.popover.trigger"),
@@ -146,7 +81,6 @@ function ServerStatusPopover() {
   const state = createMemo<StatusPopoverState>(() => ({
     shown: shown(),
     ready: serverHealth() !== undefined,
-    healthy: serverHealth() === true,
     serverHealth: serverHealth(),
     label: language.t("status.popover.trigger"),
     onOpenChange: setShown,
@@ -163,7 +97,6 @@ function ServerStatusPopover() {
 type StatusPopoverState = {
   shown: boolean
   ready: boolean
-  healthy: boolean
   serverHealth: boolean | undefined
   issue?: "critical" | "warning"
   label: string
@@ -184,15 +117,8 @@ function StatusPopoverBody(props: { shown: boolean; children: JSX.Element }) {
 }
 
 function StatusPopoverView(props: { state: StatusPopoverState }) {
-  const statusDotClass = () => ({
-    "absolute rounded-full": true,
-    "bg-icon-success-base": props.state.ready && props.state.healthy,
-    "bg-icon-warning-base": props.state.ready && props.state.serverHealth === true && props.state.issue === "warning",
-    "bg-icon-critical-base":
-      props.state.serverHealth === false ||
-      (props.state.ready && props.state.serverHealth === true && props.state.issue === "critical"),
-    "bg-border-weak-base": props.state.serverHealth === undefined || !props.state.ready,
-  })
+  const tone = () =>
+    statusDotTone({ serverHealth: props.state.serverHealth, ready: props.state.ready, issue: props.state.issue })
 
   const popoverProps = {
     class:
@@ -218,8 +144,8 @@ function StatusPopoverView(props: { state: StatusPopoverState }) {
         <div class="relative size-4">
           <IconV2 name={props.state.shown ? "status-active" : "status"} />
           <div
-            classList={statusDotClass()}
-            class="-top-1 -right-1 size-2 border border-[var(--v2-background-bg-deep)]"
+            data-status={tone()}
+            class={`absolute rounded-full -top-1 -right-1 size-2 border border-[var(--v2-background-bg-deep)] ${STATUS_DOT_CLASS[tone()]}`}
           />
         </div>
       }
