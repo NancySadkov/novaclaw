@@ -39,9 +39,10 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2
 // relocate — relocating would have orphaned the real sessions database in a temp directory.
 //
 // So this fix changes almost no behaviour and all of the legibility: **the boot still stops, but the
-// stop is now classified, named, and repairable.** Concretely, four faults are separated, because
-// they have four different repairs and describing one as another is ruling 2 broken
-// (*a fault is never described falsely*):
+// stop is now classified, named, and repairable.** Concretely, the faults below are separated,
+// because each has a DIFFERENT repair and describing one as another is ruling 2 broken
+// (*a fault is never described falsely*) — no count is given, because a count in prose goes stale
+// the first time a kind is added and `FaultKind` is the list that cannot:
 //
 //   · the file is MISSING          — a first run. Not a fault at all; it is created. The most
 //                                    important arm, and the one the adversarial pass caught an
@@ -54,6 +55,11 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2
 //   · the file is FOREIGN          — a real SQLite database that is not one of ours (tables, but no
 //                                    `session`). Someone else's file living at our path.
 //   · a MIGRATION fails on a structurally valid database — *our* bug against *their* healthy data.
+//   · the database is BUSY         — another process holds its write lock. Nothing is wrong with
+//                                    the file, the schema or this version; there are two NovaClaws
+//                                    on one file. It used to be reported as `migration`, i.e. as a
+//                                    bug in this build, with "install the version you were running
+//                                    before" attached.
 //
 // ── why NOT quarantine, argued rather than deferred ─────────────────────────────────────────────
 //
@@ -91,7 +97,7 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2
 // an agent on another instance, can act on that. Before this commit the same failure produced an
 // opaque `SQLiteError` inside a defect and, on the desktop, a window that never opened at all.
 
-/** Which of the five separated faults this is. Each has a different repair; see `repairsFor`. */
+/** Which separated fault this is. Each has a different repair; see `repairsFor`. */
 export type FaultKind =
   /** The file could not be opened: permissions, a directory in the way, a locked or read-only volume. */
   | "unreadable"
@@ -101,8 +107,39 @@ export type FaultKind =
   | "foreign"
   /** A structurally valid NovaClaw database whose schema upgrade failed. Our bug, their data. */
   | "migration"
+  /**
+   * Another process holds this database's write lock. Nothing is wrong with the file, our schema or
+   * their data — there are simply two NovaClaws on one database file.
+   *
+   * 🔴 It is a KIND of its own because the alternative was observed to be a false description with a
+   * destructive instruction attached. A concurrency fault reaching `describeMigrationFailure` lands
+   * on a structurally valid database with a full `migration` table, so it classified as `migration`
+   * and told the user *"this is a fault in this version of NovaClaw … install the version you were
+   * running before"* — sending someone to downgrade over a second window they only had to close.
+   * Ruling 2: a fault is never described falsely.
+   */
+  | "busy"
   /** Nothing above matched. Named as unknown rather than guessed — ruling 2. */
   | "unknown"
+
+/**
+ * Every kind, as a runtime value — and exhaustive by TYPE, not by memory.
+ *
+ * `Record<FaultKind, true>` fails to typecheck the moment a kind is added and not listed, so a test
+ * that iterates this covers a new arm the day it lands. The previous shape was a hand-kept
+ * `["unreadable", "corrupt", "foreign", "migration", "unknown"] as const` written out three times in
+ * `test/database-refuses.test.ts`: adding a sixth kind left all three lists green and silently
+ * untested, which is the one thing a "no two faults share a sentence" test exists to prevent.
+ */
+const FAULT_KIND_SET: Record<FaultKind, true> = {
+  unreadable: true,
+  corrupt: true,
+  foreign: true,
+  migration: true,
+  busy: true,
+  unknown: true,
+}
+export const faultKinds = Object.keys(FAULT_KIND_SET) as readonly FaultKind[]
 
 /**
  * **One named database fault, as a VALUE.**
@@ -168,7 +205,18 @@ class Diagnosed extends Data.TaggedError("DatabaseDiagnosed")<{ readonly diagnos
 const CORRUPT =
   /file is not a database|not a database file|disk image is malformed|file is encrypted|SQLITE_NOTADB|SQLITE_CORRUPT/i
 const UNREADABLE =
-  /unable to open database file|SQLITE_CANTOPEN|EACCES|EPERM|EROFS|EBUSY|ENOENT|ENOTDIR|EISDIR|database is locked|SQLITE_BUSY|readonly database|SQLITE_READONLY|disk I\/O error|SQLITE_IOERR/i
+  /unable to open database file|SQLITE_CANTOPEN|EACCES|EPERM|EROFS|ENOENT|ENOTDIR|EISDIR|readonly database|SQLITE_READONLY|disk I\/O error|SQLITE_IOERR/i
+/**
+ * Contention, which is a different fact from an unusable file and must be tested FIRST — SQLite's
+ * busy text is otherwise indistinguishable, to a reader, from a permissions problem.
+ *
+ * ⚠️ `duplicate column name` and `table … already exists` are deliberately NOT here. They used to be
+ * the loser's symptom in a two-process migration race, but `DatabaseMigration.apply` now takes
+ * `BEGIN IMMEDIATE` before it reads the schema, so a second process can no longer replay a step the
+ * first already committed. What is left of those two messages is a genuine migration bug, and
+ * matching them here would swap one false description for another.
+ */
+const CONTENDED = /SQLITE_BUSY|database is locked|database table is locked|\bEBUSY\b/i
 
 /** What a person can do about each case. Pure, and exercised directly. */
 export const repairsFor = (fault: Omit<Fault, "repair" | "summary">): readonly string[] => {
@@ -197,6 +245,12 @@ export const repairsFor = (fault: Omit<Fault, "repair" | "summary">): readonly s
         "Install the NovaClaw version you were running before; it will open this database as it always did.",
         `Report this with the line above${fault.migration === undefined ? "" : `, including migration ${fault.migration}`}.`,
       ]
+    case "busy":
+      return [
+        `Another program is holding ${fault.path} — almost always a second NovaClaw. Close the other one (a desktop window, a "novaclaw serve", or a command still running in a terminal) and start this one again.`,
+        "Nothing is wrong with your data or with this version, so do NOT reinstall or downgrade; two NovaClaws on one database file is the whole cause.",
+        "To run two at once, give this one its own database: --home <dir> (or NOVACLAW_HOME), or NOVACLAW_DB=<file>.",
+      ]
     case "unknown":
       return [
         `NovaClaw could not tell what is wrong with ${fault.path}, and stopped rather than guess. It was NOT modified.`,
@@ -207,7 +261,7 @@ export const repairsFor = (fault: Omit<Fault, "repair" | "summary">): readonly s
 }
 
 /**
- * The one sentence a person reads. Pure, and exercised directly — the five must not collapse into
+ * The one sentence a person reads. Pure, and exercised directly — no two may collapse into
  * one wording, which is exactly how the desktop's own `describeSidecarFailure` broke ruling 2 the
  * same day (app `738233284`): one sentence covering two faults sends the reader to the wrong
  * subsystem, and a fault described vaguely is better than a fault described falsely.
@@ -224,6 +278,8 @@ export const summaryFor = (kind: FaultKind, file: string, migration?: string): s
       return migration === undefined
         ? `NovaClaw could not create the tables in its database (${file}).`
         : `NovaClaw could not upgrade its database to this version (${file}); it stopped at migration ${migration}.`
+    case "busy":
+      return `Another NovaClaw is already using this database file (${file}).`
     case "unknown":
       return `NovaClaw could not use its database file (${file}).`
   }
@@ -251,6 +307,9 @@ const faultOf = (
 export const classifyOpenFailure = (file: string, cause: Cause.Cause<unknown>): Fault => {
   const detail = Cause.pretty(cause)
   if (CORRUPT.test(detail)) return faultOf("corrupt", file, detail)
+  // Before `unreadable`: a locked file IS readable, by the user who cannot get in as much as by the
+  // process holding it, and the two have different repairs.
+  if (CONTENDED.test(detail)) return faultOf("busy", file, detail)
   if (UNREADABLE.test(detail)) return faultOf("unreadable", file, detail)
   return faultOf("unknown", file, detail)
 }
@@ -273,6 +332,15 @@ export const classifyOpenFailure = (file: string, cause: Cause.Cause<unknown>): 
 const describeMigrationFailure = (db: DatabaseShape, cause: Cause.Cause<unknown>): Effect.Effect<Diagnosis> =>
   Effect.gen(function* () {
     const detail = Cause.pretty(cause)
+
+    // 🔴 Contention is decided from the ERROR, and it has to be, because it is the one migration
+    // fault the file itself cannot show: a database another process is upgrading looks — to
+    // `sqlite_master` — exactly like a healthy one whose migration went wrong. That is how a second
+    // NovaClaw used to be reported as a bug in this version, with "install the version you were
+    // running before" attached to it. It is tested FIRST for the same reason: every arm below is a
+    // statement about the file's CONTENT, and none of them is what went wrong here.
+    if (CONTENDED.test(detail)) return { kind: "busy", detail }
+
     const tables = yield* db
       .all<{ name: string }>(sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`)
       .pipe(Effect.catchCause(() => Effect.succeed(undefined)))
@@ -282,8 +350,7 @@ const describeMigrationFailure = (db: DatabaseShape, cause: Cause.Cause<unknown>
     if (tables === undefined) return { kind: "unknown", detail }
 
     const names = tables.map((table) => table.name)
-    if (names.length > 0 && !names.includes("session"))
-      return { kind: "foreign", detail, tables: names.slice().sort() }
+    if (names.length > 0 && !names.includes("session")) return { kind: "foreign", detail, tables: names.slice().sort() }
 
     if (!names.includes("migration")) return { kind: "migration", detail }
 

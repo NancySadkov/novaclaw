@@ -169,13 +169,39 @@ export const layer = Layer.effect(
     const read = Effect.fn("ModelRouteProfileStore.read")(function* (scope: Scope) {
       return (yield* all())[key(scope)]
     })
-    const replace = (scope: Scope, profile: Profile) =>
-      Effect.gen(function* () {
-        const stored = yield* all()
-        const normalized = decode(profile)
-        if (normalized === undefined) return
-        yield* settings.set(SETTINGS_KEY, { ...stored, [key(scope)]: normalized })
-      })
+    /**
+     * 🔴 **The ONE write path, and the read it is derived from happens INSIDE the permit.**
+     *
+     * Every route's profile lives in a single settings row — one JSON map under `SETTINGS_KEY` —
+     * and `SettingsConfigStore.set` replaces that row whole, so a writer that reads the map,
+     * changes one entry and sets the result is a read-modify-write. Two of them lose one another's
+     * entry with nothing failing: a calibration observed on one route quietly disappears and the
+     * next turn re-derives it from the protocol default.
+     *
+     * The gate itself is not new; what changed is that it can no longer be sidestepped. The
+     * previous shape read (`read`), decided, then called an UNGATED `replace` that read the map a
+     * SECOND time — correct only because both callers happened to wrap themselves in the permit,
+     * and a convention a future method has to remember is the thing this codebase keeps paying for.
+     * Here the permit, the read and the write are one closure, `change` is handed the current
+     * profile and cannot fetch a stale one, and the map written back is the same snapshot the
+     * decision was made on.
+     *
+     * ⚠️ The permit is IN-PROCESS, which is exact for this store's writers (fibers of one instance)
+     * and is not a cross-process lock. Closing that needs the atomic `update` the key/value
+     * primitive now has (`config-store-factory.ts`), reached through a `SettingsConfigStore.update`
+     * that does not exist yet.
+     */
+    const mutate = (scope: Scope, change: (current: Profile | undefined) => Profile | undefined) =>
+      gate.withPermit(
+        Effect.gen(function* () {
+          const stored = yield* all()
+          const next = change(stored[key(scope)])
+          if (next === undefined) return
+          const normalized = decode(next)
+          if (normalized === undefined) return
+          yield* settings.set(SETTINGS_KEY, { ...stored, [key(scope)]: normalized })
+        }),
+      )
 
     return Service.of({
       read,
@@ -188,23 +214,22 @@ export const layer = Layer.effect(
           observation: PromptCalibration.Observation & { readonly anchoredEstimatedTokens?: number },
           servedBy?: string,
         ) =>
-          gate.withPermit(
-            Effect.gen(function* () {
-              const ratio = PromptCalibration.observationRatio(observation)
-              const residualRatio =
-                observation.anchoredEstimatedTokens === undefined
-                  ? undefined
-                  : PromptCalibration.observationRatio({
-                      estimatedTokens: observation.anchoredEstimatedTokens,
-                      reportedTokens: observation.reportedTokens,
-                    })
-              if (ratio === undefined) return false
-              const current = yield* read(scope)
-              const liveServedBy = servedBy !== undefined && servedBy.trim().length > 0 ? servedBy : undefined
+          Effect.gen(function* () {
+            const ratio = PromptCalibration.observationRatio(observation)
+            const residualRatio =
+              observation.anchoredEstimatedTokens === undefined
+                ? undefined
+                : PromptCalibration.observationRatio({
+                    estimatedTokens: observation.anchoredEstimatedTokens,
+                    reportedTokens: observation.reportedTokens,
+                  })
+            if (ratio === undefined) return false
+            const liveServedBy = servedBy !== undefined && servedBy.trim().length > 0 ? servedBy : undefined
+            yield* mutate(scope, (current) => {
               const moved =
                 current?.servedBy !== undefined && liveServedBy !== undefined && current.servedBy !== liveServedBy
               const base = moved ? undefined : current
-              yield* replace(scope, {
+              return {
                 ...base,
                 promptRatios: PromptCalibration.retainNewest([...(base?.promptRatios ?? []), ratio]),
                 promptResidualRatios:
@@ -212,43 +237,40 @@ export const layer = Layer.effect(
                     ? (base?.promptResidualRatios ?? [])
                     : PromptCalibration.retainNewest([...(base?.promptResidualRatios ?? []), residualRatio]),
                 ...(liveServedBy === undefined ? {} : { servedBy: liveServedBy }),
-              })
-              return true
-            }),
-          ),
-      ),
-      put: Effect.fn("ModelRouteProfileStore.put")((scope: Scope, update: ProfileUpdate) =>
-        gate.withPermit(
-          Effect.gen(function* () {
-            const current = yield* read(scope)
-            const liveServedBy =
-              update.servedBy !== undefined && update.servedBy.trim().length > 0 ? update.servedBy : undefined
-            const moved =
-              current?.servedBy !== undefined && liveServedBy !== undefined && current.servedBy !== liveServedBy
-            // A route key identifies the address and wire, not the process currently behind it. A
-            // discovery made after a same-URL restart must not preserve the predecessor's tokenizer,
-            // image, or prefix-retention measurements. `observe` applies the same boundary to prompt
-            // ratios; `put` is the path used by non-prompt discoveries.
-            const base = moved ? undefined : current
-            yield* replace(scope, {
-              ...base,
-              ...(positive(update.imagePatchPixels) === undefined ? {} : { imagePatchPixels: update.imagePatchPixels }),
-              ...(positive(update.prefixCacheRetentionTokens) === undefined
-                ? {}
-                : { prefixCacheRetentionTokens: update.prefixCacheRetentionTokens }),
-              ...(liveServedBy === undefined ? {} : { servedBy: liveServedBy }),
-              promptRatios:
-                update.promptRatios === undefined
-                  ? (base?.promptRatios ?? [])
-                  : PromptCalibration.retainNewest(update.promptRatios),
-              promptResidualRatios:
-                update.promptResidualRatios === undefined
-                  ? (base?.promptResidualRatios ?? [])
-                  : PromptCalibration.retainNewest(update.promptResidualRatios),
+              }
             })
+            return true
           }),
-        ),
       ),
+      put: Effect.fn("ModelRouteProfileStore.put")((scope: Scope, update: ProfileUpdate) => {
+        const liveServedBy =
+          update.servedBy !== undefined && update.servedBy.trim().length > 0 ? update.servedBy : undefined
+        return mutate(scope, (current) => {
+          const moved =
+            current?.servedBy !== undefined && liveServedBy !== undefined && current.servedBy !== liveServedBy
+          // A route key identifies the address and wire, not the process currently behind it. A
+          // discovery made after a same-URL restart must not preserve the predecessor's tokenizer,
+          // image, or prefix-retention measurements. `observe` applies the same boundary to prompt
+          // ratios; `put` is the path used by non-prompt discoveries.
+          const base = moved ? undefined : current
+          return {
+            ...base,
+            ...(positive(update.imagePatchPixels) === undefined ? {} : { imagePatchPixels: update.imagePatchPixels }),
+            ...(positive(update.prefixCacheRetentionTokens) === undefined
+              ? {}
+              : { prefixCacheRetentionTokens: update.prefixCacheRetentionTokens }),
+            ...(liveServedBy === undefined ? {} : { servedBy: liveServedBy }),
+            promptRatios:
+              update.promptRatios === undefined
+                ? (base?.promptRatios ?? [])
+                : PromptCalibration.retainNewest(update.promptRatios),
+            promptResidualRatios:
+              update.promptResidualRatios === undefined
+                ? (base?.promptResidualRatios ?? [])
+                : PromptCalibration.retainNewest(update.promptResidualRatios),
+          }
+        })
+      }),
       resolve: Effect.fn("ModelRouteProfileStore.resolve")(function* (scope: Scope, input: ResolveInput) {
         return resolveProfile(yield* read(scope), input)
       }),

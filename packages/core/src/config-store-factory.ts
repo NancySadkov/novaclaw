@@ -233,8 +233,33 @@ export interface KeyValueStore<Value> {
   readonly all: () => Effect.Effect<Record<string, Value>>
   /** One value, or `undefined` when no row exists. */
   readonly get: (key: string) => Effect.Effect<Value | undefined>
-  /** Insert or replace one key's whole value (no layers — last write wins). */
+  /**
+   * Insert or replace one key's whole value (no layers — last write wins).
+   *
+   * ⚠️ **A BLIND overwrite, and that is the whole of its contract.** Whatever the row held is gone.
+   * If the value you are writing was DERIVED from the value that is there — a map you added an
+   * entry to, a list you appended to, a record you merged a field into — this is the wrong method
+   * and `update` is the right one: two writers that each read, changed and set lose one another's
+   * change, and neither of them fails.
+   */
   readonly set: (key: string, value: Value) => Effect.Effect<void>
+  /**
+   * 🔴 **Change one key's value AS A FUNCTION of what is stored, atomically.**
+   *
+   * The operation this store existed without, and the reason it is here: a key/value primitive that
+   * offers only whole-value replacement does not stop a caller holding a composite value — it makes
+   * every such caller write the read-modify-write itself, off the transaction, one call site at a
+   * time. Two callers had independently done exactly that against a settings key holding a map
+   * (`provider-capability-store.ts`, `session/runner/model-route-profile-store.ts`), and neither had
+   * anything to reach for.
+   *
+   * `change` runs INSIDE a `BEGIN IMMEDIATE` transaction on the same connection, so the read it is
+   * given and the write that follows cannot be separated — not by another fiber, and not by another
+   * NovaClaw process on the same file. It must be pure and must not fork: a forked fiber does not
+   * inherit `transactionService` and would block on the connection permit this holds
+   * (`config-store-write.ts` states the same two constraints for the config write path).
+   */
+  readonly update: (key: string, change: (current: Value | undefined) => Value) => Effect.Effect<void>
   /**
    * Write only when the ROW is absent — not when the value is falsy. The distinction is
    * load-bearing: a stored empty string is still a value the user chose, and treating it as absent
@@ -258,6 +283,28 @@ export const makeKeyValueStore = <Value = unknown>(spec: {
 }): KeyValueStore<Value> => {
   const rows = makeRowStore(spec.db, spec.table, spec.keyColumn)
   const put = (key: string, value: Value) => rows.upsert({ key, value }, { value })
+  /**
+   * The one place a read and the write it decides are joined.
+   *
+   * `behavior: "immediate"` rather than the default `deferred`, and the difference is the whole
+   * guarantee: a deferred transaction takes its read snapshot at the first SELECT and only asks for
+   * the write lock later, so a second process that commits in between makes the write fail
+   * (`SQLITE_BUSY_SNAPSHOT`) — or, before this existed, made it succeed over the other's change.
+   * `BEGIN IMMEDIATE` takes the write lock up front, so the row cannot move under the decision.
+   */
+  const readModifyWrite = (key: string, change: (row: Row | undefined) => Value | undefined) =>
+    spec.db
+      .transaction(
+        () =>
+          Effect.gen(function* () {
+            // The ROW, not its value: `setIfAbsent` asks about the row's existence, and a stored
+            // empty string is a value the user chose.
+            const next = change(yield* rows.selectOne(key))
+            if (next !== undefined) yield* put(key, next)
+          }),
+        { behavior: "immediate" },
+      )
+      .pipe(Effect.orDie)
   return {
     all: () =>
       Effect.gen(function* () {
@@ -267,11 +314,11 @@ export const makeKeyValueStore = <Value = unknown>(spec: {
       }),
     get: (key) => rows.selectOne(key).pipe(Effect.map((row) => row?.value as Value | undefined)),
     set: put,
-    setIfAbsent: (key, value) =>
-      Effect.gen(function* () {
-        const existing = yield* rows.selectOne(key)
-        if (!existing) yield* put(key, value)
-      }),
+    update: (key, change) =>
+      readModifyWrite(key, (row) => change(row === undefined ? undefined : (row.value as Value))),
+    // ⚠️ This was the primitive's OWN read-modify-write, and it was two statements with nothing
+    // holding them together: two boots seeding the same key both saw no row and both wrote.
+    setIfAbsent: (key, value) => readModifyWrite(key, (row) => (row === undefined ? value : undefined)),
     remove: (key) => rows.deleteOne(key),
     isEmpty: () => rows.isEmpty(),
   }

@@ -1,6 +1,6 @@
 export * as ProviderCapabilityStore from "./provider-capability-store"
 
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Semaphore } from "effect"
 import { makeGlobalNode } from "./effect/app-node"
 import { ProviderCapability } from "./provider-capability"
 import { SettingsConfigStore } from "./settings-config-store"
@@ -158,10 +158,44 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const settings = yield* SettingsConfigStore.Service
+    const gate = yield* Semaphore.make(1)
 
     const all = Effect.fn("ProviderCapabilityStore.all")(function* () {
       return decodeAll((yield* settings.all())[KEY])
     })
+
+    /**
+     * 🔴 **The ONE write path, and the read it decides from is INSIDE it.**
+     *
+     * Every entry this store holds lives in a single settings row — one JSON map under `KEY` — and
+     * `SettingsConfigStore.set` replaces that row whole. So a writer that reads the map, adds its
+     * entry and sets the result is a read-modify-write with nothing holding the two halves
+     * together, and two of them lose one another's entry silently: a parallel-delegation wave
+     * probing two models in the same window ends with one verdict recorded and the other gone, so
+     * the next turn on that model re-probes (three completions) or falls back to a channel nobody
+     * measured. Nothing fails; the store simply forgets.
+     *
+     * Both mutations therefore go through here, and `change` is handed the map it must not fetch
+     * for itself — there is no stale value to read, because there is no read outside the permit.
+     * Returning `undefined` means "nothing to write", which is what keeps `forgetIfMoved`'s
+     * not-a-move answer from costing a write.
+     *
+     * ⚠️ The permit is IN-PROCESS. It is exact for the two writers this store has — both are fibers
+     * of one instance — and it is not a cross-process lock; a second NovaClaw on the same database
+     * would still last-write-win here. Closing that needs the atomic `update` the key/value
+     * primitive now has (`config-store-factory.ts`), reached through a `SettingsConfigStore.update`
+     * that does not exist yet. Said plainly rather than implied: this is a stated property of the
+     * store, not a guarantee borrowed from the driver underneath.
+     */
+    const mutate = (change: (stored: Record<string, Entry>) => Record<string, Entry> | undefined) =>
+      gate.withPermit(
+        Effect.gen(function* () {
+          const next = change(yield* all())
+          if (next === undefined) return false
+          yield* settings.set(KEY, next)
+          return true
+        }),
+      )
 
     return Service.of({
       all,
@@ -179,19 +213,20 @@ export const layer = Layer.effect(
         servedBy: string,
       ) {
         const rowKey = key(providerID, modelID)
-        const stored = yield* all()
-        const entry = stored[rowKey]
-        // Unknown on either side is not evidence of a move. Equal is not a move either.
-        if (entry?.servedBy === undefined || entry.servedBy === servedBy) return false
-        const { [rowKey]: _dropped, ...rest } = stored
-        yield* settings.set(KEY, rest)
-        return true
+        return yield* mutate((stored) => {
+          const entry = stored[rowKey]
+          // Unknown on either side is not evidence of a move. Equal is not a move either.
+          if (entry?.servedBy === undefined || entry.servedBy === servedBy) return undefined
+          const { [rowKey]: _dropped, ...rest } = stored
+          return rest
+        })
       }),
       put: Effect.fn("ProviderCapabilityStore.put")(function* (providerID: string, modelID: string, entry: Entry) {
-        // Read-modify-write of the whole map. The map holds one row per model an instance has
-        // probed — single digits — so a targeted update would buy nothing and cost a second shape
-        // that has to agree with `decodeAll`.
-        yield* settings.set(KEY, { ...(yield* all()), [key(providerID, modelID)]: entry })
+        // The whole map is rewritten, not a targeted key: it holds one row per model an instance has
+        // probed — single digits — so a partial write would buy nothing and cost a second shape that
+        // has to agree with `decodeAll`. That was always a correct answer about SIZE and never one
+        // about CONCURRENCY, which is what `mutate` is for.
+        yield* mutate((stored) => ({ ...stored, [key(providerID, modelID)]: entry }))
       }),
     })
   }),

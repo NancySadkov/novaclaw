@@ -49,7 +49,7 @@
  * | `Effect.catchCause` → `Effect.catch` around `DatabaseMigration.apply` | **3** — the foreign arm dies, so `catch` misses it |
  * | `refuse` without the `process.stderr.write` | **5** — the log event alone is invisible in the packaged app |
  * | the whole pre-fix module restored (`Effect.orDie` over the build) | **10** |
- * | the five summaries collapsed into one wording | **2** |
+ * | two summaries collapsed into one wording | **2** |
  *
  * …and the *"two memo maps are two databases"* control is itself arrangement-sensitive rather than
  * trivially true: handing its two builds ONE memo map instead of two turns it red (1 fail), measured
@@ -376,7 +376,10 @@ describe("what the user reads", () => {
   }
 
   test("every kind names the file, promises nothing was destroyed, and offers a way out", () => {
-    for (const kind of ["unreadable", "corrupt", "foreign", "migration", "unknown"] as const) {
+    // `Database.faultKinds`, never a list retyped here: a hand-kept copy stays green when a sixth
+    // kind lands, so the new arm ships with no coverage at all — which is how a kind whose only job
+    // is to not be described as another one would get described as another one.
+    for (const kind of Database.faultKinds) {
       const text = Database.report(sample(kind))
       expect(text).toContain("C:\\Users\\someone\\AppData\\Local\\novaclaw\\novaclaw.db")
       expect(text).toContain("Nothing was moved, renamed or deleted")
@@ -391,11 +394,24 @@ describe("what the user reads", () => {
     }
   })
 
-  test("the five kinds do not share a sentence — a fault described falsely is the failure mode", () => {
-    const summaries = (["unreadable", "corrupt", "foreign", "migration", "unknown"] as const).map(
-      (kind) => Database.report(sample(kind)).split("\n")[0],
+  test("no two kinds share a sentence — a fault described falsely is the failure mode", () => {
+    const summaries = Database.faultKinds.map((kind) => Database.report(sample(kind)).split("\n")[0])
+    expect(new Set(summaries).size).toBe(Database.faultKinds.length)
+  })
+
+  test("🔴 contention is not blamed on this VERSION — `busy` never sends the user to downgrade", () => {
+    // The whole point of the kind. `migration` says "this is a fault in this version of NovaClaw"
+    // and "install the NovaClaw version you were running before"; a second window on one database
+    // file earned that sentence for as long as the classifier had nowhere else to put it.
+    const busy = Database.repairsFor(sample("busy")).join(" ")
+    expect(/install the novaclaw version you were running before/i.test(busy)).toBe(false)
+    expect(/downgrade|reinstall/i.test(Database.repairsFor(sample("migration")).join(" "))).toBe(false)
+    expect(busy).toContain("Close the other one")
+    expect(busy).toContain("do NOT reinstall or downgrade")
+    // …and the control: `migration` still says exactly what it always said.
+    expect(Database.repairsFor(sample("migration")).join(" ")).toContain(
+      "Install the NovaClaw version you were running before",
     )
-    expect(new Set(summaries).size).toBe(5)
   })
 
   test("the migration id appears only when there is one", () => {
@@ -406,7 +422,7 @@ describe("what the user reads", () => {
   })
 
   test("no repair on any path tells NovaClaw to move the user's file for them", () => {
-    for (const kind of ["unreadable", "corrupt", "foreign", "migration", "unknown"] as const)
+    for (const kind of Database.faultKinds)
       for (const line of Database.repairsFor(sample(kind)))
         expect(/novaclaw (will|would) (rename|move|delete)/i.test(line)).toBe(false)
   })
