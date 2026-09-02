@@ -1099,11 +1099,9 @@ const agentLocation = (agentID: string | undefined) =>
     if (AgentV2.POSTURE_IDS.has(agentID)) return requested
     const agent = yield* AgentV2.Service.use((service) => service.get(AgentV2.ID.make(agentID)))
     if (agent === undefined) return requested
-    const configured = (agent as unknown as Record<string, unknown>)["directory"]
-    const folder = AgentWorkspace.folderFor({
-      agentID,
-      directory: typeof configured === "string" ? configured : undefined,
-    })
+    // Read straight off `Agent.Info`, which has declared `directory` since this was written; the cast
+    // it used to go through predated that and hid the field's real type.
+    const folder = AgentWorkspace.folderFor({ agentID, directory: agent.directory })
     // The colleague's own scratch may not exist yet — a first chat for a newly hired officer is the
     // ordinary case. Creating it here keeps "every agent always has a real folder" true rather than
     // aspirational; a failure falls back rather than refusing the create.
