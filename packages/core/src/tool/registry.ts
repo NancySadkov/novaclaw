@@ -4,6 +4,7 @@ import {
   ToolFailure,
   ToolOutput,
   ToolRuntime,
+  resolveToolName,
   type ToolCall,
   type ToolDefinition,
   type ToolResultValue,
@@ -124,6 +125,25 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2
 // the only end that can hold the shared gate. **Do not re-add a copy here** — the check that keeps that
 // sentence true rather than aspirational is `test/tool-registry.test.ts` → "there is exactly ONE
 // unknown-tool message".
+
+/**
+ * A tool-name list bounded by the SAME character budget the shared unknown-tool message spends, read
+ * off `ToolRuntime` so the number cannot drift from the one the resident seam uses. The reason is the
+ * shared one: an unbounded list is its own denial of service on a small model's context. A truncated
+ * list says so, because a list that silently ends is a second silent omission.
+ */
+const boundedNameList = (names: ReadonlyArray<string>): string => {
+  const shown: Array<string> = []
+  let budget = ToolRuntime.UNKNOWN_TOOL_LIST_BUDGET
+  for (const candidate of names) {
+    budget -= candidate.length + 2
+    if (budget < 0 && shown.length > 0) break
+    shown.push(candidate)
+  }
+  return shown.length === names.length
+    ? shown.join(", ")
+    : `${shown.join(", ")}, and ${names.length - shown.length} more`
+}
 
 /** Keyed by the tool VALUE, so a registration never has to carry an extra field. See below. */
 const availabilityOf = new WeakMap<AnyTool, Effect.Effect<boolean>>()
@@ -407,6 +427,9 @@ const registryLayer = Layer.effect(
         )
         const callableDeferred = new Map([...deferredByName].filter(([name]) => discovered.has(name)))
         const callableNames = [...resident.keys(), ...callableDeferred.keys()]
+        const residentNames = [...resident.keys()]
+        const callableDeferredNames = [...callableDeferred.keys()]
+        const installedDeferredNames = [...deferredByName.keys()]
         return {
           // ⚠️ NOT SORTED, deliberately — see NC-PROMPT-CACHE-006. Sorting these would stabilise the
           // prefix (definitions render AHEAD of the system prompt, so an unstable order invalidates
@@ -428,27 +451,79 @@ const registryLayer = Layer.effect(
             // inner tool therefore still reaches the drain, instead of being flattened into the
             // dispatcher's own error result.
             const halt = { halted: false }
+            /**
+             * 🔴 **The name here was typed by the MODEL, so this seam must tolerate an imperfect one.**
+             *
+             * It was an exact `Map` lookup whose miss said "not callable in this session — call
+             * tool_search and use an exact name it returned", which hands a model that mistyped one
+             * character an instruction to repeat the search that produced the name it just mistyped.
+             * The harness manufactures that imperfection too: three of our own deferred tools are
+             * hyphenated in an otherwise snake_case tree, so a model that has only ever seen
+             * `apply_patch` and `tool_search` writes `read_hex` for `read-hex` as a near certainty.
+             *
+             * Renaming them was the other candidate fix and is NOT safe: a registered name is also
+             * the permission ACTION a rule resolves against (`Tool.permission` falls back to it), and
+             * those rules are authored by users and persisted, so a rename silently turns a stored
+             * `deny register-app` into no rule at all. Recovery here is also the more general answer —
+             * it covers every future typo rather than three known names.
+             *
+             * Resolution order matters. Exact wins over near, and deferred over resident, because
+             * `resident`/`callableDeferred` partition one registration map: a name in one is never in
+             * the other, and a LOOSE match must never outrank an EXACT one. `resolveToolName` is the
+             * same whitelist-gated canonicalizer the provider seam spends on resident calls
+             * (`protocols/openai-chat.ts`), so it can only ever return a name already callable here —
+             * it cannot invent one. When nothing resolves, the answer still distinguishes installed
+             * from unknown and carries the near-miss clause the resident seam has always had.
+             */
             const invokeDeferred: NonNullable<ToolContext["invokeDeferred"]> = (name, targetInput) => {
-              const target = callableDeferred.get(name)
-              if (!target) {
-                if (resident.has(name))
+              const callDirectly = (native: string) =>
+                Effect.fail(
+                  new ToolFailure({
+                    message:
+                      `${native} is a resident provider-native tool already advertised in this turn. ` +
+                      `Call ${native} directly as the tool name; do not use tool_call or tool_search for resident tools.`,
+                  }),
+                )
+              if (resident.has(name)) return callDirectly(name)
+              const resolved = callableDeferred.has(name) ? name : resolveToolName(name, callableDeferredNames)
+              const target = resolved === undefined ? undefined : callableDeferred.get(resolved)
+              if (target === undefined || resolved === undefined) {
+                const nearResident = resolveToolName(name, residentNames)
+                if (nearResident !== undefined) return callDirectly(nearResident)
+                // Installed-but-undisclosed is a different answer from does-not-exist — the outer
+                // settlement below already draws that line, and a near miss has to reach it too or a
+                // one-character slip is told the tool does not exist at all.
+                const installed = resolveToolName(name, installedDeferredNames)
+                if (installed !== undefined)
                   return Effect.fail(
                     new ToolFailure({
                       message:
-                        `${name} is a resident provider-native tool already advertised in this turn. ` +
-                        `Call ${name} directly as the tool name; do not use tool_call or tool_search for resident tools.`,
+                        `Deferred tool ${installed} is installed but its schema has not been disclosed in this session. ` +
+                        `Nothing ran. Call tool_search for the capability you need, then invoke the exact name it returns.`,
                     }),
                   )
+                const hint = ToolRuntime.closestToolName(name, callableDeferredNames)
+                // Both branches are load-bearing, exactly as in the shared unknown-tool message: an
+                // empty list is not a horizon, and a dangling "callable here: ." would be a fault
+                // described falsely. Naming the set this dispatcher can actually reach is what turns
+                // a dead turn into a recoverable one.
+                const available =
+                  callableDeferredNames.length === 0
+                    ? "No deferred tool has been disclosed in this session yet."
+                    : `Disclosed and callable through tool_call here: ${boundedNameList(callableDeferredNames)}.`
                 return Effect.fail(
                   new ToolFailure({
                     message:
-                      `Deferred tool ${name} is not callable in this session. ` +
-                      `Call tool_search first and use an exact name it returned.`,
+                      `Deferred tool ${name} is not callable in this session. Nothing ran. ` +
+                      (hint === undefined ? "" : `Did you mean "${hint}"? `) +
+                      `${available} Call tool_search for any other capability and use an exact name it returns.`,
                   }),
                 )
               }
+              // The RESOLVED name travels on, so the permission gate, the policy screen and the
+              // durable record all see the tool that actually ran rather than what was typed.
               return settleRaw(
-                { ...input, call: { type: "tool-call", id: input.call.id, name, input: targetInput } },
+                { ...input, call: { type: "tool-call", id: input.call.id, name: resolved, input: targetInput } },
                 target.identity,
                 deferred,
                 undefined,
