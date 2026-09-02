@@ -23,6 +23,8 @@
 import { spawnSync } from "node:child_process"
 import os from "node:os"
 
+import { writeDiagnostic } from "./diagnostic"
+
 /** Commit charge above this fraction of the limit means: do not add a second heavy job. */
 const COMMIT_CEILING = 0.75
 /** The full test suite is the largest guarded job and retains the conservative incident-derived floor. */
@@ -176,7 +178,9 @@ function windowsCommit(): { usedGb: number; limitGb: number } | undefined {
     if (attempt < COMMIT_PROBE_ATTEMPTS) {
       // Announced, because a silent pause before a refusal is indistinguishable from a slow unit —
       // which is exactly how the 2026-08-06 abort read for ten minutes.
-      process.stdout.write(`  commit-pressure probe attempt ${attempt}/${COMMIT_PROBE_ATTEMPTS} did not answer — retrying\n`)
+      process.stdout.write(
+        `  commit-pressure probe attempt ${attempt}/${COMMIT_PROBE_ATTEMPTS} did not answer — retrying\n`,
+      )
       // Synchronous on purpose: this guard runs before any unit starts, so nothing may interleave.
       spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", "Start-Sleep -Milliseconds 1000"], {
         timeout: 5_000,
@@ -329,10 +333,21 @@ export function check(argv: readonly string[] = process.argv, options: Options =
   return { ok: true }
 }
 
-/** Print the refusal and exit non-zero, or return quietly when it is safe to proceed. */
+/**
+ * Print the refusal and exit non-zero, or return quietly when it is safe to proceed.
+ *
+ * ⚠️ **`writeDiagnostic`, not `process.stderr.write`.** The refusal text is the ONLY output this path
+ * produces — which unit, how much was needed, who is holding it — and it is followed immediately by a
+ * hard exit, which is the shape `script/test.ts`'s footer forbids for buffered streams. This function
+ * owning both halves is what stops a caller from writing one and forgetting the other; what was and
+ * was not measured about the truncation is in `lib/diagnostic.ts`.
+ *
+ * ⚠️ `script/test.ts` deliberately does NOT use this — it needs `abort`, which kills the pool first.
+ * The only caller is `packages/desktop/scripts/prebuild.ts`, which holds no children.
+ */
 export function enforce(label: string, argv: readonly string[] = process.argv, options: Options = {}): void {
   const verdict = check(argv, options)
   if (verdict.ok) return
-  process.stderr.write(`\n\x1b[31mRefusing to start ${label}: ${verdict.reason}.\x1b[0m\n${verdict.detail ?? ""}\n\n`)
+  writeDiagnostic(`\n\x1b[31mRefusing to start ${label}: ${verdict.reason}.\x1b[0m\n${verdict.detail ?? ""}\n\n`)
   process.exit(2)
 }

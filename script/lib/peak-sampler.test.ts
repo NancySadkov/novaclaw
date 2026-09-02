@@ -7,9 +7,14 @@
  * that must fail**: an attributor that always answers "mine" is worse than counting by name, because
  * it is wrong with the same confidence and no longer says so.
  */
+import { spawn } from "node:child_process"
+import { mkdtempSync, readFileSync, rmSync } from "node:fs"
+import os from "node:os"
+import { join } from "node:path"
+
 import { describe, expect, it } from "bun:test"
 
-import { attribute } from "./peak-sampler"
+import { attribute, MAX_TICKS, POSIX_LOOP, WINDOWS_LOOP } from "./peak-sampler"
 
 /** `<tickMs> <hostPct> [<pid>,<startMs>,<commitMb>,<workingSetMb> ...]`. */
 const tick = (ms: number, hostPct: number, procs: ReadonlyArray<readonly [number, number, number, number?]>) =>
@@ -38,11 +43,7 @@ describe("attribute", () => {
     // Byte-identical to the case above except for the birth times. If this returns the same number,
     // the attributor is not attributing: it is summing by name again.
     const workers = Array.from({ length: 16 }, (_, i) => [200 + i, 990, 582] as const)
-    const sample = attribute(
-      timeline(tick(1_100, 50, [[100, 900, 7_330], ...workers])),
-      1_000,
-      2_000,
-    )
+    const sample = attribute(timeline(tick(1_100, 50, [[100, 900, 7_330], ...workers])), 1_000, 2_000)
     expect(sample.treeMb).toBeUndefined()
     expect(sample.foreignMb).toBe(7_330 + 16 * 582)
     expect(sample.ticks).toBe(1)
@@ -55,11 +56,7 @@ describe("attribute", () => {
     // peak for `schema` was 43 — the shim alone — and a `ratio: 0.113` was derived from it.
     const shim = [7, 1, 43] as const
     const sample = attribute(
-      timeline(
-        tick(10_050, 40, [shim]),
-        tick(10_250, 40, [shim, [900, 10_100, 96]]),
-        tick(10_450, 40, [shim]),
-      ),
+      timeline(tick(10_050, 40, [shim]), tick(10_250, 40, [shim, [900, 10_100, 96]]), tick(10_450, 40, [shim])),
       10_000,
       10_500,
     )
@@ -89,7 +86,12 @@ describe("attribute", () => {
 
   it("does not let a previous unit's dying child bleed into the next window", () => {
     const sample = attribute(
-      timeline(tick(2_050, 40, [[300, 1_500, 1_900], [301, 2_010, 120]])),
+      timeline(
+        tick(2_050, 40, [
+          [300, 1_500, 1_900],
+          [301, 2_010, 120],
+        ]),
+      ),
       2_000,
       2_500,
     )
@@ -109,7 +111,10 @@ describe("attribute", () => {
     const sample = attribute(
       timeline(
         tick(4_100, 40, [[500, 4_010, 100]]),
-        tick(4_300, 40, [[500, 4_010, 400], [501, 4_200, 300]]),
+        tick(4_300, 40, [
+          [500, 4_010, 400],
+          [501, 4_200, 300],
+        ]),
         tick(4_500, 40, [[500, 4_010, 150]]),
       ),
       4_000,
@@ -168,5 +173,78 @@ describe("attribute", () => {
     expect(sample.ticks).toBe(2)
     expect(sample.ownTicks).toBe(0)
     expect(sample.treeMb).toBeUndefined()
+  })
+})
+
+/**
+ * The sampler's own bounds, EXERCISED rather than described.
+ *
+ * The loop used to be `while ($true)`, and its only way out was a `stop()` its parent might never
+ * reach — a signal runs no handler, and the paths that actually produce an orphan here are memory
+ * refusals on a box that is already short of memory. So the bound moved into the loop, and a bound
+ * is only real if something has watched it fire.
+ *
+ * Both tests run the REAL loop text, not a paraphrase of it: they are the only thing standing
+ * between this file and a shell quoting mistake that silently restores `while ($true)`.
+ */
+describe("the sampled loop bounds itself", () => {
+  const win = process.platform === "win32"
+  /** Run the platform loop for real and resolve with its exit code and how long it took. */
+  const runLoop = (rootPid: number, maxTicks: number) => {
+    const dir = mkdtempSync(join(os.tmpdir(), "novaclaw-peak-test-"))
+    const file = join(dir, "timeline.txt")
+    const started = Date.now()
+    const child = win
+      ? spawn("powershell", ["-NoProfile", "-NonInteractive", "-Command", WINDOWS_LOOP(file, rootPid, maxTicks)], {
+          stdio: "ignore",
+          windowsHide: true,
+        })
+      : spawn("sh", ["-c", POSIX_LOOP(file, rootPid, maxTicks)], { stdio: "ignore" })
+    return new Promise<{ ms: number; rows: number }>((resolve) => {
+      child.on("exit", () => {
+        let rows = 0
+        try {
+          rows = readFileSync(file, "utf8").split("\n").filter(Boolean).length
+        } catch {
+          /* the loop may legitimately have written nothing */
+        }
+        rmSync(dir, { recursive: true, force: true })
+        resolve({ ms: Date.now() - started, rows })
+      })
+    })
+  }
+
+  /** A pid that is certainly gone: spawn something trivial and wait for it to die. */
+  const deadPid = async () => {
+    const probe = win ? spawn("cmd", ["/c", "exit", "0"], { stdio: "ignore", windowsHide: true }) : spawn("true")
+    const pid = probe.pid
+    await new Promise<void>((resolve) => probe.on("exit", () => resolve()))
+    if (pid === undefined) throw new Error("could not obtain a pid to bury")
+    return pid
+  }
+
+  it("🔴 stops on its own when the parent it serves is gone — the orphan case", async () => {
+    // The generous tick ceiling is the point: nothing but the LIVENESS check can end this run, so
+    // an exit here cannot be the ceiling passing for the bound under test.
+    const { ms } = await runLoop(await deadPid(), MAX_TICKS)
+    expect(ms).toBeLessThan(10_000)
+  }, 20_000)
+
+  it("🔴 stops at the tick ceiling even while its parent is alive — the PID-reuse case", async () => {
+    // NEGATIVE CONTROL for the test above: same loop, same shell, a parent that is definitely
+    // ALIVE (this process). If it still exits, the liveness check is not what ended the run above;
+    // if it never exits, `MAX_TICKS` is not a bound. Five ticks at 200 ms is ~1 s of sampling —
+    // enough to see the ceiling arrive, and the test's whole cost is that second.
+    const { ms, rows } = await runLoop(process.pid, 5)
+    expect(ms).toBeLessThan(20_000)
+    // …and it really did sample: an exit with an empty timeline would mean the loop died rather
+    // than finished, which would make the assertion above true for the wrong reason.
+    expect(rows).toBeGreaterThan(0)
+    expect(rows).toBeLessThanOrEqual(5)
+  }, 30_000)
+
+  it("the ceiling is above any real run — a --full gate is 16-25 minutes", () => {
+    // A bound that could fire mid-gate would truncate the measurement it exists to protect.
+    expect((MAX_TICKS * 200) / 60_000).toBeGreaterThanOrEqual(45)
   })
 })

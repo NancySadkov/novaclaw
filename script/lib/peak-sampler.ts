@@ -60,6 +60,33 @@
  *
  * ⚠️ **A process whose birth time cannot be read is treated as FOREIGN**, never as ours. Over-claiming
  * inflates the ladder's input, which is the failure this whole change exists to end.
+ *
+ * ─── THE LOOP BOUNDS ITSELF, because its caller cannot always reach it ─────────────────────────────
+ *
+ * 🔴 **The sampler used to be `while ($true)` with no way out except `stop()`.** `stop()` is reached
+ * on the normal path and from `test.ts`'s `abort`, and that covers a lot — but not the paths that
+ * matter most: a Ctrl+C (a signal terminates the parent without running any exit handler), an
+ * uncaught throw, or a `process.exit` in code that never learned about `stop`. On Windows a spawned
+ * child is in no job object, so it simply outlives its parent — and what it outlives it as is a
+ * PowerShell process polling WMI at 5 Hz and appending to a temp file, forever, invisible to
+ * `heavy-guard` (which does not match `powershell.exe`) and to `stray-servers` (no pattern for it).
+ *
+ * The condition that produces the orphan is a memory refusal, so **each leak makes the machine worse
+ * at exactly the moment it was already in trouble**, and refusals repeat.
+ *
+ * ⚠️ **So the bound is a property of the LOOP, not of its caller.** Two of them, because they fail
+ * differently:
+ *
+ *  · **Parent liveness**, checked every tick. The sampler exists to serve one process; when that
+ *    process is gone there is nobody left to read the timeline. This stops an orphan within one
+ *    200 ms tick, on every exit path there is, including the ones no handler can intercept.
+ *  · **{@link MAX_TICKS}, an absolute ceiling.** PID reuse is real on Windows (`peak-sampler`'s own
+ *    header records PID 12528 appearing twice in one gate), so a liveness test can be satisfied by a
+ *    stranger wearing the dead parent's number. The ceiling is what makes "forever" unreachable
+ *    regardless. It is set well above a `--full` gate (16–25 min) so it can never end a live run.
+ *
+ * `stop()` remains, and remains the fast path — these bounds are the floor under it, not a
+ * replacement for it.
  */
 import { spawn, type ChildProcess } from "node:child_process"
 import { mkdtempSync, readFileSync, rmSync } from "node:fs"
@@ -120,6 +147,16 @@ const INERT: Sampler = { window: () => ({ ticks: 0, ownTicks: 0 }), stop: () => 
 const INTERVAL_MS = 200
 
 /**
+ * The absolute ceiling on a sampler's life, in ticks — one hour at {@link INTERVAL_MS}.
+ *
+ * Chosen against the longest run that exists: a `--full` gate is 16–25 minutes, so this cannot end a
+ * live run, and it is the reason a PID-reuse false positive on the liveness check still cannot buy
+ * the loop an unbounded life. Exported so the test can build a loop with a small one and watch it
+ * stop, which is the only way to prove a bound rather than assert it.
+ */
+export const MAX_TICKS = (60 * 60 * 1000) / INTERVAL_MS
+
+/**
  * One timeline row: `<tickMs> <hostCommitPct> [<pid>,<startMs>,<commitMb>,<workingSetMb> ...]`
  *
  * Per-PROCESS rather than a pre-summed total, because the sum is exactly the thing that cannot be
@@ -130,10 +167,14 @@ const INTERVAL_MS = 200
  * (`16,758`), which the reader then had to strip with a `[^\d]` regex. A comma is now a field
  * separator, so that formatting would silently split one process into three.
  */
-const WINDOWS_LOOP = (file: string, rootPid: number) =>
+export const WINDOWS_LOOP = (file: string, rootPid: number, maxTicks: number = MAX_TICKS) =>
   [
-    `$f = '${file}'; $root = ${rootPid}`,
-    "while ($true) {",
+    `$f = '${file}'; $root = ${rootPid}; $maxTicks = ${maxTicks}; $tick = 0`,
+    "while ($tick -lt $maxTicks) {",
+    "  $tick = $tick + 1",
+    // The self-bound — see the header. `-ErrorAction SilentlyContinue` because a dead pid is the
+    // EXPECTED reading here, not an error, and a thrown one would leave the loop running.
+    "  if (-not (Get-Process -Id $root -ErrorAction SilentlyContinue)) { break }",
     "  $ms = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()",
     "  $hc = 0",
     "  $o = Get-CimInstance Win32_OperatingSystem",
@@ -166,10 +207,13 @@ const WINDOWS_LOOP = (file: string, rootPid: number) =>
  * `/proc/<pid>/stat` field 22 against `/proc/uptime`, and that is the change to make when someone can
  * run it there rather than reason about it from here.
  */
-const POSIX_LOOP = (file: string, rootPid: number) =>
+export const POSIX_LOOP = (file: string, rootPid: number, maxTicks: number = MAX_TICKS) =>
   [
-    `f='${file}'; root=${rootPid}`,
-    "while true; do",
+    `f='${file}'; root=${rootPid}; maxTicks=${maxTicks}; tick=0`,
+    'while [ "$tick" -lt "$maxTicks" ]; do',
+    "  tick=$((tick+1))",
+    // The self-bound — see the header. `kill -0` tests for existence without signalling.
+    '  kill -0 "$root" 2>/dev/null || break',
     "  now=$(date +%s%3N)",
     "  hc=0",
     "  if [ -r /proc/meminfo ]; then",
@@ -274,7 +318,13 @@ export function start(): Sampler {
   }
 
   let stopped = false
-  return {
+  // The caller's own cleanup is `stop()`; this is the one it cannot reach. An uncaught throw, or a
+  // `process.exit` somewhere that never heard of this module, still runs `exit` listeners — and this
+  // is also the only thing that removes the temp dir on those paths, since `stop()` owns that too.
+  // ⚠️ It is a BACKSTOP, not the bound: a signal runs no listener at all, which is why the sampled
+  // loop bounds itself (see the header).
+  const onExit = () => sampler.stop()
+  const sampler: Sampler = {
     window: (fromMs, toMs) => {
       let timeline: string
       try {
@@ -289,6 +339,7 @@ export function start(): Sampler {
     stop: () => {
       if (stopped) return
       stopped = true
+      process.removeListener("exit", onExit)
       try {
         // The sampler owns no children of its own, so a plain kill is enough — and it must be plain:
         // a tree kill here would be aimed at the same PowerShell heavy-guard reads with.
@@ -299,4 +350,6 @@ export function start(): Sampler {
       rmSync(dir, { recursive: true, force: true })
     },
   }
+  process.once("exit", onExit)
+  return sampler
 }

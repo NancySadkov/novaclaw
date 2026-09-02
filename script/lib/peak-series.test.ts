@@ -296,3 +296,79 @@ describe("a concurrent window measures the POOL, not the unit", () => {
     expect(regressionVerdict(row).verdict).toBe("clean")
   })
 })
+
+/**
+ * ─── the FIFTH null: a run that had to SHARD ───────────────────────────────────────────────────
+ *
+ * This one was a live red rather than a design gap. Shards run sequentially, so each window carries
+ * the previous shard's unreclaimed memory: `core` reads a median 10,117 / max 17,833 MB split
+ * against a 10,822 MB whole-run maximum. That reading reached the armed ratchet — whose fire line
+ * for `core` is 10,822 * 1.5 + 256 = 16,489 — so a memory-poor gate could be failed by the very
+ * mitigation that let it run at all, under a message reading "a CLEAN sample".
+ *
+ * A ratchet a legitimate run cannot satisfy is worse than no ratchet: it trains its readers to
+ * ignore a red. And the withholding is only half the point — the other half is that a sharded
+ * number promoted into `peaks` makes the planner shard that unit forever.
+ */
+describe("a sharded window measures the unit PLUS the previous shard", () => {
+  test("🔴 the ratchet cannot fire on a split run — the false red this closes", () => {
+    // core's real numbers: profile 10,822, a split window reading 17,833, host commit and foreign
+    // memory both perfectly healthy, so NEITHER existing contamination signal withholds it.
+    const row = buildRow(
+      RUN,
+      "default",
+      unit({ peakMb: 17_833, sampledMb: 17_833, shards: 4, hostCommitPct: 80, foreignMb: 1_230, ownTicks: 500 }),
+      { core: 10_822 },
+    )
+    expect(row.peakStatus).toBe("sharded")
+    expect(row.peakMb).toBeNull()
+    expect(row.regressed).toBeNull()
+    expect(regressionVerdict(row).verdict).toBe("clean")
+  })
+
+  test("NEGATIVE CONTROL — the identical reading from a WHOLE run still fires", () => {
+    // Byte-identical but for `shards`. Without this the test above would pass against a ratchet that
+    // had simply been disarmed, which is the failure it exists to prevent.
+    const row = buildRow(
+      RUN,
+      "default",
+      unit({ peakMb: 17_833, sampledMb: 17_833, hostCommitPct: 80, foreignMb: 1_230, ownTicks: 500 }),
+      { core: 10_822 },
+    )
+    expect(row.peakStatus).toBe("measured")
+    expect(row.peakMb).toBe(17_833)
+    expect(row.regressed).toBe(true)
+    expect(regressionVerdict(row).verdict).toBe("regressed")
+  })
+
+  test("🔴 the reading is KEPT — withheld from `peakMb`, never thrown away", () => {
+    const row = buildRow(RUN, "default", unit({ peakMb: 17_833, sampledMb: 17_833, shards: 4 }), PROFILE)
+    expect(row.sampledMb).toBe(17_833)
+    expect(row.shards).toBe(4)
+    // …and nothing derived survives, so no reader can reconstruct a comparison from the row.
+    expect(row.deltaMb).toBeNull()
+    expect(row.ratio).toBeNull()
+  })
+
+  test("🔴 the guarantee is the MODULE's, not its caller's", () => {
+    // `test.ts` classifies before it calls, but a caller that does not — an older row shape, a rig,
+    // a future second caller — must not be able to smuggle a split reading into `peakMb`. The shard
+    // count on the observation is enough on its own.
+    const row = buildRow(RUN, "default", unit({ peakMb: 17_833, shards: 4, peakStatus: "measured" }), PROFILE)
+    expect(row.peakMb).toBeNull()
+    expect(row.peakStatus).toBe("sharded")
+  })
+
+  test("classifyPeak: a split run outranks `discarded`, and `concurrent` outranks it", () => {
+    // A split reading clears the implausibility ceiling on its own, so `discarded` would report a
+    // KNOWN inflation as a suspicious one and send the reader hunting for a stray that is not there.
+    expect(classifyPeak(500, false, true, false, 4)).toBe("sharded")
+    expect(classifyPeak(500, true, false, false, 4)).toBe("sharded")
+    // A pool window cannot be attributed at all, which is the stronger statement of the two.
+    expect(classifyPeak(500, true, false, true, 4)).toBe("concurrent")
+    // …and one shard is a whole run, so the ordinary path is untouched.
+    expect(classifyPeak(500, true, false, false, 1)).toBe("measured")
+    expect(classifyPeak(500, true, false, false, undefined)).toBe("measured")
+    expect(classifyPeak(500, true, false)).toBe("measured")
+  })
+})

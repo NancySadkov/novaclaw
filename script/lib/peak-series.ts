@@ -97,8 +97,23 @@ export interface Observation {
  * the gap properly needs a per-process PARENT column in the timeline so a pool can be un-mixed;
  * that is a bigger change to an instrument with a long history of subtle bugs, and it wants its own
  * measurement rather than a ride on this one.
+ *
+ * 🔴 **`sharded` is the FIFTH null, and it was a live RED before it was a status.** A sharded window
+ * measures the unit PLUS the previous shard's memory, not yet reclaimed — `core`: 25 whole runs
+ * median 10,198 / max 10,822 against 232 split runs median 10,117 / **max 17,833**, 88 of them above
+ * the profile. That reading was being recorded as `measured`, which put it in front of the peak
+ * ratchet with `peaks.core = 10822` and a fire line at 16,489 MB: **a memory-poor gate that had to
+ * shard could fail on its own mitigation**, and the failure text printed *"a CLEAN sample"* over the
+ * one composition this file's own data says reads high. A ratchet a legitimate run cannot satisfy
+ * teaches everyone to ignore a red, which costs more than the ratchet was ever worth.
+ *
+ * It is the same shape as `concurrent` and takes the same treatment: keep `sampledMb`, withhold
+ * `peakMb`. That is also what stops the OTHER half — a sharded reading promoted into `peaks` makes
+ * the planner shard the unit forever, the loop the 2026-08-13 re-baseline closed by hand. The rule
+ * was already written down in three places ({@link Row.shards}, `test-baseline.json`'s `peaksNote`,
+ * `test.ts`'s printed *"do not promote it"*); it just was not mechanical anywhere.
  */
-export type PeakStatus = "measured" | "discarded" | "unsampled" | "concurrent"
+export type PeakStatus = "measured" | "discarded" | "unsampled" | "concurrent" | "sharded"
 
 /** Fewer observations can only establish a lower bound, never the unit's peak. */
 export const MIN_RECORDED_OWN_TICKS = 3
@@ -109,11 +124,18 @@ export function classifyPeak(
   hasDiscardedSample: boolean,
   /** Another run unit was in flight for part of this window — see {@link PeakStatus}. */
   overlapped = false,
+  /** How many shards the unit was split into. 1 (or undefined) is a whole run. */
+  shards: number | undefined = 1,
 ): PeakStatus {
   // FIRST, and ahead of `discarded`: a pool of two units easily sums past the 32 GB implausibility
   // ceiling, and reporting that as `discarded` would describe a known-unattributable reading as a
   // suspicious one — a finding invented out of a design decision.
   if (overlapped) return "concurrent"
+  // SECOND, and also ahead of `discarded`, for the same reason one rung down: a split run's reading
+  // carries the previous shard's unreclaimed memory and has been measured up to 17,833 MB against a
+  // 10,822 MB whole-run maximum, which clears the implausibility ceiling on its own. Calling that
+  // `discarded` would report a KNOWN inflation as a suspicious reading and send the reader hunting.
+  if ((shards ?? 1) > 1) return "sharded"
   if (hasDiscardedSample) return "discarded"
   if (ownTicks < MIN_RECORDED_OWN_TICKS) return "unsampled"
   return hasMeasuredPeak ? "measured" : "unsampled"
@@ -137,11 +159,26 @@ export interface Row {
    * median 12,936 / max 17,833. Never promote a `shards > 1` row into `peaks` —
    * `test-baseline.json`'s `peaksNote` excludes them by rule, and feeding one back is what kept
    * `core` permanently sharded.
+   *
+   * 🔴 **That rule is now MECHANICAL, not advice:** `shards > 1` forces `peakStatus: "sharded"` and
+   * a null `peakMb`, so there is nothing on the row for a reader or a ratchet to mistake for a
+   * whole-run figure. The raw reading survives as {@link sampledMb}, labelled.
    */
   readonly shards: number
-  /** Observed peak, or null when nothing believable was sampled. `peakStatus` says which. */
+  /**
+   * Observed peak, or null when nothing believable was sampled. `peakStatus` says which.
+   *
+   * 🔴 **The invariant: this is non-null only for a SOLO, WHOLE, adequately sampled run.** It is the
+   * field a reader promotes into `test-baseline.json`'s `peaks` and the only field the peak ratchet
+   * fires on, so every composition that measures something other than the unit's own demand —
+   * a pool window, a split run, one or two owning ticks, a discard — nulls it here rather than
+   * hoping the consumer remembers to check.
+   */
   readonly peakMb: number | null
-  /** `measured` | `discarded` | `unsampled` | `concurrent` — never infer this from `peakMb === null`. */
+  /**
+   * `measured` | `discarded` | `unsampled` | `concurrent` | `sharded` — never infer this from
+   * `peakMb === null`.
+   */
   readonly peakStatus: PeakStatus
   /**
    * The raw sampled figure, present even when it was rejected. Null when nothing was sampled.
@@ -214,7 +251,13 @@ export function buildRow(
   // An overlapped window measured the POOL, not the unit. It must never reach `peakMb`, because
   // `peakMb` is what a reader promotes into the profile the sharding ladder plans from.
   const concurrent = observation.peakStatus === "concurrent"
-  const peakMb = thinSample || concurrent ? null : observedPeakMb
+  // 🔴 And a split window measured the unit PLUS the previous shard — read off `observation.shards`
+  // rather than trusting `peakStatus`, so the guarantee is this MODULE's and not its caller's. A
+  // caller that forgets to classify still cannot get a sharded number into `peakMb`, which is the
+  // field the ratchet fires on and the field a reader promotes into `peaks`.
+  const shards = observation.shards ?? 1
+  const sharded = shards > 1 || observation.peakStatus === "sharded"
+  const peakMb = thinSample || concurrent || sharded ? null : observedPeakMb
   const fromProfile = profile[observation.name]
   // A zero or negative profile entry is not a baseline, it is a typo — treat it as absent rather than
   // dividing by it. `readPeaks()` already filters these out; this holds if that ever stops being true.
@@ -227,9 +270,11 @@ export function buildRow(
   // a caller who cannot tell them apart says `unsampled` — the weaker, non-alarming claim.
   const peakStatus: PeakStatus = concurrent
     ? "concurrent"
-    : thinSample
-      ? "unsampled"
-      : (observation.peakStatus ?? (peakMb !== null ? "measured" : "unsampled"))
+    : sharded
+      ? "sharded"
+      : thinSample
+        ? "unsampled"
+        : (observation.peakStatus ?? (peakMb !== null ? "measured" : "unsampled"))
   return {
     run,
     scope,
@@ -237,7 +282,7 @@ export function buildRow(
     kind: observation.kind,
     ok: observation.ok,
     ms: observation.ms,
-    shards: observation.shards ?? 1,
+    shards,
     peakMb,
     peakStatus,
     sampledMb,
@@ -285,6 +330,12 @@ export function buildRow(
  * ⚠️ **A withheld verdict is printed, never swallowed.** The whole failure mode this replaces is a
  * number that vanishes; "we saw a regression and are not counting it" must be as loud as counting it,
  * or the next reader cannot tell a clean history from a suppressed one.
+ *
+ * ⚠️ **A SHARDED run is not on this list, and that is deliberate — it is handled one layer earlier.**
+ * A third contamination signal here would have been the obvious fix and the wrong rung: withholding
+ * a verdict leaves the inflated number sitting in `peakMb`, where the next reader promotes it into
+ * `peaks` and the unit shards forever. {@link buildRow} nulls `peakMb` for a split run instead, so
+ * `regressed` is null and this function reaches `clean` without needing to know what a shard is.
  */
 export const CONTAMINATED_HOST_COMMIT_PCT = 85
 export const CONTAMINATED_FOREIGN_MB = 3000

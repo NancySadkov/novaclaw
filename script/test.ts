@@ -56,6 +56,7 @@ import { readFileSync } from "node:fs"
 import os from "node:os"
 import { join } from "node:path"
 
+import { writeDiagnostic } from "./lib/diagnostic"
 import { check, hostCommitPct, memoryHeadroom, topConsumers, type MemoryHeadroom } from "./lib/heavy-guard"
 import * as LedgerDrift from "./lib/ledger-drift"
 import * as CommitPressure from "./lib/commit-pressure"
@@ -95,8 +96,7 @@ const enforceTestMemory = (label: string, ownWorkInFlight = false) => {
     ownWorkInFlight,
   })
   if (verdict.ok) return
-  process.stderr.write(`\n\x1b[31mRefusing to start ${label}: ${verdict.reason}.\x1b[0m\n${verdict.detail ?? ""}\n\n`)
-  abort(2)
+  abort(2, `\n\x1b[31mRefusing to start ${label}: ${verdict.reason}.\x1b[0m\n${verdict.detail ?? ""}\n\n`)
 }
 
 /**
@@ -160,7 +160,6 @@ const IMPLAUSIBLE_PEAK_MB = MemoryPlan.IMPLAUSIBLE_PEAK_MB
  * what the reporting layer owes any reading it refuses.
  */
 type PeakStatus = PeakSeries.PeakStatus
-
 
 /**
  * What a run unit IS, because the two kinds report differently and must not be read as one another.
@@ -405,12 +404,12 @@ function demandOf(name: string, kind: Kind): MemoryPlan.Demand {
 function headroomOrRefuse(name: string, kind: Kind): MemoryHeadroom {
   const headroom = memoryHeadroom()
   if (headroom !== undefined) return headroom
-  process.stderr.write(
+  abort(
+    2,
     `\n\x1b[31mRefusing to start ${kind} unit ${name}: host memory could not be measured.\x1b[0m\n` +
       `Neither free RAM nor Windows commit charge could be read, so the harness would only be\n` +
       `guessing that this unit fits.\n\n`,
   )
-  abort(2)
 }
 
 /**
@@ -432,7 +431,8 @@ function planSolo(name: string, kind: Kind, headroom: MemoryHeadroom): MemoryPla
   const gb = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(1)} GB`
   const fits = MemoryPlan.unitsThatFit(peakProfiles.commit, peakProfiles.resident, allUnitNames(), headroom)
   const consumers = topConsumers()
-  process.stderr.write(
+  abort(
+    2,
     `\n\x1b[31mRefusing to start ${kind} unit ${name}: the machine cannot fit it, even split.\x1b[0m\n` +
       `  commit  ${gb(plan.commitRequiredBytes)} needed / ${gb(headroom.commitBytes)} available` +
       `  (peak ${demand.commitPeakMb} MB)\n` +
@@ -446,7 +446,6 @@ function planSolo(name: string, kind: Kind, headroom: MemoryHeadroom): MemoryPla
         : "") +
       `\n`,
   )
-  abort(2)
 }
 
 /**
@@ -474,8 +473,16 @@ const RUN_STAMP = new Date().toISOString()
  * between units. A pool can be holding three when the fourth is refused — and exiting there would
  * leave three `bun` processes with a dead parent, which is precisely the multi-GB orphan AGENTS.md
  * calls a death spiral. A guard that leaks what it was protecting the machine from is not a guard.
+ *
+ * 🔴 **The diagnostic is a PARAMETER, and that is the whole point of the signature.** Every caller
+ * here used to print its refusal and then call this — the pattern the footer of this file forbids,
+ * on the four paths where the printed text is the only output the run produces. Folding the write in
+ * means the wrong shape no longer typechecks: there is no way to reach this exit without handing it
+ * the text, and no way to hand it the text except synchronously (`writeDiagnostic`). See
+ * `lib/diagnostic.ts` for what was measured about the truncation itself — less than the rule claimed.
  */
-function abort(code: number): never {
+function abort(code: number, diagnostic: string): never {
+  writeDiagnostic(diagnostic)
   for (const child of liveChildren) {
     killTree(child)
     reapOrphans(child.pid, "shutdown")
@@ -862,6 +869,10 @@ async function run(job: Job, sharded: number | undefined, overlapped: () => bool
     // a unit admitted alone can have three neighbours join it two seconds later. Asking at admission
     // time would answer for the instant of the question rather than for the measurement.
     overlapped(),
+    // 🔴 A split run's windows carry the previous shard's unreclaimed memory, so its reading is not
+    // this unit's demand — see `PeakSeries.PeakStatus`. Declaring it here is what keeps the number
+    // out of `peakMb` below, and therefore out of the ratchet and out of anybody's `peaks` entry.
+    sharded,
   )
 
   // Only a bun test run has a skip count or a parseable failure list. Reading tsgo's output with either
@@ -1152,8 +1163,7 @@ while (queue.length > 0 || inFlight.size > 0) {
     // Unreachable: `admits` always admits into an empty pool, so an empty pool with a non-empty
     // queue means the very first check refused. Say so rather than spinning forever — a scheduler
     // that live-locks looks exactly like a hang, which is the one failure this file may not have.
-    process.stderr.write(`\n\x1b[31mthe scheduler admitted nothing and holds nothing — ${queue.length} left\x1b[0m\n`)
-    abort(2)
+    abort(2, `\n\x1b[31mthe scheduler admitted nothing and holds nothing — ${queue.length} left\x1b[0m\n`)
   }
   await Promise.race([...inFlight.values()].map((live) => live.settled))
 }
@@ -1307,11 +1317,12 @@ if (measured.length) {
     // 10,117 / max 17,833, with 88 of them above the profile. The inflation is real, which is why
     // the rule stays; the loop it once caused is not.
     //
-    // ⚠️ Left as a WARNING rather than deleted, because the number in the profile is the only thing
-    // holding it shut: paste one sharded reading in and `core` shards on every machine forever. A
-    // stale "this is broken" note is its own hazard — this one cost a reader an hour of chasing a
-    // defect that had already been fixed.
-    const from = r.shards ? `  \x1b[33m(from a SHARDED run — reads high; do not promote it)\x1b[0m` : ""
+    // 🔴 **And the rule is MECHANICAL now, which is why no sharded row reaches this block at all.**
+    // A split run classifies as `sharded` (`PeakSeries.PeakStatus`), so it carries no `peakMb` and
+    // prints under "peak NOT recorded" with its raw reading instead. This block is therefore the
+    // whole-run block, and the number in it is always promotable. The paragraphs above are kept as
+    // the WHY — the profile figure is still the only thing holding the sharding loop shut, and a
+    // reader who does not know the split reading is inflated will paste one in from elsewhere.
     // ⚠️ A peak taken from one or two samples is a LOWER BOUND, and saying so is the cheap half of
     // the fix that item 4 of todo/test-speed.md makes structural. A 300 ms unit gets 2–4 ticks at a
     // 200 ms interval and its child may be visible in none of them.
@@ -1329,7 +1340,7 @@ if (measured.length) {
           // 345 MB while the series holds an observation of 625. Three samples is enough to stop
           // being obviously thin, not enough to have seen the peak. Which units that applies to is a
           // property of the SERIES, so it is recorded in the baseline rather than re-derived here.
-          bound || peakProfiles.deliberatelyAbsent.has(r.name) || r.shards !== undefined
+          bound || peakProfiles.deliberatelyAbsent.has(r.name)
           ? '  \x1b[2m(absent from "peaks" — do NOT paste a bound in; see peaksUnsampledNote)\x1b[0m'
           : '  (not in profile — copy it into test-baseline.json\'s "peaks")'
         : MemoryPlan.peakRegressed(was, r.peakMb ?? 0)
@@ -1339,7 +1350,7 @@ if (measured.length) {
       ? `  \x1b[2m(${r.ownTicks} sample${r.ownTicks === 1 ? "" : "s"} — a lower bound, not a peak)\x1b[0m`
       : ""
     const resident = r.workingSetMb === undefined ? "" : `  resident ${r.workingSetMb} MB`
-    process.stdout.write(`  ${r.name.padEnd(30)} ${String(r.peakMb).padStart(5)}${resident}${drift}${from}${thin}\n`)
+    process.stdout.write(`  ${r.name.padEnd(30)} ${String(r.peakMb).padStart(5)}${resident}${drift}${thin}\n`)
   }
 }
 
@@ -1363,26 +1374,35 @@ if (unmeasured.length) {
       // `test-baseline.json`'s `peaks`, which is the input to the sharding ladder.
       r.peakStatus === "concurrent"
         ? `  ${r.name.padEnd(30)} \x1b[33mCONCURRENT\x1b[0m  ${r.sampledMb ?? "?"} MB sampled across the POOL, not this unit —\n` +
-          `  ${" ".repeat(30)} another run unit was in flight, and birth-time attribution cannot separate\n` +
-          `  ${" ".repeat(30)} them. Re-measure a unit with \`--only=${r.name.split(" ")[0]}\` or\n` +
-          `  ${" ".repeat(30)} NOVACLAW_TEST_CONCURRENCY=1 before touching its "peaks" entry.\n`
-        : r.peakStatus === "discarded"
-        ? `  ${r.name.padEnd(30)} \x1b[33mDISCARDED\x1b[0m  sampled ${r.sampledMb} MB, over the ` +
-            `${IMPLAUSIBLE_PEAK_MB} MB ceiling` +
-            `${peakProfiles.commit[r.name] === undefined ? "" : ` (profile ${peakProfiles.commit[r.name]})`}\n` +
-            `  ${" ".repeat(30)} the sampler WORKED — this is a reading, not an absence, and it is now\n` +
-            `  ${" ".repeat(30)} attributed: only processes this unit itself created are in it.\n`
-        : // ⚠️ THREE nulls, not two. Attribution added the middle one, and it is the benign case that
-          // used to be reported as a 43 MB measurement — so it must not now be reported as an
-          // instrument failure either. Say which of the three this is.
-          (r.ownTicks ?? 0) > 0
-          ? `  ${r.name.padEnd(30)} \x1b[33mUNSAMPLED\x1b[0m  sampled ${r.sampledMb} MB across ${r.ownTicks} owning tick(s);\n` +
-            `  ${" ".repeat(30)} fewer than ${PeakSeries.MIN_RECORDED_OWN_TICKS} observations is a lower bound, not a peak, so the number was withheld.\n`
-          : (r.ticks ?? 0) > 0
-            ? `  ${r.name.padEnd(30)} \x1b[33mUNSAMPLED\x1b[0m  ${r.ticks} tick(s) landed here and this unit owned\n` +
-              `  ${" ".repeat(30)} none of them — its process fit between two 200 ms heartbeats. The\n` +
-              `  ${" ".repeat(30)} instrument is fine; the unit is too short to measure this way.\n`
-            : `  ${r.name.padEnd(30)} \x1b[33mUNSAMPLED\x1b[0m  no timeline row landed in this unit's window at all\n`,
+            `  ${" ".repeat(30)} another run unit was in flight, and birth-time attribution cannot separate\n` +
+            `  ${" ".repeat(30)} them. Re-measure a unit with \`--only=${r.name.split(" ")[0]}\` or\n` +
+            `  ${" ".repeat(30)} NOVACLAW_TEST_CONCURRENCY=1 before touching its "peaks" entry.\n`
+        : // 🔴 The FIFTH null, and the one that used to be recorded as a measurement — which put it in
+          // front of the armed peak ratchet and could fail a memory-poor gate on its own mitigation.
+          // Shards run sequentially, so each window carries the previous shard's unreclaimed memory:
+          // `core` reads a median 10,117 / max 17,833 MB split against a 10,822 whole-run maximum.
+          r.peakStatus === "sharded"
+          ? `  ${r.name.padEnd(30)} \x1b[33mSHARDED\x1b[0m  ${r.sampledMb ?? "?"} MB sampled across ${r.shards} sequential shards,\n` +
+            `  ${" ".repeat(30)} which reads HIGH — the previous shard's memory is not yet reclaimed inside\n` +
+            `  ${" ".repeat(30)} the next shard's window. The peak is withheld, so it can neither fail the\n` +
+            `  ${" ".repeat(30)} ratchet nor be promoted into "peaks". Re-measure whole on a quiet box.\n`
+          : r.peakStatus === "discarded"
+            ? `  ${r.name.padEnd(30)} \x1b[33mDISCARDED\x1b[0m  sampled ${r.sampledMb} MB, over the ` +
+              `${IMPLAUSIBLE_PEAK_MB} MB ceiling` +
+              `${peakProfiles.commit[r.name] === undefined ? "" : ` (profile ${peakProfiles.commit[r.name]})`}\n` +
+              `  ${" ".repeat(30)} the sampler WORKED — this is a reading, not an absence, and it is now\n` +
+              `  ${" ".repeat(30)} attributed: only processes this unit itself created are in it.\n`
+            : // ⚠️ `unsampled` is itself two different facts, not one, and attribution added the second:
+              // "the unit owned no tick" is the benign case that used to be reported as a 43 MB
+              // measurement, so it must not now be reported as an instrument failure either. Say which.
+              (r.ownTicks ?? 0) > 0
+              ? `  ${r.name.padEnd(30)} \x1b[33mUNSAMPLED\x1b[0m  sampled ${r.sampledMb} MB across ${r.ownTicks} owning tick(s);\n` +
+                `  ${" ".repeat(30)} fewer than ${PeakSeries.MIN_RECORDED_OWN_TICKS} observations is a lower bound, not a peak, so the number was withheld.\n`
+              : (r.ticks ?? 0) > 0
+                ? `  ${r.name.padEnd(30)} \x1b[33mUNSAMPLED\x1b[0m  ${r.ticks} tick(s) landed here and this unit owned\n` +
+                  `  ${" ".repeat(30)} none of them — its process fit between two 200 ms heartbeats. The\n` +
+                  `  ${" ".repeat(30)} instrument is fine; the unit is too short to measure this way.\n`
+                : `  ${r.name.padEnd(30)} \x1b[33mUNSAMPLED\x1b[0m  no timeline row landed in this unit's window at all\n`,
     )
 }
 
@@ -1435,10 +1455,10 @@ if (peakVerdicts.length) {
     process.stdout.write(
       verdict === "withheld"
         ? `  ${row.unit.padEnd(24)} \x1b[33mWITHHELD\x1b[0m  ${row.peakMb} MB vs profile ${row.profileMb} MB — ${reason},\n` +
-          `  ${" ".repeat(24)} so this reads as the machine rather than the unit. Re-run quiet to judge it.\n`
+            `  ${" ".repeat(24)} so this reads as the machine rather than the unit. Re-run quiet to judge it.\n`
         : `  ${row.unit.padEnd(24)} \x1b[31mREGRESSED\x1b[0m  ${row.peakMb} MB vs profile ${row.profileMb} MB (ratio ${row.ratio})\n` +
-          `  ${" ".repeat(24)} host commit ${row.hostCommitPct ?? "?"}%, foreign ${row.foreignMb ?? "?"} MB, ${row.ownTicks ?? "?"} owning tick(s) — a CLEAN sample.\n` +
-          `  ${" ".repeat(24)} Either the unit really got heavier, or its profile entry is stale.\n`,
+            `  ${" ".repeat(24)} host commit ${row.hostCommitPct ?? "?"}%, foreign ${row.foreignMb ?? "?"} MB, ${row.ownTicks ?? "?"} owning tick(s) — a CLEAN sample.\n` +
+            `  ${" ".repeat(24)} Either the unit really got heavier, or its profile entry is stale.\n`,
     )
 }
 
@@ -1584,7 +1604,19 @@ process.stdout.write(
     `${ledgerDrift ? "  ·  \x1b[31mexpected-failure drift\x1b[0m" : ""}` +
     `${peakRegressions.length ? `  ·  \x1b[31m${peakRegressions.length} peak regression(s)\x1b[0m` : ""}\n`,
 )
-// `process.exitCode`, not `process.exit()`: `process.exit()` truncates queued writes whenever
-// stdout/stderr is a pipe or a file rather than a TTY, and this report is mostly read from a log.
-// Nothing here holds the loop open, so setting the code and returning exits with the same status.
+// `process.exitCode`, not `process.exit()`. Nothing here holds the loop open, so setting the code and
+// returning exits with the same status — and it costs nothing to keep the exit on the ordinary path.
+//
+// ⚠️ **The reason this rule used to give was wrong, so it is corrected rather than repeated.** It
+// said `process.exit()` truncates queued writes to a pipe or a file. Measured 2026-09-02 under `bun`
+// on Windows: it does not — 20 000 separate `process.stderr.write` calls followed immediately by
+// `process.exit(2)` arrive complete, to a file and through a pipe, as does a single 80 MB write. The
+// asynchronous cases Node documents are elsewhere again (a Windows TTY, a POSIX pipe on macOS).
+//
+// 🔴 **What `process.exit()` really costs here is FINALIZERS, and that half was real:** the refusal
+// paths that must exit from where they stand also had to kill the pool and stop the peak sampler,
+// and for a long time they did neither — the sampler's PowerShell loop outlived every one of them.
+// So the refusals go through `abort`, which owns the killing, the sampler and the (synchronous)
+// diagnostic; see `lib/diagnostic.ts` for why the write is synchronous anyway on a target we do not
+// measure from here.
 process.exitCode = failed.length || skipDrift || ledgerDrift || matchedNothing || peakRegressions.length ? 1 : 0
