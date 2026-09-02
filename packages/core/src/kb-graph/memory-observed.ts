@@ -246,6 +246,24 @@ export const observed = (inner: MemoryClient.Interface, deps: Deps): MemoryClien
   eraseAll: () =>
     inner.eraseAll().pipe(Effect.tap(() => ledgering(deps.ledger, (db) => MemoryAccessLedger.forgetEverything(db)))),
 
+  /**
+   * A cabinet was set aside wholesale — the ledger is told, because nothing else will tell it.
+   *
+   * 🔴 **`...inner` used to spread this straight through, and the miss was invisible** because
+   * `record`'s upsert re-stamps `scope` on every recall and its comment cites this exact operation
+   * as the reason. But a retirement moves `agent:<id>` to `retired:<id>:<t>`, and no recall path
+   * reads `retired:` — so the memories were never returned again and the re-stamp could never fire
+   * for the only case it named. A documented repair that cannot run is worse than none: it stops
+   * anyone looking.
+   *
+   * ⚠️ Wrapped HERE, at the store, for the reason at the top of this file. The one caller today is
+   * `agent/retire.ts`; a second one would have had to remember, and would not have.
+   */
+  moveScope: (from, to) =>
+    inner
+      .moveScope(from, to)
+      .pipe(Effect.tap(() => ledgering(deps.ledger, (db) => MemoryAccessLedger.moveScope(db, from, to)))),
+
   // Clearing a cabinet clears what the ledger learned about it. A rollup naming ids in a scope the
   // user just emptied is a measurement of memories that no longer exist — and on `session:<id>` it
   // would outlive the chat the confirmation said was removed permanently.

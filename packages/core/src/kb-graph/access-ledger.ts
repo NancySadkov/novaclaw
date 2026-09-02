@@ -1,6 +1,6 @@
 export * as MemoryAccessLedger from "./access-ledger"
 
-import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm"
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm"
 import { Effect } from "effect"
 import type { Database } from "../database/database"
 import { ascending } from "@novaclaw/schema/identifier"
@@ -70,15 +70,40 @@ const degradeWrite = <A, E, R>(effect: Effect.Effect<A, E, R>) => effect.pipe(Ef
  *
  * ⚠️ `http` is deliberately NOT here. The Memory app's search box shows results to a PERSON, and
  * counting that as "the model used it" would let browsing the store inflate the usefulness signal
- * that decides what survives pruning — a viewer changing what it is viewing.
+ * that decides what survives pruning — a viewer changing what it is viewing. It is excluded from the
+ * ROLLUP entirely — see `VIEWING_SURFACES`, which is where that argument actually bites.
  */
 const SELF_USING_SURFACES: ReadonlySet<string> = new Set(["kb-tool"])
+
+/**
+ * Surfaces where a PERSON is reading the store rather than a recall answering a question.
+ *
+ * 🔴 **These write no rollup row at all**, and withholding `uses` from them was never enough. The
+ * rollup is the row every decision is made from: `everAccessed` reads `accesses > 0` to build
+ * *Memory → never used*, and `MemoryPrunePolicy.recencyWeight` reads `last_accessed_at` and pays a
+ * memory touched in the last seven days a full 1.5 points of protection. So a person typing "car
+ * insurance" into the Memory app used to delete every match from the list that exists to FIND noise
+ * and shield it from the next forgetting pass — the pruning policy then acting on a number the
+ * viewer manufactured. The observer changed what it observed.
+ *
+ * ⚠️ The raw `memory_access` row is still written, and that is the deliberate half: it is the "why
+ * is this here" detail view, it is trimmed, and nothing that decides a memory's fate reads it. What
+ * a browse may leave behind is a trace; what it may not leave behind is a vote.
+ *
+ * 🔴 The predicate lives HERE rather than in each reader, because the readers are the part that
+ * grows. `everAccessed` and `recencyWeight` are two today; a third would have inherited the bug by
+ * writing the obvious query. A row the ledger never wrote cannot be misread by a reader nobody has
+ * written yet — the rollup's own doc says a row in it means "recall has returned this", and a
+ * viewer's read is not a recall.
+ */
+const VIEWING_SURFACES: ReadonlySet<string> = new Set(["http"])
 
 /** Record one recall: a raw row per returned memory, and the durable rollup each one belongs to. */
 export const record = (db: Db, input: RecordInput) =>
   Effect.suspend(() => {
     if (input.hits.length === 0) return Effect.void
     const selfUsing = SELF_USING_SURFACES.has(input.surface)
+    const viewing = VIEWING_SURFACES.has(input.surface)
     const rows = input.hits.map((hit) => ({
       id: "acc_" + ascending(),
       recall_id: input.recallID,
@@ -91,56 +116,77 @@ export const record = (db: Db, input: RecordInput) =>
       accessed_at: input.at,
       ...(selfUsing ? { used_at: input.at } : {}),
     }))
+    /**
+     * The durable rollup — SKIPPED for a viewer. See `VIEWING_SURFACES`: this is the row every
+     * decision is made from, so writing it on a browse is how opening the Memory app changed which
+     * memories the next forgetting pass evicted.
+     *
+     * One statement per memory rather than one bulk upsert: `onConflictDoUpdate` needs the incoming
+     * row's values, and the accumulate-or-insert shape is per-row anyway. A recall returns at most
+     * `k` memories (10 by default), so this is a bounded handful of writes on a background-ish path,
+     * not a scan.
+     */
+    const rollup = viewing
+      ? Effect.void
+      : Effect.forEach(
+          input.hits,
+          (hit) =>
+            db
+              .insert(MemoryUsageTable)
+              .values({
+                memory_id: hit.id,
+                scope: hit.scope,
+                conflict_key: hit.conflictKey ?? null,
+                first_accessed_at: input.at,
+                last_accessed_at: input.at,
+                accesses: 1,
+                // The rollup is what the pruning policy reads, so a self-using surface has to
+                // move it here too — setting `used_at` on the raw row alone would leave the
+                // signal visible in the detail view and absent from every decision made with it.
+                uses: selfUsing ? 1 : 0,
+              })
+              .onConflictDoUpdate({
+                target: MemoryUsageTable.memory_id,
+                set: {
+                  accesses: sql`${MemoryUsageTable.accesses} + 1`,
+                  ...(selfUsing ? { uses: sql`${MemoryUsageTable.uses} + 1` } : {}),
+                  last_accessed_at: input.at,
+                  // The identity is re-stamped because it is only known when the memory is
+                  // recalled. The SCOPE is re-stamped for the same reason, but it is not what
+                  // repairs a MOVED cabinet: a retired colleague's memories are never recalled
+                  // again (`recallScopes` reads session, agent and global — never `retired:`), so
+                  // this line could not fire for that case. `moveScope` below is the repair.
+                  scope: hit.scope,
+                  conflict_key: hit.conflictKey ?? null,
+                },
+              })
+              .run(),
+          { discard: true },
+        )
     return db
       .insert(MemoryAccessTable)
       .values(rows)
       .run()
       .pipe(
-        Effect.flatMap(() =>
-          // One statement per memory rather than one bulk upsert: `onConflictDoUpdate` needs the
-          // incoming row's values, and the accumulate-or-insert shape is per-row anyway. A recall
-          // returns at most `k` memories (10 by default), so this is a bounded handful of writes on
-          // a background-ish path, not a scan.
-          Effect.forEach(
-            input.hits,
-            (hit) =>
-              db
-                .insert(MemoryUsageTable)
-                .values({
-                  memory_id: hit.id,
-                  scope: hit.scope,
-                  conflict_key: hit.conflictKey ?? null,
-                  first_accessed_at: input.at,
-                  last_accessed_at: input.at,
-                  accesses: 1,
-                  // The rollup is what the pruning policy reads, so a self-using surface has to
-                  // move it here too — setting `used_at` on the raw row alone would leave the
-                  // signal visible in the detail view and absent from every decision made with it.
-                  uses: selfUsing ? 1 : 0,
-                })
-                .onConflictDoUpdate({
-                  target: MemoryUsageTable.memory_id,
-                  set: {
-                    accesses: sql`${MemoryUsageTable.accesses} + 1`,
-                    ...(selfUsing ? { uses: sql`${MemoryUsageTable.uses} + 1` } : {}),
-                    last_accessed_at: input.at,
-                    // The scope and the identity are re-stamped because a memory can MOVE cabinets
-                    // (`moveScope` on a colleague retirement) and its identity is only known when it
-                    // is recalled. A rollup carrying the pre-move scope would file a live memory
-                    // under a cabinet that no longer holds it.
-                    scope: hit.scope,
-                    conflict_key: hit.conflictKey ?? null,
-                  },
-                })
-                .run(),
-            { discard: true },
-          ),
-        ),
+        Effect.flatMap(() => rollup),
         degradeWrite,
       )
   })
 
-/** The recall's consumer confirms which of the returned memories actually reached the model. */
+/**
+ * The recall's consumer confirms which of the returned memories actually reached the model.
+ *
+ * 🔴 **The rollup is incremented from the rows this call actually PROMOTED, never from `input.ids`.**
+ * The raw update is scoped to one recall and to rows not already marked, so it is idempotent; an
+ * unscoped `uses + 1` beside it was not, and the two halves disagreed. Any repeat — a retried turn,
+ * or a `kb-tool` recall that `record` already counted as self-using and that a consumer also reports
+ * — charged a second `use` for one delivery. `uses > 0` is worth a full point in
+ * `MemoryPrunePolicy.usefulnessWeight`, so the double count decided which memories survived.
+ *
+ * ⚠️ `RETURNING` rather than a second `SELECT`: the set that matters is exactly the set the `UPDATE`
+ * changed, and reading it back separately would be a different query answering a similar question.
+ * An id the consumer names that this recall never returned promotes nothing and is charged nothing.
+ */
 export const markUsed = (
   db: Db,
   input: { readonly recallID: string; readonly ids: ReadonlyArray<string>; readonly at: number },
@@ -150,16 +196,27 @@ export const markUsed = (
     return db
       .update(MemoryAccessTable)
       .set({ used_at: input.at })
-      .where(and(eq(MemoryAccessTable.recall_id, input.recallID), inArray(MemoryAccessTable.memory_id, input.ids)))
-      .run()
+      .where(
+        and(
+          eq(MemoryAccessTable.recall_id, input.recallID),
+          inArray(MemoryAccessTable.memory_id, input.ids),
+          isNull(MemoryAccessTable.used_at),
+        ),
+      )
+      .returning({ id: MemoryAccessTable.memory_id })
+      .all()
       .pipe(
-        Effect.flatMap(() =>
-          db
+        Effect.flatMap((promoted) => {
+          // One recall returns a memory once, but the de-dup costs nothing and makes the rollup's
+          // arithmetic independent of that being true.
+          const ids = [...new Set(promoted.map((row) => row.id))]
+          if (ids.length === 0) return Effect.void
+          return db
             .update(MemoryUsageTable)
             .set({ uses: sql`${MemoryUsageTable.uses} + 1` })
-            .where(inArray(MemoryUsageTable.memory_id, input.ids))
-            .run(),
-        ),
+            .where(inArray(MemoryUsageTable.memory_id, ids))
+            .run()
+        }),
         degradeWrite,
       )
   })
@@ -443,6 +500,36 @@ export const forget = (db: Db, ids: ReadonlyArray<string>) =>
         degradeWrite,
       )
   })
+
+/**
+ * A whole cabinet MOVED — the measurement of it moves too.
+ *
+ * 🔴 **This is the repair `record`'s re-stamp could not be.** That upsert only re-files a memory the
+ * moment recall returns it again, and the one case it named — a colleague retirement, which sets
+ * `agent:<id>` aside as `retired:<id>:<t>` — is precisely the case where recall never returns it
+ * again: `SessionRecall.recallScopes` reads `session:`, `agent:` and `global`, never `retired:`. So
+ * every rollup and every raw row kept pointing at a cabinet that no longer held the memory, and two
+ * things went wrong with it: the next holder of a reused colleague id clearing their own cabinet
+ * deleted the PREVIOUS holder's rollups — including the `useful` vouches that are the hard
+ * protection `MemoryPrunePolicy.score` reads — and the Memory app's scope-filtered views attributed
+ * a retired colleague's history to the live one.
+ *
+ * ⚠️ Both tables, because both carry `scope` and both are read by scope (`forgetScope` deletes from
+ * each). A repair that moved only the rollup would leave the raw detail behind for the same
+ * `forgetScope` to take.
+ */
+export const moveScope = (db: Db, from: string, to: string) =>
+  db
+    .update(MemoryUsageTable)
+    .set({ scope: to })
+    .where(eq(MemoryUsageTable.scope, from))
+    .run()
+    .pipe(
+      Effect.flatMap(() =>
+        db.update(MemoryAccessTable).set({ scope: to }).where(eq(MemoryAccessTable.scope, from)).run(),
+      ),
+      degradeWrite,
+    )
 
 /** Drop everything the ledger holds about a scope — what clearing a cabinet owes the measurement. */
 export const forgetScope = (db: Db, scope: string) =>

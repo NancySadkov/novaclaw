@@ -153,7 +153,11 @@ const criticFor = (over: Partial<ComputerLoop.TaskSpec>) => {
   if (approved.command.kind !== "act") throw new Error(`expected the act, got ${approved.command.kind}`)
   const acting = approved.command.action
   if (!("point" in acting)) throw new Error("expected a pointer action")
-  return { watch, crop: target.crop, stated, executed: acting.point, prompt: asked.command.prompt.user }
+  // Narrowed here, not at each read: `point` is optional on the action union, and the `in` check
+  // above proves the key is present but not that it is defined.
+  const executed = acting.point
+  if (executed === undefined) throw new Error("expected a pointer action to carry a point")
+  return { watch, crop: target.crop, stated, executed, prompt: asked.command.prompt.user }
 }
 
 describe("🔴 the pre-action critic's crop-local point is in the WATCH region's frame", () => {

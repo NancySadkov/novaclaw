@@ -93,12 +93,18 @@ describe("MemoryAccessLedger", () => {
       })
 
       expect((yield* MemoryAccessLedger.accessesFor(db, "clm_tool"))[0]?.usedAt).toBe(2_600)
+      // The browse still leaves its TRACE in the detail view — that is the "why is this here"
+      // surface, it is trimmed, and no decision reads it.
       expect((yield* MemoryAccessLedger.accessesFor(db, "clm_browsed"))[0]?.usedAt).toBeNull()
-      // …and it moves the ROLLUP, which is what the pruning policy reads. A signal visible only in
-      // the detail view is a signal no decision is ever made with.
+      // …and the tool's recall moves the ROLLUP, which is what the pruning policy reads. A signal
+      // visible only in the detail view is a signal no decision is ever made with.
       const usage = yield* MemoryAccessLedger.usageFor(db, ["clm_tool", "clm_browsed"])
       expect(usage.get("clm_tool")?.uses).toBe(1)
-      expect(usage.get("clm_browsed")?.uses).toBe(0)
+      // 🔴 The browse leaves NO rollup row at all. Withholding `uses` alone was never enough: the
+      // row it used to write carried `accesses: 1` and a fresh `last_accessed_at`, which is what
+      // `everAccessed` and `MemoryPrunePolicy.recencyWeight` read. See the paired test in
+      // `kb-graph-ledger-viewing-and-moved-cabinet.test.ts` for what that cost.
+      expect(usage.has("clm_browsed")).toBe(false)
     }),
   )
 

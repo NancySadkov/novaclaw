@@ -1176,22 +1176,47 @@ export class WasmMemory {
         }
       }
 
-      const evidence: EvidenceRow[] = []
+      /**
+       * THE SOURCES ARE PICKED BY TRAVERSAL AND READ BY KEY — the same rule as `neighbors` and
+       * `list`, which this pass used to be the exception to.
+       *
+       * 🔴 It projected `b.text` (and the locator and kind beside it) straight out of the
+       * relationship traversal and used it as the label. That is a non-key read, and on this engine
+       * a non-key read can hand back an empty string for an intact row — see `hydrate`, where the
+       * measurement is. The surface it feeds is the claim timeline, whose entire job is *"why is
+       * this claim here"*, so the failure rendered blank source labels with no way for a reader to
+       * tell a source that has no description from one the engine failed to project.
+       *
+       * ⚠️ **One deduped hydration for the whole chain, not one per entry.** A source is its own
+       * node shared by every claim that cites it (see `addClaim`), so a 64-hop chain cites far fewer
+       * than 64 × 25 distinct sources — and hydrating per entry would have paid ~4 ms a row for the
+       * same body over and over, inside the single engine lock.
+       */
+      const cited: { claimID: string; sourceID: string }[] = []
       for (const entry of timeline) {
         const rows = await this.rows(
           `MATCH (a:Memory {id: $from})-[r:Rel {type: '${KbClaim.SUPPORTED_BY_EDGE}'}]->(b:Memory)
            WHERE b.t_invalid IS NULL
-           RETURN b.id AS id, b.evidence AS evidence, b.evidence_kind AS kind, b.text AS text LIMIT 25`,
+           RETURN b.id AS id LIMIT 25`,
           { from: entry.id },
         )
-        for (const row of rows)
-          evidence.push({
-            claimID: entry.id,
-            id: String(row.id),
-            locator: String(row.evidence ?? ""),
-            kind: (row.kind as KbClaim.EvidenceKind | null) ?? "chat",
-            label: String(row.text ?? ""),
-          })
+        for (const row of rows) cited.push({ claimID: entry.id, sourceID: String(row.id) })
+      }
+      const sources = new Map(
+        (await this.hydrate([...new Set(cited.map((c) => c.sourceID))])).map((row) => [row.id, row]),
+      )
+      const evidence: EvidenceRow[] = []
+      for (const { claimID, sourceID } of cited) {
+        const body = sources.get(sourceID)
+        // Skipped rather than faked, exactly as `hydrate` does: the caller asked what is there now.
+        if (body === undefined) continue
+        evidence.push({
+          claimID,
+          id: body.id,
+          locator: body.evidence ?? "",
+          kind: body.evidenceKind ?? "chat",
+          label: body.text,
+        })
       }
       return { claim: head, current: current.id === head.id ? null : current, timeline, evidence }
     })
@@ -2050,12 +2075,28 @@ export class WasmMemory {
     })
   }
 
-  /** Attach a vector to an existing memory (the embed drain). Idempotent — re-running is harmless. */
+  /**
+   * Attach a vector to an existing memory (the embed drain). Idempotent — re-running is harmless.
+   *
+   * ⚠️ **A `MATCH` that binds nothing is not an error**, so this used to report success for a row
+   * that had been forgotten between `pendingEmbeddings` and here — the same silent-success shape
+   * `invalidate`/`purge` were carrying, one table over. It matters more here than it looks: the
+   * drain's whole purpose is that a memory stored before an embedding device existed eventually gets
+   * a vector, and a no-op that answers success is indistinguishable from that having happened.
+   *
+   * The probe is a PRIMARY-KEY lookup returning one short column, inside the SAME `serialize` block
+   * as the write — a scan can hand back an empty `text` for an intact row (see `hydrate`) and an
+   * empty result is indistinguishable from a failed query, so it reads the id it matched on and
+   * nothing else. A THROW rather than a boolean, for the reason spelled out at `requireErasable`:
+   * every consumer already routes a rejection somewhere and already skips the success-only work.
+   */
   setEmbedding(id: string, embedding: readonly number[]): Promise<void> {
     if (embedding.length !== this.dim)
       return Promise.reject(new Error(`embedding length ${embedding.length} != store dim ${this.dim}`))
     return this.serialize(async () => {
       await this.q(`MATCH (m:Memory {id: $id}) SET m.embedding = ${vectorLiteral(embedding)}`, { id })
+      const seen = await this.rows(`MATCH (m:Memory {id: $id}) RETURN m.id AS id`, { id })
+      if (seen.length === 0) throw new Error(`setEmbedding: no memory ${id} — the row went away before the vector did`)
       this.touch()
     })
   }

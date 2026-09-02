@@ -2399,6 +2399,18 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/session/runner/maintenance.ts",
   },
+  /**
+   * Auto-recall could not reach the store. An empty recall and a FAILED one are different facts, and
+   * this is the highest-traffic read in the subsystem — a store whose engine had been failing every
+   * search for weeks presented as a store with nothing relevant to say.
+   */
+  "session.memory.recall.failed": {
+    level: "warn",
+    message: "auto-recall could not search memory; the turn continues without it",
+    attributes: { "session.id": "correlate", "session.cause": "fault" },
+    content: "user",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   /** A claim's cited file is gone, so the claim is flagged for review — never silently forgotten. */
   "session.memory.evidence.moved": {
     level: "info",

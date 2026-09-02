@@ -1491,7 +1491,21 @@ export const layer = Layer.effect(
             recallID,
             ...(recallVector === undefined ? {} : { embedding: recallVector }),
           })
-          .pipe(Effect.orElseSucceed(() => []))
+          .pipe(
+            // 🔴 A FAILED recall and an EMPTY one are different facts, and this collapsed them into
+            // one `[]` with nothing written down. `MemoryClient.fromEngine` folds every engine fault
+            // into a single tagged error, so a store whose engine had been failing every search for
+            // weeks presented as a store with nothing relevant to say — to the user, and to whoever
+            // read the log afterwards. Every sibling degradation in this subsystem names its fault;
+            // this is the highest-traffic path in the store and it named nothing.
+            Effect.tapError((fault) =>
+              Log.event("session.memory.recall.failed", {
+                "session.id": session.id,
+                "session.cause": Log.fault(fault),
+              }),
+            ),
+            Effect.orElseSucceed(() => []),
+          )
         yield* timingEnd("memory-search")
         // P8d: let the MODEL order what it will actually see. Metadata ordering can't read
         // authoritativeness out of the TEXT — a definitive older statement should outrank a newer
