@@ -172,8 +172,8 @@ describe("SettingsConfigStore", () => {
       const after = yield* db.select().from(RuntimeSettingTable).where(eq(RuntimeSettingTable.key, "server")).get()
       const kept = (after?.value as { password: Record<string, string> }).password
       expect(kept[ENVELOPE_FIELD]).toBe(UNOPENABLE)
-      // The stand-in is regenerated per read, so if it were ever persisted the two reads above
-      // would already disagree with what is on disk. It is not there at all.
+      // The stand-in is minted once per path per boot, so it is a value this instance can recognise
+      // on its way back in through a write — which is what keeps it off the disk. It is not here.
       expect(JSON.stringify(after?.value)).not.toContain("placeholder")
     }),
   )

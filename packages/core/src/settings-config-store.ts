@@ -54,8 +54,14 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2
 /**
  * The stand-in for a secret that could not be decrypted (NC-REL-030).
  *
- * Random per call, never a constant: a fixed sentinel would be a password published in this file,
- * and it could collide with somebody's real one. 32 bytes so no comparison against it can succeed.
+ * Random, never a constant: a fixed sentinel would be a password published in this file, and it
+ * could collide with somebody's real one. 32 bytes so no comparison against it can succeed.
+ *
+ * ⚠️ Minted once per PATH for the life of the layer (`standInFor` below), not once per read — and
+ * that is a correctness property rather than a cache. A stand-in travels back IN through the
+ * recursive merge every config write performs, so this store has to RECOGNISE its own stand-in at
+ * the write chokepoint and put the ciphertext back (`preserveSecrets`). A value regenerated per
+ * read cannot be recognised, and it is no more unguessable than one minted per boot.
  */
 const unreadableSecret = () => randomBytes(32).toString("base64url")
 
@@ -72,8 +78,45 @@ export const layer = Layer.effect(
 
     const passwordOf = (value: unknown): string | undefined =>
       isRecord(value) && typeof value.password === "string" && value.password.length > 0 ? value.password : undefined
-    let serverPassword: string | undefined
     const secretAad = (path: string) => `novaclaw:runtime-setting:${path}`
+    /**
+     * The ONE derivation of an instance token's protected path — `protect`, `reveal` and
+     * `preserveSecrets` all key on it. A second hand-kept copy drifts the day the naming changes,
+     * and its only symptom would be a secret written under the wrong AAD, i.e. unopenable.
+     */
+    const tokenPath = (entry: Record<string, unknown>, index: number) =>
+      `instances.${String(entry.name ?? index)}.token`
+    /** Every stand-in this boot has issued, by protected path. */
+    const standIns = new Map<string, string>()
+    const standInFor = (path: string) => {
+      const issued = standIns.get(path)
+      if (issued !== undefined) return issued
+      const minted = unreadableSecret()
+      standIns.set(path, minted)
+      return minted
+    }
+    /**
+     * The path a value is the stand-in FOR, or undefined if it is somebody's real secret.
+     *
+     * ⚠️ A reverse lookup rather than a per-path comparison, because the ciphertext has to follow
+     * the stand-in and not its position: a write that reorders `instances[]` moves an entry's token
+     * to a new index, and matching by index would either skip the substitution (writing the
+     * stand-in — the defect) or attach one entry's ciphertext to another's row.
+     */
+    const standInPath = (value: unknown) => {
+      if (typeof value !== "string") return undefined
+      for (const [path, issued] of standIns) if (issued === value) return path
+      return undefined
+    }
+    /**
+     * One `credential.setting.undecryptable` per path per boot.
+     *
+     * ⚠️ Load-bearing since `serverPassword()` reads through: that runs on the HTTP authorization
+     * path, i.e. once per REQUEST, so an undeduped notice would turn one damaged envelope into a
+     * log flood that buries the very entry telling the operator to restore their key. Same window
+     * and same reason as `warnUnreadable` in `config-store-factory.ts`.
+     */
+    const reportedUnreadable = new Set<string>()
     /**
      * 🔴 The unwind of app-managed encryption, step 2.
      *
@@ -120,13 +163,17 @@ export const layer = Layer.effect(
         // entry wants anyway — a DecryptError alone does not say whether the key was missing,
         // replaced or unreadable.
         Effect.catchCause((cause) =>
-          Log.event("credential.setting.undecryptable", {
-            "credential.path": path,
-            "credential.cause": Log.fault(cause),
+          Effect.suspend(() => {
+            if (reportedUnreadable.has(path)) return Effect.void
+            reportedUnreadable.add(path)
+            return Log.event("credential.setting.undecryptable", {
+              "credential.path": path,
+              "credential.cause": Log.fault(cause),
+            })
           }).pipe(Effect.as(undefined)),
         ),
       )
-      if (opened === undefined) return { value: unreadableSecret(), migrated: false, damaged: [path] }
+      if (opened === undefined) return { value: standInFor(path), migrated: false, damaged: [path] }
       // `encrypted` distinguishes "this was an envelope and it opened" from "this was never
       // encrypted at all", and only the former needs draining back to plaintext.
       return { value: opened.value, migrated: opened.encrypted === true, damaged: [] as string[] }
@@ -140,7 +187,7 @@ export const layer = Layer.effect(
           isRecord(entry) && entry.token !== undefined
             ? {
                 ...entry,
-                token: protectSecret(entry.token, `instances.${String(entry.name ?? index)}.token`),
+                token: protectSecret(entry.token, tokenPath(entry, index)),
               }
             : entry,
         )
@@ -158,7 +205,7 @@ export const layer = Layer.effect(
         const entries = yield* Effect.forEach(value, (entry, index) =>
           Effect.gen(function* () {
             if (!isRecord(entry) || entry.token === undefined) return entry
-            const token = yield* revealSecret(entry.token, `instances.${String(entry.name ?? index)}.token`)
+            const token = yield* revealSecret(entry.token, tokenPath(entry, index))
             migrated ||= token.migrated
             damaged.push(...token.damaged)
             return { ...entry, token: token.value }
@@ -167,6 +214,60 @@ export const layer = Layer.effect(
         return { value: entries, migrated, damaged }
       }
       return { value, migrated: false, damaged: [] as string[] }
+    })
+
+    /**
+     * 🔴 Never write a stand-in over the ciphertext it stands FOR.
+     *
+     * `all()` states this rule for its own drain write — *"NEVER write back a damaged value … it
+     * would destroy the only copy of the real secret"* — and enforces it there. It could not
+     * enforce it HERE, and here is where the destruction happened: every config write reads
+     * `all()`, merges the caller's patch onto that snapshot and writes the result back. The merge
+     * is recursive, so a patch touching ANY other field of `server` — a port change — carries
+     * `password: <this boot's stand-in>` into the write and replaces the envelope with 32 random
+     * bytes. Restoring `credential.key` afterwards recovers nothing. The instance is meanwhile
+     * TELLING the operator it is damaged and asking for that key (`unreadable()`), so the
+     * destruction lands precisely on the person following our own repair instructions.
+     *
+     * ⚠️ That is the self-healing law failing at its own chokepoint: an operator whose envelope is
+     * gone cannot be talked back into their instance by an agent, which is the one repair path we
+     * promise always exists.
+     *
+     * ⚠️ The guard is RECOGNITION, not refusal. Setting a NEW password while damaged IS the repair
+     * and must go through. Only the exact bytes this store handed out for that path are swapped
+     * back for the stored ciphertext; every other value is the caller's own and is written.
+     *
+     * ⚠️ And it belongs on the store, not at the two call sites, because the store is the only
+     * thing that can tell a stand-in from a password — it minted it. A guard at a caller would
+     * also be a second copy of the per-path naming, which is what `tokenPath` exists to prevent.
+     */
+    const preserveSecrets = Effect.fn("SettingsConfigStore.preserveSecrets")(function* (key: string, value: unknown) {
+      // A healthy instance has issued no stand-in and never will, so it pays no read for this.
+      if (standIns.size === 0) return value
+      if (key === "server") {
+        if (!isRecord(value) || standInPath(value.password) !== "server.password") return value
+        const stored = yield* settings.get(key)
+        // Unreachable — a stand-in is only ever minted while reading a stored envelope. Passes the
+        // value through rather than dying: failing a config write because our own bookkeeping
+        // disagreed with the row would be a worse outcome than the state it is guarding against.
+        if (!isRecord(stored) || stored.password === undefined) return value
+        return { ...value, password: stored.password }
+      }
+      if (key === "instances" && Array.isArray(value)) {
+        const stored = yield* settings.get(key)
+        if (!Array.isArray(stored)) return value
+        const kept = new Map<string, unknown>()
+        stored.forEach((entry, index) => {
+          if (isRecord(entry) && entry.token !== undefined) kept.set(tokenPath(entry, index), entry.token)
+        })
+        return value.map((entry) => {
+          if (!isRecord(entry)) return entry
+          const path = standInPath(entry.token)
+          const raw = path === undefined ? undefined : kept.get(path)
+          return raw === undefined ? entry : { ...entry, token: raw }
+        })
+      }
+      return value
     })
 
     const service = Service.of({
@@ -192,11 +293,37 @@ export const layer = Layer.effect(
           if (opened.migrated && opened.damaged.length === 0) yield* settings.set(key, protect(key, opened.value))
         }
         LogSettings.apply(result.log)
-        serverPassword = passwordOf(result.server)
         return result
       }),
+      /**
+       * 🔴 Read THROUGH the row, never a cached copy.
+       *
+       * This was a closure variable that `set` and `remove` mutated eagerly — and both of them run
+       * INSIDE `db.transaction` on the config write path. A write that rolls back (one refused path
+       * in a multi-path remove, a router arm that dies) rolled SQLite back and left the variable
+       * holding a value that was never stored. With no launcher password in the environment — the
+       * ordinary desktop and `novaclaw serve` shape — the resolver then saw `undefined` and reported
+       * `source: "open"`, so the instance accepted EVERY request unauthenticated until restart, LAN
+       * included, while `/config` still showed a password. Two surfaces, one fact, opposite answers.
+       *
+       * `apply` already states the rule for the logger's projection: *"Refresh only AFTER commit:
+       * doing it in SettingsConfigStore.set would let a later router fault roll SQLite back while
+       * the live logger kept the rejected value."* The fix is not a better-placed refresh, though —
+       * it is no cached copy at all. A rolled-back transaction cannot leave behind a row it did not
+       * commit, so reading the row is correct on every path, including the ones nobody remembers to
+       * add a refresh to.
+       *
+       * ⚠️ One point read of one row per request. After the encryption unwind above the stored
+       * value is a plain string, so `revealSecret` short-circuits without touching the cipher.
+       */
       serverPassword: Effect.fn("SettingsConfigStore.serverPassword")(function* () {
-        return serverPassword
+        const stored = yield* settings.get("server")
+        if (!isRecord(stored) || stored.password === undefined) return undefined
+        const opened = yield* revealSecret(stored.password, "server.password")
+        // A damaged envelope yields the stand-in, so the instance authenticates against 32 bytes
+        // nobody can produce: locked, never open. That is the fail-closed rule above reaching the
+        // one consumer that decides whether a request is let in.
+        return passwordOf({ password: opened.value })
       }),
       unreadable: Effect.fn("SettingsConfigStore.unreadable")(function* () {
         const stored = yield* settings.all()
@@ -208,12 +335,10 @@ export const layer = Layer.effect(
         return found
       }),
       set: Effect.fn("SettingsConfigStore.set")(function* (key, value) {
-        yield* settings.set(key, protect(key, value))
-        if (key === "server") serverPassword = passwordOf(value)
+        yield* settings.set(key, protect(key, yield* preserveSecrets(key, value)))
       }),
       remove: Effect.fn("SettingsConfigStore.remove")(function* (key) {
         yield* settings.remove(key)
-        if (key === "server") serverPassword = undefined
       }),
       isEmpty: Effect.fn("SettingsConfigStore.isEmpty")(function* () {
         return yield* settings.isEmpty()
