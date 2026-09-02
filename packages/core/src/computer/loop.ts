@@ -677,6 +677,25 @@ type BuiltAction = {
   readonly action: ComputerActions.Action
   readonly execution: { readonly kind: "argv"; readonly built: ComputerActions.Valid }
   readonly watch?: ComputerActions.Region
+  /**
+   * The grounded point in `watch`'s OWN frame, plus that frame's size — the pre-action critic's
+   * whole coordinate contract, ready to hand over.
+   *
+   * 🔴 **It is computed where both points are in scope, so the call site never has a pair to choose
+   * between.** A built pointer action carries two pixel points that differ by `pointerOffset`: the
+   * grounded one, which is what `watch` is centred on and what the critic is looking at, and the
+   * offset one, which is where the pointer must be *moved* for its sprite to render on the grounded
+   * one. Subtracting the offset point from the watch origin mixes the two frames and tells the
+   * critic to judge a pixel the action will not touch — and the critic's prompt states that point as
+   * fact, so a correct grounding gets rejected or a wrong one approved on the harness's own error.
+   * With the arithmetic done here there is no second point at the call site to get it wrong with.
+   */
+  readonly watchCrop?: {
+    readonly width: number
+    readonly height: number
+    readonly x: number
+    readonly y: number
+  }
 }
 
 const describeConversion = (error: ComputerCoordinates.ConversionError, what: string): string => {
@@ -800,9 +819,73 @@ const buildAction = (
   if (!built.ok) return { ok: false, reason: built.reason }
 
   const execution = { kind: "argv", built } as const
-  return watchPoint === undefined
-    ? { ok: true, action, execution }
-    : { ok: true, action, execution, watch: watchAround(watchPoint, spec.viewport) }
+  if (watchPoint === undefined) return { ok: true, action, execution }
+  const watch = watchAround(watchPoint, spec.viewport)
+  return {
+    ok: true,
+    action,
+    execution,
+    watch,
+    // `watchPoint`, never `point`: the offset moves the pointer's sprite, not the region, and this
+    // is the region's own frame. See {@link BuiltAction.watchCrop}.
+    watchCrop: { width: watch.width, height: watch.height, x: watchPoint.x - watch.x, y: watchPoint.y - watch.y },
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// The grounding label the planner must send
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * An article. A control is labelled `Bottom Align`; a *description* of one says `at the bottom`.
+ *
+ * ⚠️ Deliberately not the bare `a`: `Left Channel A` is a label, and one letter is too cheap a way
+ * to make a legitimate one unsendable — which is the exact failure this whole predicate exists to
+ * undo.
+ */
+const ARTICLE = /(^|[^a-z])(the|an)([^a-z]|$)/
+
+/**
+ * `undefined` when the planner's grounding label may go to the blind grounder, otherwise the reason
+ * the harness refuses it.
+ *
+ * 🔴 **`grounderLabelIssue` is a WARNING channel and says so in its own doc** — *"a label containing
+ * the word 'right' is not automatically a description — a control can be **labelled** 'Right'. The
+ * caller decides."* This is the caller deciding, and the deciding rule that matters is that a legal
+ * answer must always EXIST. Refusing every control whose visible text contains a positional word,
+ * while the refusal note instructs the model to *"use the control's visible label and nothing else"*,
+ * is an instruction nothing can satisfy: a button genuinely labelled `Left Channel`, `Top` or
+ * `Bottom Align` has no compliant spelling, so the repair is spent, the step ends `noProgress + 1`,
+ * and four of those reach `Blocked(no-progress)` on a task the model was never able to attempt.
+ *
+ * So the positional signal is refused only when the label also reads as a CLAUSE rather than a name,
+ * which is the shape the measurement had (*"the DONE button located at the bottom right of the
+ * screen, below the unit portraits and to the left of the PATROL button"*, 2/25 against 25/25 for
+ * the bare label). Two marks, either sufficient:
+ *
+ * 1. **an article** — no control's visible text contains `the`;
+ * 2. **more than three words carrying more than one positional word** — `Top Left Corner` is a
+ *    plausible anchor-picker label; a five-word phrase relating a control to two others is not.
+ *
+ * Both leave the correction reachable: dropping the article and keeping the name is always a legal
+ * label, which is precisely what the old refusal could not promise.
+ *
+ * ⚠️ **The positional vocabulary stays in `prompt.ts` and is only ever asked, never copied.** The
+ * count comes from probing the module's own predicate word by word, so a word added there is counted
+ * here with no second list to keep in step.
+ *
+ * An EMPTY label is a different refusal and stays terminal: there is no visible text to point at, so
+ * no rewrite of the label can produce one.
+ */
+export const groundingLabelRefusal = (label: string): string | undefined => {
+  const trimmed = label.trim()
+  const issue = ComputerPrompt.grounderLabelIssue(trimmed)
+  if (issue === undefined) return undefined
+  if (trimmed === "") return issue
+  const words = trimmed.split(/\s+/).filter((word) => word !== "")
+  const positional = words.filter((word) => ComputerPrompt.grounderLabelIssue(word) !== undefined).length
+  const readsAsClause = ARTICLE.test(trimmed.toLowerCase()) || (words.length > 3 && positional > 1)
+  return readsAsClause ? issue : undefined
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -947,11 +1030,12 @@ const scheduleAction = (
     pending: { ...described, signature, kind: build.action.kind },
   }
   // C3 applies to screenshot-grounded pointer actions; key/type/scroll have no proposed coordinate to check.
-  const pixelPoint = "point" in build.action ? build.action.point : undefined
+  const actionPoint = "point" in build.action ? build.action.point : undefined
   if (
     grounded !== undefined &&
     build.watch !== undefined &&
-    pixelPoint !== undefined
+    build.watchCrop !== undefined &&
+    actionPoint !== undefined
   ) {
     return {
       state: {
@@ -961,12 +1045,10 @@ const scheduleAction = (
         preactionTarget: {
           label: draft.action?.target?.trim() ?? "",
           point: grounded,
-          crop: {
-            width: build.watch.width,
-            height: build.watch.height,
-            x: pixelPoint.x - build.watch.x,
-            y: pixelPoint.y - build.watch.y,
-          },
+          // Handed over whole by `buildAction`. There is deliberately no arithmetic here: this call
+          // site can see `build.action.point` — the OFFSET point — and picking it would displace the
+          // critic's marker from where the click lands without changing anything the tests watch.
+          crop: build.watchCrop,
         },
       },
       command: {
@@ -1197,7 +1279,7 @@ export function next(state: State, event: Event): Transition {
       const actionKind = draft.action?.kind?.trim() ?? ""
       if (ComputerProposal.isPointerKind(actionKind)) {
         const target = draft.action?.target?.trim() ?? ""
-        const issue = ComputerPrompt.grounderLabelIssue(target)
+        const issue = groundingLabelRefusal(target)
         if (issue !== undefined) {
           return reprompt(
             spent,
