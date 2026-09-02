@@ -109,6 +109,15 @@ export type InboundEvent =
   | {
       readonly kind: "message"
       readonly chat: ChatSnapshot
+      /**
+       * ⚠️ **PROVIDER-ISSUED, or content-addressed over the message — never a per-connection
+       * counter.** The gateway's durable inbound ledger keys on `(account, chat, messageID)` to
+       * decide "already delivered", so an id that restarts at 1 on every reconnect collides with the
+       * previous session's rows and the first N messages after each reconnect are silently dropped
+       * as replays. Only an id that SURVIVES a replay can answer the question the ledger asks.
+       * (Stated until now only in the inbound table's own comment, where a driver author never
+       * reads it.)
+       */
       readonly messageID: string
       readonly sender: Sender
       readonly text?: string
@@ -181,11 +190,28 @@ export interface Connection {
     chatID: string,
     message: OutboundMessage,
   ) => Effect.Effect<{ messageID: string }, SendError | ChallengeError>
-  /** Only for capability `listChats: "full"` (Discord, forums). "seen" platforms rely on the
-   *  gateway's seen-chat cache instead (a Telegram bot cannot enumerate its chats). */
-  readonly listChats?: () => Effect.Effect<readonly ChatSnapshot[], ConnectError>
-  /** Recent messages of one chat, newest last — the tool's `history` op (conversation fetching). */
-  readonly history?: (chatID: string, limit: number) => Effect.Effect<readonly HistoryEntry[], ConnectError>
+  /**
+   * Only for capability `listChats: "full"` (Discord, forums). "seen" platforms rely on the
+   * gateway's seen-chat cache instead (a Telegram bot cannot enumerate its chats).
+   *
+   * 🔴 **THE THIRD DOOR.** This and `history` were typed `ConnectError` alone, so the two
+   * linked-account drivers (WhatsApp, Telegram User) wrapped them in a private helper that
+   * DOWNGRADED a `ChallengeError` to a `ConnectError` — the only way to satisfy the narrower
+   * channel. A revoked or unlinked session discovered while enumerating chats therefore read as an
+   * ordinary read failure: the account stayed `connected`, nothing parked, and the operator was
+   * never told. Both copies were wrong the same way, which is why merging them was refused.
+   *
+   * A challenge is FIRST-CLASS on every door it can arrive at (traffic rules §2.3) — connect, send,
+   * and read — because the account it protects is a real person's. The gateway parks on it here
+   * exactly as it does on the other two.
+   */
+  readonly listChats?: () => Effect.Effect<readonly ChatSnapshot[], ConnectError | ChallengeError>
+  /** Recent messages of one chat, newest last — the tool's `history` op (conversation fetching).
+   *  Carries `ChallengeError` for the same reason `listChats` does — see the note there. */
+  readonly history?: (
+    chatID: string,
+    limit: number,
+  ) => Effect.Effect<readonly HistoryEntry[], ConnectError | ChallengeError>
   readonly downloadFile?: (ref: FileRef) => Effect.Effect<Uint8Array, FileError>
   readonly moderate?: (chatID: string, act: ModerationAct) => Effect.Effect<void, ModerationError>
 }

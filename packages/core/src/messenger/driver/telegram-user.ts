@@ -391,13 +391,6 @@ export const make = (factory: UserClientFactory): Driver => {
             return { messageID: lastID }
           })
 
-        const demoteChallenge = <A>(effect: Effect.Effect<A, ConnectError | ChallengeError>) =>
-          effect.pipe(
-            Effect.mapError((error) =>
-              error._tag === "MessengerDriver.ChallengeError" ? new ConnectError({ reason: error.message }) : error,
-            ),
-          )
-
         return {
           inbound: Stream.fromQueue(queue),
           send,
@@ -409,31 +402,31 @@ export const make = (factory: UserClientFactory): Driver => {
                   reason: error instanceof UserClientError ? failureText(error.failure) : String(error),
                 }),
             }),
+          // `tryClient` raw — a revoked session met while READING parks the account, same as one met
+          // at connect (`me()`) or on a send. It used to be demoted to a ConnectError here (see the
+          // note on `Connection.listChats`), which read as an ordinary read failure and left a dead
+          // session sitting at status `connected`.
           listChats: () =>
-            demoteChallenge(
-              tryClient(() =>
-                client
-                  .dialogs(100)
-                  .then((chats) =>
-                    chats.map((chat) =>
-                      chat.chatID === me.id ? { ...chat, self: true, title: "Saved Messages" } : chat,
-                    ),
+            tryClient(() =>
+              client
+                .dialogs(100)
+                .then((chats) =>
+                  chats.map((chat) =>
+                    chat.chatID === me.id ? { ...chat, self: true, title: "Saved Messages" } : chat,
                   ),
-              ),
+                ),
             ),
           history: (chatID, limit) =>
-            demoteChallenge(
-              tryClient(() =>
-                client.history(chatID, limit).then((messages) =>
-                  messages.map((message) => ({
-                    messageID: message.messageID,
-                    senderID: message.senderID,
-                    senderName: message.senderName,
-                    outgoing: message.outgoing,
-                    ...(message.text !== undefined && message.text.length > 0 ? { text: message.text } : {}),
-                    at: message.at,
-                  })),
-                ),
+            tryClient(() =>
+              client.history(chatID, limit).then((messages) =>
+                messages.map((message) => ({
+                  messageID: message.messageID,
+                  senderID: message.senderID,
+                  senderName: message.senderName,
+                  outgoing: message.outgoing,
+                  ...(message.text !== undefined && message.text.length > 0 ? { text: message.text } : {}),
+                  at: message.at,
+                })),
               ),
             ),
         } satisfies Connection

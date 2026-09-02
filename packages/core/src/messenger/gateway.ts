@@ -1663,7 +1663,21 @@ const build = (options: Options) =>
               } satisfies ChatsOutcome
             return { ok: true, chats: cached } satisfies ChatsOutcome
           }
-          const listed = yield* live().pipe(Effect.orElseSucceed(() => undefined))
+          // 🔴 THE THIRD DOOR (traffic rules §2.3 / #9(c)). A revoked or unlinked session is often
+          // discovered HERE first — enumerating chats is the cheapest thing an agent does — and this
+          // used to swallow every failure alike into "serve the cache". The account stayed
+          // `connected`, no banner went up, and the operator was never asked to re-link. An ordinary
+          // read failure still falls back to the cache; a challenge parks first, exactly as one
+          // raised at connect or on a send does.
+          const listed = yield* live().pipe(
+            Effect.catch((error) =>
+              Effect.gen(function* () {
+                if (isChallenge(error) && entry !== undefined)
+                  yield* setStatus(accountID, entry, { state: "challenge", message: error.message })
+                return undefined
+              }),
+            ),
+          )
           if (listed === undefined) return { ok: true, chats: cached } satisfies ChatsOutcome
           // Refresh DISCOVERY metadata only. A conversation being addressable in an account proves
           // neither that somebody initiated nor that the shareholder approved first contact, so this
@@ -1730,7 +1744,20 @@ const build = (options: Options) =>
             } satisfies HistoryOutcome
           return yield* fetchHistory(input.chatID, input.limit).pipe(
             Effect.map((messages) => ({ ok: true, messages }) satisfies HistoryOutcome),
-            Effect.catch((error) => Effect.succeed({ ok: false, reason: error.reason } satisfies HistoryOutcome)),
+            Effect.catch((error) =>
+              Effect.gen(function* () {
+                // The third door again — a revoked session can surface on a history read as easily
+                // as on a listing. Park BEFORE answering the model, so the banner is up by the time
+                // it reads the refusal, and say which KIND of problem this is rather than reporting
+                // a verification prompt as an ordinary read failure.
+                if (isChallenge(error))
+                  yield* setStatus(input.accountID, entry, { state: "challenge", message: error.message })
+                return {
+                  ok: false,
+                  reason: isChallenge(error) ? `verification required — ${error.message}` : error.reason,
+                } satisfies HistoryOutcome
+              }),
+            ),
           )
         }),
       send: (input) =>

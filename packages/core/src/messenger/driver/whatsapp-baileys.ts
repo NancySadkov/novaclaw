@@ -347,11 +347,23 @@ export const make = (factory: WAClientFactory): Driver => {
         })
         yield* Effect.forkScoped(pump.pipe(Effect.catchCause(() => Queue.shutdown(queue))))
 
-        const mapSendError = (error: unknown) =>
-          new SendError({
+        // A challenge stays a CHALLENGE, exactly as `mapClientError` above has always treated it.
+        // This collapsed `logged-out` (and `challenge`) into a non-retryable `SendError`, so an
+        // unlinked or banned device discovered mid-send read as an ordinary refusal: the account
+        // never parked, the banner never went up, and the operator was never asked to re-link. The
+        // `retryable: false` made it quiet rather than correct — nothing retried, and nothing said
+        // WHY. `Connection.send` carries `ChallengeError` for precisely this.
+        const mapSendError = (error: unknown) => {
+          if (
+            error instanceof WAClientError &&
+            (error.failure.kind === "logged-out" || error.failure.kind === "challenge")
+          )
+            return new ChallengeError({ message: failureText(error.failure) })
+          return new SendError({
             reason: error instanceof WAClientError ? failureText(error.failure) : String(error),
-            retryable: !(error instanceof WAClientError && error.failure.kind === "logged-out"),
+            retryable: true,
           })
+        }
 
         const send = (chatID: string, message: { text?: string; file?: OutboundFile }) =>
           Effect.gen(function* () {
@@ -380,13 +392,6 @@ export const make = (factory: WAClientFactory): Driver => {
             return { messageID: lastID }
           })
 
-        const demoteChallenge = <A>(effect: Effect.Effect<A, ConnectError | ChallengeError>) =>
-          effect.pipe(
-            Effect.mapError((error) =>
-              error._tag === "MessengerDriver.ChallengeError" ? new ConnectError({ reason: error.message }) : error,
-            ),
-          )
-
         return {
           inbound: Stream.fromQueue(queue),
           send,
@@ -396,31 +401,31 @@ export const make = (factory: WAClientFactory): Driver => {
               catch: (error) =>
                 new FileError({ reason: error instanceof WAClientError ? failureText(error.failure) : String(error) }),
             }),
+          // `tryClient` raw — an unlinked device met while READING parks the account, same as one
+          // met at connect or on a send. It used to be demoted to a ConnectError here (see the
+          // note on `Connection.listChats`), which read as an ordinary read failure and left a dead
+          // session sitting at status `connected`.
           listChats: () =>
-            demoteChallenge(
-              tryClient(() =>
-                client
-                  .chats(100)
-                  .then((chats) =>
-                    chats.map((chat) =>
-                      chat.chatID === me.id ? { ...chat, self: true, title: "Message Yourself" } : chat,
-                    ),
+            tryClient(() =>
+              client
+                .chats(100)
+                .then((chats) =>
+                  chats.map((chat) =>
+                    chat.chatID === me.id ? { ...chat, self: true, title: "Message Yourself" } : chat,
                   ),
-              ),
+                ),
             ),
           history: (chatID, limit) =>
-            demoteChallenge(
-              tryClient(() =>
-                client.history(chatID, limit).then((messages) =>
-                  messages.map((message) => ({
-                    messageID: message.messageID,
-                    senderID: message.senderID,
-                    senderName: message.senderName,
-                    outgoing: message.outgoing,
-                    ...(message.text !== undefined && message.text.length > 0 ? { text: message.text } : {}),
-                    at: message.at,
-                  })),
-                ),
+            tryClient(() =>
+              client.history(chatID, limit).then((messages) =>
+                messages.map((message) => ({
+                  messageID: message.messageID,
+                  senderID: message.senderID,
+                  senderName: message.senderName,
+                  outgoing: message.outgoing,
+                  ...(message.text !== undefined && message.text.length > 0 ? { text: message.text } : {}),
+                  at: message.at,
+                })),
               ),
             ),
         } satisfies Connection

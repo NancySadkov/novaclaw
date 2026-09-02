@@ -523,7 +523,10 @@ describe("RedditDriver connection", () => {
           return yield* connection.history!("r/novaclaw/modqueue", 10).pipe(Effect.flip)
         }),
       )
-      expect(error.reason).toContain("posts` moderator permission")
+      // A 403 on the modqueue is a PERMISSION problem, not a provider challenge — the read channel
+      // now carries both, and only the challenge arm may park the account.
+      expect(error._tag).toBe("MessengerDriver.ConnectError")
+      expect(error._tag === "MessengerDriver.ConnectError" && error.reason).toContain("posts` moderator permission")
     }),
   )
 
