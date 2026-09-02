@@ -138,7 +138,20 @@ try {
     UI.error("Unexpected error" + EOL)
     process.stderr.write(errorMessage(e) + EOL)
   }
-  process.exitCode = 1
+  /**
+   * 🔴 **A callee that reports through a side channel, overwritten by an unconditional default.**
+   *
+   * `FormatError` does not RETURN the exit code a `CliError` carries — it assigns
+   * `process.exitCode` as a side effect (`cli/error.ts`) and returns only the message. The line
+   * that used to stand here was an unconditional `process.exitCode = 1`, which ran afterwards and
+   * clobbered it, so `CliError.exitCode` and `fail(message, code)`'s second argument could never
+   * take effect: EVERY command's non-zero intent collapsed to 1, and the assignment in
+   * `error.ts` read as load-bearing while doing nothing.
+   *
+   * Default to 1 only when nothing has claimed a code (`undefined`, or a 0 that would report a
+   * failure as success).
+   */
+  if (!process.exitCode) process.exitCode = 1
 } finally {
   // Some subprocesses don't react properly to SIGTERM and similar signals.
   // Most notably, some docker-container-based MCP servers don't handle such signals unless

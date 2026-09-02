@@ -10,13 +10,22 @@ import path from "path"
 import os from "os"
 import { Config } from "@/config/config"
 import { Global } from "@novaclaw/core/global"
-import { Effect, Option } from "effect"
+import { Effect } from "effect"
 import { CommandSpec } from "../command-spec"
 
-const promptValue = <Value>(value: Option.Option<Value>) => {
-  if (Option.isNone(value)) return Effect.die(new UI.CancelledError())
-  return Effect.succeed(value.value)
-}
+/**
+ * 🔴 **Exit 2 — the invocation is missing something only the caller can supply.**
+ *
+ * Distinct from 1 ("the work was attempted and failed") so a provisioning script can tell "you
+ * called me wrong" from "authentication was refused" without parsing prose. These leaves used to
+ * open a blocking prompt instead, which principle 14 forbids structurally: a headless CLI has
+ * nobody to answer it, and a killed process's output is discarded, so the operator saw nothing at
+ * all. Answer immediately, or do not ask — so we refuse and name what is needed.
+ */
+const EXIT_USAGE = 2
+
+/** The one non-interactive channel for a secret. Not a flag: argv is visible in the process table. */
+const API_KEY_ENV = "NOVACLAW_API_KEY"
 
 export const ProvidersCommand = cmd({
   ...CommandSpec.providers,
@@ -134,38 +143,31 @@ export const ProvidersLoginCommand = effectCmd({
       ),
     ]
 
-    let provider: string
-    if (args.provider) {
-      const input = args.provider
-      const byID = options.find((x) => x.value === input)
-      const byName = options.find((x) => x.label.toLowerCase() === input.toLowerCase())
-      const match = byID ?? byName
-      if (!match) {
-        return yield* fail(`Unknown provider "${input}"`)
-      }
-      provider = match.value
-    } else {
-      provider = yield* promptValue(
-        yield* Prompt.autocomplete({
-          message: "Select provider",
-          maxItems: 8,
-          options: [...options, { value: "other", label: "Other" }],
-        }),
+    // ⚠️ No `Select provider` prompt, and no "Other" free-text escape behind it. Both blocked on a
+    // human; the "Other" branch additionally told the user to "configure it in novaclaw.json",
+    // a file no booted instance reads (config is SQLite). An unlisted provider is configured in
+    // Settings → Providers, which is where the runtime actually reads it from.
+    if (!args.provider) {
+      return yield* fail(
+        [
+          "providers login needs the provider to log in to.",
+          `  nova-cli providers login --provider <id>   (${options.length} available: ${options
+            .slice(0, 8)
+            .map((x) => x.value)
+            .join(", ")}${options.length > 8 ? ", …" : ""})`,
+          "  nova-cli providers list                    lists what is already configured",
+        ].join("\n"),
+        EXIT_USAGE,
       )
     }
-
-    if (provider === "other") {
-      provider = (yield* promptValue(
-        yield* Prompt.text({
-          message: "Enter provider id",
-          validate: (x) => (x && x.match(/^[0-9a-z-]+$/) ? undefined : "a-z, 0-9 and hyphens only"),
-        }),
-      )).replace(/^@ai-sdk\//, "")
-
-      yield* Prompt.log.warn(
-        `This only stores a credential for ${provider} - you will need configure it in novaclaw.json, check the docs for examples.`,
-      )
+    const input = args.provider
+    const byID = options.find((x) => x.value === input)
+    const byName = options.find((x) => x.label.toLowerCase() === input.toLowerCase())
+    const match = byID ?? byName
+    if (!match) {
+      return yield* fail(`Unknown provider "${input}"`)
     }
+    const provider = match.value
 
     if (provider === "novaclaw") {
       yield* Prompt.log.info("Create an api key at https://novaclaw.app/auth")
@@ -181,11 +183,21 @@ export const ProvidersLoginCommand = effectCmd({
       )
     }
 
-    const key = yield* Prompt.password({
-      message: "Enter your API key",
-      validate: (x) => (x && x.length > 0 ? undefined : "Required"),
-    })
-    const apiKey = yield* promptValue(key)
+    // ⚠️ This was `Prompt.password({message: "Enter your API key"})` with NO non-interactive escape
+    // of any kind — the one leaf of the eight that could not be satisfied from argv at all. A
+    // scheduled agent or CI job running `providers login --provider openai` got a process that
+    // never returned.
+    const apiKey = process.env[API_KEY_ENV]?.trim()
+    if (!apiKey) {
+      return yield* fail(
+        [
+          `providers login needs the API key for "${provider}" in ${API_KEY_ENV}.`,
+          `  ${API_KEY_ENV}=<key> nova-cli providers login --provider ${provider}`,
+          "It is read from the environment, never from argv, so the key does not appear in the process list.",
+        ].join("\n"),
+        EXIT_USAGE,
+      )
+    }
     yield* Effect.orDie(authSvc.set(provider, { type: "api", key: apiKey }))
 
     yield* Prompt.outro("Done")
@@ -209,28 +221,29 @@ export const ProvidersLogoutCommand = effectCmd({
     UI.empty()
     const credentials: Array<[string, Auth.Info]> = Object.entries(yield* Effect.orDie(authSvc.all()))
     yield* Prompt.intro("Remove credential")
-    if (credentials.length === 0) {
-      yield* Prompt.log.error("No credentials found")
-      return
-    }
+    // ⚠️ "No credentials found" then `return` exited 0: `providers logout x && echo ok` printed the
+    // error AND "ok". A mutation that did not happen never reports success (ruling 2).
+    if (credentials.length === 0) return yield* fail("No credentials found")
     const database = yield* modelsDev.get()
     const options = credentials.map(([key, value]) => ({
       label: (database[key]?.name || key) + UI.Style.TEXT_DIM + " (" + value.type + ")",
       value: key,
     }))
-    const provider = args.provider
-      ? options.find(
-          (option) =>
-            option.value === args.provider ||
-            database[option.value]?.name?.toLowerCase() === args.provider?.toLowerCase(),
-        )?.value
-      : yield* promptValue(
-          yield* Prompt.autocomplete({
-            message: "Select provider",
-            maxItems: 8,
-            options,
-          }),
-        )
+    // ⚠️ Was a `Select provider` autocomplete when the positional was omitted. Refuse and name the
+    // credentials that exist instead — the list is the same information the prompt would have shown.
+    if (!args.provider) {
+      return yield* fail(
+        [
+          "providers logout needs the provider to log out from.",
+          `  nova-cli providers logout <provider>   (stored: ${options.map((x) => x.value).join(", ")})`,
+        ].join("\n"),
+        EXIT_USAGE,
+      )
+    }
+    const provider = options.find(
+      (option) =>
+        option.value === args.provider || database[option.value]?.name?.toLowerCase() === args.provider?.toLowerCase(),
+    )?.value
     if (!provider) return yield* fail(`Unknown configured provider "${args.provider}"`)
     yield* Effect.orDie(authSvc.remove(provider))
     yield* Prompt.outro("Logout successful")

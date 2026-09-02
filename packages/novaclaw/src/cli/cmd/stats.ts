@@ -342,7 +342,21 @@ export function displayStats(stats: SessionStats, toolLimit?: number, modelLimit
     console.log("│                      MODEL USAGE                       │")
     console.log("├────────────────────────────────────────────────────────┤")
 
-    for (const [model, usage] of modelsToDisplay) {
+    /**
+     * 🔴 **Never repair printed output by moving the cursor — this stream is designed to be piped.**
+     *
+     * This loop used to print a separator AFTER every model block, including the last, and then
+     * erase that last line by writing a raw `\x1B[1A` cursor-up straight to stdout. Nothing
+     * guarded it, and nothing could: `stats --models > usage.txt` (or `| tee`, or a CI log) has no
+     * cursor to move, so the file captured the escape byte AND the separator it was meant to
+     * remove — a corrupted table with a stray control character mid-stream.
+     *
+     * Printing the separator BEFORE every block but the first means the line is never emitted, so
+     * there is nothing to take back. The only writes left here are `console.log` lines that are
+     * correct on a terminal and in a pipe alike.
+     */
+    for (const [index, [model, usage]] of modelsToDisplay.entries()) {
+      if (index > 0) console.log("├────────────────────────────────────────────────────────┤")
       console.log(`│ ${model.padEnd(54)} │`)
       console.log(renderRow("  Messages", usage.messages.toLocaleString()))
       console.log(renderRow("  Input Tokens", formatNumber(usage.tokens.input)))
@@ -350,10 +364,7 @@ export function displayStats(stats: SessionStats, toolLimit?: number, modelLimit
       console.log(renderRow("  Cache Read", formatNumber(usage.tokens.cache.read)))
       console.log(renderRow("  Cache Write", formatNumber(usage.tokens.cache.write)))
       console.log(renderRow("  Cost", `$${usage.cost.toFixed(4)}`))
-      console.log("├────────────────────────────────────────────────────────┤")
     }
-    // Remove last separator and add bottom border
-    process.stdout.write("\x1B[1A") // Move up one line
     console.log("└────────────────────────────────────────────────────────┘")
   }
   console.log()

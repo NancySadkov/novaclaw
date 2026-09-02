@@ -1,7 +1,7 @@
 import { cmd } from "./cmd"
 import { CommandSpec } from "../command-spec"
 import { Config as ConfigV2 } from "@novaclaw/core/config"
-import { effectCmd } from "../effect-cmd"
+import { effectCmd, fail } from "../effect-cmd"
 import { Cause } from "effect"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
@@ -37,6 +37,17 @@ function getAuthStatusText(status: MCP.AuthStatus): string {
       return "not authenticated"
   }
 }
+
+/**
+ * 🔴 **Exit 2 — the invocation is missing something only the caller can supply.**
+ *
+ * Distinct from 1 ("the work was attempted and failed") so a provisioning script can tell "you
+ * called me wrong" from "authentication was refused" without parsing prose. Every leaf below that
+ * uses it used to open a blocking prompt instead, which principle 14 forbids structurally: a
+ * headless CLI has nobody to answer it, and a killed process's output is discarded, so the operator
+ * saw nothing at all. Answer immediately, or do not ask — so we refuse and name what is needed.
+ */
+const EXIT_USAGE = 2
 
 // V2 nests servers under `mcp.servers`; every server carries a `type`.
 type McpEntry = NonNullable<NonNullable<ConfigV2.Info["mcp"]>["servers"]>[string]
@@ -175,67 +186,53 @@ export const McpAuthCommand = effectCmd({
     const mcpServers = config.mcp?.servers ?? {}
     const servers = oauthServers(config)
 
+    // ⚠️ Every arm below used to be `log.error(...); outro("Done"); return` — which exits **0**.
+    // `nova-cli mcp auth my-server && echo ok` printed the error AND "ok", and any provisioning
+    // script gating on it proceeded against an unauthenticated server. A failed mutation never
+    // reports success (ruling 2), so each one is now a `fail`.
     if (servers.length === 0) {
-      prompts.log.warn("No OAuth-capable MCP servers configured")
-      // Was: "add a remote server in novaclaw.json", with a V1-shaped flat `mcp` snippet. Both
-      // halves were wrong — servers nest under `mcp.servers`, and a hand-edited jsonc is not read
-      // at runtime at all (config is SQLite). Point at the command that actually writes.
-      prompts.log.info("Remote MCP servers support OAuth by default. Add one with:")
-      prompts.log.info(`  nova-cli mcp add my-server --url https://example.com/mcp`)
-      prompts.outro("Done")
-      return
+      return yield* fail(
+        [
+          "No OAuth-capable MCP servers configured.",
+          // Was: "add a remote server in novaclaw.json", with a V1-shaped flat `mcp` snippet. Both
+          // halves were wrong — servers nest under `mcp.servers`, and a hand-edited jsonc is not
+          // read at runtime at all (config is SQLite). Point at the command that actually writes.
+          "Remote MCP servers support OAuth by default. Add one with:",
+          "  nova-cli mcp add my-server --url https://example.com/mcp",
+        ].join("\n"),
+      )
     }
 
-    let serverName = args.name
+    // ⚠️ Was a `Select MCP server to authenticate` prompt. The list it would have rendered is the
+    // same information, so print it and refuse rather than wait for a keystroke nobody will send.
+    const serverName = args.name
     if (!serverName) {
-      // Build options with auth status
-      const options = servers.map(([name, cfg]) => {
-        const authStatus = auth[name]
-        const icon = getAuthStatusIcon(authStatus)
-        const statusText = getAuthStatusText(authStatus)
-        const url = cfg.url
-        return {
-          label: `${icon} ${name} (${statusText})`,
-          value: name,
-          hint: url,
-        }
-      })
-
-      const selected = yield* Effect.promise(() =>
-        prompts.select({
-          message: "Select MCP server to authenticate",
-          options,
-        }),
+      return yield* fail(
+        [
+          "mcp auth needs the name of the server to authenticate.",
+          "  nova-cli mcp auth <name>",
+          ...servers.map(([name]) => `    ${getAuthStatusIcon(auth[name])} ${name} (${getAuthStatusText(auth[name])})`),
+        ].join("\n"),
+        EXIT_USAGE,
       )
-      if (prompts.isCancel(selected)) throw new UI.CancelledError()
-      serverName = selected
     }
 
     const serverConfig = mcpServers[serverName]
-    if (!serverConfig) {
-      prompts.log.error(`MCP server not found: ${serverName}`)
-      prompts.outro("Done")
-      return
-    }
+    if (!serverConfig) return yield* fail(`MCP server not found: ${serverName}`)
 
     if (!isMcpRemote(serverConfig) || serverConfig.oauth === false) {
-      prompts.log.error(`MCP server ${serverName} is not an OAuth-capable remote server`)
-      prompts.outro("Done")
-      return
+      return yield* fail(`MCP server ${serverName} is not an OAuth-capable remote server`)
     }
 
     // Check if already authenticated
     const authStatus = auth[serverName] ?? (yield* MCP.Service.use((mcp) => mcp.getAuthStatus(serverName)))
+    // ⚠️ Was `prompts.confirm({message: "… already has valid credentials. Re-authenticate?"})`,
+    // reached WITH the positional supplied — so the fully-specified, non-interactive invocation
+    // still blocked on a human forever. There is no question to ask: the caller named this server
+    // and asked for it to be authenticated. Say what is happening and do it, which also keeps
+    // `mcp auth <name>` idempotent for a provisioning script that runs it twice.
     if (authStatus === "authenticated") {
-      const confirm = yield* Effect.promise(() =>
-        prompts.confirm({
-          message: `${serverName} already has valid credentials. Re-authenticate?`,
-        }),
-      )
-      if (prompts.isCancel(confirm) || !confirm) {
-        prompts.outro("Cancelled")
-        return
-      }
+      prompts.log.info(`${serverName} already has valid credentials — re-authenticating.`)
     } else if (authStatus === "expired") {
       prompts.log.warn(`${serverName} has expired credentials. Re-authenticating...`)
     }
@@ -243,44 +240,56 @@ export const McpAuthCommand = effectCmd({
     const spinner = prompts.spinner()
     spinner.start("Starting OAuth flow...")
 
-    yield* MCP.Service.use((mcp) =>
+    /**
+     * 🔴 **`spinner.stop(msg, 1)`'s `1` is a clack RENDERING flag, not an exit code.**
+     *
+     * Both arms below used to end the handler normally — the `catchCause` converted the cause into
+     * a SUCCESS and returned, and the non-`connected` statuses simply fell through to
+     * `outro("Done")`. So `mcp auth my-server` printed "Authentication failed" and exited **0**,
+     * which is worse than a crash for a headless tool: a script cannot tell. Both now carry the
+     * reason out as a value and refuse below.
+     */
+    const failure = yield* MCP.Service.use((mcp) =>
       mcp.authenticate(serverName, (url) => {
         spinner.stop("Authorize in your browser:")
         prompts.log.info(url)
         spinner.start("Waiting for authorization...")
       }),
     ).pipe(
-      Effect.tap((status) =>
-        Effect.sync(() => {
-          if (status.status === "connected") {
-            spinner.stop("Authentication successful!")
-          } else if (status.status === "needs_client_registration") {
-            spinner.stop("Authentication failed", 1)
-            prompts.log.error(status.error)
-            // Was a jsonc snippet under a V1-flat `mcp` key with camelCase `clientId`/`clientSecret`
-            // — three ways wrong at once (dead file, wrong nesting, wrong field names; the schema is
-            // `mcp.servers.<name>.oauth.client_id`). Re-adding through the command is the one route
-            // that writes where the runtime reads.
-            prompts.log.info(
-              `Re-add "${serverName}" with \`nova-cli mcp add\` (interactive) and answer yes to ` +
-                `"pre-registered client ID", or set mcp.servers.${serverName}.oauth.client_id in Settings.`,
-            )
-          } else if (status.status === "failed") {
-            spinner.stop("Authentication failed", 1)
-            prompts.log.error(status.error)
-          } else {
-            spinner.stop("Unexpected status: " + status.status, 1)
-          }
-        }),
-      ),
+      Effect.map((status): string | undefined => {
+        if (status.status === "connected") {
+          spinner.stop("Authentication successful!")
+          return undefined
+        }
+        if (status.status === "needs_client_registration") {
+          spinner.stop("Authentication failed", 1)
+          // Was a jsonc snippet under a V1-flat `mcp` key with camelCase `clientId`/`clientSecret`
+          // — three ways wrong at once (dead file, wrong nesting, wrong field names; the schema is
+          // `mcp.servers.<name>.oauth.client_id`). It then pointed at `mcp add` "(interactive)",
+          // which no longer exists: that wizard was one of the eight blocking leaves. Settings is
+          // where the runtime reads this from, and it is the one route that can carry a secret.
+          prompts.log.info(
+            `Set mcp.servers.${serverName}.oauth.client_id (and client_secret, if the provider ` +
+              `issued one) in Settings → MCP, then run this command again.`,
+          )
+          return status.error
+        }
+        if (status.status === "failed") {
+          spinner.stop("Authentication failed", 1)
+          return status.error
+        }
+        spinner.stop("Unexpected status: " + status.status, 1)
+        return `unexpected authentication status: ${String(status.status)}`
+      }),
       Effect.catchCause((cause) =>
         Effect.sync(() => {
           spinner.stop("Authentication failed", 1)
           const error = Cause.squash(cause)
-          prompts.log.error(error instanceof Error ? error.message : String(error))
+          return error instanceof Error ? error.message : String(error)
         }),
       ),
     )
+    if (failure) return yield* fail(`Authentication failed for "${serverName}": ${failure}`)
 
     prompts.outro("Done")
   }),
@@ -331,42 +340,30 @@ export const McpLogoutCommand = effectCmd({
     const credentials = yield* McpAuth.Service.use((auth) => auth.all())
     const serverNames = Object.keys(credentials)
 
-    if (serverNames.length === 0) {
-      prompts.log.warn("No MCP OAuth credentials stored")
-      prompts.outro("Done")
-      return
-    }
+    // ⚠️ All three arms used to exit 0, so `mcp logout <typo>` was indistinguishable from a
+    // successful logout — the removal never happened and the caller was told it had.
+    if (serverNames.length === 0) return yield* fail("No MCP OAuth credentials stored")
 
-    let serverName = args.name
+    // ⚠️ Was a `Select MCP server to logout` prompt. Same information, printed and refused.
+    const serverName = args.name
     if (!serverName) {
-      const selected = yield* Effect.promise(() =>
-        prompts.select({
-          message: "Select MCP server to logout",
-          options: serverNames.map((name) => {
+      return yield* fail(
+        [
+          "mcp logout needs the name of the server to log out from.",
+          "  nova-cli mcp logout <name>",
+          ...serverNames.map((name) => {
             const entry = credentials[name]
-            const hasTokens = !!entry.tokens
-            const hasClient = !!entry.clientInfo
-            let hint = ""
-            if (hasTokens && hasClient) hint = "tokens + client"
-            else if (hasTokens) hint = "tokens"
-            else if (hasClient) hint = "client registration"
-            return {
-              label: name,
-              value: name,
-              hint,
-            }
+            const held = [entry.tokens ? "tokens" : undefined, entry.clientInfo ? "client registration" : undefined]
+              .filter(Boolean)
+              .join(" + ")
+            return `    ${name}${held ? ` (${held})` : ""}`
           }),
-        }),
+        ].join("\n"),
+        EXIT_USAGE,
       )
-      if (prompts.isCancel(selected)) throw new UI.CancelledError()
-      serverName = selected
     }
 
-    if (!credentials[serverName]) {
-      prompts.log.error(`No credentials found for: ${serverName}`)
-      prompts.outro("Done")
-      return
-    }
+    if (!credentials[serverName]) return yield* fail(`No credentials found for: ${serverName}`)
 
     yield* MCP.Service.use((mcp) => mcp.removeAuth(serverName))
     prompts.log.success(`Removed OAuth credentials for ${serverName}`)
@@ -434,8 +431,16 @@ function persistServer(name: string, mcpConfig: McpServerWrite) {
  */
 const ADDED_HINT = "It is connected the next time the instance starts (restart a running one to pick it up)."
 
-/** What the prompts/flags produced: the server to write, or nothing (the user cancelled). */
-type Collected = { name: string; config: McpServerWrite }
+/** `KEY=VALUE` pairs, or the message naming the pair that is not one. */
+function parsePairs(values: string[], kind: string): Record<string, string> | string {
+  const out: Record<string, string> = {}
+  for (const entry of values) {
+    const index = entry.indexOf("=")
+    if (index < 1) return `Invalid ${kind}: ${entry}. Expected KEY=VALUE`
+    out[entry.slice(0, index)] = entry.slice(index + 1)
+  }
+  return out
+}
 
 export const McpAddCommand = effectCmd({
   command: "add [name]",
@@ -461,181 +466,59 @@ export const McpAddCommand = effectCmd({
         array: true,
       }),
   handler: Effect.fn("Cli.mcp.add")(function* (args) {
-    // Everything that prompts or validates stays inside ONE promise (so a validation `throw` keeps
-    // its existing exit behaviour); it returns the entry to write, or undefined when the user
-    // cancelled. The store write then happens as an Effect, outside it.
-    const collected = yield* Effect.promise(async (): Promise<Collected | undefined> => {
-      const command = args["--"] ?? []
-      if (!args.name && (args.url || args.env?.length || args.header?.length || command.length)) {
-        throw new Error("A server name is required for non-interactive MCP configuration")
-      }
-      if (args.name) {
-        if (!!args.url === !!command.length) {
-          throw new Error("Provide either --url <url> or a command after --")
+    const command = args["--"] ?? []
+    /**
+     * 🔴 **The interactive wizard is deleted, not gated.**
+     *
+     * `mcp add` with no name used to walk seven blocking prompts (name, type, command/url, three
+     * confirms, a password) with no flag able to answer any of them. Principle 14 forbids that
+     * structurally — not "unless a TTY", not "unless a timeout": a headless CLI has nobody to
+     * answer, and a killed process's output is discarded, so the operator saw nothing. Every field
+     * the wizard collected already has a flag EXCEPT the OAuth client id/secret, and a secret does
+     * not belong on argv anyway — Settings is where the runtime reads those from.
+     */
+    if (!args.name) {
+      return yield* fail(
+        [
+          "mcp add needs a server name and how to reach it.",
+          "  nova-cli mcp add <name> --url <url> [--header K=V]     a remote server",
+          "  nova-cli mcp add <name> [--env K=V] -- <command...>    a local server",
+          "OAuth client credentials are set in Settings → MCP; a secret does not belong on argv.",
+        ].join("\n"),
+        EXIT_USAGE,
+      )
+    }
+    // ⚠️ These were `throw new Error(...)` inside an `Effect.promise`, i.e. DEFECTS: the user saw
+    // "Unexpected error" and a raw message rather than a named refusal. They are usage errors.
+    if (!!args.url === !!command.length) {
+      return yield* fail("Provide either --url <url> or a command after --", EXIT_USAGE)
+    }
+    if (args.url && !URL.canParse(args.url)) return yield* fail(`Invalid URL: ${args.url}`, EXIT_USAGE)
+    if (args.url && args.env?.length) return yield* fail("--env is only valid for local MCP servers", EXIT_USAGE)
+    if (command.length && args.header?.length) {
+      return yield* fail("--header is only valid for remote MCP servers", EXIT_USAGE)
+    }
+
+    const environment = parsePairs(args.env ?? [], "environment variable")
+    if (typeof environment === "string") return yield* fail(environment, EXIT_USAGE)
+    const headers = parsePairs(args.header ?? [], "HTTP header")
+    if (typeof headers === "string") return yield* fail(headers, EXIT_USAGE)
+
+    const mcpConfig: McpServerWrite = args.url
+      ? {
+          type: "remote",
+          url: args.url,
+          ...(Object.keys(headers).length ? { headers } : {}),
         }
-        if (args.url && !URL.canParse(args.url)) {
-          throw new Error(`Invalid URL: ${args.url}`)
-        }
-        if (args.url && args.env?.length) {
-          throw new Error("--env is only valid for local MCP servers")
-        }
-        if (command.length && args.header?.length) {
-          throw new Error("--header is only valid for remote MCP servers")
-        }
-
-        const entries = (values: string[], kind: string) =>
-          Object.fromEntries(
-            values.map((entry) => {
-              const index = entry.indexOf("=")
-              if (index < 1) throw new Error(`Invalid ${kind}: ${entry}. Expected KEY=VALUE`)
-              return [entry.slice(0, index), entry.slice(index + 1)]
-            }),
-          )
-        const environment = entries(args.env ?? [], "environment variable")
-        const headers = entries(args.header ?? [], "HTTP header")
-        const mcpConfig: McpServerWrite = args.url
-          ? {
-              type: "remote",
-              url: args.url,
-              ...(Object.keys(headers).length ? { headers } : {}),
-            }
-          : {
-              type: "local",
-              command,
-              ...(Object.keys(environment).length ? { environment } : {}),
-            }
-
-        return { name: args.name, config: mcpConfig }
-      }
-
-      UI.empty()
-      prompts.intro("Add MCP server")
-
-      // The "Current project / Global" scope prompt is GONE (2026-07-28). It offered to write a
-      // project-root `novaclaw.json`, which is the pre-detachment shape `config-seed-startup.ts`
-      // deleted: config is instance-level and lives in the instance's SQLite stores, so a
-      // per-project MCP file had no reader and the choice was between one dead file and another.
-      const name = await prompts.text({
-        message: "Enter MCP server name",
-        validate: (x) => (x && x.length > 0 ? undefined : "Required"),
-      })
-      if (prompts.isCancel(name)) throw new UI.CancelledError()
-
-      const type = await prompts.select({
-        message: "Select MCP server type",
-        options: [
-          {
-            label: "Local",
-            value: "local",
-            hint: "Run a local command",
-          },
-          {
-            label: "Remote",
-            value: "remote",
-            hint: "Connect to a remote URL",
-          },
-        ],
-      })
-      if (prompts.isCancel(type)) throw new UI.CancelledError()
-
-      if (type === "local") {
-        const command = await prompts.text({
-          message: "Enter command to run",
-          placeholder: "e.g., nova-cli x @modelcontextprotocol/server-filesystem",
-          validate: (x) => (x && x.length > 0 ? undefined : "Required"),
-        })
-        if (prompts.isCancel(command)) throw new UI.CancelledError()
-
-        return { name, config: { type: "local", command: command.split(" ") } satisfies McpServerWrite }
-      }
-
-      if (type === "remote") {
-        const url = await prompts.text({
-          message: "Enter MCP server URL",
-          placeholder: "e.g., https://example.com/mcp",
-          validate: (x) => {
-            if (!x) return "Required"
-            if (x.length === 0) return "Required"
-            const isValid = URL.canParse(x)
-            return isValid ? undefined : "Invalid URL"
-          },
-        })
-        if (prompts.isCancel(url)) throw new UI.CancelledError()
-
-        const useOAuth = await prompts.confirm({
-          message: "Does this server require OAuth authentication?",
-          initialValue: false,
-        })
-        if (prompts.isCancel(useOAuth)) throw new UI.CancelledError()
-
-        let mcpConfig: McpServerWrite
-
-        if (useOAuth) {
-          const hasClientId = await prompts.confirm({
-            message: "Do you have a pre-registered client ID?",
-            initialValue: false,
-          })
-          if (prompts.isCancel(hasClientId)) throw new UI.CancelledError()
-
-          if (hasClientId) {
-            const clientId = await prompts.text({
-              message: "Enter client ID",
-              validate: (x) => (x && x.length > 0 ? undefined : "Required"),
-            })
-            if (prompts.isCancel(clientId)) throw new UI.CancelledError()
-
-            const hasSecret = await prompts.confirm({
-              message: "Do you have a client secret?",
-              initialValue: false,
-            })
-            if (prompts.isCancel(hasSecret)) throw new UI.CancelledError()
-
-            let clientSecret: string | undefined
-            if (hasSecret) {
-              const secret = await prompts.password({
-                message: "Enter client secret",
-              })
-              if (prompts.isCancel(secret)) throw new UI.CancelledError()
-              clientSecret = secret
-            }
-
-            mcpConfig = {
-              type: "remote",
-              url,
-              oauth: {
-                client_id: clientId,
-                ...(clientSecret && { client_secret: clientSecret }),
-              },
-            }
-          } else {
-            mcpConfig = {
-              type: "remote",
-              url,
-              oauth: {},
-            }
-          }
-        } else {
-          mcpConfig = {
-            type: "remote",
-            url,
-          }
+      : {
+          type: "local",
+          command,
+          ...(Object.keys(environment).length ? { environment } : {}),
         }
 
-        return { name, config: mcpConfig }
-      }
-
-      // `type` is a two-option select, so this is unreachable — but returning undefined here would
-      // print "added successfully" for a server that was never written, which is the exact lie this
-      // command was fixed to stop telling.
-      throw new Error(`Unsupported MCP server type: ${String(type)}`)
-    })
-
-    if (!collected) return
-
-    yield* persistServer(collected.name, collected.config)
-    prompts.log.success(`MCP server "${collected.name}" added to this instance's config.`)
+    yield* persistServer(args.name, mcpConfig)
+    prompts.log.success(`MCP server "${args.name}" added to this instance's config.`)
     prompts.log.info(ADDED_HINT)
-    if (!args.name) prompts.outro("MCP server added successfully")
   }),
 })
 
@@ -660,29 +543,22 @@ export const McpDebugCommand = effectCmd({
             entry: auth.get(args.name),
           })
         : undefined
+
+    // ⚠️ These three refusals used to live INSIDE the `Effect.promise` below, where a `return` ends
+    // the async body successfully — so `mcp debug <typo>` printed "MCP server not found" and exited
+    // **0**. Hoisting them out is what makes the refusal reach the exit code at all; the checks
+    // themselves already ran out here (they decide whether `authInfo` is fetched).
+    if (!serverConfig) return yield* fail(`MCP server not found: ${args.name}`)
+    if (!isMcpRemote(serverConfig)) return yield* fail(`MCP server ${args.name} is not a remote server`)
+    if (serverConfig.oauth === false) {
+      return yield* fail(`MCP server ${args.name} has OAuth explicitly disabled`)
+    }
+
     yield* Effect.promise(async () => {
       UI.empty()
       prompts.intro("MCP OAuth Debug")
 
       const serverName = args.name
-
-      if (!serverConfig) {
-        prompts.log.error(`MCP server not found: ${serverName}`)
-        prompts.outro("Done")
-        return
-      }
-
-      if (!isMcpRemote(serverConfig)) {
-        prompts.log.error(`MCP server ${serverName} is not a remote server`)
-        prompts.outro("Done")
-        return
-      }
-
-      if (serverConfig.oauth === false) {
-        prompts.log.warn(`MCP server ${serverName} has OAuth explicitly disabled`)
-        prompts.outro("Done")
-        return
-      }
 
       prompts.log.info(`Server: ${serverName}`)
       prompts.log.info(`URL: ${serverConfig.url}`)

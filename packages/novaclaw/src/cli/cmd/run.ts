@@ -1006,7 +1006,11 @@ export const RunCommand = effectCmd({
           })
           if (result.error) {
             if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))
-            process.exitCode = 1
+            // ⚠️ Same shape as the one fixed in `src/index.ts`: `formatRunError` reaches
+            // `FormatError`, which reports a CliError's own exit code by ASSIGNING
+            // `process.exitCode`. Overwriting it unconditionally here discards whatever it just
+            // said. Default to 1 only when nothing has claimed a code.
+            if (!process.exitCode) process.exitCode = 1
             return
           }
           await finish()
@@ -1024,16 +1028,39 @@ export const RunCommand = effectCmd({
         // V2 engine.
         // V1-nuke slice D: the native prompt takes {text, files}; the per-turn agent/model persist
         // via the switch ops (the V2 semantics — the V1 promptAsync carried them inline).
+        /**
+         * 🔴 **A SILENT DEFAULT, TWICE — the same shape as the `--agent` refusal below it.**
+         *
+         * Both halves of this block used to swallow the caller's instruction and exit 0:
+         *
+         *   1. `if (providerID && modelID)` with no `else`. A `--model` ref without a `/` — a bare
+         *      `opus`, a typo, a model id pasted without its provider — skipped `switchModel`
+         *      ENTIRELY and the run proceeded on whatever model the session already had. So did
+         *      `--variant`, which rides this call and was dropped with it.
+         *   2. `.catch(() => undefined)`. A refused or failed switch was folded into the same value
+         *      a successful one produces, and the turn ran on the old model.
+         *
+         * A run that did the work with the wrong model is worse than one that did not run: its
+         * output looks authoritative. The existing "unknown model exits nonzero" test covers
+         * neither — it passes a well-formed ref that stores fine and fails later at generation.
+         */
         if (model) {
           const [providerID, ...restModel] = model.split("/")
           const modelID = restModel.join("/")
-          if (providerID && modelID)
-            await client.v2.session
-              .switchModel({
-                sessionID,
-                model: { providerID, id: modelID, ...(args.variant ? { variant: args.variant } : {}) },
-              })
-              .catch(() => undefined)
+          if (!providerID || !modelID) {
+            UI.error(`could not run with model "${model}": expected "providerID/modelID"`)
+            process.exit(1)
+          }
+          const switched = await client.v2.session
+            .switchModel({
+              sessionID,
+              model: { providerID, id: modelID, ...(args.variant ? { variant: args.variant } : {}) },
+            })
+            .catch((error: unknown) => ({ error }))
+          if (switched && "error" in switched && switched.error) {
+            UI.error(`could not run with model "${model}": ${String(switched.error)}`)
+            process.exit(1)
+          }
         }
         /**
          * 🔴 **A REFUSED SWITCH IS NOT A FALLBACK.** This was
@@ -1071,7 +1098,8 @@ export const RunCommand = effectCmd({
         })
         if (result.error) {
           if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))
-          process.exitCode = 1
+          // ⚠️ Second instance of the `src/index.ts` clobber — see the note at the `--command` arm.
+          if (!process.exitCode) process.exitCode = 1
           return
         }
         await finish()
