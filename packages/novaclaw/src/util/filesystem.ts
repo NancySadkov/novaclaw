@@ -189,10 +189,18 @@ export async function findUp(
   stop?: string,
   options?: { rootFirst?: boolean },
 ) {
+  // ⚠️ The SECOND copy of `FSUtil`'s three ancestor walks, and it inherited their defect: the
+  // boundary was spelled `stop === current`, so a `stop` that equals no ancestor — the `"/"` sentinel
+  // a non-repository location carries, or a volume root reached only after the whole volume has been
+  // visited — never fired, and the walk ran to the drive root. The permissive branch is what a missed
+  // match produces, which is why it failed open and silently. The rule now lives in
+  // `FSUtil.walkBoundary` and the comparison in `FSUtil.samePath`; both are called rather than
+  // restated, because restating them is how these two copies drifted apart.
+  const limit = stop === undefined ? undefined : FSUtil.walkBoundary(start, stop)
   const dirs = [start]
   let current = start
   while (true) {
-    if (stop === current) break
+    if (limit !== undefined && FSUtil.samePath(limit, current)) break
     const parent = dirname(current)
     if (parent === current) break
     dirs.push(parent)
@@ -212,13 +220,21 @@ export async function findUp(
 
 export async function* up(options: { targets: string[]; start: string; stop?: string }) {
   const { targets, start, stop } = options
+  // ⚠️ The SECOND copy of `FSUtil`'s three ancestor walks, and it inherited their defect: the
+  // boundary was spelled `stop === current`, so a `stop` that equals no ancestor — the `"/"` sentinel
+  // a non-repository location carries, or a volume root reached only after the whole volume has been
+  // visited — never fired, and the walk ran to the drive root. The permissive branch is what a missed
+  // match produces, which is why it failed open and silently. The rule now lives in
+  // `FSUtil.walkBoundary` and the comparison in `FSUtil.samePath`; both are called rather than
+  // restated, because restating them is how these two copies drifted apart.
+  const limit = stop === undefined ? undefined : FSUtil.walkBoundary(start, stop)
   let current = start
   while (true) {
     for (const target of targets) {
       const search = join(current, target)
       if (await exists(search)) yield search
     }
-    if (stop === current) break
+    if (limit !== undefined && FSUtil.samePath(limit, current)) break
     const parent = dirname(current)
     if (parent === current) break
     current = parent
@@ -226,6 +242,8 @@ export async function* up(options: { targets: string[]; start: string; stop?: st
 }
 
 export async function globUp(pattern: string, start: string, stop?: string) {
+  // Same boundary rule as `findUp`/`up` above — see the note there.
+  const limit = stop === undefined ? undefined : FSUtil.walkBoundary(start, stop)
   let current = start
   const result = []
   while (true) {
@@ -240,7 +258,7 @@ export async function globUp(pattern: string, start: string, stop?: string) {
     } catch {
       // Skip invalid glob patterns
     }
-    if (stop === current) break
+    if (limit !== undefined && FSUtil.samePath(limit, current)) break
     const parent = dirname(current)
     if (parent === current) break
     current = parent

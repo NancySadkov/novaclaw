@@ -47,8 +47,15 @@ export const layer: Layer.Layer<Service, never, ProjectV2.Service | InstanceBoot
         const resolved = yield* project.resolve(AbsolutePath.make(FSUtil.resolve(input.directory)))
         const ctx: InstanceContext = {
           directory: input.directory,
-          // Outside any repo the boundary sentinel stays "/" (containsPath skips it) — never a
-          // filesystem root that would contains-match the whole drive.
+          // Outside any repo the boundary sentinel stays "/" — never a filesystem root that would
+          // contains-match the whole drive.
+          //
+          // ⚠️ THIS VALUE IS DECODED IN THREE PLACES, and each one had to learn it separately:
+          // `containsPath` skips the worktree check for it, `Config.writableConfigDir` refuses it
+          // as a write root, and `FSUtil.walkBoundary` turns it into the home floor rather than a
+          // walk to the drive root. Every consumer that reads it as an ORDINARY path silently
+          // widens to the whole volume — that is what it did to the config and skill walks — so a
+          // new consumer of `worktree` states what it does with the sentinel or it has a bug.
           worktree: resolved.vcs ? resolved.directory : "/",
           origin: resolved.id,
           ...(resolved.vcs ? { vcs: resolved.vcs.type } : {}),

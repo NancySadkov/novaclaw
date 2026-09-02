@@ -7,7 +7,12 @@ import { unique } from "remeda"
 import * as Effect from "effect/Effect"
 import { FSUtil } from "@novaclaw/core/fs-util"
 
-export const directories = Effect.fn("ConfigPaths.directories")(function* (directory: string, worktree?: string) {
+// `worktree` is REQUIRED, and that is the point: an omitted boundary is an unbounded walk, and this
+// one both reads a directory's commands into the session and (through `Config.ensureGitignore`)
+// used to write into every `.novaclaw` it passed. Outside a repository the caller's worktree is the
+// `"/"` sentinel, which names no ancestor at all — `FSUtil.up` is what turns that into the home
+// floor rather than the whole drive; see `FSUtil.walkBoundary`.
+export const directories = Effect.fn("ConfigPaths.directories")(function* (directory: string, worktree: string) {
   const afs = yield* FSUtil.Service
   return unique([
     Global.Path.config,

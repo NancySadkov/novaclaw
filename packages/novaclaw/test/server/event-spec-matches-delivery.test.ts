@@ -152,7 +152,8 @@ describe("the /event subscription is bounded, and filtered at the source", () =>
         yield* publish(MINE, "evt_mine")
 
         const frames = yield* stream.pipe(Stream.take(1), Stream.runCollect)
-        return Array.from(frames).map((event) => event.id)
+        // `Event.ID` is a branded string; widen it here so the assertion below compares plain ids.
+        return Array.from(frames).map((event) => String(event.id))
       }).pipe(Effect.scoped),
     )
 

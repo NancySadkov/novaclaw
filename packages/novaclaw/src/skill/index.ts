@@ -195,6 +195,10 @@ const discoverSkills = Effect.fnUntraced(function* (
       yield* scan(state, root, EXTERNAL_SKILL_PATTERN, { dot: true, scope: "global" })
     }
 
+    // ⚠️ `worktree` is the boundary, and outside a repository it is the `"/"` sentinel — a value
+    // that equals no ancestor and once let this walk load `.claude`/`.agents` skills from every
+    // directory up to the drive root. `FSUtil.up` enforces the boundary now (`FSUtil.walkBoundary`),
+    // so the sentinel means the home floor rather than the whole volume.
     const upDirs = yield* fsys
       .up({ targets: externalDirs, start: directory, stop: worktree })
       .pipe(Effect.catch(() => Effect.succeed([] as string[])))

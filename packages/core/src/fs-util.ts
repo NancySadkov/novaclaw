@@ -1,5 +1,6 @@
 import { NodeFileSystem } from "@effect/platform-node"
-import { basename, dirname, isAbsolute, join, relative, resolve as pathResolve, sep } from "path"
+import { basename, dirname, isAbsolute, join, parse, relative, resolve as pathResolve, sep } from "path"
+import { homedir } from "os"
 import { realpathSync } from "fs"
 import * as NFS from "fs/promises"
 import { lookup } from "mime-types"
@@ -136,11 +137,12 @@ export namespace FSUtil {
 
       const findUp = Effect.fn("FileSystem.findUp")(function* (target: string, start: string, stop?: string) {
         const result: string[] = []
+        const limit = boundaryFor(start, stop)
         let current = start
         while (true) {
           const search = join(current, target)
           if (yield* fs.exists(search)) result.push(search)
-          if (stop === current) break
+          if (limit !== undefined && samePath(limit, current)) break
           const parent = dirname(current)
           if (parent === current) break
           current = parent
@@ -150,13 +152,14 @@ export namespace FSUtil {
 
       const up = Effect.fn("FileSystem.up")(function* (options: { targets: string[]; start: string; stop?: string }) {
         const result: string[] = []
+        const limit = boundaryFor(options.start, options.stop)
         let current = options.start
         while (true) {
           for (const target of options.targets) {
             const search = join(current, target)
             if (yield* fs.exists(search)) result.push(search)
           }
-          if (options.stop === current) break
+          if (limit !== undefined && samePath(limit, current)) break
           const parent = dirname(current)
           if (parent === current) break
           current = parent
@@ -166,13 +169,14 @@ export namespace FSUtil {
 
       const globUp = Effect.fn("FileSystem.globUp")(function* (pattern: string, start: string, stop?: string) {
         const result: string[] = []
+        const limit = boundaryFor(start, stop)
         let current = start
         while (true) {
           const matches = yield* glob(pattern, { cwd: current, absolute: true, include: "file", dot: true }).pipe(
             Effect.catch(() => Effect.succeed([] as string[])),
           )
           result.push(...matches)
-          if (stop === current) break
+          if (limit !== undefined && samePath(limit, current)) break
           const parent = dirname(current)
           if (parent === current) break
           current = parent
@@ -244,6 +248,66 @@ export namespace FSUtil {
       .replace(/^\/([a-zA-Z])(?:\/|$)/, (_, drive) => `${drive.toUpperCase()}:/`)
       .replace(/^\/cygdrive\/([a-zA-Z])(?:\/|$)/, (_, drive) => `${drive.toUpperCase()}:/`)
       .replace(/^\/mnt\/([a-zA-Z])(?:\/|$)/, (_, drive) => `${drive.toUpperCase()}:/`)
+  }
+
+  // Declared as functions, not consts: the walks above are written earlier in the file and would
+  // otherwise reference a binding in its temporal dead zone if a layer were ever built during
+  // module evaluation.
+  /**
+   * Two paths naming the same place. Exported because `===` is the comparison that made the walks
+   * above fail open: it misses a trailing separator, a case difference on win32 and an unnormalised
+   * segment, and the *permissive* branch is what a missed match produces. The second copy of these
+   * walks (`novaclaw/src/util/filesystem.ts`) needs the same test, and duplicating it there is how
+   * the two copies drifted in the first place.
+   */
+  export function samePath(left: string, right: string) {
+    return relative(pathResolve(windowsPath(left)), pathResolve(windowsPath(right))) === ""
+  }
+
+  /** `C:\`, `\\server\share\`, `/` — a "boundary" that would trust an entire volume. */
+  export function isVolumeRoot(candidate: string): boolean {
+    const resolved = pathResolve(windowsPath(candidate))
+    return relative(resolved, parse(resolved).root) === ""
+  }
+
+  /**
+   * The boundary an ancestor walk may actually stop at, given the one it was ASKED to stop at.
+   *
+   * 🔴 **A walk's `stop` is a safety parameter that fails OPEN.** The three walks above terminate
+   * on `stop === current`, so a value that never equals an ancestor is not a boundary at all and
+   * the walk covers every directory up to the drive root: `"/"` — the sentinel a location outside
+   * any repository carries — matches nothing on Windows, and a genuine volume root (`Project.resolve`
+   * returns `path.parse(input).root` when there is no repository) matches only after the walk has
+   * already visited the whole volume. Both spellings mean *there is no project root*, and both were
+   * read as *stop at the root of the disk*.
+   *
+   * This is `ProjectFileResolve.trustedBoundary`'s rule, moved onto the primitive so that no caller
+   * has to remember it: a boundary that would trust a whole volume falls back to the user's HOME,
+   * and a boundary that is not an ancestor of the start folder is clamped to the start folder — a
+   * directory outside home is then bounded by itself rather than by nothing.
+   *
+   * ⚠️ **Home is the floor because of what is ABOVE it.** Walking past home reaches `C:\Users` or
+   * `/`, where one stray directory would be read into every session on the machine.
+   *
+   * ⚠️ **Lexical, like `bounded()` in `project-file.ts`** — this runs on every config load and every
+   * skill scan, and a `realpath` per level is not free. Callers that must screen a *write* against a
+   * symlinked ancestor use `containsCanonical` at the write itself; a walk boundary decides only how
+   * far to look.
+   */
+  export function walkBoundary(start: string, stop: string): string {
+    const from = pathResolve(windowsPath(start))
+    const requested = pathResolve(windowsPath(stop))
+    const floor = isVolumeRoot(requested) ? homedir() : requested
+    return contains(floor, from) ? floor : from
+  }
+
+  /**
+   * `undefined` — a walk with no `stop` at all — is the ONE unbounded case, and it is deliberate:
+   * repository discovery (`.git`) legitimately walks past home, reads a fixed filename, and writes
+   * nothing. Every other caller states a boundary and gets it enforced.
+   */
+  function boundaryFor(start: string, stop: string | undefined) {
+    return stop === undefined ? undefined : walkBoundary(start, stop)
   }
 
   /**

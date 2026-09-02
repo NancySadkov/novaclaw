@@ -176,11 +176,17 @@ export const layer = Layer.effect(
       const data = loadAsV2(parsed, source)
       if (!("path" in options)) return data
 
-      if (!data.$schema) {
-        data.$schema = "https://novaclaw.app/config.json"
-        const updated = text.replace(/^\s*\{/, '{\n  "$schema": "https://novaclaw.app/config.json",')
-        yield* fs.writeFileString(options.path, updated).pipe(Effect.catch(() => Effect.void))
-      }
+      // 🔴 The `$schema` back-fill is IN MEMORY ONLY. It used to rewrite the file it had just read,
+      // and the only path that reaches here with a `path` is the MACHINE-WIDE managed config
+      // (`/etc/novaclaw`, `%ProgramData%\novaclaw`, `/Library/Application Support/novaclaw`) — a
+      // policy artefact an administrator deploys, which AGENTS.md principle 11 names verbatim as a
+      // place we may read and nothing more. The write was wrapped in `Effect.catch(() =>
+      // Effect.void)`, so it no-opped exactly where permissions forbid it and succeeded on the
+      // machines where the running account keeps write ACLs: invisible on the developer's box,
+      // live on the deployed one, showing the admin's file as drifted under configuration
+      // management. Nothing reads the bytes back — every consumer reads `data` — so the file never
+      // needed to change.
+      if (!data.$schema) data.$schema = "https://novaclaw.app/config.json"
       return data
     })
 
@@ -217,7 +223,45 @@ export const layer = Layer.effect(
       return yield* cachedGlobal
     })
 
-    const ensureGitignore = Effect.fn("Config.ensureGitignore")(function* (dir: string) {
+    /**
+     * May NovaClaw itself create a file in this config directory?
+     *
+     * 🔴 AGENTS.md principle 11: our own writes land in exactly three places — a home instance dir,
+     * the OS temp dir, or the session's working/project folder. A config directory is *discovered*
+     * by an ancestor walk, so the set the walk yields is not automatically one of them: a
+     * `.novaclaw` sitting above the session's folder (a sibling project's, or one in `Documents`)
+     * is a place we may READ and never write.
+     *
+     * ⚠️ Stated as the roots we are ALLOWED to write, never as a property of the walk. The walk's
+     * boundary is a separate fix in a separate module (`FSUtil.walkBoundary`); if it ever widens
+     * again — a new source of config directories, a boundary sentinel nobody decoded — this list
+     * still holds, because it does not depend on where the directory came from.
+     *
+     * The session's own folder is `containsPath` — the same predicate the rest of the instance uses
+     * for "is this inside the project", including its skip for the `"/"` no-repository sentinel,
+     * which names the whole volume rather than a project root. The instance dirs are screened
+     * CANONICALLY: a `.novaclaw` that is a junction or symlink into someone else's tree must not
+     * pass by spelling, and canonicalisation failing is answered with "no" — a write we cannot
+     * place is a write we do not make.
+     */
+    const writableConfigDir = (dir: string, ctx: InstanceContext) => {
+      if (containsPath(dir, ctx)) return true
+      const instanceDirs = [
+        Global.Path.config,
+        path.join(Global.Path.home, ".novaclaw"),
+        ...(Flag.NOVACLAW_CONFIG_DIR ? [Flag.NOVACLAW_CONFIG_DIR] : []),
+      ]
+      return instanceDirs.some((root) => {
+        try {
+          return FSUtil.containsCanonical(root, dir)
+        } catch {
+          return false
+        }
+      })
+    }
+
+    const ensureGitignore = Effect.fn("Config.ensureGitignore")(function* (dir: string, ctx: InstanceContext) {
+      if (!writableConfigDir(dir, ctx)) return
       const gitignore = path.join(dir, ".gitignore")
       const hasIgnore = yield* fs.existsSafe(gitignore)
       if (!hasIgnore) {
@@ -277,7 +321,7 @@ export const layer = Layer.effect(
         const deps: Fiber.Fiber<void>[] = []
 
         for (const dir of directories) {
-          yield* ensureGitignore(dir).pipe(Effect.orDie)
+          yield* ensureGitignore(dir, ctx).pipe(Effect.orDie)
 
           // Opt-in only (Flag doc): `@novaclaw/plugin` is not on npm, so this
           // background install 404'd at every boot since the rename — pure noise
@@ -293,7 +337,11 @@ export const layer = Layer.effect(
           // for a 404 we already log below. Re-open this ONLY if `@novaclaw/plugin` becomes a
           // runtime import target that must resolve before external plugins load; then the join
           // belongs at the external loader, not at boot.
-          if (Flag.NOVACLAW_INSTALL_PLUGIN_TYPES) {
+          //
+          // ⚠️ Gated on the SAME answer as the gitignore above, because it is the same kind of act:
+          // `npm install` writes `package.json`, a lockfile and `node_modules/` into `dir`. A
+          // directory we may only read is not made writable by a different write arriving.
+          if (Flag.NOVACLAW_INSTALL_PLUGIN_TYPES && writableConfigDir(dir, ctx)) {
             const dep = yield* npmSvc
               .install(dir, {
                 add: [
