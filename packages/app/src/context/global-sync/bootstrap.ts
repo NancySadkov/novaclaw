@@ -20,13 +20,15 @@ import { loadMcpQuery } from "../server-sync"
 import { NormalizedProviderListResponse } from "@novaclaw/session-ui/context"
 import { ScopedKey, type ServerScope } from "@/utils/server-scope"
 import { afterFirstPaint } from "@/utils/after-first-paint"
+import type { InitError } from "@/pages/error"
 
-// ⚠️ Structurally matched to `context/server-sync.tsx`'s `GlobalStore` (which additionally carries
-// `error`): that file hands `setBootStore` in as `setGlobalStore`, so the two are compared by shape
-// and MUST move together. Narrow one alone and you get TS2719 — "two different types with this name
-// exist, but they are unrelated" — which is how the dead `"complete"` arm below was found.
+// ⚠️ Structurally matched to `context/server-sync.tsx`'s `GlobalStore`, `error` included: that file
+// hands `setBootStore` in as `setGlobalStore`, so the two are compared by shape and MUST move
+// together. Narrow one alone and you get TS2719 — "two different types with this name exist, but
+// they are unrelated" — which is how the dead `"complete"` arm below was found.
 type GlobalStore = {
   ready: boolean
+  error?: InitError
   path: Path
   provider: NormalizedProviderListResponse
   config: Config
@@ -89,6 +91,37 @@ export const loadGlobalConfigQuery = (scope: ServerScope, sdk: NovaclawClient) =
     queryFn: () => retry(() => sdk.global.config.get().then((x) => x.data!)),
   })
 
+/**
+ * Readiness is "the global bootstrap FINISHED **and** SUCCEEDED" — the two are not the same thing.
+ * Every `GlobalStore` getter in `context/server-sync.tsx` falls back to a private EMPTY literal when
+ * its query holds no data, so a settled-but-failed boot is byte-for-byte indistinguishable from an
+ * instance that genuinely has no providers, no config and no path. Splitting them is what stops the
+ * app declaring itself ready over a config it never loaded.
+ */
+export function globalReady(input: { pending: boolean; error: InitError | undefined }) {
+  return !input.pending && !input.error
+}
+
+/**
+ * The store field is typed `InitError` because `pages/error.tsx` already knows how to render that
+ * shape — a named server fault (which arrives as `{name, data}`, sometimes wrapped in a fetch
+ * `Error`'s `cause.body`) keeps its structure and its issue list; anything else is carried as the
+ * readable message `formatServerError` produces, under the `UnknownError` name that file formats.
+ */
+function toInitError(error: unknown, translate: Translator): InitError {
+  const body =
+    error instanceof Error && error.cause && typeof error.cause === "object" && "body" in error.cause
+      ? (error.cause as { body: unknown }).body
+      : error
+  if (body && typeof body === "object" && "name" in body && "data" in body) {
+    const candidate = body as { name: unknown; data: unknown }
+    if (typeof candidate.name === "string" && typeof candidate.data === "object" && candidate.data !== null) {
+      return { name: candidate.name, data: candidate.data as Record<string, unknown> }
+    }
+  }
+  return { name: "UnknownError", data: { message: formatServerError(error, translate) } }
+}
+
 export async function bootstrapGlobal(input: {
   serverSDK: NovaclawClient
   scope: ServerScope
@@ -103,13 +136,21 @@ export async function bootstrapGlobal(input: {
     () => input.queryClient.fetchQuery(loadProvidersQuery(input.scope, null, input.serverSDK)),
     () => input.queryClient.fetchQuery(loadPathQuery(input.scope, null, input.serverSDK)),
   ]
-  await runAll(slow)
-  // showErrors({
-  //   errors: errors(),
-  //   title: input.requestFailedTitle,
-  //   translate: input.translate,
-  //   formatMoreCount: input.formatMoreCount,
-  // })
+  const slowErrs = errors(await runAll(slow))
+  // A boot that succeeds after a failed one must CLEAR the verdict, or a healed instance stays
+  // not-ready forever — `updateConfig` refetches this query precisely so a repair can take effect.
+  if (slowErrs.length === 0) {
+    input.setGlobalStore("error", undefined)
+    return
+  }
+  input.setGlobalStore("error", toInitError(slowErrs[0], input.translate))
+  console.error("Failed to bootstrap instance globals", slowErrs[0])
+  showErrors({
+    errors: slowErrs,
+    title: input.requestFailedTitle,
+    translate: input.translate,
+    formatMoreCount: input.formatMoreCount,
+  })
 }
 
 function groupBySession<T extends { id: string; sessionID: string }>(input: T[]) {

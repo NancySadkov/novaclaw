@@ -11,6 +11,7 @@ import {
   bootstrapDirectory,
   bootstrapGlobal,
   clearProviderRev,
+  globalReady,
   isCancelledError,
   loadAgentsQuery,
   loadGlobalConfigQuery,
@@ -119,7 +120,12 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
 
   const [globalStore, setGlobalStore] = createStore<GlobalStore>({
     get ready() {
-      return !bootstrap.isPending
+      // ⚠️ Not `!bootstrap.isPending` alone. Each getter below answers with a private EMPTY literal
+      // whenever its query holds no data, so "the boot settled" and "the boot worked" render
+      // identically — a half-started instance would report itself ready over a config, provider list
+      // and path it never loaded. `bootstrapGlobal` writes `error` on failure and clears it on a
+      // later success, and it is the only thing that tells the two apart.
+      return globalReady({ pending: bootstrap.isPending, error: globalStore.error })
     },
     get path() {
       const EMPTY = { state: "", config: "", data: "", roots: [], worktree: "", directory: "", home: "" }
