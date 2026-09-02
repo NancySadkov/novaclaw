@@ -19,6 +19,8 @@ let joinedChildren = 0
 let generationReleased = false
 let maintenanceReleased = false
 let maintenanceID: string | undefined
+let blockingPermissionAnswered = false
+let blockingPublishAnswered = false
 
 const emit = (message: SessionWorkerProtocol.WorkerMessage) =>
   process.stdout.write(SessionWorkerProtocol.encodeLine(message))
@@ -111,6 +113,24 @@ input.on("line", (line) => {
       })
       return
     }
+    // A request the host can only answer by waiting on something outside this worker, issued
+    // together with an ordered publication from what is, on the worker side, a different fiber.
+    if (mode === "blocking-interaction") {
+      emit({
+        ...identity,
+        type: "permission-assert",
+        requestID: "rpc_permission",
+        input: { sessionID: message.sessionID, action: "read", resources: ["README.md"] },
+      })
+      emit({
+        ...identity,
+        type: "publish-event",
+        requestID: "rpc_publish",
+        eventType: "session.next.synthetic",
+        data: { sessionID: message.sessionID, requestID: "rpc_publish" },
+      })
+      return
+    }
     if (mode === "await-parallel") {
       for (const [requestID, childID] of [
         ["rpc_wait_1", SessionSchema.ID.make("ses_worker_child_one")],
@@ -130,6 +150,12 @@ input.on("line", (line) => {
     return
   }
   if (!identity) process.exit(65)
+  if (mode === "blocking-interaction") {
+    if (message.type === "permission-result") blockingPermissionAnswered = true
+    if (message.type === "event-published" || message.type === "event-rejected") blockingPublishAnswered = true
+    if (blockingPermissionAnswered && blockingPublishAnswered) emit({ ...identity, type: "settled" })
+    return
+  }
   if (message.type === "event-published") {
     acknowledgements++
     if (acknowledgements === 2) emit({ ...identity, type: "settled" })

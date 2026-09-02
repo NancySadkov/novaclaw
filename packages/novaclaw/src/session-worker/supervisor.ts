@@ -114,6 +114,111 @@ const activePIDs = new Set<number>()
 /** Process-count diagnostic and a testable lazy-lifetime invariant: an idle session owns no worker. */
 export const activeWorkerCount = () => activePIDs.size
 
+let reaperInstalled = false
+
+/**
+ * 🔴 **Do not spawn what you will not reap — including when the thing that spawned it is what dies.**
+ *
+ * A session worker is a raw `child_process.spawn` that holds a SQLite connection to the live instance
+ * database and owns a tool-subprocess tree of its own. `finish` tree-kills it on every terminal path
+ * the supervisor can see; nothing saw the case where the SUPERVISOR's own process goes away first.
+ * `serve` under supervision is covered by accident — `cli/cmd/serve.ts` `killTreeSync`s the inner
+ * server and `taskkill /t` reaches its worker children — but `serve --no-supervise` exits through the
+ * `process.exit()` in `src/index.ts`'s `finally`, and a fatal in the server process exits the same
+ * way. Both left every live worker running, which is AGENTS.md pitfall #8 with the instance database
+ * still open.
+ *
+ * `killTreeSync` is the right twin here and not a shortcut: an `exit` hook cannot await, and an async
+ * `taskkill` spawned from one is not guaranteed to outlive the process that spawned it
+ * (`core/src/util/kill-tree.ts`).
+ *
+ * ⚠️ Installed on FIRST SPAWN, not at import: importing this module must stay free of process-wide
+ * side effects, and a process that never started a worker has nothing to reap.
+ *
+ * ⚠️ What this does NOT cover, deliberately. `SIGKILL`, a Windows `TerminateProcess`, and a `SIGTERM`
+ * that no listener handles all bypass `exit` hooks — no in-process hook can cover those, which is why
+ * the layer above still tree-kills rather than trusting this one. Registering our own `SIGINT`/
+ * `SIGTERM` listeners is NOT the answer: a listener suppresses Node's default termination, so a
+ * module that merely gets imported would silently change what Ctrl-C does to every CLI command.
+ *
+ * ⚠️ **Which hosts this actually rescues, measured 2026-09-02 on win32.** Under **Bun** a
+ * non-`detached` child joins a job object that Windows tears down with the parent, so a bun-hosted
+ * server's workers were already dying on their own there — the same probe with `detached: true`
+ * outlived its parent, which is what identifies the job object as the reason. That is a property of
+ * one runtime on one platform: **Node** (the desktop sidecar is an Electron `utilityProcess`, i.e.
+ * node) creates no such job, and no POSIX host has one at all. So the hole is real everywhere except
+ * the one configuration that happens to be the easiest to test from.
+ */
+export const reapActiveWorkers = () => {
+  for (const pid of activePIDs) killTreeSync(pid)
+  activePIDs.clear()
+}
+
+const installReaper = () => {
+  if (reaperInstalled) return
+  reaperInstalled = true
+  process.once("exit", reapActiveWorkers)
+}
+
+/** The worker messages that carry a `requestID` — i.e. the ones the host must answer. */
+type RPCMessage = Extract<SessionWorkerProtocol.WorkerMessage, { readonly requestID: string }>
+
+/**
+ * 🔴 **Which worker RPCs share one serial chain — decided by a PROPERTY, not by a list of names.**
+ *
+ * There are two properties in play and they are not the same axis:
+ *
+ *  · **It writes the host's ORDERED record for this session.** `publish-event` appends to the durable
+ *    event sequence and `execution-*` checkpoints the fenced attempt row; two of those overtaking one
+ *    another is a transcript that reads out of order. These are local database writes — none of them
+ *    can block on anything but disk.
+ *  · **It can block on something OUTSIDE the worker.** `permission-assert` and `question-ask` wait as
+ *    long as a human takes to answer. `await-child` waits out its whole timeout (`tool/wait.ts` passes
+ *    ten minutes). `spawn-child` and `colleague-request` reach another session. A device admission may
+ *    wait for a lease this same worker is concurrently trying to release. A memory op is an
+ *    independent store call. **None of these writes the ordered record.**
+ *
+ * The rule is that first property alone, and the second one is why getting it wrong is expensive: a
+ * blocking request parked on the shared chain stalls every ordered write behind it. That is not
+ * hypothetical — with the interaction group on the chain, a session's transcript stopped advancing
+ * for as long as a permission dialog stayed open, and the 30 s early-title fiber
+ * (`core/src/session/runner/maintenance.ts`) never got its publication out, which is precisely the
+ * long turn it exists for.
+ *
+ * Ordering is safe to drop for everything else because the worker correlates replies by `requestID`
+ * (`client.ts`), not by arrival order, and each fiber awaits its own op before issuing the next — so
+ * per-caller ordering is preserved by the caller, and the scheduler, permission gate, question
+ * registry and memory store each own their own serialization.
+ *
+ * ⚠️ **`satisfies` is the door.** The table is exhaustive over `RPCMessage["type"]`, so a new worker
+ * RPC does not compile until somebody answers "does this write the ordered record?" — the previous
+ * shape, an exemption naming one message type at one dispatch site, let a new blocking request join
+ * the chain by simply not being mentioned anywhere.
+ */
+const ORDERED_RPC = {
+  "publish-event": true,
+  "execution-advance": true,
+  "execution-tool-dispatched": true,
+  "execution-tool-settled": true,
+  "execution-provider-started": true,
+  "execution-provider-tool-protocol": true,
+  "execution-provider-settled": true,
+  "execution-provider-recovery": true,
+  "execution-served-by": true,
+  "execution-context-updated": true,
+  "permission-assert": false,
+  "question-ask": false,
+  "spawn-child": false,
+  "colleague-request": false,
+  "await-child": false,
+  "device-admit": false,
+  "device-release": false,
+  "device-report": false,
+  "device-maintenance-admit": false,
+  "device-maintenance-release": false,
+  "memory-request": false,
+} satisfies Record<RPCMessage["type"], boolean>
+
 /** One child, one lease, one drain. This owns process lifetime only; event/device/interaction/execution RPC is
  * layered on top. Every terminal path tree-kills the worker so a tool subprocess cannot outlive
  * the fault domain that launched it. */
@@ -151,6 +256,7 @@ export function spawn(input: Input): Handle {
     throw new Error("Session worker process did not expose its control pipes")
   const childPID = child.pid
   activePIDs.add(childPID)
+  installReaper()
   const startedAt = Date.now()
   let lastHeartbeat = startedAt
   let ready = false
@@ -195,47 +301,28 @@ export function spawn(input: Input): Handle {
     }
   }
 
-  const queueRPC = (requestID: string, run: () => Promise<SessionWorkerProtocol.HostMessage>) => {
-    rpcTail = rpcTail
-      .then(async () => {
-        if (done) return
-        const reply = await run()
-        if (!("requestID" in reply) || reply.requestID !== requestID) {
-          finish({ type: "protocol-error", detail: "RPC reply request id does not match" })
-          return
-        }
-        send(reply)
-      })
-      .catch(() => finish({ type: "protocol-error", detail: "worker RPC failed" }))
-  }
-
   /**
-   * 🔴 **RPCs that do NOT join `rpcTail`, and the reason is a deadline nobody owns.**
+   * Route one worker RPC: onto the serial chain, or straight out.
    *
-   * `queueRPC` runs worker requests through one serial chain. `await-child` can wait out its whole
-   * timeout. A second join behind it would therefore wait for the FIRST CHILD before it even began
-   * observing the second — turning a model's parallel `wait` calls into serial joins. Device
-   * admissions have the same shape: maintenance may wait for a generation lease which this worker
-   * is concurrently trying to release. Serializing those two requests makes the release wait behind
-   * the admission that needs it. Memory operations are independent store calls too, so all three
-   * bypass the transcript-order chain.
-   *
-   * Nothing about correctness needs the ordering: the worker correlates replies by `requestID`
-   * (`client.ts`), not by arrival order, and each fiber awaits its own op before issuing the next, so
-   * per-caller ordering is preserved by the caller. Only transcript publication needs the serial
-   * chain: durable event sequences must not overtake one another. The scheduler and memory store own
-   * their own serialization.
+   * The classification is {@link ORDERED_RPC}, which is a PROPERTY of the request rather than a list
+   * of the requests somebody remembered to exempt.
    */
-  const dispatchRPC = (requestID: string, run: () => Promise<SessionWorkerProtocol.HostMessage>) => {
-    void run()
-      .then((reply) => {
-        if (done) return
-        if (!("requestID" in reply) || reply.requestID !== requestID) {
-          finish({ type: "protocol-error", detail: "RPC reply request id does not match" })
-          return
-        }
-        send(reply)
-      })
+  const dispatchRPC = (message: RPCMessage, run: () => Promise<SessionWorkerProtocol.HostMessage>) => {
+    const settle = async () => {
+      if (done) return
+      const reply = await run()
+      if (!("requestID" in reply) || reply.requestID !== message.requestID) {
+        finish({ type: "protocol-error", detail: "RPC reply request id does not match" })
+        return
+      }
+      send(reply)
+    }
+    if (!ORDERED_RPC[message.type]) {
+      void settle().catch(() => finish({ type: "protocol-error", detail: "worker RPC failed" }))
+      return
+    }
+    rpcTail = rpcTail
+      .then(settle)
       .catch(() => finish({ type: "protocol-error", detail: "worker RPC failed" }))
   }
 
@@ -297,9 +384,10 @@ export function spawn(input: Input): Handle {
           })
           return
         }
-        // One promise chain is the transcript ordering gate. Even if an RPC handler awaits disk,
-        // the next publish cannot overtake it and receive an earlier durable sequence.
-        queueRPC(message.requestID, () => publish(message, lifetime.signal))
+        // Ordered: one promise chain is the transcript ordering gate, so even when a publication
+        // awaits disk the next one cannot overtake it and receive an earlier durable sequence. See
+        // `ORDERED_RPC` for why nothing that can block on a human shares that chain any more.
+        dispatchRPC(message, () => publish(message, lifetime.signal))
         return
       }
       case "device-admit":
@@ -324,7 +412,7 @@ export function spawn(input: Input): Handle {
           })
           return
         }
-        dispatchRPC(message.requestID, () => request(message, lifetime.signal))
+        dispatchRPC(message, () => request(message, lifetime.signal))
         return
       }
       case "permission-assert":
@@ -385,7 +473,7 @@ export function spawn(input: Input): Handle {
           )
           return
         }
-        queueRPC(message.requestID, () => request(message, lifetime.signal))
+        dispatchRPC(message, () => request(message, lifetime.signal))
         return
       }
       case "await-child": {
@@ -406,7 +494,7 @@ export function spawn(input: Input): Handle {
           })
           return
         }
-        dispatchRPC(message.requestID, () => request(message, lifetime.signal))
+        dispatchRPC(message, () => request(message, lifetime.signal))
         return
       }
       case "memory-request": {
@@ -430,7 +518,7 @@ export function spawn(input: Input): Handle {
           })
           return
         }
-        dispatchRPC(message.requestID, () => request(message, lifetime.signal))
+        dispatchRPC(message, () => request(message, lifetime.signal))
         return
       }
       case "execution-advance":
@@ -460,7 +548,7 @@ export function spawn(input: Input): Handle {
           })
           return
         }
-        queueRPC(message.requestID, () => request(message, lifetime.signal))
+        dispatchRPC(message, () => request(message, lifetime.signal))
         return
       }
     }

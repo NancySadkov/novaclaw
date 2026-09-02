@@ -28,7 +28,7 @@ import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { Location } from "@novaclaw/core/location"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { SessionID } from "@/session/schema"
-import { waitEvent } from "./util"
+import { waitEvent, waitUntil } from "./util"
 import { WorkspaceRef } from "@/effect/instance-ref"
 import { Vcs } from "@/project/vcs"
 import { InstanceStore } from "@/project/instance-store"
@@ -944,25 +944,30 @@ type HistoryEvent = {
   data: Record<string, unknown>
 }
 
-function waitUntilSynced(input: {
+/**
+ * Wait for the fence in `state` to be met, bounded by `timeout`.
+ *
+ * ⚠️ `timeout` is the budget for the WHOLE wait, and it has to be: the predicate below matches every
+ * durable event on the instance (`event-v2-bridge.ts` stamps a `"sync"` payload on all of them), so a
+ * per-round budget re-armed on each match is a deadline a busy instance never reaches. That, and the
+ * arrival dropped between a match and the re-check, are what {@link waitUntil} owns — see the note on
+ * `waitEvent` for why this is not a loop around it.
+ */
+export function waitUntilSynced(input: {
   db: Database.Interface["db"]
   workspaceID: WorkspaceV2.ID
   state: Record<string, number>
   signal?: AbortSignal
   timeout: number
 }): Effect.Effect<void, unknown> {
-  return Effect.suspend(() =>
-    waitEvent({
-      timeout: input.timeout,
-      signal: input.signal,
-      fn(event) {
-        return event.workspace === input.workspaceID || event.payload.type === "sync"
-      },
-    }).pipe(
-      Effect.andThen(synced(input.db, input.state)),
-      Effect.flatMap((done): Effect.Effect<void, unknown> => (done ? Effect.void : waitUntilSynced(input))),
-    ),
-  )
+  return waitUntil({
+    timeout: input.timeout,
+    signal: input.signal,
+    fn(event) {
+      return event.workspace === input.workspaceID || event.payload.type === "sync"
+    },
+    check: () => synced(input.db, input.state),
+  })
 }
 
 function synced(db: Database.Interface["db"], state: Record<string, number>): Effect.Effect<boolean> {
