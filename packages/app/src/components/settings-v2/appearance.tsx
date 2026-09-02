@@ -1,4 +1,4 @@
-import { Component, createMemo, createResource, onMount, Show, createSignal } from "solid-js"
+import { Component, createMemo, createResource, onCleanup, onMount, Show, createSignal } from "solid-js"
 import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
@@ -28,31 +28,53 @@ import { BUNDLED_MONO, BUNDLED_SANS, CANDIDATE_MONO, CANDIDATE_SANS, makeFontPro
 // lifted out of General so the app-wide config there isn't cluttered with per-device presentation.
 type ThemeOption = { id: string; name: string }
 
-// Debounce sound demos so quick selection changes don't overlap (moved with Sound Effects).
-let demoSoundState = {
-  cleanup: undefined as (() => void) | undefined,
-  timeout: undefined as NodeJS.Timeout | undefined,
-  run: 0,
-}
-const stopDemoSound = () => {
-  demoSoundState.run += 1
-  if (demoSoundState.cleanup) demoSoundState.cleanup()
-  clearTimeout(demoSoundState.timeout)
-  demoSoundState.cleanup = undefined
-}
-const playDemoSound = (id: string | undefined) => {
-  stopDemoSound()
-  if (!id) return
-  const run = ++demoSoundState.run
-  demoSoundState.timeout = setTimeout(() => {
-    void playSoundById(id).then((cleanup) => {
-      if (demoSoundState.run !== run) {
-        cleanup?.()
-        return
-      }
-      demoSoundState.cleanup = cleanup
-    })
-  }, 100)
+/**
+ * The sound demo, debounced so quick selection changes don't overlap — and **owned by the panel that
+ * schedules it.**
+ *
+ * 🔴 This state used to be a module-level `let`, which is the class: *a timer whose handle lives
+ * outside any component's lifecycle, so nothing is in a position to cancel it when its owner goes
+ * away.* Hovering a sound option armed a 100 ms `setTimeout`; closing Settings inside that window
+ * played the sound into a panel that no longer existed, and left its stop-handle in a global nobody
+ * would ever call again. `SelectV2` could not save it either — its `onCleanup(stop)` invokes only the
+ * closure RETURNED by `onHighlight`, and the three sound rows returned `undefined` while the colour
+ * scheme and theme rows beside them correctly returned `theme.cancelPreview`.
+ *
+ * Creating it under the component's owner is what makes the cancel structural: `onCleanup` is
+ * registered by the factory, so there is no way to schedule a demo that outlives the panel — and it
+ * covers the `onSelect` path too, which `onHighlight`'s return value never could.
+ *
+ * ⚠️ Exported only so a test can own it: driving the three sound rows from the DOM would mean opening
+ * a Kobalte dropdown, which a synthetic click does not do (`computer.test.ts` states the same limit).
+ * The panel's use of it is pinned by the ledger in `numeric-and-timer-ledger.test.ts`.
+ */
+export const createDemoSound = () => {
+  let cleanup: (() => void) | undefined
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  let run = 0
+  const stop = () => {
+    run += 1
+    if (cleanup) cleanup()
+    cleanup = undefined
+    clearTimeout(timeout)
+    timeout = undefined
+  }
+  const play = (id: string | undefined) => {
+    stop()
+    if (!id) return
+    const started = ++run
+    timeout = setTimeout(() => {
+      void playSoundById(id).then((stopPlayback) => {
+        if (run !== started) {
+          stopPlayback?.()
+          return
+        }
+        cleanup = stopPlayback
+      })
+    }, 100)
+  }
+  onCleanup(stop)
+  return { play, stop }
 }
 
 const FONT_CUSTOM = "type-a-font-name"
@@ -183,6 +205,7 @@ export const SettingsAppearanceV2: Component = () => {
 
   const noneSound = { id: "none", label: "sound.option.none" } as const
   const soundOptions = [noneSound, ...SOUND_OPTIONS]
+  const demoSound = createDemoSound()
   const soundSelectProps = (
     enabled: () => boolean,
     current: () => string,
@@ -195,18 +218,25 @@ export const SettingsAppearanceV2: Component = () => {
     label: (o: (typeof soundOptions)[number]) => language.t(o.label),
     onHighlight: (option: (typeof soundOptions)[number] | undefined) => {
       if (!option) return
-      playDemoSound(option.id === "none" ? undefined : option.id)
+      demoSound.play(option.id === "none" ? undefined : option.id)
+      // ⚠️ **Deliberately returns nothing**, unlike the colour-scheme and theme rows above. The
+      // obvious-looking fix here — return `demoSound.stop` so `SelectV2` cancels it — cancels the
+      // WRONG demo: `SelectV2`'s `onChange` runs `onSelect` (which plays the picked sound) and then
+      // `stop()`, so the returned cleanup would kill the 100 ms timer the pick had just armed. The
+      // theme rows are unharmed by that order because their cleanup only ends a PREVIEW of a value
+      // `onSelect` has already committed. Cancellation for this row is the panel-scoped
+      // `onCleanup` inside `createDemoSound`, which covers the select path too.
     },
     onSelect: (option: (typeof soundOptions)[number] | null) => {
       if (!option) return
       if (option.id === "none") {
         setEnabled(false)
-        stopDemoSound()
+        demoSound.stop()
         return
       }
       setEnabled(true)
       set(option.id)
-      playDemoSound(option.id)
+      demoSound.play(option.id)
     },
   })
 

@@ -1,11 +1,12 @@
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
-import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { For, Show, type Component } from "solid-js"
 import { useExpertise } from "@/context/expertise"
 import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
+import { reportedWrite } from "@/utils/config-write"
 import { showToast } from "@/utils/toast"
 import { SettingsListV2 } from "./parts/list"
+import { SettingsNumberFieldV2 } from "./parts/number-field"
 import { SettingsRowV2 } from "./parts/row"
 import { SettingsExplainV2 } from "./explain"
 
@@ -45,17 +46,11 @@ export const SettingsTunesV2: Component = () => {
   const reminderCadence = () => current().todo_reminder?.cadence ?? 6
   const reminderBudget = () => current().todo_reminder?.max_tokens ?? 256
 
-  async function persist(next: ContextConfig) {
-    await serverSync()
-      .updateConfig({ context: next })
-      .catch((error: unknown) => {
-        showToast({
-          variant: "error",
-          title: language.t("settings.tunes.toast.failed"),
-          description: error instanceof Error ? error.message : String(error),
-        })
-      })
-  }
+  const persist = (next: ContextConfig) =>
+    reportedWrite(
+      () => serverSync().updateConfig({ context: next }),
+      (error) => showToast({ variant: "error", title: language.t("settings.tunes.toast.failed"), description: error }),
+    )
 
   const setShare = (profile: ContextProfileName, category: ContextCategory, value: number) => {
     const nextProfile = { ...current().profiles?.[profile], [category]: value }
@@ -117,43 +112,30 @@ export const SettingsTunesV2: Component = () => {
               title={language.t("settings.tunes.todo.cadence.title")}
               description={language.t("settings.tunes.todo.cadence.description")}
             >
-              <div class="settings-v2-tunes-input">
-                <TextInputV2
-                  type="number"
-                  appearance="base"
-                  min="1"
-                  max="1000"
-                  step="1"
-                  value={reminderCadence()}
-                  onInput={(event) => {
-                    const parsed = Number.parseInt(event.currentTarget.value, 10)
-                    if (Number.isFinite(parsed)) setReminder({ cadence: Math.max(1, Math.min(1000, parsed)) })
-                  }}
-                  aria-label={language.t("settings.tunes.todo.cadence.title")}
-                />
-                <span aria-hidden="true">msg</span>
-              </div>
+              <SettingsNumberFieldV2
+                class="settings-v2-tunes-input"
+                value={() => reminderCadence()}
+                onCommit={(cadence) => setReminder({ cadence })}
+                min={1}
+                max={1000}
+                unit="msg"
+                ariaLabel={language.t("settings.tunes.todo.cadence.title")}
+              />
             </SettingsRowV2>
             <SettingsRowV2
               title={language.t("settings.tunes.todo.budget.title")}
               description={language.t("settings.tunes.todo.budget.description")}
             >
-              <div class="settings-v2-tunes-input">
-                <TextInputV2
-                  type="number"
-                  appearance="base"
-                  min="64"
-                  max="4096"
-                  step="16"
-                  value={reminderBudget()}
-                  onInput={(event) => {
-                    const parsed = Number.parseInt(event.currentTarget.value, 10)
-                    if (Number.isFinite(parsed)) setReminder({ max_tokens: Math.max(64, Math.min(4096, parsed)) })
-                  }}
-                  aria-label={language.t("settings.tunes.todo.budget.title")}
-                />
-                <span aria-hidden="true">tok</span>
-              </div>
+              <SettingsNumberFieldV2
+                class="settings-v2-tunes-input"
+                value={() => reminderBudget()}
+                onCommit={(max_tokens) => setReminder({ max_tokens })}
+                min={64}
+                max={4096}
+                step={16}
+                unit="tok"
+                ariaLabel={language.t("settings.tunes.todo.budget.title")}
+              />
             </SettingsRowV2>
           </SettingsListV2>
         </div>
@@ -183,25 +165,17 @@ export const SettingsTunesV2: Component = () => {
                           when={atLeast("developer")}
                           fallback={<span class="settings-v2-tunes-share">{share(profile, category)}%</span>}
                         >
-                          <div class="settings-v2-tunes-input">
-                            <TextInputV2
-                              type="number"
-                              appearance="base"
-                              min="0"
-                              max="100"
-                              step="1"
-                              value={share(profile, category)}
-                              onInput={(event) => {
-                                const parsed = Number.parseInt(event.currentTarget.value, 10)
-                                if (Number.isFinite(parsed))
-                                  setShare(profile, category, Math.max(0, Math.min(100, parsed)))
-                              }}
-                              aria-label={`${language.t(`settings.tunes.profile.${profile}`)} — ${language.t(
-                                `settings.tunes.category.${category}`,
-                              )}`}
-                            />
-                            <span aria-hidden="true">%</span>
-                          </div>
+                          <SettingsNumberFieldV2
+                            class="settings-v2-tunes-input"
+                            value={() => share(profile, category)}
+                            onCommit={(value) => setShare(profile, category, value)}
+                            min={0}
+                            max={100}
+                            unit="%"
+                            ariaLabel={`${language.t(`settings.tunes.profile.${profile}`)} — ${language.t(
+                              `settings.tunes.category.${category}`,
+                            )}`}
+                          />
                         </Show>
                       </SettingsRowV2>
                     )}

@@ -1,11 +1,12 @@
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
-import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { type Component, Show, createSignal } from "solid-js"
+import { reportedWrite } from "@/utils/config-write"
 import { showToast } from "@/utils/toast"
 import { type TranslationKey, useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { SettingsListV2 } from "./parts/list"
+import { SettingsNumberFieldV2 } from "./parts/number-field"
 import { SettingsRowV2 } from "./parts/row"
 import { SettingsExplainV2 } from "./explain"
 
@@ -85,19 +86,19 @@ const BudgetControl: Component<{
       <Show
         when={!custom() && isPreset()}
         fallback={
-          <TextInputV2
-            type="number"
-            appearance="base"
-            min="0"
-            max={String(MAX_TOKENS)}
-            step="1024"
-            value={props.value || ""}
+          // Swept with the two rows below. `Math.min(parsed, MAX_TOKENS)` was the same silent
+          // coercion: a budget typed above the ceiling was stored as the ceiling and reported as the
+          // user's own choice. It is refused by name now, and 0 stays legal here because "0 = off"
+          // is what this row's copy promises.
+          <SettingsNumberFieldV2
+            value={() => props.value}
+            onCommit={(tokens) => props.onPersist(tokens)}
+            onClear={() => props.onPersist(0)}
+            min={0}
+            max={MAX_TOKENS}
+            step={1024}
             placeholder={props.fallbackPlaceholder}
-            onChange={(event) => {
-              const parsed = Number.parseInt(event.currentTarget.value, 10)
-              props.onPersist(Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, MAX_TOKENS) : 0)
-            }}
-            aria-label={props.label}
+            ariaLabel={props.label}
           />
         }
       >
@@ -129,18 +130,13 @@ export const SettingsStrictV2: Component = () => {
 
   const current = (): StrictConfig => (serverSync().data.config as { strict?: StrictConfig }).strict ?? {}
 
-  async function persist(patch: Partial<StrictConfig>) {
+  const persist = (patch: Partial<StrictConfig>) => {
     const next = { ...current(), ...patch }
     for (const key of Object.keys(next) as Array<keyof StrictConfig>) if (next[key] === undefined) delete next[key]
-    await serverSync()
-      .updateConfig({ strict: next } as never)
-      .catch((error: unknown) => {
-        showToast({
-          variant: "error",
-          title: language.t("settings.strict.toast.failed"),
-          description: error instanceof Error ? error.message : String(error),
-        })
-      })
+    return reportedWrite(
+      () => serverSync().updateConfig({ strict: next } as never),
+      (error) => showToast({ variant: "error", title: language.t("settings.strict.toast.failed"), description: error }),
+    )
   }
 
   return (
@@ -204,20 +200,21 @@ export const SettingsStrictV2: Component = () => {
                 </>
               }
             >
+              {/* The row's own copy says "Empty or 1 = off", and until this box shared the settings
+                  number field it made that sentence false: the handler read `parsed > 1`, one keystroke
+                  away from the `min="1"` printed on the same element, so typing the documented `1`
+                  stored `0` — a value the schema never describes — and `attempts || ""` then blanked
+                  the field the user had just filled in. Empty now CLEARS the key (the idiom the group
+                  switches above use), and 1 stores 1. */}
               <div class="w-full sm:w-[100px]">
-                <TextInputV2
-                  type="number"
-                  appearance="base"
-                  min="1"
-                  max="8"
-                  step="1"
-                  value={current().attempts || ""}
+                <SettingsNumberFieldV2
+                  value={() => current().attempts || undefined}
+                  onCommit={(attempts) => void persist({ attempts })}
+                  onClear={() => void persist({ attempts: undefined })}
+                  min={1}
+                  max={8}
                   placeholder="1"
-                  onChange={(event) => {
-                    const parsed = Number.parseInt(event.currentTarget.value, 10)
-                    void persist({ attempts: Number.isFinite(parsed) && parsed > 1 ? Math.min(parsed, 8) : 0 })
-                  }}
-                  aria-label={language.t("settings.strict.row.attempts.title")}
+                  ariaLabel={language.t("settings.strict.row.attempts.title")}
                 />
               </div>
             </SettingsRowV2>
@@ -226,20 +223,18 @@ export const SettingsStrictV2: Component = () => {
               title={language.t("settings.strict.row.wallMinutes.title")}
               description={language.t("settings.strict.row.wallMinutes.description")}
             >
+              {/* Swept with the row above, and it was the mirror defect: `parsed > 0` with no upper
+                  bound at all, so the `max="480"` on the element was decoration and a typed 5000
+                  persisted silently. The shared field refuses it and says the range. */}
               <div class="w-full sm:w-[100px]">
-                <TextInputV2
-                  type="number"
-                  appearance="base"
-                  min="1"
-                  max="480"
-                  step="1"
-                  value={current().wallMinutes || ""}
+                <SettingsNumberFieldV2
+                  value={() => current().wallMinutes || undefined}
+                  onCommit={(wallMinutes) => void persist({ wallMinutes })}
+                  onClear={() => void persist({ wallMinutes: undefined })}
+                  min={1}
+                  max={480}
                   placeholder={String(DEFAULT_WALL_MINUTES)}
-                  onChange={(event) => {
-                    const parsed = Number.parseInt(event.currentTarget.value, 10)
-                    void persist({ wallMinutes: Number.isFinite(parsed) && parsed > 0 ? parsed : 0 })
-                  }}
-                  aria-label={language.t("settings.strict.row.wallMinutes.title")}
+                  ariaLabel={language.t("settings.strict.row.wallMinutes.title")}
                 />
               </div>
             </SettingsRowV2>

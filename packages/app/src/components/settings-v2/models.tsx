@@ -12,6 +12,7 @@ import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
 import { popularProviders } from "@/hooks/use-providers"
 import { providerProbe, type ProbeResult } from "@/utils/fs-api"
+import { reportedWrite } from "@/utils/config-write"
 import { showToast } from "@/utils/toast"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
@@ -175,15 +176,27 @@ export const SettingsModelsV2: Component = () => {
     const c = ctx()
     const dir = routeDir()
     if (!c) return
-    const removed = await c.sdk.client.v2.provider
-      .removeModel({
-        providerID: key.providerID,
-        modelID: key.modelID,
-        ...(dir ? { location: { directory: dir } } : {}),
-      })
-      .then(() => true)
-      .catch(() => false)
-    if (removed) models.remove(key)
+    // ⚠️ And a refused delete must SAY SO (ruling 2). It used to end at `.catch(() => false)`: the
+    // row correctly stayed, and nothing anywhere told the user why — leaving "the delete failed" and
+    // "the button is broken" indistinguishable after a destructive confirm they had just answered.
+    // The verdict is a VALUE now (`utils/config-write.ts`), so the local hide sits behind a check the
+    // type puts in front of it rather than behind a boolean this function had to remember to test.
+    const deleted = await reportedWrite(
+      () =>
+        c.sdk.client.v2.provider.removeModel({
+          providerID: key.providerID,
+          modelID: key.modelID,
+          ...(dir ? { location: { directory: dir } } : {}),
+        }),
+      (error) =>
+        showToast({
+          variant: "error",
+          title: language.t("settings.models.remove.toast.failed", { model: name }),
+          description: error,
+        }),
+    )
+    if (!deleted.ok) return
+    models.remove(key)
   }
 
   const list = useFilteredList<ModelItem>({

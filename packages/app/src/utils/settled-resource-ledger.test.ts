@@ -113,13 +113,11 @@ const LEDGER: { resources: Record<string, number>; folds: Record<string, number>
     "pages/memory-graph.tsx": 3,
     "pages/new-session.tsx": 1,
     "pages/recipes.tsx": 1,
-    "pages/registry.tsx": 3,
     "pages/session/composer/session-composer-region-controller.ts": 1,
     "pages/session/composer/session-lost-folder-dock.tsx": 1,
     "pages/session/composer/session-responder-dock.tsx": 1,
     "pages/session/timeline/model.ts": 1,
     "pages/skills.tsx": 2,
-    "pages/terminal.tsx": 1,
     "utils/persist.ts": 1,
   },
   folds: {

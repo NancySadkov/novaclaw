@@ -1,7 +1,7 @@
 /**
  * **Which folder a screen sends with a request, said out loud — once.**
  *
- * 🔴 **The finding (RF-19-13 / RF-21-9) and where it was WRONG.** Eighteen call sites across
+ * 🔴 **The finding this file closes, and where that finding was WRONG.** Eighteen call sites across
  * `pages/`, `components/settings-v2/` and `apps/` each resolved this inline, in two orders that
  * disagree whenever the instance is pointed at a project folder — i.e. in the normal case. The
  * sweep read that as one duplication in two camps and prescribed "one order, chosen once".
@@ -9,12 +9,12 @@
  * ⚠️ **It is not one thing in two orders. It is TWO things, and the orders are their definitions.**
  * The evidence is in the tree, written by the people who chose each order:
  *
- * - `pages/trash.tsx:38` — *"The trash store is global; `directory` is only for request routing —
- *   the server's home works."* `pages/registry.tsx:83` says the same of the database. These want
+ * - `pages/trash.tsx` — *"The trash store is global; `directory` is only for request routing —
+ *   the server's home works."* `pages/registry.tsx` says the same of the database. These want
  *   ANY directory the instance will accept, and prefer the one that always exists.
- * - `components/settings-v2/project-copy.ts:8` — the Project section resolves its subject as
+ * - `components/settings-v2/project-copy.ts` — the Project section resolves its subject as
  *   *"the INSTANCE's directory (`path.directory || path.home`) — correct by design, because Settings
- *   is an instance-wide dialog and not a per-chat one."* `pages/skills.tsx:583` feeds the same value
+ *   is an instance-wide dialog and not a per-chat one."* `pages/skills.tsx` feeds the same value
  *   to `projectState(http, dir)`. These are ABOUT a folder; the routed one is the answer.
  *
  * Collapsing those into one order would have changed what a screen means, not merely where the
@@ -22,9 +22,12 @@
  * duplication removed here is the EXPRESSION and the silence around it; the two answers stay, named,
  * so the next edit has to pick one on purpose instead of copying whichever neighbour it read first.
  *
- * ⚠️ Both fall back to `""`, and `""` is falsy on purpose: every caller gates its request on a
- * non-empty directory, and a resource keyed on `""` must stay pending rather than ask the server to
- * route to nowhere.
+ * ⚠️ **Both fall back to `""`, and `""` means the instance named no folder** — never that the read
+ * failed. Every caller gates its request on a non-empty directory, so a resource keyed on `""` never
+ * asks the server to route to nowhere; what a caller must NOT do is leave it there silently, because
+ * a gate that never opens is a spinner that never resolves. `answeredNothing` is the reading that
+ * separates it from "not asked yet", and `resolveInstanceGlobalDirectory` below rejects rather than
+ * producing this value when the request itself failed.
  */
 
 /** The subset of the SDK's `Path` these two decisions read. Both fields are optional because the
@@ -67,22 +70,31 @@ export interface DirectoryResolvable {
  * if the store has not answered yet.**
  *
  * ⚠️ This was the same nine lines three times over — `pages/trash.tsx`, `pages/registry.tsx` and
- * `pages/terminal.tsx`, verbatim down to the `.catch(() => undefined)` (RF-19-13). Three copies of a
+ * `pages/terminal.tsx`, verbatim down to the `.catch(() => undefined)`. Three copies of a
  * fetch-with-fallback is three chances for one of them to stop falling back, and the symptom is a
  * panel that is permanently empty on a cold client rather than an error anyone would report.
  *
- * ⚠️ **The `.catch` swallows deliberately, and that is inherited, not introduced.** All three copies
- * folded a failed `GET /path` to `""`, which their callers treat as "not ready" — so the panel stays
- * pending instead of asking the server to route to nowhere. It is a real gap that nothing names the
- * fault (the sweep filed it separately as RF-19-4), and moving the code does not close it; keeping
- * one copy is what makes closing it a one-line change instead of a three-file one.
+ * 🔴 **It REJECTS when `GET /path` fails, and that is the whole point of keeping one copy.** All
+ * three originals folded the failure into `""`, and `""` is the value their callers read as *"not
+ * asked yet"* — so a broken path lookup left every panel keyed on it sitting at a spinner that
+ * nothing would ever resolve. That is the same false claim as an empty list wearing a different
+ * animation, and it is the second half of ruling 2: *an unavailable subsystem names itself instead
+ * of rendering empty.* A rejection is the only value that cannot be mistaken for an answer, so this
+ * function raises it and `utils/settled-resource.ts` classifies it — do NOT put a `.catch` back.
+ *
+ * ⚠️ **A 200 with no usable body still returns `""`**, because that IS an answer: the instance told
+ * us it has neither a home nor a routed directory. Callers separate the two with `answeredNothing`,
+ * which is `state === "ready" && !value` — a settled, unfailed read that produced nothing usable.
+ *
+ * ⚠️ **Every caller must therefore hold this in a `createSettledResource`**, never a bare
+ * `createResource`: an errored resource re-throws from its own accessor, so reading it unguarded
+ * hands the outage to the root `ErrorBoundary` and replaces the application. All three live callers
+ * do (`pages/trash.tsx`, `pages/registry.tsx`, `pages/terminal.tsx`), and
+ * `utils/settled-resource-ledger.test.ts` is what keeps a fourth from arriving with a bare one.
  */
 export async function resolveInstanceGlobalDirectory(ctx: DirectoryResolvable): Promise<string> {
   const known = instanceGlobalDirectory(ctx.sync.data.path)
   if (known) return known
-  const fetched = await ctx.sdk.client.path
-    .get()
-    .then((response) => response.data)
-    .catch(() => undefined)
+  const fetched = await ctx.sdk.client.path.get().then((response) => response.data)
   return instanceGlobalDirectory(fetched)
 }

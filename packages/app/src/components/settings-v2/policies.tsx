@@ -8,6 +8,8 @@ import { useLanguage, type TranslationKey } from "@/context/language"
 import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
 import { policyState, type InstalledPolicy } from "@/utils/policy-api"
+import { reportedWrite } from "@/utils/config-write"
+import { showToast } from "@/utils/toast"
 import { projectState, projectWrite, type ProjectState, type ProjectWriteResult } from "@/utils/project-api"
 import type { ServerConnection } from "@/context/server"
 import { SettingsListV2 } from "./parts/list"
@@ -114,6 +116,7 @@ export const SettingsPoliciesSection: Component = () => {
     }
   })
 
+  const [toggleError, setToggleError] = createSignal<string | undefined>(undefined)
   const installed = createMemo(() => state()?.installed ?? [])
   const off = createMemo(() => installed().filter((entry) => !entry.enabled).length)
   const requested = createMemo(() => new Set(state()?.requested ?? []))
@@ -134,12 +137,29 @@ export const SettingsPoliciesSection: Component = () => {
    * ⚠️ `enabled: true` is written explicitly rather than clearing the row, because `PATCH /config`
    * treats `null` as a value and not as a tombstone (deleting is `POST /api/config/remove`). An
    * explicit `true` and an absent key mean the same thing to the gate.
+   *
+   * 🔴 **A failed toggle is SAID, not logged.** It used to end
+   * `.catch((error) => console.error(…))`: the switch is controlled by the stored value, so the
+   * thumb sprang back to where it was and the only account of why lived in a devtools console a
+   * normal person never opens. On the one surface that decides which checks run before a tool call,
+   * a control that appears to refuse its own input without a word is the obscurantism this section
+   * exists to end.
    */
-  const toggle = (id: string, enabled: boolean) => {
-    void sync()
-      .updateConfig({ tool_policy: { [id]: { enabled } } } as never)
-      .then(() => refetch())
-      .catch((error) => console.error("policy toggle failed", error))
+  const toggle = async (id: string, enabled: boolean) => {
+    const saved = await reportedWrite(
+      () => sync().updateConfig({ tool_policy: { [id]: { enabled } } } as never),
+      (error) => {
+        setToggleError(`${language.t("policies.toggle.failed", { id: authorText(id, 64) || id })} ${error}`)
+        showToast({
+          variant: "error",
+          title: language.t("policies.toggle.failed", { id: authorText(id, 64) || id }),
+          description: error,
+        })
+      },
+    )
+    if (!saved.ok) return
+    setToggleError(undefined)
+    void refetch()
   }
 
   /**
@@ -203,7 +223,7 @@ export const SettingsPoliciesSection: Component = () => {
                   }
                 >
                   <div data-action="settings-policy-toggle" data-policy={entry.id}>
-                    <Switch checked={entry.enabled} onChange={(checked) => toggle(entry.id, checked)} />
+                    <Switch checked={entry.enabled} onChange={(checked) => void toggle(entry.id, checked)} />
                   </div>
                 </SettingsRowV2>
               )}
@@ -251,6 +271,19 @@ export const SettingsPoliciesSection: Component = () => {
               </SettingsRowV2>
             </Show>
           </SettingsListV2>
+
+          {/* 🔴 The switch's own failure, on screen and next to the switch. A control that springs
+              back is a control that refused, and a refusal with no sentence is indistinguishable
+              from a dead one. */}
+          <Show when={toggleError()}>
+            <span
+              class="text-[12px] leading-4 break-all"
+              style={{ color: "var(--v2-state-danger-text, #ef4444)" }}
+              data-slot="settings-policy-toggle-error"
+            >
+              {toggleError()}
+            </span>
+          </Show>
 
           <FolderPoliciesEditor
             installed={installed}

@@ -4,11 +4,13 @@ import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { TextareaV2 } from "@novaclaw/ui/v2/textarea-v2"
 import { type Component, For, Show, createSignal } from "solid-js"
 import { showToast } from "@/utils/toast"
-import { useLanguage } from "@/context/language"
+import { reportedWrite } from "@/utils/config-write"
+import { useLanguage, type TranslationKey } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { useConfirm } from "@/components/dialog-confirm"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
+import { planRecipeSave, type Recipe, type RecipeRefusal } from "./tools-draft"
 
 // P4 (4E) — the Tools settings tab: define/edit/enable/disable GLOBAL ad-hoc tool recipes
 // (`adhoc_tools` config — an array, so updateConfig replaces it wholesale; deletion works,
@@ -17,18 +19,17 @@ import { SettingsRowV2 } from "./parts/row"
 // it via bash/curl. Session-scoped recipes a model defines via define_tool are per-session
 // files, not config — surfacing them here needs an HTTP endpoint (remaining).
 //
-// Caps mirror core/adhoc-tools.ts validation so errors surface at edit time, not at use time.
+// What a save is ALLOWED to write — the caps, the name pattern and the collision refusal — lives in
+// `tools-draft.ts`, which is where the rename-onto-an-existing-name deletion was closed. This file
+// renders and persists; it does not re-derive the rules.
 
-interface Recipe {
-  name: string
-  description: string
-  manual: string
-  enabled?: boolean
+/** One arm per refusal, so a fifth `RecipeRefusal` is a type error naming the missing sentence. */
+const REFUSAL_KEY: Record<RecipeRefusal, TranslationKey> = {
+  name: "settings.tools.error.name",
+  description: "settings.tools.error.description",
+  manual: "settings.tools.error.manual",
+  duplicate: "settings.tools.error.duplicate",
 }
-
-const NAME_PATTERN = /^[a-z0-9][a-z0-9-_]{0,63}$/
-const MAX_DESCRIPTION_CHARS = 300
-const MAX_MANUAL_CHARS = 8_192
 
 export const SettingsToolsV2: Component = () => {
   const language = useLanguage()
@@ -53,32 +54,30 @@ export const SettingsToolsV2: Component = () => {
     setEditing(recipe?.name ?? "")
   }
 
-  async function persist(next: Recipe[]) {
-    await serverSync()
-      .updateConfig({ adhoc_tools: next } as never)
-      .catch((error: unknown) => {
-        showToast({
-          variant: "error",
-          title: language.t("settings.tools.toast.failed"),
-          description: error instanceof Error ? error.message : String(error),
-        })
-      })
-  }
+  // Returns the VERDICT rather than swallowing it: everything below decides what to do with a
+  // failure, and none of it may treat one as a save.
+  const persist = (next: readonly Recipe[]) =>
+    reportedWrite(
+      () => serverSync().updateConfig({ adhoc_tools: next } as never),
+      (error) => showToast({ variant: "error", title: language.t("settings.tools.toast.failed"), description: error }),
+    )
 
   async function saveDraft() {
-    const name = draftName().trim()
-    const description = draftDescription().trim()
-    const manual = draftManual().trim()
-    if (!NAME_PATTERN.test(name)) return setDraftError(language.t("settings.tools.error.name"))
-    if (!description || description.length > MAX_DESCRIPTION_CHARS)
-      return setDraftError(language.t("settings.tools.error.description"))
-    if (!manual || manual.length > MAX_MANUAL_CHARS) return setDraftError(language.t("settings.tools.error.manual"))
-    const original = editing()
-    const others = recipes().filter((recipe) => recipe.name !== original && recipe.name !== name)
-    if (original === "" && recipes().some((recipe) => recipe.name === name))
-      return setDraftError(language.t("settings.tools.error.duplicate"))
-    const kept = recipes().find((recipe) => recipe.name === original)
-    await persist([...others, { name, description, manual, ...(kept?.enabled === false ? { enabled: false } : {}) }])
+    const plan = planRecipeSave({
+      recipes: recipes(),
+      editing: editing() ?? "",
+      name: draftName(),
+      description: draftDescription(),
+      manual: draftManual(),
+    })
+    if (!plan.ok) return setDraftError(language.t(REFUSAL_KEY[plan.reason]))
+    setDraftError(undefined)
+    const saved = await persist(plan.next)
+    // 🔴 The editor closes ONLY on a landed write. It used to close unconditionally, which threw
+    // away an 8 KB manual the moment the instance was momentarily unreachable — a toast said so and
+    // the only copy of the text went with the unmount. The draft is the user's, so the failure is
+    // named where the draft still is rather than only in a toast.
+    if (!saved.ok) return setDraftError(`${language.t("settings.tools.error.saveFailed")} ${saved.error}`)
     setEditing(undefined)
   }
 

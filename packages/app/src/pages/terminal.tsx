@@ -2,7 +2,7 @@ import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
 import { TabsV2 } from "@novaclaw/ui/v2/tabs-v2"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
-import { createEffect, createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js"
 import { Terminal, type TerminalHandle } from "@/components/terminal"
 import { terminalWorkspaceShortcut } from "@/components/terminal-keyboard"
 import {
@@ -25,6 +25,7 @@ import { findMatches, stepMatch } from "@/pages/terminal-search"
 import { InstallationVersion } from "@novaclaw/core/installation/version"
 import { showToast } from "@/utils/toast"
 import { resolveInstanceGlobalDirectory } from "@/utils/routing-directory"
+import { answeredNothing, createSettledResource } from "@/utils/settled-resource"
 
 /** A terminal belongs to the selected NovaClaw instance, not to the renderer machine. Resolve that
  * instance's home as the PTY working directory, then reuse the exact directory-scoped PTY transport
@@ -40,7 +41,23 @@ export function TerminalPage() {
   })
   // A pty is instance-global; `directory` is only request routing. The read is
   // `utils/routing-directory.ts`, shared verbatim with trash.tsx and registry.tsx.
-  const [directory] = createResource(ctx, resolveInstanceGlobalDirectory)
+  const [directory, directoryActions] = createSettledResource(ctx, resolveInstanceGlobalDirectory)
+
+  /**
+   * 🔴 **The permanent spinner, and why it needed a type to fix.** This page used to hold the read
+   * in a bare `createResource` whose fetcher folded a failed `GET /path` into `""`, and then gated
+   * on `<Show when={directory()}>`. `""` is falsy, so the fallback rendered — and the resource had
+   * already SETTLED, so nothing would ever re-run it. The screen said *"Loading terminal…"* forever,
+   * with no error, no retry and no route out but the titlebar; `TerminalProvider` and `SDKProvider`
+   * never mounted, so nothing downstream could report the fault either. A spinner that will never
+   * resolve is the same false claim as an empty list, wearing a different animation (ruling 2).
+   *
+   * Two distinct faults reach the same dead end and both belong here: the read REJECTED
+   * (`.failed`), or it answered and the instance has no folder to route to (`answeredNothing`).
+   * Neither is "still loading", and the difference between them is not something a person can act
+   * on differently, so they share one sentence and one **Try again**.
+   */
+  const directoryFailed = createMemo(() => directory.failed || answeredNothing(directory))
 
   return (
     <RequiresLevel
@@ -53,23 +70,37 @@ export function TerminalPage() {
         />
       }
     >
-      <Show
-        when={directory()}
-        keyed
+      <Switch
         fallback={
           <div class="flex h-full w-full flex-1 self-stretch items-center justify-center text-text-weak">
             {language.t("terminal.loading")}
           </div>
         }
       >
-        {(resolved) => (
-          <SDKProvider directory={resolved}>
-            <TerminalProvider>
-              <TerminalWorkspace serverName={conn() ? serverName(conn()!) : "NovaClaw"} />
-            </TerminalProvider>
-          </SDKProvider>
-        )}
-      </Show>
+        <Match when={directoryFailed()}>
+          <div
+            data-slot="terminal-directory-failed"
+            class="flex h-full w-full flex-1 flex-col items-center justify-center gap-3 self-stretch px-6 text-center"
+          >
+            <div class="text-sm font-semibold text-v2-text-text-base">{language.t("terminal.unavailable.title")}</div>
+            <div class="max-w-md text-[13px] text-v2-text-text-muted">
+              {language.t("terminal.unavailable.description")}
+            </div>
+            <ButtonV2 size="small" variant="ghost-muted" onClick={() => void directoryActions.refetch()}>
+              {language.t("terminal.unavailable.retry")}
+            </ButtonV2>
+          </div>
+        </Match>
+        <Match when={directory()} keyed>
+          {(resolved) => (
+            <SDKProvider directory={resolved}>
+              <TerminalProvider>
+                <TerminalWorkspace serverName={conn() ? serverName(conn()!) : "NovaClaw"} />
+              </TerminalProvider>
+            </SDKProvider>
+          )}
+        </Match>
+      </Switch>
     </RequiresLevel>
   )
 }

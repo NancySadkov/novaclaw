@@ -1086,6 +1086,10 @@ export const dict = {
     "It stopped with exit code {{code}}. Whatever it printed is still above — start a new shell when you have read it.",
   "terminal.exited.newShell": "New shell",
   "terminal.loading": "Loading terminal...",
+  "terminal.unavailable.title": "The terminal could not start",
+  "terminal.unavailable.description":
+    "NovaClaw could not ask this instance where to open a shell, so nothing has started. The instance may be restarting — this is not a problem with your machine.",
+  "terminal.unavailable.retry": "Try again",
   "terminal.title": "Terminal",
   "terminal.title.numbered": "Terminal {{number}}",
   "terminal.close": "Close terminal",
@@ -1183,6 +1187,13 @@ export const dict = {
   "settings.tab.recovery": "Health",
   "settings.tab.about": "About",
   "settings.tab.storage": "Storage",
+
+  // The one message every settings number box refuses with. It names the RANGE, because a control
+  // that rejects a value without saying which values it wants is the c64-memory-poke the settings
+  // rules exist to end — and because the alternative the boxes used to do (silently clamp the
+  // half-typed value and write it) made the legal value unreachable.
+  "settings.field.number.range": "Enter a whole number between {{min}} and {{max}}",
+
   "settings.tunes.title": "Tunes",
   "settings.tunes.description":
     "Choose how NovaClaw protects the instructions, conversation, recalled memory, knowledge, and tool evidence that a model needs to keep working.",
@@ -1562,6 +1573,8 @@ export const dict = {
     "Right now: {{count}} installed, and all of them run. Each one sees a tool call before it happens and may add a note, correct it, ask you first, or refuse it.",
   "policies.inForce.some":
     "Right now: {{count}} installed, and {{off}} switched off. The rest see a tool call before it happens and may add a note, correct it, ask you first, or refuse it.",
+  "policies.toggle.failed":
+    "“{{id}}” did not change — saving failed, so the switch is back where it was. Nothing about this check has moved.",
   "policies.inForce.title": "What runs before a tool",
   "policies.hint":
     "These are installed with NovaClaw, not written here — a folder can ask for one by name below, and no file can ever add a command of its own.",
@@ -1797,6 +1810,8 @@ export const dict = {
   "settings.instances.access.source.launcher": "Launcher default in force.",
   "settings.instances.access.source.open": "No token in force — this instance is open.",
   "settings.instances.access.source.checking": "Checking which token is in force…",
+  "settings.instances.access.saveFailed":
+    "Saving failed — this instance's token has not changed, and what you typed is still in the box.",
   "settings.instances.peers.title": "Agent peers",
   "settings.instances.peers.hint":
     "Peer instances this instance's agents may drive over HTTP — full API access with the stored token. Agents see them in their environment.",
@@ -1809,6 +1824,8 @@ export const dict = {
   "settings.instances.peers.scanning": "Looking…",
   "settings.instances.peers.none": "No other instances answered on this network — fill the fields below.",
   "settings.instances.peers.add": "Add peer",
+  "settings.instances.peers.saveFailed":
+    "Saving failed — the peer list has not changed, and the name, address and token you typed are still below. Try again once the instance answers.",
   "settings.general.row.virtualFs.title": "Virtual workspace",
   "settings.general.row.virtualFs.description":
     "Keep this instance's projects, notes, and files in an app-private folder — for hosts without a browsable filesystem.",
@@ -2157,6 +2174,7 @@ export const dict = {
   "settings.models.remove.confirm.description":
     "This removes the model from your list here. It doesn't delete anything on the model server, and you can add it back later.",
   "settings.models.remove.confirm.action": "Remove",
+  "settings.models.remove.toast.failed": "Could not remove {{model}}",
   "settings.messengers.title": "Messengers",
   "settings.messengers.description":
     "Connect NovaClaw to your messaging apps — the agent can answer chats while you're away, and you can drive NovaClaw from your phone.",
@@ -2518,6 +2536,8 @@ export const dict = {
   "settings.tools.error.description": "Description is required, max 300 chars.",
   "settings.tools.error.manual": "Manual is required, max 8192 chars.",
   "settings.tools.error.duplicate": "A tool with this name already exists.",
+  "settings.tools.error.saveFailed":
+    "Saving failed — nothing was written. The editor is still open and everything you typed is still here.",
 
   "settings.permissions.tool.read.title": "Read",
   "settings.permissions.tool.read.description": "Read a file",
@@ -2923,7 +2943,8 @@ export const dict = {
   "skills.loading": "Loading…",
   // An unavailable subsystem names itself instead of rendering empty — and it says which of the two
   // it is, because "no skills" and "could not ask" send a person to entirely different remedies.
-  "skills.loadFailed": "Could not read the skill list. Your skills are still installed — this page could not reach them.",
+  "skills.loadFailed":
+    "Could not read the skill list. Your skills are still installed — this page could not reach them.",
   "skills.intro.pick": "Pick a skill on the left to see who wrote it and what it tells your agent to do.",
   "skills.badge.slash": "Slash command",
 

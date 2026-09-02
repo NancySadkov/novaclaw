@@ -78,7 +78,7 @@ const ID_CITATION = /\b(?:RF-\d{2}-\d+[a-z]?|UX-\d{2})\b/g
  * A package that reaches 0 keeps its line at 0 — a package with no line at all fails the roster test.
  */
 const LEDGER: Record<string, { paths: number; ids: number }> = {
-  app: { paths: 0, ids: 19 },
+  app: { paths: 0, ids: 12 },
   core: { paths: 60, ids: 24 },
   desktop: { paths: 0, ids: 0 },
   dht: { paths: 0, ids: 0 },

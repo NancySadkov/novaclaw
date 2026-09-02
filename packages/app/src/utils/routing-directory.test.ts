@@ -9,7 +9,7 @@ import {
 } from "@/utils/routing-directory"
 
 /**
- * **The two directory answers, and the fact that they are two** (RF-19-13 / RF-21-9).
+ * **The two directory answers, and the fact that they are two.**
  *
  * Eighteen sites resolved this inline in two orders. The sweep read that as one duplication and
  * prescribed a single order; the tree disagrees, in writing, at both ends — `trash.tsx` and
@@ -93,15 +93,19 @@ describe("resolveInstanceGlobalDirectory — the read that was written out three
     expect(value).toBe("C:/fetched")
   })
 
-  test('a failed GET /path becomes "", which callers read as "not ready"', async () => {
-    // ⚠️ Inherited behaviour, pinned so the move is provably faithful — all three copies swallowed
-    // this. That nothing NAMES the fault is a real gap (the sweep filed it as RF-19-4); it is now
-    // one line to fix instead of three.
-    const value = await resolveInstanceGlobalDirectory(ctx(undefined, () => Promise.reject(new Error("offline"))))
-    expect(value).toBe("")
+  test("a failed GET /path REJECTS — it is never folded into an answer", async () => {
+    // 🔴 The behaviour this function was changed to have, and the reason it is worth a test of its
+    // own. It used to swallow the rejection and return "", which every caller reads as "not asked
+    // yet" — so a broken path lookup produced a spinner that would never resolve, on three pages at
+    // once. `""` and a rejection are now different facts, and only `createSettledResource` may turn
+    // the second one back into a value.
+    const read = resolveInstanceGlobalDirectory(ctx(undefined, () => Promise.reject(new Error("offline"))))
+    await expect(read).rejects.toThrow("offline")
   })
 
-  test("a 200 with no body is not a crash", async () => {
+  test('a 200 with no body is an ANSWER of "", not a failure', async () => {
+    // The other side of the same line: the instance replied and has neither a home nor a routed
+    // directory. Callers separate this from the rejection above with `answeredNothing`.
     expect(await resolveInstanceGlobalDirectory(ctx(undefined, async () => ({})))).toBe("")
   })
 })

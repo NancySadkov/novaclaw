@@ -9,6 +9,8 @@ import { useGlobal } from "@/context/global"
 import { discoverInstances, type DiscoveredInstance } from "@/utils/instance-discovery"
 import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
+import { reportedWrite } from "@/utils/config-write"
+import { showToast } from "@/utils/toast"
 import { mergePeer, type Peer } from "./peer-token"
 
 // P2P inter-instance access (Settings → Instances):
@@ -35,19 +37,39 @@ export const InstancesAccess: Component = () => {
   const tokenSaved = createMemo(() => config().server?.password ?? "")
   const tokenValue = () => tokenDraft() ?? tokenSaved()
   const tokenDirty = () => tokenDraft() !== undefined && tokenDraft() !== tokenSaved()
-  const saveToken = (next: string) => {
-    void serverSync()
-      .updateConfig({ server: { ...(config().server ?? {}), password: next } } as never, {
-        // The server applies the new credential before this response returns. Change the saved
-        // connection in the same success turn, before any follow-up read can use the old header.
-        onAccepted: () => {
-          server.setIncomingToken(server.key, next)
-          setTokenDraft(undefined)
-        },
-        // Updating the connection rebuilds its SDK context; that new context owns the bootstrap.
-        refetch: false,
-      })
-      .catch(() => undefined)
+  /**
+   * ⚠️ Both writers below report, and both report BESIDE the field rather than only in a toast.
+   * They used to end `.catch(() => undefined)` — a rejected credential write said nothing anywhere,
+   * and the peer writer went on to clear the pasted token on the next line. A secret a person can
+   * no longer see, was never told was dropped, and must go back to its source to recover is the
+   * sharpest form of ruling 2's *a failed mutation never reports success*.
+   */
+  const [tokenError, setTokenError] = createSignal<string | undefined>(undefined)
+  const [peerError, setPeerError] = createSignal<string | undefined>(undefined)
+  const saveToken = async (next: string) => {
+    const saved = await reportedWrite(
+      () =>
+        serverSync().updateConfig({ server: { ...(config().server ?? {}), password: next } } as never, {
+          // The server applies the new credential before this response returns. Change the saved
+          // connection in the same success turn, before any follow-up read can use the old header.
+          onAccepted: () => {
+            server.setIncomingToken(server.key, next)
+            setTokenDraft(undefined)
+          },
+          // Updating the connection rebuilds its SDK context; that new context owns the bootstrap.
+          refetch: false,
+        }),
+      (error) => {
+        setTokenError(`${language.t("settings.instances.access.saveFailed")} ${error}`)
+        showToast({
+          variant: "error",
+          title: language.t("settings.instances.access.saveFailed"),
+          description: error,
+        })
+      },
+    )
+    if (saved.ok) setTokenError(undefined)
+    return saved
   }
   const tokenSource = createMemo(() => global.servers.health[server.key]?.auth?.source)
   const tokenSourceCopy = createMemo(() => {
@@ -86,22 +108,32 @@ export const InstancesAccess: Component = () => {
       setScanning(false)
     }
   }
-  const savePeers = (next: Peer[]) => {
-    void serverSync()
-      .updateConfig({
-        instances: next.map((peer) => ({
-          name: peer.name,
-          url: peer.url,
-          ...(peer.token ? { token: peer.token } : {}),
-        })),
-      } as never)
-      .catch(() => undefined)
+  const savePeers = async (next: Peer[]) => {
+    const saved = await reportedWrite(
+      () =>
+        serverSync().updateConfig({
+          instances: next.map((peer) => ({
+            name: peer.name,
+            url: peer.url,
+            ...(peer.token ? { token: peer.token } : {}),
+          })),
+        } as never),
+      (error) => {
+        setPeerError(`${language.t("settings.instances.peers.saveFailed")} ${error}`)
+        showToast({ variant: "error", title: language.t("settings.instances.peers.saveFailed"), description: error })
+      },
+    )
+    if (saved.ok) setPeerError(undefined)
+    return saved
   }
-  const addPeer = () => {
+  const addPeer = async () => {
     const value = draft()
     const merged = mergePeer({ draft: value, existing: peers().find((peer) => peer.name === value.name.trim()) })
     if (merged === undefined) return
-    savePeers([...peers().filter((peer) => peer.name !== merged.name), merged])
+    const saved = await savePeers([...peers().filter((peer) => peer.name !== merged.name), merged])
+    // 🔴 The draft is cleared ONLY once the write landed. Clearing it beside the call — before the
+    // write could even settle — is what discarded a pasted bearer token on every rejection.
+    if (!saved.ok) return
     setDraft({ name: "", url: "", token: "" })
   }
 
@@ -129,7 +161,10 @@ export const InstancesAccess: Component = () => {
               type="password"
               appearance="base"
               value={tokenValue()}
-              onInput={(event) => setTokenDraft(event.currentTarget.value)}
+              onInput={(event) => {
+                setTokenError(undefined)
+                setTokenDraft(event.currentTarget.value)
+              }}
               placeholder={language.t("settings.instances.access.placeholder")}
               autocomplete="off"
               data-slot="instances-access-token"
@@ -139,7 +174,7 @@ export const InstancesAccess: Component = () => {
                 size="small"
                 variant="contrast"
                 data-action="instances-access-save"
-                onClick={() => saveToken(tokenValue())}
+                onClick={() => void saveToken(tokenValue())}
               >
                 {language.t("common.save")}
               </ButtonV2>
@@ -149,12 +184,21 @@ export const InstancesAccess: Component = () => {
                 size="small"
                 variant="neutral"
                 data-action="instances-access-clear"
-                onClick={() => saveToken("")}
+                onClick={() => void saveToken("")}
               >
                 {language.t("common.clear")}
               </ButtonV2>
             </Show>
           </div>
+          <Show when={tokenError()}>
+            <span
+              class="text-[12px] leading-snug break-all"
+              style={{ color: "var(--v2-state-danger-text, #ef4444)" }}
+              data-slot="instances-access-error"
+            >
+              {tokenError()}
+            </span>
+          </Show>
         </div>
 
         <div class="flex flex-col gap-1 pt-2">
@@ -181,7 +225,7 @@ export const InstancesAccess: Component = () => {
                   size="small"
                   variant="neutral"
                   data-action="instances-peer-remove"
-                  onClick={() => savePeers(peers().filter((item) => item.name !== peer.name))}
+                  onClick={() => void savePeers(peers().filter((item) => item.name !== peer.name))}
                 >
                   {language.t("common.remove")}
                 </ButtonV2>
@@ -247,10 +291,19 @@ export const InstancesAccess: Component = () => {
                 revealPeerToken() ? "settings.instances.peers.token.hide" : "settings.instances.peers.token.reveal",
               )}
             />
-            <ButtonV2 size="small" variant="neutral" data-action="instances-peer-addbtn" onClick={addPeer}>
+            <ButtonV2 size="small" variant="neutral" data-action="instances-peer-addbtn" onClick={() => void addPeer()}>
               {language.t("settings.instances.peers.add")}
             </ButtonV2>
           </div>
+          <Show when={peerError()}>
+            <span
+              class="text-[12px] leading-snug break-all"
+              style={{ color: "var(--v2-state-danger-text, #ef4444)" }}
+              data-slot="instances-peer-error"
+            >
+              {peerError()}
+            </span>
+          </Show>
         </div>
       </div>
     </RequiresLevel>
