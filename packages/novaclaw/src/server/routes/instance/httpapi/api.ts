@@ -25,10 +25,7 @@ import { QuestionApi } from "./groups/question"
 import { RegistryApi } from "./groups/registry"
 import { ShellApi } from "./groups/shell"
 import { SyncApi } from "./groups/sync"
-import { makeApi } from "@novaclaw/protocol/api"
-import { LocationMiddleware } from "@novaclaw/server/location"
-import { SessionLocationMiddleware } from "@novaclaw/server/middleware/session-location"
-import { WorkspaceRoutingMiddleware } from "@novaclaw/server/middleware/workspace-routing"
+import { runtimeApi } from "@novaclaw/server/api"
 import { GlobalApi } from "./groups/global"
 import { Authorization } from "./middleware/authorization"
 import { ExperimentalSchemaErrorMiddleware } from "./middleware/schema-error"
@@ -46,14 +43,25 @@ const EventSchema: Schema.Schema<unknown> = Schema.Union([
   InstanceDisposed,
 ]).annotate({ identifier: "Event" })
 
-export const ServerApi = makeApi({
-  definitions: EventManifest.Latest.values().toArray(),
-  locationMiddleware: LocationMiddleware,
-  sessionLocationMiddleware: SessionLocationMiddleware,
-  // The PROXYING implementation lives in this package (`./middleware/workspace-routing`); the KEY is
-  // shared so `packages/protocol` can declare it on the native session group.
-  workspaceRoutingMiddleware: WorkspaceRoutingMiddleware,
-})
+/**
+ * The `/api/*` surface — the SAME object the router mounts, not a second declaration of it.
+ *
+ * 🔴 **This used to be a private re-construction** — `makeApi({ definitions: EventManifest.Latest…
+ * })` — and it published a `GET /api/event` contract the route could not honour. The bus carries
+ * `EventManifest.Definitions`; the served handler (`@novaclaw/server/handlers/event`) narrows to
+ * `ServerDefinitions ∪ server.connected`, about twenty types fewer, and drops the rest by design.
+ * So the spec promised arms — `session.status`, `permission.*`, `question.*`, `mcp.*`,
+ * `workspace.*`, `worktree.*` — that a conforming client would wait for forever. Nothing failed:
+ * the two declarations simply drifted, because `makeApi`'s `definitions` parameter is checked
+ * against nothing.
+ *
+ * ⚠️ **The fix is to stop having two.** `runtimeApi()` is what `HttpApiBuilder.layer` serves
+ * (`./server.ts`), so generating the spec from it makes the contract and the implementation one
+ * value — divergence is not a bug you can reintroduce here, it is a statement that cannot be
+ * written. The middleware wiring, including the shared workspace-routing KEY, now has exactly one
+ * home: `packages/server/src/api.ts`.
+ */
+export const ServerApi: HttpApi.HttpApi<"server", HttpApiGroup.Any> = runtimeApi()
 
 export const RootHttpApi = HttpApi.make("novaclaw-root")
   .addHttpApi(ControlApi)

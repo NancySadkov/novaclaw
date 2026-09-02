@@ -50,10 +50,62 @@ function eventID() {
  * The stream still ends when `live` ends — that is the request scope closing, which is a real
  * goodbye rather than an inferred one.
  */
-export const subscriptionOutput = <A extends { readonly type: string }>(
-  live: Stream.Stream<A>,
+export const subscriptionOutput = <A extends { readonly type: string }, E = never>(
+  live: Stream.Stream<A, E>,
   disposals: Stream.Stream<A>,
-): Stream.Stream<A> => live.pipe(Stream.merge(disposals, { haltStrategy: "left" }))
+): Stream.Stream<A, E> => live.pipe(Stream.merge(disposals, { haltStrategy: "left" }))
+
+/**
+ * How far one subscriber may fall behind before it is disconnected to resync.
+ *
+ * ⚠️ The SAME bound and the same overflow policy as `/global/event` next door: a healthy client
+ * drains continuously, so reaching this means it has stopped reading rather than merely being slow.
+ * Overflow ENDS the subscription instead of trimming it — `sliding`/`dropping` leave that one
+ * client's view silently diverged, and `suspend` lets it apply backpressure to a bus every other
+ * client shares. Ending is safe because a reconnect re-emits `server.connected` and the app resyncs.
+ */
+const EVENT_STREAM_BUFFER = 1024
+
+/**
+ * The bounded, source-filtered subscription this route serves.
+ *
+ * 🔴 **Two defects lived in one expression, and the second is what made the first unbounded in
+ * practice.** The queue was `Queue.unbounded`, and the location predicate ran DOWNSTREAM of it — so
+ * every subscriber buffered every event of every location in the process, without limit, and threw
+ * almost all of it away one stage later. One stalled `run --attach` was enough to own the heap.
+ *
+ * ⚠️ **Once the queue is bounded, filtering at the SOURCE stops being an optimisation and becomes
+ * the correctness of the bound.** Filtered after the queue, a subscriber watching a quiet directory
+ * is disconnected by a busy neighbour's traffic it was never going to be shown — the bound would
+ * measure the wrong stream.
+ *
+ * The bounding shape is `EventV2.allBounded`'s (`core/src/event.ts`), which `/api/event` already
+ * uses: a dropping queue that FAILS on overflow rather than silently shedding — the failure travels
+ * in the stream's error channel, so a forced disconnect is a report and not a silence. The only
+ * thing added here is the predicate, applied before the offer. `capacity` is a parameter so a test
+ * can reach the bound without publishing a thousand events.
+ */
+export const boundedSubscription = (
+  events: EventV2.Interface,
+  accepts: (event: EventV2.Payload) => boolean,
+  capacity = EVENT_STREAM_BUFFER,
+) =>
+  Effect.gen(function* () {
+    const queue = yield* Queue.dropping<EventV2.Payload, EventV2.SubscriberOverflowError>(capacity)
+    const unsubscribe = yield* events.listen((event) =>
+      !accepts(event)
+        ? Effect.void
+        : Queue.offer(queue, event).pipe(
+            Effect.flatMap((accepted) =>
+              accepted
+                ? Effect.void
+                : Queue.fail(queue, new EventV2.SubscriberOverflowError({ capacity })).pipe(Effect.asVoid),
+            ),
+          ),
+    )
+    yield* Effect.addFinalizer(() => unsubscribe.pipe(Effect.andThen(Queue.shutdown(queue)), Effect.asVoid))
+    return Stream.fromQueue(queue)
+  })
 
 function eventResponse(events: EventV2.Interface) {
   return Effect.gen(function* () {
@@ -61,17 +113,12 @@ function eventResponse(events: EventV2.Interface) {
     const workspaceID = yield* InstanceState.workspaceID
     // Listener registration is eager, so events published after this point cannot
     // be lost while the HTTP body fiber is starting or emitting server.connected.
-    const queue = yield* Queue.unbounded<EventV2.Payload>()
-    const unsubscribe = yield* events.listen((event) => Effect.sync(() => Queue.offerUnsafe(queue, event)))
-    yield* Effect.addFinalizer(() => unsubscribe)
-    const stream = Stream.fromQueue(queue).pipe(
-      Stream.filter(
-        (event) =>
-          event.location?.directory === instance.directory &&
-          (event.location.workspaceID === undefined || event.location.workspaceID === workspaceID),
-      ),
-      Stream.map((event) => ({ id: event.id, type: event.type, properties: event.data })),
-    )
+    const stream = (yield* boundedSubscription(
+      events,
+      (event) =>
+        event.location?.directory === instance.directory &&
+        (event.location.workspaceID === undefined || event.location.workspaceID === workspaceID),
+    )).pipe(Stream.map((event) => ({ id: event.id, type: event.type, properties: event.data })))
     const disposed = Stream.callback<{ id: string; type: string; properties: unknown }>((queue) => {
       const listener = (event: {
         directory?: string
