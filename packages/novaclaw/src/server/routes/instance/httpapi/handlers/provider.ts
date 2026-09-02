@@ -4,6 +4,7 @@ import { ModelsDev } from "@novaclaw/core/models-dev"
 import { ProbeWindow } from "@novaclaw/core/probe-window"
 import { ProviderCatalogResult } from "@/provider/catalog-result"
 import { Catalog } from "@novaclaw/core/catalog"
+import { ModelV2 } from "@novaclaw/core/model"
 import { LocationServiceMap } from "@novaclaw/core/location-services"
 import { ServerLocationServiceMap } from "@/location-service-map"
 import { Location } from "@novaclaw/core/location"
@@ -609,11 +610,29 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       params: { providerID: ProviderV2.ID }
       payload: ProbePayload
     }) {
-      const config = yield* cfg.get()
-      const entry = config.providers?.[ctx.params.providerID]
-      // V2 provider config has no flat `options`: the endpoint URL lives on `api.url`, and any extra
-      // settings/apiKey are under api.settings / request.body. Flatten them into the shape this probe
-      // reads (baseURL, apiKey).
+      // Read the provider from the location-scoped Catalog, the same source `list` above and every
+      // other provider consumer uses. It used to read `Config.get().providers`, which has been EMPTY
+      // since providers moved into `CatalogStore` (settings-in-SQLite): the write goes to the
+      // catalog through the `providers` layered arm, and the config document keeps nothing. So a
+      // Test on a SAVED model could only ever answer "no-url", while the New-Model dialog passed a
+      // baseURL in the payload and worked. Two paths, one of them dead, and the dead one is the one
+      // a user reaches from Settings.
+      const directory = (yield* InstanceState.context).directory
+      const scope = locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))
+      const entry = yield* Catalog.Service.use((c) => c.provider.get(ctx.params.providerID)).pipe(
+        Effect.provide(scope),
+        Effect.orElseSucceed(() => undefined),
+      )
+      // The saved MODEL comes from the same catalog: `api.id` is the upstream id to put on the wire
+      // when it differs from ours, and `retry.attempts` bounds the completion probe. Resolved here
+      // once rather than at each of the two use sites below.
+      const savedModel = ctx.payload.modelID
+        ? yield* Catalog.Service.use((c) =>
+            c.model.get(ctx.params.providerID, ModelV2.ID.make(ctx.payload.modelID!)),
+          ).pipe(Effect.provide(scope), Effect.orElseSucceed(() => undefined))
+        : undefined
+      // The endpoint URL lives on `api.url`; extra settings/apiKey are under api.settings and
+      // request.body. Flatten them into the shape this probe reads (baseURL, apiKey).
       const options = {
         ...(entry?.api?.settings ?? {}),
         ...(entry?.request?.body ?? {}),
@@ -631,7 +650,9 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       if (!baseURL)
         return {
           status: "no-url" as const,
-          detail: "No baseURL is configured for this provider and its catalog entry has no API URL.",
+          // User-facing prose. This string is rendered verbatim in Settings, so it names the
+          // missing thing and the action, not the two internal sources that were consulted.
+          detail: "Add the server address for this provider (for example http://localhost:8000/v1), then test again.",
         }
       const apiKey =
         (ctx.payload.apiKey && ctx.payload.apiKey.length > 0 ? ctx.payload.apiKey : undefined) ??
@@ -683,9 +704,6 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       let completionLatencyMs: number | undefined
       let completionAttempts: number | undefined
       if (ctx.payload.modelID) {
-        const savedModel = entry?.models?.[ctx.payload.modelID] as
-          | { api?: { id?: string }; retry?: { attempts?: number } }
-          | undefined
         const wireModelID = savedModel?.api?.id ?? ctx.payload.modelID
         const attempts = Math.max(1, Math.min(5, Math.trunc(savedModel?.retry?.attempts ?? 1)))
         let completion: CompletionProbe | undefined
@@ -725,7 +743,6 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       // same failure three more times under three different names.
       let capabilities: (ProviderCapability.Report & { readonly servedBy?: string }) | undefined
       if (ctx.payload.capabilities === true && ctx.payload.modelID) {
-        const savedModel = entry?.models?.[ctx.payload.modelID] as { api?: { id?: string } } | undefined
         const wireModel = savedModel?.api?.id ?? ctx.payload.modelID
         capabilities = yield* probeCapabilities(http, {
           baseURL,

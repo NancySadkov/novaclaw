@@ -550,13 +550,22 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  /* The probe result is a SENTENCE, not a word: without wrapping here the row grows past the panel
+     instead of the chip taking a second line. */
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .settings-v2-models-probe-result {
   font-size: 12px;
   font-weight: 440;
-  line-height: 1;
-  white-space: nowrap;
+  /* `nowrap` + a flex item that cannot shrink is what pushed a long failure detail outside the
+     widget. A result may be one word ("Testing") or a full remedy sentence, so it wraps, breaks a
+     long URL rather than overflowing, and gets a line-height that survives two lines. */
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  min-width: 0;
   color: var(--v2-text-text-muted);
 }
 

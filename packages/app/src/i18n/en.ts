@@ -1956,7 +1956,7 @@ export const dict = {
   "settings.models.probe.unreachable": "Couldn't connect",
   "settings.models.probe.auth": "Sign-in failed — check your API key",
   "settings.models.probe.missing": "Model not found on this provider",
-  "settings.models.probe.noUrl": "No URL configured",
+  "settings.models.probe.noUrl": "No server address saved",
   "settings.models.probe.error": "Error",
   "settings.models.probe.window": "window",
   // Capability tier — a rough size class NovaClaw uses to decide how much to scaffold a model
