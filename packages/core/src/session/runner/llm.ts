@@ -920,6 +920,7 @@ export const layer = Layer.effect(
       // The endpoint named its image cap; re-lower this same turn under it. Distinct from the
       // overflow arm because the recovery differs: compaction summarises TEXT and removes no image.
       | { readonly _tag: "RetryUnderImageBudget"; readonly step: number }
+      | { readonly _tag: "RetryOnReplacedModel"; readonly step: number }
 
     class TurnTransitionError extends Error {
       constructor(readonly transition: TurnTransition) {
@@ -929,6 +930,9 @@ export const layer = Layer.effect(
 
     const continueAfterCompaction = (step: number) => new TurnTransitionError({ _tag: "ContinueAfterCompaction", step })
     const retryUnderImageBudget = (step: number) => new TurnTransitionError({ _tag: "RetryUnderImageBudget", step })
+    /** The model this turn asked for is not served; the row now names another one. Re-run so the
+     *  user gets an answer instead of a fault they have to act on. */
+    const retryOnReplacedModel = (step: number) => new TurnTransitionError({ _tag: "RetryOnReplacedModel", step })
     type OverflowRecovery = {
       readonly plan: OverflowRecoveryPolicy.Compress
       readonly failure: ProviderErrorEvent
@@ -2387,6 +2391,53 @@ export const layer = Layer.effect(
           // and removes not one image, so recovering an image-cap refusal that way would burn a
           // compaction and then fail again identically — with the history now shorter and the same
           // four images still in it.
+          // 🔴 A MODEL THAT IS NOT THERE is an operational event, not the user's problem. Diverted
+          // BEFORE anything is published, so the turn recovers instead of ending in a red block the
+          // user has to read, understand and re-send past. Owner, 2026-09-03: *"such failure
+          // shouldn't stop execution, but switch seamlessly."*
+          //
+          // ⚠️ `!publisher.hasAssistantStarted()` — the same guard the image-cap arm below uses, and
+          // for the same reason: once tokens have reached the transcript a silent re-run would
+          // duplicate them. A 404 lands before any output, so this is the ordinary case, not a
+          // narrow one.
+          //
+          // ⚠️ Bounded by construction rather than by a counter. Each pass retires ONE model, and
+          // `healthyAlternative` never routes onto a retired one, so an instance whose models are
+          // all gone walks the list once and then stops — the last pass finds no replacement, falls
+          // through, and reports the real fault.
+          if (failure !== undefined && !publisher.hasAssistantStarted() && isModelMissing(String(failure.message ?? ""))) {
+            const dead = modelRef ?? { providerID: String(model.provider), id: String(model.id) }
+            ModelHealth.retired(dead)
+            const replacement = yield* models
+              .resolve({ ...session, model: undefined }, { requested: false })
+              .pipe(Effect.orElseSucceed(() => undefined))
+            const ref =
+              replacement === undefined
+                ? undefined
+                : ModelV2.Ref.make({
+                    providerID: ProviderV2.ID.make(String(replacement.provider)),
+                    id: ModelV2.ID.make(String(replacement.id)),
+                  })
+            if (ref !== undefined && `${ref.providerID}/${ref.id}` !== `${dead.providerID}/${dead.id}`) {
+              // Written to the ROW, so the next process starts on the live model — module state does
+              // not survive a turn (every turn drains in a fresh worker). The switch is a durable
+              // event, so the transcript shows WHAT it moved to without an error beside it.
+              yield* events
+                .publish(SessionEvent.ModelSwitched, {
+                  sessionID: session.id,
+                  messageID: SessionMessage.ID.create(),
+                  timestamp: yield* DateTime.now,
+                  model: ref,
+                })
+                .pipe(Effect.ignore)
+              yield* Log.event("session.model.retired", {
+                "session.id": session.id,
+                "model.retired": `${dead.providerID}/${dead.id}`,
+                "model.used": `${ref.providerID}/${ref.id}`,
+              })
+              return yield* Effect.die(retryOnReplacedModel(currentStep))
+            }
+          }
           const discovered = mediaLimitFailure(mediaLimitFailureEvent ?? failure)
           if (discovered !== undefined && !publisher.hasAssistantStarted()) {
             // No key means no identity to remember it against; the turn still recovers, it just
@@ -2904,6 +2955,17 @@ export const layer = Layer.effect(
           Effect.fnUntraced(function* (defect) {
             if (!(defect instanceof TurnTransitionError)) return yield* Effect.die(defect)
             // A learned cap is applied by REBUILDING the request, which the ordinary re-entry does.
+            // The row already names the replacement, so the ordinary re-entry re-resolves onto it —
+            // the same mechanism the image cap uses, which also recovers by REBUILDING the request.
+            if (defect.transition._tag === "RetryOnReplacedModel")
+              return yield* runAfterOverflowCompaction(
+                sessionID,
+                harness,
+                undefined,
+                defect.transition.step,
+                recovery,
+                timing,
+              )
             if (defect.transition._tag === "RetryUnderImageBudget")
               return yield* runAfterOverflowCompaction(
                 sessionID,
@@ -2949,6 +3011,16 @@ export const layer = Layer.effect(
           Effect.fnUntraced(function* (defect) {
             if (!(defect instanceof TurnTransitionError)) return yield* Effect.die(defect)
             yield* Effect.yieldNow
+            if (defect.transition._tag === "RetryOnReplacedModel")
+              return yield* runTurnAttempt(
+                sessionID,
+                harness,
+                undefined,
+                defect.transition.step,
+                harness.compaction.compactAfterOverflow,
+                undefined,
+                timing,
+              )
             if (defect.transition._tag === "ContinueAfterOverflowCompaction")
               return yield* runAfterOverflowCompaction(
                 sessionID,
