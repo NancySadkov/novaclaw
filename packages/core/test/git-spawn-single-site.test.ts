@@ -18,8 +18,12 @@ import path from "node:path"
  * while the ledger recorded the divergence as closed. A shared constant plus a per-call-site
  * discipline is not one invocation prefix; a shared spawn is.
  *
- * So the invariant is structural: exactly one place in `packages/novaclaw/src` may hand the string
- * `"git"` to `ChildProcess.make`, and it is `Git.spawn`, which applies the list unconditionally.
+ * So the invariant is structural: exactly one place in `packages/novaclaw/src` may hand a git
+ * executable to `ChildProcess.make`, and it is `Git.spawn`, which applies the list unconditionally.
+ * That one place now passes `gitBinary()` — core's `binary()`, which prefers a system git and falls
+ * back to the provisioned PortableGit, so the revert substrate works on a machine with no git. The
+ * bare `"git"` literal is still matched here, so a regression back to it is a SECOND site rather
+ * than an invisible one.
  *
  * ⚠️ Scoped to `packages/novaclaw/src` on purpose. `packages/core/src/git.ts` is a different service
  * with its own executable resolution (`binary()` → system git, else the bundled PortableGit) and its
@@ -39,7 +43,7 @@ export const stripComments = (source: string) =>
     .replaceAll(/\/\*[\s\S]*?\*\//g, (hit) => hit.replaceAll(/[^\n]/g, " "))
     .replaceAll(/(^|[^:])\/\/[^\n]*/g, (hit, keep: string) => keep + " ".repeat(hit.length - keep.length))
 
-const SPAWN = /ChildProcess\.make\(\s*"git"/g
+const SPAWN = /ChildProcess\.make\(\s*(?:"git"|gitBinary\(\))/g
 
 /** Every line in `source` that hands the literal `"git"` to `ChildProcess.make`, comments excluded. */
 export const gitSpawnLines = (source: string): number[] => {
@@ -90,12 +94,14 @@ describe("one git spawn", () => {
     // buries the one word that changed.
     const line = stripComments(source)
       .split("\n")
-      .find((item) => item.includes('ChildProcess.make("git"'))
-    expect(line?.trim()).toBe('ChildProcess.make("git", [...CONFIG_ARGS, ...args], {')
+      .find((item) => item.includes("ChildProcess.make(gitBinary()"))
+    expect(line?.trim()).toBe("ChildProcess.make(gitBinary(), [...CONFIG_ARGS, ...args], {")
   })
 
   test("the scan bites on a fresh spawn, and not on one described in a comment (negative control)", () => {
     expect(gitSpawnLines('const r = appProcess.run(ChildProcess.make("git", args, {}))')).toEqual([1])
+    // …and on the resolved form too, so the guard cannot be evaded by taking the correct call twice.
+    expect(gitSpawnLines("const r = appProcess.run(ChildProcess.make(gitBinary(), args, {}))")).toEqual([1])
     // Multi-line call — the shape a `\n` after the paren would hide from a naive pattern.
     expect(gitSpawnLines('appProcess.run(\n  ChildProcess.make(\n    "git",\n    args,\n  ),\n)')).toEqual([2])
     // …and the two comment forms that a regex over raw source counts as violations.

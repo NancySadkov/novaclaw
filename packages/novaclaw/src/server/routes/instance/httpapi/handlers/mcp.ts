@@ -30,6 +30,12 @@ export const mcpHandlers = HttpApiBuilder.group(InstanceHttpApi, "mcp", (handler
         Effect.catchTag("MCP.NotFoundError", (error) =>
           Effect.fail(new McpServerNotFoundError({ name: error.name, message: `MCP server not found: ${error.name}` })),
         ),
+        // A state the USER can reach — a server whose OAuth metadata cannot be fetched — used to be a
+        // raw throw inside the generator, i.e. a defect that walks past every caller's catch arm. It
+        // is a typed failure now, so it lands on the endpoint's already-declared arm.
+        Effect.catchTag("MCP.AuthUnavailableError", (error) =>
+          Effect.fail(new UnsupportedOAuthError({ error: error.reason })),
+        ),
       )
     })
 

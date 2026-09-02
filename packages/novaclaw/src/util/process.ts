@@ -16,8 +16,11 @@ export interface Options {
   stderr?: Stdio
   shell?: Shell
   abort?: AbortSignal
-  kill?: NodeJS.Signals | number
-  timeout?: number
+  // ⚠️ There is deliberately NO `kill` signal and NO `timeout` grace here any more. They configured a
+  // SECOND kill policy on the same object — a bare `proc.kill` to the ROOT — living fifty lines above
+  // the one that reaps the tree, and a knob that selects the orphaning kill is the defect, not the
+  // caller who reaches for it. `abort` and {@link stop} both go through `Shell.killTree`, which owns
+  // the signal sequence and the grace window for every platform.
 }
 
 export interface RunOptions extends Omit<Options, "stdout" | "stderr"> {
@@ -70,24 +73,27 @@ export function spawn(cmd: string[], opts: Options = {}): Child {
   })
 
   let closed = false
-  let timer: ReturnType<typeof setTimeout> | undefined
+  const dead = () => proc.exitCode !== null || proc.signalCode !== null
 
+  /**
+   * 🔴 **Aborting goes through the ONE tree-kill, exactly as {@link stop} does.**
+   *
+   * This used to be `proc.kill(...)` plus a `setTimeout` SIGKILL — a signal to the ROOT only, which
+   * is the precise thing `stop`'s own comment fifty lines below forbids: on Windows a non-tree kill
+   * leaves every grandchild running, and on POSIX SIGKILL to the root guarantees the tree is
+   * orphaned rather than reaped. So `Process.spawn`/`Process.run` held two kill policies for one
+   * object, and the weaker one was on the path a timeout or a cancelled request takes.
+   */
   const abort = () => {
-    if (closed) return
-    if (proc.exitCode !== null || proc.signalCode !== null) return
+    if (closed || dead()) return
     closed = true
-
-    proc.kill(opts.kill ?? "SIGTERM")
-
-    const ms = opts.timeout ?? 5_000
-    if (ms <= 0) return
-    timer = setTimeout(() => proc.kill("SIGKILL"), ms)
+    // `killTree` never throws and never rejects, so this needs no catch arm.
+    void Shell.killTree(proc, { exited: dead })
   }
 
   const exited = new Promise<number>((resolve, reject) => {
     const done = () => {
       opts.abort?.removeEventListener("abort", abort)
-      if (timer) clearTimeout(timer)
     }
 
     proc.once("exit", (code, signal) => {
@@ -119,8 +125,6 @@ export async function run(cmd: string[], opts: RunOptions = {}): Promise<Result>
     stdin: opts.stdin,
     shell: opts.shell,
     abort: opts.abort,
-    kill: opts.kill,
-    timeout: opts.timeout,
     stdout: "pipe",
     stderr: "pipe",
   })

@@ -80,6 +80,21 @@ export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("MCP
   name: Schema.String,
 }) {}
 
+/**
+ * 🔴 **The OAuth entry points cannot start a flow for this server, as a TYPED failure.**
+ *
+ * ⚠️ These three states — not a remote server, OAuth explicitly disabled, an unparseable URL — used
+ * to be `throw new Error(...)` inside an `Effect.fn` generator. A raw throw in a generator is a
+ * **defect**, not a failure: it bypasses every `Effect.catch` arm the caller wrote and lands as an
+ * unhandled cause at the HTTP boundary, so a user who typed a malformed URL in Settings got a fiber
+ * death where the rest of this module is scrupulous about returning a describable outcome
+ * (`connectRemote` folds the very same invalid-URL state into `Status.failed`).
+ */
+export class AuthUnavailableError extends Schema.TaggedErrorClass<AuthUnavailableError>()("MCP.AuthUnavailableError", {
+  name: Schema.String,
+  reason: Schema.String,
+}) {}
+
 export type MCPClient = Client
 
 /**
@@ -294,7 +309,7 @@ export interface Interface {
   ) => Effect.Effect<Awaited<ReturnType<MCPClient["readResource"]>> | undefined>
   readonly startAuth: (
     mcpName: string,
-  ) => Effect.Effect<{ authorizationUrl: string; oauthState: string }, NotFoundError>
+  ) => Effect.Effect<{ authorizationUrl: string; oauthState: string }, NotFoundError | AuthUnavailableError>
   readonly authenticate: (
     mcpName: string,
     onAuthorization?: (authorizationUrl: string) => void,
@@ -1120,10 +1135,18 @@ export const layer = Layer.effect(
 
     const startAuth = Effect.fn("MCP.startAuth")(function* (mcpName: string) {
       const mcpConfig = yield* requireMcpConfig(mcpName)
-      if (mcpConfig.type !== "remote") throw new Error(`MCP server ${mcpName} is not a remote server`)
-      if (mcpConfig.oauth === false) throw new Error(`MCP server ${mcpName} has OAuth explicitly disabled`)
+      if (mcpConfig.type !== "remote")
+        return yield* new AuthUnavailableError({
+          name: mcpName,
+          reason: `MCP server ${mcpName} is not a remote server`,
+        })
+      if (mcpConfig.oauth === false)
+        return yield* new AuthUnavailableError({
+          name: mcpName,
+          reason: `MCP server ${mcpName} has OAuth explicitly disabled`,
+        })
       const url = remoteURL(mcpConfig.url)
-      if (!url) throw new Error(`Invalid MCP URL for "${mcpName}"`)
+      if (!url) return yield* new AuthUnavailableError({ name: mcpName, reason: `Invalid MCP URL for "${mcpName}"` })
 
       // OAuth config is optional - if not provided, we'll use auto-discovery
       const oauthConfig = typeof mcpConfig.oauth === "object" ? mcpConfig.oauth : undefined
@@ -1190,9 +1213,17 @@ export const layer = Layer.effect(
       mcpName: string,
       onAuthorization?: (authorizationUrl: string) => void,
     ) {
-      const result = yield* startAuth(mcpName)
+      // `authenticate` publishes a `Status`, so the one state `startAuth` can refuse in becomes the
+      // `failed` status rather than a fiber death the caller cannot see.
+      const attempt = yield* startAuth(mcpName).pipe(
+        Effect.catchTag("MCP.AuthUnavailableError", (error) => Effect.succeed(error)),
+      )
+      if (attempt instanceof AuthUnavailableError) return { status: "failed", error: attempt.reason } satisfies Status
+      // Annotated, not inferred: the two success returns use `satisfies AuthResult`, which keeps each
+      // literal's own type, so the union drops the optional `client` and an `in` narrowing yields `{}`.
+      const result: AuthResult = attempt
       if (!result.authorizationUrl) {
-        const client = "client" in result ? result.client : undefined
+        const client = result.client
         const mcpConfig = yield* requireMcpConfig(mcpName).pipe(
           Effect.tapError(() => (client ? shutdownClient(client) : Effect.void)),
         )
@@ -1243,7 +1274,10 @@ export const layer = Layer.effect(
       const storedState = yield* auth.getOAuthState(mcpName)
       if (storedState !== result.oauthState) {
         yield* auth.clearOAuthState(mcpName)
-        throw new Error("OAuth state mismatch - potential CSRF attack")
+        // A REFUSAL the caller can render, not a defect. This is the CSRF arm: it is reached by an
+        // attacker-supplied callback and by an honest race (two flows for one server), and a fiber
+        // death here told the user nothing while the Settings screen kept spinning.
+        return { status: "failed", error: "OAuth state mismatch - potential CSRF attack" } satisfies Status
       }
       yield* auth.clearOAuthState(mcpName)
       return yield* finishAuth(mcpName, code)
@@ -1252,7 +1286,15 @@ export const layer = Layer.effect(
     const finishAuth = Effect.fn("MCP.finishAuth")(function* (mcpName: string, authorizationCode: string) {
       yield* requireMcpConfig(mcpName)
       const pending = pendingOAuthTransports.get(mcpName)
-      if (!pending) throw new Error(`No pending OAuth flow for MCP server: ${mcpName}`)
+      // 🔴 The state the server's own restart produces: `pendingOAuthTransports` is in-memory, so a
+      // restart mid-flow empties it and the user still clicks through the browser callback. That is
+      // a normal, user-reachable outcome and it returns the `failed` status the caller already
+      // renders — it used to throw, which killed the fiber inside `Effect.gen` as a DEFECT.
+      if (!pending)
+        return {
+          status: "failed",
+          error: `No pending OAuth flow for MCP server: ${mcpName}`,
+        } satisfies Status
 
       const error = yield* Effect.tryPromise({
         try: () => pending.transport.finishAuth(authorizationCode),

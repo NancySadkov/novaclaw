@@ -1,5 +1,6 @@
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { AppProcess } from "@novaclaw/core/process"
+import { binary as gitBinary } from "@novaclaw/core/git"
 import { Effect, Layer, Context } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 
@@ -63,10 +64,19 @@ export interface SpawnOptions {
  * structural. Measured on git 2.54.0.windows.1: those thirteen produce byte-identical stdout and the
  * same exit code with and without the prefix, and `git init` does not persist a `-c` value, so the
  * explicit `config` writes that follow it still decide the store's settings.
+ *
+ * 🔴 **WHICH git: `gitBinary()`, never the literal `"git"`.** `@novaclaw/core/git`'s `binary()` is
+ * `which("git") ?? ShellBundle.resolve()?.git ?? "git"`, and its own comment says why the middle arm
+ * exists — *"so snapshots/revert work on machines with no git installed"*. Git is the revert
+ * substrate (per-turn snapshot trees ride it), which is why PortableGit is the one Windows bundle.
+ * Spawning the bare string meant that on a Windows box with no system git this package's snapshot
+ * and worktree got `ENOENT` while the provisioned bundle sat on disk — and the Shell screen named
+ * that bundle as this instance's git, so the product reported a binary its own revert substrate
+ * never called. Two answers to one fact; `binary()` is the one, and it is memoised per process.
  */
 export const spawn = (appProcess: AppProcess.Interface, args: readonly string[], opts?: SpawnOptions) =>
   appProcess.run(
-    ChildProcess.make("git", [...CONFIG_ARGS, ...args], {
+    ChildProcess.make(gitBinary(), [...CONFIG_ARGS, ...args], {
       cwd: opts?.cwd,
       env: opts?.env,
       extendEnv: true,
