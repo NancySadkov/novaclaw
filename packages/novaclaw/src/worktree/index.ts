@@ -100,6 +100,28 @@ export class DirtyWorktreeError extends Schema.TaggedErrorClass<DirtyWorktreeErr
   message: Schema.String,
 }) {}
 
+/**
+ * 🔴 The CONTAINMENT refusal: the caller named a directory that is not one of ours to delete.
+ *
+ * `remove` used to answer `true` — "removed" — for **any** directory git did not recognise as a
+ * worktree, after recursively deleting it. A caller naming `C:\Users\<name>\Documents` got it erased
+ * and a success back. That is AGENTS.md principle 11 head-on: NovaClaw writes and deletes in the home
+ * instance dirs, the OS temp dir and the session's own folder, and nowhere else.
+ *
+ * Distinct from `RemoveFailedError` for the same reason {@link DirtyWorktreeError} is: nothing
+ * failed. The request was refused, nothing on disk changed, and the caller needs to be able to tell
+ * that apart from a removal that broke halfway — ruling 2, a failed mutation never reports success,
+ * and its converse, a refusal is not described as a fault.
+ *
+ * ⚠️ Deliberately kept OUT of the shared `Error` union and off the `WorktreeErrorName` wire union:
+ * only a removal can be refused this way, and a route that ever exposes `remove` again must handle
+ * this case explicitly rather than inherit a mapping that flattens it into "worktree removal failed".
+ */
+export class OutsideRootError extends Schema.TaggedErrorClass<OutsideRootError>()("WorktreeOutsideRootError", {
+  directory: Schema.String,
+  message: Schema.String,
+}) {}
+
 export class ResetFailedError extends Schema.TaggedErrorClass<ResetFailedError>()("WorktreeResetFailedError", {
   message: Schema.String,
 }) {}
@@ -142,12 +164,14 @@ export interface Interface {
   readonly create: (input?: CreateInput) => Effect.Effect<Info, Error>
   readonly list: () => Effect.Effect<(Omit<Info, "branch"> & { branch?: string })[], Error>
   /**
-   * ⚠️ `DirtyWorktreeError` is declared HERE and deliberately kept out of the shared `Error` union:
-   * only a removal can be refused for holding uncommitted work. Widening the union would force every
-   * caller of `create`/`reset`/`list` to handle a case they cannot produce, and — worse — would let a
-   * generic error mapper answer "worktree is dirty" for an operation where that is meaningless.
+   * ⚠️ `DirtyWorktreeError` and `OutsideRootError` are declared HERE and deliberately kept out of the
+   * shared `Error` union: only a removal can be refused for holding uncommitted work, and only a
+   * removal can be refused for naming a directory outside this instance's worktree root. Widening the
+   * union would force every caller of `create`/`reset`/`list` to handle a case they cannot produce,
+   * and — worse — would let a generic error mapper answer "worktree is dirty" for an operation where
+   * that is meaningless.
    */
-  readonly remove: (input: RemoveInput) => Effect.Effect<boolean, Error | DirtyWorktreeError>
+  readonly remove: (input: RemoveInput) => Effect.Effect<boolean, Error | DirtyWorktreeError | OutsideRootError>
   readonly reset: (input: ResetInput) => Effect.Effect<boolean, Error>
 }
 
@@ -236,6 +260,30 @@ export const layer: Layer.Layer<
      */
     const reason = (result: GitResult, fallback: string) => childOutput(result) || result.fault || fallback
 
+    /**
+     * **Where this instance's worktrees live — `<data>/worktree/<origin>`.**
+     *
+     * One definition, because two would drift and the drift would be invisible: `makeWorktreeInfo`
+     * builds every worktree path under this root, and `remove` refuses to delete anything that is not
+     * under it. A second spelling of the root in either place is a guard that has quietly stopped
+     * matching the thing it guards.
+     */
+    const worktreeRootPath = (origin: string) => pathSvc.join(Global.Path.data, "worktree", origin)
+
+    /**
+     * The same root, created if absent — for the side that PUTS worktrees there.
+     *
+     * ⚠️ Kept separate from {@link worktreeRootPath} on purpose: `remove`'s containment check must not
+     * create a directory while refusing a request. It does not need to, either. A root that does not
+     * exist cannot contain a directory that does, so an absent root makes the check fail closed —
+     * which is the answer a guard should give when it cannot see its own boundary.
+     */
+    const ensureWorktreeRoot = Effect.fnUntraced(function* (origin: string) {
+      const root = worktreeRootPath(origin)
+      yield* fs.makeDirectory(root, { recursive: true }).pipe(Effect.orDie)
+      return root
+    })
+
     const MAX_NAME_ATTEMPTS = 26
     const candidate = Effect.fn("Worktree.candidate")(function* (input: {
       root: string
@@ -270,8 +318,7 @@ export const layer: Layer.Layer<
         return yield* new NotGitError({ message: "Worktrees are only supported for git projects" })
       }
 
-      const root = pathSvc.join(Global.Path.data, "worktree", ctx.origin)
-      yield* fs.makeDirectory(root, { recursive: true }).pipe(Effect.orDie)
+      const root = yield* ensureWorktreeRoot(ctx.origin)
 
       // Slug.from's cap is load-bearing here: `name` becomes both a directory component under
       // Global.Path.data and a `novaclaw/<name>` branch ref, and a caller-supplied name arrives over
@@ -402,6 +449,46 @@ export const layer: Layer.Layer<
       return pathSvc.normalize(real)
     })
 
+    /**
+     * `canonical`, but it answers `undefined` rather than GUESSING when the path cannot be resolved.
+     *
+     * 🔴 The difference is the whole security property. `canonical` falls back to the lexical
+     * `resolve()` when `realPath` fails, which is right for listing and display — a path we cannot
+     * stat is still a path we can print. It is wrong for a containment decision, because the lexical
+     * form collapses `..` *through* symlinks: with `<root>/link` a junction to `C:\Users\me`, the
+     * lexical answer for `<root>/link/Documents` is "inside `<root>`" while the bytes live outside it.
+     * Resolution normally closes that (the real path is compared), so the hole is exactly the arm
+     * where resolution failed — an unreadable ancestor, a permission error — and there the honest
+     * answer is "I cannot prove containment", not "assume the lexical form".
+     */
+    const canonicalReal = Effect.fnUntraced(function* (input: string) {
+      const real = yield* fs.realPath(pathSvc.resolve(input)).pipe(Effect.catch(() => Effect.succeed(undefined)))
+      if (real === undefined) return undefined
+      const normalized = pathSvc.normalize(real)
+      return process.platform === "win32" ? normalized.toLowerCase() : normalized
+    })
+
+    /**
+     * 🔴 **The ONE containment check** — is `target` a path strictly inside `base`, as they exist on
+     * disk? Used by `remove` before it deletes anything git did not vouch for, and by `prune`.
+     *
+     * Three refusals, and each one has been a real defect somewhere:
+     * - **the container itself** (`target === base`) — a "clean up under X" that deletes X;
+     * - **a sibling with a shared prefix** — `…/worktree/acme-evil` is not inside `…/worktree/acme`,
+     *   which is why the separator is part of the comparison rather than a bare `startsWith`;
+     * - **anything that resolves outward** — `..` (collapsed by `resolve`) and symlinks/junctions
+     *   (collapsed by `realPath`) both land outside and are refused on their REAL path.
+     *
+     * Case is folded on win32 because the filesystem is case-insensitive, so `C:\Users` and
+     * `c:\users` are one directory and a case-sensitive compare would refuse a legitimate child.
+     */
+    const containedIn = Effect.fnUntraced(function* (base: string, target: string) {
+      const root = yield* canonicalReal(base)
+      const inside = yield* canonicalReal(target)
+      if (root === undefined || inside === undefined) return false
+      return inside !== root && inside.startsWith(`${root}${pathSvc.sep}`)
+    })
+
     function parseWorktreeList(text: string) {
       return text
         .split("\n")
@@ -513,12 +600,46 @@ export const layer: Layer.Layer<
       const entries = parseWorktreeList(list.text)
       const entry = yield* locateWorktree(entries, directory)
 
+      /**
+       * 🔴 **git did not vouch for this path, so nothing else may.**
+       *
+       * Every branch below this one deletes a directory GIT named — `entry.path` comes out of
+       * `git worktree list --porcelain` for this very repository, and `git worktree remove` refuses
+       * the main worktree itself. This branch has no such authority: `locateWorktree` found nothing,
+       * so the only thing pointing at the directory is the caller's own string. Until 2026-09-02 it
+       * recursively deleted whatever that string named and answered `true` — a caller passing their
+       * Documents folder had it erased and was told the worktree was removed.
+       *
+       * So the delete is admitted only for a path inside `<data>/worktree/<origin>`, which is where
+       * `makeWorktreeInfo` puts every worktree we create and is sanctioned place (a) under AGENTS.md
+       * principle 11. The legitimate case that still reaches here is a worktree of ours whose
+       * registry entry is gone (a `git worktree prune`, a half-finished removal) and whose directory
+       * lingers.
+       *
+       * ⚠️ The order of the two conditions is deliberate. A path that does not exist is answered
+       * `true` and nothing is touched — that is an idempotent removal, not a claim about the caller's
+       * right to the path, and it is the answer `remove` has always given for a worktree that is
+       * already gone. Only an actual delete has to be justified.
+       *
+       * ⚠️ `store.disposeDirectory` above runs before this check and stays there: it drops an
+       * in-memory instance keyed by the directory and writes nothing, so it is not a mutation this
+       * guard exists to prevent — and moving it below would skip it on the registered path.
+       */
       if (!entry?.path) {
         const directoryExists = yield* fs.exists(directory).pipe(Effect.orDie)
-        if (directoryExists) {
-          yield* stopFsmonitor(directory)
-          yield* cleanDirectory(directory)
+        if (!directoryExists) return true
+        if (!(yield* containedIn(worktreeRootPath(ctx.origin), directory))) {
+          return yield* new OutsideRootError({
+            // The CALLER's path, for the same reason `DirtyWorktreeError` carries it: the client has
+            // to recognise the value it sent, not a lowercased Windows form it never wrote.
+            directory: input.directory,
+            message:
+              `Refusing to remove ${input.directory}: it is not a worktree of this project and it is ` +
+              `not inside this instance's worktree directory. Nothing was deleted.`,
+          })
         }
+        yield* stopFsmonitor(directory)
+        yield* cleanDirectory(directory)
         return true
       }
 
@@ -639,15 +760,17 @@ export const layer: Layer.Layer<
       return true
     })
 
+    // The entries are paths git PRINTED in a "failed to remove" warning, so they are attacker-shaped
+    // only in the sense that a repository can contain anything — which is enough. `containedIn` is
+    // the same predicate `remove` uses; it used to be spelled out here and nowhere else, which is how
+    // `remove` came to be missing it.
     const prune = Effect.fnUntraced(function* (root: string, entries: string[]) {
-      const base = yield* canonical(root)
       yield* Effect.forEach(
         entries,
         (entry) =>
           Effect.gen(function* () {
-            const target = yield* canonical(pathSvc.resolve(root, entry))
-            if (target === base) return
-            if (!target.startsWith(`${base}${pathSvc.sep}`)) return
+            const target = pathSvc.resolve(root, entry)
+            if (!(yield* containedIn(root, target))) return
             yield* fs.remove(target, { recursive: true }).pipe(Effect.ignore)
           }),
         { concurrency: "unbounded" },
