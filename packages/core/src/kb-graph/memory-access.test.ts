@@ -92,15 +92,17 @@ describe("a stranger cannot READ across the boundary", () => {
 })
 
 describe("a stranger cannot MUTATE across the boundary", () => {
-  test("🔴 invalidating another chat's memory by id does nothing", async () => {
+  test("🔴 invalidating another chat's memory by id is REFUSED, loudly", async () => {
     const before = await mem.stats()
-    await mem.invalidate("S", undefined, { scopes: BOB })
+    // ⚠️ It used to RESOLVE — a refused erase reported as success, which is what let the `kb` tool
+    // answer "Purged" about a row that is still here. The refusal is now named.
+    await expect(mem.invalidate("S", undefined, { scopes: BOB })).rejects.toThrow(/refused to forget "S"/)
     const after = await mem.stats()
     expect(after.valid).toBe(before.valid)
   })
 
-  test("🔴 purging another officer's memory by id does nothing — it destroys history too", async () => {
-    await mem.purge("O", { scopes: BOB })
+  test("🔴 purging another officer's memory by id is REFUSED, loudly — and the row survives", async () => {
+    await expect(mem.purge("O", { scopes: BOB })).rejects.toThrow(/refused to purge "O"/)
     const rows = await mem.list({ includeInvalid: true, limit: 100 })
     expect(rows.some((m) => m.id === "O")).toBe(true)
   })

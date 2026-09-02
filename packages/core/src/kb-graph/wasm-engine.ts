@@ -579,7 +579,26 @@ export class WasmMemory {
     }
   }
 
+  /**
+   * 🔴 **THE DEAD LATCH IS ENFORCED HERE — and this is the only place it can be.**
+   *
+   * `dead`'s own doc says every later call must fail immediately "rather than queue behind a lock
+   * that will never release", and until this line nothing honoured it: the latch had four readers
+   * (`persist`, the branch that sets it, `touch`, and prose in `close`) and not one of them was an
+   * operation. So after an `Aborted(...)` every op still ran `this.serialize(() => this._op())`,
+   * chained onto `this.lock`, and issued a statement against a corpse. The lock is a promise chain,
+   * so the FIRST call that never settles holds it for every later call in the process — and the
+   * auto-recall leg (`session/runner/llm.ts`) has no timeout, so one fatal abort wedged every
+   * subsequent turn of every session, permanently, at 0.1% CPU with nothing in the log.
+   *
+   * ⚠️ **Before the lock, deliberately.** Queueing the rejection behind `this.lock` would inherit
+   * the very hang it exists to prevent. `close()` is unaffected: it reaches `flush()` through
+   * `bounded()`, which treats a rejection as "finished".
+   *
+   * The message names the ORIGINAL fault, not this call — see `EngineFault.deadMessage`.
+   */
   private serialize<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.dead) return Promise.reject(new Error(this.dead))
     const run = this.lock.then(fn, fn)
     this.lock = run.then(
       () => {},
@@ -1469,12 +1488,13 @@ export class WasmMemory {
    */
   invalidate(id: string, at?: string, opts: { scopes?: readonly string[] } = {}): Promise<void> {
     return this.serialize(async () => {
-      const when = at ? `timestamp($at)` : `current_timestamp()`
       const scopeFilter = opts.scopes ? `WHERE m.scope IN $scopes` : ``
+      const params = { id, ...(opts.scopes ? { scopes: opts.scopes } : {}) }
+      await this.requireErasable("forget", id, scopeFilter, params, opts.scopes !== undefined)
+      const when = at ? `timestamp($at)` : `current_timestamp()`
       await this.q(`MATCH (m:Memory {id: $id}) ${scopeFilter} SET m.t_invalid = ${when}`, {
-        id,
+        ...params,
         ...(at ? { at } : {}),
-        ...(opts.scopes ? { scopes: opts.scopes } : {}),
       })
       this.touch()
     })
@@ -1484,12 +1504,50 @@ export class WasmMemory {
   purge(id: string, opts: { scopes?: readonly string[] } = {}): Promise<void> {
     return this.serialize(async () => {
       const scopeFilter = opts.scopes ? `WHERE m.scope IN $scopes` : ``
-      await this.q(`MATCH (m:Memory {id: $id}) ${scopeFilter} DETACH DELETE m`, {
-        id,
-        ...(opts.scopes ? { scopes: opts.scopes } : {}),
-      })
+      const params = { id, ...(opts.scopes ? { scopes: opts.scopes } : {}) }
+      await this.requireErasable("purge", id, scopeFilter, params, opts.scopes !== undefined)
+      await this.q(`MATCH (m:Memory {id: $id}) ${scopeFilter} DETACH DELETE m`, params)
       this.touch()
     })
+  }
+
+  /**
+   * 🔴 **A REFUSED ERASE MUST SAY SO.** Both erase statements used to run and resolve whether or not
+   * their `MATCH` bound anything: a `SET`/`DETACH DELETE` over zero rows is not an error, so a caller
+   * asking to erase a memory it may not see was told the erase happened. `MemoryObserved` then
+   * published `MemoryEvent.Forgotten` and dropped the access-ledger rows for a memory that is still
+   * in the store, and the `kb` tool answered *"Purged … — no history kept."* to a model whose next
+   * search can still find the text. That is a failed mutation reporting success, which is the one
+   * thing this class of op may never do.
+   *
+   * ⚠️ **A THROW, not a boolean, and the reason is the plumbing.** Every consumer of this pair —
+   * `MemoryClient.fromEngine`'s `Effect.tryPromise`, `MemoryObserved`'s `Effect.tap` chain, the
+   * `kb` tool's `Effect.catch`, the HTTP handler's `asBadRequest` — already routes a failure to the
+   * user and already SKIPS the success-only side effects. A boolean would have had to be threaded
+   * through five signatures for the same outcome, and every site that forgot to read it would be the
+   * present bug again. The refusal reaches the model as *"Couldn't forget …"* with no change above.
+   *
+   * ⚠️ The probe is a PRIMARY-KEY lookup returning one short column. A scan on this engine can hand
+   * back an empty `text` for an intact row (see `hydrate`), and an empty result is indistinguishable
+   * from a failed query — so the probe reads the id it matched on and nothing else, and a genuine
+   * engine fault throws rather than being read as "no such row". It runs inside the SAME `serialize`
+   * block as the statement it guards, so nothing can slip between the check and the erase.
+   */
+  private async requireErasable(
+    what: "forget" | "purge",
+    id: string,
+    scopeFilter: string,
+    params: Record<string, unknown>,
+    scoped: boolean,
+  ): Promise<void> {
+    const seen = await this.rows(`MATCH (m:Memory {id: $id}) ${scopeFilter} RETURN m.id AS id`, params)
+    if (seen.length > 0) return
+    throw new Error(
+      `kb-memory: refused to ${what} "${id}" — nothing was erased. ` +
+        (scoped
+          ? `No memory with that id is one this caller can see.`
+          : `No memory with that id is in the store.`),
+    )
   }
 
   /**
@@ -1908,6 +1966,10 @@ export class WasmMemory {
    * reason this returns scopes rather than pruning by prefix in one pass.
    */
   async stagedScopes(prefix: string): Promise<string[]> {
+    // ⚠️ The one public op that does not go through `serialize` (filed separately), so it is also the
+    // one the latch there does not cover. Without this line it would still issue a statement against
+    // a dead module — the same silence, one method over.
+    if (this.dead) throw new Error(this.dead)
     const rows = await this.rows(
       `MATCH (m:Memory)
        WHERE m.t_invalid IS NULL AND m.relation = 'staged' AND starts_with(m.scope, $prefix)
