@@ -328,33 +328,6 @@ function note(input: {
   )
 }
 
-// jh-improve2: undo a botched, unfixable edit by rolling the file back to the last VERIFIED checkpoint (the
-// harness commits after each verified step). `git checkout -- <path>` restores TRACKED files to HEAD; an
-// untracked file (never checkpointed) can't be reverted this way — that's reported. Uses the runner (a git
-// subprocess), like `run`. This is the surgical-edit safety net (owner: don't rewrite the whole program —
-// edit; if the edit botches, revert and re-edit).
-function gitRevert(
-  runner: JhProcessRunner.Runner,
-  input: { args: Readonly<Record<string, unknown>>; cwd: string },
-): Effect.Effect<Observation> {
-  const raw = input.args.path
-  const p = typeof raw === "string" && raw.trim() !== "" ? raw.trim() : "."
-  if (p !== "." && !safePath(input.cwd, p))
-    return Effect.succeed(obs(false, `git_revert refused unsafe path "${p}" (absolute or contains "..")`))
-  return runner
-    .run({ command: `git checkout -- ${p}`, cwd: input.cwd, timeoutMs: 15_000 })
-    .pipe(
-      Effect.map((r) =>
-        obs(
-          r.exitCode === 0 && !r.timedOut,
-          r.exitCode === 0 && !r.timedOut
-            ? `git_revert: rolled ${p === "." ? "the working tree" : p} back to the last verified checkpoint`
-            : `git_revert failed (exit ${r.exitCode}): ${r.output.trim() || "the file may be untracked (never checkpointed) or this is not a git repo"}`,
-        ),
-      ),
-    )
-}
-
 export function basicExecutor(runner: JhProcessRunner.Runner, opts?: { readonly runTimeoutMs?: number }): Executor {
   // C9: the run-action timeout is caller-tunable — for compute tasks a correct program finishes in
   // seconds, so a 60 s wait per hung run is pure wall loss (run57: 30 hung runs × 60 s ≈ half the wall).
@@ -374,8 +347,6 @@ export function basicExecutor(runner: JhProcessRunner.Runner, opts?: { readonly 
           return Effect.succeed(readFile(input))
         case "note":
           return Effect.succeed(note(input))
-        case "git_revert":
-          return gitRevert(runner, input)
         case "run": {
           const command = input.args.command
           if (typeof command !== "string") return Effect.succeed(badArgs("run", "{command: string}"))

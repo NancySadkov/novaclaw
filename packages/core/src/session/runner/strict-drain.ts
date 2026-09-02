@@ -130,6 +130,11 @@ export const make = (dependencies: Dependencies) => {
       )
     if (selected === undefined) return "handled" as const
     const model = selected.model
+    // The route's HONORED context window. `completeOnce` below already hands it to
+    // `ProviderDispatch.prepare` as `contextSize`, but packing cannot save the Strict route — the engine's
+    // prompt is ONE `Message.user`, so there is nothing to evict and `dropped` is always 0. So the same
+    // number goes to the engine, which budgets the workspace render where it is BUILT.
+    const contextTokens = model.route.defaults.limits?.context
     const maxProviderAttempts = ProviderRetry.maxAttempts(yield* models.retryAttempts(modelSession))
     const scheduledDevice = selected.device
     const routeProfile = yield* routeProfiles
@@ -502,6 +507,7 @@ export const make = (dependencies: Dependencies) => {
           // over the instance default; `Quality.DEFAULTS.enabled` is false, so an instance that has
           // configured no commands sees no behaviour change at all.
           quality: { ...harness.quality, enabled: resolved.quality ?? harness.quality.enabled },
+          ...(contextTokens === undefined ? {} : { contextTokens }),
           host: strictHost,
           completeOnce: completeAbortable,
           ...(resumeState === undefined ? {} : { resume: resumeState }),

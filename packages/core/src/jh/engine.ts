@@ -19,6 +19,7 @@ export * as JhEngine from "./engine"
 import { Effect, Exit } from "effect"
 import type { Presence } from "../presence"
 import { Hash } from "../util/hash"
+import { Token } from "../util/token"
 import { JhTree } from "./tree"
 import { JhStep } from "./step"
 import { JhDataflow } from "./dataflow"
@@ -288,7 +289,14 @@ export interface Deps {
    *  exits via the NORMAL terminal path (reason "aborted") — THROUGH the terminal best-restore — at
    *  the next loop/leaf boundary. Losing racers stop cleanly; their workspaces stay verified-best. */
   readonly aborted?: () => boolean
-  readonly limits: { readonly maxDepth: number; readonly maxTotalSteps: number }
+  /** `contextTokens` is the HONORED context window of the model these prompts are sent to. It bounds the
+   *  working-directory render (`workspaceCharBudget`), which is otherwise the largest thing in a prompt
+   *  and the one component with no total of its own. Unset = the conservative default, never unbounded. */
+  readonly limits: {
+    readonly maxDepth: number
+    readonly maxTotalSteps: number
+    readonly contextTokens?: number
+  }
   readonly trigger: JhBudget.SplitTrigger
   readonly onLog?: (entry: JhLog.Sequenced) => void
   readonly checkpoint?: (state: State) => Effect.Effect<void>
@@ -416,6 +424,78 @@ export const COMPLETION_GATE_MAX_CHECKS = 2
 // NAMED elision (the omitted line range), never an unnamed `[truncated]`.
 const FILE_RENDER_CAP = 24_000
 const WAVE4_FILE_CAP = 8_000 // improve5 P1b flags-off: the exact wave-4 cap + unnamed truncation (ablation)
+// 🔴 THE WORKSPACE RENDER CARRIES A TOTAL, and the reason it must is that nothing downstream can supply
+// one. A per-file cap and a file-COUNT cap bound each dimension separately and multiply: a caller that
+// lists 24 files at 24,000 chars each hands the provider ~576,000 characters — well past the honored
+// window of the local models this harness exists to serve. It arrives as ONE user message, which is the
+// single shape every context-packing mechanism is inert against (a lone message is both the newest and
+// the anchor, so nothing is droppable and `dropped` is 0), so the prompt is not truncated by us and not
+// reported by us — the model just silently loses its front. Hence a TOTAL, derived from the caller's
+// context window rather than from a second magic number.
+const MIN_FILE_CAP = 500
+const WORKSPACE_SEP = "\n\n"
+// Room for the omission notice appended when blocks are dropped.
+const OMISSION_NOTICE_RESERVE = 240
+/** The share of the model's context window the working-directory render may occupy. The rest carries the
+ *  task/plan/artifact base (`JhContext`, itself capped at 24,000 chars), the program-output tail, the
+ *  steer blocks, the system prompt AND the reply the model still has to generate — so this is a bound on
+ *  the largest single component, not a full budget for the prompt. */
+export const WORKSPACE_CONTEXT_SHARE = 0.5
+/** Assumed window when the caller cannot name one. A local model is commonly served at 32K, and a bound
+ *  that assumes the generous case is not a bound: an unknown window gets the conservative number. */
+export const DEFAULT_CONTEXT_TOKENS = 32_768
+/** Characters the workspace render may occupy, given the honored context window in TOKENS. */
+export const workspaceCharBudget = (contextTokens: number | undefined): number =>
+  Token.charsFromTokens(
+    Math.floor(
+      (contextTokens !== undefined && Number.isFinite(contextTokens) && contextTokens > 0
+        ? contextTokens
+        : DEFAULT_CONTEXT_TOKENS) * WORKSPACE_CONTEXT_SHARE,
+    ),
+  )
+
+/**
+ * Render the working-directory files for a prompt, inside `budgetChars`.
+ *
+ * `files` arrives most-recently-modified first, so the TAIL is the least relevant: blocks drop from the
+ * end and the omission is NAMED (never a silent cap — the same discipline `JhContext` applies to the
+ * artifact half). The LAST surviving block is never dropped, only elided harder, because the file the
+ * model is editing must never become invisible. Pure + total.
+ */
+export function renderFiles(
+  files: ReadonlyArray<{ readonly name: string; readonly content: string }>,
+  opts: { readonly numbered: boolean; readonly fullFiles: boolean },
+  budgetChars: number,
+): string {
+  if (files.length === 0) return ""
+  const bodies = files.map((f) => renderFileBlock(f.name, f.content, opts))
+  const sizeOf = (n: number): number => {
+    let total = Math.max(0, n - 1) * WORKSPACE_SEP.length
+    for (let i = 0; i < n; i++) total += bodies[i]!.length
+    return total
+  }
+  if (sizeOf(bodies.length) <= budgetChars) return bodies.join(WORKSPACE_SEP)
+  const budget = Math.max(MIN_FILE_CAP, budgetChars - OMISSION_NOTICE_RESERVE)
+  let keep = bodies.length
+  while (keep > 1 && sizeOf(keep) > budget) keep--
+  const kept = bodies.slice(0, keep)
+  // One block left and still over: shrink its per-file cap until the RENDERED block fits. Measured, not
+  // assumed — numbering inflates the render, so the raw cap is NOT the rendered length.
+  if (keep === 1 && kept[0]!.length > budget) {
+    let cap = budget
+    kept[0] = renderFileBlock(files[0]!.name, files[0]!.content, { ...opts, cap })
+    for (let i = 0; i < 8 && kept[0]!.length > budget && cap > MIN_FILE_CAP; i++) {
+      cap = Math.max(MIN_FILE_CAP, Math.floor((cap * budget) / kept[0]!.length))
+      kept[0] = renderFileBlock(files[0]!.name, files[0]!.content, { ...opts, cap })
+    }
+  }
+  const dropped = bodies.length - keep
+  if (dropped === 0) return kept.join(WORKSPACE_SEP)
+  return [
+    ...kept,
+    `### (${dropped} least-recently-modified file block(s) omitted — the working directory does not fit this model's context; use read_file "<name>" to see one)`,
+  ].join(WORKSPACE_SEP)
+}
 
 // improve5 P1a/b: render ONE workspace file for a prompt. `numbered` prefixes each line `N→` (1-based) so
 // the model can address edits by coordinate (replace_lines). `fullFiles` picks the cap + elision style: ON
@@ -424,8 +504,12 @@ const WAVE4_FILE_CAP = 8_000 // improve5 P1b flags-off: the exact wave-4 cap + u
 function renderFileBlock(
   name: string,
   content: string,
-  opts: { readonly numbered: boolean; readonly fullFiles: boolean },
+  opts: { readonly numbered: boolean; readonly fullFiles: boolean; readonly cap?: number },
 ): string {
+  // The per-file cap is the flag's cap, or a SMALLER one the total budget asked for (never larger:
+  // the ablation flag still means what it says).
+  const flagCap = opts.fullFiles ? FILE_RENDER_CAP : WAVE4_FILE_CAP
+  const cap = opts.cap === undefined ? flagCap : Math.max(MIN_FILE_CAP, Math.min(opts.cap, flagCap))
   const numberize = (text: string): string =>
     opts.numbered
       ? text
@@ -436,14 +520,14 @@ function renderFileBlock(
   let body: string
   if (!opts.fullFiles) {
     // wave-4 exact: raw char-cap + unnamed truncation (numbered line-wise on the shown part only).
-    body = numberize(content.length > WAVE4_FILE_CAP ? content.slice(0, WAVE4_FILE_CAP) + "\n…[truncated]…" : content)
-  } else if (content.length <= FILE_RENDER_CAP) {
+    body = numberize(content.length > cap ? content.slice(0, cap) + "\n…[truncated]…" : content)
+  } else if (content.length <= cap) {
     body = numberize(content)
   } else {
     // full-visibility over-cap: head + tail with a NAMED elision so the model KNOWS what it cannot see.
     const lines = content.split("\n")
-    const headBudget = Math.floor(FILE_RENDER_CAP * 0.6)
-    const tailBudget = FILE_RENDER_CAP - headBudget
+    const headBudget = Math.floor(cap * 0.6)
+    const tailBudget = cap - headBudget
     let hc = 0
     let headEnd = 0
     while (headEnd < lines.length && hc + lines[headEnd]!.length + 1 <= headBudget) {
@@ -559,6 +643,7 @@ const hasInstrumentation = (output: string): boolean => (output.match(NAME_VALUE
 
 export function runTask(deps: Deps, task: { readonly goal: string }, resume?: State): Effect.Effect<Report> {
   const { maxDepth, maxTotalSteps } = deps.limits
+  const workspaceBudget = workspaceCharBudget(deps.limits.contextTokens)
 
   // ---- mutable engine state (closed over by every helper below) ----
   let tree: JhTree.Tree =
@@ -759,12 +844,12 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       if (files.length === 0) fileBlock = "\n\n# Working directory\n(no files yet)"
       else {
         // improve5 P1a/b: the model's EDITING view — numbered (so it can `replace_lines` by coordinate) + full-visibility.
+        // Bounded by the model's context window (`workspaceBudget`): the per-file and per-COUNT caps
+        // multiply, so without a total this block alone can be several times the honored window.
         const numbered = deps.numberedWorkspace !== false
-        const bodies = files.map((f) =>
-          renderFileBlock(f.name, f.content, { numbered, fullFiles: deps.fullFiles !== false }),
-        )
+        const rendered = renderFiles(files, { numbered, fullFiles: deps.fullFiles !== false }, workspaceBudget)
         const numNote = numbered ? " — each line is prefixed `N→` (the 1-based line number, for `replace_lines`)" : ""
-        fileBlock = `\n\n# Working directory (the ACTUAL files on disk${numNote}; reference these exact names, and fix code here if a step failed)\n${bodies.join("\n\n")}`
+        fileBlock = `\n\n# Working directory (the ACTUAL files on disk${numNote}; reference these exact names, and fix code here if a step failed)\n${rendered}`
       }
     }
     // D7 (jh-improve1): grown fix/analyze nodes must SEE the program's most recent stdout (the diagnostics) —
@@ -813,13 +898,23 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
    *  the oracle extracts digits and the evidence check matches raw quotes, so numbers must NOT pollute this
    *  render), but WITH full visibility (P1b: the raised cap + named elision — so the goal-check can't mistake
    *  a render cut for an incomplete program, the run84 harm). */
-  const renderWorkspace = (): string => {
-    const files = deps.listFiles?.() ?? []
-    if (files.length === 0) return "(no files yet)"
-    return files
-      .map((f) => renderFileBlock(f.name, f.content, { numbered: false, fullFiles: deps.fullFiles !== false }))
-      .join("\n\n")
-  }
+  const renderWorkspaceFrom = (files: ReadonlyArray<{ readonly name: string; readonly content: string }>): string =>
+    files.length === 0
+      ? "(no files yet)"
+      : files
+          .map((f) => renderFileBlock(f.name, f.content, { numbered: false, fullFiles: deps.fullFiles !== false }))
+          .join("\n\n")
+  const renderWorkspace = (): string => renderWorkspaceFrom(deps.listFiles?.() ?? [])
+  /** The same workspace, bounded for a PROMPT. `renderWorkspace` above stays whole because its other two
+   *  readers are local and unbounded — the caller's oracle (`taskComplete`) grades the real files, and the
+   *  evidence check matches the model's quote against them. Only what actually travels to a model is
+   *  budgeted, and a quote from the budgeted subset is still found in the whole. */
+  const renderWorkspaceForPrompt = (
+    files: ReadonlyArray<{ readonly name: string; readonly content: string }>,
+  ): string =>
+    files.length === 0
+      ? "(no files yet)"
+      : renderFiles(files, { numbered: false, fullFiles: deps.fullFiles !== false }, workspaceBudget)
   // R3: the current graded progress score (from the caller's oracle), or undefined if ungraded.
   const currentScore = (): number | undefined =>
     deps.taskComplete?.({ workspace: renderWorkspace(), lastOutput: lastRunOutput }).score
@@ -1103,16 +1198,36 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
   // achievement is backstopped by the compile/run checks and the root oracle, so evidence is not needed there.
   const runGoalCheck = (goal: string, applyEvidence: boolean): Effect.Effect<GoalVerdict> =>
     Effect.gen(function* () {
-      const workspace = renderWorkspace()
+      // ONE listing feeds both renders: the whole workspace is the evidence material, the budgeted one is
+      // what the model sees. Two separate listings could disagree, and the evidence guarantee — a quote
+      // from what the model saw is findable in the material — only holds if they are the same snapshot.
+      const files = deps.listFiles?.() ?? []
+      const workspace = renderWorkspaceFrom(files)
       const key = Hash.sha256(`${applyEvidence ? "E" : "-"}|${goal}|${workspace}|${lastRunOutput}`)
       if (deps.goalCheckCache !== false) {
         const hit = goalCheckCache.get(key)
         if (hit) return { ...hit, cached: true }
       }
       const gc = yield* Effect.exit(
-        deps.introspect(JhExpander.goalCheckPrompt({ goal, workspace, lastOutput: lastRunOutput })),
+        deps.introspect(
+          JhExpander.goalCheckPrompt({ goal, workspace: renderWorkspaceForPrompt(files), lastOutput: lastRunOutput }),
+        ),
       )
-      if (!Exit.isSuccess(gc)) return { achieved: true, missing: "", cached: false, evidenceFault: false } // unreachable checker → don't stall; accept
+      // 🔴 A VERIFIER THAT COULD NOT RUN HAS NOT VERIFIED (ruling 2: a failed mutation never reports
+      // success, and an unavailable subsystem names itself). This used to return achieved:true — and on
+      // the default Strict path this verdict IS the completion authority (no rig supplies `completionGate`
+      // and `strict.ts` supplies no `taskComplete`), so a model call that simply failed rubber-stamped the
+      // whole task as done. It also returned above the evidence block, so the one guard built to catch an
+      // unearned `true` was bypassed on exactly the path that produces one. `evidenceFault` marks it a
+      // CHECKER fault so it does not accrue toward the leaf's stuck counter; the retry budget decides
+      // whether the run stalls, and the report says "not verified" rather than "complete".
+      if (!Exit.isSuccess(gc))
+        return {
+          achieved: false,
+          missing: "the goal-check could not run — the model call failed, so nothing verified this goal",
+          cached: false,
+          evidenceFault: true,
+        }
       const parsed = JhExpander.parseGoalCheck(gc.value)
       let verdict = { achieved: parsed.achieved, missing: parsed.missing, evidenceFault: false }
       // Evidence rule (root-only): a whole-task success claim must quote verbatim proof from the workspace/output.
@@ -1550,7 +1665,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       const fresh = sweep.redTest.priorFailures === 0
       const compilerBroken = /(^|\s)([\w./\\-]+\.[a-z]{1,4}):\d+(:\d+)?:\s*(fatal\s+)?error/i.test(sweep.redTest.detail)
       const detail = fresh
-        ? `REGRESSION: \`${sweep.redTest.command}\` passed before your edit and FAILS now — the change you just made to ${where} broke previously-verified behavior${greenNote}. Fix THOSE files (or git-revert) before anything else. Test output: ${sweep.redTest.detail}${skipNote}${sweep.suspectNote ?? ""}`
+        ? `REGRESSION: \`${sweep.redTest.command}\` passed before your edit and FAILS now — the change you just made to ${where} broke previously-verified behavior${greenNote}. Fix THOSE files${deps.toolNames.includes("git_revert") ? " (or git-revert)" : ""} before anything else. Test output: ${sweep.redTest.detail}${skipNote}${sweep.suspectNote ?? ""}`
         : `REGRESSION SUITE: \`${sweep.redTest.command}\` is STILL failing (round ${sweep.redTest.priorFailures + 1}) after your change to ${where}${greenNote} — keep working on exactly this. Test output: ${sweep.redTest.detail}${skipNote}${sweep.suspectNote ?? ""}`
       return { result: { ok: false, detail }, damage: fresh || compilerBroken }
     })
@@ -1647,18 +1762,31 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         const coordIntercepted =
           coordBase !== undefined &&
           (coordLocked.has(coordBase) || (editMissesTotal.get(coordBase) ?? 0) >= COORD_CUMULATIVE)
-        const observation: JhBasicTools.Observation = coordIntercepted
+        // 🔴 THE TOOL VOCABULARY IS A CONSTRAINT, NOT A SUGGESTION. `deps.toolNames` decided which atoms
+        // this run may perform, and until now it only shaped the PROMPT: whatever the model named was
+        // handed straight to the executor. A caller that withdraws a tool because running it would be
+        // destructive — Strict drops `git_revert` because its executor runs `git checkout -- .` inside the
+        // user's own project — was withdrawing an advertisement, not a capability. The refusal is the
+        // enforcement, and it reads like the executor's own unknown-tool answer so the model can recover.
+        const outOfVocabulary = currentTool !== "" && !deps.toolNames.includes(currentTool)
+        const observation: JhBasicTools.Observation = outOfVocabulary
           ? {
               ok: false,
-              output: `edit_file is DISABLED for ${coordBase} — your old_string did not match the file ${COORD_AFTER} times in a row. Use replace_lines {path, first_line, last_line, new_content} with the \`N→\` line numbers shown in the workspace view above; you do NOT need to reproduce the old text — the numbered lines are the ground truth.`,
+              output: `the tool "${currentTool}" is NOT AVAILABLE in this run; available tools: ${deps.toolNames.join(", ")}. Choose one of those.`,
               artifacts: new Map(),
             }
-          : yield* deps.executor.run({
-              tool: currentTool,
-              args: currentArgs,
-              produces: draft.produces ?? [],
-              cwd: deps.cwd,
-            })
+          : coordIntercepted
+            ? {
+                ok: false,
+                output: `edit_file is DISABLED for ${coordBase} — your old_string did not match the file ${COORD_AFTER} times in a row. Use replace_lines {path, first_line, last_line, new_content} with the \`N→\` line numbers shown in the workspace view above; you do NOT need to reproduce the old text — the numbered lines are the ground truth.`,
+                artifacts: new Map(),
+              }
+            : yield* deps.executor.run({
+                tool: currentTool,
+                args: currentArgs,
+                produces: draft.produces ?? [],
+                cwd: deps.cwd,
+              })
         if (currentTool === "run" && observation.ok) {
           lastRunOutput = observation.output // remember the program's stdout for the goal-checks
           sampleScore(node.id) // R3: track the best progress score + snapshot on improvement
@@ -1884,8 +2012,11 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
             vr = {
               ok: false,
               detail:
+                // A checker fault reports ITS OWN reason: "claimed success without verifiable evidence"
+                // and "could not run at all" are different faults, and a fixed string for both would tell
+                // the model the checker rejected a claim it never made.
                 (res.evidenceFault
-                  ? "goal-check claimed success without verifiable evidence"
+                  ? res.missing || "goal-check claimed success without verifiable evidence"
                   : `goal not yet achieved — ${res.missing || "the deliverable is not produced/verified"}`) + marker,
             }
             // an evidence fault is a CHECKER fault, not a model-action rut — it must not accrue toward stuck.
@@ -2125,6 +2256,15 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         // improve5 P1c: when the workspace is numbered AND replace_lines is offered, steer surgical fixes to
         // COORDINATES (the reliable way for a weak model) over quoting a byte sequence it can't reproduce.
         const coordEdit = deps.numberedWorkspace !== false && deps.toolNames.includes("replace_lines")
+        // Same gate as `coordEdit` beside it, and for a sharper reason: a Strict run over a USER project
+        // removes `git_revert` from the vocabulary precisely because its executor runs `git checkout -- .`
+        // in that project. Naming it here anyway was an instruction to destroy the user's uncommitted work
+        // with a tool the prompt's own tool table does not list.
+        const revertHint = deps.toolNames.includes("git_revert")
+          ? [
+              "- An edit left the file WORSE and you cannot repair it → `git_revert` to roll the file back to the last verified state, then try a DIFFERENT edit.",
+            ]
+          : []
         const editHint = coordEdit
           ? "use `replace_lines {path, first_line, last_line, new_content}` addressing the `N→` line numbers shown above (the RELIABLE way to change specific lines — you do NOT have to reproduce the old text), or `edit_file` only for a SHORT, unique, easy-to-quote string"
           : "make a SURGICAL `edit_file` on the SPECIFIC line(s) named in the error (a targeted old_string→new_string on the code shown above)"
@@ -2135,7 +2275,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
           "The working-directory files with their CURRENT contents are shown above. Emit exactly ONE atomic Step for the SINGLE next action that makes real progress toward the goal:",
           `- SOURCE-CODE error (a compile/runtime error in a file) → ${editHint}. Do NOT rewrite the whole file — \`write_file\` is ONLY for creating a file that does not exist yet.`,
           `- The program RAN but produced WRONG output (e.g. expected '3.14159', got '3.0') → ONE function's logic is buggy. Fix just that function (${coordEdit ? "`replace_lines` by coordinate, or `edit_file`" : "`edit_file`"}) — re-emitting the entire file discards code you already verified and silently reintroduces bugs. NOTE: after ANY source edit the compiled .exe is STALE — your very next steps must RECOMPILE (a \`run\` gcc step) and then re-run, before checking output again.`,
-          "- An edit left the file WORSE and you cannot repair it → `git_revert` to roll the file back to the last verified state, then try a DIFFERENT edit.",
+          ...revertHint,
           "- The goal needs a file a COMMAND produces (e.g. the compiled .exe) → `run` that command (every gcc call needs the `set PATH=…/bin;%PATH% &&` prefix; the .exe lands in the working directory).",
           "- The command itself was wrong (missing PATH, wrong path/filename, bad shell syntax) → a corrected `run` command.",
           `Do NOT repeat the exact action that just failed, and do NOT rewrite the whole program — if re-running gave the same wrong result, change the SPECIFIC buggy code ${coordEdit ? "with `replace_lines`" : "with edit_file"}.`,

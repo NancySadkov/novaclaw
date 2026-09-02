@@ -751,6 +751,19 @@ export interface RunArgs {
    * config), so it is injected here for the same reason `host` is.
    */
   readonly quality?: Quality.Config
+  /**
+   * The HONORED context window of the model this run's prompts go to, in tokens (`limits.context` on the
+   * resolved route). It bounds the engine's working-directory render, which is the largest single thing in
+   * a Strict prompt and the only one with no total of its own — a per-file cap and a file-COUNT cap
+   * multiply rather than bound. Nothing downstream can supply this: the engine's prompt arrives as ONE
+   * `Message.user`, the shape every packing mechanism is inert against (a lone message is both anchor and
+   * newest, so `dropped` is always 0 and the overrun never even logs).
+   *
+   * ⚠️ Omitted — a route that declares no window — the engine assumes a conservative 32K rather than an
+   * unbounded one. Only `session/runner/llm.ts`/`strict-drain.ts` can resolve it, so it is injected here
+   * for the same reason `host` and `quality` are.
+   */
+  readonly contextTokens?: number
   readonly now?: () => number
 }
 
@@ -885,7 +898,11 @@ export function runTask(args: RunArgs): Effect.Effect<StrictReport> {
     listFiles: () => listFilesFor(args.cwd),
     // No git checkpoints in a USER project (L3) — git_revert would fail confusingly; drop the atom.
     toolNames: JhBasicTools.TOOL_NAMES.filter((t) => t !== "git_revert"),
-    limits: { maxDepth: MAX_DEPTH, maxTotalSteps: MAX_TOTAL_STEPS },
+    limits: {
+      maxDepth: MAX_DEPTH,
+      maxTotalSteps: MAX_TOTAL_STEPS,
+      ...(args.contextTokens === undefined ? {} : { contextTokens: args.contextTokens }),
+    },
     trigger: JhBudget.DEFAULT_TRIGGER,
     budget: { startedAt: nowFn(), wallMs: wallMin * 60 * 1000, now: nowFn },
     ...flagsFor(args.strict),
