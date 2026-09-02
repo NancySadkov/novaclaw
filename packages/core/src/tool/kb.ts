@@ -177,7 +177,38 @@ export const formatNeighbors = (rows: ReadonlyArray<MemoryClient.Neighbor>): str
 export const searchRepair = (query: string): string =>
   `No memories match "${query}". Try different or fewer words, or {"op":"remember","text":"…"} to save it.`
 
+/**
+ * 🔴 RULING 2 — *an unavailable subsystem names itself instead of rendering empty*, and *a failed
+ * mutation never reports success*.
+ *
+ * Every read op here used to fold its error channel into the SAME value an honest miss produces
+ * (`orElseSucceed(() => [])`, `=> null`, `=> {total: 0}`), and `ingest` discarded every write error
+ * outright. So "the graph has nothing for you" and "the engine is not answering" reached the model
+ * as one sentence — and the repair for the first (rephrase it, or remember it) is exactly the wrong
+ * move for the second, which is why the two must not share a line. `remember`/`forget`/`relate`
+ * already got this right in this same file; these are the sites that did not.
+ *
+ * The engine's own reason rides the line, and so does the ONE action that repairs it: `memory` is a
+ * lazy capability (`kb-graph/memory.ts:377`), so a cached acquisition failure is cleared by
+ * `configure`'s `retry` op and by nothing else the model can reach.
+ */
+export const engineDown = (what: string, reason: string): string =>
+  `Couldn't ${what} — long-term memory isn't answering (${reason}). This is NOT "nothing found": ` +
+  `nothing was read or written. Retry the capability with the configure tool — ` +
+  `{"op":"retry","capability":"memory"} — then try this again.`
+
 // -----------------------------------------------------------------------------------------------
+
+/** A memory op's outcome with the engine fault kept SEPARATE from the value, so no caller below can
+ *  reconstruct the collapse this file was fixed for: `fault !== undefined` is the only thing that
+ *  means "the engine did not answer", and it is never `[]`, `null` or `0`. */
+type Probe<A> = { readonly value: A | undefined; readonly fault: string | undefined }
+
+const probe = <A>(effect: Effect.Effect<A, MemoryClient.MemoryError>): Effect.Effect<Probe<A>> =>
+  effect.pipe(
+    Effect.map((value): Probe<A> => ({ value, fault: undefined })),
+    Effect.catch((error): Effect.Effect<Probe<A>> => Effect.succeed({ value: undefined, fault: error.reason })),
+  )
 
 // Ordering can only choose among retrieved candidates, so fetch a wider pool than we return.
 const OVERFETCH = 3
@@ -289,8 +320,8 @@ export const layer = Layer.effectDiscard(
                     // (measured 85% vs 77% keyword-only). Undefined = no device ⇒ keyword-only, never a failure.
                     const queryVector = yield* Effect.promise(() => KbEmbedder.embedOne(input.query))
                     const k = input.k ?? 8
-                    const candidates = yield* memory
-                      .search({
+                    const found = yield* probe(
+                      memory.search({
                         query: input.query,
                         // Over-fetch, then re-rank down to k: ordering can only choose among what
                         // retrieval returned, so the candidate pool must be wider than the answer.
@@ -298,8 +329,16 @@ export const layer = Layer.effectDiscard(
                         scopes: scopesForSearch(sessionScope, agentID, input.scope),
                         surface: "kb-tool",
                         ...(queryVector === undefined ? {} : { embedding: queryVector }),
-                      })
-                      .pipe(Effect.orElseSucceed(() => []))
+                      }),
+                    )
+                    // A down engine is not a fruitless query: `searchRepair` tells the model to
+                    // rephrase, which it would then do forever against a store it never reached.
+                    if (found.fault !== undefined)
+                      return {
+                        ok: false,
+                        message: engineDown(`search memory for "${input.query}"`, found.fault),
+                      } satisfies Output
+                    const candidates = found.value ?? []
                     if (candidates.length === 0)
                       return { ok: false, message: searchRepair(input.query) } satisfies Output
                     // P8: recency × authority re-rank (bounded — see ranking.ts). A no-op when the hits
@@ -407,7 +446,13 @@ export const layer = Layer.effectDiscard(
                     // ⚠️ The SAME `access` as every other id-based op. History is the widest read the
                     // lifecycle adds — one id walks a whole chain — so it is the last place to reach
                     // for a wider reach "because it is only reading".
-                    const history = yield* memory.claimHistory(input.id, access).pipe(Effect.orElseSucceed(() => null))
+                    const probed = yield* probe(memory.claimHistory(input.id, access))
+                    if (probed.fault !== undefined)
+                      return {
+                        ok: false,
+                        message: engineDown(`look up the history of "${input.id}"`, probed.fault),
+                      } satisfies Output
+                    const history = probed.value ?? null
                     if (history === null)
                       return {
                         ok: false,
@@ -436,9 +481,15 @@ export const layer = Layer.effectDiscard(
                     )
                   }
                   case "neighbors": {
-                    const rows = yield* memory
-                      .neighbors(input.id, access, { k: input.k ?? 10 })
-                      .pipe(Effect.orElseSucceed(() => []))
+                    const linked = yield* probe(memory.neighbors(input.id, access, { k: input.k ?? 10 }))
+                    // "Nothing is linked to it yet" invites the model to build the link. An engine
+                    // that never answered would have it building links into a store it can't reach.
+                    if (linked.fault !== undefined)
+                      return {
+                        ok: false,
+                        message: engineDown(`list what's linked to "${input.id}"`, linked.fault),
+                      } satisfies Output
+                    const rows = linked.value ?? []
                     if (rows.length === 0)
                       return {
                         ok: false,
@@ -507,10 +558,22 @@ export const layer = Layer.effectDiscard(
                       // A duplicate id does NOT fail on the real engine (measured) — it dedupes by primary
                       // key and addMemory still succeeds. Counting successful calls would claim we stored
                       // passages we did not, so count the actual delta.
-                      const before = yield* memory.stats().pipe(Effect.orElseSucceed(() => ({ total: 0, valid: 0 })))
+                      //
+                      // 🔴 …but a delta is only a FACT while the engine is answering. Both `stats()` calls
+                      // used to degrade to `{total: 0}` and every write was `Effect.ignore`d, so an engine
+                      // that was down produced `stored === 0` — byte-identical to "this document is already
+                      // stored" — and the tool answered ok:true *"already in memory (412 passages, nothing
+                      // new)"* about a document it had never read. The model's next `search` then said "No
+                      // memories match", leaving it holding two contradictory statements about its own
+                      // memory. Ruling 2's first clause, in the tool the whole KB surface runs through.
+                      // So: write failures are COUNTED, and a `stats()` fault suppresses the delta
+                      // arithmetic instead of feeding a fallback zero into it.
+                      const before = yield* probe(memory.stats())
+                      let failed = 0
+                      let fault: string | undefined = before.fault
                       for (const text of passages) {
-                        yield* memory
-                          .addMemory({
+                        const written = yield* probe(
+                          memory.addMemory({
                             id: passageID(label, text),
                             kind: "passage",
                             text,
@@ -518,11 +581,40 @@ export const layer = Layer.effectDiscard(
                             scope: ingestScope,
                             source: "ingest",
                             relation: "staged",
-                          })
-                          .pipe(Effect.ignore)
+                          }),
+                        )
+                        if (written.fault !== undefined) {
+                          failed += 1
+                          fault ??= written.fault
+                        }
                       }
-                      const after = yield* memory.stats().pipe(Effect.orElseSucceed(() => ({ total: 0, valid: 0 })))
-                      const stored = Math.max(0, after.total - before.total)
+                      const after = yield* probe(memory.stats())
+                      fault ??= after.fault
+                      const wrote = passages.length - failed
+                      if (failed > 0)
+                        return {
+                          ok: false,
+                          message:
+                            wrote === 0
+                              ? `${engineDown(`ingest "${label}"`, fault ?? "unknown")} None of its ${passages.length} passages were stored.`
+                              : `Only ${wrote} of ${passages.length} passages from "${label}" were stored — the other ` +
+                                `${failed} failed (${fault ?? "unknown"}). A search over it would be INCOMPLETE; ` +
+                                `re-run the same ingest once memory is healthy — the ids are content-addressed, so ` +
+                                `it fills the gap without duplicating what landed.`,
+                        } satisfies Output
+                      const tail =
+                        `${ingestScope === "global" ? "" : " (this chat only)"}` +
+                        `. Find things in it with {"op":"search","query":"…"}.`
+                      // Every write landed but the COUNT check itself faulted: say what is known and name
+                      // what is not, rather than inventing a delta out of a fallback zero.
+                      if (before.fault !== undefined || after.fault !== undefined)
+                        return {
+                          ok: true,
+                          message:
+                            `Ingested "${label}" — all ${passages.length} passage${passages.length === 1 ? "" : "s"} ` +
+                            `were written, but memory couldn't report how many were NEW (${fault ?? "unknown"})${tail}`,
+                        } satisfies Output
+                      const stored = Math.max(0, (after.value?.total ?? 0) - (before.value?.total ?? 0))
                       // Content-addressed ids make re-ingest idempotent: nothing new is not a failure.
                       if (stored === 0)
                         return {
@@ -531,9 +623,7 @@ export const layer = Layer.effectDiscard(
                         } satisfies Output
                       return {
                         ok: true,
-                        message:
-                          `Ingested "${label}" as ${stored} searchable passage${stored === 1 ? "" : "s"}` +
-                          `${ingestScope === "global" ? "" : " (this chat only)"}. Find things in it with {"op":"search","query":"…"}.`,
+                        message: `Ingested "${label}" as ${stored} searchable passage${stored === 1 ? "" : "s"}${tail}`,
                       } satisfies Output
                     }).pipe(
                       Effect.catch((error) => {
