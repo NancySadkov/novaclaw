@@ -8,6 +8,7 @@ import { Location } from "@novaclaw/core/location"
 import { LocationServiceMap } from "@novaclaw/core/location-service-map"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { CalendarStore } from "@novaclaw/core/schedule/store"
+import { Recurrence } from "@novaclaw/core/schedule/recurrence"
 import { ScheduleExecutionSettings } from "@novaclaw/core/schedule/execution-settings"
 import { InvalidRequestError } from "@novaclaw/protocol/errors"
 import { CalendarApi, handlerLayer } from "../handler-api"
@@ -64,6 +65,34 @@ const refuseUnrunnable = Effect.fn("Calendar.refuseUnrunnable")(function* (
   if (refusal) return yield* new InvalidRequestError({ message: refusal })
 })
 
+/**
+ * The IANA zone a new schedule's wall clock should be read in — the thing a fixed offset cannot be.
+ *
+ * 🔴 An offset is a zone's answer at ONE instant, so a schedule pinned to one shifts by an hour twice a
+ * year in every daylight-saving jurisdiction: a 09:00 report starts arriving at 08:00 and reads as a
+ * scheduler bug. Naming the zone is the fix, and the instance can name its own.
+ *
+ * ⚠️ Only when the caller's offset AGREES with it, because the UI and the runtime need not share a
+ * machine (the instance is reached by URL). Same machine ⇒ same zone ⇒ the offsets always agree, which
+ * is the local-first case and the overwhelming majority. A caller elsewhere is left on its fixed offset:
+ * degraded exactly as today, and never silently relabelled with a zone that is not its own.
+ *
+ * ⚠️ This is an INFERENCE and it is here only until the caller sends its own zone. It is unsound for the
+ * one case where a remote client's offset momentarily coincides with the host's; a client-supplied zone
+ * on the recurrence wins over it, and `withZone` never overwrites one.
+ */
+const hostZoneAgreeingWith = (tzOffsetMin: number | undefined, now: number): string | undefined => {
+  let zone: string | undefined
+  try {
+    zone = Intl.DateTimeFormat().resolvedOptions().timeZone || undefined
+  } catch {
+    return undefined
+  }
+  if (zone === undefined) return undefined
+  if (tzOffsetMin === undefined) return zone
+  return Recurrence.zoneOffsetMinutes(zone, now) === tzOffsetMin ? zone : undefined
+}
+
 export const CalendarHandler = handlerLayer(
   HttpApiBuilder.group(CalendarApi, "server.calendar", (handlers) =>
     Effect.gen(function* () {
@@ -84,7 +113,15 @@ export const CalendarHandler = handlerLayer(
             // `refuseUnrunnable`; the stored value itself remains the scheduler's authority.
             yield* refuseUnrunnable(ctx.payload, ctx.payload.location)
             // The endpoint schema validated shape; narrow weekdays (number[] -> Weekday[]) at the boundary.
-            return yield* CalendarStore.create(db, ctx.payload as unknown as CalendarStore.CreateInput, now)
+            const input = ctx.payload as unknown as CalendarStore.CreateInput
+            return yield* CalendarStore.create(
+              db,
+              {
+                ...input,
+                recurrence: Recurrence.withZone(input.recurrence, hostZoneAgreeingWith(input.tzOffsetMin, now)),
+              },
+              now,
+            )
           }),
         )
         .handle(
@@ -114,10 +151,22 @@ export const CalendarHandler = handlerLayer(
                 ctx.payload.location === undefined ? existing.location : ctx.payload.location,
               )
             }
+            const patch = ctx.payload as unknown as CalendarStore.UpdateInput
+            // A re-sent recurrence keeps the zone the schedule already had — the wire cannot carry one
+            // yet, so reading it back off the stored rule is what stops a save from downgrading a
+            // zone-correct schedule to a fixed offset.
             const updated = yield* CalendarStore.update(
               db,
               ctx.params.id,
-              ctx.payload as unknown as CalendarStore.UpdateInput,
+              patch.recurrence === undefined
+                ? patch
+                : {
+                    ...patch,
+                    recurrence: Recurrence.withZone(
+                      patch.recurrence,
+                      Recurrence.zoneOf(existing.recurrence) ?? hostZoneAgreeingWith(patch.tzOffsetMin, now),
+                    ),
+                  },
               now,
             )
             // A concurrent delete between the read and write is still a client error, not a 500.

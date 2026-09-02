@@ -90,6 +90,57 @@ describe("CalendarStore", () => {
     expect(after?.nextFireAt).toBe(MAR10_0900)
   })
 
+  // An ordinary edit must not cancel today's run. The editor round-trips the whole form on save, so the
+  // patch that renames a task carries an identical recurrence and offset — which is why the test here is
+  // whether the timing VALUES changed, not whether their fields were present in the patch.
+  test("a patch that changes nothing about WHEN it fires leaves a due occurrence due", async () => {
+    const tenSecondsLate = MAR10_0900 + 10_000
+    const { renamed, stillDue } = await withDb((db) =>
+      Effect.gen(function* () {
+        const s = yield* CalendarStore.create(db, { recurrence: daily9, title: "Backup", prompt: "x" }, MAR10_0800)
+        // The 09:00 occurrence is due and the ticker has not reached it yet.
+        const renamed = yield* CalendarStore.update(
+          db,
+          s.id,
+          { title: "Nightly backup", recurrence: daily9, tzOffsetMin: 0, enabled: true },
+          tenSecondsLate,
+        )
+        const stillDue = yield* CalendarStore.due(db, tenSecondsLate)
+        return { renamed, stillDue }
+      }),
+    )
+    expect(renamed?.title).toBe("Nightly backup")
+    expect(renamed?.nextFireAt).toBe(MAR10_0900) // NOT rolled to tomorrow
+    expect(stillDue).toHaveLength(1)
+  })
+
+  test("a patch that really reschedules DOES move the next fire", async () => {
+    const tenSecondsLate = MAR10_0900 + 10_000
+    const moved = await withDb((db) =>
+      Effect.gen(function* () {
+        const s = yield* CalendarStore.create(db, { recurrence: daily9, prompt: "x" }, MAR10_0800)
+        return yield* CalendarStore.update(
+          db,
+          s.id,
+          { recurrence: { kind: "daily", time: { hour: 18, minute: 0 } } },
+          tenSecondsLate,
+        )
+      }),
+    )
+    expect(moved?.nextFireAt).toBe(Date.UTC(2025, 2, 10, 18, 0))
+  })
+
+  test("a patch that only moves the offset also reschedules", async () => {
+    const moved = await withDb((db) =>
+      Effect.gen(function* () {
+        const s = yield* CalendarStore.create(db, { recurrence: daily9, prompt: "x" }, MAR10_0800)
+        return yield* CalendarStore.update(db, s.id, { tzOffsetMin: 120 }, MAR10_0800)
+      }),
+    )
+    // 09:00 wall at UTC+2 on Mar 10 is 07:00 UTC, already behind `now` — so the next one is Mar 11.
+    expect(moved?.nextFireAt).toBe(MAR11_0900 - 120 * 60_000)
+  })
+
   test("update of a missing id returns undefined", async () => {
     const result = await withDb((db) => CalendarStore.update(db, "cal_nope", { title: "x" }, MAR10_0800))
     expect(result).toBeUndefined()

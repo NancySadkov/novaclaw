@@ -3,19 +3,75 @@ export * as CalendarStore from "./store"
 // Calendar / cron-session creator (P1). Pure DB functions over the schedule + fire tables (the JhStore
 // pattern: take `db`, no service), so the ticker (P2) calls them from its fiber and tests exercise them on
 // an in-memory DB. `now` is passed in (never Date.now()) so next-fire computation is deterministic; the
-// caller supplies `yield* Clock.currentTimeMillis`. next_fire_at is recomputed via schedule/recurrence.ts
-// on every create/update/advance, and set to null while a schedule is disabled.
+// caller supplies `yield* Clock.currentTimeMillis`. next_fire_at is computed via schedule/recurrence.ts on
+// create and advance, and on an update only when that update changes WHEN the schedule fires; it is null
+// while a schedule is disabled.
 
 import { and, desc, eq, lte } from "drizzle-orm"
 import { Effect } from "effect"
 import { ascending } from "@novaclaw/schema/identifier"
 import type { Database } from "../database/database"
-import { nextFire, type EpochMillis, type Recurrence } from "./recurrence"
+import { nextFire, sameRecurrence, type EpochMillis, type Recurrence } from "./recurrence"
 import { CalendarFireTable, CalendarScheduleTable } from "./calendar.sql"
 
 type Db = Database.Interface["db"]
 
 export type FireStatus = "spawned" | "skipped" | "error"
+
+/**
+ * 🔴 THE LEDGER MAY NEVER CLAIM MORE THAN HAPPENED.
+ *
+ * An occurrence has to be claimed BEFORE the work, or two tickers run it twice; so the claim row exists
+ * while the run has not happened yet, and a process that dies in that window leaves the row behind. What
+ * the row says at that moment is therefore what a crash makes PERMANENT, and it must be the weakest true
+ * statement available — never the outcome we are hoping for.
+ *
+ * `skipped` is that statement: "this occurrence produced no session". True the instant it is written,
+ * still true forever if this process never returns, and promoted to `spawned`/`error` by
+ * `setFireOutcome` once the launch has actually resolved. Nothing else in the tree writes it (swept:
+ * zero other writers), so no existing meaning is overloaded, and status is only ever promoted — a row
+ * read as `skipped` never ran.
+ *
+ * ⚠️ Claiming as `spawned` is the mistake this replaces: it recorded a session that did not exist and
+ * made the occurrence indistinguishable from one that genuinely ran, so nothing could ever retry it.
+ */
+const CLAIM_STATUS: FireStatus = "skipped"
+
+/**
+ * How long a claim may sit unresolved before another cycle may take it over. A claim is resolved
+ * within one launch, so anything left this long belongs to a process that is gone.
+ *
+ * Human units on purpose (AGENTS.md principle 12(c)): five MINUTES, not a millisecond literal. It is
+ * also the cost of the failure — a run interrupted by a crash restarts at most five minutes late — and
+ * it is deliberately many times a tick, because re-running an unattended task twice is worse than
+ * running it late.
+ */
+export const RECLAIM_ABANDONED_AFTER_MINUTES = 5
+
+/**
+ * How long an abandoned claim stays worth recovering. Past it the occurrence is left as it stands — a
+ * ledger row that honestly says no session came of it — and the schedule rolls on.
+ *
+ * ⚠️ This bound is the whole reason recovery cannot become a crash loop. A task that KILLS the process
+ * abandons its claim every time, so an unbounded retry would relaunch the killer every few minutes
+ * forever. One hour buys back a run interrupted by a reboot and stops there.
+ */
+export const RECOVERABLE_FOR_MINUTES = 60
+
+/**
+ * What a tick learned when it asked for an occurrence. Deliberately four cases rather than a boolean:
+ * "somebody else has it" and "it already ran" used to collapse into the same `false`, and rolling the
+ * schedule forward on that answer is exactly how a crashed run was lost.
+ */
+export type OccurrenceClaim =
+  /** Ours, freshly recorded. Run it. */
+  | { readonly kind: "claimed" }
+  /** Ours, taken over from a process that died mid-run. Run it. */
+  | { readonly kind: "reclaimed"; readonly abandonedAt: number }
+  /** Somebody else is running it right now. Do NOT run it, and do NOT roll the schedule past it. */
+  | { readonly kind: "in-flight"; readonly since: number }
+  /** It already resolved. Do not run it; the schedule may roll forward. */
+  | { readonly kind: "settled"; readonly status: FireStatus }
 
 export interface Schedule {
   readonly id: string
@@ -135,7 +191,18 @@ export const create = (db: Db, input: CreateInput, now: EpochMillis): Effect.Eff
     return (yield* get(db, id))!
   })
 
-/** Patch a schedule; recomputes next_fire_at from `now` (recurrence/tz/enabled can all shift it). */
+/**
+ * Patch a schedule.
+ *
+ * 🔴 next_fire_at is recomputed only when the patch actually CHANGES when it fires. Recomputing it
+ * unconditionally silently drops an occurrence that is already due but has not been ticked yet: the
+ * next fire is always computed strictly after `now`, so renaming a 06:00 task at 06:00:10 moved it to
+ * tomorrow and that morning's run simply never happened.
+ *
+ * ⚠️ The test is the VALUE, not whether the field appears in the patch. The editor round-trips the whole
+ * form on save, so a rename arrives carrying an identical `recurrence` and `tzOffsetMin`; a
+ * presence-based test would call that a reschedule and lose the occurrence exactly as before.
+ */
 export const update = (db: Db, id: string, patch: UpdateInput, now: EpochMillis): Effect.Effect<Schedule | undefined> =>
   Effect.gen(function* () {
     const existing = yield* get(db, id)
@@ -143,6 +210,12 @@ export const update = (db: Db, id: string, patch: UpdateInput, now: EpochMillis)
     const recurrence = patch.recurrence ?? existing.recurrence
     const tz = patch.tzOffsetMin ?? existing.tzOffsetMin
     const enabled = patch.enabled ?? existing.enabled
+    // Pausing stands a schedule down deliberately, so resuming picks up from `now` rather than
+    // resurrecting whatever came due while it was off — that is what the pause was for. Every other
+    // patch leaves the stored instant exactly as it was, still due if it was already due.
+    const timingChanged =
+      !sameRecurrence(recurrence, existing.recurrence) || tz !== existing.tzOffsetMin || enabled !== existing.enabled
+    const nextFireAt = timingChanged ? computeNext(recurrence, enabled, tz, now) : existing.nextFireAt
     yield* db
       .update(CalendarScheduleTable)
       .set({
@@ -155,7 +228,7 @@ export const update = (db: Db, id: string, patch: UpdateInput, now: EpochMillis)
         ...(patch.location !== undefined ? { location_json: patch.location } : {}),
         ...(patch.permissionMode !== undefined ? { permission_mode: patch.permissionMode } : {}),
         enabled,
-        next_fire_at: computeNext(recurrence, enabled, tz, now),
+        next_fire_at: nextFireAt,
       })
       .where(eq(CalendarScheduleTable.id, id))
       .run()
@@ -181,9 +254,12 @@ export const due = (db: Db, now: EpochMillis): Effect.Effect<Schedule[]> =>
     )
 
 /**
- * Record that an occurrence fired. Returns false (no-op) when this exact occurrence was already recorded —
- * the ticker's idempotency guard against overlapping ticks / a restart mid-fire. The unique index on
- * (schedule_id, occurrence_millis) is the hard backstop; onConflictDoNothing covers the check→insert race.
+ * Record that an occurrence fired, with its outcome already known. Returns false (no-op) when this exact
+ * occurrence was already recorded. The unique index on (schedule_id, occurrence_millis) is the hard
+ * backstop; onConflictDoNothing covers the check→insert race.
+ *
+ * ⚠️ NOT the ticker's path — it claims through `claimOccurrence`, which owns the claim status. This
+ * remains for a caller that has an outcome in hand and nothing to claim.
  */
 export const recordFire = (db: Db, input: FireInput): Effect.Effect<boolean> =>
   Effect.gen(function* () {
@@ -215,7 +291,86 @@ export const recordFire = (db: Db, input: FireInput): Effect.Effect<boolean> =>
     return true
   })
 
-/** Stamp a fire row's session/status after the launch resolves (the claim from recordFire ran first). */
+const fireRow = (db: Db, scheduleId: string, occurrenceMillis: number) =>
+  db
+    .select()
+    .from(CalendarFireTable)
+    .where(
+      and(eq(CalendarFireTable.schedule_id, scheduleId), eq(CalendarFireTable.occurrence_millis, occurrenceMillis)),
+    )
+    .get()
+    .pipe(
+      Effect.orDie,
+      Effect.map((row) => row ?? undefined),
+    )
+
+/**
+ * Take this occurrence, or say who has it. The ONLY way the ticker enters the fire ledger — the claim's
+ * status is not the caller's to choose, so a claim can no longer be written as an outcome.
+ *
+ * A claim left unresolved for `RECLAIM_ABANDONED_AFTER_MINUTES` belonged to a process that is gone, and
+ * is taken over rather than mistaken for a completed run. The take-over is a guarded UPDATE and the
+ * winner is confirmed by reading the lease back, so two instances on one database cannot both take it.
+ */
+export const claimOccurrence = (
+  db: Db,
+  input: { readonly scheduleId: string; readonly occurrenceMillis: number; readonly now: EpochMillis },
+): Effect.Effect<OccurrenceClaim> =>
+  Effect.gen(function* () {
+    const existing = yield* fireRow(db, input.scheduleId, input.occurrenceMillis)
+    if (existing === undefined) {
+      yield* db
+        .insert(CalendarFireTable)
+        .values({
+          id: "fire_" + ascending(),
+          schedule_id: input.scheduleId,
+          occurrence_millis: input.occurrenceMillis,
+          fired_at: input.now,
+          session_id: null,
+          status: CLAIM_STATUS,
+        })
+        .onConflictDoNothing()
+        .run()
+        .pipe(Effect.orDie)
+      // onConflictDoNothing swallows the check->insert race; the row decides who actually holds it.
+      const held = yield* fireRow(db, input.scheduleId, input.occurrenceMillis)
+      if (held === undefined || held.fired_at !== input.now || held.status !== CLAIM_STATUS)
+        return { kind: "in-flight", since: held?.fired_at ?? input.now }
+      return { kind: "claimed" }
+    }
+    if (existing.status !== CLAIM_STATUS) return { kind: "settled", status: existing.status }
+
+    const abandonedBefore = input.now - RECLAIM_ABANDONED_AFTER_MINUTES * 60_000
+    if (existing.fired_at > abandonedBefore) return { kind: "in-flight", since: existing.fired_at }
+    // Too old to be worth resurrecting: the row already says no session came of it, so let the schedule
+    // move on rather than relaunching a run whose window has passed.
+    if (existing.fired_at < input.now - RECOVERABLE_FOR_MINUTES * 60_000)
+      return { kind: "settled", status: existing.status }
+    yield* db
+      .update(CalendarFireTable)
+      .set({ fired_at: input.now })
+      .where(
+        and(
+          eq(CalendarFireTable.schedule_id, input.scheduleId),
+          eq(CalendarFireTable.occurrence_millis, input.occurrenceMillis),
+          eq(CalendarFireTable.status, CLAIM_STATUS),
+          lte(CalendarFireTable.fired_at, abandonedBefore),
+        ),
+      )
+      .run()
+      .pipe(Effect.orDie)
+    const taken = yield* fireRow(db, input.scheduleId, input.occurrenceMillis)
+    if (taken === undefined || taken.fired_at !== input.now)
+      return { kind: "in-flight", since: taken?.fired_at ?? input.now }
+    return { kind: "reclaimed", abandonedAt: existing.fired_at }
+  })
+
+/**
+ * Stamp a fire row's session/status once the launch has resolved — the promotion out of the claim.
+ *
+ * Guarded on the row still being a claim: a process that comes back from the dead after its occurrence
+ * was reclaimed and re-run must not overwrite the newer outcome with its own stale one.
+ */
 export const setFireOutcome = (
   db: Db,
   input: {
@@ -233,6 +388,7 @@ export const setFireOutcome = (
         and(
           eq(CalendarFireTable.schedule_id, input.scheduleId),
           eq(CalendarFireTable.occurrence_millis, input.occurrenceMillis),
+          eq(CalendarFireTable.status, CLAIM_STATUS),
         ),
       )
       .run()

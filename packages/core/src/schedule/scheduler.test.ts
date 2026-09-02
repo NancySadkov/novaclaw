@@ -177,6 +177,105 @@ describe("CalendarScheduler.tick", () => {
     expect(out.after?.nextFireAt).toBe(MAR11_0900)
   })
 
+  // A process KILLED between claiming an occurrence and rolling the schedule forward. The claim it left
+  // behind is the real artefact of that death, so the crash is simulated by making it through the
+  // production primitive and then doing nothing else — exactly what the dead process managed.
+  const LEASE = CalendarStore.RECLAIM_ABANDONED_AFTER_MINUTES * 60_000
+  const CLAIMED_AT = MAR10_0900 + 30_000
+
+  const crashedMidFire = (db: Database.Interface["db"]) =>
+    Effect.gen(function* () {
+      const s = yield* CalendarStore.create(db, { recurrence: daily9, prompt: "backup" }, MAR10_0800)
+      const claim = yield* CalendarStore.claimOccurrence(db, {
+        scheduleId: s.id,
+        occurrenceMillis: MAR10_0900,
+        now: CLAIMED_AT,
+      })
+      return { s, claim }
+    })
+
+  test("a crashed claim is never recorded as a run that happened", async () => {
+    const out = await withDb((db) =>
+      Effect.gen(function* () {
+        const { s, claim } = yield* crashedMidFire(db)
+        const fires = yield* CalendarStore.fires(db, s.id)
+        return { claim, fires }
+      }),
+    )
+    expect(out.claim.kind).toBe("claimed")
+    expect(out.fires).toHaveLength(1)
+    expect(out.fires[0]!.status).not.toBe("spawned") // the lie this replaces
+    expect(out.fires[0]!.session_id).toBeNull()
+  })
+
+  test("a live claim holds the occurrence: not re-launched, and NOT rolled past", async () => {
+    const out = await withDb((db) =>
+      Effect.gen(function* () {
+        const { s } = yield* crashedMidFire(db)
+        const { launch, calls } = recorder("ses_r")
+        const result = yield* CalendarScheduler.tick(db, launch, CLAIMED_AT + 60_000)
+        const after = yield* CalendarStore.get(db, s.id)
+        return { result, calls, after }
+      }),
+    )
+    expect(out.calls).toHaveLength(0)
+    expect(out.result).toEqual({ fired: 0, skipped: 1 })
+    expect(out.after?.nextFireAt).toBe(MAR10_0900) // still due — this is what makes recovery possible
+  })
+
+  test("after the lease expires the occurrence RUNS: the crash costs lateness, not the run", async () => {
+    const out = await withDb((db) =>
+      Effect.gen(function* () {
+        const { s } = yield* crashedMidFire(db)
+        const { launch, calls } = recorder("ses_r")
+        const result = yield* CalendarScheduler.tick(db, launch, CLAIMED_AT + LEASE + 1)
+        const after = yield* CalendarStore.get(db, s.id)
+        const fires = yield* CalendarStore.fires(db, s.id)
+        return { result, calls, after, fires }
+      }),
+    )
+    expect(out.result).toEqual({ fired: 1, skipped: 0 })
+    expect(out.calls).toHaveLength(1)
+    expect(out.calls[0]!.occurrenceMillis).toBe(MAR10_0900) // the occurrence that was lost
+    expect(out.fires).toHaveLength(1) // recovered in place, never a second ledger row
+    expect(out.fires[0]!.status).toBe("spawned")
+    expect(out.fires[0]!.session_id).toBe("ses_r")
+    expect(out.after?.nextFireAt).toBe(MAR11_0900)
+  })
+
+  test("a recovered occurrence does not run a THIRD time", async () => {
+    const out = await withDb((db) =>
+      Effect.gen(function* () {
+        const { s } = yield* crashedMidFire(db)
+        const { launch, calls } = recorder("ses_r")
+        yield* CalendarScheduler.tick(db, launch, CLAIMED_AT + LEASE + 1)
+        yield* CalendarScheduler.tick(db, launch, CLAIMED_AT + LEASE * 4)
+        const fires = yield* CalendarStore.fires(db, s.id)
+        return { calls, fires }
+      }),
+    )
+    expect(out.calls).toHaveLength(1)
+    expect(out.fires).toHaveLength(1)
+  })
+
+  test("recovery is BOUNDED: a claim nobody ever resolved stops being retried and the schedule rolls on", async () => {
+    const staleBy = CalendarStore.RECOVERABLE_FOR_MINUTES * 60_000 + 60_000
+    const out = await withDb((db) =>
+      Effect.gen(function* () {
+        const { s } = yield* crashedMidFire(db)
+        const { launch, calls } = recorder("ses_r")
+        const result = yield* CalendarScheduler.tick(db, launch, CLAIMED_AT + staleBy)
+        const after = yield* CalendarStore.get(db, s.id)
+        const fires = yield* CalendarStore.fires(db, s.id)
+        return { result, calls, after, fires }
+      }),
+    )
+    expect(out.calls).toHaveLength(0) // a task that kills the process is not relaunched forever
+    expect(out.result).toEqual({ fired: 0, skipped: 1 })
+    expect(out.after!.nextFireAt!).toBeGreaterThan(CLAIMED_AT + staleBy)
+    expect(out.fires[0]!.status).not.toBe("spawned") // and the ledger still does not claim it ran
+  })
+
   test("a launch failure is isolated: recorded as error, schedule still advances", async () => {
     const out = await withDb((db) =>
       Effect.gen(function* () {
@@ -369,7 +468,11 @@ describe("CalendarScheduler.makeLaunch", () => {
   test("an unknown colleague falls back to the instance home rather than failing the launch", async () => {
     const created: any[] = []
     await Effect.runPromise(
-      CalendarScheduler.makeLaunch(fakeSessions(created, []), "/home/nancy", folderOf({}))({
+      CalendarScheduler.makeLaunch(
+        fakeSessions(created, []),
+        "/home/nancy",
+        folderOf({}),
+      )({
         schedule: sample({ agent: "ghost" }),
         occurrenceMillis: 1,
         firedAt: 1,

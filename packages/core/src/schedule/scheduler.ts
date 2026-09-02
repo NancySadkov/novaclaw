@@ -7,6 +7,10 @@ export * as CalendarScheduler from "./scheduler"
 // next FUTURE occurrence (advance computes strictly after `now`); missed intermediate occurrences are not
 // replayed (no thundering herd). A launch failure is isolated (never wedges the loop), recorded as `error`,
 // and the schedule still advances.
+//
+// A process KILLED mid-fire is a different case from a failed launch, and is recovered rather than
+// advanced past: the claim it left behind stays a claim, the schedule stays due, and the first cycle to
+// find the claim abandoned re-runs the occurrence (schedule/store.ts, `claimOccurrence`).
 
 import { Clock, Context, Duration, Effect, Layer, Schedule } from "effect"
 import { AgentV2 } from "../agent"
@@ -48,7 +52,7 @@ export type Launch = (input: LaunchInput) => Effect.Effect<string | null, unknow
 export interface TickResult {
   /** Occurrences that launched a session this cycle. */
   readonly fired: number
-  /** Due occurrences that were already claimed by a prior cycle, or whose launch produced no session. */
+  /** Due occurrences another cycle had already resolved or is still running, or whose launch produced no session. */
   readonly skipped: number
 }
 
@@ -64,15 +68,25 @@ export const tick = (db: Db, launch: Launch, now: EpochMillis): Effect.Effect<Ti
       const occurrence = schedule.nextFireAt
       if (occurrence === null) continue // due() already excludes nulls; defensive.
 
-      // Claim the occurrence BEFORE doing any work — the idempotency guard against overlapping
-      // ticks / a restart mid-fire. A losing claim means another cycle already handled it.
-      const claimed = yield* CalendarStore.recordFire(db, {
+      // Claim the occurrence BEFORE doing any work — the idempotency guard against overlapping ticks /
+      // a restart mid-fire. The answer distinguishes "already ran" from "somebody is running it", which
+      // a boolean could not: rolling the schedule forward is only safe for the first.
+      const claim = yield* CalendarStore.claimOccurrence(db, {
         scheduleId: schedule.id,
         occurrenceMillis: occurrence,
-        firedAt: now,
-        status: "spawned",
+        now,
       })
-      if (claimed) {
+      // 🔴 A HELD-BUT-UNFINISHED occurrence is left DUE, and the schedule is not rolled past it. This
+      // is the whole recovery: a process killed between the claim and the roll-forward leaves the row
+      // behind, and the next cycle to see it after the lease expires re-runs it instead of reading it
+      // as a run that already happened.
+      if (claim.kind === "in-flight") {
+        skipped++
+        continue
+      }
+      if (claim.kind === "settled") {
+        skipped++
+      } else {
         const sessionId = yield* launch({ schedule, occurrenceMillis: occurrence, firedAt: now }).pipe(
           // A bad launch must never kill the poll loop — record it and move on.
           Effect.catchCause(() => Effect.succeed(null)),
@@ -85,11 +99,9 @@ export const tick = (db: Db, launch: Launch, now: EpochMillis): Effect.Effect<Ti
         })
         if (sessionId !== null) fired++
         else skipped++
-      } else {
-        skipped++
       }
 
-      // Roll forward regardless so this occurrence is never re-returned by due().
+      // Roll forward so a resolved occurrence is never re-returned by due().
       yield* CalendarStore.advance(db, schedule.id, now)
     }
     return { fired, skipped }
