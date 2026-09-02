@@ -64,20 +64,105 @@ interface Deps {
   readonly random: () => number
 }
 
+/**
+ * One host's runtime state. Two semaphores, because they guard two different things and holding one
+ * for the other's duration would be wrong in both directions:
+ *
+ *   · `budget` serializes the ACCOUNTING (read the row, decide, write it back). Held for microseconds,
+ *     released before any wait.
+ *   · `inflight` serializes the FETCH — the "no parallel streams at one site" rule. Held for the whole
+ *     network read, and its width is the configured `perHostConcurrency`.
+ */
+interface HostLane {
+  readonly budget: Semaphore.Semaphore
+  readonly inflight: Semaphore.Semaphore
+}
+
 export const make = (deps: Deps): Interface => {
-  // One semaphore per host — the "no parallel streams at one site" rule.
-  const gates = new Map<string, Semaphore.Semaphore>()
+  const lanes = new Map<string, HostLane>()
   // sessionID+url -> times fetched. Process-local: a loop happens within a run.
   const seen = new Map<string, number>()
 
-  const gateFor = (host: string, permits: number) =>
-    Effect.gen(function* () {
-      const existing = gates.get(host)
-      if (existing) return existing
-      const created = yield* Semaphore.make(Math.max(1, permits))
-      gates.set(host, created)
-      return created
-    })
+  /**
+   * ⚠️ **Synchronous on purpose.** The obvious version reads the map, `yield*`s a `Semaphore.make`, then
+   * writes the map — a check-then-act with a suspension point inside it, which is the same defect this
+   * lane exists to close: two fibers racing on a host's FIRST read each build their own lane, the second
+   * overwrites the first in the map, and the two fibers then hold DIFFERENT semaphores, so neither the
+   * budget lock nor the in-flight limit binds them. `Semaphore.makeUnsafe` keeps get-and-set in one tick,
+   * where no other fiber can run.
+   */
+  const laneFor = (host: string, permits: number): HostLane => {
+    const existing = lanes.get(host)
+    if (existing) return existing
+    const created: HostLane = {
+      budget: Semaphore.makeUnsafe(1),
+      inflight: Semaphore.makeUnsafe(Math.max(1, permits)),
+    }
+    lanes.set(host, created)
+    return created
+  }
+
+  /**
+   * Charge one read against the durable per-host row — **the only reader or writer of
+   * `WebHostBudgetTable` in this module**, and the whole select → decide → write runs inside the host's
+   * `budget` permit, so the three steps are one critical section.
+   *
+   * ⚠️ **The serialization is the point, not a nicety.** Unserialized, N fibers entering for one host all
+   * read the SAME row before any of them writes, all compute the same `count + 1` and the same `fireAt`,
+   * and the last `onConflictDoUpdate` overwrites the others with an identical value: N reads charge the
+   * daily counter ONCE and spend ONE token, so `HOST_DAILY_LIMIT` is silently multiplied by the fan-out
+   * and all N wake from the same jittered wait together — the swarm this module exists to prevent, on the
+   * surface the shipped Traffic-limits panel promises to enforce. `fetch-pace.decide` charges the slot
+   * FORWARD (`updatedAt = fireAt`) so the next decider queues behind this one rather than beside it; that
+   * only works when the next decider READS this one's write, which is exactly what the permit guarantees.
+   */
+  const charge = (lane: HostLane, host: string, limits: WebFetchPace.Limits) =>
+    lane.budget.withPermits(1)(
+      Effect.gen(function* () {
+        const row = yield* deps.db
+          .select()
+          .from(WebHostBudgetTable)
+          .where(eq(WebHostBudgetTable.host, host))
+          .get()
+          .pipe(Effect.orDie)
+        const state = row
+          ? { day: row.day, count: row.count, tokens: row.tokens, updatedAt: row.updated_at }
+          : undefined
+        // The clock is read as LATE as possible — immediately before the decision that uses it, and
+        // after the row it is compared against. It is also the one step in here a test can make
+        // suspend, which is how `test/web-governor-concurrency.test.ts` gets a negative control for
+        // the permit above without a probe in this file: park a fiber between the read and the write,
+        // and an unserialized version loses the count.
+        const now = yield* deps.now()
+        const decision = WebFetchPace.decide(state, now, limits)
+        // A denial spends nothing, so there is nothing to persist.
+        if (decision.kind === "deny") return decision
+
+        // Persist BEFORE releasing the permit and before sleeping: the slot is claimed the moment it is
+        // decided, so neither a concurrent read nor a crash mid-wait can reuse it.
+        yield* deps.db
+          .insert(WebHostBudgetTable)
+          .values({
+            host,
+            day: decision.state.day,
+            count: decision.state.count,
+            tokens: decision.state.tokens,
+            updated_at: decision.state.updatedAt,
+          })
+          .onConflictDoUpdate({
+            target: WebHostBudgetTable.host,
+            set: {
+              day: decision.state.day,
+              count: decision.state.count,
+              tokens: decision.state.tokens,
+              updated_at: decision.state.updatedAt,
+            },
+          })
+          .run()
+          .pipe(Effect.orDie)
+        return decision
+      }),
+    )
 
   const guard: Interface["guard"] = (input) =>
     Effect.gen(function* () {
@@ -93,6 +178,11 @@ export const make = (deps: Deps): Interface => {
       const limits = yield* deps.limits()
 
       // 1. Loop guard first — cheapest, and a looping agent should not even consume a token.
+      //
+      // This read-modify-write needs no lock, and the reason is structural rather than lucky: there is no
+      // `yield*` between the `get` and the `set` on the path that reaches the `set`, so a fiber cannot
+      // suspend inside it. Keep it that way — adding an await in the middle re-opens the same race the
+      // budget below had to be serialized against.
       const key = `${input.sessionID ?? "-"}::${input.url}`
       const count = seen.get(key) ?? 0
       if (WebFetchPace.isLoop(count, limits.sameUrlLimit && limits.sameUrlLimit > 0 ? limits.sameUrlLimit : undefined))
@@ -101,47 +191,20 @@ export const make = (deps: Deps): Interface => {
         )
       seen.set(key, count + 1)
 
-      // 2. Pace + daily cap, against the durable per-host row.
-      const now = yield* deps.now()
-      const row = yield* deps.db
-        .select()
-        .from(WebHostBudgetTable)
-        .where(eq(WebHostBudgetTable.host, host))
-        .get()
-        .pipe(Effect.orDie)
-      const state = row ? { day: row.day, count: row.count, tokens: row.tokens, updatedAt: row.updated_at } : undefined
-      const decision = WebFetchPace.decide(state, now, limits)
+      const lane = laneFor(host, limits.perHostConcurrency ?? 1)
+
+      // 2. Pace + daily cap, against the durable per-host row — serialized per host (see `charge`).
+      const decision = yield* charge(lane, host, limits)
       if (decision.kind === "deny") return yield* Effect.fail(new WebBudgetError(decision.reason))
 
-      // Persist BEFORE sleeping: the slot is claimed the moment it is decided, so a concurrent read (or a
-      // crash mid-wait) can never reuse it.
-      yield* deps.db
-        .insert(WebHostBudgetTable)
-        .values({
-          host,
-          day: decision.state.day,
-          count: decision.state.count,
-          tokens: decision.state.tokens,
-          updated_at: decision.state.updatedAt,
-        })
-        .onConflictDoUpdate({
-          target: WebHostBudgetTable.host,
-          set: {
-            day: decision.state.day,
-            count: decision.state.count,
-            tokens: decision.state.tokens,
-            updated_at: decision.state.updatedAt,
-          },
-        })
-        .run()
-        .pipe(Effect.orDie)
-
+      // The wait is OUTSIDE the budget permit: the slot is already claimed and written, so holding the
+      // lock through a multi-second sleep would only stall the next decider's bookkeeping without
+      // protecting anything.
       const wait = WebFetchPace.jitter(decision.waitMs, deps.random)
       if (wait > 0) yield* deps.sleep(wait)
 
       // 3. Hold the host's slot for the duration of the fetch itself.
-      const gate = yield* gateFor(host, limits.perHostConcurrency ?? 1)
-      return yield* gate.withPermits(1)(input.fetch)
+      return yield* lane.inflight.withPermits(1)(input.fetch)
     })
 
   return { guard }
