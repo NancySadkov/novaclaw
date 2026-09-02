@@ -258,6 +258,22 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
       )}
       onChange={(next) => {
         const v = next == null ? null : Array.isArray(next) ? ((next[0] as T) ?? null) : (next as T)
+        // ⚠️ Kobalte fires this for its OWN pruning effect, not only for a user's pick. `SelectBase`
+        // runs an effect on every change of its option KEYS — "delete selected keys that do not match
+        // any option in the listbox" — which calls `setSelectedKeys`, and it defaults
+        // `allowDuplicateSelectionEvents` to true, so `onChange` runs even when the selection did not
+        // move. A caller whose option array is rebuilt reactively is therefore handed an `onSelect`
+        // reporting the selection it already has, and if that handler writes remotely the write's own
+        // refetch rebuilds the array and re-enters.
+        //
+        // Measured on the Affective settings tab, 2026-09-01: one gesture, two config writes, and a
+        // clear whose second remove answered 400 to the user. It terminates at two only because
+        // TanStack's structural sharing returns the identical object for the unchanged refetch —
+        // against a store without it, one switch click produced 10,872 writes.
+        //
+        // A selection that did not move is not a select. `local.current` still holds the OLD option
+        // when a real pick arrives, so this only ever suppresses the echo.
+        if ((v == null ? null : keyFor(v)) === (local.current == null ? null : keyFor(local.current))) return
         local.onSelect?.(v)
         stop()
       }}

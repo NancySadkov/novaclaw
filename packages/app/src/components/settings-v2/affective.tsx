@@ -35,6 +35,18 @@ interface AffectiveConfig {
   extended?: boolean
 }
 
+/**
+ * Flat value comparison over the union of both key sets. `affective` is three scalars, so `!==` per
+ * key is the whole of it — no recursion, and no `JSON.stringify` (key ORDER differs between the
+ * object the server sends back and the one `{ ...current(), ...patch }` builds, which would make
+ * every write look like a change).
+ */
+const sameConfig = (a: AffectiveConfig, b: AffectiveConfig) => {
+  for (const key of new Set([...Object.keys(a), ...Object.keys(b)]) as Set<keyof AffectiveConfig>)
+    if (a[key] !== b[key]) return false
+  return true
+}
+
 export const SettingsAffectiveV2: Component = () => {
   const language = useLanguage()
   const serverSync = useServerSync()
@@ -49,9 +61,39 @@ export const SettingsAffectiveV2: Component = () => {
       description: error instanceof Error ? error.message : String(error),
     })
 
+  /**
+   * 🔴 **A write that would not change the stored value is NOT sent.** This is the same rule
+   * `clear()` below already applies to the delete verb — *never ask the server for a mutation that
+   * does nothing* — and it is here because this tab is fed by a control that re-emits its own
+   * selection when the store moves under it.
+   *
+   * ⚠️ The mechanism, measured, because a guard without one invites deletion. `PresetFieldV2` gives
+   * `SelectV2` a freshly built option array (a "Custom (…)" entry appears and disappears with the
+   * value, so `allOptions()` cannot be memoised on identity). Kobalte's `SelectBase` runs an effect
+   * on every change of its option keys — *"delete selected keys that do not match any option"* —
+   * which calls `setSelectedKeys`, and `SelectBase` defaults `allowDuplicateSelectionEvents` to
+   * `true`, so that fires `onChange` **even when the selection is unchanged**. The tab writes → the
+   * config re-reads → the option array is rebuilt → the droplist re-reports its selection → the tab
+   * writes again. Live on 2026-09-01 that read as *one gesture, two `PATCH /global/config`*, and a
+   * clear whose second `POST /api/config/remove` answered 400 for a path that no longer named
+   * anything. It terminates at two only because TanStack Query's structural sharing hands back the
+   * identical object on the second refetch; against a store that does not share structure it does
+   * not terminate at all (measured in `test-browser/settings-affective-write-count.test.tsx`:
+   * ten thousand PATCHes from one click).
+   *
+   * The re-entrant call always carries the value that was just written, so suppressing a no-op write
+   * ends it at the first one. It does not suppress a real edit — the tests assert three distinct
+   * commits still produce three writes.
+   *
+   * ⚠️ This closes the door on THIS tab's side. The re-entrant `onChange` itself lives in
+   * `@novaclaw/ui/v2/select-v2`, which forwards Kobalte's pruning event as a user selection; any
+   * other caller that pairs a reactively rebuilt option list with a remote write has the same defect.
+   */
   async function persist(patch: Partial<AffectiveConfig>) {
-    const next = { ...current(), ...patch }
+    const before = current()
+    const next = { ...before, ...patch }
     for (const key of Object.keys(next) as Array<keyof AffectiveConfig>) if (next[key] === undefined) delete next[key]
+    if (sameConfig(before, next)) return
     await serverSync()
       .updateConfig({ affective: next } as never)
       .catch(failed)
@@ -70,11 +112,12 @@ export const SettingsAffectiveV2: Component = () => {
     // **400** for a path that names nothing ("NOTHING was removed … rolled back rather than report
     // success"), which is the right contract: a delete that matched nothing must not report success.
     // But it means asking to clear an already-absent key turns a correct state into a reported
-    // FAILURE the user sees as a toast. Measured live 2026-09-01: one gesture on this tab reaches its
-    // handler TWICE (six PATCHes for three keystrokes, two for one switch click), and the second
-    // clear hit exactly that 400. That duplicate-write cause is still open and is NOT this guard —
-    // this guard is why it is no longer visible to the user. Where
-    // one gesture on this tab reaches the handler twice and the second clear hit exactly that 400.
+    // FAILURE the user sees as a toast — which is what a user saw on 2026-09-01, when one pick of
+    // "Default" produced two removes and the second one 400'd.
+    //
+    // It stays now that the re-entry above is closed, as the delete-verb half of the same rule
+    // `persist` states: never ask the server for a mutation that does nothing. Deleting it would
+    // leave the two verbs on this tab disagreeing about that.
     if (current()[key] === undefined) return
     const client = sdk()
     if (!client) return failed(new Error(language.t("settings.affective.toast.failed")))
