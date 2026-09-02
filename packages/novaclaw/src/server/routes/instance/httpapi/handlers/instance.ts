@@ -14,6 +14,7 @@ import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { Credential } from "@novaclaw/core/credential"
 import { CredentialCipher } from "@novaclaw/core/credential-cipher"
 import { CredentialRepair } from "@novaclaw/core/credential/repair"
+import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { VirtualFs } from "@novaclaw/core/virtual-fs"
 import { Scratch } from "@novaclaw/core/scratch"
 import { Vcs } from "@/project/vcs"
@@ -303,7 +304,12 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
             const cipher = yield* CredentialCipher.Service
             const settings = yield* SettingsConfigStore.Service
             const found = CredentialRepair.dedupe([
-              ...(yield* CredentialRepair.scan([Credential.repairSource(db, cipher)])),
+              ...(yield* CredentialRepair.scan([
+                Credential.repairSource(db, cipher),
+                // See the sibling handler: without this the scan reports 0 damaged for the one
+                // secret a user has no way to re-enter.
+                InstanceIdentityStore.repairSource(db, cipher),
+              ])),
               ...(yield* settings.unreadable().pipe(Effect.catchCause(() => Effect.succeed([])))),
             ])
             const directory = (yield* Global.Service).state

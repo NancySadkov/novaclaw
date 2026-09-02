@@ -824,19 +824,27 @@ export const communityPeerHandlers = HttpApiBuilder.group(InstanceHttpApi, "comm
            * peer surface hands to any stranger through `/sync/messages`, which is what makes
            * answering from them a saving of a round trip rather than a disclosure.
            */
-          const mineID = (yield* selfIdentity.identity()).networkID
+          /**
+           * 🔴 EVERY key this user has held, not the one they hold now.
+           *
+           * A room message records its author by the key that signed it. Comparing against the
+           * current key alone therefore made a rotation retroactively disown this user's own posts:
+           * they came back as `HEARD from <our own former key>`, and the system prompt tells the
+           * model the evidence says which of SAW and HEARD applies. `heldKeys` walks the succession
+           * chain BACKWARD from the key we hold, which is a walk every step of which is signed by a
+           * key we hold or held — see its own note on why the forward direction is not safe here.
+           */
+          const mine = InstanceIdentityStore.heldKeys(
+            (yield* selfIdentity.identity()).networkID,
+            yield* successions.known(),
+          )
           const rooms = yield* channels.channels()
           const claims: CommunityAnswer.Evidence[] = []
           for (const room of rooms.slice(0, CommunityAnswer.MAX_EVIDENCE_ROOMS))
             for (const message of yield* channels.history(room.name, CommunityAnswer.MAX_EVIDENCE_SCANNED))
-              claims.push({
-                channel: message.channel,
-                author: message.author,
-                at: message.at,
-                body: message.body,
-                // The only thing this instance genuinely witnessed is what its own user said.
-                saw: message.author === mineID,
-              })
+              // `witness` is the only constructor of a piece of evidence: it takes the key SET, so
+              // "was this us" cannot be answered against a single key at a call site again.
+              claims.push(CommunityAnswer.witness(message, mine))
           const evidence = CommunityAnswer.selectEvidence(ctx.payload.question, claims)
 
           const answer = yield* turn.withPermitsIfAvailable(1)(

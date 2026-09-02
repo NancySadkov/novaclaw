@@ -1,9 +1,10 @@
 export * as InstanceIdentityStore from "./instance-identity-store"
 
 import { createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify } from "node:crypto"
-import { isNull, or } from "drizzle-orm"
+import { eq, isNull, or } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
 import { CredentialCipher } from "./credential-cipher"
+import { CredentialRepair } from "./credential/repair"
 import { Database } from "./database/database"
 import { makeGlobalNode } from "./effect/app-node"
 import * as Id from "./id/id"
@@ -279,18 +280,145 @@ export interface SuccessorStatement {
   readonly successorSignature: string
 }
 
+/**
+ * 🔴 **Every key this instance has ever held**, walked BACKWARD from the key it holds now.
+ *
+ * An instance is not its current key. A rotation replaces the key and keeps the person, and every
+ * record written before it — a channel message's author, an observation's subject, an offer's sender
+ * — still names the OLD one. So "is this us?" answered by `x === identity().networkID` answers a
+ * narrower question than the one being asked: *is this our current spelling of us*. The first place
+ * that mattered was the evidence packet, where it turned this user's own past posts into hearsay from
+ * an unknown stranger on the one axis the system prompt tells the model to trust.
+ *
+ * ⚠️ **BACKWARD only, and that is what makes an unauthenticated store safe to read.** The succession
+ * door accepts statements from anyone, so the table is stranger-writable by design. A backward step
+ * from a key K accepts a statement only if its `successorSignature` verifies under K — and every K on
+ * this walk is a key we hold or held, so every step demands a signature only we could have made. A
+ * forward walk has no such property: it would follow whatever a stranger claims we became.
+ *
+ * ⚠️ BOTH signatures are checked, the same rule `succession.ts` states at its own door: the
+ * predecessor says "this new key is also me" and the successor says "I accept that name", and one
+ * alone lets a key be pointed at a key its author does not hold.
+ *
+ * ⚠️ A statement per predecessor is not assumed unique. A stranger can post rubbish naming one of our
+ * keys as a successor, and taking the first row for a key would let that rubbish truncate our own
+ * history — so every candidate is tried and the first that PROVES the handover wins.
+ */
+export const heldKeys = (current: string, statements: ReadonlyArray<SuccessorStatement>): ReadonlySet<string> => {
+  const candidates = new Map<string, SuccessorStatement[]>()
+  for (const statement of statements) {
+    if (typeof statement.successor !== "string") continue
+    const list = candidates.get(statement.successor)
+    if (list === undefined) candidates.set(statement.successor, [statement])
+    else list.push(statement)
+  }
+  const keys = new Set([current])
+  let cursor = current
+  for (;;) {
+    const step = (candidates.get(cursor) ?? []).find(
+      (statement) => !keys.has(statement.predecessor) && provenHandover(statement),
+    )
+    // A cycle is not merely useless — it is how a walk could be made to spin forever.
+    if (step === undefined) return keys
+    keys.add(step.predecessor)
+    cursor = step.predecessor
+  }
+}
+
+/** One handover, proven by both ends. Never throws: a malformed statement is simply not proof. */
+const provenHandover = (statement: SuccessorStatement): boolean => {
+  if (typeof statement.predecessor !== "string" || typeof statement.successor !== "string") return false
+  // A statement naming itself as its own successor is nonsense that would otherwise verify.
+  if (statement.predecessor === statement.successor) return false
+  /**
+   * ⚠️ `isSafeInteger`, not `isFinite` — the succession door's own lesson: a `BigInt(-1)` reaching
+   * `writeBigUInt64BE` throws, and this reads rows a stranger can write.
+   */
+  if (!Number.isSafeInteger(statement.at) || statement.at < 0) return false
+  if (typeof statement.signature !== "string" || typeof statement.successorSignature !== "string") return false
+  const signature = Buffer.from(statement.signature, "base64url")
+  const successorSignature = Buffer.from(statement.successorSignature, "base64url")
+  if (signature.length !== 64 || successorSignature.length !== 64) return false
+  const bytes = successionBytes(statement)
+  return (
+    verifySignature(statement.predecessor, bytes, signature) &&
+    verifySignature(statement.successor, bytes, successorSignature)
+  )
+}
+
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/InstanceIdentityStore") {}
+
+/**
+ * The two secret columns and the AAD each was sealed under — one map, at module scope.
+ *
+ * ⚠️ Each AAD is bound to the COLUMN it protects, so ciphertext lifted from one into the other will
+ * not decrypt. Module scope because `repairSource` below needs the same pairs, and a second copy of
+ * them there would go stale with the only symptom being every row reported unreadable — which reads
+ * as catastrophic damage rather than as a wrong constant.
+ */
+const SECRET_AAD = {
+  secret_key: "instance-identity.secret_key",
+  sealing_secret_key: "instance-identity.sealing_secret_key",
+} as const
+
+type SecretColumn = keyof typeof SECRET_AAD
+
+const SECRET_COLUMNS = Object.keys(SECRET_AAD) as ReadonlyArray<SecretColumn>
+
+/** How an identity secret is named in a repair report. Never the value: the id is not the secret. */
+const REPAIR_PREFIX = "instance-identity:"
+
+/**
+ * 🔴 **Which identity secrets cannot be opened** — the half the repair surface never had.
+ *
+ * The scan was handed the credential table and the settings store and nothing else, so the Nova
+ * Health "stored secrets" row reported *0 unreadable, no notice* for an instance whose Ed25519
+ * identity was an envelope it could no longer open. That is the exact inversion of what the damage is
+ * worth: a provider credential can be pasted again and an OAuth flow rerun, while this file says at
+ * length that an identity that will not open is a network identity permanently lost, along with every
+ * contact's record of it. The one loss the code calls unrecoverable was the one the repair surface
+ * could not see.
+ *
+ * ⚠️ It lives HERE, not in the handlers that call it: this module owns the table, the envelope
+ * predicate and both AADs, and a scanner assembled elsewhere would have to duplicate all three.
+ */
+export const repairSource = (
+  db: Database.Interface["db"],
+  cipher: CredentialCipher.Interface,
+): CredentialRepair.ScanSource => ({
+  rows: () =>
+    db
+      .select()
+      .from(InstanceIdentityTable)
+      .pipe(
+        Effect.map((rows) =>
+          rows.flatMap((row) =>
+            SECRET_COLUMNS.flatMap((column) => {
+              const value = row[column]
+              // An absent secret is not a damaged one: a pre-keypair row and an instance that has
+              // never sealed anything both read as null, and reporting them would send a user to
+              // restore a backup for a secret that was never there.
+              return typeof value === "string" && value.length > 0
+                ? [{ path: `${REPAIR_PREFIX}${column}`, value }]
+                : []
+            }),
+          ),
+        ),
+      ),
+  sealed: (value) => typeof value === "string" && cipher.encrypted(value),
+  open: (path, value) => {
+    const aad = SECRET_AAD[path.slice(REPAIR_PREFIX.length) as SecretColumn]
+    return aad === undefined
+      ? Effect.fail(`Not an instance-identity secret path: ${path}`)
+      : cipher.decrypt(value as string, aad)
+  },
+})
 
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const { db } = yield* Database.Service
     const cipher = yield* CredentialCipher.Service
-
-    /** Bound to the row it protects, so ciphertext lifted into another row will not decrypt. */
-    const AAD = "instance-identity.secret_key"
-    /** Its own AAD, so a sealing secret cannot be lifted into the identity column or the reverse. */
-    const SEALING_AAD = "instance-identity.sealing_secret_key"
 
     /**
      * 🔴 The unwind of app-managed encryption, last consumer.
@@ -309,12 +437,70 @@ export const layer = Layer.effect(
      *
      * ⚠️ `encrypted()` is a prefix test on the envelope marker. A base64url secret cannot begin
      * with `nc1:` — the alphabet has no colon — so the two forms cannot be confused.
+     *
+     * 🔴 **And it DRAINS, which is step (3) of that unwind and was never done for this store.**
+     *
+     * The order the unwind states is: keep decrypt-on-read, stop encrypting, then persist plaintext
+     * when an envelope is opened so the ciphertext leaves while the key still exists, and only then
+     * delete the module. `sealSecret` stopped the writes, so a row created by THIS build is plaintext
+     * — but nothing ever wrote an opened envelope back, and the only path that rewrites `secret_key`
+     * at all is `rotate`, which an ordinary instance never runs. A row written by a pre-unwind build
+     * therefore stayed an envelope forever, and the tolerant read that makes that safe is safe only
+     * for exactly as long as `credential.key` survives. The motivating case of the whole unwind is
+     * that file going missing in a partial restore.
+     *
+     * ⚠️ The COLUMN is the parameter, not the AAD. Naming the column is what lets this write the
+     * plaintext back, so an open that does not drain is no longer expressible — and it also removes
+     * the chance of opening one column under the other's AAD.
+     *
+     * ⚠️ The write is guarded on the envelope still being there, the same discipline as the two
+     * backfills below: a concurrent `rotate` that already replaced the column must not have a stale
+     * plaintext written over the top of it.
      */
-    const openSecret = (value: string, aad: string) =>
-      cipher.encrypted(value) ? cipher.decrypt(value, aad) : Effect.succeed(value)
+    const openSecret = (column: SecretColumn, value: string) =>
+      Effect.gen(function* () {
+        if (!cipher.encrypted(value)) return value
+        const plaintext = yield* cipher.decrypt(value, SECRET_AAD[column])
+        yield* db
+          .update(InstanceIdentityTable)
+          .set(column === "secret_key" ? { secret_key: plaintext } : { sealing_secret_key: plaintext })
+          .where(
+            column === "secret_key"
+              ? eq(InstanceIdentityTable.secret_key, value)
+              : eq(InstanceIdentityTable.sealing_secret_key, value),
+          )
+          .run()
+          .pipe(Effect.orDie)
+        return plaintext
+      })
+
+    /**
+     * 🔴 Drain on the first read of the ROW, not on the first signature.
+     *
+     * Every other read path here is reached only when the instance does something — sign, seal,
+     * rotate, back up. An instance that has joined nothing does none of them, so leaving the drain to
+     * those paths would leave the envelope in place for exactly the instance least likely to notice.
+     * `ensure()` runs at boot, which makes the window between upgrading and losing the key as small
+     * as the code can make it.
+     *
+     * ⚠️ Failure here is NOT fatal. If the key is already gone the envelope cannot be drained, and
+     * that is the damage this cannot repair — `repairSource` is what reports it. Dying instead would
+     * turn a degraded instance into one that will not boot.
+     */
+    const drained = (stored: typeof InstanceIdentityTable.$inferSelect) =>
+      Effect.gen(function* () {
+        let opened = false
+        for (const column of SECRET_COLUMNS) {
+          const value = stored[column]
+          if (typeof value !== "string" || !cipher.encrypted(value)) continue
+          const plaintext = yield* openSecret(column, value).pipe(Effect.catch(() => Effect.succeed(undefined)))
+          if (plaintext !== undefined) opened = true
+        }
+        return opened ? ((yield* row()) ?? stored) : stored
+      })
 
     /** Plaintext from here on; existing envelopes still open through `openSecret`. */
-    const sealSecret = (value: string, _aad: string) => value
+    const sealSecret = (value: string) => value
 
     const row = () => db.select().from(InstanceIdentityTable).get().pipe(Effect.orDie)
 
@@ -327,12 +513,15 @@ export const layer = Layer.effect(
      */
     const ensure = Effect.fn("InstanceIdentityStore.ensure")(function* () {
       const existing = yield* row()
-      if (existing?.public_key && existing.secret_key) return existing
+      // The drain runs on the way past, so the ciphertext leaves on the first BOOT after an upgrade
+      // rather than on the first signature. Costs one prefix test per read when there is nothing to
+      // drain, which is every instance this build created.
+      if (existing?.public_key && existing.secret_key) return yield* drained(existing)
 
       const { publicKey, privateKey } = generateKeyPairSync("ed25519")
       const publicRaw = rawPublicKey(publicKey.export({ type: "spki", format: "der" }) as Buffer)
       const secretRaw = (privateKey.export({ type: "pkcs8", format: "der" }) as Buffer).subarray(PKCS8_PREFIX.length)
-      const secret = sealSecret(secretRaw.toString("base64url"), AAD)
+      const secret = sealSecret(secretRaw.toString("base64url"))
       const publicEncoded = publicRaw.toString("base64url")
 
       if (existing === undefined) {
@@ -393,7 +582,7 @@ export const layer = Layer.effect(
             .update(InstanceIdentityTable)
             .set({
               sealing_public_key: minted.publicKey,
-              sealing_secret_key: sealSecret(minted.secretKey, SEALING_AAD),
+              sealing_secret_key: sealSecret(minted.secretKey),
             })
             // 🔴 Guarded on absence, like the identity backfill: two concurrent first calls must not
             // let the loser overwrite the winner's key, or a peer that already fetched the first one
@@ -403,7 +592,7 @@ export const layer = Layer.effect(
             .pipe(Effect.orDie)
           publicKey = (yield* row())?.sealing_public_key ?? minted.publicKey
         }
-        const secret = yield* openSecret(stored?.secret_key ?? "", AAD).pipe(Effect.orDie)
+        const secret = yield* openSecret("secret_key", stored?.secret_key ?? "").pipe(Effect.orDie)
         const signature = sign(
           null,
           Buffer.from(sealingKeyBytes(publicKey)),
@@ -418,19 +607,19 @@ export const layer = Layer.effect(
       ) {
         const stored = yield* row()
         if (!stored?.sealing_secret_key) return undefined
-        const secret = yield* openSecret(stored.sealing_secret_key, SEALING_AAD).pipe(Effect.orDie)
+        const secret = yield* openSecret("sealing_secret_key", stored.sealing_secret_key).pipe(Effect.orDie)
         return CommunitySeal.unseal(secret, envelope, CommunitySeal.envelopeAAD(pair.from, pair.to))
       }),
 
       sign: Effect.fn("InstanceIdentityStore.sign")(function* (message: Uint8Array) {
         const stored = yield* ensure()
-        const secret = yield* openSecret(stored.secret_key ?? "", AAD).pipe(Effect.orDie)
+        const secret = yield* openSecret("secret_key", stored.secret_key ?? "").pipe(Effect.orDie)
         return sign(null, Buffer.from(message), privateKeyFromRaw(Buffer.from(secret, "base64url")))
       }),
       rotate: Effect.fn("InstanceIdentityStore.rotate")(function* () {
         const stored = yield* ensure()
         const previousPublic = Buffer.from(stored.public_key ?? "", "base64url")
-        const previousSecret = yield* openSecret(stored.secret_key ?? "", AAD).pipe(Effect.orDie)
+        const previousSecret = yield* openSecret("secret_key", stored.secret_key ?? "").pipe(Effect.orDie)
 
         const { publicKey, privateKey } = generateKeyPairSync("ed25519")
         const nextPublic = rawPublicKey(publicKey.export({ type: "spki", format: "der" }) as Buffer)
@@ -463,7 +652,7 @@ export const layer = Layer.effect(
           .update(InstanceIdentityTable)
           .set({
             public_key: nextPublic.toString("base64url"),
-            secret_key: sealSecret(nextSecret.toString("base64url"), AAD),
+            secret_key: sealSecret(nextSecret.toString("base64url")),
           })
           .run()
           .pipe(Effect.orDie)
@@ -479,7 +668,7 @@ export const layer = Layer.effect(
       }),
       backup: Effect.fn("InstanceIdentityStore.backup")(function* () {
         const stored = yield* ensure()
-        const secret = yield* openSecret(stored.secret_key ?? "", AAD).pipe(Effect.orDie)
+        const secret = yield* openSecret("secret_key", stored.secret_key ?? "").pipe(Effect.orDie)
         const publicKey = Buffer.from(stored.public_key ?? "", "base64url")
         return { version: 1, id: stored.id, networkID: networkID(publicKey), secretKey: secret } satisfies Backup
       }),
@@ -521,7 +710,7 @@ export const layer = Layer.effect(
               "This instance already has an identity. Restoring would orphan every contact that knows it, so it must be confirmed explicitly.",
           })
 
-        const encrypted = sealSecret(secretRaw.toString("base64url"), AAD)
+        const encrypted = sealSecret(secretRaw.toString("base64url"))
         const publicEncoded = derived.toString("base64url")
         if (existing === undefined)
           yield* db

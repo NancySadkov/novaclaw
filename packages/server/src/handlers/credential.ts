@@ -3,6 +3,7 @@ import { CredentialCipher } from "@novaclaw/core/credential-cipher"
 import { CredentialRepair } from "@novaclaw/core/credential/repair"
 import { Database } from "@novaclaw/core/database/database"
 import { Global } from "@novaclaw/core/global"
+import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { Integration } from "@novaclaw/core/integration"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { Effect } from "effect"
@@ -30,7 +31,12 @@ export const CredentialHandler = handlerLayer(
           const cipher = yield* CredentialCipher.Service
           const settings = yield* SettingsConfigStore.Service
           const found = CredentialRepair.dedupe([
-            ...(yield* CredentialRepair.scan([Credential.repairSource(db, cipher)])),
+            ...(yield* CredentialRepair.scan([
+              Credential.repairSource(db, cipher),
+              // The identity secret is the one this instance cannot re-enter, so a scan that omits
+              // it reports 0 damaged while the unrecoverable one sits there.
+              InstanceIdentityStore.repairSource(db, cipher),
+            ])),
             ...(yield* settings.unreadable().pipe(Effect.catchCause(() => Effect.succeed([])))),
           ])
           const global = yield* Global.Service

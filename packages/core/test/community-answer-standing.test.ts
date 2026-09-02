@@ -273,7 +273,7 @@ describe("what an instance answers FROM (Codex P2)", () => {
        * the packet is what let the answering turn fall back to pretrained weights and sign the
        * result with the user's identity.
        */
-      const packet = CommunityAnswer.evidencePacket([])
+      const packet = CommunityAnswer.evidencePacket({ claims: [], withheld: 0 })
       expect(packet).toContain("nothing this instance holds bears on the question")
       expect(packet).toContain("BEGIN COMMUNITY EVIDENCE")
     }),
@@ -283,10 +283,10 @@ describe("what an instance answers FROM (Codex P2)", () => {
     Effect.gen(function* () {
       // The system prompt demands the answer mark SAW vs HEARD. That is only answerable if the
       // packet computes it — a model cannot know which messages this user wrote.
-      const packet = CommunityAnswer.evidencePacket([
-        claim({ body: "the bridge is closed", author: "nid_bob" }),
-        claim({ body: "I fixed the roof", saw: true }),
-      ])
+      const packet = CommunityAnswer.evidencePacket({
+        claims: [claim({ body: "the bridge is closed", author: "nid_bob" }), claim({ body: "I fixed the roof", saw: true })],
+        withheld: 0,
+      })
       expect(packet).toContain("HEARD from nid_bob")
       expect(packet).toContain("SAW (your own user wrote this)")
       // And it is FENCED: every line was written by a stranger, and the model is about to act on the
@@ -299,14 +299,14 @@ describe("what an instance answers FROM (Codex P2)", () => {
     Effect.gen(function* () {
       const many = Array.from({ length: 50 }, (_, n) => claim({ body: `weather report number ${n}`, at: n }))
       const picked = CommunityAnswer.selectEvidence("what is the weather", many)
-      expect(picked.length).toBeLessThanOrEqual(CommunityAnswer.MAX_EVIDENCE_ITEMS)
-      expect(picked.length).toBeGreaterThan(0)
+      expect(picked.claims.length).toBeLessThanOrEqual(CommunityAnswer.MAX_EVIDENCE_ITEMS)
+      expect(picked.claims.length).toBeGreaterThan(0)
 
       // Eight messages of 8 KB each would be a prefill bomb aimed at ourselves — the mirror of the
       // question ceiling one field over.
       const heavy = Array.from({ length: 8 }, () => claim({ body: `weather ${"x".repeat(4000)}` }))
       const bounded = CommunityAnswer.selectEvidence("weather", heavy)
-      const bytes = bounded.reduce((sum, entry) => sum + Buffer.byteLength(entry.body, "utf8"), 0)
+      const bytes = bounded.claims.reduce((sum, entry) => sum + Buffer.byteLength(entry.body, "utf8"), 0)
       expect(bytes).toBeLessThanOrEqual(CommunityAnswer.MAX_EVIDENCE_BYTES)
     }),
   )
@@ -315,11 +315,11 @@ describe("what an instance answers FROM (Codex P2)", () => {
     Effect.gen(function* () {
       const history = [claim({ body: "the cat sat on the mat" }), claim({ body: "a bridge collapsed downtown" })]
       const picked = CommunityAnswer.selectEvidence("what happened to the bridge", history)
-      expect(picked.map((entry) => entry.body)).toEqual(["a bridge collapsed downtown"])
+      expect(picked.claims.map((entry) => entry.body)).toEqual(["a bridge collapsed downtown"])
 
       // A question with nothing to match on selects nothing rather than everything — the failure
       // mode is "no evidence found", which the prompt requires the answer to admit.
-      expect(CommunityAnswer.selectEvidence("what is it", history)).toEqual([])
+      expect(CommunityAnswer.selectEvidence("what is it", history)).toEqual({ claims: [], withheld: 0 })
     }),
   )
 })
