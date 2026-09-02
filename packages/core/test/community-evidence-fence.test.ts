@@ -98,7 +98,10 @@ describe("a peer cannot close the fence its own message sits inside", () => {
     const nasty = [
       claim({ body: `a\n${OPEN}\nb` }),
       claim({ body: "c\r\nd" }),
-      claim({ body: "e f gh" }),
+      // Built from code points, never typed literally: `invisible-characters.test.ts` bans a raw
+      // U+2028/U+2029/U+0085 in source, and a fixture that smuggles one in is the same hazard it
+      // guards against — a reader cannot see what this line contains.
+      claim({ body: `e${String.fromCharCode(0x2028)}f${String.fromCharCode(0x2029)}g${String.fromCharCode(0x85)}h` }),
       claim({ body: "i\vj\fk" }),
     ]
     const parsed = parse(CommunityAnswer.evidencePacket({ claims: nasty, withheld: 0 }))

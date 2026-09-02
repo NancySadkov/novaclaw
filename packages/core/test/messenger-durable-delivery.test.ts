@@ -1,6 +1,4 @@
 import { describe, expect } from "bun:test"
-import nodeFs from "node:fs"
-import nodeOs from "node:os"
 import nodePath from "node:path"
 import type { Cause } from "effect"
 import { Duration, Effect, Layer, Queue, Stream } from "effect"
@@ -18,6 +16,7 @@ import { MessengerDrivers } from "@novaclaw/core/messenger/drivers"
 import { MessengerGateway } from "@novaclaw/core/messenger/gateway"
 import { MessengerPace } from "@novaclaw/core/messenger/pace"
 import { MessengerStore } from "@novaclaw/core/messenger/store"
+import { tmpdir } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
 
 /**
@@ -166,17 +165,6 @@ const it = testEffect(AppNodeBuilder.build(graph, REPLACEMENTS))
 const overFile = (file: string) =>
   Layer.fresh(AppNodeBuilder.build(graph, [...REPLACEMENTS, [Database.node, Database.layerFromPath(file)]]))
 
-const discardDb = (file: string) => {
-  for (const suffix of ["", "-wal", "-shm"]) {
-    try {
-      nodeFs.rmSync(`${file}${suffix}`, { force: true })
-    } catch {
-      // Windows holds the handle a moment past close; a leftover file in the OS temp dir is not
-      // worth failing a test whose assertions have all already passed.
-    }
-  }
-}
-
 let seq = 0
 const message = (
   chatID: string,
@@ -223,7 +211,16 @@ describe("messenger gateway — what it may claim to have done", () => {
    */
   it.live("🔴 a moderation message still in the batch buffer is not recorded as delivered", () =>
     Effect.gen(function* () {
-      const file = nodePath.join(nodeOs.tmpdir(), `novaclaw-audience-restart-${process.pid}.db`)
+      // ⚠️ The shared fixture, not `os.tmpdir() + process.pid`: a killed run leaves a PID-named file
+      // behind, and PID reuse then hands it to a LATER run as live state. `tmpdir()` is
+      // mkdtemp-unique and its root is reaped by the next run whatever killed this one.
+      // `tmpdir-namespace.test.ts` fails the gate on the other shape. Acquired through the scope
+      // rather than `await using`, because this body is an `Effect.gen` and has no `await`.
+      const temp = yield* Effect.acquireRelease(
+        Effect.promise(() => tmpdir()),
+        (handle) => Effect.promise(() => handle[Symbol.asyncDispose]()),
+      )
+      const file = nodePath.join(temp.path, "audience-restart.db")
       const buffered: string[] = []
       let injected = ""
       let accountID = "" as Messenger.AccountID
@@ -277,11 +274,7 @@ describe("messenger gateway — what it may claim to have done", () => {
         }
         expect(yield* store.claimInbound({ accountID, chatID: "#ops", messageID: injected })).toBe("delivered")
       }).pipe(Effect.scoped, Effect.provide(overFile(file)))
-    }).pipe(
-      Effect.ensuring(
-        Effect.sync(() => discardDb(nodePath.join(nodeOs.tmpdir(), `novaclaw-audience-restart-${process.pid}.db`))),
-      ),
-    ),
+    }).pipe(Effect.scoped),
   )
 
   it.live("a batch that FLUSHES marks every message in it delivered — and only then", () =>
