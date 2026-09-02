@@ -350,9 +350,9 @@ describe("JhEngine.runTask", () => {
           ]),
         ),
         reply(atomObj({ goal: "producer", produces: [{ id: "shared", type: "note" }] })),
-        reply(atomObj({ goal: "consumer", consumes: [{ id: "shared", type: "note" }], produces: [] })),
+        reply(atomObj({ goal: "consumer", consumes: [{ id: "shared", type: "note" }] })),
       ],
-      observations: [okObs({ shared: "x" }), okObs()],
+      observations: [okObs({ shared: "x" }), okObs({ out: "y" })],
       trigger: { cardinality: 999, density: 1, margin: 1 },
     })
     const r = await run(d)
@@ -366,8 +366,8 @@ describe("JhEngine.runTask", () => {
     const nineConsumes = Array.from({ length: 9 }, (_, i) => ({ id: `c${i}`, type: "file" as const }))
     const degrade = scriptedDeps({
       noForceSplit: false,
-      replies: [reply(atomObj({ consumes: nineConsumes, produces: [] })), reply(atomObj({ produces: [] }))], // 2nd reply is atomic → won't split
-      observations: [okObs()],
+      replies: [reply(atomObj({ consumes: nineConsumes })), reply(atomObj())], // 2nd reply is atomic → won't split
+      observations: [okObs({ out: "x" })],
     })
     const rd = await run(degrade)
     expect(types(rd)).toContain("split_degraded")
@@ -412,8 +412,8 @@ describe("JhEngine.runTask", () => {
   test("7c. improve5 P3.2: force-split is DISARMED by default under lazyPlan (advisory only — no forced decomposition)", async () => {
     const nineConsumes = Array.from({ length: 9 }, (_, i) => ({ id: `c${i}`, type: "file" as const }))
     const adv = scriptedDeps({
-      replies: [reply(atomObj({ consumes: nineConsumes, produces: [] }))],
-      observations: [okObs()],
+      replies: [reply(atomObj({ consumes: nineConsumes }))],
+      observations: [okObs({ out: "x" })],
     })
     const r = await run(adv)
     expect(types(r)).toContain("forced_split_advisory")

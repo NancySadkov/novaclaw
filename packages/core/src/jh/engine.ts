@@ -1908,10 +1908,22 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         } else if (regressionPreempt) {
           vr = regressionPreempt // the edit broke a locked test — skip the leaf's own check entirely
         } else if (observation.ok) {
-          const producedPresent = (draft.produces ?? []).every((p) => {
-            const c = observation.artifacts.get(p.id)
-            return c !== undefined && c.length > 0
-          })
+          // 🔴 THREE ANSWERS, NOT TWO. `[].every(…)` is `true`, so a bare `every` over the model's own
+          // `produces` reported "all products present" for a step that declared NONE — and the verifier,
+          // handed a bare boolean, had no way to tell that apart from a step whose products really were
+          // all there. The empty case is the DEFAULT case: `artifact_present` is what the engine
+          // substitutes when the model omits a check, so the least-specified step in a run got the gate
+          // that could not fail. `none_declared` carries the distinction to the gate, which refuses.
+          const declared = draft.produces ?? []
+          const produced: JhVerifier.Produced =
+            declared.length === 0
+              ? "none_declared"
+              : declared.every((p) => {
+                    const c = observation.artifacts.get(p.id)
+                    return c !== undefined && c.length > 0
+                  })
+                ? "present"
+                : "missing"
           // R1: before executing a compile/run/output_equals check, refuse to run a STALE product — auto-re-run
           // the model's own last successful producing command(s) (the make move; log `refreshed`). Rebuild
           // EVERY stale product in production order (a chain pi.c→pi.o→pi.exe rebuilds pi.o then pi.exe),
@@ -1979,9 +1991,19 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
               ...(deps.filePresence === undefined
                 ? {}
                 : { filePresence: (rel: string) => deps.filePresence!(rel, deps.cwd) }),
-              producedPresent,
+              produced,
               defaultTimeoutMs: checkTimeout,
             })
+            // 🔴 THE GATE'S OWN RUN IS A RUN. `lastRunOutput` is "the most recent program output" and it
+            // feeds three judges — the goal-check prompt (and its cache key), the caller's completion
+            // oracle, and the forced-analyze instrumentation gate three blocks below — yet it was written
+            // ONLY where the MODEL invoked the `run` tool. A leaf that edits the source and then verifies
+            // with a `run`/`output_equals` check re-runs the program HERE, and every one of those judges
+            // then graded the stdout of the previous run: the analyze gate could pass on instrumentation
+            // that no longer exists, and the oracle could call a task done on digits the current binary
+            // no longer prints. The same gap was already found and patched for the staleness tracker
+            // directly below; this is the reader it missed.
+            if (vr.runOutput !== undefined) lastRunOutput = vr.runOutput
             // Record artifacts the CHECK's command PRODUCED (e.g. pi.o from a `gcc -c pi.c` compile check) so a
             // later source edit auto-rebuilds them instead of nagging — the D1 gap baseline run39/40 exposed
             // (recordAction previously saw only ACTION runs + rebuilds, never verify-check runs).
@@ -1993,7 +2015,13 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
                 before: curSnap,
                 after: snapFiles(),
               })
-            if (staleness && !vr.ok) {
+            // 🔴 AN INCONCLUSIVE RESULT MAY NOT PRIME THE IDEMPOTENCE CACHE. The short-circuit above says
+            // "this check EXECUTED over this workspace and failed, so re-running it cannot newly pass" —
+            // a claim about the subject. A check that could not be PERFORMED (nothing declared to look
+            // for, a path we could not read) established nothing of the sort, and caching it would freeze
+            // the leaf on a verdict our instrument never reached AND swallow the goal check below, which
+            // is the one thing that can still answer. `ok` stays false; only the memo is withheld.
+            if (staleness && !vr.ok && vr.inconclusive !== true) {
               lastFailDigest = staleness.checkDigest(check, curSnap)
               lastFailDetail = vr.detail
             }
@@ -2005,7 +2033,19 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         // file_exists) passing does NOT prove the step's GOAL is met — a write that never compiled/ran.
         // Ask the model to judge achievement against the workspace; if not achieved, demote to a verify
         // FAIL so the leaf keeps exploring (compile/run/verify). This kills the "false done".
-        if (vr.ok && deps.verifyGoal && (check.type === "artifact_present" || check.type === "file_exists")) {
+        //
+        // The same block is also the ONLY thing that can still certify a step whose `artifact_present`
+        // check had nothing to check (no `produces` declared — the verifier now refuses instead of
+        // rubber-stamping). That refusal is `inconclusive`: our instrument, not the step. The goal check
+        // reads the REAL workspace, so it can answer what the mechanical gate could not; if it says the
+        // goal is met the step commits, and with no goal checker configured the step simply stays
+        // uncertified rather than passing on nothing.
+        const vacuousArtifact = check.type === "artifact_present" && vr.inconclusive === true && !vr.ok
+        if (
+          (vr.ok || vacuousArtifact) &&
+          deps.verifyGoal &&
+          (check.type === "artifact_present" || check.type === "file_exists")
+        ) {
           const res = yield* runGoalCheck(goalOf(node.id), false) // R2: cached; NO evidence (per-step — see runGoalCheck)
           const marker = res.cached ? " (cached — state unchanged)" : ""
           if (!res.achieved) {
@@ -2021,8 +2061,12 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
             }
             // an evidence fault is a CHECKER fault, not a model-action rut — it must not accrue toward stuck.
             if (res.evidenceFault) noCountSig = true
-          } else if (res.cached) {
-            vr = { ok: true, detail: "goal achieved" + marker } // surface the cache hit (no LLM call spent)
+          } else if (res.cached || vacuousArtifact) {
+            // `vacuousArtifact` arrived here as a FAIL, so the achieved verdict has to promote it (a cache
+            // hit is surfaced the same way — no LLM call was spent). The detail is deliberately the goal
+            // check's verdict and not the mechanical gate's silence: what certified this step is the goal
+            // check, and the log should name the thing that actually did the certifying.
+            vr = { ok: true, detail: "goal achieved" + marker }
           }
         }
         // R4 forced-analyze: an "analyze" node's job is to PRODUCE diagnostics — a passing check that emitted

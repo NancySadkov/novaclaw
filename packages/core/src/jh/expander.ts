@@ -88,7 +88,7 @@ export function introspectPrompt(input: {
     '  - {"type":"run","command":"./t","expect":"999"}   → exit 0 (+ output contains expect, if given)',
     '  - {"type":"output_equals","command":"./pi","expected":"3.14"} → trimmed output equals expected',
     '  - {"type":"file_exists","path":"add.c"}',
-    '  - {"type":"artifact_present"}                      → the declared produces were written',
+    '  - {"type":"artifact_present"}                      → the declared produces were written (ONLY valid if you declare `produces`)',
     "",
     "Available tools (an atomic step calls exactly ONE):",
     toolTable,

@@ -19,7 +19,7 @@ const doVerify = (
     runner?: JhProcessRunner.Runner
     fileExists?: (p: string) => boolean
     filePresence?: (p: string) => Presence.Answer
-    producedPresent?: boolean
+    produced?: JhVerifier.Produced
     defaultTimeoutMs?: number
   } = {},
 ) =>
@@ -30,7 +30,7 @@ const doVerify = (
       runner: opts.runner ?? fake(rr()),
       fileExists: opts.fileExists ?? (() => false),
       ...(opts.filePresence === undefined ? {} : { filePresence: opts.filePresence }),
-      producedPresent: opts.producedPresent ?? false,
+      produced: opts.produced ?? "missing",
       defaultTimeoutMs: opts.defaultTimeoutMs,
     }),
   )
@@ -139,8 +139,22 @@ describe("JhVerifier.verify (fake runner)", () => {
   })
 
   test("artifact_present pass / fail via the flag", async () => {
-    expect((await doVerify({ type: "artifact_present" }, { producedPresent: true })).ok).toBe(true)
-    expect((await doVerify({ type: "artifact_present" }, { producedPresent: false })).ok).toBe(false)
+    expect((await doVerify({ type: "artifact_present" }, { produced: "present" })).ok).toBe(true)
+    expect((await doVerify({ type: "artifact_present" }, { produced: "missing" })).ok).toBe(false)
+  })
+
+  test("artifact_present over ZERO declared produces is REFUSED, never passed", async () => {
+    // The gate's contract is "every declared produce was committed with non-empty content"; over zero
+    // declarations that is vacuously satisfied, and a vacuous check is worse than no check because the
+    // step reports VERIFIED. Refused as unverifiable: `ok:false` (the gate may not certify what it could
+    // not check) + `inconclusive` (the fault is our instrument, not the step's work).
+    const res = await doVerify({ type: "artifact_present" }, { produced: "none_declared" })
+    expect(res.ok).toBe(false)
+    expect(res.inconclusive).toBe(true)
+    expect(res.detail).toContain("NOTHING to check")
+    // It must not assert a failure it never witnessed — the `file_exists` audit's rule, same gate.
+    for (const forbidden of ["missing or empty", "not found"])
+      expect({ forbidden, said: res.detail.includes(forbidden) }).toEqual({ forbidden, said: false })
   })
 
   test("timeout is classified, actionable (C9), and honors the caller's default", async () => {

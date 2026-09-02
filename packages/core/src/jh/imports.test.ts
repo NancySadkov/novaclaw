@@ -28,6 +28,11 @@ function violationFor(filename: string, spec: string): string | undefined {
   // precisely BECAUSE of this rule: `../shell` re-exports the same function but drags Flag/FSUtil/
   // ShellBundle/Global behind it, and jh must not reach those. Do NOT relax this to "../shell".
   if (spec === "../util/kill-tree") return undefined
+  // The workspace-render budget (2026-09-02) needs a token estimate to size the render against
+  // `limits.context`. `src/util/token.ts` imports NOTHING AT ALL — a pure estimator over a string —
+  // so it carries no session/tool/config/v1/llm/schema reach, which is what §0.7.2 actually guards.
+  // Same grounds as `../util/hash` and `../util/kill-tree` above.
+  if (spec === "../util/token") return undefined
   // logging 1b (2026-08-06): jh's ONE log call became a declared event, which needs the keyed
   // wrapper. Whitelisted on exactly the grounds this guard states for `../util/hash` and
   // `../util/kill-tree` — `@novaclaw/schema/log` imports `effect` and `./log-events`, and
