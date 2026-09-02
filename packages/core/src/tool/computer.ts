@@ -39,7 +39,7 @@ For tasks with no API and no text interface — a native app, a game, a site tha
 
 \`screenshot\` returns the captured image in its own result — look at it directly; do not call \`read\` on the path.
 
-On Windows, x/y use the vision model's 0–1000 logical grid from top-left to bottom-right, independent of window size (0–1 fractions are accepted too). X11 uses screenshot pixels. Screenshot first and read the target off it; never reuse a position from before an action, because what you clicked may have moved it.
+On Windows, x/y use the vision model's 0–1000 logical grid from top-left to bottom-right, independent of window size. X11 uses screenshot pixels. Screenshot first and read the target off it; never reuse a position from before an action, because what you clicked may have moved it.
 
 On an approved Windows application, \`copy_text\` atomically selects all, copies, and returns text from that exact foreground window. It never reads old clipboard contents. Use it for a long browser article after a screenshot proves the correct page is open.
 
@@ -804,7 +804,16 @@ export const layer = Layer.effectDiscard(
 
                 const built =
                   target.kind === "windows-window"
-                    ? WindowsComputer.build(action, target, windowsInspection!, windowsHelper!, screenshotPath)
+                    ? WindowsComputer.build(
+                        action,
+                        target,
+                        windowsInspection!,
+                        windowsHelper!,
+                        screenshotPath,
+                        // DECLARED, never inferred (`computer/coordinates.ts`). The tool's own
+                        // description tells the model this grid; the builder is told the same thing.
+                        "normalized-1000",
+                      )
                     : ComputerActions.build(action, {
                         display: target.display,
                         screenshotPath,

@@ -5,6 +5,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { createHash } from "node:crypto"
 import { tmpdir } from "node:os"
 import helperSource from "./windows-helper.ps1" with { type: "text" }
+import { ComputerCoordinates } from "./coordinates"
 import type { ComputerActions } from "./actions"
 import type { ComputerControlTarget } from "./control-target"
 
@@ -87,24 +88,60 @@ export type Built =
   | { readonly ok: true; readonly argv: ReadonlyArray<ReadonlyArray<string>>; readonly env: Readonly<Record<string, string>> }
   | { readonly ok: false; readonly reason: string }
 
+/** Say what went wrong in the caller's own vocabulary, so a refusal names the declared space. */
+const conversionReason = (
+  error: ComputerCoordinates.ConversionError,
+  space: ComputerCoordinates.Space,
+): string => {
+  switch (error.kind) {
+    case "not-finite":
+      return `${error.axis}=${error.value} is not a finite coordinate`
+    case "viewport-invalid":
+      return `the approved window reports no usable size (${error.viewport.width}x${error.viewport.height})`
+    case "out-of-range":
+      return (
+        `${error.axis}=${error.value} is outside the declared ${space} range 0..${error.max}` +
+        (error.alsoValidAs.length === 0 ? "" : ` — it would be in range as ${error.alsoValidAs.join(" or ")}`)
+      )
+  }
+}
+
+/**
+ * Lower one action to helper argv.
+ *
+ * 🔴 **`space` is DECLARED BY THE CALLER and is never inferred here.** `coordinates.ts` states the
+ * ban in red and gives the reason: the spaces overlap by construction, so inference can only be made
+ * *usually* correct, and its failure is a click that lands somewhere else with exit 0 and no log.
+ * This function used to hand-roll exactly that inference, and got the boundary wrong in the one
+ * direction nothing can detect: `Number.isInteger(1)` is true, so `x: 1` — the right edge, as a
+ * fraction — took the 0..1000 branch and became pixel 1, the LEFT edge.
+ *
+ * Out of range is a REFUSAL and nothing is clamped, for the same reason `toPixels` refuses: a clamped
+ * stray point is a silent misclick wearing a success, and the refusal carries `alsoValidAs`, which is
+ * what turns "the model cannot ground" into "the space is declared wrong".
+ */
 export const build = (
   action: ComputerActions.Action,
   target: ComputerControlTarget.WindowsWindow,
   inspection: Inspection,
   helperPath: string,
   screenshotPath: string,
+  space: ComputerCoordinates.Space,
 ): Built => {
   const command = (...args: string[]) => [...base(helperPath, action.kind), "-Handle", target.windowHandle, ...args]
-  const coordinate = (value: number, extent: number) => {
-    if (!Number.isInteger(value) && value > 0 && value <= 1)
-      return Math.min(extent - 1, Math.round(value * extent))
-    if (value >= 0 && value <= 1000) return Math.min(extent - 1, Math.round((value / 1000) * extent))
-    return value
+  const viewport = { width: inspection.width, height: inspection.height }
+  type Located = { readonly ok: true; readonly args: string[] } | { readonly ok: false; readonly reason: string }
+  const point = (value: ComputerActions.Point | undefined): Located => {
+    if (value === undefined) return { ok: true, args: [] }
+    const converted = ComputerCoordinates.toPixels(value, space, viewport)
+    if (!converted.ok) return { ok: false, reason: conversionReason(converted.error, space) }
+    // ⚠️ **Nothing is clamped on the way out, deliberately** (G8). The predecessor pinned every
+    // coordinate to `extent - 1`, which is why the top of a normalized range silently became the last
+    // pixel instead of saying anything. The helper's own `Move` refuses a point outside the approved
+    // window, so the residual — the exact top of a normalized range mapping one past the last pixel —
+    // is a LOUD refusal naming the window, not a click on whatever is next door.
+    return { ok: true, args: ["-X", String(converted.point.x), "-Y", String(converted.point.y)] }
   }
-  const point = (value: ComputerActions.Point | undefined): string[] =>
-    value === undefined
-      ? []
-      : ["-X", String(coordinate(value.x, inspection.width)), "-Y", String(coordinate(value.y, inspection.height))]
 
   switch (action.kind) {
     case "screenshot":
@@ -121,17 +158,24 @@ export const build = (
           ),
         ],
       }
-    case "move":
-      return { ok: true, env: {}, argv: [command(...point(action.point))] }
+    case "move": {
+      const located = point(action.point)
+      if (!located.ok) return { ok: false, reason: located.reason }
+      return { ok: true, env: {}, argv: [command(...located.args)] }
+    }
     case "click": {
+      const located = point(action.point)
+      if (!located.ok) return { ok: false, reason: located.reason }
       const argv: string[][] = []
-      if (action.point) argv.push([...base(helperPath, "move"), "-Handle", target.windowHandle, ...point(action.point)])
+      if (action.point) argv.push([...base(helperPath, "move"), "-Handle", target.windowHandle, ...located.args])
       argv.push(command("-Button", action.button))
       return { ok: true, env: {}, argv }
     }
     case "double_click": {
+      const located = point(action.point)
+      if (!located.ok) return { ok: false, reason: located.reason }
       const argv: string[][] = []
-      if (action.point) argv.push([...base(helperPath, "move"), "-Handle", target.windowHandle, ...point(action.point)])
+      if (action.point) argv.push([...base(helperPath, "move"), "-Handle", target.windowHandle, ...located.args])
       argv.push(command())
       return { ok: true, env: {}, argv }
     }

@@ -64,7 +64,7 @@ describe("native Windows computer actions", () => {
 
   test("hostile typed text is base64 data and never PowerShell syntax", () => {
     const text = '"; Remove-Item -Recurse C:\\\\ #'
-    const built = WindowsComputer.build({ kind: "type", text }, target, inspection, "helper.ps1", "shot.png")
+    const built = WindowsComputer.build({ kind: "type", text }, target, inspection, "helper.ps1", "shot.png", "normalized-1000")
     expect(built.ok).toBe(true)
     if (!built.ok) return
     const argv = built.argv[0]!
@@ -79,6 +79,7 @@ describe("native Windows computer actions", () => {
       inspection,
       "helper.ps1",
       "shot.png",
+      "normalized-1000",
     )
     expect(built.ok).toBe(true)
     if (!built.ok) return
@@ -89,13 +90,17 @@ describe("native Windows computer actions", () => {
     expect(built.argv[1]).toContain(target.windowHandle)
   })
 
-  test("normalizes unambiguous fractional coordinates against the approved window", () => {
+  test("a fraction is converted when the caller DECLARES a fractional space", () => {
+    // ⚠️ It used to be INFERRED from the value, which is what made `x: 1` mean 1/1000 of the window
+    // instead of its right edge. The space is the caller's to state; the same 0.15 under a declared
+    // `normalized-1000` is now refused by name rather than silently re-read.
     const built = WindowsComputer.build(
       { kind: "move", point: { x: 0.15, y: 0.55 } },
       target,
       inspection,
       "helper.ps1",
       "shot.png",
+      "normalized-1",
     )
     expect(built.ok).toBe(true)
     if (!built.ok) return
@@ -109,6 +114,7 @@ describe("native Windows computer actions", () => {
       inspection,
       "helper.ps1",
       "shot.png",
+      "normalized-1000",
     )
     expect(built.ok).toBe(true)
     if (!built.ok) return
@@ -154,6 +160,6 @@ describe("native Windows computer actions", () => {
       { kind: "cursor" },
     ]
     for (const action of actions)
-      expect(WindowsComputer.build(action, target, inspection, "helper.ps1", "shot.png").ok).toBe(true)
+      expect(WindowsComputer.build(action, target, inspection, "helper.ps1", "shot.png", "normalized-1000").ok).toBe(true)
   })
 })

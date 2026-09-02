@@ -365,7 +365,15 @@ export interface State {
   readonly ledger: ComputerLedger.Ledger
   /** Index of the next unsatisfied checkpoint. `=== checkpoints.length` means the terminal one passed. */
   readonly checkpointIndex: number
-  /** The newest frame, and ONLY the newest frame (G11). */
+  /**
+   * The newest frame, and ONLY the newest frame (G11).
+   *
+   * ⚠️ **A CROP IS NOT A FRAME.** The only other image the loop handles is C3's pre-action watch
+   * capture, which is a region a few percent of the screen. It is a witness for one closed question
+   * and is passed straight to that question's prompt; assigning it here silently redefines "the
+   * screen" for every later reader of this field — the planner's repair and the checkpoint
+   * adjudicator's fallback both take their image from it.
+   */
   readonly image?: ComputerPrompt.Image
   readonly pending?: Pending
   /** The planner's accepted pointer proposal while the blind grounder supplies only its point. */
@@ -1268,7 +1276,15 @@ export function next(state: State, event: Event): Transition {
         return blocked(state, "capture-failed", "the pre-action capture produced no image for the grounded critic")
       if (state.preactionTarget === undefined || state.preparedAction === undefined || state.pending === undefined)
         return voided(state, "protocol", "the pre-action capture arrived without a parked pointer action")
-      const checking: State = { ...state, phase: "preaction-critique", image: event.image }
+      // 🔴 The pre-action capture is a WATCH CROP — `watchAround` sizes it at ~6% of each axis — so
+      // it is NOT a frame, and it must never reach `State.image`, whose contract one field over is
+      // "the newest frame, and ONLY the newest frame (G11)". It goes to the critic, which is asked a
+      // closed question about exactly that patch, and nowhere else. Writing it to `State.image`
+      // showed the PLANNER the patch under the instruction "Re-ground from this screen" — a
+      // re-grounding request against 6% of the screen, which it can only answer by re-emitting or
+      // abstaining — and left the checkpoint ADJUDICATOR reading the same patch on the acting path,
+      // where `image: event.image ?? state.image` falls back whenever the after-frame capture fails.
+      const checking: State = { ...state, phase: "preaction-critique" }
       return ask(
         checking,
         ComputerPrompt.preActionCritic({
