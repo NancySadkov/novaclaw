@@ -590,7 +590,7 @@ export const make = (
         )
       const selfName = str((meResponse.body as Record<string, unknown> | undefined)?.["name"]) ?? config.username
 
-      const queue = yield* Queue.unbounded<InboundEvent>()
+      const queue = yield* Queue.unbounded<InboundEvent, ConnectError>()
       let cursors = readCursor(yield* ctx.cursor.get().pipe(Effect.orElseSucceed(() => undefined)))
 
       const children = (body: unknown): Thing[] => {
@@ -706,7 +706,17 @@ export const make = (
           yield* Effect.sleep(Duration.millis(pollIntervalMs))
         }
       })
-      yield* Effect.forkScoped(pump.pipe(Effect.catchCause(() => Queue.shutdown(queue))))
+      // ⚠️ A pump failure must reach the STREAM, not vanish. `Queue.shutdown` transitions the queue
+      // to Done with an INTERRUPT cause, and an interrupt is off the error channel — so the
+      // gateway's consumer is interrupted rather than failed, the reconnect loop's catch never
+      // sees it, and the account sits at `connected` with a dead fiber behind it. Fail first, then
+      // shut down for a defect that carries no error.
+      yield* Effect.forkScoped(
+        pump.pipe(
+          Effect.catch((error) => Queue.fail(queue, error)),
+          Effect.catchCause(() => Queue.shutdown(queue)),
+        ),
+      )
 
       const send = (chatID: string, message: OutboundMessage) =>
         Effect.gen(function* () {

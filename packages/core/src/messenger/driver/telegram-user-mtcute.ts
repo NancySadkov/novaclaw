@@ -136,6 +136,66 @@ const toUserMessage = (message: MtcuteMessage): UserMessage => {
   }
 }
 
+/**
+ * The push→pull inbox behind `UserClient.pull()`: mtcute pushes messages at us, the driver's pump
+ * pulls batches. It buffers, and it HOLDS when empty (the driver's scoped pump interrupt is what
+ * ends the wait — the same semantics as the bot driver's long-poll).
+ *
+ * 🔴 **`fail` is the half that was missing, and its absence made a dead account look healthy.**
+ * `pull()` used to settle only when a message arrived, and the updates loop that feeds it discarded
+ * its own rejection (`startUpdatesLoop().catch(() => undefined)`). A loop death past mtcute's
+ * internal recovery therefore left the driver's pump awaiting a promise nothing could ever settle:
+ * `attempt` never returned, the reconnect ladder was never reached, and the account sat at
+ * `connected` — sending fine, receiving nothing, forever. Outbound still working is what makes this
+ * the worst shape to diagnose: it reads as "the agent is ignoring me", not as a broken connection.
+ *
+ * A subsystem that cannot do its job has to SAY SO. `fail` classifies the loop's error and settles
+ * both the waiting `pull()` and every later one, which fails the driver's pump, ends the inbound
+ * stream, and hands the account to the gateway's ladder: a transient death reconnects, and a revoked
+ * session parks at the reconnect's `me()` gate — the challenge door this driver already obeys.
+ *
+ * Lives here, exported and free of mtcute types, so the fault can be exercised without a provider.
+ */
+export const messageInbox = () => {
+  let buffer: UserMessage[] = []
+  let waiter: { resolve: (batch: readonly UserMessage[]) => void; reject: (error: unknown) => void } | undefined
+  let dead: UserClientError | undefined
+  return {
+    push: (message: UserMessage): void => {
+      buffer.push(message)
+      if (waiter === undefined) return
+      const { resolve } = waiter
+      waiter = undefined
+      const batch = buffer
+      buffer = []
+      resolve(batch)
+    },
+    /** The updates loop died. Idempotent — the FIRST cause is the one reported. */
+    fail: (error: unknown): void => {
+      dead ??= classify(error)
+      const pending = waiter
+      waiter = undefined
+      pending?.reject(dead)
+    },
+    pull: (): Promise<readonly UserMessage[]> =>
+      new Promise((resolve, reject) => {
+        // Buffered messages first even when the loop is dead: what already arrived is real, and the
+        // next pull reports the death. Losing them would trade one silent fault for another.
+        if (buffer.length > 0) {
+          const batch = buffer
+          buffer = []
+          resolve(batch)
+          return
+        }
+        if (dead !== undefined) {
+          reject(dead)
+          return
+        }
+        waiter = { resolve, reject }
+      }),
+  }
+}
+
 /** The production factory the driver registry injects. */
 export const factory: UserClientFactory = async (config: UserClientConfig): Promise<UserClient> => {
   const mtcute = await load()
@@ -168,21 +228,9 @@ export const factory: UserClientFactory = async (config: UserClientConfig): Prom
   }
 
   let selfID: string | undefined
-  // pull(): buffer + waiter over mtcute's push emitter — holds when empty (the driver's scoped
-  // pump interrupt is what ends the wait; mirrors the bot driver's long-poll hold semantics).
-  let buffer: UserMessage[] = []
-  let waiter: ((batch: readonly UserMessage[]) => void) | undefined
   let listening = false
-  client.onNewMessage.add((message) => {
-    buffer.push(toUserMessage(message))
-    if (waiter !== undefined) {
-      const resolve = waiter
-      waiter = undefined
-      const batch = buffer
-      buffer = []
-      resolve(batch)
-    }
-  })
+  const inbox = messageInbox()
+  client.onNewMessage.add((message) => inbox.push(toUserMessage(message)))
 
   return {
     me: () =>
@@ -191,7 +239,9 @@ export const factory: UserClientFactory = async (config: UserClientConfig): Prom
         selfID = String(user.id)
         if (!listening) {
           listening = true
-          client.startUpdatesLoop().catch(() => undefined)
+          // Only a REJECTION is death. mtcute resolves this promise once the loop is running, so
+          // treating resolution as death would park every healthy account the instant it connected.
+          client.startUpdatesLoop().catch(inbox.fail)
         }
         return { id: selfID, name: user.displayName }
       }),
@@ -212,16 +262,7 @@ export const factory: UserClientFactory = async (config: UserClientConfig): Prom
         await client.checkPassword(password)
       }),
     exportSession: () => wrap(() => client.exportSession()),
-    pull: () =>
-      new Promise((resolve) => {
-        if (buffer.length > 0) {
-          const batch = buffer
-          buffer = []
-          resolve(batch)
-          return
-        }
-        waiter = resolve
-      }),
+    pull: inbox.pull,
     dialogs: (limit) =>
       wrap(async () => {
         const out: ChatSnapshot[] = []

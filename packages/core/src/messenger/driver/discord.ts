@@ -321,7 +321,7 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
           return meta
         })
 
-      const queue = yield* Queue.unbounded<InboundEvent>()
+      const queue = yield* Queue.unbounded<InboundEvent, ConnectError>()
       const rawCursor = yield* ctx.cursor.get().pipe(Effect.orElseSucceed(() => undefined))
       const stored = readCursor(rawCursor)
       // Per-channel catch-up anchors survive an invalid-session wipe (see readAnchors) — they are
@@ -506,7 +506,17 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
           }
         }
       })
-      yield* Effect.forkScoped(pump.pipe(Effect.catchCause(() => Queue.shutdown(queue))))
+      // ⚠️ A pump failure must reach the STREAM, not vanish. `Queue.shutdown` transitions the queue
+      // to Done with an INTERRUPT cause, and an interrupt is off the error channel — so the
+      // gateway's consumer is interrupted rather than failed, the reconnect loop's catch never
+      // sees it, and the account sits at `connected` with a dead fiber behind it. Fail first, then
+      // shut down for a defect that carries no error.
+      yield* Effect.forkScoped(
+        pump.pipe(
+          Effect.catch((error) => Queue.fail(queue, error)),
+          Effect.catchCause(() => Queue.shutdown(queue)),
+        ),
+      )
 
       const send = (chatID: string, message: { text?: string; file?: OutboundFile; replyTo?: string }) =>
         Effect.gen(function* () {

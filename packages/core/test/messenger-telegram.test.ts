@@ -210,4 +210,40 @@ describe("TelegramDriver", () => {
       )
     }),
   )
+
+  /**
+   * 🔴 **A poll loop that dies must FAIL the inbound stream, not quietly close the queue.**
+   * `Connection.inbound`'s contract is that the stream failing sends the gateway to backoff +
+   * reconnect. Shutting the queue down instead INTERRUPTS the gateway's consumer, and an interrupt
+   * travels off the error channel, past the reconnect ladder's catch, killing the connection fiber —
+   * so the account stays pinned at `connected` with nothing behind it: no backoff, no reconnect, no
+   * banner, and no inbound ever again. The `getUpdates refused` branch (a token revoked mid-run,
+   * another instance stealing the long-poll) is the one that gets here, and it is the one a person
+   * most needs told.
+   *
+   * A/B control: put the loop's fork back to `Effect.catchCause(() => Queue.shutdown(queue))` and
+   * this fails — the stream ends with no error, so the assertion has nothing to read.
+   */
+  it.live("a REFUSED getUpdates fails the inbound stream with its reason, rather than ending silently", () =>
+    Effect.gen(function* () {
+      const fetchImpl: FetchLike = async (url) => {
+        const method = url.split("/").pop() ?? ""
+        if (method === "getMe") return Response.json({ ok: true, result: { id: 999, is_bot: true } })
+        if (method === "getUpdates") return Response.json({ ok: false, description: "Unauthorized" })
+        return Response.json({ ok: true, result: true })
+      }
+      const error = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const connection = yield* TelegramDriver.make(fetchImpl).connect({
+            account: { id: "msa_x", driverID: "telegram", label: "t", enabled: true, settings: {} } as never,
+            secret: "TOKEN",
+            cursor: { get: () => Effect.succeed(undefined), set: () => Effect.void },
+          })
+          // `Effect.flip`, so a stream that merely ENDS fails this test instead of passing it.
+          return yield* Effect.flip(connection.inbound.pipe(Stream.runForEach(() => Effect.void)))
+        }),
+      )
+      expect(error.reason).toContain("Unauthorized")
+    }),
+  )
 })

@@ -3,8 +3,17 @@ export * as TelegramDriver from "./telegram"
 import { Effect, Queue, Schema, Stream } from "effect"
 import { Messenger } from "@novaclaw/schema/messenger"
 import { MessengerFormat } from "../format"
-import type { ChatSnapshot, Connection, ConnectContext, Driver, FileRef, InboundEvent, OutboundFile } from "../driver"
-import { ConnectError, FileError, SendError } from "../driver"
+import type {
+  ChatSnapshot,
+  Connection,
+  ConnectContext,
+  Driver,
+  FileRef,
+  InboundEvent,
+  ModerationAct,
+  OutboundFile,
+} from "../driver"
+import { ConnectError, FileError, ModerationError, SendError } from "../driver"
 
 // The Telegram BOT-API driver (messenger-plan §2.1): raw HTTPS/JSON, zero dependencies — the
 // fakeable Telegram protocol that proves the whole gateway pipeline + the `key` auth path.
@@ -22,9 +31,27 @@ const CAPS: Messenger.Capabilities = {
   files: { up: true, down: true, maxBytes: 20_000_000 },
   edits: true,
   threads: false,
+  // Each of these five is a promise the layer above plans against, and each is kept by `moderate`
+  // in the returned Connection. `approve`/`lock` are absent because this driver does not do them —
+  // a flag may only ever say what the code does.
   moderation: { delete: true, ban: true, kick: true, mute: true, pin: true },
   format: "html", // we send HTML (escape-first is injection-safe); markdown downgrades to it.
   maxChars: 4096,
+}
+
+/** A muted member's ChatPermissions: every way of putting content in the chat, off. Telegram treats
+ *  an omitted field as `false`, but naming them keeps the intent readable at the call site. */
+const MUTED_PERMISSIONS = {
+  can_send_messages: false,
+  can_send_audios: false,
+  can_send_documents: false,
+  can_send_photos: false,
+  can_send_videos: false,
+  can_send_video_notes: false,
+  can_send_voice_notes: false,
+  can_send_polls: false,
+  can_send_other_messages: false,
+  can_add_web_page_previews: false,
 }
 
 /** The subset of the Bot API we decode. Telegram sends much more; unknown fields are ignored. */
@@ -79,7 +106,11 @@ const MessageResponse = TgResponse(TgMessage)
 const GetMeResponse = TgResponse(TgUser)
 const FileResponse = TgResponse(TgFile)
 
+/** Every Bot API method answers the same envelope; the moderation methods return only `ok`. */
+const AckResponse = Schema.Struct({ ok: Schema.Boolean, description: Schema.optional(Schema.String) })
+
 const decodeUpdates = Schema.decodeUnknownOption(UpdatesResponse)
+const decodeAck = Schema.decodeUnknownOption(AckResponse)
 const decodeMessage = Schema.decodeUnknownOption(MessageResponse)
 const decodeGetMe = Schema.decodeUnknownOption(GetMeResponse)
 const decodeFile = Schema.decodeUnknownOption(FileResponse)
@@ -258,7 +289,7 @@ export const make = (fetchImpl: FetchLike): Driver => ({
 
       // The long-poll loop: getUpdates(offset) → emit → advance the durable offset. The stream is
       // scoped; closing it ends the loop. Failures propagate to the gateway's backoff.
-      const queue = yield* Queue.unbounded<InboundEvent>()
+      const queue = yield* Queue.unbounded<InboundEvent, ConnectError>()
       const stored = yield* ctx.cursor.get().pipe(Effect.orElseSucceed(() => undefined))
       let offset = typeof stored === "number" ? stored : 0
 
@@ -297,7 +328,26 @@ export const make = (fetchImpl: FetchLike): Driver => ({
         }
       })
 
-      yield* Effect.forkScoped(pump.pipe(Effect.catchCause(() => Queue.shutdown(queue))))
+      /**
+       * 🔴 **The poll loop's death has to reach the STREAM, and `Queue.shutdown` does not carry it.**
+       * `shutdown` interrupts the queue, so the gateway's consumer is INTERRUPTED rather than failed
+       * — and an interrupt is not on the error channel, so the reconnect ladder's catch never sees
+       * it and the whole connection fiber dies. The account is then pinned at `connected` with
+       * nothing behind it: no backoff, no reconnect, no banner. The one case that gets here is the
+       * `getUpdates refused` branch above (a token revoked mid-run, or another instance stealing the
+       * long-poll), and it is exactly the case that must be visible.
+       *
+       * `Queue.fail` puts the reason on the stream, which is what `Connection.inbound` promises: the
+       * stream failing sends the gateway to backoff + reconnect, where the `getMe` gate reports the
+       * legible cause. `catchCause` still covers a DEFECT — not a reason anyone can act on, and not
+       * something to dress up as one.
+       */
+      yield* Effect.forkScoped(
+        pump.pipe(
+          Effect.catch((error) => Queue.fail(queue, error)),
+          Effect.catchCause(() => Queue.shutdown(queue)),
+        ),
+      )
 
       // getFile → file_path → the file endpoint (a separate URL space from method calls).
       const downloadFile = (ref: FileRef) =>
@@ -325,10 +375,111 @@ export const make = (fetchImpl: FetchLike): Driver => ({
           })
         })
 
+      // Moderation over the Bot API. The bot needs the matching admin right in the chat; Telegram's
+      // refusal comes back legible rather than as a crash.
+      //
+      // 🔴 **A capability flag is a PROMISE, and this one had nothing behind it.** `CAPS.moderation`
+      // declared all five acts while the returned `Connection` carried no `moderate` at all, so the
+      // gateway answered the model *"this messenger has no moderation controls"* — a claim about
+      // TELEGRAM invented from a gap in OUR driver, and one an agent moderating a supergroup can
+      // never retry its way out of. The manifest is the only advance description the layer above
+      // gets; it may only say what the code does. Every act below therefore either performs the
+      // platform call or REFUSES with the reason, and no act silently does something adjacent.
+      const moderate = (chatID: string, act: ModerationAct) =>
+        Effect.gen(function* () {
+          const chat_id = Number(chatID)
+          const nowSeconds = Math.floor(Date.now() / 1000)
+          const ack = (method: string, body: Record<string, unknown>) =>
+            call(method, body).pipe(
+              Effect.mapError((error) => new ModerationError({ reason: error.reason })),
+              Effect.flatMap((raw) => {
+                const decoded = decodeAck(raw)
+                if (decoded._tag === "Some" && decoded.value.ok === false)
+                  return Effect.fail(
+                    new ModerationError({
+                      reason:
+                        `Telegram refused ${method}` +
+                        (decoded.value.description === undefined ? "" : `: ${decoded.value.description}`),
+                    }),
+                  )
+                return Effect.void
+              }),
+            )
+          switch (act.act) {
+            case "delete":
+              return yield* ack("deleteMessage", { chat_id, message_id: Number(act.messageID) })
+            case "pin":
+              return yield* ack("pinChatMessage", { chat_id, message_id: Number(act.messageID) })
+            case "ban": {
+              // `purgeSeconds` asks for the member's posts from the last N seconds. Telegram's only
+              // purge is `revoke_messages`, which deletes EVERYTHING that member ever wrote in the
+              // chat — strictly more than the caller asked for. The contract's rule for a modifier a
+              // platform cannot honour is to refuse, not to do the adjacent thing quietly.
+              if (act.purgeSeconds !== undefined)
+                return yield* Effect.fail(
+                  new ModerationError({
+                    reason:
+                      "Telegram can only delete ALL of a member's messages in a chat, never just the recent ones — ban without the purge and delete the offending messages individually.",
+                  }),
+                )
+              // A temporary ban is `until_date`. Telegram silently makes a ban PERMANENT when the
+              // date is under 30 seconds or over 366 days away, so a duration outside that window
+              // would turn "banned for two years" into "banned forever" with no error anywhere.
+              const days = act.durationDays
+              if (days !== undefined && (days < 1 || days > 366))
+                return yield* Effect.fail(
+                  new ModerationError({
+                    reason: `Telegram's timed bans run from 1 to 366 days (asked for ${days}) — outside that range Telegram makes the ban permanent instead. Pick a duration in range, or ban permanently.`,
+                  }),
+                )
+              return yield* ack("banChatMember", {
+                chat_id,
+                user_id: Number(act.userID),
+                ...(days === undefined ? {} : { until_date: nowSeconds + days * 86_400 }),
+              })
+            }
+            case "kick":
+              // Telegram has no kick verb: a ban lifted immediately removes the member and lets them
+              // rejoin, which is what "kick" means on every platform that has the word.
+              yield* ack("banChatMember", { chat_id, user_id: Number(act.userID) })
+              return yield* ack("unbanChatMember", { chat_id, user_id: Number(act.userID), only_if_banned: true })
+            case "mute": {
+              // `restrictChatMember` with every send permission off. The same 30s/366d rule as a ban
+              // applies to `until_date`, and here the accident is worse (a 10-second mute becoming
+              // permanent), so the floor is clamped up rather than refused.
+              const seconds = Math.max(31, Math.min(act.seconds ?? 600, 366 * 86_400))
+              return yield* ack("restrictChatMember", {
+                chat_id,
+                user_id: Number(act.userID),
+                until_date: nowSeconds + seconds,
+                permissions: MUTED_PERMISSIONS,
+              })
+            }
+            case "approve":
+              return yield* Effect.fail(
+                new ModerationError({
+                  reason: "Telegram has no approval queue — a message is live from the moment it is sent.",
+                }),
+              )
+            case "lock":
+              // Telegram CAN close a group (setChatPermissions), but that rewrites the group's
+              // default permissions for every member — a group-settings change, not a per-chat
+              // moderation act — so this driver does not offer it and `CAPS.moderation.lock` is
+              // absent. The refusal names OUR gap, never a platform limit Telegram does not have.
+              return yield* Effect.fail(
+                new ModerationError({
+                  reason:
+                    "This driver doesn't lock Telegram chats: closing a group rewrites its default permissions for every member, which is a group setting rather than a moderation act. Change it in Telegram itself.",
+                }),
+              )
+          }
+        })
+
       return {
         inbound: Stream.fromQueue(queue),
         send,
         downloadFile,
+        moderate,
       } satisfies Connection
     }),
 })

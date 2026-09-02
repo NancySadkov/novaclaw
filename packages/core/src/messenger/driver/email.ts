@@ -399,7 +399,7 @@ export const makeConnect =
 
       // Reply state per thread, rebuilt from inbound so send() can address the right person.
       const threads = new Map<string, ThreadState>()
-      const queue = yield* Queue.unbounded<InboundEvent>()
+      const queue = yield* Queue.unbounded<InboundEvent, ConnectError>()
 
       // Durable cursor: {uidValidity, uid}. A UIDVALIDITY change means the mailbox was rebuilt — the
       // old UIDs are meaningless, so reset to 0 and re-fetch (never silently drop) (edge #10).
@@ -443,7 +443,17 @@ export const makeConnect =
           yield* Effect.sleep(`${pollIntervalMs} millis`)
         }
       })
-      yield* Effect.forkScoped(pump.pipe(Effect.catchCause(() => Queue.shutdown(queue))))
+      // ⚠️ A pump failure must reach the STREAM, not vanish. `Queue.shutdown` transitions the queue
+      // to Done with an INTERRUPT cause, and an interrupt is off the error channel — so the
+      // gateway's consumer is interrupted rather than failed, the reconnect loop's catch never
+      // sees it, and the account sits at `connected` with a dead fiber behind it. Fail first, then
+      // shut down for a defect that carries no error.
+      yield* Effect.forkScoped(
+        pump.pipe(
+          Effect.catch((error) => Queue.fail(queue, error)),
+          Effect.catchCause(() => Queue.shutdown(queue)),
+        ),
+      )
 
       let sentSeq = 0
       const send = (chatID: string, message: { text?: string }) =>

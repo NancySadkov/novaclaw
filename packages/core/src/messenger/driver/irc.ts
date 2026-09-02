@@ -283,7 +283,7 @@ export const make = (factory: IrcSocketFactory): Driver => ({
       const user = nick.replaceAll(/[^A-Za-z0-9]/g, "").slice(0, 10) || "novaclaw"
       yield* sendCommand("USER", [user, "0", "*"], "NovaClaw")
 
-      const queue = yield* Queue.unbounded<InboundEvent>()
+      const queue = yield* Queue.unbounded<InboundEvent, ConnectError>()
       // The same-millisecond de-collider for `messageIDOf`'s derived arm (its doc comment carries
       // the why). Two byte-identical messages from one sender inside one millisecond derive one
       // id, and the gateway's ledger would read the second as a replay and drop it — a silent
@@ -351,7 +351,17 @@ export const make = (factory: IrcSocketFactory): Driver => ({
           }
         }
       })
-      yield* Effect.forkScoped(pump.pipe(Effect.catchCause(() => Queue.shutdown(queue))))
+      // ⚠️ A pump failure must reach the STREAM, not vanish. `Queue.shutdown` transitions the queue
+      // to Done with an INTERRUPT cause, and an interrupt is off the error channel — so the
+      // gateway's consumer is interrupted rather than failed, the reconnect loop's catch never
+      // sees it, and the account sits at `connected` with a dead fiber behind it. Fail first, then
+      // shut down for a defect that carries no error.
+      yield* Effect.forkScoped(
+        pump.pipe(
+          Effect.catch((error) => Queue.fail(queue, error)),
+          Effect.catchCause(() => Queue.shutdown(queue)),
+        ),
+      )
 
       // The outbound receipt id. IRC issues none for our own sends either, so it is synthesized —
       // but it carries the connection's epoch for the same reason the inbound id is derived: a

@@ -34,7 +34,17 @@ const CAPS: Messenger.Capabilities = {
   files: { up: true, down: true, maxBytes: 2_000_000_000 },
   edits: true,
   threads: false,
-  moderation: { delete: true, ban: true, kick: true, mute: true, pin: true },
+  // 🔴 **This said all five were `true` while the returned `Connection` has no `moderate` at all.**
+  // A capability flag is a promise the layer above plans against: an agent read `ban: true`, called
+  // the tool's `moderate` op, and got back *"this messenger has no moderation controls"* — a claim
+  // about TELEGRAM invented from a gap in OUR driver, unretryable and undiagnosable from the model's
+  // side. The honest value is the one the code can keep, so it is `false` until moderation is
+  // IMPLEMENTED here — and then raised in the same change. Two reasons it is not implemented now:
+  // the `UserClient` seam has no moderation surface (every act would be new unproven adapter code),
+  // and this is a real person's own account, where issuing privileged writes AS the human is the
+  // riskiest thing this driver could do — see the traffic-rules note at the top of this file. The
+  // Bot-account driver (`telegram.ts`) is the moderation path, and it implements what it declares.
+  moderation: { delete: false, ban: false, kick: false, mute: false, pin: false },
   // We send PLAIN text: a human typing doesn't emit markup, and plain can't inject entities.
   format: "plain",
   maxChars: 4096,
@@ -314,7 +324,7 @@ export const make = (factory: UserClientFactory): Driver => {
         const me = yield* tryClient(() => client.me())
         const sent = sentTracker(512)
 
-        const queue = yield* Queue.unbounded<InboundEvent>()
+        const queue = yield* Queue.unbounded<InboundEvent, ConnectError>()
         const pump = Effect.gen(function* () {
           while (true) {
             const batch = yield* tryClient(() => client.pull())
@@ -349,7 +359,33 @@ export const make = (factory: UserClientFactory): Driver => {
             }
           }
         })
-        yield* Effect.forkScoped(pump.pipe(Effect.catchCause(() => Queue.shutdown(queue))))
+        /**
+         * 🔴 **A pump failure has to FAIL THE STREAM, and `Queue.shutdown` is not that.** `shutdown`
+         * interrupts the queue, so the gateway's `consume` ends up interrupted rather than failed —
+         * and an interrupt is not on the error channel, so `connectionLoop`'s catch never sees it
+         * and the whole reconnect fiber dies. The account is then pinned at `connected` with nothing
+         * behind it: no backoff, no reconnect, no banner, forever. That is the second half of the
+         * silent-deafness fault, and it survives every fix made at the adapter — the pump can learn
+         * to fail all it likes if the failure is thrown away one line later.
+         *
+         * `Queue.fail` puts the reason ON the stream, which is what `Connection.inbound` promises
+         * ("the stream failing sends the gateway to backoff + reconnect"). A challenge met here is
+         * carried as its reason: `inbound` is typed `ConnectError`, and the reconnect's `me()` is
+         * the challenge door for this driver — it parks the account one ladder step later, with the
+         * provider's own words. `catchCause` still covers a DEFECT, which is not a reason anyone can
+         * act on and must not be dressed up as one.
+         */
+        yield* Effect.forkScoped(
+          pump.pipe(
+            Effect.catch((error) =>
+              Queue.fail(
+                queue,
+                error._tag === "MessengerDriver.ChallengeError" ? new ConnectError({ reason: error.message }) : error,
+              ),
+            ),
+            Effect.catchCause(() => Queue.shutdown(queue)),
+          ),
+        )
 
         const mapSendError = (error: unknown) => {
           // 🔴 NC-REL-036: a challenge stays a CHALLENGE. This collapsed every `UserClientError` into

@@ -308,7 +308,7 @@ export const make = (factory: WAClientFactory): Driver => {
         const me = yield* tryClient(() => client.me())
         const sent = sentTracker(512)
 
-        const queue = yield* Queue.unbounded<InboundEvent>()
+        const queue = yield* Queue.unbounded<InboundEvent, ConnectError>()
         const pump = Effect.gen(function* () {
           while (true) {
             const batch = yield* tryClient(() => client.pull())
@@ -345,7 +345,24 @@ export const make = (factory: WAClientFactory): Driver => {
             }
           }
         })
-        yield* Effect.forkScoped(pump.pipe(Effect.catchCause(() => Queue.shutdown(queue))))
+        // ⚠️ A pump failure must reach the STREAM, not vanish. `Queue.shutdown` transitions the queue
+        // to Done with an INTERRUPT cause, and an interrupt is off the error channel — so the
+        // gateway's consumer is interrupted rather than failed, the reconnect loop's catch never
+        // sees it, and the account sits at `connected` with a dead fiber behind it. Fail first, then
+        // shut down for a defect that carries no error.
+        yield* Effect.forkScoped(
+          pump.pipe(
+            Effect.catch((error) =>
+              Queue.fail(
+                queue,
+                error._tag === "MessengerDriver.ChallengeError"
+                  ? new ConnectError({ reason: error.message })
+                  : error,
+              ),
+            ),
+            Effect.catchCause(() => Queue.shutdown(queue)),
+          ),
+        )
 
         // A challenge stays a CHALLENGE, exactly as `mapClientError` above has always treated it.
         // This collapsed `logged-out` (and `challenge`) into a non-retryable `SendError`, so an
