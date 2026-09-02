@@ -1,7 +1,7 @@
 export * as StrictDrain from "./strict-drain"
 
 import { LLM, LLMEvent, Message, SystemPart, type LLMClientShape } from "@novaclaw/llm"
-import { Cause, DateTime, Duration, Effect, Fiber, Stream } from "effect"
+import { Cause, DateTime, Deferred, Duration, Effect, Fiber, Stream } from "effect"
 import fs from "node:fs"
 import { Log } from "@novaclaw/schema/log"
 import { Database } from "../../database/database"
@@ -55,11 +55,69 @@ export interface Dependencies {
 }
 
 /**
+ * The scheduler identity of ONE generation.
+ *
+ * ⚠️ The scheduler keys a slot by `slot.sessionID` and `admit` is idempotent per that id, so N
+ * concurrent generations sharing one id are counted as **1**: `device.concurrency` is enforced
+ * against one participant, and the FIRST of them to settle releases the slot for all of them —
+ * admitting a waiting turn while N−1 generations are still on the wire. Anything that fans out
+ * completions (best-of-N racing) therefore gives each fan-out branch its own slot identity, the
+ * same rule `SessionScheduler.admitMaintenance` states for overlapping maintenance work.
+ *
+ * This is NOT a decision to serialize: a device is not single-threaded (AGENTS.md, Devices) and the
+ * cap is a policy we choose. The defect it closes is a cap that was advertised and then bypassed.
+ */
+export const attemptSlot = (slot: SessionScheduler.AdmitInput, attempt: number): SessionScheduler.AdmitInput => ({
+  ...slot,
+  sessionID: `${slot.sessionID}#a${attempt}`,
+})
+
+/**
+ * One Strict engine per FOLDER.
+ *
+ * The invariant is about a DIRECTORY, so this is what enforces it — one instance per Location, held
+ * for as long as the engine's own fiber lives. `enter` is a test-and-set inside a single
+ * `Effect.suspend`: reading the token, claiming it and starting the fiber that owns it happen with
+ * no step boundary between them, so two callers can never both find the folder free. `undefined`
+ * means the folder is already claimed and the caller must refuse — the holder is the engine's
+ * DETACHED fiber, which outlives a Stop by design and must keep the folder for exactly that long.
+ *
+ * 🔴 IN-PROCESS ONLY. Production runs one disposable child process per drain
+ * (`session-worker/execution.ts`), so two SESSIONS are two processes and neither sees the other's
+ * token. Closing this across processes needs a cross-process lock (`util/flock.ts`, keyed on the
+ * directory); that is filed, and this is the seam it slots into.
+ */
+export const folderExclusion = () => {
+  let held: Deferred.Deferred<void> | undefined
+  return {
+    /** Advisory read — for a message, never for a decision. `enter` is what decides. */
+    busy: () => held !== undefined,
+    enter: (run: Effect.Effect<void>): Effect.Effect<Fiber.Fiber<void> | undefined> =>
+      Effect.suspend((): Effect.Effect<Fiber.Fiber<void> | undefined> => {
+        if (held !== undefined) return Effect.succeed(undefined)
+        const token = Deferred.makeUnsafe<void>()
+        held = token
+        return Effect.forkDetach(
+          run.pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                if (held === token) held = undefined
+                Deferred.doneUnsafe(token, Effect.void)
+              }),
+            ),
+          ),
+        )
+      }),
+  }
+}
+
+/**
  * Build the Strict drain for one Location-scoped runner.
  *
- * The inflight map deliberately lives inside this constructor: it is runtime state owned by one
- * location, while every dependency is passed explicitly. That makes Strict a real collaborator
- * behind the runner seam instead of a second engine hidden in llm.ts's closure.
+ * The folder exclusion and the per-session tail deliberately live inside this constructor: they are
+ * runtime state owned by one location, while every dependency is passed explicitly. That makes
+ * Strict a real collaborator behind the runner seam instead of a second engine hidden in llm.ts's
+ * closure.
  */
 export const make = (dependencies: Dependencies) => {
   const {
@@ -95,7 +153,19 @@ export const make = (dependencies: Dependencies) => {
   // THROUGH the best-restore at its next step boundary), crash resume (a "running" JhStore row
   // means a hard death; a bare "resume"/"continue" continues it), and the end-of-run summary (a
   // real streamed assistant message — the user's readable answer).
-  const strictInflight = new Map<SessionSchema.ID, Fiber.Fiber<void>>()
+  //
+  // ⚠️ TWO ENGINES MUST NEVER WORK THE SAME FOLDER. That is a claim about a DIRECTORY, so what
+  // enforces it is keyed by the directory (`folderExclusion`, above). It used to be a `Map` keyed by
+  // session id, which answers a different question entirely ("has THIS session left a straggler?"),
+  // and two chats open on one project therefore both started an engine against the same working
+  // tree. `make` runs once per Location (`llm.ts` builds the runner as a location node), so
+  // `location.directory` is invariant across every session this closure serves — one exclusion IS
+  // the folder's lock.
+  const folder = folderExclusion()
+  // The tail of ONE session's own previous run: a stopped run finalizes on a detached fiber, and
+  // that fiber is still writing this session's JhStore rows — which the next drain reads to decide
+  // resume. A per-SESSION question, so a per-session key is the right one here.
+  const sessionTail = new Map<SessionSchema.ID, Fiber.Fiber<void>>()
   return Effect.fn("SessionRunner.strictDrain")(function* (
     sessionID: SessionSchema.ID,
     harness: Harness,
@@ -163,6 +233,29 @@ export const make = (dependencies: Dependencies) => {
       ...(scheduledDevice.concurrency === undefined ? {} : { concurrency: scheduledDevice.concurrency }),
       ...(scheduledDevice.locality === undefined ? {} : { locality: scheduledDevice.locality }),
     }
+    // ⚠️ ONE GENERATION = ONE PARTICIPANT ON THE DEVICE. The scheduler's identity for a slot is
+    // `slot.sessionID`, and `admit` is idempotent per that id: N generations sharing one id are
+    // counted as 1, so `device.concurrency` is enforced against 1 — and the FIRST of them to settle
+    // releases the slot for all N, admitting a waiting interactive turn while N−1 are still on the
+    // wire. Best-of-N racing (`strict.attempts`, up to 8) fans out exactly that way, so each racer
+    // takes its own slot identity. This is the same rule `scheduler.admitMaintenance` already
+    // states for overlapping maintenance work ("a fresh identity per invocation prevents the
+    // scheduler's idempotent re-admit rule from turning that overlap into uncounted device
+    // concurrency") — racing is that overlap under another name.
+    //
+    // Serializing is NOT what this buys: a device is not single-threaded (AGENTS.md, Devices), and
+    // the cap is a POLICY. The defect was that the policy was stated and then bypassed. An
+    // interactive race now holds N interactive slots and frees the device only when the last one
+    // settles; a batch-class race queues its racers past the device's declared ceiling instead of
+    // running 8 completions against a cap of 2.
+    //
+    // 🔴 SCOPE: in production the worker's scheduler is an RPC bridge and the HOST substitutes the
+    // fenced lease's session id for whatever the worker sent (`session-worker/device-bridge.ts`:
+    // "Worker-supplied session IDs never reach the scheduler"), so these identities collapse back
+    // to one there. Carrying a per-generation discriminator across that boundary — the way
+    // `admitMaintenance` already carries a host-minted `maintenanceID` — is the other half, and it
+    // is filed. The seam is correct here, and correct for every in-process executor.
+    const slotFor = (attempt: number) => attemptSlot(dispatchSlot, attempt)
     const promptCacheKey = /^ses_[0-9a-f]{64}$/.test(session.id) ? session.id.slice(4) : session.id
     const thinkingBudget = model.route.defaults.limits?.thinkingBudget ?? 0
     const budgetEnforced = stanceOf("thinkingBudget", resolved.thinkingBudget)
@@ -171,7 +264,10 @@ export const make = (dependencies: Dependencies) => {
     // "Measured": a C program is ~13-15k tokens; truncation is fatal), and reasoning steps need room
     // to CLOSE their think block or they return empty (notes/jh/think-stage.md). The user owns both
     // numbers because only they know what their served context can afford.
-    const completeOnce = (system: string, user: string, maxTokens: number) =>
+    // `slot` is REQUIRED, so a caller that fans out cannot reach the device without saying which
+    // participant it is: the shared `dispatchSlot` has to be named, and naming it once per racer is
+    // the wrong-looking call rather than the shorter one.
+    const completeOnce = (slot: SessionScheduler.AdmitInput, system: string, user: string, maxTokens: number) =>
       Effect.gen(function* () {
         const text: string[] = []
         const reasoning: string[] = []
@@ -217,8 +313,10 @@ export const make = (dependencies: Dependencies) => {
         const result = yield* ProviderDispatch.run({
           events,
           scheduler,
+          // The SESSION id stays the real one — status events, timing and logs all belong to the
+          // chat. Only the scheduler's slot identity splits per racer.
           sessionID: session.id,
-          slot: dispatchSlot,
+          slot,
           maxAttempts: maxProviderAttempts,
           hasOutput: () => text.length > 0 || reasoning.length > 0,
           costTokens: () => costTokens,
@@ -250,13 +348,14 @@ export const make = (dependencies: Dependencies) => {
       // `task` came out of this very array.
       const taskKey =
         context.findLast((message) => message.type === "user" && message.text.trim() === task)?.id ?? `seq${cutoff}`
-      // A stopped run finalizes on a detached fiber at its next step boundary — two engines must
-      // never work the same folder, so wait for any straggler before starting (or routing) anything.
+      // A stopped run finalizes on a detached fiber at its next step boundary, and it is still
+      // saving THIS session's plan rows — so wait for our own straggler before reading them for
+      // resume. The folder's exclusion is a different claim and is taken below, at the fork.
       {
-        const inflight = strictInflight.get(sessionID)
-        if (inflight !== undefined) {
-          yield* Effect.exit(Fiber.join(inflight))
-          strictInflight.delete(sessionID)
+        const tail = sessionTail.get(sessionID)
+        if (tail !== undefined) {
+          yield* Fiber.await(tail)
+          sessionTail.delete(sessionID)
         }
       }
       // The effective strict config for THIS session: the global `config.strict` overlaid with the
@@ -309,7 +408,7 @@ export const make = (dependencies: Dependencies) => {
         const verdict = wantsResume
           ? ("chat" as const)
           : SessionStrict.routeOf(
-              yield* completeOnce(SessionStrict.ROUTE_SYSTEM, task, SessionStrict.ROUTE_TOKENS).pipe(
+              yield* completeOnce(dispatchSlot, SessionStrict.ROUTE_SYSTEM, task, SessionStrict.ROUTE_TOKENS).pipe(
                 Effect.catch(() => Effect.succeed("TASK")),
               ),
             )
@@ -379,6 +478,18 @@ export const make = (dependencies: Dependencies) => {
         )
         return "chat" as const
       }
+      // The folder refusal, said in the same voice and at the same place as the host-execution one.
+      // This read is ADVISORY — the binding test-and-set is at the fork below, which is the only
+      // point where a claim can be made atomically. Refusing here as well keeps the common case
+      // legible: without it the user would read "Strict mode: working on this step-by-step" and
+      // then, two lines later, that it never started.
+      const folderBusyNotice =
+        "🛡️ Strict mode can't run this here yet — another Strict run is already working in this folder, " +
+        "and two engines must never edit the same working tree. Answering normally instead; ask again once it finishes."
+      if (folder.busy()) {
+        yield* notice(folderBusyNotice)
+        return "chat" as const
+      }
       // improve11 P5 (jh.md §14.2): best-of-N racing — explicit opt-in via strict.attempts. Each
       // racer works on a bounded FORK of the folder; the first oracle-... (in sessions: the first
       // attempt whose run completes DONE) wins and its changes are applied back; losers are deleted.
@@ -428,8 +539,11 @@ export const make = (dependencies: Dependencies) => {
       })
       // raceFirst, not race: the latch's FAILURE must decide the race and interrupt the in-flight
       // model call (plain race waits for the first SUCCESS and would ignore the failing watcher).
-      const completeAbortable = (system: string, user: string, maxTokens: number) =>
-        Effect.raceFirst(completeOnce(system, user, maxTokens), abortWatch)
+      // One racer, one slot. A single-attempt run IS the session's one generation, so it keeps the
+      // session's own slot; racers 1..N each get theirs (`slotFor`), which is what makes N
+      // concurrent generations count as N against the device.
+      const completeAbortable = (i: number) => (system: string, user: string, maxTokens: number) =>
+        Effect.raceFirst(completeOnce(single ? dispatchSlot : slotFor(i + 1), system, user, maxTokens), abortWatch)
       let winnerIdx: number | undefined
       // P14.1 materialization (legibility): a run shares ONE assistant message — every state-
       // changing engine action lands on it as a real tool part (fed through the publisher as
@@ -509,7 +623,7 @@ export const make = (dependencies: Dependencies) => {
           quality: { ...harness.quality, enabled: resolved.quality ?? harness.quality.enabled },
           ...(contextTokens === undefined ? {} : { contextTokens }),
           host: strictHost,
-          completeOnce: completeAbortable,
+          completeOnce: completeAbortable(i),
           ...(resumeState === undefined ? {} : { resume: resumeState }),
           onMilestone: (text) => notice(single ? text : `[attempt ${i + 1}/${attempts}] ${text}`),
           aborted: () => stopRequested || (winnerIdx !== undefined && winnerIdx !== i),
@@ -558,6 +672,31 @@ export const make = (dependencies: Dependencies) => {
         endBoundary = { snapshot: endSnapshot, files }
         return endBoundary
       })
+      // ⚠️ THE RUN'S MESSAGE IS SETTLED ON EVERY EXIT, not only the ones that produce a report.
+      // A run that published tool parts owns a live assistant message, and `Step.Ended` is what
+      // carries the END boundary that `session/changes.ts` and `session/revert.ts` read — so a run
+      // that dies without settling leaves a message unfinished forever AND makes Revert restore
+      // ZERO files for a folder it just rewrote. That guard existed, but it lived inside
+      // `publishSummary` and was therefore unreachable from every path that never got that far.
+      // One home, and it runs from `finalize`'s own finalizer.
+      let runSettled = false
+      const settleRunMessage = Effect.gen(function* () {
+        if (runSettled) return
+        if (actionSeq === 0) return
+        if (runPublisher.stepSettlement() !== undefined) return
+        runSettled = true
+        const boundary = yield* captureEndBoundary()
+        yield* events.publish(SessionEvent.Step.Ended, {
+          sessionID,
+          timestamp: yield* DateTime.now,
+          assistantMessageID: yield* runPublisher.startAssistant(),
+          finish: "stop",
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          snapshot: boundary.snapshot,
+          files: boundary.files,
+        })
+      }).pipe(Effect.ignore)
       // P14.1 final answer: the end-of-run summary — a REAL streamed assistant message built from
       // harness ground truth (goal, outcome, the phase journal, applied files), so the user reads a
       // normal reply instead of decoding notices. Best-effort: the terminal notice already stated
@@ -626,6 +765,7 @@ export const make = (dependencies: Dependencies) => {
           if (dispatched._tag === "Failure") yield* Effect.failCause(dispatched.cause)
           const settlement = publisher.stepSettlement()
           if (settlement !== undefined && !publisher.hasProviderError()) {
+            runSettled = true
             const boundary = yield* captureEndBoundary()
             yield* events.publish(SessionEvent.Step.Ended, {
               sessionID,
@@ -646,26 +786,10 @@ export const make = (dependencies: Dependencies) => {
             }),
           ),
           // The run message may already exist (tool parts) — a failed/empty summary must not
-          // leave it visibly unsettled forever. Best-effort: settle with a plain stop.
-          Effect.andThen(
-            Effect.gen(function* () {
-              if (actionSeq === 0) return
-              if (runPublisher.stepSettlement() !== undefined) return
-              // Same boundary as the settled path: a run whose summary failed still changed the
-              // folder, so Revert/Changes must still see what it touched.
-              const boundary = yield* captureEndBoundary()
-              yield* events.publish(SessionEvent.Step.Ended, {
-                sessionID,
-                timestamp: yield* DateTime.now,
-                assistantMessageID: yield* runPublisher.startAssistant(),
-                finish: "stop",
-                cost: 0,
-                tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-                snapshot: boundary.snapshot,
-                files: boundary.files,
-              })
-            }).pipe(Effect.ignore),
-          ),
+          // leave it visibly unsettled forever. Settled here so it happens BEFORE `postRun` reads
+          // the turn; `finalize`'s finalizer repeats the call for every other exit and the flag
+          // makes the second one a no-op.
+          Effect.andThen(settleRunMessage),
         )
       // The engine work + everything owed to the user afterwards runs on a DETACHED fiber: when the
       // drain is interrupted (Stop), this fiber survives, the latch stops the engine at its next
@@ -680,8 +804,17 @@ export const make = (dependencies: Dependencies) => {
         const report =
           winnerIdx !== undefined ? reports[winnerIdx] : (reports.find((r) => r !== undefined) ?? undefined)
         if (report === undefined) {
+          // ⚠️ "left as-is" was TRUE only of the racing branch, whose work is in temp forks. On the
+          // single-attempt path — the default — the engine writes straight into the working
+          // directory and every successful write was already published as a tool part, so the old
+          // wording described a fault falsely (ruling 2). Say which of the two happened; the
+          // conditional is the one `SessionStrict.terminalNotice` already applies for `single`.
           yield* notice(
-            "⚠️ The Strict run hit an internal error — see the server log. The working directory is left as-is.",
+            !single
+              ? "⚠️ The Strict run hit an internal error — see the server log. YOUR FOLDER IS UNCHANGED — the attempts ran on isolated copies of it."
+              : actionSeq > 0
+                ? `⚠️ The Strict run hit an internal error — see the server log. It had already written to your working directory (${actionSeq} action${actionSeq === 1 ? "" : "s"} above) and those changes are still there; use Revert on this message to undo them.`
+                : "⚠️ The Strict run hit an internal error — see the server log. It had not written anything yet, so your folder is unchanged.",
           )
           for (const d of forks)
             try {
@@ -750,7 +883,6 @@ export const make = (dependencies: Dependencies) => {
         if (!single && winnerIdx !== undefined)
           for (const action of racerActions[winnerIdx]!) yield* publishAction(action)
         yield* publishSummary(report, appliedFiles)
-        yield* maintenance.postRun(sessionID)
       }).pipe(
         Effect.catchCause((cause) =>
           Log.event("session.strict.finalize.failed", {
@@ -758,9 +890,35 @@ export const make = (dependencies: Dependencies) => {
             "session.cause": Log.fault(cause),
           }),
         ),
+        // EVERY exit owes the same two things, so neither is written on a branch. `postRun` used to
+        // be the last line of the happy path and `Step.Ended` lived inside `publishSummary`, so a
+        // dead engine skipped both: no auto-title, no changes-summary refresh, no memory
+        // extraction, and an assistant message that never settled. Both are idempotent.
+        Effect.andThen(settleRunMessage),
+        Effect.andThen(maintenance.postRun(sessionID).pipe(Effect.ignore)),
       )
-      const worker = yield* Effect.forkDetach(finalize)
-      strictInflight.set(sessionID, worker)
+      // ── the FOLDER claim (`folderExclusion`, top of file) ──
+      // A second session is REFUSED, not queued, and that is deliberate. Queueing would hold this
+      // chat silent for the other run's whole wall, and worse: the START snapshot above was already
+      // captured, so a queued run's Revert boundary would span the OTHER engine's changes and undo
+      // them. Refusing is the shape the host-execution gate above already uses — name it once and
+      // answer normally. The drain's own queued messages never see this: each iteration joins its
+      // fiber before the next one starts, and a stopped run's straggler is awaited by `sessionTail`.
+      const worker = yield* folder.enter(
+        finalize.pipe(Effect.ensuring(Effect.sync(() => sessionTail.delete(sessionID)))),
+      )
+      if (worker === undefined) {
+        for (const d of forks)
+          try {
+            fs.rmSync(d, { recursive: true, force: true })
+          } catch {}
+        yield* notice(folderBusyNotice)
+        return "chat" as const
+      }
+      // ⚠️ Deleted by the fiber's own finalizer as well as here: a Stop interrupts the join and this
+      // line is never reached, which is exactly the case that used to leave a completed fiber in the
+      // map until that session drained again.
+      sessionTail.set(sessionID, worker)
       yield* Fiber.join(worker).pipe(
         Effect.onInterrupt(() =>
           Effect.sync(() => {
@@ -768,7 +926,7 @@ export const make = (dependencies: Dependencies) => {
           }),
         ),
       )
-      strictInflight.delete(sessionID)
+      sessionTail.delete(sessionID)
       promotion = "queue"
       if (!(yield* SessionInput.hasPending(db, sessionID, "queue"))) return "handled" as const
     }
