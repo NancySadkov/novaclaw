@@ -29,7 +29,6 @@ type PersistTarget = {
 
 const LEGACY_STORAGE = "default.dat"
 const GLOBAL_STORAGE = "novaclaw.global.dat"
-const LOCAL_PREFIX = "novaclaw."
 const fallback = new Map<string, boolean>()
 
 const CACHE_MAX_ENTRIES = 500
@@ -109,40 +108,6 @@ function quota(error: unknown) {
   return false
 }
 
-type Evict = { key: string; size: number }
-
-function evict(storage: Storage, keep: string, value: string) {
-  const total = storage.length
-  const indexes = Array.from({ length: total }, (_, index) => index)
-  const items: Evict[] = []
-
-  for (const index of indexes) {
-    const name = storage.key(index)
-    if (!name) continue
-    if (!name.startsWith(LOCAL_PREFIX)) continue
-    if (name === keep) continue
-    const stored = storage.getItem(name)
-    items.push({ key: name, size: stored?.length ?? 0 })
-  }
-
-  items.sort((a, b) => b.size - a.size)
-
-  for (const item of items) {
-    storage.removeItem(item.key)
-    cacheDelete(item.key)
-
-    try {
-      storage.setItem(keep, value)
-      cacheSet(keep, value)
-      return true
-    } catch (error) {
-      if (!quota(error)) throw error
-    }
-  }
-
-  return false
-}
-
 function write(storage: Storage, key: string, value: string) {
   try {
     storage.setItem(key, value)
@@ -162,8 +127,13 @@ function write(storage: Storage, key: string, value: string) {
     if (!quota(error)) throw error
   }
 
-  const ok = evict(storage, key, value)
-  return ok
+  // 🔴 A store owns exactly the key it was asked to write, and nothing else. Browser storage is ONE
+  // flat namespace shared with the workspace drafts, the tab strip, the Notes app's last-opened
+  // pointer and every client setting — so there is no key here this write is entitled to delete.
+  // Making room by evicting a neighbour trades a convenience (prompt history) for somebody else's
+  // data, and the module that loses it never learns why. The caller degrades to the in-memory cache
+  // for this scope instead, which is the path every other storage failure already takes.
+  return false
 }
 
 function snapshot(value: unknown) {

@@ -7,6 +7,23 @@ const DEFAULT_PROMPT: Prompt = [{ type: "text", content: "", start: 0, end: 0 }]
 
 export const MAX_HISTORY = 100
 
+/**
+ * How much attachment data the prompt history may keep, **in total, across every entry** — a quarter
+ * of a megabyte.
+ *
+ * An attachment travels inside the prompt as a whole `data:…;base64,…` string, so one photo is
+ * megabytes of text. The history is a convenience for re-sending something you already sent, not a
+ * place to archive files, and on the web every entry shares one small browser-storage budget with
+ * the user's drafts, tab strip and settings — so the history must never be the thing that fills it.
+ *
+ * **At the limit the attachment is dropped from the HISTORY COPY of the entry, and only there.** The
+ * entry keeps its text, its comments and whatever attachments still fit, so it stays usable; the
+ * message the user is composing is never touched, and nothing half-formed is stored — an attachment
+ * is kept whole or not at all. Newest entries are served first, so the budget is spent on what was
+ * sent most recently.
+ */
+export const MAX_HISTORY_ATTACHMENT_BYTES = 256 * 1024
+
 export type PromptHistoryComment = {
   id: string
   path: string
@@ -78,6 +95,45 @@ export function promptLength(prompt: Prompt) {
   return prompt.reduce((len, part) => len + ("content" in part ? part.content.length : 0), 0)
 }
 
+/**
+ * Spend {@link MAX_HISTORY_ATTACHMENT_BYTES} newest-first over a history list, dropping the
+ * attachments that no longer fit. Returns the SAME array when nothing was dropped, so a caller can
+ * still tell "unchanged" by identity. A legacy list written before the budget existed is repaired by
+ * the first call, because every write goes through here.
+ */
+export function applyHistoryAttachmentBudget(
+  entries: PromptHistoryStoredEntry[],
+  budget = MAX_HISTORY_ATTACHMENT_BYTES,
+): PromptHistoryStoredEntry[] {
+  let left = budget
+  let changed = false
+
+  const next = entries.map((stored) => {
+    const prompt = Array.isArray(stored) ? stored : stored.prompt
+    const kept: Prompt = []
+    let dropped = false
+
+    for (const part of prompt) {
+      if (part.type !== "image") {
+        kept.push(part)
+        continue
+      }
+      if (part.dataUrl.length > left) {
+        dropped = true
+        continue
+      }
+      left -= part.dataUrl.length
+      kept.push(part)
+    }
+
+    if (!dropped) return stored
+    changed = true
+    return Array.isArray(stored) ? kept : { ...stored, prompt: kept }
+  })
+
+  return changed ? next : entries
+}
+
 export function prependHistoryEntry(
   entries: PromptHistoryStoredEntry[],
   prompt: Prompt,
@@ -98,7 +154,9 @@ export function prependHistoryEntry(
   } satisfies PromptHistoryEntry
   const last = entries[0]
   if (last && isPromptEqual(last, entry)) return entries
-  return [entry, ...entries].slice(0, max)
+  // The budget is spent HERE and nowhere else: this is the only door into either history store, so
+  // an attachment cannot reach storage without passing it.
+  return applyHistoryAttachmentBudget([entry, ...entries].slice(0, max))
 }
 
 function isCommentEqual(commentA: PromptHistoryComment, commentB: PromptHistoryComment) {
