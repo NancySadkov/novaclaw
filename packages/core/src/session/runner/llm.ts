@@ -1046,6 +1046,12 @@ export const layer = Layer.effect(
         system,
         modelSession,
         model,
+        // 🔴 The catalog entry the route above was built from — the model that ACTUALLY RUNS this
+        // turn, after `resolve`'s unavailable- and unhealthy-model fallbacks. Carried so the turn's
+        // model FACTS are read off it (`SessionRunnerModel.perTurnFacts`) instead of from a second
+        // resolution that applies neither fallback. `undefined` only behind a test/embedding seam,
+        // which resolves a route with no catalog behind it at all.
+        ran: resolvedModel.ran,
         scheduledDevice: resolvedModel.device,
         entries,
         promoted,
@@ -1145,7 +1151,7 @@ export const layer = Layer.effect(
       const prepared = yield* prepareTurn(sessionID, { promotion, onFailure: surfacePreTurnFailure })
       // The session moved to another location while this drain was queued — not ours to run.
       if (prepared === undefined) return yield* Effect.interrupt
-      const { session, config, agent, system, modelSession, model, scheduledDevice, entries } = prepared
+      const { session, config, agent, system, modelSession, model, ran, scheduledDevice, entries } = prepared
       const toolFibers = yield* FiberSet.make<void, ToolOutputStore.Error>()
       let needsContinuation = false
       /** A pre-action policy returned `halt` for one of this turn's tool calls. See `tool-policy.ts`. */
@@ -1159,13 +1165,44 @@ export const layer = Layer.effect(
       let imagesHeldThisTurn = 0
       // A promoted user message restarts the step allowance: what the agent is answering changed.
       let currentStep = prepared.promoted > 0 ? 1 : step
-      const maxProviderAttempts = ProviderRetry.maxAttempts(yield* models.retryAttempts(modelSession))
+      /**
+       * EVERY per-turn model fact, off the ONE model this turn resolved to.
+       *
+       * 🔴 **This used to be six independent `models.*` reads, and they described a different model
+       * than the one serving the request.** Each re-entered `SessionRunnerModel`'s `select()`, which
+       * applies neither of `resolve()`'s fallbacks — so a colleague whose vision model had been
+       * demoted by `ModelHealth` ran on the text-only default while `capabilities` still said
+       * `input: ["text","image"]`. `unreadableTurnAttachments` therefore passed, and the user's
+       * screenshot was lowered as a real media part into a text-only request: the provider
+       * media-type 400 the capability gate exists to prevent. Its mirror was silent and worse — a
+       * text-only selection falling back to a vision model replaced every image in history with
+       * *"was NOT sent to you"* and instructed a model that could see the picture to say it had not.
+       * `prePrompt`, `retryAttempts`, `imageLimit` and `ref` split the same way, and `ref` is what
+       * `rememberImageLimit` files a learned cap under — a cap measured on one endpoint, stored
+       * against another model's id.
+       *
+       * ⚠️ `ran` is `undefined` ONLY behind a seam that resolves a route with no catalog entry
+       * behind it (`SessionRunnerModel.layerWith`). There the accessors are the sole answer, so they
+       * are read — never mixed with a partial catalog answer, which would be the same split again.
+       */
+      const facts =
+        ran === undefined
+          ? {
+              ref: yield* models.ref(modelSession),
+              tier: yield* models.tier(modelSession),
+              prePrompt: yield* models.prePrompt(modelSession),
+              retryAttempts: yield* models.retryAttempts(modelSession),
+              capabilities: yield* models.capabilities(modelSession),
+              imageLimit: yield* models.imageLimit(modelSession),
+            }
+          : SessionRunnerModel.perTurnFacts(ran)
+      const maxProviderAttempts = ProviderRetry.maxAttempts(facts.retryAttempts)
       // Catalog identity, not the provider wire id: a model may deliberately route API requests
       // under `api.id` while users and live config know it by a different stable catalog id.
-      const modelRef = yield* models.ref(modelSession)
+      const modelRef = facts.ref
       // Models item (c): scaffold the system prompt harder for a weak model (jh.md thesis). Reads
       // the resolved model's capability tier; best-effort (never gates the turn).
-      const tier = yield* models.tier(modelSession)
+      const tier = facts.tier
       const tierHint = TierScaffold.tierScaffold(tier)
       // 🔴 ROLE/MODEL FIT — tell the colleague when the model behind it is beneath what its role
       // declared (`agent/model-fit.ts`; `notes/named-agents.md`). It warns and never refuses.
@@ -1212,9 +1249,14 @@ export const layer = Layer.effect(
             .pipe(Effect.ignore)
       }
       // Per-model pre-prompt (owner 2026-07-29): the resolved model's optional user-authored
-      // behaviour correction, wrapped as a distinct labelled section. Read best-effort off the
-      // resolved catalog model exactly like the tier above; undefined ⇒ inert (see system-compose.ts).
-      const modelPrePrompt = SystemCompose.modelPrePromptSection(yield* models.prePrompt(modelSession))
+      // behaviour correction, wrapped as a distinct labelled section. Read off the model that RAN
+      // exactly like the tier above; undefined ⇒ inert (see system-compose.ts).
+      //
+      // ⚠️ It has to be the model that ran, and this is the false-description ruling rather than
+      // tidiness: a pre-prompt is a correction for THESE weights' known behaviour, so injecting the
+      // demoted model's into a request for its substitute tells the substitute to compensate for a
+      // defect it does not have.
+      const modelPrePrompt = SystemCompose.modelPrePromptSection(facts.prePrompt)
       const context = entries.map((entry) => entry.message)
       const discoveredTools = ToolDiscovery.discovered(context)
       const todoReminderConfig = TodoReminder.resolve(harness.context?.todo_reminder)
@@ -1253,16 +1295,19 @@ export const layer = Layer.effect(
       //
       // ⚠️ **NO LONGER GATED ON MEDIA, and the old note claiming a saving was wrong.** It read "the
       // catalog read is gated on there being MEDIA at all, so the media-free turn pays nothing" —
-      // but `models.capabilities` resolves through the very same `select(session)` that `tier` and
-      // `prePrompt` above already call unconditionally on every turn. The gate saved a third copy of
-      // a read this turn had made twice, and it cost the perception section its input on exactly the
+      // but the capability answer comes from the turn's own model resolution, which every turn makes
+      // anyway. The gate saved nothing, and it cost the perception section its input on exactly the
       // turns that need it: a media-free turn is where a model DECIDES whether to go and look, and
       // under the gate it was told nothing. Measured 2026-08-19 — see `perceptionSection`.
-      const modelCapabilities = yield* models.capabilities(modelSession)
+      //
+      // 🔴 **Off the model that RAN.** This is the reading that decides whether a screenshot is
+      // lowered as a real media part, so describing the model the session merely SELECTED is how a
+      // demoted vision model's `input: ["text","image"]` walked a picture into a text-only request.
+      const modelCapabilities = facts.capabilities
       // How many images this endpoint takes in one request; `undefined` = unlimited. Without it a
       // session that looked at more images than the server allows DEAD-ENDS — every later turn
       // re-lowers the same history and re-fails the same 400. See `budgetImages`.
-      const declaredImageLimit = yield* models.imageLimit(modelSession)
+      const declaredImageLimit = facts.imageLimit
       // The DECLARED cap wins when there is one — a catalog entry is the operator's statement and a
       // learned value is an inference. Otherwise use whatever this endpoint told us it allows.
       const learnedKey = imageLimitKey(modelRef)
@@ -2236,7 +2281,12 @@ export const layer = Layer.effect(
           if (
             llmFailure &&
             !publisher.hasProviderError() &&
-            publisher.stepSettlement() !== undefined &&
+            // ⚠️ A settlement the PROVIDER reported. `openai-chat`'s halt path now also synthesizes
+            // one for a stream cut before its terminal event, and reason `"error"` is how it says
+            // "nothing here was delivered" — the exact opposite of this branch's premise. Without
+            // this test a truncated reply falls in here and is presented as finished.
+            publisher.stepSettlement()?.finish !== undefined &&
+            publisher.stepSettlement()?.finish !== "error" &&
             ProviderRetry.isBrokenResponse(llmFailure)
           ) {
             // Some compatible servers send a valid finish_reason and then sever the SSE body before
@@ -2252,7 +2302,9 @@ export const layer = Layer.effect(
             llmFailure &&
             !publisher.hasProviderError() &&
             publisher.hasAssistantStarted() &&
-            publisher.stepSettlement() === undefined &&
+            // …and the mirror of the note above: a synthesized `"error"` settlement means the halt
+            // recovered nothing, so this IS the truncated-reply case and still needs a continuation.
+            (publisher.stepSettlement() === undefined || publisher.stepSettlement()?.finish === "error") &&
             ProviderRetry.isBrokenResponse(llmFailure)
           ) {
             brokenResponse = true
@@ -2332,11 +2384,16 @@ export const layer = Layer.effect(
           // endpoint plainly served, and demoting on a damaged epilogue would move a colleague off a
           // working model. Both branches are best-effort — health tracking must never fail a turn.
           //
-          // ⚠️ Keyed on the model the turn RAN on (`model.provider`/`model.id` — the same pair
-          // `observeServing` uses), never on `modelRef`. `models.ref` reports what the session
-          // SELECTED, which after a fallback is the sick model rather than the one that answered:
-          // keying on it would let a successful turn on the healthy substitute clear the sick model's
-          // record, send the next turn back to it, and flap one failed turn per cycle forever.
+          // ⚠️ Keyed on the model the turn RAN on, which `modelRef` now IS — it is read off
+          // `Resolution.ran`, the catalog entry `resolve()` actually routed to after its fallbacks.
+          // 🔴 **This comment used to say "never on `modelRef`" while the line below read
+          // `modelRef ?? …`, and BOTH halves were right about something.** `models.ref` reported what
+          // the session SELECTED, which after a fallback is the sick model rather than the one that
+          // answered — so a successful turn on the healthy substitute cleared the SICK model's
+          // record, the next turn went back to it, and the pair flapped one failed turn per cycle
+          // forever. The prose named the hazard and the code walked into it, because the accessor's
+          // meaning was the thing that was wrong. Fixing the accessor is what makes this line honest;
+          // re-deriving an identity here would put the second answer back.
           // ⚠️ **CATALOG identity, and the wire id is a different string.** `fromCatalogModel` builds
           // the route with `id: model.api.id` — a model may deliberately route requests under an api
           // id while the catalog, the config and the user know it by another (`test-model` vs

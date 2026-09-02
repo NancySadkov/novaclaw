@@ -160,7 +160,7 @@ export interface Interface {
   readonly resolveWithDevice: (
     session: SessionSchema.Info,
     options?: { readonly requested?: boolean },
-  ) => Effect.Effect<{ readonly model: Model; readonly device: ScheduledDevice }, Error>
+  ) => Effect.Effect<Resolution, Error>
   /**
    * Report WHICH process served a live turn, so a verdict measured on another is discarded.
    *
@@ -185,6 +185,14 @@ export interface Interface {
    * `maintenance.ts` spreads a REAL session; that is not the same thing as inventing one.
    */
   readonly resolveDefault: () => Effect.Effect<Model, Error>
+  /**
+   * 🔴 **The six accessors below all describe the model `resolve` LANDS ON, fallbacks applied — and
+   * a per-turn caller should not be reaching for them at all.** They each cost their own resolution,
+   * so six of them is six chances to disagree about which model a turn is about; the turn's own
+   * `resolveWithDevice` hands back that model once, as `Resolution.ran`, and `perTurnFacts` reads
+   * every one of these off it. These stay for callers that hold nothing but a session — and for a
+   * seam, where there is no catalog entry to read.
+   */
   /** Models item (c): the resolved catalog model's capability tier, for the system-prompt scaffold.
    *  Best-effort — an unresolvable model yields `undefined` rather than failing the turn. */
   readonly tier: (session: SessionSchema.Info) => Effect.Effect<ModelV2.Tier | undefined>
@@ -207,9 +215,9 @@ export interface Interface {
   /**
    * How many images the resolved model accepts in ONE request, or `undefined` for unlimited.
    *
-   * Read the same best-effort way as `tier`/`prePrompt`/`capabilities` — one `select(session)`, no
-   * new cost — and `undefined` is the pass-everything answer, which is what every endpoint that
-   * never had this cap wants. See `budgetImages` for why a guessed default would be wrong.
+   * Read the same best-effort way as `tier`/`prePrompt`/`capabilities`, and `undefined` is the
+   * pass-everything answer, which is what every endpoint that never had this cap wants. See
+   * `budgetImages` for why a guessed default would be wrong.
    */
   readonly imageLimit: (session: SessionSchema.Info) => Effect.Effect<number | undefined>
   /**
@@ -225,8 +233,9 @@ export interface Interface {
   readonly learnedImageLimit: (model: ModelV2.Ref) => Effect.Effect<number | undefined>
   /** Remember a cap learned this run. Best-effort: a failed write must never fail a recovered turn. */
   readonly rememberImageLimit: (model: ModelV2.Ref, limit: number) => Effect.Effect<void>
-  /** Catalog identity of the model `resolve` selects. Unlike the wire route's `model.id`, this is
-   * the stable user-facing id and is therefore the identity model-routing config matches. */
+  /** Catalog identity of the model `resolve` lands on — fallbacks included. Unlike the wire route's
+   * `model.id`, this is the stable user-facing id and is therefore the identity model-routing config
+   * matches, and the identity `ModelHealth` files a verdict under. */
   readonly ref: (session: SessionSchema.Info) => Effect.Effect<ModelV2.Ref | undefined>
   /**
    * The SCHEDULER's device key for the model this session would resolve to (`deviceKeyFor` below).
@@ -239,6 +248,56 @@ export interface Interface {
 export interface ScheduledDevice extends DeviceRegistry.SchedulingProfile {
   readonly key: string
 }
+
+/**
+ * ONE turn's model decision: the wire route, the scheduler identity, and the catalog entry both were
+ * built from.
+ *
+ * 🔴 **`ran` is the whole point, and it is the model that ACTUALLY RAN.** `resolve` owns two
+ * fallbacks — an unavailable configured model, and a model `ModelHealth` says is failing — and both
+ * used to reassign a LOCAL nothing downstream could see. So a caller that wanted the turn's
+ * capabilities, tier, pre-prompt, retry policy or image cap had to ask `select()` again, which
+ * applies neither fallback, and got the model the session SELECTED while the request went to the
+ * substitute. A screenshot then passed a vision-capable gate on its way into a text-only request —
+ * the provider media-type 400 the gate exists to prevent — and the mirror case silently told a
+ * sighted model it had not been shown the picture it was holding. Read the per-turn facts off THIS
+ * value (`perTurnFacts`) and the two answers collapse into one.
+ *
+ * ⚠️ `undefined` only on a seam (`layerWith`), which resolves a route with no catalog behind it. A
+ * reader that gets `undefined` has no catalog answer at all and must say so, never substitute a
+ * second resolution.
+ */
+export interface Resolution {
+  readonly model: Model
+  readonly device: ScheduledDevice
+  readonly ran: ModelV2.Info | undefined
+}
+
+/**
+ * Every per-turn fact that describes ONE catalog model, read off that model and nothing else.
+ *
+ * Exists so the runner cannot derive six of them from six independent lookups again: the failure was
+ * never a wrong field, it was six chances to disagree about which model the turn is about.
+ */
+export const perTurnFacts = (
+  model: ModelV2.Info,
+): {
+  readonly ref: ModelV2.Ref
+  readonly tier: ModelV2.Tier | undefined
+  readonly prePrompt: string | undefined
+  readonly retryAttempts: number | undefined
+  readonly capabilities: ModelV2.Capabilities | undefined
+  readonly imageLimit: number | undefined
+} => ({
+  /** Catalog identity — the stable user-facing id, NOT the wire `api.id`. */
+  ref: { providerID: model.providerID, id: model.id },
+  tier: model.tier,
+  prePrompt: model.prePrompt,
+  retryAttempts: model.retry?.attempts,
+  capabilities: model.capabilities,
+  /** `undefined` = unlimited, the pass-everything answer. */
+  imageLimit: model.limit.images,
+})
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/SessionRunnerModel") {}
 
@@ -319,11 +378,17 @@ export const layerWith = (
     Service,
     Service.of({
       resolve,
+      // ⚠️ `ran: undefined`, and that is the honest answer rather than a gap. A seam hands back a
+      // wire route with NO catalog entry behind it, so there is nothing here that could describe the
+      // model that ran; a reader falls back to the members below, which is the only answer this seam
+      // has. Fabricating a `ModelV2.Info` from `model.provider`/`model.id` would look like a catalog
+      // fact and be a wire id wearing one.
       resolveWithDevice: (session, options) =>
         Effect.all({ model: resolve(session, options), device: device(session) }).pipe(
           Effect.map(({ model, device }) => ({
             model,
             device: device ?? { key: `${model.provider}/${model.id}` },
+            ran: undefined,
           })),
         ),
       resolveDefault,
@@ -724,7 +789,19 @@ export const locationLayer = Layer.effect(
       return entry?.choice === "native" || entry?.choice === "prompted" ? entry.choice : undefined
     })
 
-    const base: Omit<Interface, "resolveWithDevice"> = {
+    /**
+     * ⚠️ `resolve` is WIDER here than on the interface: it hands back the catalog entry beside the
+     * route (`Resolution`'s `ran`), and the public member below narrows it to the route. That is
+     * deliberate — an in-layer caller (`resolveWithDevice`) must be able to see WHICH model the
+     * fallbacks landed on without re-deriving it, and re-deriving it is the entire defect this
+     * shape exists to prevent.
+     */
+    const base: Omit<Interface, "resolveWithDevice" | "resolve"> & {
+      readonly resolve: (
+        session: SessionSchema.Info,
+        options?: { readonly requested?: boolean },
+      ) => Effect.Effect<{ readonly model: Model; readonly ran: ModelV2.Info }, Error>
+    } = {
       /**
        * A live turn reported WHICH process served it — discard a verdict measured on another.
        *
@@ -741,120 +818,31 @@ export const locationLayer = Layer.effect(
           .forgetIfMoved(model.providerID, model.id, servedBy)
           .pipe(Effect.catchCause(() => Effect.succeed(false)))
       }),
-      resolve: Effect.fn("SessionRunnerModel.resolve")(function* (session, options?: { readonly requested?: boolean }) {
-        // Location plugins populate and filter the catalog asynchronously during layer startup
-        // (plugin-internal's forked boot batch) — a prompt issued right after boot can read an
-        // EMPTY catalog and misreport a configured model as unavailable. Only when the first
-        // look fails: await the boot latch (bounded — some test graphs never open it) and look
-        // again before failing. The healthy path pays nothing.
-        let selected = yield* select(session)
-        if (!selected) {
-          yield* plugins.ready.pipe(Effect.timeoutOrElse({ duration: "5 seconds", orElse: () => Effect.void }))
-          selected = yield* select(session)
-        }
-        // 🔴 FALL BACK to the instance default rather than killing the turn (owner, 2026-08-21: *"if
-        // the agent's chosen model is unavailable / gives errors, we temporarily auto switch to the
-        // Default model"*).
-        //
-        // A colleague's model is part of its job description now, so an unavailable one is an
-        // ordinary condition — a local model not yet pulled, a provider whose key expired, a machine
-        // that used to have a GPU. Refusing the turn made the colleague useless until somebody
-        // noticed and edited its configuration; falling back keeps it working, worse, and says so.
-        //
-        // ⚠️ TEMPORARY means nothing is written. The colleague's configured model is untouched, so
-        // the very next turn tries it again and recovers by itself the moment it returns. Rewriting
-        // the config on a transient failure would be a silent, permanent downgrade nobody asked for.
-        // 🔴 **AN EXPLICIT REQUEST THAT CANNOT BE SERVED IS AN ERROR, NEVER A SUBSTITUTION.**
-        // The fallback below exists for a COLLEAGUE whose configured model is temporarily down — the
-        // officer keeps working on the default rather than going silent. It must not swallow
-        // `--model does/not-exist`: the user named that model, and quietly running a different one is
-        // answering a question nobody asked.
-        //
-        // Measured 2026-08-23 in the release gate: `novaclaw run --model test/nonexistent-model` had
-        // started exiting 0, defeating `run-process.test.ts`'s regression guard for #27371. The two
-        // rules are both right and the resolver could not tell them apart, because an agent-declared
-        // model and a user-requested one arrive on the same field.
-        if (!selected && session.model && options?.requested === true)
-          return yield* new ModelUnavailableError({
-            providerID: session.model.providerID,
-            modelID: session.model.id,
-          })
-        if (!selected && session.model) {
-          const usable = usableFallback({
-            fallback: yield* catalog.model.default(),
-            available: yield* catalog.model.available(),
-            supported,
-          })
-          if (usable) {
-            yield* Log.event("session.model.fallback", {
-              "session.id": session.id,
-              "model.requested": `${session.model.providerID}/${session.model.id}`,
-              "model.used": `${usable.providerID}/${usable.id}`,
-              "model.reason": "unavailable",
-            })
-            selected = usable
-          } else
-            return yield* new ModelUnavailableError({
-              providerID: session.model.providerID,
-              modelID: session.model.id,
-            })
-        }
-        // 🔴 The SECOND half of the owner's rule: *"or gives errors"*. A model that resolves cleanly
-        // and then fails every request is the commoner fault — a local server that died, a key that
-        // expired — and the block above cannot see it, because there is nothing wrong with the
-        // catalog entry. `ModelHealth` watches the turns themselves and answers "is this endpoint
-        // serving right now"; two exhausted-retry failures inside ten minutes is the bar, so a
-        // restarting local server does not demote anybody (see that module's threshold note).
-        //
-        // ⚠️ Never routes onto a model that is ALSO sick, and never away from the default onto
-        // nothing: if the default is the thing failing, staying put and reporting its real error
-        // beats bouncing between two dead endpoints and reporting neither.
-        // ⚠️ **NO `session.model` GUARD, and it had one until it was driven.** The block above needs
-        // `session.model` because it reports what the user ASKED for and there is nothing else to
-        // name. This one does not: the question is whether the model this turn is about to use is
-        // failing, and where that choice came from is irrelevant.
-        //
-        // Copying the guard made the feature dead for the case it exists for. A colleague's model
-        // comes from its AGENT config, which `select()` applies — it never reaches `config.model`,
-        // which resolves from the SESSION ROW (`config-resolve.ts`: `model` → column `model`). So
-        // `session.model` is undefined for every roster colleague, and after the composer's per-chat
-        // model chip was removed on 2026-08-22 that is very nearly every session. Measured live the
-        // same day: holo3.1's endpoint went down, four turns failed with `Transport` in one process,
-        // and the fallback never fired once.
-        if (selected) {
-          const at = yield* Clock.currentTimeMillis
-          if (ModelHealth.sick(selected, at)) {
-            const healthy = healthyAlternative({
-              selected,
-              fallback: yield* catalog.model.default(),
-              available: yield* catalog.model.available(),
-              supported,
-              sick: (entry) => ModelHealth.sick(entry, at),
-              same: (a, b) => `${a.providerID}/${a.id}` === `${b.providerID}/${b.id}`,
-            })
-            if (healthy) {
-              yield* Log.event("session.model.fallback", {
-                "session.id": session.id,
-                "model.requested": `${selected.providerID}/${selected.id}`,
-                "model.used": `${healthy.providerID}/${healthy.id}`,
-                "model.reason": "unhealthy",
-              })
-              selected = healthy
-            }
-          }
-        }
-        if (!selected) return yield* new ModelNotSelectedError({ sessionID: session.id })
+      /**
+       * The route for a turn, AND the catalog entry it was built from.
+       *
+       * 🔴 It returns the pair because returning only the route is what made seven per-turn facts
+       * describe a different model than the one serving the request: `turnModel` below may substitute
+       * for an unavailable or a sick model, and a caller that had to ask again got the substitution
+       * back out (`Resolution.ran`).
+       */
+      resolve: Effect.fn("SessionRunnerModel.resolve")(function* (
+        session: SessionSchema.Info,
+        options?: { readonly requested?: boolean },
+      ) {
+        const selected = yield* turnModel(session, { requested: options?.requested, latch: true, report: true })
         yield* ensureManagedModel(localModels, selected, Config.latest(yield* config.entries(), "local_model_catalog"))
         const provider = yield* catalog.provider.get(selected.providerID)
         const connection = yield* integrations.connection.active(
           provider?.integrationID ?? Integration.ID.make(selected.providerID),
         )
-        return yield* resolve(
+        const routed = yield* resolve(
           session,
           selected,
           connection ? yield* integrations.connection.resolve(connection) : undefined,
           yield* measuredChannel(selected),
         )
+        return { model: routed, ran: selected }
       }),
       /**
        * The instance default, for work with no conversation behind it (document ingestion).
@@ -888,24 +876,28 @@ export const locationLayer = Layer.effect(
           connection ? yield* integrations.connection.resolve(connection) : undefined,
         )
       }),
-      // Models item (c): best-effort tier lookup for the system-prompt scaffold. Reuses `select`
+      // Models item (c): best-effort tier lookup for the system-prompt scaffold. Reuses `turnModel`
       // (no boot-latch wait — this only decorates the prompt, never gates the turn) and never fails.
+      //
+      // ⚠️ `turnModel`, NOT `select`. `select` answers "what did this session CHOOSE", and after a
+      // fallback that is not the model the turn runs on — which is how six of these accessors came
+      // to describe a model that served nothing.
       tier: Effect.fn("SessionRunnerModel.tier")(function* (session) {
-        return (yield* select(session).pipe(Effect.orElseSucceed(() => undefined)))?.tier
+        return (yield* turnModel(session).pipe(Effect.orElseSucceed(() => undefined)))?.tier
       }),
       // The optional per-model pre-prompt, read the same best-effort way as `tier` — it only
       // decorates the system prompt (never gates the turn), so an unresolvable model → undefined.
       prePrompt: Effect.fn("SessionRunnerModel.prePrompt")(function* (session) {
-        return (yield* select(session).pipe(Effect.orElseSucceed(() => undefined)))?.prePrompt
+        return (yield* turnModel(session).pipe(Effect.orElseSucceed(() => undefined)))?.prePrompt
       }),
       retryAttempts: Effect.fn("SessionRunnerModel.retryAttempts")(function* (session) {
-        return (yield* select(session).pipe(Effect.orElseSucceed(() => undefined)))?.retry?.attempts
+        return (yield* turnModel(session).pipe(Effect.orElseSucceed(() => undefined)))?.retry?.attempts
       }),
       // The attachment gate's evidence, read exactly like `tier` above — no boot-latch wait, never
       // fails. An unresolved model returns undefined, which the gate reads as "no evidence" and
       // lets through; the turn's real model resolution (`resolve`) is what fails a missing model.
       imageLimit: Effect.fn("SessionRunnerModel.imageLimit")(function* (session) {
-        return (yield* select(session).pipe(Effect.orElseSucceed(() => undefined)))?.limit?.images
+        return (yield* turnModel(session).pipe(Effect.orElseSucceed(() => undefined)))?.limit?.images
       }),
       /**
        * What a PREVIOUS process learned from this endpoint's own 400.
@@ -935,10 +927,10 @@ export const locationLayer = Layer.effect(
           .pipe(Effect.ignore)
       }),
       capabilities: Effect.fn("SessionRunnerModel.capabilities")(function* (session) {
-        return (yield* select(session).pipe(Effect.orElseSucceed(() => undefined)))?.capabilities
+        return (yield* turnModel(session).pipe(Effect.orElseSucceed(() => undefined)))?.capabilities
       }),
       ref: Effect.fn("SessionRunnerModel.ref")(function* (session) {
-        const model = yield* select(session).pipe(Effect.orElseSucceed(() => undefined))
+        const model = yield* turnModel(session).pipe(Effect.orElseSucceed(() => undefined))
         return model === undefined ? undefined : { providerID: model.providerID, id: model.id }
       }),
       // Read exactly like `ref` above — no boot-latch wait, never fails. A scheduling key that
@@ -949,7 +941,7 @@ export const locationLayer = Layer.effect(
       // `config.model` (`runner/llm.ts`'s `modelSession`). So a sub-agent inherits its parent's
       // device without declaring one, which is what makes this a config field rather than a column.
       device: Effect.fn("SessionRunnerModel.device")(function* (session) {
-        const model = yield* select(session).pipe(Effect.orElseSucceed(() => undefined))
+        const model = yield* turnModel(session).pipe(Effect.orElseSucceed(() => undefined))
         if (model === undefined) return undefined
         const endpoints = yield* devices.endpoints()
         const declaredProfile = session.device === undefined ? undefined : yield* devices.profile(session.device)
@@ -965,6 +957,139 @@ export const locationLayer = Layer.effect(
         return { key: placement.key, ...profile }
       }),
     }
+
+    /**
+     * WHICH catalog model a session runs on — `select()` plus BOTH fallbacks, and nothing else.
+     *
+     * 🔴 **Every reader of a per-turn model fact resolves through HERE, and that is the fix for a
+     * whole class of bug rather than one instance of it.** `tier`, `prePrompt`, `retryAttempts`,
+     * `capabilities`, `imageLimit`, `ref` and `device` each used to call `select()` directly, which
+     * applies NEITHER fallback — so after a health demotion the runner held two models at once and
+     * described the sick one while the request went to the substitute. The visible failure was a
+     * screenshot passing a *vision* capability gate on its way into a *text-only* request (the
+     * provider media-type 400 the gate exists to prevent), and its mirror was worse and silent: a
+     * sighted model told, in its own prompt, that it had not been shown the picture it was holding.
+     *
+     * ⚠️ **Side-effect free on purpose.** Waking a managed local model, resolving credentials and
+     * reading the measured tool channel belong to `resolveRoute`; a best-effort prompt decoration
+     * must not start a GPU process.
+     *
+     * @param latch  await the plugin boot latch when the first look finds nothing. The turn's own
+     *   resolution does; a prompt decoration does not, because it must never gate a turn on a wait.
+     * @param report emit the one `session.model.fallback` line. The turn's resolution owns it — a
+     *   line per best-effort reader would report six fallbacks where one happened.
+     */
+    const turnModel = Effect.fnUntraced(function* (
+      session: SessionSchema.Info,
+      options?: { readonly requested?: boolean; readonly latch?: boolean; readonly report?: boolean },
+    ) {
+      const report = options?.report === true
+      // Location plugins populate and filter the catalog asynchronously during layer startup
+      // (plugin-internal's forked boot batch) — a prompt issued right after boot can read an
+      // EMPTY catalog and misreport a configured model as unavailable. Only when the first
+      // look fails: await the boot latch (bounded — some test graphs never open it) and look
+      // again before failing. The healthy path pays nothing.
+      let selected = yield* select(session)
+      if (!selected && options?.latch === true) {
+        yield* plugins.ready.pipe(Effect.timeoutOrElse({ duration: "5 seconds", orElse: () => Effect.void }))
+        selected = yield* select(session)
+      }
+      // 🔴 FALL BACK to the instance default rather than killing the turn (owner, 2026-08-21: *"if
+      // the agent's chosen model is unavailable / gives errors, we temporarily auto switch to the
+      // Default model"*).
+      //
+      // A colleague's model is part of its job description now, so an unavailable one is an
+      // ordinary condition — a local model not yet pulled, a provider whose key expired, a machine
+      // that used to have a GPU. Refusing the turn made the colleague useless until somebody
+      // noticed and edited its configuration; falling back keeps it working, worse, and says so.
+      //
+      // ⚠️ TEMPORARY means nothing is written. The colleague's configured model is untouched, so
+      // the very next turn tries it again and recovers by itself the moment it returns. Rewriting
+      // the config on a transient failure would be a silent, permanent downgrade nobody asked for.
+      // 🔴 **AN EXPLICIT REQUEST THAT CANNOT BE SERVED IS AN ERROR, NEVER A SUBSTITUTION.**
+      // The fallback below exists for a COLLEAGUE whose configured model is temporarily down — the
+      // officer keeps working on the default rather than going silent. It must not swallow
+      // `--model does/not-exist`: the user named that model, and quietly running a different one is
+      // answering a question nobody asked.
+      //
+      // Measured 2026-08-23 in the release gate: `novaclaw run --model test/nonexistent-model` had
+      // started exiting 0, defeating `run-process.test.ts`'s regression guard for #27371. The two
+      // rules are both right and the resolver could not tell them apart, because an agent-declared
+      // model and a user-requested one arrive on the same field.
+      if (!selected && session.model && options?.requested === true)
+        return yield* new ModelUnavailableError({
+          providerID: session.model.providerID,
+          modelID: session.model.id,
+        })
+      if (!selected && session.model) {
+        const usable = usableFallback({
+          fallback: yield* catalog.model.default(),
+          available: yield* catalog.model.available(),
+          supported,
+        })
+        if (usable) {
+          if (report)
+            yield* Log.event("session.model.fallback", {
+              "session.id": session.id,
+              "model.requested": `${session.model.providerID}/${session.model.id}`,
+              "model.used": `${usable.providerID}/${usable.id}`,
+              "model.reason": "unavailable",
+            })
+          selected = usable
+        } else
+          return yield* new ModelUnavailableError({
+            providerID: session.model.providerID,
+            modelID: session.model.id,
+          })
+      }
+      // 🔴 The SECOND half of the owner's rule: *"or gives errors"*. A model that resolves cleanly
+      // and then fails every request is the commoner fault — a local server that died, a key that
+      // expired — and the block above cannot see it, because there is nothing wrong with the
+      // catalog entry. `ModelHealth` watches the turns themselves and answers "is this endpoint
+      // serving right now"; two exhausted-retry failures inside ten minutes is the bar, so a
+      // restarting local server does not demote anybody (see that module's threshold note).
+      //
+      // ⚠️ Never routes onto a model that is ALSO sick, and never away from the default onto
+      // nothing: if the default is the thing failing, staying put and reporting its real error
+      // beats bouncing between two dead endpoints and reporting neither.
+      // ⚠️ **NO `session.model` GUARD, and it had one until it was driven.** The block above needs
+      // `session.model` because it reports what the user ASKED for and there is nothing else to
+      // name. This one does not: the question is whether the model this turn is about to use is
+      // failing, and where that choice came from is irrelevant.
+      //
+      // Copying the guard made the feature dead for the case it exists for. A colleague's model
+      // comes from its AGENT config, which `select()` applies — it never reaches `config.model`,
+      // which resolves from the SESSION ROW (`config-resolve.ts`: `model` → column `model`). So
+      // `session.model` is undefined for every roster colleague, and after the composer's per-chat
+      // model chip was removed on 2026-08-22 that is very nearly every session. Measured live the
+      // same day: holo3.1's endpoint went down, four turns failed with `Transport` in one process,
+      // and the fallback never fired once.
+      if (selected) {
+        const at = yield* Clock.currentTimeMillis
+        if (ModelHealth.sick(selected, at)) {
+          const healthy = healthyAlternative({
+            selected,
+            fallback: yield* catalog.model.default(),
+            available: yield* catalog.model.available(),
+            supported,
+            sick: (entry) => ModelHealth.sick(entry, at),
+            same: (a, b) => `${a.providerID}/${a.id}` === `${b.providerID}/${b.id}`,
+          })
+          if (healthy) {
+            if (report)
+              yield* Log.event("session.model.fallback", {
+                "session.id": session.id,
+                "model.requested": `${selected.providerID}/${selected.id}`,
+                "model.used": `${healthy.providerID}/${healthy.id}`,
+                "model.reason": "unhealthy",
+              })
+            selected = healthy
+          }
+        }
+      }
+      if (!selected) return yield* new ModelNotSelectedError({ sessionID: session.id })
+      return selected
+    })
 
     const resolveWithDevice: Interface["resolveWithDevice"] = Effect.fn("SessionRunnerModel.resolveWithDevice")(
       function* (session, options) {
@@ -1023,34 +1148,40 @@ export const locationLayer = Layer.effect(
             connection ? yield* integrations.connection.resolve(connection) : undefined,
             yield* measuredChannel(placement.model),
           )
-          return { model: routed, device: { key: placement.key, ...declaredProfile } }
+          // A pin resolves its own placement, so the catalog entry the route was built from is
+          // `placement.model` — which may be a DIFFERENT placement of the same catalog model than
+          // the one `select` returned, and is therefore the one the per-turn facts must describe.
+          return { model: routed, device: { key: placement.key, ...declaredProfile }, ran: placement.model }
         }
 
         // Automatic placement retains the existing fallback/health selection and then derives the
-        // scheduler identity from the route that selection produced.
-        let routed = yield* base.resolve(session, options)
-        const available = yield* catalog.model.available()
-        const selected = available.find(
-          (candidate) =>
-            String(candidate.providerID) === String(routed.provider) && String(candidate.api.id) === String(routed.id),
-        )
-        const endpoints = yield* devices.endpoints()
-
-        if (selected === undefined) return { model: routed, device: { key: `${routed.provider}/${routed.id}` } }
-
+        // scheduler identity from the model that selection produced.
+        //
+        // ⚠️ The catalog entry now comes back FROM the resolution instead of being re-found in
+        // `available` by matching the wire route against `providerID`/`api.id`. That match could
+        // miss — a route whose pair names no catalog row fell through to the per-model device key —
+        // and a miss is exactly when a caller has no catalog answer to describe the turn with.
+        const resolved = yield* base.resolve(session, options)
         const placement = resolveDevicePlacement({
-          selected,
-          available,
-          endpoints,
+          selected: resolved.ran,
+          available: yield* catalog.model.available(),
+          endpoints: yield* devices.endpoints(),
         })
         // With no declaration this branch is exhaustive by construction.
-        if (placement._tag === "refused") return { model: routed, device: { key: `${routed.provider}/${routed.id}` } }
+        if (placement._tag === "refused")
+          return { ...resolved, device: { key: `${resolved.model.provider}/${resolved.model.id}` } }
         const profile = yield* devices.profile(placement.key)
-        return { model: routed, device: { key: placement.key, ...profile } }
+        return { ...resolved, device: { key: placement.key, ...profile } }
       },
     )
 
-    return Service.of({ ...base, resolveWithDevice })
+    return Service.of({
+      ...base,
+      // The public member is the route alone. `ran` is not withheld — `resolveWithDevice` is where a
+      // caller asks "which model is this turn", and it answers with both halves at once.
+      resolve: (session, options) => base.resolve(session, options).pipe(Effect.map((resolved) => resolved.model)),
+      resolveWithDevice,
+    })
   }),
 )
 
