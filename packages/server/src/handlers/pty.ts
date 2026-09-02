@@ -1,6 +1,6 @@
 import { Pty } from "@novaclaw/core/pty"
 import { PtyProtocol } from "@novaclaw/core/pty/protocol"
-import { PtyTicket } from "@novaclaw/core/pty/ticket"
+import { Ticket } from "@novaclaw/core/ticket"
 import { Location } from "@novaclaw/core/location"
 import { Shell } from "@novaclaw/core/shell"
 import { Effect, Queue } from "effect"
@@ -10,11 +10,7 @@ import * as Socket from "effect/unstable/socket/Socket"
 import { PtyApi, handlerLayer } from "../handler-api"
 import { CorsConfig, isAllowedRequestOrigin } from "../cors"
 import { ForbiddenError, PtyNotFoundError } from "@novaclaw/protocol/errors"
-import {
-  PTY_CONNECT_TICKET_QUERY,
-  PTY_CONNECT_TOKEN_HEADER,
-  PTY_CONNECT_TOKEN_HEADER_VALUE,
-} from "@novaclaw/protocol/groups/pty"
+import { TICKET_QUERY, TICKET_REQUEST_HEADER, TICKET_REQUEST_HEADER_VALUE } from "@novaclaw/schema/ticket"
 import { response } from "../location"
 
 const ticketScope = Effect.gen(function* () {
@@ -25,7 +21,7 @@ const ticketScope = Effect.gen(function* () {
 export const PtyHandler = handlerLayer(
   HttpApiBuilder.group(PtyApi, "server.pty", (handlers) =>
     Effect.gen(function* () {
-      const tickets = yield* PtyTicket.Service
+      const tickets = yield* Ticket.Service
       const cors = yield* CorsConfig
 
       return handlers
@@ -152,7 +148,7 @@ export const PtyHandler = handlerLayer(
             // The custom header forces a CORS preflight, so cross-origin browser pages cannot
             // mint tickets without passing the server's origin policy.
             if (
-              request.headers[PTY_CONNECT_TOKEN_HEADER] !== PTY_CONNECT_TOKEN_HEADER_VALUE ||
+              request.headers[TICKET_REQUEST_HEADER] !== TICKET_REQUEST_HEADER_VALUE ||
               !isAllowedRequestOrigin(request.headers.origin, request.headers.host, cors)
             )
               return yield* new ForbiddenError({ message: "Invalid PTY connect token request" })
@@ -167,7 +163,9 @@ export const PtyHandler = handlerLayer(
                   }),
               ),
             )
-            return yield* response(tickets.issue({ ptyID: ctx.params.ptyID, ...(yield* ticketScope) }))
+            return yield* response(
+              tickets.issue({ kind: "pty.connect", ptyID: ctx.params.ptyID, ...(yield* ticketScope) }),
+            )
           }),
         )
         .handleRaw(
@@ -181,10 +179,13 @@ export const PtyHandler = handlerLayer(
             if (!exists) return HttpServerResponse.empty({ status: 404 })
 
             const url = new URL(ctx.request.url, "http://localhost")
-            const ticket = url.searchParams.get(PTY_CONNECT_TICKET_QUERY)
+            const ticket = url.searchParams.get(TICKET_QUERY)
             if (ticket) {
               const valid = isAllowedRequestOrigin(ctx.request.headers.origin, ctx.request.headers.host, cors)
-                ? yield* tickets.consume({ ticket, ptyID: ctx.params.ptyID, ...(yield* ticketScope) })
+                ? yield* tickets.consume(
+                    { kind: "pty.connect", ptyID: ctx.params.ptyID, ...(yield* ticketScope) },
+                    ticket,
+                  )
                 : false
               if (!valid) return HttpServerResponse.empty({ status: 403 })
             }

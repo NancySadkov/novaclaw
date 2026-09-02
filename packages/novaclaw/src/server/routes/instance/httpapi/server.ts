@@ -89,7 +89,7 @@ import { ModelsDev } from "@novaclaw/core/models-dev"
 import { Npm } from "@novaclaw/core/npm"
 import { PermissionSaved } from "@novaclaw/core/permission/saved"
 import { ProjectV2 } from "@novaclaw/core/project"
-import { PtyTicket } from "@novaclaw/core/pty/ticket"
+import { Ticket } from "@novaclaw/core/ticket"
 import { Ripgrep } from "@novaclaw/core/ripgrep"
 import { AgentRemoval } from "@novaclaw/core/agent/removal"
 import { AgentReassignment } from "@novaclaw/core/agent/reassignment"
@@ -435,7 +435,7 @@ const app = LayerNode.group([
   // client would read as "nobody is attached" rather than as a fault.
   SessionPresence.node,
   ProjectV2.node,
-  PtyTicket.node,
+  Ticket.node,
 ])
 
 // The Messenger stack (messenger-plan §3.2: "the gateway is instance-global — it lives on the

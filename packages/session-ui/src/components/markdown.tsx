@@ -1,6 +1,7 @@
 import { HTML_EMBED_PATH } from "@novaclaw/schema/html-embed"
 import { EMBED_WRITE, isEmbedReady } from "@novaclaw/schema/html-embed-bootstrap"
-import { useMarked } from "@novaclaw/ui/context/marked"
+import { useMarked, type HostFileResolver } from "@novaclaw/ui/context/marked"
+import { handleAgentFileClick } from "./markdown-agent-file"
 import { escapeHtml } from "@novaclaw/ui/util/html"
 import { useI18n } from "@novaclaw/ui/context/i18n"
 import morphdom from "morphdom"
@@ -351,7 +352,11 @@ function decorate(root: HTMLDivElement, labels: CopyLabels) {
   markCodeLinks(root)
 }
 
-function setupCodeCopy(root: HTMLDivElement, getLabels: () => CopyLabels) {
+function setupCodeCopy(
+  root: HTMLDivElement,
+  getLabels: () => CopyLabels,
+  getFileResolver: () => HostFileResolver | undefined,
+) {
   const timeouts = new Map<HTMLButtonElement, ReturnType<typeof setTimeout>>()
 
   const updateLabel = (button: HTMLButtonElement) => {
@@ -373,6 +378,11 @@ function setupCodeCopy(root: HTMLDivElement, getLabels: () => CopyLabels) {
         block.dataset.htmlEmbedView = toggle.dataset.embedTarget === "code" ? "code" : "preview"
       return
     }
+
+    // Saving a colleague's file — the ONE branch that has to run before anything else looks at
+    // the click, because its anchor's href is `#` and letting that default through scrolls the chat
+    // to the top. `markdown-agent-file.ts` owns the why.
+    if (handleAgentFileClick(event, getFileResolver)) return
 
     const button = target.closest('[data-slot="markdown-copy-button"]')
     if (!(button instanceof HTMLButtonElement)) return
@@ -507,7 +517,7 @@ export function Markdown(
           }
 
           const hash = checksum(block.raw)
-          const safe = sanitizeMarkdown(await Promise.resolve(marked.parse(block.src)))
+          const safe = sanitizeMarkdown(await Promise.resolve(marked.parser.parse(block.src)))
           if (key && hash) touchCachedMarkdown(key, { raw: block.raw, hash, html: safe })
           return { key: blockKey, mode: block.mode, raw: block.raw, hash: hash ?? "", html: safe }
         }),
@@ -569,10 +579,14 @@ export function Markdown(
       .querySelectorAll<HTMLButtonElement>('[data-slot="markdown-embed-toggle"]')
       .forEach((button) => setEmbedToggleLabel(button, labels))
     if (!copyCleanup)
-      copyCleanup = setupCodeCopy(container, () => ({
-        copy: i18n.t("ui.message.copy"),
-        copied: i18n.t("ui.message.copied"),
-      }))
+      copyCleanup = setupCodeCopy(
+        container,
+        () => ({
+          copy: i18n.t("ui.message.copy"),
+          copied: i18n.t("ui.message.copied"),
+        }),
+        () => marked.resolveFile(),
+      )
   })
 
   onCleanup(() => {

@@ -6103,7 +6103,7 @@ class ApiV2Fs extends NovaClawApiClient {
   /**
    * Read file
    *
-   * Serve one file relative to the requested location.
+   * Serve one file relative to the requested location. A browser download presents a `ticket` from `fs.readToken` in place of the `Authorization` header it cannot set.
    */
   public read<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -6111,12 +6111,36 @@ class ApiV2Fs extends NovaClawApiClient {
         directory?: string
         workspace?: string
       }
+      ticket?: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
-    const query = { location: parameters?.["location"] }
+    const query = { location: parameters?.["location"], ticket: parameters?.["ticket"] }
     return (options?.client ?? this.client).get<T.V2FsReadResponses, T.V2FsReadErrors, ThrowOnError>({
       url: "/api/fs/read/*",
+      ...options,
+      query,
+    })
+  }
+
+  /**
+   * Create file read ticket
+   *
+   * Create a short-lived single-use ticket authorizing one browser download of one file.
+   */
+  public readToken<ThrowOnError extends boolean = false>(
+    parameters: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      path: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"], path: parameters?.["path"] }
+    return (options?.client ?? this.client).post<T.V2FsReadTokenResponses, T.V2FsReadTokenErrors, ThrowOnError>({
+      url: "/api/fs/read-token",
       ...options,
       query,
     })

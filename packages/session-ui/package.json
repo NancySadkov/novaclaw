@@ -7,6 +7,7 @@
     "./*": "./src/components/*.tsx",
     "./session-diff": "./src/components/session-diff.ts",
     "./markdown-stream": "./src/components/markdown-stream.ts",
+    "./markdown-agent-file": "./src/components/markdown-agent-file.ts",
     "./markdown-cache": "./src/components/markdown-cache.tsx",
     "./line-comment-styles": "./src/components/line-comment-styles.ts",
     "./pierre": "./src/pierre/index.ts",

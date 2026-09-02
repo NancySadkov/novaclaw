@@ -1940,6 +1940,11 @@ export type ProviderNotFoundError = {
 
 export type UnknownReason = "not-applicable" | "not-measured" | "measurement-failed" | "incomplete"
 
+export type ForbiddenError = {
+  _tag: "ForbiddenError"
+  message: string
+}
+
 export type MessengerAccountStatus = {
   id: string
   metadata?: {
@@ -2051,11 +2056,6 @@ export type PtyNotFoundError = {
 export type PtyActivity = {
   state: "idle" | "foreground" | "unknown"
   descendants?: number
-}
-
-export type ForbiddenError = {
-  _tag: "ForbiddenError"
-  message: string
 }
 
 export type ConfigPath = Array<string>
@@ -6075,6 +6075,11 @@ export type PermissionV2Source = {
   callID: string
 }
 
+export type TicketAccessToken = {
+  ticket: string
+  expires_in: number
+}
+
 export type FileSystemSnapshotContent = {
   type: "binary"
   content: string
@@ -6768,11 +6773,6 @@ export type V2EventServerConnected = {
   data: {
     [key: string]: unknown
   }
-}
-
-export type PtyTicketConnectToken = {
-  ticket: string
-  expires_in: number
 }
 
 export type QuestionV2Request = {
@@ -16842,6 +16842,7 @@ export type V2FsReadData = {
       directory?: string
       workspace?: string
     }
+    ticket?: string
   }
   url: "/api/fs/read/*"
 }
@@ -16855,6 +16856,10 @@ export type V2FsReadErrors = {
    * UnauthorizedError
    */
   401: UnauthorizedError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
 }
 
 export type V2FsReadError = V2FsReadErrors[keyof V2FsReadErrors]
@@ -16867,6 +16872,48 @@ export type V2FsReadResponses = {
 }
 
 export type V2FsReadResponse = V2FsReadResponses[keyof V2FsReadResponses]
+
+export type V2FsReadTokenData = {
+  body?: never
+  path?: never
+  query: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+    path: string
+  }
+  url: "/api/fs/read-token"
+}
+
+export type V2FsReadTokenErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+}
+
+export type V2FsReadTokenError = V2FsReadTokenErrors[keyof V2FsReadTokenErrors]
+
+export type V2FsReadTokenResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: TicketAccessToken
+  }
+}
+
+export type V2FsReadTokenResponse = V2FsReadTokenResponses[keyof V2FsReadTokenResponses]
 
 export type V2FsSnapshotReadData = {
   body?: never
@@ -17492,7 +17539,7 @@ export type V2PtyConnectTokenResponses = {
    */
   200: {
     location: LocationInfo
-    data: PtyTicketConnectToken
+    data: TicketAccessToken
   }
 }
 

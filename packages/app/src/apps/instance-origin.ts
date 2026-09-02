@@ -48,6 +48,36 @@ export const setInstanceFileReader = (read: InstanceFileReader | undefined): voi
 
 export const instanceFileReader = (): InstanceFileReader | undefined => reader
 
+/**
+ * Mint one short-lived, single-use ticket authorizing ONE download of ONE file.
+ *
+ * 🔴 **The download half of the same credential problem, and it needs a different answer from the
+ * reader above.** A `<a download>` href is fetched by the BROWSER, which sends no `Authorization`
+ * header — so on an instance with a server password the click saved the 401 body under the file's
+ * own name. The image path solves that by reading the bytes here and pasting them into a `data:`
+ * URL; a download must not, because the Files browser records a deliberate decision that a large
+ * artefact must never have to fit in a JS string. So the credential buys a TICKET instead, and the
+ * browser still streams the file itself.
+ *
+ * ⚠️ Minted at CLICK time and nowhere else. The chat's rendered HTML sits in a content-addressed
+ * LRU that replays it verbatim while `/api/fs/read` sets no cache headers, so a ticket baked into
+ * markup is spent on the first paint; and the user clicks a download at an arbitrary later moment,
+ * which no TTL short enough to be a ticket survives.
+ *
+ * ⚠️ `undefined` while nothing is connected, and resolves `undefined` when the mint is refused. The
+ * caller degrades to the unticketed URL — which is what every instance WITHOUT a password serves
+ * happily — rather than doing nothing at all.
+ */
+export type InstanceTicketMinter = (directory: string, name: string) => Promise<string | undefined>
+
+let minter: InstanceTicketMinter | undefined
+
+export const setInstanceTicketMinter = (mint: InstanceTicketMinter | undefined): void => {
+  minter = mint
+}
+
+export const instanceTicketMinter = (): InstanceTicketMinter | undefined => minter
+
 let mediaNote = ""
 
 /**

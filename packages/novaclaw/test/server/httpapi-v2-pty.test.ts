@@ -5,7 +5,7 @@ import { HttpClient, HttpClientRequest, HttpRouter, HttpServer } from "effect/un
 import * as Socket from "effect/unstable/socket/Socket"
 import { Location } from "@novaclaw/core/location"
 import { Pty } from "@novaclaw/core/pty"
-import { PtyTicket } from "@novaclaw/core/pty/ticket"
+import { Ticket } from "@novaclaw/schema/ticket"
 import { PtyPaths } from "@novaclaw/protocol/groups/pty"
 import { PtyInstancePaths } from "@novaclaw/protocol/groups/pty-instance"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
@@ -238,7 +238,7 @@ describe("v2 pty HttpApi", () => {
         headers: { "x-novaclaw-ticket": "1" },
       })
       expect(token.status).toBe(200)
-      const ticket = Schema.decodeUnknownSync(Location.response(PtyTicket.ConnectToken))(await token.json()).data.ticket
+      const ticket = Schema.decodeUnknownSync(Location.response(Ticket.AccessToken))(await token.json()).data.ticket
       expect(ticket).toBeTruthy()
 
       const invalid = await request(`/api/pty/${info.id}/connect?ticket=not-a-ticket`, tmp.path)

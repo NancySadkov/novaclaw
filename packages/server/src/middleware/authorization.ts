@@ -2,6 +2,7 @@ import { ServerAuth } from "../auth"
 import { UnauthorizedError } from "@novaclaw/protocol/errors"
 import { Authorization } from "@novaclaw/protocol/middleware/authorization"
 export { Authorization } from "@novaclaw/protocol/middleware/authorization"
+import { hasFileReadTicketURL } from "@novaclaw/protocol/groups/fs"
 import { hasPtyConnectTicketURL, isPtyConnectURL } from "@novaclaw/protocol/groups/pty"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { Effect, Encoding, Layer, Redacted } from "effect"
@@ -54,9 +55,19 @@ export const authorizationLayer = Layer.effect(
         const config = ServerAuth.effective(envConfig, yield* settings.serverPassword())
         if (!ServerAuth.required(config)) return yield* effect
         const request = yield* HttpServerRequest.HttpServerRequest
-        // Browsers cannot set headers on WebSocket upgrades, so a ticketed PTY connect skips
-        // credential checks here; the connect handler consumes and validates the ticket.
-        if (hasPtyConnectTicketURL(new URL(request.url, "http://localhost"))) return yield* effect
+        // 🔴 THE TWO REQUESTS A BROWSER ISSUES ON ITS OWN, and they are the only ones exempted.
+        // A WebSocket upgrade and a `<a download>` are both fetched by the browser rather than by
+        // our client, so neither can carry `Authorization`; each instead presents a `ticket`
+        // (`@novaclaw/core/ticket`) that names one target, works once and dies in a minute.
+        //
+        // ⚠️ **This admits the request; it does not authorize it.** Each handler is obliged to
+        // CONSUME the ticket and refuse a request whose ticket does not match what it is being
+        // asked for — `handlers/pty.ts` for the upgrade, `handlers/fs.ts` for the read. A handler
+        // that skipped that step would make the predicate beside it an open door, which is why the
+        // ticket suites assert a forged and an expired one are refused rather than only that a
+        // fresh one works.
+        const url = new URL(request.url, "http://localhost")
+        if (hasPtyConnectTicketURL(url) || hasFileReadTicketURL(url)) return yield* effect
         const credential = yield* credentialFromRequest(request)
         if (ServerAuth.authorized(credential, config)) return yield* effect
         yield* HttpEffect.appendPreResponseHandler((_request, response) =>

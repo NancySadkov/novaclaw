@@ -94,17 +94,26 @@ describe("a markdown link cannot add an attribute or an element the author never
     expect(attributeNames(image)).toEqual(["alt", "class", "src", "title"])
   })
 
-  test("🔴 a resolved host file is escaped too — the url this app builds is still a value in a string", async () => {
-    const html = await parseWithFileRenderer("[report](out.md)", {
-      target: () => ({ url: 'https://host/f?q=" onmouseover="alert(1)', name: "out.md", image: false }),
+  test("🔴 a resolved host file is escaped too — the path it carries is still a value in a string", async () => {
+    // 🔴 The anchor carries no instance URL any more (a `download` href is fetched by the browser,
+    // which sends no `Authorization`); it carries the MODEL'S OWN href in a data attribute, for the
+    // click handler to mint a ticket against. That is untrusted input in an HTML string exactly as
+    // the url was, and the same escaper has to close the slot.
+    const html = await parseWithFileRenderer('[report](<https://host/f?q=" onmouseover="alert(1)>)', {
+      target: () => ({ name: "out.md", image: false }),
       inline: () => Promise.resolve({ ok: false, reason: "unreadable" as const }),
+      download: () => {},
     })
     const host = document.createElement("div")
     host.innerHTML = html
     const link = anchor(host)
 
     expect(link.getAttribute("onmouseover")).toBeNull()
-    expect(attributeNames(link)).toEqual(["class", "data-agent-file", "download", "href"])
+    expect(attributeNames(link)).toEqual(["class", "data-agent-file", "data-agent-file-path", "download", "href"])
+    // The path survives INTACT as a value — escaping that mangled it would break the download.
+    expect(link.getAttribute("data-agent-file-path")).toBe('https://host/f?q=" onmouseover="alert(1)')
+    // 🔴 And nothing fetchable is left on the element before a click.
+    expect(link.getAttribute("href")).toBe("#")
   })
 
   // ⚠️ CONTROLS. Both pass in the unfixed tree; without them every assertion above is satisfied by a

@@ -15,10 +15,20 @@ import { fileURLToPath } from "node:url"
  * would pass on the prose describing code that had been deleted.
  */
 
+/**
+ * ⚠️ **A block comment is only stripped when it OPENS A LINE, and that is not fussiness.**
+ *
+ * The route this file's last describe asserts is `"/api/fs/read/*"` — a wildcard path whose final
+ * two characters are `/*`. The stripper used to match `/\*[\s\S]*?\*\//` anywhere, so the moment a
+ * doc comment was added anywhere BELOW that route the two paired up and ate every line between
+ * them: the assertion failed naming a route that was still there, three lines from where it always
+ * was. Requiring the opener to start its own line separates a JSDoc from a path, and every block
+ * comment in the files read here is a JSDoc.
+ */
 const read = (...segments: string[]): string => {
   const here = path.dirname(fileURLToPath(import.meta.url))
   const raw = readFileSync(path.join(here, "..", "..", "..", ...segments), "utf8")
-  return raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1")
+  return raw.replace(/^[ \t]*\/\*[\s\S]*?\*\//gm, "").replace(/(^|[^:])\/\/.*$/gm, "$1")
 }
 
 const IMAGE_RENDERER = "image(token: Tokens.Image"
@@ -127,4 +137,66 @@ test("there is exactly one parser, and the file renderer is on it", () => {
   const source = read("ui", "src", "context", "marked.tsx")
   expect(source).not.toContain("nativeParser")
   expect(source.match(/marked\.use\(|new Marked\(/g)?.length).toBe(2)
+})
+
+/**
+ * 🔴 THE DOWNLOAD CLICK IS ALSO A JOIN, and it spans one more package than the render does.
+ *
+ * `marked.tsx` emits the hook, `session-ui/components/markdown.tsx` installs the delegated listener,
+ * `markdown-agent-file.ts` claims the click, and `app/src/apps/agent-file-link.ts` mints the ticket
+ * and saves the file. `app/test-browser/agent-file-download-click.test.ts` drives the last three
+ * against real rendered markup; the one link it cannot reach is the FIRST — `markdown.tsx` imports
+ * a bundler-only `?worker&url` module, so `bun test` cannot load it into a DOM at all. That line is
+ * asserted here instead, which is the same reason every other test in this file exists.
+ */
+describe("a colleague's file is SAVED by a click, not by an href", () => {
+  test("the renderer emits no instance URL — the anchor's own href is inert", () => {
+    const source = read("ui", "src", "context", "marked.tsx")
+    // The member the renderers used to interpolate is gone from the type, so neither branch can
+    // name it. Both anchors carry `href="#"` and the path in a data attribute instead.
+    expect(source).not.toContain("local.url")
+    expect(source.match(/class="agent-file-link"/g)?.length).toBe(2)
+    expect(source.match(/<a href="#"/g)?.length).toBe(2)
+    expect(source).toContain("AGENT_FILE_PATH_ATTRIBUTE")
+  })
+
+  /**
+   * 🔴 **The one line no behavioural test in this repo can reach, and it was measured.**
+   *
+   * `markdown.tsx` imports the highlighting worker through a bundler-only `?worker&url` specifier,
+   * so `bun test` cannot load that module into a DOM at all — which means the DOM suite has to call
+   * the handler itself. Poisoning this exact statement to `if (false && …)` was run against the
+   * whole `app:browser` directory and produced **222 pass / 0 fail**: without the assertion below,
+   * a colleague's file link would render, look right, and do nothing on click, and every other test
+   * in this change would still be green.
+   *
+   * ⚠️ So the CALL is pinned, not the identifier. `toContain("handleAgentFileClick")` was the first
+   * version and it is what the poison walked straight past.
+   */
+  test("the markdown component installs the delegated handler", () => {
+    const source = read("session-ui", "src", "components", "markdown.tsx")
+    expect(source).toContain("if (handleAgentFileClick(event, getFileResolver)) return")
+    // ⚠️ Inside the delegated `click` listener, not on a per-anchor binding: the chat rewrites its
+    // own HTML on every streamed token, and a listener attached to an element does not survive that.
+    expect(source).toMatch(/root\.addEventListener\("click"/)
+    // And the resolver it hands over must be the LIVE one — a captured value points at whichever
+    // instance was connected when the component mounted.
+    expect(source).toContain("() => marked.resolveFile()")
+  })
+
+  test("the app answers that click by minting a ticket, never by pasting a credential", () => {
+    const source = read("app", "src", "apps", "agent-file-link.ts")
+    expect(source).toContain("download: (href) => downloadHostFile(href)")
+    expect(source).toContain("instanceTicketMinter()")
+    // 🔴 `auth_token` is `btoa("user:password")` and `workspaceProxyURL` copies a query string
+    // wholesale into a proxy target. A ticket names one file, works once, and expires in a minute.
+    expect(source).not.toContain("auth_token")
+  })
+
+  test("the Files browser reaches the same click, and has no href to leak", () => {
+    const source = read("app", "src", "pages", "files.tsx")
+    expect(source).toContain("downloadHostPath(entry().absolute)")
+    expect(source).not.toContain("fileDownloadHref")
+    expect(source).toContain('data-action="download-file"')
+  })
 })

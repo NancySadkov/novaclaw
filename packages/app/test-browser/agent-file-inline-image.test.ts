@@ -28,9 +28,11 @@ import { setInstanceBase, setInstanceFileReader, setInstanceMediaNote } from "@/
  *     no lifetime and issues no second request, which is why the replay case below is the one worth
  *     owning.
  *
- * ⚠️ Scope is the IMAGE half. A `<a download>` is clicked at an arbitrary time after render, so it
- * needs a click-time credential, a mint endpoint and an SDK regen; it is unchanged here and the
- * non-image link assertions below are the control that says so.
+ * ⚠️ Scope is the IMAGE half, and the two halves deliberately take DIFFERENT answers. A
+ * `<a download>` is clicked at an arbitrary time after render, and its artefact may be a video or
+ * an archive — so it must keep STREAMING and cannot become a `data:` URL. It mints a short-lived
+ * ticket at click time instead (`agent-file-download-click.test.ts`); what the non-image assertions
+ * below control for here is that a download still reads nothing through this process.
  */
 
 /** A one-pixel-ish payload. Only its base64-ness and its length matter to anything here. */
@@ -115,16 +117,21 @@ describe("a colleague's image reaches the chat without a credential in any URL",
     expect(reads).toEqual([])
   })
 
-  // ⚠️ CONTROL for the half that is deliberately unchanged: a NON-image host file is still a
-  // download anchor carrying the instance route. The click-time credential that fixes it is a
-  // server change and is out of this unit's scope.
-  test("a non-image host file is still a download link on the instance route", async () => {
+  /**
+   * ⚠️ CONTROL for the half that takes the OTHER answer: a non-image host file is still a download
+   * anchor, and it must NOT have started reading bytes through the client. A report, an archive or
+   * a video must never have to fit in a JS string, so this path keeps streaming — what changed is
+   * that its anchor no longer carries an instance route at all. The route is built at CLICK time,
+   * with a ticket, by `apps/agent-file-link.ts`.
+   */
+  test("a non-image host file is a download anchor that is not fetchable until it is clicked", async () => {
     const host = await render("[report](/tmp/report.pdf)")
     const link = one<HTMLAnchorElement>(host, "a")
 
-    expect(link.getAttribute("href")).toContain("http://spark-0693.local:4096/api/fs/read/report.pdf")
+    expect(link.getAttribute("href")).toBe("#")
+    expect(link.getAttribute("data-agent-file-path")).toBe("/tmp/report.pdf")
     expect(link.getAttribute("download")).toBe("report")
-    expect(reads).toEqual([])
+    expect(reads, "a download must not read the bytes through this process").toEqual([])
   })
 
   /**
@@ -257,7 +264,10 @@ describe("an image too large to inline degrades honestly", () => {
     const link = one<HTMLAnchorElement>(host, "a")
     expect(link.getAttribute("data-agent-file-inline")).toBe("oversize")
     expect(link.getAttribute("download")).toBe("huge.png")
-    expect(link.getAttribute("href")).toContain("/api/fs/read/huge.png")
+    // 🔴 The degrade hands over the same click-time download the link renderer does — not a
+    // pre-built instance route, which is what answered 401 under a server password.
+    expect(link.getAttribute("href")).toBe("#")
+    expect(link.getAttribute("data-agent-file-path")).toBe("/tmp/huge.png")
     expect(link.textContent, "the colleague's own label for the image was dropped").toBe("chart")
     expect(host.textContent, "nothing on screen says why the picture is missing").toContain(NOTE)
   })

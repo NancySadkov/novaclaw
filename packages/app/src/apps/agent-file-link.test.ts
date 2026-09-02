@@ -1,6 +1,6 @@
-import { describe, expect, test } from "bun:test"
-import { agentFileResolver, fileDownloadHref, fileUrl, hostFile } from "./agent-file-link"
-import { setInstanceBase } from "./instance-origin"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { agentFileResolver, downloadHostFile, downloadHostPath, fileUrl, hostFile } from "./agent-file-link"
+import { setInstanceBase, setInstanceTicketMinter } from "./instance-origin"
 
 // Which hrefs the chat treats as FILES ON THIS MACHINE, and which it leaves alone.
 //
@@ -118,15 +118,41 @@ describe("the URL that serves it", () => {
   test("a trailing slash on the base does not double up", () => {
     expect(fileUrl("http://x/", { directory: "/tmp", name: "a.txt", image: false })).toContain("http://x/api/fs/read/")
   })
+
+  test("a ticket rides the query when there is one, and the parameter is absent when there is not", () => {
+    const file = { directory: "/tmp", name: "a.txt", image: false }
+    expect(fileUrl("http://x", file, "tk 1")).toBe(
+      "http://x/api/fs/read/a.txt?location%5Bdirectory%5D=%2Ftmp&ticket=tk%201",
+    )
+    expect(fileUrl("http://x", file)).not.toContain("ticket")
+  })
+
+  /**
+   * 🔴 A TICKET, NEVER `auth_token`. That parameter is `btoa("user:password")` — the instance's own
+   * password — and `workspaceProxyURL` copies a request's whole query string into its proxy target,
+   * so a request merely passing through an instance would carry that instance's password to a
+   * machine that is not ours. The narrowing in the authorization middleware exists because that
+   * happened. A ticket names one file, works once and expires in a minute.
+   */
+  test("🔴 no credential ever rides this URL", () => {
+    const url = fileUrl("http://x", { directory: "/tmp", name: "a.txt", image: false }, "tk-1")
+    expect(url).not.toContain("auth_token")
+    expect(url).not.toContain("password")
+  })
 })
 
 describe("the resolver the renderer is handed", () => {
-  test("a host image resolves to a same-origin URL and says it is an image", () => {
-    expect(agentFileResolver.target("/tmp/chart.svg")).toEqual({
-      url: "/api/fs/read/chart.svg?location%5Bdirectory%5D=%2Ftmp",
-      name: "chart.svg",
-      image: true,
-    })
+  /**
+   * 🔴 **THERE IS NO URL IN A RESOLVED TARGET, and that is the fix.**
+   *
+   * It used to carry `url` — the instance route serving the file — and the renderer wrote it into
+   * an `<a href download>`. A `download` href is fetched by the BROWSER, and a browser-issued
+   * request carries no `Authorization` header, so on any instance with a server password the click
+   * saved the 401 body under the file's own name. The member is gone: a renderer can only emit what
+   * it is handed, so the URL cannot reappear in an attribute by anyone forgetting anything.
+   */
+  test("a host image is named and marked, and carries no URL at all", () => {
+    expect(agentFileResolver.target("/tmp/chart.svg")).toEqual({ name: "chart.svg", image: true })
   })
 
   test("a host file resolves, and is NOT an image", () => {
@@ -140,44 +166,138 @@ describe("the resolver the renderer is handed", () => {
   })
 })
 
-// 🔴 WHEN THE COLLEAGUE IS ON ANOTHER MACHINE (owner, 2026-08-22). A same-origin URL asks the user's
-// own machine for a path that exists on the instance's — and the remote colleague is exactly the one
-// whose files they cannot otherwise reach.
-describe("addressing the instance the colleague runs on", () => {
-  test("links point at the CONNECTED instance, not the page", () => {
-    setInstanceBase("http://spark-0693.local:4096")
-    expect(agentFileResolver.target("/data/reports/q3.pdf")?.url).toBe(
-      "http://spark-0693.local:4096/api/fs/read/q3.pdf?location%5Bdirectory%5D=%2Fdata%2Freports",
-    )
+/**
+ * 🔴 WHAT THE BROWSER IS ACTUALLY HANDED WHEN THE USER CLICKS.
+ *
+ * `downloadHostFile` mints a ticket, then creates an anchor, sets its `href` and `download`, and
+ * clicks it — so the browser streams the file itself and a large artefact never has to fit in a JS
+ * string. These tests intercept `HTMLAnchorElement.prototype.click` rather than a seam invented for
+ * them, so what is asserted is the URL the real code path gives a real element.
+ *
+ * 🔴 **Addressing the instance the colleague RUNS ON** (owner, 2026-08-22): a same-origin URL asks
+ * the user's own machine for a path that exists on the instance's, and the remote colleague is
+ * exactly the one whose files they cannot otherwise reach.
+ */
+describe("the download click", () => {
+  const clicked: { href: string; download: string }[] = []
+  const native = HTMLAnchorElement.prototype.click
+
+  beforeEach(() => {
+    clicked.length = 0
+    HTMLAnchorElement.prototype.click = function (this: HTMLAnchorElement) {
+      clicked.push({ href: this.getAttribute("href") ?? "", download: this.download })
+    }
+  })
+
+  afterEach(() => {
+    HTMLAnchorElement.prototype.click = native
+    setInstanceTicketMinter(undefined)
     setInstanceBase("")
   })
 
-  test("no connection yet is same-origin, which is the honest answer", () => {
-    setInstanceBase(undefined)
-    expect(agentFileResolver.target("/tmp/a.txt")?.url).toBe("/api/fs/read/a.txt?location%5Bdirectory%5D=%2Ftmp")
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+  test("mints a ticket for THIS file and hands the browser a URL carrying it", async () => {
+    const asked: string[] = []
+    setInstanceBase("http://spark-0693.local:4096")
+    setInstanceTicketMinter(async (directory, name) => {
+      asked.push(directory + "|" + name)
+      return "tk-42"
+    })
+
+    downloadHostFile("/data/reports/q3.pdf")
+    await settle()
+
+    expect(asked).toEqual(["/data/reports|q3.pdf"])
+    expect(clicked).toEqual([
+      {
+        href: "http://spark-0693.local:4096/api/fs/read/q3.pdf?location%5Bdirectory%5D=%2Fdata%2Freports&ticket=tk-42",
+        download: "q3.pdf",
+      },
+    ])
   })
 
-  test("the files browser downloads through the SAME resolver", () => {
+  test("🔴 the ticket is minted at CLICK time, once per click — never once per render", async () => {
+    // A ticket baked into markup is spent by the first paint: the chat replays rendered HTML from a
+    // 200-entry content-addressed LRU and `/api/fs/read` sets no cache headers. Two clicks must
+    // therefore be two tickets.
+    const minted: string[] = []
+    setInstanceTicketMinter(async () => {
+      const ticket = "tk-" + minted.length
+      minted.push(ticket)
+      return ticket
+    })
+
+    downloadHostFile("/tmp/a.txt")
+    await settle()
+    downloadHostFile("/tmp/a.txt")
+    await settle()
+
+    expect(minted).toEqual(["tk-0", "tk-1"])
+    expect(clicked.map((entry) => entry.href)).toEqual([
+      "/api/fs/read/a.txt?location%5Bdirectory%5D=%2Ftmp&ticket=tk-0",
+      "/api/fs/read/a.txt?location%5Bdirectory%5D=%2Ftmp&ticket=tk-1",
+    ])
+  })
+
+  test("a refused mint degrades to the unticketed URL rather than to nothing", async () => {
+    // Which is exactly what HEAD always sent: an instance with no password serves it, and one with
+    // a password answers the same 401 it did before. Doing nothing at all would be worse than the
+    // bug this replaces.
+    setInstanceTicketMinter(async () => {
+      throw new Error("mint refused")
+    })
+
+    downloadHostFile("/tmp/a.txt")
+    await settle()
+
+    expect(clicked).toEqual([{ href: "/api/fs/read/a.txt?location%5Bdirectory%5D=%2Ftmp", download: "a.txt" }])
+  })
+
+  test("nothing connected still downloads, same-origin and unticketed", async () => {
+    downloadHostFile("/tmp/a.txt")
+    await settle()
+    expect(clicked.map((entry) => entry.href)).toEqual(["/api/fs/read/a.txt?location%5Bdirectory%5D=%2Ftmp"])
+  })
+
+  test("a path it cannot parse downloads nothing at all", async () => {
+    setInstanceTicketMinter(async () => "tk-1")
+    downloadHostFile("not-a-path")
+    await settle()
+    expect(clicked).toEqual([])
+  })
+
+  /**
+   * 🔴 The remote-root refusal is re-applied HERE, on the value that came back out of an attribute.
+   *
+   * `//host/share/x` is a network destination wearing a path's clothes: fetching it opens an SMB
+   * connection to a host an attacker named, which on Windows hands over an NTLM exchange. The path
+   * travels from the renderer to this function through a DOM attribute, so a guard applied only
+   * before it was written there is a guard a replayed or hand-edited attribute walks straight past.
+   */
+  test("🔴 the chat click refuses a remote root; the Files browser, where the user chose it, does not", async () => {
+    setInstanceTicketMinter(async () => "tk-1")
+
+    downloadHostFile("//fileserver/team/q3.pdf")
+    await settle()
+    expect(clicked).toEqual([])
+
+    downloadHostPath("//fileserver/team/q3.pdf")
+    await settle()
+    expect(clicked).toHaveLength(1)
+    expect(clicked[0]!.href).toContain("%2F%2Ffileserver%2Fteam")
+  })
+
+  test("the chat's resolver and the Files browser reach the same download", async () => {
     // Two surfaces asking one question. A second path-splitter would drift from this one.
-    setInstanceBase("http://spark-0693.local:4096")
-    // ⚠️ `toBe(string | undefined)` does not typecheck; the resolver's answer is asserted present
-    // first, which is also the stronger claim — a resolver returning nothing here would be the bug.
-    const resolved = agentFileResolver.target("/data/reports/q3.pdf")
-    expect(resolved).toBeDefined()
-    expect(fileDownloadHref("/data/reports/q3.pdf")).toBe(resolved!.url)
-    setInstanceBase("")
-  })
+    setInstanceTicketMinter(async () => "tk-1")
 
-  test("a path it cannot parse yields an empty href rather than a broken one", () => {
-    expect(fileDownloadHref("not-a-path")).toBe("")
-  })
+    agentFileResolver.download("/data/reports/q3.pdf")
+    await settle()
+    downloadHostPath("/data/reports/q3.pdf")
+    await settle()
 
-  test("🔴 the chat resolver refuses a remote root; the files browser, where the user chose it, does not", () => {
-    setInstanceBase("http://127.0.0.1:4096")
-    // The one place the two surfaces are DELIBERATELY not the same question, and the asymmetry is the
-    // point: one side's input is a row the user opened, the other side's is a string a model wrote.
-    expect(agentFileResolver.target("//fileserver/team/q3.pdf")).toBeUndefined()
-    expect(fileDownloadHref("//fileserver/team/q3.pdf")).toContain("%2F%2Ffileserver%2Fteam")
-    setInstanceBase("")
+    expect(clicked).toHaveLength(2)
+    expect(clicked[0]).toEqual(clicked[1]!)
   })
 })

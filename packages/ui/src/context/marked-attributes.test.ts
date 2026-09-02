@@ -63,17 +63,23 @@ describe("link and image attributes are escaped at the point they are built", ()
     expect(image).toContain('title="a title"')
   })
 
-  test("a resolved host file becomes a download link, with its url and name escaped", () => {
+  test("a resolved host file becomes a download link whose PATH is escaped", () => {
+    // 🔴 The anchor no longer carries an instance URL at all — a `download` href is fetched by the
+    // browser, which sends no `Authorization`. What it carries is the model's own href, in a data
+    // attribute the click handler reads back, and that value is untrusted input in an HTML string
+    // exactly as the url was.
     const out = marked
       .use({
         renderer: fileRenderer({
-          target: () => ({ url: 'https://host/f?q="x', name: "out.md", image: false }),
+          target: () => ({ name: "out.md", image: false }),
           inline: () => Promise.resolve({ ok: false, reason: "unreadable" as const }),
+          download: () => {},
         }),
       })
-      .parse("[report](out.md)", { async: false }) as string
+      .parse('[report](<https://host/f?q="x>)', { async: false }) as string
     expect(out).toContain('data-agent-file="true"')
-    expect(out, "the resolved url was interpolated raw").not.toContain('?q="x')
+    expect(out).toContain('href="#"')
+    expect(out, "the resolved path was interpolated raw").not.toContain('?q="x')
     expect(out).toContain("&quot;")
   })
 })

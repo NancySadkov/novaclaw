@@ -250,7 +250,33 @@ const GENERATE_TIMEOUT_MS = 60_000
 //   + `V2EventServerConnected` — the same `server.connected` arm, now emitted from the synthetic
 //     `V2Event.server.connected` identifier rather than the manifest's. A removal beside an addition
 //     is a rename and this one is it; measured, not eyeballed, against the two manifest sets.
-const SCHEMA_NAME_FINGERPRINT = "bb4f5b087ee28d84368365e83998f5dd8588922c423a65108e661be5e442dbc8"
+// ── 2026-09-02: the download ticket — ONE ADDITION, ONE REMOVAL, and they are the SAME NAME ────────
+//   − `PtyTicketConnectToken`                    (`PtyTicket.ConnectToken`, `{ticket, expires_in}`)
+//   + `TicketAccessToken`                        (`Ticket.AccessToken`, byte-identical shape)
+// ⚠️ **A removal beside an addition is a RENAME, and this one is** — so it is reviewed as a public
+// API change rather than re-pinned as "additive". Measured, not eyeballed: 507 pairs before and 507
+// after; the ONLY pair gone is `PtyTicketConnectToken -> PtyTicketConnectToken` and the only pair
+// arrived is `TicketAccessToken -> TicketAccessToken`. Each maps to itself — no collision suffix, no
+// acronym normalisation moved — and the two component schemas are identical field for field
+// (`git diff packages/sdk/openapi.json` shows zero `~ schema … changed shape`).
+//
+// Why the name moved: a WebSocket upgrade was the only request on this surface a browser issues
+// itself, so a single-use ticket could be called a PTY connect token. A `<a download>` is the
+// second — it is fetched by the browser, carries no `Authorization`, and saved the 401 body under
+// the file's own name on any instance with a server password. `POST /api/fs/read-token` mints the
+// same ticket for `fs.read`, and a filesystem route whose response schema is called `PtyTicket…`
+// is a public contract that lies about itself. One mechanism (`@novaclaw/core/ticket`), one wire
+// type, one name.
+//
+// Also in this regen, and NOT covered by this fingerprint (the spec check below covers it):
+//   + path  `POST /api/fs/read-token`
+//   ~ path  `GET /api/fs/read/*`               (gained the `ticket` query parameter and a 403)
+//   ~ path  `POST /api/pty/{ptyID}/connect-token` (its 200 now `$ref`s the renamed schema)
+// 45 further pairs moved in WALK ORDER only, with no pair added, removed or repointed among them:
+// `fs.read` now declares `ForbiddenError`, so the emitter reaches that already-public schema earlier
+// (first divergence at index 78). The fingerprint hashes `mapping.join()`, so a reordering moves it
+// exactly as a rename would — which is why the set comparison above is what makes this re-pin safe.
+const SCHEMA_NAME_FINGERPRINT = "439b267d046d44b48df59ae16f093f5aa08f455130d957d801d3d8338cd2736f"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

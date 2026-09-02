@@ -24899,9 +24899,14 @@
               },
               "additionalProperties": false
             },
-            "required": false,
-            "style": "deepObject",
-            "explode": true
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "ticket",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "security": [],
@@ -24936,14 +24941,120 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "ForbiddenError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForbiddenError"
+                }
+              }
+            }
           }
         },
-        "description": "Serve one file relative to the requested location.",
+        "description": "Serve one file relative to the requested location. A browser download presents a `ticket` from `fs.readToken` in place of the `Authorization` header it cannot set.",
         "summary": "Read file",
         "x-codeSamples": [
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.fs.read({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/fs/read-token": {
+      "post": {
+        "tags": ["filesystem"],
+        "operationId": "v2.fs.readToken",
+        "parameters": [
+          {
+            "name": "location",
+            "in": "query",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "directory": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "required": false,
+            "style": "deepObject",
+            "explode": true
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "location": {
+                      "$ref": "#/components/schemas/LocationInfo"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/TicketAccessToken"
+                    }
+                  },
+                  "required": ["location", "data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "ForbiddenError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForbiddenError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Create a short-lived single-use ticket authorizing one browser download of one file.",
+        "summary": "Create file read ticket",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.fs.readToken({\n  ...\n})"
           }
         ]
       }
@@ -26293,7 +26404,7 @@
                       "$ref": "#/components/schemas/LocationInfo"
                     },
                     "data": {
-                      "$ref": "#/components/schemas/PtyTicketConnectToken"
+                      "$ref": "#/components/schemas/TicketAccessToken"
                     }
                   },
                   "required": ["location", "data"],
@@ -33964,6 +34075,20 @@
         "type": "string",
         "enum": ["not-applicable", "not-measured", "measurement-failed", "incomplete"]
       },
+      "ForbiddenError": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": ["ForbiddenError"]
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": ["_tag", "message"],
+        "additionalProperties": false
+      },
       "messenger.account.status": {
         "type": "object",
         "properties": {
@@ -34296,20 +34421,6 @@
           }
         },
         "required": ["state"],
-        "additionalProperties": false
-      },
-      "ForbiddenError": {
-        "type": "object",
-        "properties": {
-          "_tag": {
-            "type": "string",
-            "enum": ["ForbiddenError"]
-          },
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": ["_tag", "message"],
         "additionalProperties": false
       },
       "ConfigPath": {
@@ -47815,6 +47926,20 @@
         "required": ["type", "messageID", "callID"],
         "additionalProperties": false
       },
+      "TicketAccessToken": {
+        "type": "object",
+        "properties": {
+          "ticket": {
+            "type": "string"
+          },
+          "expires_in": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          }
+        },
+        "required": ["ticket", "expires_in"],
+        "additionalProperties": false
+      },
       "FileSystemSnapshotContent": {
         "type": "object",
         "properties": {
@@ -49821,20 +49946,6 @@
           }
         },
         "required": ["id", "type", "data"],
-        "additionalProperties": false
-      },
-      "PtyTicketConnectToken": {
-        "type": "object",
-        "properties": {
-          "ticket": {
-            "type": "string"
-          },
-          "expires_in": {
-            "type": "integer",
-            "exclusiveMinimum": 0
-          }
-        },
-        "required": ["ticket", "expires_in"],
         "additionalProperties": false
       },
       "QuestionV2Request": {

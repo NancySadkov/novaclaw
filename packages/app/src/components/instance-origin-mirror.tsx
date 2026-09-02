@@ -3,7 +3,13 @@ import type { Component } from "solid-js"
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
-import { setInstanceBase, setInstanceFileReader, setInstanceMediaNote } from "@/apps/instance-origin"
+import { TICKET_REQUEST_HEADER, TICKET_REQUEST_HEADER_VALUE } from "@novaclaw/schema/ticket"
+import {
+  setInstanceBase,
+  setInstanceFileReader,
+  setInstanceMediaNote,
+  setInstanceTicketMinter,
+} from "@/apps/instance-origin"
 
 /**
  * Keep `instance-origin.ts` pointed at whoever is connected — and holding their CREDENTIAL.
@@ -46,14 +52,33 @@ export const InstanceOriginMirror: Component = () => {
               .then((result) => result.data)
         : undefined,
     )
+    // 🔴 The DOWNLOAD half of the same credential, and it must not read the bytes. A `<a download>`
+    // href is fetched by the browser with no `Authorization`, and the Files browser's own decision
+    // is that a large artefact never has to fit in a JS string — so the credential mints a ticket
+    // and the browser still streams the file itself.
+    //
+    // ⚠️ The custom header is what forces a CORS preflight, so a hostile page cannot mint against a
+    // connected instance without passing its origin policy; `handlers/fs.ts` refuses a mint without
+    // it. `throwOnError: false` because a refusal must degrade to the unticketed URL, not reject.
+    setInstanceTicketMinter(
+      conn
+        ? async (directory, name) => {
+            const result = await global
+              .ensureServerCtx(conn)
+              .sdk.client.v2.fs.readToken(
+                { location: { directory }, path: name },
+                { throwOnError: false, headers: { [TICKET_REQUEST_HEADER]: TICKET_REQUEST_HEADER_VALUE } },
+              )
+            return result.response.status === 200 ? result.data?.data.ticket : undefined
+          }
+        : undefined,
+    )
   })
 
   createEffect(() => {
     // Reuses the copy the diff viewer's own media fallback already shows in all eighteen locales,
     // rather than minting a nineteenth string for the same sentence.
-    setInstanceMediaNote(
-      language.t("ui.fileMedia.state.unavailable", { kind: language.t("ui.fileMedia.kind.image") }),
-    )
+    setInstanceMediaNote(language.t("ui.fileMedia.state.unavailable", { kind: language.t("ui.fileMedia.kind.image") }))
   })
 
   return null

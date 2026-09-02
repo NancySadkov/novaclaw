@@ -505,6 +505,16 @@ export function markedMath() {
 }
 
 /**
+ * The markup hook a colleague's file link is clicked through.
+ *
+ * 🔴 **The href a host file link carries is `#`.** The real path lives here instead, so that
+ * nothing about the anchor is fetchable until a click has minted a credential for it. One constant
+ * because the renderer that writes it and the delegated handler that reads it are in different
+ * packages, and a hook spelled twice is a feature that silently stops working.
+ */
+export const AGENT_FILE_PATH_ATTRIBUTE = "data-agent-file-path"
+
+/**
  * What the host offers for one markdown href that names a file on it.
  *
  * `undefined` from {@link HostFileResolver.target} means "not a local file" and the ordinary
@@ -512,13 +522,22 @@ export function markedMath() {
  */
 export interface HostFileTarget {
   /**
-   * The instance URL that serves this file to a DOWNLOAD anchor.
+   * 🔴 **There is no URL here, and that absence is the type's whole job.**
    *
-   * ⚠️ **A download anchor only.** It is never an `<img src>`: a subresource carries no
-   * `Authorization` header, so on an instance with a server password this URL answers 401 — which
-   * is exactly the defect the inline path below exists to close.
+   * This carried `url: string` — the instance route that serves the file — and the two renderers
+   * below wrote it straight into an `<a href download>`. A browser fetches a `download` href
+   * ITSELF, and a browser-issued request carries no `Authorization` header, so on any instance with
+   * a server password that anchor saved the 401 body under the file's own name. Deleting the member
+   * is the close: a renderer can only emit what it is handed, so an instance route cannot reappear
+   * in an attribute by anyone forgetting anything.
+   *
+   * What replaces it is a CLICK: the markup carries the file's href in a data attribute, and
+   * {@link HostFileResolver.download} mints a short-lived ticket at the moment the user asks and
+   * lets the browser stream the file. Minting during the parse would not work — the rendered HTML is
+   * content-addressed and replayed from an LRU, so the ticket is spent on the first paint — and a
+   * `data:` URL (the answer the IMAGE path takes) is refused here on purpose: a large artefact must
+   * never have to fit in a JS string.
    */
-  readonly url: string
   /** The file's own name. The label a degraded image falls back to when the alt text is empty. */
   readonly name: string
   /** Render inline as an image rather than offering it as a download. */
@@ -586,6 +605,21 @@ export interface HostFileResolver {
    * this pass calls it once per image token per parse.
    */
   readonly inline: (href: string) => Promise<HostImage>
+  /**
+   * Save one host file, NOW — the click behind {@link AGENT_FILE_PATH_ATTRIBUTE}.
+   *
+   * 🔴 **Called from a delegated handler, never from a renderer.** The host mints a short-lived
+   * single-use ticket, hands the browser a URL carrying it, and lets the browser stream the bytes
+   * to disk. Everything about that has to happen at click time: a ticket minted while the markdown
+   * was parsed is spent by the first paint (the rendered HTML sits in a content-addressed LRU that
+   * replays it verbatim, and the route sets no cache headers), and the user clicks at an arbitrary
+   * later moment anyway.
+   *
+   * ⚠️ Takes the ORIGINAL href, not a resolved path, so the host re-applies its own admission rules
+   * — including the refusal of `//host/share/…`, which is a network destination wearing a path's
+   * clothes and must not become one because a value round-tripped through an attribute.
+   */
+  readonly download: (href: string) => void
 }
 
 /**
@@ -640,8 +674,11 @@ export const fileRenderer = (resolveFile?: HostFileResolver) => ({
     // makes the click save it rather than navigate, and the attribute carries the file's own
     // name so it does not land as the route's last segment.
     const local = resolveFile?.target(href)
+    // 🔴 `href="#"` and the real path in a DATA attribute, because a `download` href is fetched by
+    // the BROWSER and a browser request carries no `Authorization`. The click is handled by
+    // `session-ui/src/components/markdown.tsx`, which mints a ticket and streams the file.
     if (local)
-      return `<a${attr("href", local.url)}${attr("title", title)} class="agent-file-link"${flagAttr("download", text)} data-agent-file="true">${text}</a>`
+      return `<a href="#"${attr("title", title)} class="agent-file-link"${flagAttr("download", text)} data-agent-file="true"${attr(AGENT_FILE_PATH_ATTRIBUTE, href)}>${text}</a>`
     return `<a${attr("href", href)}${attr("title", title)} class="external-link" target="_blank" rel="noopener noreferrer">${text}</a>`
   },
   /**
@@ -687,7 +724,7 @@ export const fileRenderer = (resolveFile?: HostFileResolver) => ({
     // The alt text is the author's own inline markdown and stays raw, as everywhere else here; the
     // file NAME is a path segment a model wrote, so it is escaped as ordinary text.
     const label = text === "" ? escapeHtml(local.name) : text
-    const anchor = `<a${attr("href", local.url)}${attr("title", title)} class="agent-file-link"${flagAttr("download", local.name)} data-agent-file="true"${attr("data-agent-file-inline", inlined?.reason ?? "unreadable")}>${label}</a>`
+    const anchor = `<a href="#"${attr("title", title)} class="agent-file-link"${flagAttr("download", local.name)} data-agent-file="true"${attr(AGENT_FILE_PATH_ATTRIBUTE, href)}${attr("data-agent-file-inline", inlined?.reason ?? "unreadable")}>${label}</a>`
     return inlined?.note ? `${anchor}<span class="agent-file-note">${escapeHtml(inlined.note)}</span>` : anchor
   },
 })
@@ -712,7 +749,20 @@ export const parseWithFileRenderer = (markdown: string, resolveFile?: HostFileRe
     }).parse(markdown),
   )
 
-export const { use: useMarked, provider: MarkedProvider } = createSimpleContext({
+/**
+ * ⚠️ `MarkedContext` is exported for TESTS ONLY — product code uses `useMarked`.
+ *
+ * The delegated click that saves a colleague's file lives in `session-ui`'s `Markdown` and reaches
+ * the host through this context, so the assertion that a click actually calls it has to mount that
+ * component. `provider` runs the real `init`, which builds a parser and a syntax highlighter; the
+ * raw context lets a test supply a stub value instead, which is the case `createSimpleContext`
+ * exposes `context` for.
+ */
+export const {
+  use: useMarked,
+  provider: MarkedProvider,
+  context: MarkedContext,
+} = createSimpleContext({
   name: "Marked",
   init: (props: { resolveFile?: HostFileResolver }) => {
     /**
@@ -754,6 +804,13 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
       }),
     )
 
-    return jsParser
+    /**
+     * ⚠️ **The resolver rides the context beside the parser**, because the markup the renderer
+     * emits is only half a feature: the other half is the delegated click in
+     * `session-ui/src/components/markdown.tsx`, and that component has no other way to reach the
+     * host. Read through an accessor rather than captured, for the same reason `walkTokens` does —
+     * props are reactive and the connected instance changes mid-session.
+     */
+    return { parser: jsParser, resolveFile: () => props.resolveFile }
   },
 })

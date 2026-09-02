@@ -1,6 +1,6 @@
 import { useSearchParams } from "@solidjs/router"
 import { rowsForDirectory } from "./files-rows"
-import { fileDownloadHref } from "@/apps/agent-file-link"
+import { downloadHostPath } from "@/apps/agent-file-link"
 import { createEffect, createMemo, createResource, createSignal, For, Match, Show, Switch } from "solid-js"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { useGlobal } from "@/context/global"
@@ -583,9 +583,7 @@ export function FilesPage() {
             </div>
             <div class="min-h-0 flex-1 overflow-auto py-1">
               <Switch
-                fallback={
-                  <div class="px-4 py-3 text-sm text-v2-text-text-faint">{language.t("files.loading")}</div>
-                }
+                fallback={<div class="px-4 py-3 text-sm text-v2-text-text-faint">{language.t("files.loading")}</div>}
               >
                 <Match when={trashListing().kind === "failed"}>
                   <div class="px-4 py-3 text-sm text-v2-state-fg-danger" data-slot="files-trash-failed">
@@ -698,21 +696,30 @@ export function FilesPage() {
                       existed the browser could SHOW a text file and nothing else: a PDF, a rendered
                       chart or an archive was visible and unobtainable.
 
-                      ⚠️ An `<a download>` rather than a fetch-and-save: the browser streams it
-                      straight from the instance, so a large artefact never has to fit in a JS string,
-                      and the `download` attribute carries the file's own name so it does not land
-                      named after the route. Directories are excluded — there is nothing to stream. */}
+                      ⚠️ **Still a browser download, and still streaming** — `downloadHostPath` mints
+                      a ticket and hands the browser a URL with the file's own name on it. A
+                      fetch-and-save was never an option here: a report, an archive or a video must
+                      not have to fit in a JS string, which is exactly why this half could not take
+                      the `data:` answer the chat's IMAGES did.
+
+                      🔴 **A button, because the href was the bug.** It was an `<a href download>`,
+                      and a `download` href is fetched by the BROWSER — which sends no
+                      `Authorization`, so on any instance with a server password this saved the 401
+                      body under the file's own name. There is nothing left to put an unauthorized
+                      URL into. Directories are excluded — there is nothing to stream. */}
                   <Show when={entry().type === "file"}>
-                    <a
+                    <button
+                      type="button"
                       role="menuitem"
                       data-action="download-file"
-                      href={fileDownloadHref(entry().absolute)}
-                      download={entry().name}
                       class="flex items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-v2-overlay-simple-overlay-hover"
-                      onClick={() => setContextMenu(undefined)}
+                      onClick={() => {
+                        setContextMenu(undefined)
+                        downloadHostPath(entry().absolute)
+                      }}
                     >
                       {language.t("files.download")}
-                    </a>
+                    </button>
                   </Show>
                   <button
                     type="button"

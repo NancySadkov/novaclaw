@@ -1,15 +1,11 @@
 import { Pty } from "@novaclaw/schema/pty"
-import { PtyTicket } from "@novaclaw/schema/pty-ticket"
+import { Ticket, TICKET_QUERY } from "@novaclaw/schema/ticket"
 import { Location } from "@novaclaw/schema/location"
 import { NonNegativeInt } from "@novaclaw/schema/schema"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
 import { ForbiddenError, PtyNotFoundError } from "../errors"
 import { LocationQuery, locationQueryOpenApi } from "./location"
-
-export const PTY_CONNECT_TICKET_QUERY = "ticket"
-export const PTY_CONNECT_TOKEN_HEADER = "x-novaclaw-ticket"
-export const PTY_CONNECT_TOKEN_HEADER_VALUE = "1"
 
 export const PtyShell = Schema.Struct({
   path: Schema.String,
@@ -37,6 +33,13 @@ export const PtyPaths = {
  * WebSocket upgrade carries no `Authorization`. Every other `/api/**` route is proxied by
  * `workspaceProxyURL`, which copies the query string to another machine — so a credential is
  * admissible in the URL here and nowhere else.
+ *
+ * ⚠️ **`fs.read` is the second header-less request and it is NOT an exception to this one.** A
+ * `<a download>` cannot set a header either, but what it carries is a `ticket`
+ * (`@novaclaw/schema/ticket`, `@novaclaw/core/ticket`) —
+ * one scope, one use, under a minute — never `auth_token`, which is `btoa("user:password")` and
+ * would still egress this instance's password through the proxy. The two answers are different
+ * because the two things in the URL are different.
  */
 export function isPtyConnectURL(url: URL) {
   return PTY_CONNECT_PATH.test(url.pathname)
@@ -45,7 +48,7 @@ export function isPtyConnectURL(url: URL) {
 // Authorization middleware skips credential checks when this matches; the PTY connect handler
 // is then responsible for consuming and validating the ticket.
 export function hasPtyConnectTicketURL(url: URL) {
-  return PTY_CONNECT_PATH.test(url.pathname) && !!url.searchParams.get(PTY_CONNECT_TICKET_QUERY)
+  return PTY_CONNECT_PATH.test(url.pathname) && !!url.searchParams.get(TICKET_QUERY)
 }
 
 export const PtyGroup = HttpApiGroup.make("server.pty")
@@ -117,8 +120,7 @@ export const PtyGroup = HttpApiGroup.make("server.pty")
         OpenApi.annotations({
           identifier: "v2.pty.activity",
           summary: "Inspect PTY process activity",
-          description:
-            "Report whether a running terminal shell has descendant processes before a destructive close.",
+          description: "Report whether a running terminal shell has descendant processes before a destructive close.",
         }),
       ),
   )
@@ -173,7 +175,7 @@ export const PtyGroup = HttpApiGroup.make("server.pty")
     HttpApiEndpoint.post("pty.connectToken", PtyPaths.connectToken, {
       params: { ptyID: Pty.ID },
       query: LocationQuery,
-      success: Location.response(PtyTicket.ConnectToken),
+      success: Location.response(Ticket.AccessToken),
       error: [ForbiddenError, PtyNotFoundError],
     })
       .annotateMerge(locationQueryOpenApi)
@@ -201,7 +203,7 @@ export const PtyGroup = HttpApiGroup.make("server.pty")
           ...operation,
           parameters: [
             ...(operation.parameters ?? []),
-            ...["location[directory]", "location[workspace]", "cursor", PTY_CONNECT_TICKET_QUERY].map((name) => ({
+            ...["location[directory]", "location[workspace]", "cursor", TICKET_QUERY].map((name) => ({
               in: "query",
               name,
               schema: { type: "string" },

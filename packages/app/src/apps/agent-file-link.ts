@@ -1,6 +1,7 @@
 import type { HostFileResolver, HostImage } from "@novaclaw/ui/context/marked"
 import { inlineMediaFromFile } from "@novaclaw/session-ui/pierre/media"
-import { instanceBase, instanceFileReader, instanceMediaNote } from "./instance-origin"
+import { TICKET_QUERY } from "@novaclaw/schema/ticket"
+import { instanceBase, instanceFileReader, instanceMediaNote, instanceTicketMinter } from "./instance-origin"
 
 // FILES A COLLEAGUE MADE, reachable from the chat log (owner, 2026-08-22: *"the agent can embed
 // links to the files on the host machine, which user can just click in the chat log to download, as
@@ -114,7 +115,18 @@ export const hostFile = (href: string | undefined, options: HostFileOptions = {}
 }
 
 /**
- * The instance URL that serves one host file.
+ * The instance URL that serves one host file, optionally carrying a ticket.
+ *
+ * 🔴 **Only ever built inside a CLICK now.** This used to be handed to the markdown renderer, which
+ * wrote it into an `<a href download>` — and a `download` href is fetched by the browser, which
+ * sends no `Authorization`. `HostFileTarget` no longer has a `url` member at all, so the only code
+ * that can reach this function is code that can also mint the ticket it needs.
+ *
+ * ⚠️ **`ticket`, never `auth_token`.** That parameter is `btoa("user:password")` — the instance's
+ * own password — and `workspaceProxyURL` copies a query string wholesale into a proxy target, so a
+ * request merely passing through an instance would carry its password to a machine that is not
+ * ours. A ticket names one file, works once and expires in a minute; it is a capability, and it is
+ * why the URL form is admissible here at all.
  *
  * ⚠️ **`location[directory]`, not `directory`** — and this was measured, not read. `LocationQuery` is
  * a deepObject parameter (`protocol/groups/location.ts`), so the flat form answers 500. The unit
@@ -125,8 +137,8 @@ export const hostFile = (href: string | undefined, options: HostFileOptions = {}
  * folders; an unencoded directory truncates the query at the drive letter and an unencoded `name`
  * breaks on the first space.
  */
-export const fileUrl = (base: string, file: HostFile): string =>
-  `${base.replace(/\/+$/, "")}/api/fs/read/${encodeURIComponent(file.name)}?location%5Bdirectory%5D=${encodeURIComponent(file.directory)}`
+export const fileUrl = (base: string, file: HostFile, ticket?: string): string =>
+  `${base.replace(/\/+$/, "")}/api/fs/read/${encodeURIComponent(file.name)}?location%5Bdirectory%5D=${encodeURIComponent(file.directory)}${ticket ? `&${TICKET_QUERY}=${encodeURIComponent(ticket)}` : ""}`
 
 /**
  * Most resolved images kept at once.
@@ -197,8 +209,9 @@ export const agentFileResolver: HostFileResolver = {
   target: (href) => {
     const file = hostFile(href)
     if (file === undefined) return undefined
-    return { url: fileUrl(instanceBase(), file), name: file.name, image: file.image }
+    return { name: file.name, image: file.image }
   },
+  download: (href) => downloadHostFile(href),
   inline: (href) => {
     const file = hostFile(href)
     // ⚠️ `hostFile` again, with the DEFAULT options — so `//host/share/x.png` is still refused here.
@@ -210,17 +223,57 @@ export const agentFileResolver: HostFileResolver = {
 }
 
 /**
- * The URL that downloads one absolute host path from the connected instance.
+ * Hand the browser one file to save, from the connected instance.
  *
- * ⚠️ Shares `hostFile`/`fileUrl` with the chat renderer on purpose — the Files browser and a
- * colleague's file link are the same question ("serve me this path from that machine") asked by two
- * surfaces, and a second path-splitter would drift from this one the first time either changed.
+ * 🔴 **A ticket, then a STREAM — never bytes through this process.** The chat's image path reads a
+ * file through the authenticated client and pastes it into a `data:` URL, and that answer is
+ * refused here on purpose: the Files browser exists to fetch the artefacts a colleague produced,
+ * and a report, an archive or a video must never have to fit in a JS string. So the credential buys
+ * a short-lived single-use ticket and the browser does the fetching, exactly as it did before —
+ * with the difference that it is now authorized to.
+ *
+ * ⚠️ **A detached anchor rather than the clicked one.** Both sinks — a chat file link and a Files
+ * row — arrive here after their own `preventDefault`, so there is no element left holding a usable
+ * href; and one code path for both is what stops the two drifting apart again.
+ *
+ * ⚠️ **A refused mint degrades to the unticketed URL, which is what HEAD always sent.** Nothing is
+ * regressed by that: an instance with no server password serves it, and one with a password
+ * answers the same 401 it did before this fix — the difference is that the 401 is now the fallback
+ * rather than the only behaviour. Silently doing nothing would be a worse answer than the old bug.
  */
-export const fileDownloadHref = (absolute: string): string => {
-  // ⚠️ `remote: true` here and NOWHERE ELSE. This path is reached from a row the user navigated to in
-  // the Files browser, so the share was already opened by their own choice and refusing it would take
-  // a working download away from anyone whose workspace lives on one. The chat's resolver above keeps
-  // the default, because there the path is a string a model wrote.
-  const file = hostFile(absolute, { remote: true })
-  return file === undefined ? "" : fileUrl(instanceBase(), file)
+export const downloadHostFile = (href: string, options: HostFileOptions = {}): void => {
+  const file = hostFile(href, options)
+  // ⚠️ `hostFile` again, at CLICK time and with the caller's own options — so `//host/share/x.pdf`
+  // is refused here too unless the Files browser asked for it. The path travelled through an HTML
+  // attribute to get here; a guard applied only before it was written there is a guard that a
+  // replayed or hand-edited attribute walks straight past.
+  if (file === undefined) return
+  void ticketFor(file).then((ticket) => save(fileUrl(instanceBase(), file, ticket), file.name))
 }
+
+const ticketFor = (file: HostFile): Promise<string | undefined> => {
+  const mint = instanceTicketMinter()
+  if (!mint) return Promise.resolve(undefined)
+  return mint(file.directory, file.name).catch(() => undefined)
+}
+
+const save = (url: string, name: string): void => {
+  const anchor = document.createElement("a")
+  anchor.href = url
+  anchor.download = name
+  anchor.rel = "noopener"
+  anchor.style.display = "none"
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+}
+
+/**
+ * Save one absolute host path — the Files browser's Download.
+ *
+ * ⚠️ `remote: true` here and NOWHERE ELSE. This path is reached from a row the user navigated to in
+ * the Files browser, so the share was already opened by their own choice and refusing it would take
+ * a working download away from anyone whose workspace lives on one. The chat's resolver above keeps
+ * the default, because there the path is a string a model wrote.
+ */
+export const downloadHostPath = (absolute: string): void => downloadHostFile(absolute, { remote: true })
