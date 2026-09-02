@@ -2913,8 +2913,22 @@ export const layer = Layer.effect(
       // The compactor reads only `generation?.maxTokens` (else the model's own output limit)
       // from the request — a minimal envelope is enough.
       const request = LLM.request({ model, messages: [], tools: [] })
+      // The branch that actually declined, so the notice below STATES it instead of guessing. The
+      // shipped sentence asserted "still small enough … or the summary model was unavailable" for
+      // every decline — including the one that means the chat is too LARGE to summarise in one pass,
+      // so a user whose chat was wedged over its ceiling was told it was too small.
+      let declined: SessionCompaction.DeclineReason | undefined
       const compacted = yield* compaction.compactAfterOverflow(
-        { sessionID: session.id, entries, model, request, imagePatchPixels: routeProfile.imagePatchPixels },
+        {
+          sessionID: session.id,
+          entries,
+          model,
+          request,
+          imagePatchPixels: routeProfile.imagePatchPixels,
+          onDecline: (reason) => {
+            declined = reason
+          },
+        },
         "manual",
       )
       // The archive runs on BOTH compaction paths, and it did not until now — the automatic branch
@@ -2935,7 +2949,10 @@ export const layer = Layer.effect(
           sessionID: session.id,
           messageID: SessionMessage.ID.create(),
           timestamp: yield* DateTime.now,
-          text: "⚠️ Compaction didn't run — the conversation is still small enough that there is nothing to fold up, or the summary model was unavailable.",
+          text:
+            declined === undefined
+              ? "⚠️ Compaction didn't run — see the server log for details."
+              : SessionCompaction.declineNotice(declined),
         })
     })
 

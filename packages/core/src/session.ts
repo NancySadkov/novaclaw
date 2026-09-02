@@ -29,6 +29,7 @@ import { InstallationVersion } from "./installation/version"
 import { Slug } from "./util/slug"
 import path from "path"
 import { fromRow } from "./session/info"
+import { SessionHistory } from "./session/history"
 import { JhStore } from "./jh/store"
 import { SessionRunner } from "./session/runner/index"
 import { SessionScheduler } from "./session/scheduler"
@@ -851,6 +852,25 @@ export const layer = Layer.effect(
           Effect.orElseSucceed(() => true),
         ),
     })
+    /**
+     * 🔴 **…and DISCHARGE the memory tombstones the previous process could not.**
+     *
+     * `removeSessionRecord` writes a durable `session_memory_cleanup` row and then sweeps it
+     * best-effort, under a comment promising the row "guarantees the cleanup happens; this is only
+     * what makes it happen NOW rather than at the next boot". **There was no next-boot sweep.** So a
+     * deletion that ran while the memory engine was down (or with `memory` off) left every
+     * `scope: "session"` memory on disk under `session:<deleted-id>` — still enumerable in the
+     * Memory app — until the user happened to delete another chat. The promise the confirmation
+     * makes ("removed permanently") was discharged by an unrelated user action or not at all.
+     *
+     * ⚠️ A feature built, tested and never called is indistinguishable from the bug it replaced;
+     * this is the caller. Forked and ignored for the same reason the two arms above are: boot is
+     * where the self-healing law is void, so a sweep that cannot run must degrade rather than take
+     * the instance down. `sweep` is idempotent, re-checks liveness (a tombstone for a session that
+     * still exists is RETRACTED, never applied), and leaves a row it could not clear for next time —
+     * so running it here can only move the outstanding set toward zero.
+     */
+    yield* Effect.forkScoped(SessionMemoryCleanup.sweep(db, memory).pipe(Effect.ignore))
     const isDurableSessionEvent = Schema.is(SessionEvent.Durable)
     const decode = SessionMessageRead.decodeRow
 
@@ -1505,6 +1525,66 @@ export const layer = Layer.effect(
             { sessionID: forked.id, timestamp: yield* DateTime.now, message: copied },
             { location },
           )
+        }
+        /**
+         * 🔴 **A FORK CARRIES ITS SOURCE'S CONTEXT STATE, NOT JUST ITS TRANSCRIPT.**
+         *
+         * The loop above copies `SessionMessageTable`, and the compaction overlay does not live in
+         * that table: `Compaction.Ended` projects into `session_compaction`, and
+         * `SessionHistory.projectedEntries` synthesises the overlay from there. So a fork of a chat
+         * that had already compacted got no `session_compaction` row, `latestCompaction` returned
+         * `undefined`, and `messageRows` ran with no `seq > prefix_seq` bound — the fork's very
+         * first turn assembled the FULL raw history its source had summarised away. On a small
+         * model that is the context overflow this harness exists to prevent, and the fork must burn
+         * a fresh summarisation call before it can answer anything.
+         *
+         * Ruling 8 says a fork carries the source's resolved CONFIG. This is the same argument one
+         * layer down: a fork that comes back needing more context than its source is a defect, not
+         * a preference.
+         *
+         * ⚠️ **Through `latestCompaction`, so a STALE overlay is not propagated.** It re-derives the
+         * source's prefix hash and yields nothing when the stored overlay no longer matches the
+         * transcript it claims to cover — carrying one of those forward would mint a second copy of
+         * a row the source itself refuses to apply.
+         *
+         * ⚠️ **The seqs are RE-MAPPED, never copied.** `prefix_seq` is an aggregate sequence and the
+         * fork is a different aggregate, so the boundary is carried by POSITION: the source rows are
+         * copied in `seq` order, so the n-th copied row is the n-th source row and the fork's
+         * boundary is the seq of the row at the same index. The hash is recomputed over the FORK's
+         * rows for the same reason — new ids and new seqs hash differently, and a copied hash would
+         * be rejected as stale on the first load.
+         */
+        const sourceCompaction = yield* SessionHistory.latestCompaction(db, SessionSchema.ID.make(input.sessionID))
+        // An overlay whose prefix reaches past the fork point summarises messages this fork does not
+        // have. There is no honest boundary for it here, so it is dropped rather than truncated.
+        if (sourceCompaction && (boundary === undefined || sourceCompaction.prefix_seq < boundary)) {
+          const prefixCount = sourceRows.filter((messageRow) => messageRow.seq <= sourceCompaction.prefix_seq).length
+          const forkedRows = yield* db
+            .select({ seq: SessionMessageTable.seq })
+            .from(SessionMessageTable)
+            .where(eq(SessionMessageTable.session_id, forked.id))
+            .orderBy(asc(SessionMessageTable.seq))
+            .all()
+            .pipe(Effect.orDie)
+          // The positional map is only sound if every source row landed. It always does today; if it
+          // ever does not, a fork with no overlay is a slow fork, and a fork with a MISPLACED overlay
+          // is a fork that silently drops or duplicates messages.
+          const forkedPrefixSeq =
+            prefixCount > 0 && forkedRows.length === sourceRows.length ? forkedRows[prefixCount - 1]?.seq : undefined
+          if (forkedPrefixSeq !== undefined)
+            // `Compaction.Ended` and not a direct INSERT: the projector is the one writer of
+            // `session_compaction`, and a second one is how the two copies drift. `Started` is
+            // deliberately not published — nothing projects it, and a fork did not run a summariser.
+            yield* events.publish(SessionEvent.Compaction.Ended, {
+              sessionID: forked.id,
+              messageID: SessionMessage.ID.create(),
+              timestamp: yield* DateTime.now,
+              reason: sourceCompaction.reason,
+              text: sourceCompaction.summary,
+              recent: sourceCompaction.recent,
+              prefixSeq: forkedPrefixSeq,
+              prefixHash: yield* SessionHistory.prefixHash(db, forked.id, forkedPrefixSeq),
+            })
         }
         const fresh = yield* store.get(forked.id)
         return fresh ?? forked

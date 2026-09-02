@@ -35,6 +35,14 @@ const TOOL_OUTPUT_MAX_CHARS = 2_000
 const STEER_LABEL = "[Automated harness check — not the user]: "
 const SUMMARY_OUTPUT_TOKENS = 4_096
 const SUMMARY_HEAD_REMOVED = "[Older summary content removed to fit the summary budget.]"
+/**
+ * The INPUT counterpart of the constant above, and deliberately a SECOND string: one marks a summary
+ * that outgrew its output budget, the other marks a transcript that outgrew one summarization pass.
+ * Sharing a sentence would make the two indistinguishable in the one place they are ever read — a
+ * durable summary somebody is trying to explain.
+ */
+const HISTORY_HEAD_REMOVED =
+  "[Older conversation omitted here: it did not fit a single summarization pass. It stays searchable through this colleague's memory.]"
 
 /**
  * THINKING CEILING FOR THE SUMMARY — owner ask 2026-08-29: *"generate it the same way we generate
@@ -153,6 +161,76 @@ type Input = {
   readonly overflowPromptTokens?: number
   /** One fixed post-compaction target derived from that rejected prompt. */
   readonly overflowTargetTokens?: number
+  /**
+   * Called with the NAMED reason whenever this cycle declines. Optional because the auto path has
+   * nobody to tell; the manual path passes it so the notice the user reads is the branch that
+   * actually fired rather than a guess — see `DeclineReason`.
+   */
+  readonly onDecline?: (reason: DeclineReason) => void
+}
+
+/**
+ * 🔴 **WHY A DECLINE HAS A NAME.**
+ *
+ * `compactIfNeeded` was deliberately given the *"say what this guard measured, every turn"*
+ * treatment, because a guard that returns `false` silently leaves no trace and cost a reverted
+ * change plus three withdrawn mechanisms. `compactAfterOverflow` was not, and it declines through
+ * nine separate branches. Eight of them emitted nothing at all.
+ *
+ * ⭐ **The sharp edge is not the silence, it is what the silence let the CALLER say.** The manual
+ * `/compact` cycle reads a bare `false` and tells the user *"the conversation is still small enough
+ * that there is nothing to fold up, or the summary model was unavailable"* — a specific cause the
+ * caller never established, and the exact inverse of some of these branches. **A message may not
+ * assert a cause the code that emits it did not learn** (ruling 2: a fault is never described
+ * falsely). This union is that learning, and `declineNotice` is the only sentence allowed to be
+ * built from it.
+ */
+export type DeclineReason =
+  /** The route declares no usable context window, so there is no budget to compact against. */
+  | "context-window-unknown"
+  /** `compaction.auto` is off: the automatic trigger is not allowed to fire at all. */
+  | "auto-disabled"
+  /** `compaction.summarize` is off: the cheap prune ran and stopping there is the setting working. */
+  | "prune-only"
+  /** The assembled prompt is under the trigger's ceiling. The ordinary, healthy decline. */
+  | "under-threshold"
+  /** Nothing foldable: no conversation to summarize, or an empty head with no previous summary. */
+  | "nothing-to-fold"
+  /** The window is too small to hold any summary at all, let alone the retry envelope. */
+  | "context-too-small"
+  /** Even a maximally trimmed transcript will not fit one summarization pass. */
+  | "transcript-too-large"
+  /** The summarizer returned nothing usable — unreachable, errored, timed out, or empty. */
+  | "summarizer-unavailable"
+  /** The summarizer answered, but out of budget in a shape no bounded retry can rescue. */
+  | "summary-unusable"
+
+/**
+ * The ONE sentence a declined compaction may show a user, keyed by the branch that actually fired.
+ *
+ * ⚠️ It says what happened AND what to do, because every one of these has a different next move and
+ * the user is reading it instead of a screen that changed. Principle 14: it goes in the reply.
+ */
+export const declineNotice = (reason: DeclineReason): string => {
+  switch (reason) {
+    case "context-window-unknown":
+      return "⚠️ Compaction didn't run — this model's context window isn't known, so there's nothing to measure a summary against. Set the model's context limit and try again."
+    case "auto-disabled":
+      return "⚠️ Compaction didn't run — automatic compaction is switched off for this chat."
+    case "prune-only":
+      return "⚠️ Compaction didn't summarise — this chat is set to prune stale tool output only. Stale output was reclaimed; no summary was written."
+    case "under-threshold":
+    case "nothing-to-fold":
+      return "⚠️ Compaction didn't run — the conversation is still small enough that there is nothing to fold up."
+    case "context-too-small":
+      return "⚠️ Compaction didn't run — this model's context window is too small to hold a summary of it. Switch this chat to a model with a larger window."
+    case "transcript-too-large":
+      return "⚠️ Compaction didn't run — this conversation is too large to summarise in one pass on this model. Switch this chat to a model with a larger context window, or start a fresh chat and carry over what matters."
+    case "summarizer-unavailable":
+      return "⚠️ Compaction didn't run — the summary model didn't answer. Check the model is reachable and try again."
+    case "summary-unusable":
+      return "⚠️ Compaction didn't run — the summary model answered, but not within the budget its summary has to fit. Try again, or switch this chat to a different model."
+  }
 }
 
 /**
@@ -475,8 +553,16 @@ export const make = (dependencies: Dependencies) => {
     input: Input,
     reason: "auto" | "manual" = "auto",
   ) {
+    // ⚠️ EVERY exit from this function goes through here. A bare `return false` is the defect this
+    // block exists to close: it is shorter to type than the honest one, which is exactly why it won
+    // eight times, and it hands the caller a value that cannot distinguish a healthy decline from a
+    // wedged chat. See `DeclineReason`.
+    const decline = (why: DeclineReason) => {
+      input.onDecline?.(why)
+      return false
+    }
     const context = input.model.route.defaults.limits?.context
-    if (context === undefined || context <= 0) return false
+    if (context === undefined || context <= 0) return decline("context-window-unknown")
     const output = input.request.generation?.maxTokens ?? input.model.route.defaults.limits?.output ?? 0
     const entries = yield* pruneCheapTier(input.entries, input.imagePatchPixels)
     // PRUNE ONLY (`compaction.summarize: false`). The cheap tier has already run and its reclaim is
@@ -488,7 +574,7 @@ export const make = (dependencies: Dependencies) => {
     // gating the tier itself is what `prune: false` already does.
     if (!config.summarize) {
       yield* Log.event("session.compaction.prune.only", { "session.id": input.sessionID })
-      return false
+      return decline("prune-only")
     }
     const selected = selectContext(
       entries,
@@ -499,19 +585,55 @@ export const make = (dependencies: Dependencies) => {
       }),
     )
     const previousSummary = entries.find((entry) => entry.message.type === "compaction")?.message
-    if (!selected || (selected.head.length === 0 && previousSummary?.type !== "compaction")) return false
-    const summaryPrompt = buildPrompt({
-      previousSummary: previousSummary?.type === "compaction" ? previousSummary.summary : undefined,
-      context: [previousSummary?.type === "compaction" ? previousSummary.recent : "", selected.head].filter(Boolean),
-    })
+    if (!selected || (selected.head.length === 0 && previousSummary?.type !== "compaction"))
+      return decline("nothing-to-fold")
+    const carriedSummary = previousSummary?.type === "compaction" ? previousSummary.summary : undefined
+    const carriedRecent = previousSummary?.type === "compaction" ? previousSummary.recent : ""
+    const promptFor = (head: string) =>
+      buildPrompt({ previousSummary: carriedSummary, context: [carriedRecent, head].filter(Boolean) })
     const requestedSummaryOutput = Math.min(output || SUMMARY_OUTPUT_TOKENS, SUMMARY_OUTPUT_TOKENS)
     // The retry contains the first answer AND reserves the same amount for its replacement. Cap the
     // answer so a conforming first attempt can always be quoted into a second request without
     // overflowing the model merely because the recovery envelope exists.
     const retryEnvelope = Token.estimate(buildSummaryTrimPrompt("", requestedSummaryOutput))
     const summaryOutput = Math.min(requestedSummaryOutput, Math.floor((context - retryEnvelope) / 2))
-    if (summaryOutput <= 0) return false
-    if (Token.estimate(summaryPrompt) > context - summaryOutput) return false
+    if (summaryOutput <= 0) return decline("context-too-small")
+    /**
+     * 🔴 **A TRANSCRIPT TOO LARGE TO SUMMARIZE USED TO BE A DEAD END.**
+     *
+     * This guard was `if (estimate(prompt) > context - summaryOutput) return false`, and it fires
+     * exactly when the head is bigger than one summarization pass — which is reachable on the
+     * overflow-recovery path, where `overflowRecentBudget` shrinks the verbatim TAIL while the head
+     * is whatever is left. The session is then over its ceiling with compaction refusing to run, so
+     * every subsequent turn overflows: the one state a compactor exists to prevent, entered by the
+     * compactor declining.
+     *
+     * ⭐ **Dropping the OLDEST head is the same trade the rest of this file already makes** —
+     * `trimSummaryHead` cuts an oversized summary from the front under `SUMMARY_HEAD_REMOVED`, and
+     * `overflowRecentBudget` cuts the tail. Oldest-first, halving, bounded, and the dropped span is
+     * not lost: `archiveCompactedChat` writes the compacted entries into this colleague's memory as
+     * passages before the overlay commits, so `kb search` still reaches them.
+     *
+     * The loop is finite by construction (each pass halves, and zero terminates it), so this cannot
+     * become an unbounded self-edit — the same property the summarize/trim chain below is built on.
+     */
+    const promptCeiling = context - summaryOutput
+    let keptHeadChars = selected.head.length
+    let head = selected.head
+    let summaryPrompt = promptFor(head)
+    while (keptHeadChars > 0 && Token.estimate(summaryPrompt) > promptCeiling) {
+      keptHeadChars = Math.floor(keptHeadChars / 2)
+      head = keptHeadChars === 0 ? "" : `${HISTORY_HEAD_REMOVED}\n\n${selected.head.slice(-keptHeadChars)}`
+      summaryPrompt = promptFor(head)
+    }
+    // Still over with nothing left to give: the window cannot hold the template plus the carried
+    // summary, so no amount of trimming this chat helps and the user must be told THAT.
+    if (Token.estimate(summaryPrompt) > promptCeiling) return decline("transcript-too-large")
+    if (head.length === 0 && carriedSummary === undefined) return decline("transcript-too-large")
+    // ⚠️ NOT logged through `session.compaction.summary.truncated` — that key names the SUMMARY
+    // overrunning its output budget, and borrowing it for a trimmed INPUT would make the one number
+    // it reports mean two things. The trim announces itself where it matters instead: the marker
+    // rides the prompt the model is sent, so it is visible in the request the tests pin.
     const messageID = SessionMessage.ID.create()
     yield* dependencies.events.publish(SessionEvent.Compaction.Started, {
       sessionID: input.sessionID,
@@ -524,13 +646,13 @@ export const make = (dependencies: Dependencies) => {
     // output, then a deterministic oldest-first cut. A model cannot turn compaction into an
     // unbounded self-edit loop.
     const first = yield* summarize({ prompt: summaryPrompt, model: input.model, outputTokens: summaryOutput })
-    if (!first.completed || first.failed || !first.text.trim()) return false
+    if (!first.completed || first.failed || !first.text.trim()) return decline("summarizer-unavailable")
     const firstFits = summaryWithinBudget(first.text, summaryOutput, first.reportedTokens)
     const firstClean = first.finish === "stop" && firstFits
     let summary = first.text
     if (!firstClean) {
       const retryable = FinishRecovery.isTruncated(first.finish) || (first.finish === "stop" && !firstFits)
-      if (!retryable) return false
+      if (!retryable) return decline("summary-unusable")
       yield* Log.event("session.compaction.summary.truncated", {
         "session.id": String(input.sessionID),
         "compaction.output.cap": summaryOutput,
@@ -561,7 +683,7 @@ export const make = (dependencies: Dependencies) => {
         summary = trimSummaryHead(source.text, summaryOutput)
       }
     }
-    if (!summary.trim()) return false
+    if (!summary.trim()) return decline("summarizer-unavailable")
     const prefixSeq = entries.reduce((highest, entry) => Math.max(highest, entry.seq), 0)
     yield* dependencies.events.publish(SessionEvent.Compaction.Ended, {
       sessionID: input.sessionID,
@@ -576,9 +698,15 @@ export const make = (dependencies: Dependencies) => {
     return true
   })
   const compactIfNeeded = Effect.fn("SessionCompaction.compactIfNeeded")(function* (input: Input) {
-    if (!config.auto) return false
+    // The trigger's own three exits report through the same channel as the nine below it, so a
+    // caller that wants to explain a decline never has to know which of the two functions declined.
+    const decline = (why: DeclineReason) => {
+      input.onDecline?.(why)
+      return false
+    }
+    if (!config.auto) return decline("auto-disabled")
     const context = input.model.route.defaults.limits?.context
-    if (context === undefined || context <= 0) return false
+    if (context === undefined || context <= 0) return decline("context-window-unknown")
     const output = input.request.generation?.maxTokens ?? input.model.route.defaults.limits?.output ?? 0
     /**
      * 🔴 **SAY WHAT THIS GUARD MEASURED, EVERY TURN, WHETHER OR NOT IT FIRES.**
@@ -624,7 +752,7 @@ export const make = (dependencies: Dependencies) => {
       "compaction.threshold": threshold,
       "compaction.fires": estimatedWithMargin > threshold,
     })
-    if (estimatedWithMargin <= threshold) return false
+    if (estimatedWithMargin <= threshold) return decline("under-threshold")
     // The cheap tier runs inside `compactAfterOverflow`, ahead of the summary prompt — the
     // threshold test above reads the ALREADY-ASSEMBLED request, which prune cannot shrink.
     return yield* compactAfterOverflow(input)

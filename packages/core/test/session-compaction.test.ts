@@ -226,7 +226,9 @@ test("the compaction trigger logs what it measured BEFORE it declines", () => {
     .join("\n")
 
   const logAt = source.indexOf('Log.event("session.compaction.threshold"')
-  const returnAt = source.indexOf("if (estimatedWithMargin <= threshold) return false")
+  // Re-pointed, per this test's own instruction: the early return still exists, but it now names the
+  // branch it took (`DeclineReason`) instead of returning a bare `false` the caller has to guess at.
+  const returnAt = source.indexOf('if (estimatedWithMargin <= threshold) return decline("under-threshold")')
   expect(logAt, "the threshold log moved — re-point this test, do not delete it").toBeGreaterThan(-1)
   expect(returnAt, "the early return moved — re-point this test, do not delete it").toBeGreaterThan(-1)
   expect(logAt).toBeLessThan(returnAt)

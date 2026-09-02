@@ -64,12 +64,43 @@ describe("deadChildMessage — a dead child must not read as a slow one", () => 
   /**
    * 🔴 **The half that decides whether this is safe to ship.** Calling a LIVE child dead sends the
    * parent to duplicate work already in flight — the opposite error, and an expensive one on a device
-   * this fan-out exists to saturate. `recovering` and `paused` are alive and will come back;
-   * `starting`/`busy` obviously so.
+   * this fan-out exists to saturate. `recovering` comes back on its own; `starting`/`busy` obviously
+   * so.
+   *
+   * ⚠️ `paused` used to be asserted here, on the strength of a comment claiming it was "still
+   * alive". It is not: nothing in the recovery machinery leaves that state without an operator
+   * calling `authorizeRetry`, so the parent was told to keep waiting for a child that would never
+   * finish. The criterion is *will anything move this child without a human*, not *did something go
+   * wrong* — see the two cases below.
    */
   test("every state that can still finish is NOT dead", () => {
-    for (const state of ["starting", "busy", "recovering", "paused", "settled"])
+    for (const state of ["starting", "busy", "recovering", "settled"])
       expect(deadChildMessage("ses_child", state)).toBeUndefined()
+  })
+
+  /**
+   * 🔴 **A PAUSED child is parked, not slow.** `SessionExecutionAttempt.recoverStale` writes
+   * `paused` exactly when `SessionRecoveryDecision.decide` returns `automatic: false`, and
+   * `SessionBootRecovery.resumeInterrupted` filters on `decision.automatic` — so the only thing that
+   * leaves `paused` is `authorizeRetry`, an operator action. Telling the parent "it may still be
+   * working" is a ten-minute wait loop with no end.
+   */
+  test("a PAUSED child is terminal, and says so in its own words", () => {
+    const message = deadChildMessage("ses_child", "paused")
+    expect(message).toBeDefined()
+    expect(message).toContain("DID NOT FINISH")
+    expect(message).toContain("PAUSED")
+    expect(message).toContain("will not resume on its own")
+    expect(message).toContain("waiting again will not help")
+  })
+
+  /**
+   * The distinction is load-bearing: a failed slice is re-issued, a paused one may have left a tool
+   * half-applied, so the parent must not be handed the same "spawn a replacement" instruction.
+   */
+  test("paused does not borrow the failure wording", () => {
+    expect(deadChildMessage("ses_child", "paused")).not.toContain("spawn a replacement")
+    expect(deadChildMessage("ses_child", "failed")).not.toContain("PAUSED")
   })
 
   test("an ABSENT attempt row is not dead either — it may not have started", () => {

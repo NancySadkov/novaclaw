@@ -29,14 +29,52 @@ import { SessionJoin } from "../session/join"
  * ⭐ **That is the shape that matters: nine slices of ten merge into a plausible,
  * complete-looking, WRONG answer**, and the nine successes are exactly what hide the tenth.
  *
- * ⚠️ **Only a state that CANNOT recover counts as dead.** `recovering` and `paused` are still
- * alive, and `starting`/`busy` obviously so; calling any of those dead would send the parent to
- * duplicate work a live child is doing — the opposite error, and an expensive one on a device
- * this fan-out is meant to saturate. An ABSENT attempt row is also not dead: it means the child
- * has not started yet, or the row was pruned.
+ * ⚠️ **Only a state that CANNOT recover counts as dead.** `recovering`, `starting` and `busy` are
+ * alive; calling any of those dead would send the parent to duplicate work a live child is doing —
+ * the opposite error, and an expensive one on a device this fan-out is meant to saturate. An ABSENT
+ * attempt row is also not dead: it means the child has not started yet, or the row was pruned.
+ *
+ * 🔴 **The criterion is NOT "did something go wrong" — it is *will anything move this child without
+ * a human?*** Those are different questions, and reading the first one is what put `paused` on the
+ * live side of this predicate for as long as it existed. A paused attempt is written precisely when
+ * `SessionRecoveryDecision.decide` returns `automatic: false` (the circuit breaker after
+ * `FAILURE_LIMIT`, or a tool dispatched with an unknown outcome), `SessionBootRecovery` resumes only
+ * the `automatic` half, and `recoverStale` never even selects `paused`. Nothing in the recovery
+ * machinery leaves that state; only `authorizeRetry` — an operator action — does. So a parent told
+ * *"it may still be working"* about a paused child waits ten minutes a lap, forever.
  */
+/**
+ * ⭐ **The classification is EXHAUSTIVE over `SessionExecutionAttempt.State`, by construction.** A
+ * predicate that lists the states it acts on silently ignores the next one somebody adds, and the
+ * ignored default here is *"alive"* — the direction that strands a parent. `Unclassified` below is
+ * a type error the moment a state is added to the union without an answer to the question above.
+ */
+const HALTED_STATES = ["failed", "interrupted", "paused"] as const
+const PROGRESSING_STATES = ["starting", "busy", "recovering", "settled"] as const
+type Classified = (typeof HALTED_STATES)[number] | (typeof PROGRESSING_STATES)[number]
+type Unclassified = Exclude<SessionExecutionAttempt.State, Classified>
+const _everyAttemptStateIsClassified: [Unclassified] extends [never]
+  ? true
+  : ["classify this attempt state in wait.ts", Unclassified] = true
+void _everyAttemptStateIsClassified
+
+const isHalted = (state: string | undefined): state is (typeof HALTED_STATES)[number] =>
+  HALTED_STATES.includes(state as (typeof HALTED_STATES)[number])
+
 export const deadChildMessage = (childID: string, state: string | undefined): string | undefined => {
-  if (state !== "failed" && state !== "interrupted") return undefined
+  if (!isHalted(state)) return undefined
+  // ⚠️ Paused gets its OWN sentence rather than being folded into the failure wording. The parent's
+  // next move differs: a failed slice is re-issued, a paused one has a durable attempt row a person
+  // must look at, and telling the model "it failed" about a parked child invites it to silently
+  // respawn work whose side effects are of unknown status — which is exactly the state `paused` is
+  // recorded for. Principle 14: this goes in the reply; nothing blocks waiting for the operator.
+  if (state === "paused")
+    return (
+      `Session ${childID} DID NOT FINISH: its execution is PAUSED for operator inspection and will ` +
+      `not resume on its own. It is not still working and waiting again will not help. Its share of ` +
+      `the work was NOT done — say so in your reply, and re-issue that slice yourself only if ` +
+      `repeating it is safe; it may have been parked because a tool's outcome is unknown.`
+    )
   return (
     `Session ${childID} DID NOT FINISH: its execution ${state === "failed" ? "failed" : "was interrupted"}. ` +
     `It is not still working and waiting again will not help. Its share of the work was NOT done — ` +
