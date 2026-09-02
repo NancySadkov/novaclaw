@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js"
 import { createAutosave } from "./notes-autosave"
 import { GoldGlyph } from "@/components/gold-glyph"
 import { useGlobal } from "@/context/global"
@@ -6,6 +6,8 @@ import { useServer } from "@/context/server"
 import { useLanguage } from "@/context/language"
 import { fsMkdir, fsWrite } from "@/utils/fs-api"
 import { AppPage, AppPageHeader } from "@/components/app-page"
+import { answeredNothing, createSettledResource } from "@/utils/settled-resource"
+import { createListState } from "@/utils/list-state"
 
 // The Notes app (B6 v1 — plan.md M5). One shared server-side `notes/` folder under the server's
 // data root (Global.Path.data/notes) that agents can also read/append (the B3 base prompt states
@@ -53,11 +55,13 @@ export function NotesPage() {
   // Resolve the notes dir: the server data root (PathInfo.data — read via cast, the generated SDK
   // type predates the field) + "/notes", created idempotently on first visit. FS-3 (T7): under
   // virtual mode, notes live in the app-private virtual root's own notes subdir instead.
-  const [notesDir] = createResource(ctx, async (c) => {
+  // ⚠️ The `GET /path` read no longer swallows its own rejection. It used to fold a transport
+  // failure into `undefined`, which is also what "this instance has no data root" looks like, so the
+  // listing below could never tell the two apart and neither could the screen.
+  const [notesDir] = createSettledResource(ctx, async (c) => {
     const info = await c.sdk.client.path
       .get()
       .then((r) => r.data as { data?: string; home?: string; virtual?: boolean; virtualRoot?: string } | undefined)
-      .catch(() => undefined)
     const data = info?.virtual && info.virtualRoot ? info.virtualRoot : info?.data
     if (!data) return undefined
     const cn = conn()
@@ -65,23 +69,32 @@ export function NotesPage() {
     await fsMkdir(cn.http, { directory: data, path: "notes" }).catch(() => undefined)
     return `${data.replace(/[\\/]+$/, "")}/notes`
   })
+  /** The folder could not be resolved — either the read rejected, or it answered with nothing. */
+  const notesDirUnavailable = () => notesDir.failed || answeredNothing(notesDir)
 
-  const [entries, { refetch: refetchEntries }] = createResource(
+  /**
+   * 🔴 A failed listing used to become `[]` — *"No notes yet"* over notes that exist. It was worse
+   * than a wrong sentence: the boot effect below reads `list.length === 0` as *"this user has no
+   * notes"* and CREATES `notes.md`, so a server that could not answer produced a new file and an
+   * empty editor over the user's real notes.
+   */
+  const [entries, { refetch: refetchEntries }] = createSettledResource(
     () => {
       const c = ctx()
       const d = notesDir()
       return c && d ? { c, d, t: tick() } : undefined
     },
     async ({ c, d }) => {
-      const rows = await c.sdk.client.file
-        .list({ directory: d, path: "" })
-        .then((r) => r.data as Entry[] | undefined)
-        .catch(() => undefined)
-      return (rows ?? [])
-        .filter((e) => e.type === "file" && e.name.endsWith(".md"))
-        .sort((a, b) => a.name.localeCompare(b.name))
+      const rows = await c.sdk.client.file.list({ directory: d, path: "" }).then((r) => r.data as Entry[] | undefined)
+      if (!rows) throw new Error("the notes folder could not be listed")
+      return rows.filter((e) => e.type === "file" && e.name.endsWith(".md")).sort((a, b) => a.name.localeCompare(b.name))
     },
   )
+  const listing = createListState<Entry>(entries, { failedWhen: notesDirUnavailable })
+  const loaded = createMemo(() => {
+    const state = listing()
+    return state.kind === "loaded" ? state.items : undefined
+  })
 
   // Serialized autosave: one promise chain per page so two writes to the same file never overlap
   // (a last-write-wins race truncates); the debounce timer flushes on unmount/navigation.
@@ -156,7 +169,14 @@ export function NotesPage() {
       setText(res?.type === "text" ? (res.content ?? "") : "")
       setNoteLoading(false)
     }
-    localStorage.setItem(LAST_KEY, name)
+    try {
+      localStorage.setItem(LAST_KEY, name)
+    } catch {
+      // ⚠️ Browser storage throws on ACCESS, not only when full — a private window or blocked site
+      // data rejects the read as well as the write. Every other raw storage site in the app is
+      // guarded; these two were not, so the Notes app died on open and on boot. The note is still
+      // open, it just is not remembered across a reload.
+    }
   }
 
   async function createNote(raw: string) {
@@ -202,7 +222,13 @@ export function NotesPage() {
     const list = entries()
     if (booted || !list || entries.loading) return
     booted = true
-    const last = localStorage.getItem(LAST_KEY)
+    const last = (() => {
+      try {
+        return localStorage.getItem(LAST_KEY)
+      } catch {
+        return null
+      }
+    })()
     if (last && list.some((e) => e.name === last)) void openNote(last)
     else if (list.length) void openNote(list[0].name)
     else void createNote("notes")
@@ -260,27 +286,36 @@ export function NotesPage() {
             </Show>
           </div>
           <div class="min-h-0 flex-1 overflow-auto py-1">
-            <Show
-              when={entries()?.length}
-              fallback={
-                <div class="px-4 py-2 text-sm text-v2-text-text-faint">
-                  {entries.loading ? language.t("notes.loading") : language.t("notes.empty")}
-                </div>
-              }
+            <Switch
+              fallback={<div class="px-4 py-2 text-sm text-v2-text-text-faint">{language.t("notes.loading")}</div>}
             >
-              <For each={entries()}>
-                {(entry) => (
-                  <button
-                    type="button"
-                    class="block w-full truncate px-4 py-1.5 text-left text-sm hover:bg-v2-background-bg-layer-02"
-                    classList={{ "bg-v2-background-bg-layer-02": current() === entry.name }}
-                    onClick={() => void openNote(entry.name)}
-                  >
-                    {entry.name.replace(/\.md$/, "")}
-                  </button>
+              <Match when={listing().kind === "failed"}>
+                <div class="px-4 py-2 text-sm text-v2-state-fg-danger" data-slot="notes-failed">
+                  {language.t("notes.loadFailed")}
+                </div>
+              </Match>
+              <Match when={listing().kind === "empty"}>
+                <div class="px-4 py-2 text-sm text-v2-text-text-faint" data-slot="notes-empty">
+                  {language.t("notes.empty")}
+                </div>
+              </Match>
+              <Match when={loaded()}>
+                {(rows) => (
+                  <For each={rows()}>
+                    {(entry) => (
+                      <button
+                        type="button"
+                        class="block w-full truncate px-4 py-1.5 text-left text-sm hover:bg-v2-background-bg-layer-02"
+                        classList={{ "bg-v2-background-bg-layer-02": current() === entry.name }}
+                        onClick={() => void openNote(entry.name)}
+                      >
+                        {entry.name.replace(/\.md$/, "")}
+                      </button>
+                    )}
+                  </For>
                 )}
-              </For>
-            </Show>
+              </Match>
+            </Switch>
           </div>
         </div>
 
@@ -290,7 +325,13 @@ export function NotesPage() {
             fallback={
               <div class="flex h-full flex-col items-center justify-center gap-3 px-4 py-3 text-sm text-v2-text-text-faint">
                 <GoldGlyph name="notes" class="size-12 opacity-60" />
-                {notesDir.loading || entries.loading ? language.t("notes.loading") : language.t("notes.empty")}
+                {/* The editor pane says what the LIST says: an unreadable folder is not an empty one,
+                    and the big centred word in the middle of the page is where a person looks first. */}
+                {listing().kind === "failed"
+                  ? language.t("notes.loadFailed")
+                  : listing().kind === "empty"
+                    ? language.t("notes.empty")
+                    : language.t("notes.loading")}
               </div>
             }
           >

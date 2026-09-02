@@ -8,7 +8,9 @@ import { ServerConnection, useServer } from "@/context/server"
 import { useTabs } from "@/context/tabs"
 import { useLanguage } from "@/context/language"
 import { showToast } from "@/utils/toast"
-import { fsTrashList, fsTrashRestore } from "@/utils/fs-api"
+import { fsTrashList, fsTrashRestore, type TrashEntry } from "@/utils/fs-api"
+import { createSettledResource } from "@/utils/settled-resource"
+import { createListState } from "@/utils/list-state"
 import { useFilesystemOperations, type FilesystemTarget } from "@/components/filesystem-operations"
 import { filesystemShortcut, isEditableFilesystemTarget } from "@/components/filesystem-domain"
 import { AppPage, AppPageHeader } from "@/components/app-page"
@@ -249,16 +251,31 @@ export function FilesPage() {
     },
   )
 
-  // The Trash panel's data — global store (entries from any root), newest first; the directory
-  // param is only for request routing.
-  const [trashEntries] = createResource(
+  /**
+   * The Trash panel's data — global store (entries from any root), newest first; the directory
+   * param is only for request routing.
+   *
+   * 🔴 It printed `"Trash is empty."` for a listing that FAILED, and the correct treatment was
+   * already in this same file: the folder listing forty lines up distinguishes `files.cantRead` from
+   * `files.empty`. The fix was made where the bug was reported and not where the class lives — which
+   * is why the guard exists one site over so often that it has a name.
+   *
+   * ⚠️ No `.catch` in the fetcher: `createSettledResource` owns the rejection, and a fetcher that
+   * swallows it hides the failure from `failed` and puts the same lie back.
+   */
+  const [trashEntries] = createSettledResource(
     () => {
       const cn = conn()
       const d = dir()
       return cn && d && showTrash() ? { cn, d, t: tick() } : undefined
     },
-    ({ cn, d }) => fsTrashList(cn.http, { directory: d }).catch(() => undefined),
+    ({ cn, d }) => fsTrashList(cn.http, { directory: d }),
   )
+  const trashListing = createListState<TrashEntry>(trashEntries)
+  const trashLoaded = createMemo(() => {
+    const state = trashListing()
+    return state.kind === "loaded" ? state.items : undefined
+  })
 
   async function doRestore(id: string) {
     const cn = conn()
@@ -412,6 +429,7 @@ export function FilesPage() {
           classList={{ "bg-v2-background-bg-layer-02": showTrash() }}
           onClick={() => setShowTrash((v) => !v)}
           disabled={!conn() || !dir()}
+          data-slot="files-trash-toggle"
         >
           {language.t("files.trash")}
         </button>
@@ -564,40 +582,44 @@ export function FilesPage() {
               <span class="text-xs text-v2-text-text-faint">{language.t("files.trashHint")}</span>
             </div>
             <div class="min-h-0 flex-1 overflow-auto py-1">
-              <Show
-                when={trashEntries.latest}
+              <Switch
                 fallback={
-                  <div class="px-4 py-3 text-sm text-v2-text-text-faint">
-                    {trashEntries.loading ? language.t("files.loading") : language.t("files.trashEmpty")}
-                  </div>
+                  <div class="px-4 py-3 text-sm text-v2-text-text-faint">{language.t("files.loading")}</div>
                 }
               >
-                <Show
-                  when={trashEntries.latest!.length}
-                  fallback={
-                    <div class="px-4 py-3 text-sm text-v2-text-text-faint">{language.t("files.trashEmpty")}</div>
-                  }
-                >
-                  <For each={trashEntries.latest}>
-                    {(entry) => (
-                      <div class="flex items-center gap-2 px-4 py-1.5 text-sm hover:bg-v2-background-bg-layer-02">
-                        <Show when={entry.type === "directory"} fallback={<span class="size-4 shrink-0" />}>
-                          <Icon name="folder" size="normal" class="shrink-0 text-v2-text-text-muted" />
-                        </Show>
-                        <span class="min-w-0 flex-1 truncate" title={entry.originalPath}>
-                          {entry.originalPath}
-                        </span>
-                        <span class="shrink-0 text-xs text-v2-text-text-faint">
-                          {new Date(entry.trashedAt).toLocaleString()}
-                        </span>
-                        <button type="button" class={btn} onClick={() => void doRestore(entry.id)}>
-                          {language.t("files.restore")}
-                        </button>
-                      </div>
-                    )}
-                  </For>
-                </Show>
-              </Show>
+                <Match when={trashListing().kind === "failed"}>
+                  <div class="px-4 py-3 text-sm text-v2-state-fg-danger" data-slot="files-trash-failed">
+                    {language.t("files.trashLoadFailed")}
+                  </div>
+                </Match>
+                <Match when={trashListing().kind === "empty"}>
+                  <div class="px-4 py-3 text-sm text-v2-text-text-faint" data-slot="files-trash-empty">
+                    {language.t("files.trashEmpty")}
+                  </div>
+                </Match>
+                <Match when={trashLoaded()}>
+                  {(rows) => (
+                    <For each={rows()}>
+                      {(entry) => (
+                        <div class="flex items-center gap-2 px-4 py-1.5 text-sm hover:bg-v2-background-bg-layer-02">
+                          <Show when={entry.type === "directory"} fallback={<span class="size-4 shrink-0" />}>
+                            <Icon name="folder" size="normal" class="shrink-0 text-v2-text-text-muted" />
+                          </Show>
+                          <span class="min-w-0 flex-1 truncate" title={entry.originalPath}>
+                            {entry.originalPath}
+                          </span>
+                          <span class="shrink-0 text-xs text-v2-text-text-faint">
+                            {new Date(entry.trashedAt).toLocaleString()}
+                          </span>
+                          <button type="button" class={btn} onClick={() => void doRestore(entry.id)}>
+                            {language.t("files.restore")}
+                          </button>
+                        </div>
+                      )}
+                    </For>
+                  )}
+                </Match>
+              </Switch>
             </div>
           </Show>
           <Show

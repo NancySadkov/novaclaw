@@ -362,7 +362,7 @@ describe("linked-account drivers: a challenge survives the read path", () => {
           return [
             yield* connection.listChats!().pipe(Effect.flip),
             yield* connection.history!("c1@g.us", 10).pipe(Effect.flip),
-            // RF-08-3's own half: the SEND mapper collapsed `logged-out` into a non-retryable
+            // The send mapper's own half: it collapsed `logged-out` into a non-retryable
             // SendError, so an unlinked or banned account never parked and never notified — a layer
             // BELOW the widened send channel, where the ChallengeError was never constructed at all.
             yield* connection.send("c1@g.us", { text: "hi" }).pipe(Effect.flip),

@@ -1,4 +1,4 @@
-import { createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js"
+import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js"
 import { fireStatusLabel } from "./calendar-status"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
@@ -19,6 +19,8 @@ import {
 } from "@/utils/calendar-api"
 import { AppPage, AppPageHeader } from "@/components/app-page"
 import { scopedDirectory } from "@/utils/routing-directory"
+import { createSettledResource } from "@/utils/settled-resource"
+import { createListState } from "@/utils/list-state"
 
 // Calendar app: the home tile's page. Shows the live date/time, the next
 // scheduled run, the list of schedules with their next-fire, and a form to add one. Data comes from the
@@ -136,29 +138,30 @@ export function CalendarPage() {
   // Live clock — bump every second; refresh the list every 10s so next/last-fire stays current.
   const [now, setNow] = createSignal(Date.now())
 
-  const [schedules, { refetch }] = createResource(
+  /**
+   * 🔴 **The sharpest instance of the whole class, and the reason it is not merely a wrong word.**
+   * Both reads folded a failed fetch into `[]`, and the list below renders `[]` as *"No tasks yet —
+   * add one below."* The schedules are **still firing** server-side while that sentence is on
+   * screen, so it is not a false statement, it is an INVITATION to create them a second time and
+   * have every unattended run happen twice.
+   *
+   * ⚠️ `initialValue: []` was doing the opposite of what it looked like. It sets Solid's `resolved`
+   * flag before anything is asked, so the page was `"ready"` with an empty list on a cold client —
+   * and it does not make `.latest` safe either, which is what made the pattern spread.
+   */
+  const [scheduleRows, { refetch }] = createSettledResource(
     () => httpBase(),
-    async (base) => {
-      try {
-        return await listSchedules(base)
-      } catch {
-        return [] as Schedule[]
-      }
-    },
-    { initialValue: [] as Schedule[] },
+    (base) => listSchedules(base),
   )
+  const schedules = (): Schedule[] => scheduleRows() ?? []
+  const scheduleListing = createListState<Schedule>(scheduleRows)
 
-  const [fires, { refetch: refetchFires }] = createResource(
+  const [fireRows, { refetch: refetchFires }] = createSettledResource(
     () => httpBase(),
-    async (base) => {
-      try {
-        return await listFires(base)
-      } catch {
-        return [] as Fire[]
-      }
-    },
-    { initialValue: [] as Fire[] },
+    (base) => listFires(base),
   )
+  const fires = (): Fire[] => fireRows() ?? []
+  const fireListing = createListState<Fire>(fireRows)
 
   onMount(() => {
     const clock = setInterval(() => setNow(Date.now()), 1000)
@@ -402,73 +405,95 @@ export function CalendarPage() {
         {/* Schedule list */}
         <div>
           <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-v2-text-text-faint">
-            Scheduled tasks ({schedules().length})
+            {/* A count is a CLAIM about how many tasks exist. It is withheld until one has arrived,
+                because "(0)" over a failed read is the same lie in numerals. */}
+            Scheduled tasks
+            <Show when={scheduleListing().kind === "loaded" || scheduleListing().kind === "empty"}>
+              {" "}
+              ({schedules().length})
+            </Show>
           </div>
-          <Show
-            when={schedules().length}
-            fallback={<div class="text-sm text-v2-text-text-muted">No tasks yet — add one below.</div>}
-          >
-            <div class="flex flex-col gap-2">
-              <For each={schedules()}>
-                {(s) => (
-                  <div class={`${CARD} flex items-start gap-3`}>
-                    <div class="min-w-0 flex-1">
-                      <div class="flex items-center gap-2">
-                        <span class="truncate font-medium">{s.title || "Untitled task"}</span>
-                        <Show when={!s.enabled}>
-                          <span class="rounded bg-v2-background-bg-layer-03 px-1.5 py-0.5 text-[10px] text-v2-text-text-faint">
-                            disabled
-                          </span>
-                        </Show>
+          <Switch fallback={<div class="text-sm text-v2-text-text-muted">Loading your scheduled tasks…</div>}>
+            <Match when={scheduleListing().kind === "failed"}>
+              <div class="text-sm text-v2-state-fg-danger" data-slot="calendar-schedules-failed">
+                Could not read your scheduled tasks. They are still on the instance and still running — only this
+                list failed to arrive, so there is nothing here to add again.
+              </div>
+            </Match>
+            <Match when={scheduleListing().kind === "empty"}>
+              <div class="text-sm text-v2-text-text-muted" data-slot="calendar-schedules-empty">
+                No tasks yet — add one below.
+              </div>
+            </Match>
+            <Match when={scheduleListing().kind === "loaded"}>
+              <div class="flex flex-col gap-2">
+                <For each={schedules()}>
+                  {(s) => (
+                    <div class={`${CARD} flex items-start gap-3`}>
+                      <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-2">
+                          <span class="truncate font-medium">{s.title || "Untitled task"}</span>
+                          <Show when={!s.enabled}>
+                            <span class="rounded bg-v2-background-bg-layer-03 px-1.5 py-0.5 text-[10px] text-v2-text-text-faint">
+                              disabled
+                            </span>
+                          </Show>
+                        </div>
+                        <div class="mt-0.5 text-xs text-v2-text-text-muted">{describeRecurrence(s.recurrence)}</div>
+                        <div class="mt-0.5 truncate text-xs text-v2-text-text-faint">“{s.prompt}”</div>
+                        <div class="mt-0.5 truncate text-[11px] text-v2-text-text-faint">
+                          {/* WHO first, because that is now the fact that decides the rest: an unnamed
+                              task is Nova's, and the colleague supplies the model, the posture and —
+                              unless this task overrides it — the folder. */}
+                          {responsibleName(s.agent)}
+                          {s.location ? ` · folder: ${s.location}` : ""}
+                          {s.permissionMode ? ` · access: ${s.permissionMode}` : ""}
+                          {s.model ? ` · model: ${s.model}` : ""}
+                        </div>
+                        <div class="mt-1 text-xs text-v2-text-text-accent">
+                          <Show
+                            when={s.nextFireAt !== null}
+                            fallback={<span class="text-v2-text-text-faint">no next run</span>}
+                          >
+                            next {relative(s.nextFireAt ?? 0, now())} · {new Date(s.nextFireAt ?? 0).toLocaleString()}
+                          </Show>
+                          <Show when={s.lastFiredAt}>
+                            <span class="text-v2-text-text-faint">
+                              {" "}
+                              · last ran {new Date(s.lastFiredAt ?? 0).toLocaleString()}
+                            </span>
+                          </Show>
+                        </div>
                       </div>
-                      <div class="mt-0.5 text-xs text-v2-text-text-muted">{describeRecurrence(s.recurrence)}</div>
-                      <div class="mt-0.5 truncate text-xs text-v2-text-text-faint">“{s.prompt}”</div>
-                      <div class="mt-0.5 truncate text-[11px] text-v2-text-text-faint">
-                        {/* WHO first, because that is now the fact that decides the rest: an unnamed
-                            task is Nova's, and the colleague supplies the model, the posture and —
-                            unless this task overrides it — the folder. */}
-                        {responsibleName(s.agent)}
-                        {s.location ? ` · folder: ${s.location}` : ""}
-                        {s.permissionMode ? ` · access: ${s.permissionMode}` : ""}
-                        {s.model ? ` · model: ${s.model}` : ""}
-                      </div>
-                      <div class="mt-1 text-xs text-v2-text-text-accent">
-                        <Show
-                          when={s.nextFireAt !== null}
-                          fallback={<span class="text-v2-text-text-faint">no next run</span>}
-                        >
-                          next {relative(s.nextFireAt ?? 0, now())} · {new Date(s.nextFireAt ?? 0).toLocaleString()}
-                        </Show>
-                        <Show when={s.lastFiredAt}>
-                          <span class="text-v2-text-text-faint">
-                            {" "}
-                            · last ran {new Date(s.lastFiredAt ?? 0).toLocaleString()}
-                          </span>
-                        </Show>
-                      </div>
+                      <button class={BTN} onClick={() => edit(s)} title="Edit task" aria-pressed={editingID() === s.id}>
+                        Edit
+                      </button>
+                      <button
+                        class={BTN}
+                        onClick={() => void toggle(s)}
+                        title={s.enabled ? "Pause this task" : "Resume this task"}
+                        disabled={!routingDirectory()}
+                      >
+                        {s.enabled ? "Pause" : "Resume"}
+                      </button>
+                      <button class={BTN} onClick={() => void del(s.id)} title="Delete task">
+                        <Icon name="trash" size="normal" />
+                      </button>
                     </div>
-                    <button class={BTN} onClick={() => edit(s)} title="Edit task" aria-pressed={editingID() === s.id}>
-                      Edit
-                    </button>
-                    <button
-                      class={BTN}
-                      onClick={() => void toggle(s)}
-                      title={s.enabled ? "Pause this task" : "Resume this task"}
-                      disabled={!routingDirectory()}
-                    >
-                      {s.enabled ? "Pause" : "Resume"}
-                    </button>
-                    <button class={BTN} onClick={() => void del(s.id)} title="Delete task">
-                      <Icon name="trash" size="normal" />
-                    </button>
-                  </div>
-                )}
-              </For>
-            </div>
-          </Show>
+                  )}
+                </For>
+              </div>
+            </Match>
+          </Switch>
         </div>
 
-        {/* Recent runs */}
+        {/* Recent runs — an unread history is not an empty one, so a failed read says so rather than
+            hiding the whole section and implying nothing has ever run. */}
+        <Show when={fireListing().kind === "failed"}>
+          <div class="text-sm text-v2-state-fg-danger" data-slot="calendar-fires-failed">
+            Could not read the recent-run history.
+          </div>
+        </Show>
         <Show when={fires().length}>
           <div>
             <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-v2-text-text-faint">Recent runs</div>

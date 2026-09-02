@@ -28,6 +28,7 @@ export const dict = {
   "files.showHidden": "Hidden files",
   "files.trashHint": "You can restore it for about 2 days",
   "files.trashEmpty": "Trash is empty.",
+  "files.trashLoadFailed": "Could not read the Trash — this is not an empty Trash.",
   "files.restore": "Restore",
   "files.drives": "Drives",
   "files.restoreFailed": "Couldn’t restore",
@@ -94,6 +95,7 @@ export const dict = {
   "notes.placeholder": "Write anything — phone numbers, sites, birthdays…",
   "notes.loading": "Loading…",
   "notes.empty": "No notes yet",
+  "notes.loadFailed": "Could not read your notes. This is not an empty folder — the list did not arrive.",
   "notes.saving": "Saving…",
   "notes.saved": "Saved",
   "notes.saveFailed": "Couldn’t save",
@@ -102,6 +104,9 @@ export const dict = {
   "trash.refresh": "Refresh",
   "trash.loading": "Loading…",
   "trash.empty": "Trash is empty.",
+  // ⚠️ Deliberately NOT a variation on "Trash is empty." Those were the same sentence for years, and
+  // on this screen the difference decides whether someone believes a deleted file is gone.
+  "trash.loadFailed": "Could not read the Trash. This is not an empty Trash — the list did not arrive.",
   "trash.restore": "Restore",
   "trash.restoreFailed": "Couldn’t restore",
   "trash.expiresIn": "expires in",
@@ -2915,6 +2920,10 @@ export const dict = {
   "skills.search.placeholder": "Search skills",
   "skills.empty.none": "No skills yet. NovaClaw looks for them in the places listed below.",
   "skills.empty.filtered": "No skill matches that search.",
+  "skills.loading": "Loading…",
+  // An unavailable subsystem names itself instead of rendering empty — and it says which of the two
+  // it is, because "no skills" and "could not ask" send a person to entirely different remedies.
+  "skills.loadFailed": "Could not read the skill list. Your skills are still installed — this page could not reach them.",
   "skills.intro.pick": "Pick a skill on the left to see who wrote it and what it tells your agent to do.",
   "skills.badge.slash": "Slash command",
 

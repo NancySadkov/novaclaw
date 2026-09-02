@@ -1,5 +1,5 @@
 import { useNavigate } from "@solidjs/router"
-import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { useDirectoryPicker } from "@/components/directory-picker"
@@ -43,6 +43,8 @@ import {
   type VerdictView,
 } from "@/apps/recipes"
 import { AppPage, AppPageHeader } from "@/components/app-page"
+import { createSettledResource } from "@/utils/settled-resource"
+import { createListState } from "@/utils/list-state"
 
 // The Recipes app (AGENTS.md → *Recipes are source code for the AI era*). A recipe is a folder of prompt +
 // assets; this page is where a normal person reads, runs, copies, edits, shares and CHECKS one.
@@ -107,17 +109,20 @@ export function RecipesPage() {
   const archiveTransfers = new AbortController()
   onCleanup(() => archiveTransfers.abort())
 
-  const [recipes, { refetch }] = createResource(
+  /**
+   * ⚠️ A failed listing used to become `[]`, and `[]` reads as *"No recipes yet — make one, or import
+   * one."* The bundled recipes are this install's health check, so telling someone they have none is
+   * telling them the install is bare when what actually happened is that the page could not ask.
+   *
+   * `initialValue: []` was not the guard it looked like: it sets Solid's `resolved` flag before
+   * anything is requested, so the page claimed an empty shelf on a cold client too.
+   */
+  const [recipeRows, { refetch }] = createSettledResource(
     () => httpBase(),
-    async (base) => {
-      try {
-        return await listRecipes(base)
-      } catch {
-        return [] as Recipe[]
-      }
-    },
-    { initialValue: [] as Recipe[] },
+    (base) => listRecipes(base),
   )
+  const recipes = (): Recipe[] => recipeRows() ?? []
+  const recipeListing = createListState<Recipe>(recipeRows)
 
   const [selected, setSelected] = createSignal<string | undefined>()
   const [query, setQuery] = createSignal("")
@@ -527,52 +532,62 @@ export function RecipesPage() {
             />
           </div>
           <div class="min-h-0 flex-1 overflow-auto px-2 pb-2">
-            <Show
-              when={groups().length}
-              fallback={
+            <Switch>
+              <Match when={recipeListing().kind === "failed"}>
+                <div class="p-2 text-sm text-v2-state-fg-danger" data-slot="recipes-failed">
+                  Could not read your recipes. Your shelf is intact — this page could not reach it.
+                </div>
+              </Match>
+              <Match when={recipeListing().kind === "idle" || recipeListing().kind === "loading"}>
+                <div class="p-2 text-sm text-v2-text-text-muted">Loading your recipes…</div>
+              </Match>
+              <Match when={groups().length === 0}>
+                {/* Two empties, and only one of them is a recipe count: nothing installed, versus
+                    nothing matching the search. Neither may stand in for a failed read above. */}
                 <div class="p-2 text-sm text-v2-text-text-muted" data-slot="recipes-empty">
                   {recipes().length === 0 ? "No recipes yet — make one, or import one." : "Nothing matches that."}
                 </div>
-              }
-            >
-              <For each={groups()}>
-                {(group) => (
-                  <div class="mb-3">
-                    {/* A shelf, not a profile: a title and a line about what lives here, no settings.
-                        Membership is decided by the build — a recipe cannot declare its own shelf. */}
-                    <div class={LABEL} data-slot="recipe-shelf">
-                      {group.collection.title}
-                    </div>
-                    <div class="mt-0.5 mb-1.5 text-[11px] text-v2-text-text-faint">{group.collection.note}</div>
-                    <For each={group.recipes}>
-                      {(recipe) => (
-                        <button
-                          class="mb-1.5 block w-full rounded-md border px-2.5 py-2 text-left transition-colors"
-                          classList={{
-                            "border-v2-border-border-focus bg-v2-background-bg-layer-02": selected() === recipe.key,
-                            "border-transparent hover:bg-v2-background-bg-layer-01": selected() !== recipe.key,
-                          }}
-                          data-slot="recipe-row"
-                          onClick={() => open(recipe)}
-                        >
-                          <div class="flex items-center gap-1.5">
-                            <span class="min-w-0 flex-1 truncate text-sm font-medium">{recipe.name}</span>
-                            <Show when={recipe.assets.length}>
-                              <span class="shrink-0 rounded bg-v2-background-bg-layer-03 px-1.5 py-0.5 text-[10px] text-v2-text-text-faint">
-                                {recipe.assets.length} file{recipe.assets.length === 1 ? "" : "s"}
-                              </span>
+              </Match>
+              <Match when={groups().length}>
+                <For each={groups()}>
+                  {(group) => (
+                    <div class="mb-3">
+                      {/* A shelf, not a profile: a title and a line about what lives here, no settings.
+                          Membership is decided by the build — a recipe cannot declare its own shelf. */}
+                      <div class={LABEL} data-slot="recipe-shelf">
+                        {group.collection.title}
+                      </div>
+                      <div class="mt-0.5 mb-1.5 text-[11px] text-v2-text-text-faint">{group.collection.note}</div>
+                      <For each={group.recipes}>
+                        {(recipe) => (
+                          <button
+                            class="mb-1.5 block w-full rounded-md border px-2.5 py-2 text-left transition-colors"
+                            classList={{
+                              "border-v2-border-border-focus bg-v2-background-bg-layer-02": selected() === recipe.key,
+                              "border-transparent hover:bg-v2-background-bg-layer-01": selected() !== recipe.key,
+                            }}
+                            data-slot="recipe-row"
+                            onClick={() => open(recipe)}
+                          >
+                            <div class="flex items-center gap-1.5">
+                              <span class="min-w-0 flex-1 truncate text-sm font-medium">{recipe.name}</span>
+                              <Show when={recipe.assets.length}>
+                                <span class="shrink-0 rounded bg-v2-background-bg-layer-03 px-1.5 py-0.5 text-[10px] text-v2-text-text-faint">
+                                  {recipe.assets.length} file{recipe.assets.length === 1 ? "" : "s"}
+                                </span>
+                              </Show>
+                            </div>
+                            <Show when={recipe.hasDescription}>
+                              <div class="mt-0.5 line-clamp-2 text-xs text-v2-text-text-muted">{recipe.description}</div>
                             </Show>
-                          </div>
-                          <Show when={recipe.hasDescription}>
-                            <div class="mt-0.5 line-clamp-2 text-xs text-v2-text-text-muted">{recipe.description}</div>
-                          </Show>
-                        </button>
-                      )}
-                    </For>
-                  </div>
-                )}
-              </For>
-            </Show>
+                          </button>
+                        )}
+                      </For>
+                    </div>
+                  )}
+                </For>
+              </Match>
+            </Switch>
           </div>
         </div>
 

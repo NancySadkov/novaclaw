@@ -1,4 +1,7 @@
-import { createMemo, createResource, createSignal, For, Show } from "solid-js"
+// ⚠️ `Switch as SolidSwitch`: this file's `Switch` is the UI toggle control, imported below. Solid's
+// control-flow component has to be renamed rather than the other way round — the toggle is used in
+// JSX throughout the page, and renaming it would touch code this change has no business in.
+import { createMemo, createResource, createSignal, For, Match, Show, Switch as SolidSwitch } from "solid-js"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { useLanguage, type TranslationKey, type Translator } from "@/context/language"
@@ -15,6 +18,8 @@ import {
 } from "@/apps/project-skills"
 import { AppPage, AppPageHeader } from "@/components/app-page"
 import { SettingsExplainV2 } from "@/components/settings-v2/explain"
+import { createSettledResource } from "@/utils/settled-resource"
+import { createListState } from "@/utils/list-state"
 import {
   authorText,
   filterViews,
@@ -533,14 +538,27 @@ export function SkillsPage() {
   )
   const context = createMemo<SkillContext>(() => ({ paths: paths(), sources: sources() }))
 
-  const [skills, { refetch }] = createResource(
+  /**
+   * 🔴 This read had BOTH halves of the failure wrong at once, and the correct treatment was
+   * already in this file — the `agents` read below and the `project` read further down each name
+   * their own fault, with a comment explaining why.
+   *
+   * ⚠️ The generated SDK does not throw on a non-2xx: it returns `{ data: undefined, error }` unless
+   * the caller asked for `throwOnError`. So `response.data?.data ?? []` turned every server-side
+   * failure into an empty skill list and the page said *"No skills yet"* over skills that are
+   * installed — while a TRANSPORT failure took the other route and threw from the accessor, because
+   * `initialValue: []` does not make a read safe.
+   */
+  const [skillRows, { refetch }] = createSettledResource(
     () => sdk(),
     async (client) => {
       const response = await client.client.v2.skill.list()
+      if (response.error) throw response.error
       return (response.data?.data ?? []) as SkillInfo[]
     },
-    { initialValue: [] as SkillInfo[] },
   )
+  const skills = (): SkillInfo[] => skillRows() ?? []
+  const skillListing = createListState<SkillInfo>(skillRows)
 
   // Enablement is the `skill` permission action evaluated per AGENT (core/src/skill.ts →
   // `available`). Failure is answered with `undefined`, which `describeEnablement` reports as
@@ -773,40 +791,50 @@ export function SkillsPage() {
             />
           </div>
           <div class="min-h-0 flex-1 overflow-auto px-2 pb-2">
-            <Show
-              when={shown().length}
-              fallback={
+            <SolidSwitch>
+              <Match when={skillListing().kind === "failed"}>
+                <div class="p-2 text-sm text-v2-state-fg-danger" data-slot="skills-failed">
+                  {t("skills.loadFailed")}
+                </div>
+              </Match>
+              <Match when={skillListing().kind === "idle" || skillListing().kind === "loading"}>
+                <div class="p-2 text-sm text-v2-text-text-muted">{t("skills.loading")}</div>
+              </Match>
+              <Match when={shown().length === 0}>
+                {/* Two empties: none installed, and none matching the search. A failed read is
+                    neither, and it is checked first so it can never wear either sentence. */}
                 <div class="p-2 text-sm text-v2-text-text-muted" data-slot="skills-empty">
                   {skills().length === 0 ? t("skills.empty.none") : t("skills.empty.filtered")}
                 </div>
-              }
-            >
-              <For each={shown()}>
-                {(view) => (
-                  <button
-                    class="mb-1.5 block w-full rounded-md border px-2.5 py-2 text-left transition-colors"
-                    classList={{
-                      "border-v2-border-border-focus bg-v2-background-bg-layer-02": selected() === view.key,
-                      "border-transparent hover:bg-v2-background-bg-layer-01": selected() !== view.key,
-                    }}
-                    data-slot="skill-row"
-                    onClick={() => setSelected(view.key)}
-                  >
-                    <div class="flex items-center gap-1.5">
-                      <span class="min-w-0 flex-1 truncate text-sm font-medium">{view.name}</span>
-                      <span
-                        class={`${CHIP} shrink-0 ${view.remote ? "bg-v2-background-bg-layer-03 text-v2-text-text-accent" : "bg-v2-background-bg-layer-02 text-v2-text-text-faint"}`}
-                      >
-                        {t(ORIGIN_BADGE[view.origin.kind])}
-                      </span>
-                    </div>
-                    <div class="mt-0.5 line-clamp-2 text-xs text-v2-text-text-muted">
-                      {view.hasDescription ? view.description : t("skills.description.none.short")}
-                    </div>
-                  </button>
-                )}
-              </For>
-            </Show>
+              </Match>
+              <Match when={shown().length}>
+                <For each={shown()}>
+                  {(view) => (
+                    <button
+                      class="mb-1.5 block w-full rounded-md border px-2.5 py-2 text-left transition-colors"
+                      classList={{
+                        "border-v2-border-border-focus bg-v2-background-bg-layer-02": selected() === view.key,
+                        "border-transparent hover:bg-v2-background-bg-layer-01": selected() !== view.key,
+                      }}
+                      data-slot="skill-row"
+                      onClick={() => setSelected(view.key)}
+                    >
+                      <div class="flex items-center gap-1.5">
+                        <span class="min-w-0 flex-1 truncate text-sm font-medium">{view.name}</span>
+                        <span
+                          class={`${CHIP} shrink-0 ${view.remote ? "bg-v2-background-bg-layer-03 text-v2-text-text-accent" : "bg-v2-background-bg-layer-02 text-v2-text-text-faint"}`}
+                        >
+                          {t(ORIGIN_BADGE[view.origin.kind])}
+                        </span>
+                      </div>
+                      <div class="mt-0.5 line-clamp-2 text-xs text-v2-text-text-muted">
+                        {view.hasDescription ? view.description : t("skills.description.none.short")}
+                      </div>
+                    </button>
+                  )}
+                </For>
+              </Match>
+            </SolidSwitch>
           </div>
           <div class="border-t border-v2-border-border-base p-2">
             {/* ⚠️ "Where NovaClaw looks" USED to stand here as a permanent block: a heading, the list
