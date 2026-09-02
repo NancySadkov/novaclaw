@@ -2595,8 +2595,75 @@ export const layer = Layer.effect(
             // ⚠️ Only the DEFAULT heals silently. `resolve` refuses to reroute a model the user named
             // (owner, 2026-09-02) — retiring it here is still right, because it is a fact about the
             // endpoint, but what the user sees is the error and the offer to switch.
-            if (isModelMissing(publisher.assistantFailureMessage() ?? "")) ModelHealth.retired(ranOn)
-            else ModelHealth.failed(ranOn, yield* Clock.currentTimeMillis)
+            if (isModelMissing(publisher.assistantFailureMessage() ?? "")) {
+              ModelHealth.retired(ranOn)
+              // 🔴 CLEAR THE PIN, which is the half that actually heals.
+              //
+              // Retiring the model only steers the next RESOLUTION, and a session whose row pins the
+              // dead model never reaches that decision: `resolveWithDevice` is called with
+              // `requested: session.model !== undefined`, so a pinned session is treated as one the
+              // user explicitly asked for and is deliberately not rerouted.
+              //
+              // ⚠️ And that pin is usually not a choice anybody made. Measured on a live instance:
+              // a Companion chat carried `holo3.1` because that was the default the DAY THE CHAT WAS
+              // CREATED, and it kept asking for it after the endpoint moved. The row is a snapshot,
+              // not an instruction.
+              //
+              // `ModelSwitched.model` is nullable — the kernel's own event for "go back to
+              // inheriting" — so clearing is a supported state rather than a hole punched in the
+              // row. The next turn then resolves the live default, and the retirement above keeps
+              // that resolution off the dead model even if it is still the default.
+              //
+              // The user is not kept in the dark: THIS turn already failed with the fault on screen,
+              // and the switch is a durable event the transcript and the UI both show.
+              // 🔴 RESOLVE THE REPLACEMENT HERE, and persist it — because in-memory health does not
+              // survive this turn.
+              //
+              // Measured 2026-09-03: every turn drains in a FRESH session-worker process, so
+              // `ModelHealth` (module state) starts empty each time. Turn 1 retired the model in
+              // pid A; turn 2 resolved in pid B and saw `retired=false`. That is why the threshold
+              // of two failures could never be reached either — the whole health mechanism is
+              // invisible to itself across turns in this topology.
+              //
+              // The retirement IS live in this process, so asking the resolver now — with the pin
+              // removed, which also drops the `requested` flag that suppresses rerouting — returns
+              // the model the next turn should use. Writing that choice to the row is what makes it
+              // durable: a session component, not a memory the next process will not have.
+              const replacement = yield* models
+                .resolve({ ...session, model: undefined }, { requested: false })
+                .pipe(Effect.orElseSucceed(() => undefined))
+              // ⚠️ The resolved model carries the LLM ROUTE's brands (`LLM.ProviderID`/`LLM.ModelID`),
+              // not the catalog's. They are different vocabularies on purpose — the wire id and the
+              // catalog id can differ — so the conversion is explicit here rather than a cast.
+              const replacementRef =
+                replacement === undefined
+                  ? undefined
+                  : ModelV2.Ref.make({
+                      providerID: ProviderV2.ID.make(String(replacement.provider)),
+                      id: ModelV2.ID.make(String(replacement.id)),
+                    })
+              const healed =
+                replacementRef !== undefined &&
+                `${replacementRef.providerID}/${replacementRef.id}` !== `${ranOn.providerID}/${ranOn.id}`
+              // ⚠️ Nothing else can serve: leave the pin alone and let the fault stand. Clearing it
+              // would only move the same failure to a different sentence, and the invariant the
+              // owner asked for is explicitly conditioned on a model being available.
+              if (healed || session.model !== undefined) {
+                yield* events
+                  .publish(SessionEvent.ModelSwitched, {
+                    sessionID: session.id,
+                    messageID: SessionMessage.ID.create(),
+                    timestamp: yield* DateTime.now,
+                    model: healed ? replacementRef! : null,
+                  })
+                  .pipe(Effect.ignore)
+                yield* Log.event("session.model.retired", {
+                  "session.id": session.id,
+                  "model.retired": `${ranOn.providerID}/${ranOn.id}`,
+                  "model.used": healed ? `${replacementRef!.providerID}/${replacementRef!.id}` : "none",
+                })
+              }
+            } else ModelHealth.failed(ranOn, yield* Clock.currentTimeMillis)
           } else if (!publisher.hasAssistantFailed()) {
             ModelHealth.succeeded(ranOn)
           }

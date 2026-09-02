@@ -1181,6 +1181,18 @@ export const EVENTS = {
     content: "correlated",
     file: "packages/core/src/session/runner/model.ts",
   },
+  /** The endpoint said it does not serve this model, so the session's stale pin was cleared. */
+  "session.model.retired": {
+    level: "warn",
+    message: "model is not served by its endpoint — cleared the session's pin",
+    attributes: {
+      "session.id": "correlate",
+      "model.retired": "id",
+      "model.used": "id",
+    },
+    content: "correlated",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   /** A directory had no instance yet, so one is being created. 1146 lines. */
   "instance.store.create": {
     level: "info",
