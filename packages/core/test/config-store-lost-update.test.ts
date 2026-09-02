@@ -13,6 +13,15 @@ import { ModelRouteProfileStore } from "@novaclaw/core/session/runner/model-rout
 import { tmpdir } from "./fixture/tmpdir"
 
 /**
+ * ⚠️ `expect(Exit.isFailure(x)).toBe(true)` asserts at RUNTIME and narrows nothing for the
+ * compiler, so the `.cause` read after one is a type error. This asserts and narrows in one step.
+ */
+function failureOf<A, E>(exit: Exit.Exit<A, E>): Cause.Cause<E> {
+  if (!Exit.isFailure(exit)) throw new Error("expected a failure, got a success")
+  return exit.cause
+}
+
+/**
  * **A key/value row is one whole value, so every writer that changes PART of it is a
  * read-modify-write — and two of them lose one another's change with nothing failing.**
  *
@@ -263,7 +272,7 @@ describe("the key/value primitive's atomic update", () => {
     holder.run("PRAGMA busy_timeout = 0")
     holder.run("BEGIN IMMEDIATE")
     let decided = 0
-    let exit: Exit.Exit<void, never>
+    let exit: Exit.Exit<void, unknown>
     try {
       exit = await onStore(file, 50, (store) =>
         store.update("counts", (current) => {
@@ -279,8 +288,7 @@ describe("the key/value primitive's atomic update", () => {
       }
     }
 
-    expect(Exit.isFailure(exit)).toBe(true)
-    expect(Cause.pretty(exit.cause)).toMatch(/SQLITE_BUSY|database is locked/i)
+    expect(Cause.pretty(failureOf(exit))).toMatch(/SQLITE_BUSY|database is locked/i)
     expect(decided).toBe(0)
 
     // The control: with nobody holding the lock the very same call goes through, and it composes

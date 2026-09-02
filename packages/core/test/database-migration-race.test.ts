@@ -11,6 +11,16 @@ import { migrations } from "@novaclaw/core/database/migration.gen"
 import { tmpdir } from "./fixture/tmpdir"
 
 /**
+ * ⚠️ `expect(Exit.isFailure(x)).toBe(true)` asserts at RUNTIME and narrows nothing for the
+ * compiler, so every `.cause` read after one is a type error. This asserts and narrows in one step,
+ * so the reads below are checked rather than cast.
+ */
+function failureOf<A, E>(exit: Exit.Exit<A, E>): Cause.Cause<E> {
+  if (!Exit.isFailure(exit)) throw new Error("expected a failure, got a success")
+  return exit.cause
+}
+
+/**
  * **Two NovaClaws on one database file.**
  *
  * Not a hypothetical shape: the desktop's Electron utilityProcess server and a `novaclaw` CLI run in
@@ -104,8 +114,7 @@ describe("two openers of one database file", () => {
     const loser = await onConnection(file, 5_000, (db) =>
       db.run(sql`CREATE TABLE ${sql.identifier("migration")} (id TEXT PRIMARY KEY, time_completed INTEGER NOT NULL)`),
     )
-    expect(Exit.isFailure(loser)).toBe(true)
-    expect(Cause.pretty(loser.cause)).toMatch(/already exists/i)
+    expect(Cause.pretty(failureOf(loser))).toMatch(/already exists/i)
   })
 
   test("the decision is taken under the write lock, so the second opener is refused rather than misled", async () => {
@@ -123,8 +132,7 @@ describe("two openers of one database file", () => {
       // `apply` is blocked — at BEGIN, before it can read anything it might act on.
       return await onConnection(file, 50, (db) => DatabaseMigration.apply(db))
     })
-    expect(Exit.isFailure(outcome)).toBe(true)
-    expect(Cause.pretty(outcome.cause)).toMatch(/SQLITE_BUSY|database is locked/i)
+    expect(Cause.pretty(failureOf(outcome))).toMatch(/SQLITE_BUSY|database is locked/i)
 
     // Nothing the loser did reached the file, and once the other process lets go the same call
     // succeeds — with every migration recorded exactly once, not twice.
@@ -176,10 +184,11 @@ describe("the refusal names the real cause", () => {
       }
     })
 
-    expect(Exit.isFailure(exit)).toBe(true)
-    const squashed = Cause.squash(exit.cause)
+    const cause = failureOf(exit)
+    const squashed = Cause.squash(cause)
     if (!(squashed instanceof Database.Unusable))
-      throw new Error(`expected a named refusal, got:\n${Cause.pretty(exit.cause)}`)
+      throw new Error(`expected a named refusal, got:
+${Cause.pretty(cause)}`)
 
     // The fault this used to be reported as — a structurally valid database with a full `migration`
     // table looks, to `sqlite_master`, exactly like a healthy one whose upgrade went wrong.
