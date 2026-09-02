@@ -1,5 +1,6 @@
 export * as IrcDriver from "./irc"
 
+import { createHash } from "node:crypto"
 import { Effect, Queue, Stream } from "effect"
 import type { Messenger } from "@novaclaw/schema/messenger"
 import { MessengerFormat } from "../format"
@@ -7,7 +8,7 @@ import type { ChatSnapshot, Connection, ConnectContext, Driver, InboundEvent } f
 import { ConnectError, SendError } from "../driver"
 
 // The IRC driver (messenger-plan §2.1) — the contract's DEGRADATION FLOOR: no files, no edits,
-// no message ids from the platform (we synthesize), no chat enumeration (join-by-name; the
+// no message ids from the platform (we DERIVE them — see `messageIDOf`), no chat enumeration (join-by-name; the
 // gateway's seen-cache + the picker's manual handle entry are the list). Raw line protocol over
 // TCP/TLS behind an injectable socket seam, so tests drive a fake socket and production uses
 // `Bun.connect`. Lines budget BYTES (RFC 1459: 512 incl. command + CRLF) — the byte-mode chunker
@@ -40,16 +41,60 @@ const CAPS: Messenger.Capabilities = {
   maxChars: LINE_TEXT_BYTES,
 }
 
-/** One parsed server line: optional prefix, command, params (trailing folded in last). */
+/** One parsed server line: optional IRCv3 tags, optional prefix, command, params (trailing folded
+ *  in last). `tags` is ABSENT (never an empty object) on the ordinary untagged line. */
 export interface IrcLine {
+  readonly tags?: Readonly<Record<string, string>>
   readonly prefix?: string
   readonly command: string
   readonly params: readonly string[]
 }
 
+// IRCv3 tag-value escapes. A backslash before anything else is dropped and the character kept,
+// which is what the spec says to do with an undefined escape.
+const TAG_ESCAPES: Readonly<Record<string, string>> = { ":": ";", s: " ", "\\": "\\", r: "\r", n: "\n" }
+
+const unescapeTagValue = (raw: string): string => {
+  if (!raw.includes("\\")) return raw
+  let out = ""
+  for (let index = 0; index < raw.length; index += 1) {
+    const char = raw[index]
+    if (char !== "\\") {
+      out += char
+      continue
+    }
+    index += 1
+    const escaped = raw[index]
+    if (escaped === undefined) break // a trailing lone backslash is dropped
+    out += TAG_ESCAPES[escaped] ?? escaped
+  }
+  return out
+}
+
 export const parseLine = (raw: string): IrcLine | undefined => {
   let rest = raw.replace(/\r?\n$/, "")
   if (rest.length === 0) return undefined
+  // IRCv3 message tags: `@key=value;flag :prefix CMD …`. We do not negotiate the caps that make a
+  // server send them, so this is defensive rather than expected — but a bouncer or proxy in front
+  // of the server can add them, and without this branch the whole tag blob was read as the COMMAND
+  // and the message silently vanished. When they are present they carry the two things IRC
+  // otherwise denies us: `msgid` (a provider-issued id) and `time` (the server's own timestamp).
+  let tags: Record<string, string> | undefined
+  if (rest.startsWith("@")) {
+    const space = rest.indexOf(" ")
+    if (space === -1) return undefined
+    const parsed: Record<string, string> = {}
+    for (const pair of rest.slice(1, space).split(";")) {
+      if (pair.length === 0) continue
+      const equals = pair.indexOf("=")
+      const key = equals === -1 ? pair : pair.slice(0, equals)
+      if (key.length === 0) continue
+      parsed[key] = equals === -1 ? "" : unescapeTagValue(pair.slice(equals + 1))
+    }
+    tags = parsed
+    rest = rest.slice(space + 1).replace(/^ +/, "")
+    if (rest.length === 0) return undefined
+  }
   let prefix: string | undefined
   if (rest.startsWith(":")) {
     const space = rest.indexOf(" ")
@@ -69,7 +114,48 @@ export const parseLine = (raw: string): IrcLine | undefined => {
   if (command === undefined) return undefined
   params.push(...parts.slice(1))
   if (trailing !== undefined) params.push(trailing)
-  return { prefix, command: command.toUpperCase(), params }
+  return { ...(tags === undefined ? {} : { tags }), prefix, command: command.toUpperCase(), params }
+}
+
+// NUL is the one byte an IRC line can never carry, so it is the field separator the digest below
+// joins on: no combination of sender, target and text can be re-cut into a different message that
+// hashes the same. Built from a char code rather than written as an escape, so the byte in this
+// file stays printable.
+const FIELD_SEPARATOR = String.fromCharCode(0)
+
+/**
+ * 🔴 **The id the durable inbound ledger keys on** — `messenger_inbound` is
+ * `(account, chat, message_id)`, and `sql.ts` says in as many words that the key must be the
+ * PROVIDER's message id, because that is the only identifier that survives a replay.
+ *
+ * IRC hands us no id on a bare connection, and the obvious substitute — a counter minted per
+ * connection — is the one thing that must never be used. It restarts at 1 every time the socket
+ * comes back, so after a reconnect the first messages of the new session collide with rows the
+ * PREVIOUS session already wrote, the gateway reads them as `delivered`, and the account goes
+ * **silently deaf** until the counter climbs past wherever it stopped. Nothing logs, nothing
+ * fails; the messages are simply never routed.
+ *
+ * So the id is derived, in the order the key demands:
+ *
+ *  · an IRCv3 `msgid` tag is a provider-issued id and is used verbatim — it is also the only form
+ *    that dedupes a bouncer's history playback, which is the case the ledger exists for;
+ *  · otherwise the id is content-addressed over the line and its timestamp (the `time` tag when
+ *    the server sends one, else the moment we read the line). Deterministic, so the same line seen
+ *    twice derives the same id, and distinct across reconnects, because the timestamp is.
+ *
+ * ⚠️ **The derived arm is not unique by itself**: two byte-identical messages from one sender
+ * inside a single millisecond hash alike. The connect loop de-collides them; keeping this function
+ * pure is what lets the derivation be tested on its own. (When a `time` tag IS present, identical
+ * content at an identical server timestamp is the same message, so collapsing them is correct.)
+ */
+export const messageIDOf = (line: IrcLine, receivedAt: number): string => {
+  const provider = line.tags?.["msgid"]
+  if (provider !== undefined && provider.length > 0) return provider
+  const at = line.tags?.["time"] ?? String(receivedAt)
+  const digest = createHash("sha1")
+    .update([at, line.prefix ?? "", line.command, ...line.params].join(FIELD_SEPARATOR))
+    .digest("hex")
+  return `irc-${digest.slice(0, 24)}`
 }
 
 /** The nick half of a `nick!user@host` prefix. */
@@ -172,7 +258,25 @@ export const make = (factory: IrcSocketFactory): Driver => ({
       yield* sendLine(`USER ${nick.replaceAll(/[^A-Za-z0-9]/g, "").slice(0, 10) || "novaclaw"} 0 * :NovaClaw`)
 
       const queue = yield* Queue.unbounded<InboundEvent>()
-      let messageSeq = 0
+      // The same-millisecond de-collider for `messageIDOf`'s derived arm (its doc comment carries
+      // the why). Two byte-identical messages from one sender inside one millisecond derive one
+      // id, and the gateway's ledger would read the second as a replay and drop it — a silent
+      // loss, which is the same class of fault the derivation exists to end. Only ids issued at
+      // the CURRENT millisecond are held, so the set resets constantly and never grows.
+      // ⚠️ Provider ids (`msgid`) are never passed through here: a repeated provider id IS the
+      // same message, and de-colliding it would resurrect the double-delivery the ledger stops.
+      let stampMs = -1
+      let issued = new Set<string>()
+      const disambiguate = (id: string, at: number): string => {
+        if (at !== stampMs) {
+          stampMs = at
+          issued = new Set()
+        }
+        let candidate = id
+        for (let nth = 2; issued.has(candidate); nth += 1) candidate = `${id}-${nth}`
+        issued.add(candidate)
+        return candidate
+      }
       const pump = Effect.gen(function* () {
         while (true) {
           const batch = yield* Effect.tryPromise({
@@ -206,8 +310,12 @@ export const make = (factory: IrcSocketFactory): Driver => ({
                   }),
                 )
               case "PRIVMSG": {
-                messageSeq += 1
-                const event = toInbound(line, nick, `irc-${messageSeq}`)
+                const at = Date.now()
+                const derived = messageIDOf(line, at)
+                const provider = line.tags?.["msgid"]
+                const messageID =
+                  provider !== undefined && provider.length > 0 ? derived : disambiguate(derived, at)
+                const event = toInbound(line, nick, messageID)
                 if (event !== undefined) yield* Queue.offer(queue, event)
                 continue
               }
@@ -219,6 +327,11 @@ export const make = (factory: IrcSocketFactory): Driver => ({
       })
       yield* Effect.forkScoped(pump.pipe(Effect.catchCause(() => Queue.shutdown(queue))))
 
+      // The outbound receipt id. IRC issues none for our own sends either, so it is synthesized —
+      // but it carries the connection's epoch for the same reason the inbound id is derived: a
+      // bare per-connection counter hands two different messages the same receipt across a
+      // reconnect, and a receipt that repeats is a receipt that identifies nothing.
+      const openedAt = Date.now()
       let sentSeq = 0
       const send = (chatID: string, message: { text?: string }) =>
         Effect.gen(function* () {
@@ -237,7 +350,7 @@ export const make = (factory: IrcSocketFactory): Driver => ({
             }
           }
           sentSeq += 1
-          return { messageID: `irc-out-${sentSeq}` }
+          return { messageID: `irc-out-${openedAt}-${sentSeq}` }
         })
 
       return {

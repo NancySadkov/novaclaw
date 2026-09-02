@@ -468,6 +468,11 @@ const build = (options: Options) =>
     // a burst is precisely what gets a real person's account flagged (AGENTS.md #9(a), "one hand").
     // Cleared the moment a routing read for that chat succeeds, so the NEXT outage speaks again.
     const toldUnreadable = new Set<string>()
+    // chatKeys already told, once, that their pairing code did not work. Same shape and same
+    // reason as `toldUnreadable` above: `/pair` is the one command an UNPAIRED sender may still
+    // draw an answer from, so it is also the only remaining way a stranger can pull repeated
+    // outbound out of the account. Cleared when that chat pairs successfully.
+    const toldBadPairing = new Set<string>()
 
     /** Ask both cold-start questions and collapse them once (see `invitationOf`). Never fails — an
      *  unreadable table becomes `"unknown"`, which is an ANSWER the callers must handle, not an
@@ -546,6 +551,57 @@ const build = (options: Options) =>
 
     const reply = (connection: Connection, chatID: string, text: string) =>
       paceSend(connection, chatID, text).pipe(Effect.ignore)
+
+    /**
+     * 🔴 **The flood cap (§7.6), charged exactly ONCE per inbound message** — at the command branch
+     * or at the turn-driving branch, whichever the message reaches first. A command returns, so no
+     * message is ever charged twice, and both paths share ONE bucket per chat.
+     *
+     * One implementation, deliberately, rather than a copy at each call site: the two paths must
+     * not be able to disagree about what the cap is or about when the single slow-down reply fires.
+     *
+     * 🔴 **Why the command branch has to be under it at all.** Gateway commands used to be handled
+     * ABOVE this gate, so a stranger looping a slash command drew one automated reply per inbound
+     * message, unbounded, out of a real person's account — the exact burst AGENTS.md #9(a) exists
+     * to prevent. And the damage was never confined to that chat: outbound is serialized through
+     * one global "hand" (`MessengerPace`), so the flood held the permit and every OTHER account's
+     * outbound stopped for as long as it ran. The cap is what bounds it; `handleCommand`'s stranger
+     * check is what silences it.
+     *
+     * ⚠️ NC-SEC-013: keyed on the chat the message ROUTES to, not the one it arrived on. A thread
+     * falls back to its parent's binding and the sender picks the thread id — keying on the child
+     * let one sender mint a fresh bucket per message. `floodChat` carries the why.
+     *
+     * ⚠️ `mayAnswer` decides whether the one-per-streak slow-down reply is sent at all, and it is
+     * a parameter rather than a constant because the two call sites reach this gate with different
+     * knowledge. The turn-driving site has already passed the stranger gate and holds a binding, so
+     * the chat is one we demonstrably answer. The command site has not, so it passes `trust`: an
+     * UNPAIRED sender gets nothing here either, warning included — telling a flooding stranger we
+     * are throttling them is still an outbound message per streak, and still a signal that somebody
+     * is home (§7.5). Over the cap and silent is the whole point.
+     */
+    const floodCleared = (
+      account: Messenger.AccountInfo,
+      connection: Connection,
+      event: Extract<InboundEvent, { kind: "message" }>,
+      mayAnswer: boolean,
+    ): Effect.Effect<boolean> =>
+      Effect.gen(function* () {
+        const flood = floodClear(
+          MessengerPipeline.chatKey(account.id, MessengerPipeline.floodChat(event.chat)),
+          yield* Clock.currentTimeMillis,
+        )
+        if (flood.ok) return true
+        // Never silent loss to somebody we talk to, and never a warning per dropped message:
+        // `warn` is true exactly once per over-cap streak.
+        if (flood.warn && mayAnswer)
+          yield* reply(
+            connection,
+            event.chat.chatID,
+            "You're sending faster than I can keep up — I'll skip some messages until it slows down.",
+          )
+        return false
+      })
 
     // Files IN (P5, edge #6): fetch each attachment and hand it to the session as a normal
     // prompt file — small ones inline (data: URI, model-visible at lowering), big ones land in
@@ -838,6 +894,15 @@ const build = (options: Options) =>
           const now = yield* Clock.currentTimeMillis
           const record = pairing.get(command.code)
           if (record === undefined || record.accountID !== account.id || record.expiresAt < now) {
+            // ⚠️ Told ONCE per chat, like `toldUnreadable` next door and for the same reason. A bad
+            // code is the last thing an unpaired sender can still draw an answer with, so without
+            // this a stranger looping `/pair xyz` gets a reply per message up to the flood cap —
+            // still a sustained burst out of a real person's account on the one global hand
+            // (#9(a)), and still a signal that somebody is home (§7.5). One reply names the fix
+            // ("mint a fresh one"), so a second says nothing the first did not. Cleared on a
+            // SUCCESSFUL pairing below, so a later code can speak again.
+            if (toldBadPairing.has(key)) return
+            toldBadPairing.add(key)
             yield* reply(
               connection,
               event.chat.chatID,
@@ -845,6 +910,7 @@ const build = (options: Options) =>
             )
             return
           }
+          toldBadPairing.delete(key)
           pairing.delete(command.code)
           yield* store.upsertContact({
             accountID: account.id,
@@ -862,6 +928,26 @@ const build = (options: Options) =>
         }
         // Everything else is operator-only, in a DM.
         if (trust !== "operator" || event.chat.kind !== "dm") {
+          // 🔴 **An UNPAIRED sender gets silence, not a refusal.** Default-deny (§7.5) is that a
+          // stranger gets no signal that anyone is home, and the plain-text path four screens down
+          // already obeys it — this branch was the hole. Two things went wrong at once when it
+          // answered: it told anyone probing the account that something automated lives there, and
+          // it handed a stranger looping `/help` one outbound message per inbound one, on the
+          // single global "hand" — a burst out of a real person's account (#9(a)) that also stalls
+          // every OTHER account's outbound while it lasts.
+          //
+          // The refusal below is for somebody we already know: a paired member reaching for an
+          // operator command, or the operator typing one in a channel. `/pair` above stays
+          // answerable to a stranger and is the ONE command that may be — they can only run it
+          // holding a code the operator minted and handed them, so answering is not a broadcast.
+          if (trust === undefined) {
+            yield* Log.event("messenger.command.stranger.ignored", {
+              "messenger.account": account.id,
+              "messenger.chat": event.chat.chatID,
+              "messenger.command": command.kind,
+            })
+            return
+          }
           yield* reply(connection, event.chat.chatID, "Only the operator can run that, and only in a direct message.")
           return
         }
@@ -1127,6 +1213,11 @@ const build = (options: Options) =>
 
         const command = event.text ? MessengerCommands.parse(event.text) : undefined
         if (command !== undefined) {
+          // 🔴 The cap runs BEFORE the command is handled. A command reply is outbound traffic on
+          // the same one global "hand" as any other message, so a chat firing commands faster than
+          // a human is dropped here exactly as plain text is below — this branch used to sit above
+          // the gate and was the one path in the tree that could burst without limit.
+          if (!(yield* floodCleared(account, connection, event, trust !== undefined))) return
           yield* handleCommand(account, connection, event, command, trust)
           return
         }
@@ -1192,23 +1283,10 @@ const build = (options: Options) =>
         }
         // Flood cap (§7.6): a chat firing faster than a human gets dropped past the cap, with a
         // single throttled slow-down reply. (Audience already coalesces, but a hard flood would
-        // still flush size-batches back-to-back — the cap bounds that too.)
-        // ⚠️ NC-SEC-013: keyed on the chat the message ROUTES to, not the one it arrived on. A
-        // thread falls back to its parent's binding, and the sender picks the thread id — so keying
-        // on the child let one sender mint a fresh bucket per message. `floodChat` carries the why.
-        const flood = floodClear(
-          MessengerPipeline.chatKey(account.id, MessengerPipeline.floodChat(event.chat)),
-          yield* Clock.currentTimeMillis,
-        )
-        if (!flood.ok) {
-          if (flood.warn)
-            yield* reply(
-              connection,
-              event.chat.chatID,
-              "You're sending faster than I can keep up — I'll skip some messages until it slows down.",
-            )
-          return
-        }
+        // still flush size-batches back-to-back — the cap bounds that too.) `floodCleared` carries
+        // the rule and the reason the command branch above shares this same bucket. `true`: this
+        // site is past the stranger gate and holds a binding, so the chat is one we answer.
+        if (!(yield* floodCleared(account, connection, event, true))) return
         // Files in (P5): materialize attachments into prompt files + note lines BEFORE framing,
         // so the notes ride inside the provenance body the model reads.
         const bound = yield* sessions.get(binding.sessionID as Session.ID).pipe(Effect.orElseSucceed(() => undefined))
