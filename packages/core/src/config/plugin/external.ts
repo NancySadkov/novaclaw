@@ -56,6 +56,17 @@ export const PLUGIN_GLOB = ConfigPluginGlob.PATTERN
 // just never contributes CODE.** Pinned by `test/config/plugin.test.ts`'s
 // "never loads a plugin from a project directory".
 //
+// ⚠️ **THE OTHER HALF OF RULING 5 IS ENFORCED NOW, and it is enforced somewhere else.** The ruling
+// let this glob survive on a stated condition — *"user code at user privilege, **unreachable by an
+// agent**, a registry or a peer"* — and until 2026-09-02 nothing checked the emphasised clause. Under
+// `yolo`, or from a session whose working folder IS the config dir, or with any
+// `external_directory_write` allow a user or a repairing agent had written, one redirect put a file
+// here and the next boot ran it. `PermissionV2` now refuses every agent-originated write into these
+// directories in a pre-emptive arm no mode, ruleset or saved row can soften (`permission.ts` → §THE
+// PLUGIN DOOR), and it derives WHICH directories from `ConfigPluginGlob.PATTERN` rather than naming
+// them again — so widening the glob widens the guard in the same edit, and narrowing it cannot leave
+// the guard pointing at a folder nobody loads from.
+//
 // ⚠️ There is no second source, and that absence is also the property. Ruling 5
 // (`notes/reports/decisions-v0.2.0.md` §5, dependency step 17) deleted the arm that took a package
 // NAME from config, fetched it with `npm.add` and `import()`ed the result — remote code at this

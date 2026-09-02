@@ -19,12 +19,15 @@ import {
   autoResolvedMode,
   chainAutoGrant,
   EFFECTIVE_CONFIG_DEFAULTS,
+  HOST_MUTATING_ACTIONS,
   MODE_RULES,
   rootAttendance,
   stanceOf,
   unattendedStanceRules,
   type PermissionMode,
 } from "./session/config-resolve"
+import { ConfigPluginGlob } from "./config/plugin/glob"
+import { FSUtil } from "./fs-util"
 import { SessionAutoGrant } from "./session/auto-grant"
 import { PermissionSaved } from "./permission/saved"
 import { ShortChat } from "./session/runner/short-chat"
@@ -125,6 +128,18 @@ export const DenialReason = Schema.Literals([
    */
   "ask-removed",
   /**
+   * The target is inside the instance's EXTERNAL-PLUGIN directory — the one door in-process
+   * third-party code comes through (`config/plugin/external.ts`).
+   *
+   * ⚠️ Its own literal for the same reason `project-denied` has one: the ADVICE is unlike every
+   * other refusal here. The others describe a posture that can be widened — a setting, a rule, a
+   * grant made in advance. This one cannot be widened by anybody, because the thing being protected
+   * is not a file's contents but the fact that a file there RUNS, at this process's privilege,
+   * before any NovaClaw API is consulted. Telling a model to "ask the operator to allow it" would
+   * send it to negotiate for something no permission rule can give.
+   */
+  "plugin-door",
+  /**
    * This folder's `novaclaw.json` refused it, and nothing else would have.
    *
    * ⚠️ Its own literal because the ADVICE differs from every other reason here: the others describe
@@ -155,6 +170,45 @@ export class DeniedError extends Schema.TaggedErrorClass<DeniedError>()("Permiss
 }) {}
 
 export type Error = DeniedError
+
+/**
+ * THE ONE REMEDY A DENIAL MAY PRESCRIBE, spelled once so the copy cannot outlive the code.
+ *
+ * 🔴 **Why this constant exists.** Two of the messages below used to end by telling the model that a
+ * capability could be had by *"approving it once with 'always' in an attended chat"* — and that path
+ * does not exist. `ask` was retired as an outcome (owner, 2026-08-20: *"Ask considered harmful"*), so
+ * no consent card is ever shown and no reply is ever collected; `PermissionSaved.add`, the only
+ * writer of the durable saved-grant table, has had **no production caller** since. The `permission`
+ * table is read by `savedRules()` below and written by nothing an operator can reach from a chat.
+ * So the copy prescribed a remedy the code had removed, and a model that followed it would spend its
+ * result telling the user to answer a prompt they will never see.
+ *
+ * 🔴 **Why the fix is the COPY and not a restored ask.** AGENTS.md principle 14 is structural: *the
+ * chat IS the channel*, a model that needs a decision ends its turn and says so, and *"do not add a
+ * mode that decides whether to block; do not add a timeout and call it safe."* Attendance cannot be
+ * inferred either — *"'interactive' describes how a session was CREATED, never whether anyone is
+ * listening"* — which is the very failure that retired the outcome: a headless HTTP session is
+ * created as `interactive`, `attendedRoot` said a human was present, and the run blocked for good.
+ * Restoring an attended grant path would therefore have to re-introduce exactly the blocking
+ * semantics the principle forbids. The two ends the fault offered are *restore the remedy* or
+ * *rewrite the copy*; the vision picks the second, so the second is what this is.
+ *
+ * ⚠️ **`keys` is the mechanical half.** A sentence naming a remedy is prose, and prose drifts from
+ * code silently — which is the whole defect. These are the `Config.Info` keys the remedy is spelled
+ * in, and `KEY_TIERS` (`config-tier.ts`) is annotated `Record<keyof Config.Info, Tier>`, so a key
+ * present there is a real, classified, ROUTED config key — `config-store-write.ts` refuses an
+ * unrouted key by name. The test asserts both directions: every key here is classified, and the
+ * sentence names every key. Rename the setting and the assertion fails instead of the user.
+ */
+export const GRANT_IN_ADVANCE = {
+  /** The config keys the remedy is written in. Verified against `ConfigTier.KEY_TIERS`. */
+  keys: ["permissions", "agents"] as const,
+  sentence:
+    `Widening this is the operator's decision and it is made IN ADVANCE, as a standing rule in the ` +
+    `instance's permission settings (the \`permissions\` config key, or \`agents\` for one ` +
+    `colleague's own ruleset). There is no consent prompt to answer and no way to grant it mid-run: ` +
+    `this instance never interrupts anyone to ask.`,
+} as const
 
 /**
  * 1J: lower a permission failure into a model-legible message (denial as observation, never a
@@ -226,6 +280,22 @@ export function denialMessage(error: unknown): string | undefined {
         `allowed to do, and if the task genuinely cannot finish without '${actions}', name it in your result ` +
         `together with the project file so the user can decide.`
       )
+    // The one refusal on this list that no setting can lift, so the advice cannot end in "get it
+    // widened". A file placed there is EXECUTED at the next boot, in this process, before any
+    // NovaClaw API is consulted — so the question is not whether the agent may write a file, it is
+    // whether the agent may choose what NovaClaw runs. Naming the folder matters: a model told only
+    // "denied" would keep trying spellings of the same path.
+    if (error.reason === "plugin-door")
+      return (
+        `Permission denied: '${resources}' is inside this instance's EXTERNAL PLUGIN directory, and no ` +
+        `agent may write there — including this one, in any permission mode. Anything in that folder is ` +
+        `imported and RUN at NovaClaw's next start, at the user's own privilege, before any permission ` +
+        `check happens, so writing it would be choosing what this program executes rather than editing a ` +
+        `file. This refusal is structural: no setting, mode or permission rule can lift it, and retrying, ` +
+        `renaming or reaching the same folder another way will not either. If a plugin is genuinely what ` +
+        `the task needs, write the file somewhere you ARE allowed to — your own project folder — and say ` +
+        `in your reply where it is and what it does, so the user can install it themselves.`
+      )
     if (error.reason === "project-file-invalid") return ProjectFileCache.refusal({ kind: "invalid", file: resources })
     if (error.reason === "project-file-future-version")
       return ProjectFileCache.refusal({ kind: "future-version", file: resources })
@@ -241,10 +311,8 @@ export function denialMessage(error: unknown): string | undefined {
         `rule grants it, but this is an UNATTENDED session — no operator is present to answer a consent ` +
         `prompt. A prompt here would stall the whole run instead of gating it, so the request is refused ` +
         `immediately. Waiting, retrying, or trying to get the permission widened mid-run will change nothing. ` +
-        `Continue with the tools you ARE allowed to use and finish what you can. Making '${actions}' available ` +
-        `to unattended runs takes a grant made in advance — approved once with "always" in an attended chat, ` +
-        `or allowed for this agent in the instance permission settings — so if the task genuinely cannot ` +
-        `finish without it, name '${actions}' in your result and stop trying it.`
+        `Continue with the tools you ARE allowed to use and finish what you can. ${GRANT_IN_ADVANCE.sentence} ` +
+        `So if the task genuinely cannot finish without it, name '${actions}' in your result and stop trying it.`
       )
     // The same refusal, honestly attributed — ruling 2 in both directions. We did not establish that
     // this run is unattended; we failed to read the chain that would have told us. Saying "this is an
@@ -262,8 +330,7 @@ export function denialMessage(error: unknown): string | undefined {
         `If you need somewhere for notes, a plan, a draft or any other scratch work, use YOUR OWN ` +
         `PROJECT FOLDER — that is what it is for, and writing there needs no permission. ` +
         `If the task genuinely cannot be done inside it, say so in your result and name '${actions}' ` +
-        `rather than trying again. Widening this is the operator's decision, made in advance in the ` +
-        `permission settings.`
+        `rather than trying again. ${GRANT_IN_ADVANCE.sentence}`
       )
     if (error.reason === "unanswerable-chain-unreadable")
       return (
@@ -313,6 +380,119 @@ export function protectedAttachment(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// THE PLUGIN DOOR (v0.2.0) — an agent may never write where in-process code is loaded from.
+//
+// 🔴 AGENTS.md principle 13's last clause: *"In-process third-party code enters through exactly one
+// door — the instance config dir's plugin glob — and it must never widen to a project directory. The
+// plugin contract is NOT a gate: `import()` runs module scope before anything is validated."*
+// Ruling 5 (`notes/reports/decisions-v0.2.0.md` §5) kept that door open on exactly one condition,
+// stated in the ruling itself: the local `{plugin,plugins}/*.ts` glob survives as *"user code at user
+// privilege, unreachable by an agent, a registry or a peer."* Nothing enforced the middle clause.
+// This is that clause, mechanised.
+//
+// ⚠️ WHY IT IS NOT COVERED BY THE ORDINARY PATH GATES, which is the part that looks wrong until you
+// check it. The plugin directory sits under the instance CONFIG dir, which is outside any session's
+// Location, so a write there normally spends `external_directory_write` — `ask` on the compiled
+// floor, refused by the last arm. That is a DEFAULT, not a boundary, and three ordinary states walk
+// through it: `MODE_RULES.yolo` allows `external_directory_write` on `*`; a session whose working
+// folder IS the config dir spends plain `write`/`create`, which `bypass` allows; and a user or a
+// repairing agent may write an `external_directory_write` allow into their own permission rules for
+// perfectly good reasons. Every one of those is a decision about FILES. None of them is a decision to
+// let an agent choose what code this process executes at its next boot, and the two must not be the
+// same switch — so this is a pre-emptive DENY arm, the shape ruling 4 uses for the same reason, and
+// no mode, agent ruleset, saved row or project file can soften it.
+//
+// ⚠️ WHAT IT DOES NOT COVER, said plainly rather than left to be discovered (ruling 2). `bash` is
+// exempt because its `resource` is the raw COMMAND STRING and matching one is prompt-reduction, never
+// containment (the boundary note above `evaluate`). Its redirect TARGETS are re-asserted as
+// `create`/`write` against a resolved path (`tool/bash.ts` → `mutation.resolve`, `readsContent:
+// false`) and ARE screened here, so `> ~/.config/novaclaw/plugin/x.ts` is refused — but `cp`, a
+// heredoc inside `sh -c`, `python -c`, or `find -exec` are not, and no token scan will make them so.
+// Hard confinement is the operator's boundary (Agent Jail, v0.3.0). This closes the resolved-path
+// seam, which is the seam that exists; claiming more would be the false promise principle 13 names.
+//
+// ⚠️ NOR is it a rule about the config directory. NovaClaw's OWN writes there — settings, catalog,
+// the database — are principle 11 location (a) and are the product working; they do not pass through
+// this evaluator at all, and an agent writing `<config>/anything-else` is still governed by ordinary
+// policy. Only the two plugin directories are removed from the negotiation.
+
+/**
+ * The directory names the external-plugin glob opens, read OFF the pattern rather than re-typed.
+ *
+ * 🔴 A guard that names a path in one file while the loader globs it from another is a guard with a
+ * scheduled expiry — the loader moves, the guard keeps protecting the old place, and everything stays
+ * green. `ConfigPluginGlob.PATTERN` is the single source, and it is a LEAF module with no imports
+ * (see its header), so reading it here costs this graph nothing.
+ *
+ * Throws rather than guessing if the pattern stops starting with a literal `{a,b}` (or plain) segment:
+ * a containment guard that silently degrades to matching nothing is worse than a boot failure.
+ */
+export function pluginDoorDirectories(pattern: string): readonly string[] {
+  const head = pattern.split("/")[0] ?? ""
+  const braced = /^\{(.+)\}$/.exec(head)
+  const names = (braced ? braced[1]!.split(",") : [head]).map((name) => name.trim()).filter((name) => name.length > 0)
+  if (names.length === 0 || names.some((name) => /[*?{}[\]]/.test(name)))
+    throw new Error(
+      `The external-plugin glob no longer begins with a literal directory segment (${pattern}); ` +
+        `PermissionV2's plugin-door guard cannot derive what to protect.`,
+    )
+  return names
+}
+
+/** The absolute directories no agent write may land in, for one instance config dir. */
+export const pluginDoors = (configDir: string): readonly string[] =>
+  pluginDoorDirectories(ConfigPluginGlob.PATTERN).map((name) => path.join(configDir, name))
+
+/**
+ * The one action deliberately left unscreened, and the reason, in the place the set is built.
+ * See the ⚠️ block above: a command string is not a path.
+ */
+const PLUGIN_DOOR_UNSCREENED_ACTIONS: ReadonlySet<string> = new Set(["bash"])
+
+/**
+ * The actions this guard screens: every host-mutating action except the one whose resource is not a
+ * path. DERIVED from `HOST_MUTATING_ACTIONS` (which is itself derived from `MODE_RULES.yolo`), so a
+ * new mutating action is screened the day it is added rather than the day someone remembers.
+ */
+export const PLUGIN_DOOR_ACTIONS: ReadonlySet<string> = new Set(
+  HOST_MUTATING_ACTIONS.filter((action) => !PLUGIN_DOOR_UNSCREENED_ACTIONS.has(action)),
+)
+
+/**
+ * The plugin-directory path this request would write, if any.
+ *
+ * ⚠️ Containment by `FSUtil.containsCanonical`, not by string prefix, and both sides are canonicalised
+ * — the check `location-mutation.ts` already reasons about at length. A lexical compare would miss a
+ * config dir reached through a symlinked home (`/tmp` that is really `/private/tmp`), miss a junction
+ * or `subst` drive pointing INTO the plugin folder, and — since the target usually does not exist yet
+ * — has to answer for a prospective path, which is what `FSUtil.canonical`'s walk-up to the nearest
+ * existing ancestor is for.
+ *
+ * ⚠️ It reads `targets[].canonical` AND the absolute members of `resources`/`denyAliases`, because the
+ * two seams speak differently: every path-shaped tool passes `targets` with a canonical path, while
+ * `LocationMutation.externalDirectoryPermission` passes the canonical path as the RESOURCE and carries
+ * its targets under `metadata` where this evaluator does not read them. A relative resource with no
+ * target cannot be screened and is not pretended to be — that shape does not exist among today's
+ * mutating asserts, and if one is ever added it must supply `targets` like every other.
+ */
+export function pluginDoorTarget(
+  input: {
+    readonly action: string
+    readonly resources: readonly string[]
+    readonly targets?: readonly MutationTarget[]
+    readonly denyAliases?: readonly string[]
+  },
+  doors: readonly string[],
+): string | undefined {
+  if (!PLUGIN_DOOR_ACTIONS.has(input.action)) return undefined
+  const candidates = [
+    ...(input.targets ?? []).map((target) => target.canonical),
+    ...[...input.resources, ...(input.denyAliases ?? [])].filter((resource) => path.isAbsolute(resource)),
+  ]
+  return candidates.find((candidate) => doors.some((door) => FSUtil.containsCanonical(door, candidate)))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // THE AMBIENT-SAFE BASELINE (v0.2.0 B4c).
 //
 // The compiled floor every built-in agent's ruleset opens with (`plugin/agent.ts`). It REPLACES
@@ -331,15 +511,26 @@ export function protectedAttachment(
 // ── MEMBERSHIP: the three tests an action must pass ──────────────────────────────────────────
 // An action belongs here only if it (1) cannot mutate the host, (2) cannot egress, and (3) cannot
 // change what a LATER turn or a later session runs. Ruling 4's *unclassified ⇒ privileged* is the
-// tie-break, and it points one way: an action wrongly LEFT OUT costs one consent card that the user
-// can answer "always"; an action wrongly PUT IN is a gate that grants itself, which is the fault
+// tie-break, and it points one way: an action wrongly LEFT OUT costs the user one permission rule
+// written in advance; an action wrongly PUT IN is a gate that grants itself, which is the fault
 // this baseline exists to end (ruling 2 — *a fault is never described falsely*).
+// ⚠️ That price used to read "one consent card the user can answer 'always'", and it stopped being
+// true when `ask` was retired as an outcome (owner, 2026-08-20 — see {@link GRANT_IN_ADVANCE}).
+// Nothing about the MEMBERSHIP argument changes; the cost of getting it wrong is simply paid in the
+// permission settings now, and the tie-break still points the same way.
 //
 //  · `read`      — file reads (`tool/read.ts`, `tool/read-hex.ts`). Cannot mutate, cannot egress.
 //                  Two things still narrow it and neither is weakened by living here: a target
 //                  outside the Location passes a SEPARATE `external_directory_read` assert first
-//                  (`location-mutation.ts`), and `plugin/agent.ts`'s `.env` refinements sit AFTER
-//                  this rule in the same ruleset, so findLast keeps them winning.
+//                  (`location-mutation.ts`), and a `novaclaw.json` `exclude` list is enforced at
+//                  `LocationMutation.resolve`, which is BEFORE any permission rule is consulted.
+//                  ⚠️ This line used to claim a third: *"`plugin/agent.ts`'s `.env` refinements sit
+//                  AFTER this rule in the same ruleset, so findLast keeps them winning."* There are
+//                  no such refinements — neither `plugin/agent.ts` nor `config/plugin/agent.ts`
+//                  contains any rule naming `.env`, and the only `read` rule either builds is an
+//                  allow on `*`. A comment describing a protection that does not exist is worse
+//                  than none, because the next reader stops looking for one (ruling 2). If secret
+//                  files are to be narrowed, it is unbuilt work, not a line already here.
 //  · `explore`   — the glob + grep grant; listing and searching are ONE class (`tool/glob.ts`,
 //                  `tool/grep.ts`, which assert exactly this action). Same shape as `read` and
 //                  gated the same way outside the Location. No compiled rule ever named it, so it
@@ -367,8 +558,10 @@ export function protectedAttachment(
 // USER PICKED rather than by a catch-all — which is what finally makes picking `ask` or `plan` mean
 // something for everything else too. `spawn`, `kb`, `skill`, `revert`,
 // `provision`, `define_tool`, `register-app`, `messenger.*`, MCP tools and ad-hoc tools each fail at
-// least one of the three tests above and now ASK on first use; the answer is saveable
-// (allow-always), so the cost is one card per capability per install, not one per call.
+// least one of the three tests above, so on a default install they fall through to `evaluate`'s
+// `ask` — which the last arm of `evaluateInput` turns into an immediate refusal, because asking was
+// retired as an outcome. The cost is therefore one permission RULE per capability per install, in
+// the settings, not one consent card and not one prompt per call ({@link GRANT_IN_ADVANCE}).
 //
 // ⚠️ AND THIS IS A FLOOR, NOT A CEILING. User config, agent config and saved answers are all
 // appended AFTER it (`evaluateInput` below), so a repairing agent or a user can still widen it — the
@@ -500,6 +693,14 @@ export const layer = Layer.effect(
   Service,
   EffectRuntime.gen(function* () {
     const location = yield* Location.Service
+    // ⚠️ Through `Global.Service`, NEVER `Global.Path.config` — that is the difference between
+    // guarding the door and guarding a directory next to it. `Global.make()` applies
+    // `NOVACLAW_CONFIG_DIR` and `Global.Path` does not, and the loader this guard shadows
+    // (`config/plugin/external.ts`) reads the service. Two readers of one location that resolve it
+    // differently is the failure `tool/tool-manual.ts` records from the other side; here the
+    // disagreement would be silent AND load-bearing — the guard would protect an empty folder while
+    // the loader read the one the agent just wrote to. Resolved once, at layer build.
+    const pluginDoorDirs = pluginDoors((yield* Global.Service).config)
     const agents = yield* AgentV2.Service
     const sessions = yield* SessionStore.Service
     const projects = yield* ProjectFileCache.Service
@@ -540,6 +741,19 @@ export const layer = Layer.effect(
     const autoGrants = yield* SessionAutoGrant.Service
     const saved = yield* PermissionSaved.Service
 
+    /**
+     * The durable saved-grant table, folded in after the agent ruleset and the mode overlay.
+     *
+     * ⚠️ **Nothing a user can reach from a CHAT writes it, and every comment here that assumes
+     * otherwise is wrong.** `PermissionSaved.add` lost its only caller when `ask` was retired as an
+     * outcome (owner, 2026-08-20), and the HTTP surface exposes `permission.saved.list` and
+     * `permission.saved.remove` and no add. What can still write a row is the Developer-mode
+     * Registry app editing the `permission` table by hand — a human on their own machine, which is
+     * ruling 5's trust boundary working as designed — and an AGENT may not, which round 1 made a
+     * refusal in `db-registry.ts` (`PERMISSION_KERNEL_TABLES`). So the read stays: revoking or
+     * inspecting a grant is a real repair. What must NOT come back is denial copy telling a model to
+     * get a row written by answering something — see {@link GRANT_IN_ADVANCE}.
+     */
     const savedRules = EffectRuntime.fnUntraced(function* () {
       return (yield* saved.list({ origin: location.origin })).map(
         (item): Permission.Rule => ({ action: item.action, resource: item.resource, effect: item.effect ?? "allow" }),
@@ -579,6 +793,22 @@ export const layer = Layer.effect(
     const sessionConfig = (sessionID: SessionV2.ID) => effective.resolve(sessionID)
 
     const evaluateInput = EffectRuntime.fnUntraced(function* (input: AssertInput) {
+      // ── THE PLUGIN DOOR, first and unconditional (see §THE PLUGIN DOOR above) ─────────────────
+      //
+      // FIRST because it is the one arm that depends on nothing — not the mode, not the chain, not
+      // the project file — and because being reachable only after some other arm declines is exactly
+      // how a hard gate turns into a default. It reads only the request, so it costs one set lookup
+      // for every non-mutating action and cannot be softened by anything below it.
+      const pluginDoorHit = pluginDoorTarget(input, pluginDoorDirs)
+      if (pluginDoorHit !== undefined)
+        return {
+          effect: "deny" as const,
+          // The synthetic rule's resource is the PATH, not the request's own resource string, so the
+          // message names the file the user would have to look at — the same choice the project-file
+          // fault arm makes below, for the same reason.
+          rules: [{ action: input.action, resource: pluginDoorHit, effect: "deny" as const }],
+          reason: "plugin-door" as DenialReason | undefined,
+        }
       // 1K: the session's resolved permission MODE contributes a rule overlay. Appended after the
       // agent's configured rules (last-match-wins) so the user's explicit mode outranks agent
       // defaults. The early hard-deny check runs over the configured chain and the mode overlay
@@ -817,9 +1047,15 @@ export const layer = Layer.effect(
       // ⚠️ AND THIS IS NOT A NEW BOUNDARY — it converts a verdict, it never creates one. Anything
       // resolving to `allow` above is untouched (in-folder work, reads, `explore`, `todowrite`, the
       // whole mutation/exec cluster under the default `bypass`), and the way to give an unattended
-      // run a gated capability is unchanged and stated in the denial text: grant it in ADVANCE —
-      // one "always" answer in an attended chat, or an agent/instance permission rule. The
-      // self-healing law is untouched: both of those are runtime-editable stores.
+      // run a gated capability is unchanged and stated in the denial text: grant it in ADVANCE, as
+      // an agent or instance permission rule ({@link GRANT_IN_ADVANCE}). The self-healing law is
+      // untouched — that is a runtime-editable store.
+      // ⚠️ This sentence named a second path — *one "always" answer in an attended chat* — until
+      // 2026-09-02, and the denial text it points at named it too. There is no such path: retiring
+      // `ask` removed the only caller of `PermissionSaved.add`, so nothing a user can reach from a
+      // chat writes the saved-grant table. A remedy the code cannot perform is ruling 2 broken by
+      // the very text written to satisfy it, which is exactly what this arm's own comment warns of
+      // two paragraphs down.
       //
       // The synthetic rules appended to `rules` ARE the verdict this arm reached, in the vocabulary
       // `denialMessage` reads — one per requested resource, because the call is refused for all of
@@ -877,13 +1113,20 @@ export const layer = Layer.effect(
   }),
 )
 
-export const locationLayer = layer.pipe(Layer.provideMerge(AgentV2.locationLayer))
+// `Global.layer` is provided here rather than left in `R`: the guard above put `Global.Service` into
+// this layer's requirements, and an exported layer that silently grows one hands its next caller a
+// type error in a file they did not touch. Global is a pure value read off the environment, so a
+// second instance of it is the same instance.
+export const locationLayer = layer.pipe(Layer.provideMerge(AgentV2.locationLayer), Layer.provide(Global.layer))
 
 export const node = makeLocationNode({
   service: Service,
   layer,
   deps: [
     Location.node,
+    // The instance config dir, for the plugin-door guard. A dependency-free global node that every
+    // instance already builds, so this adds a reference and not a subsystem.
+    Global.node,
     AgentV2.node,
     SessionStore.node,
     PermissionSaved.node,

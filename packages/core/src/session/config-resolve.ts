@@ -162,6 +162,22 @@ export const MODE_RULES: Record<PermissionMode, readonly PermissionRule[]> = {
   ],
 }
 
+/**
+ * Every action that can CHANGE THE HOST, read off `MODE_RULES.yolo` rather than typed a second time.
+ *
+ * 🔴 **Derived, because a hand-kept copy of this list is how a guard silently stops covering
+ * something.** `yolo` is the mode whose whole meaning is *"every capability that alters the machine"*,
+ * so its rule list already IS the enumeration — and it is maintained, because a new mutating action
+ * that nobody added to `yolo` would be a mode that fails to grant what it promises. Anything reading
+ * this constant therefore grows with the vocabulary instead of going stale under it
+ * (`permission.ts` → THE PLUGIN DOOR is the caller, and its own test pins the two against each other).
+ *
+ * ⚠️ It is the ACTION vocabulary, not a claim about containment. `bash` is in it and is the one member
+ * whose `resource` is not a path — see the boundary note above `PermissionV2.evaluate` — so a caller
+ * that screens PATHS must say what it does with `bash` rather than inheriting an answer from here.
+ */
+export const HOST_MUTATING_ACTIONS: readonly string[] = [...new Set(MODE_RULES.yolo.map((rule) => rule.action))]
+
 // ─────────────────────────────────────────────────────────────────────────────
 // The UNATTENDED CONFINEMENT stance (deny-fast).
 //

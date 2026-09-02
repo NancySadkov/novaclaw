@@ -1100,7 +1100,7 @@ describe("PermissionV2 — an unattended ask denies FAST", () => {
       expect(message).toContain(FALL_THROUGH_RESOURCE) // WHICH resource, not just which verb
       expect(message).toContain("UNATTENDED")
       expect(message).toContain("will change nothing")
-      expect(message).toContain('approved once with "always" in an attended chat')
+      expect(message).toContain(PermissionV2.GRANT_IN_ADVANCE.sentence)
       expect(message).not.toContain("ask the user")
       // The failure mode the synthetic rules exist to prevent: with an EMPTY ruleset —
       // and a fall-through action has no compiled rule by definition — `denialMessage`
@@ -1181,10 +1181,12 @@ describe("PermissionV2 — an unattended ask denies FAST", () => {
     }),
   )
 
-  it.effect("a saved allow-always DOES unblock it — the escape hatch the denial text promises", () =>
+  it.effect("a saved allow-always DOES unblock it — the Developer-mode repair path, not a chat answer", () =>
     Effect.gen(function* () {
-      // The denial tells the model a grant made in advance is what would change things. That has to
-      // be TRUE, or the refusal is a dead end wearing advice. This arm sits AFTER saved answers
+      // The denial tells the model a grant written into the agent/instance rules in advance is what
+      // would change things — never an answer given in the chat, since `PermissionSaved.add` has no
+      // production caller. That has to be TRUE, or the refusal is a dead end wearing advice. This
+      // arm sits AFTER saved answers
       // deliberately — unlike the confinement stance, which is a hard arm a saved grant cannot buy
       // out of, because this one converts a fall-through rather than a classified boundary.
       yield* setup(b4cBaseline)
