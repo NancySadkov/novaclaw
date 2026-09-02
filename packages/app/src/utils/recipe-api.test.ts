@@ -88,7 +88,10 @@ describe("downloading a recipe archive — an archive, or nothing at all", () =>
   test("negative control — the pre-fix reader would have passed every assertion above", async () => {
     // What the code did: `if (!reader) return new Uint8Array()`. Reproduced here so the claim "this
     // test would have been green before" is demonstrated rather than asserted in a comment.
-    const preFix = async (response: Response): Promise<Uint8Array> => {
+    // `Uint8Array<ArrayBuffer>`, not the bare alias: the default parameter is ArrayBufferLike, which
+    // admits SharedArrayBuffer and so is not a BlobPart — and the point of this control is that the
+    // pre-fix result WAS blobbable.
+    const preFix = async (response: Response): Promise<Uint8Array<ArrayBuffer>> => {
       const reader = response.body?.getReader()
       if (!reader) return new Uint8Array()
       const chunks: Uint8Array[] = []
@@ -99,7 +102,7 @@ describe("downloading a recipe archive — an archive, or nothing at all", () =>
         total += next.value.byteLength
         chunks.push(next.value)
       }
-      const out = new Uint8Array(total)
+      const out = new Uint8Array(new ArrayBuffer(total))
       let at = 0
       for (const chunk of chunks) {
         out.set(chunk, at)
