@@ -11,6 +11,7 @@ import {
   mediaLimitFailure,
   type FinishReason,
   type ProviderErrorEvent,
+  isModelMissing,
 } from "@novaclaw/llm"
 import { Cause, Clock, DateTime, Duration, Effect, Exit, FiberSet, Layer, Option, Semaphore, Stream } from "effect"
 import path from "path"
@@ -2584,7 +2585,18 @@ export const layer = Layer.effect(
           // `[DONE]` would move it off something that works.
           const turnFailed = publisher.hasAssistantFailed() && !handledResponseFailure
           if (turnFailed) {
-            ModelHealth.failed(ranOn, yield* Clock.currentTimeMillis)
+            // 🔴 An endpoint saying it does not HAVE this model is not a flaky turn, and counting it
+            // as one is why a dead pin kept failing. The threshold exists because a transport blip is
+            // weak evidence; a 404 naming the model is the endpoint telling us the catalog is wrong,
+            // and the next turn will fail exactly the same way. Retiring it takes effect on the very
+            // next resolution, with no threshold and no window, so a colleague on the default heals
+            // itself instead of failing twice more first.
+            //
+            // ⚠️ Only the DEFAULT heals silently. `resolve` refuses to reroute a model the user named
+            // (owner, 2026-09-02) — retiring it here is still right, because it is a fact about the
+            // endpoint, but what the user sees is the error and the offer to switch.
+            if (isModelMissing(publisher.assistantFailureMessage() ?? "")) ModelHealth.retired(ranOn)
+            else ModelHealth.failed(ranOn, yield* Clock.currentTimeMillis)
           } else if (!publisher.hasAssistantFailed()) {
             ModelHealth.succeeded(ranOn)
           }

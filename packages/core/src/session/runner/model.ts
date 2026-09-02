@@ -1064,7 +1064,13 @@ export const locationLayer = Layer.effect(
       // model chip was removed on 2026-08-22 that is very nearly every session. Measured live the
       // same day: holo3.1's endpoint went down, four turns failed with `Transport` in one process,
       // and the fallback never fired once.
-      if (selected) {
+      // ⚠️ An EXPLICIT choice is never rerouted (owner, 2026-09-02: *"when the user explicitly picks
+      // a specific model, we still present the user with an error asking if they want to switch to
+      // another model"*). The self-healing invariant below is about the model nobody chose — a
+      // colleague running on the default. Silently moving a user off the model they named is
+      // answering a question nobody asked, which is the same rule the availability arm above already
+      // states for `--model does/not-exist`.
+      if (selected && options?.requested !== true) {
         const at = yield* Clock.currentTimeMillis
         if (ModelHealth.sick(selected, at)) {
           const healthy = healthyAlternative({

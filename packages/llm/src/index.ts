@@ -6,6 +6,7 @@ export {
   isContextOverflow,
   isContextOverflowFailure,
   isMediaLimit,
+  isModelMissing,
   mediaLimitFailure,
 } from "./provider-error"
 export type {

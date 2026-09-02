@@ -72,6 +72,27 @@ export const imageLimitFrom = (message: string): number | undefined => {
 
 export const isMediaLimit = (message: string) => imageLimitFrom(message) !== undefined
 
+/**
+ * The endpoint saying it does not serve this model at all.
+ *
+ * 🔴 A different KIND of evidence from every other fault here, and that is why it has its own
+ * predicate rather than joining `classify`. An overflow or a media cap is evidence about the
+ * REQUEST, and the recovery is to send a smaller one. This is evidence about the CATALOG: the model
+ * we were told exists does not, so no retry and no smaller request will ever succeed and the only
+ * recovery is to run something else.
+ *
+ * Measured 2026-09-02 on a live instance, where a chat pinned to a model the endpoint had replaced
+ * failed identically on every turn: `HTTP 404 {"message":"The model `holo3.1` does not exist."}`.
+ *
+ * ⚠️ The separator is `[^\n]`, NOT `[^.]` — a model id contains dots, so a dot-excluding gap could
+ * never span the very thing being matched. That bug shipped in the first cut of the sibling matcher
+ * in `session-error.ts` and was caught by a test rather than by reading it.
+ */
+const MODEL_MISSING =
+  /\bmodel\b[^\n]{0,80}?\b(?:does not exist|not found|unknown|is not available)\b|\bno such model\b/i
+
+export const isModelMissing = (message: string): boolean => MODEL_MISSING.test(message)
+
 export const mediaLimitFailure = (failure: unknown): number | undefined => {
   const classified =
     failure instanceof LLMError

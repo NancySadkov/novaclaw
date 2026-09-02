@@ -121,6 +121,10 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
   let assistantMessageID: SessionMessage.ID | undefined
   let assistantActive = false
   let assistantFailed = false
+  // The fault's own words, kept so the runner can tell a TRANSIENT failure from the endpoint
+  // saying it does not serve this model at all — the two recover differently and a bare boolean
+  // cannot distinguish them.
+  let assistantFailureMessage: string | undefined
   let providerFailed = false
   let stepSettlement: { readonly finish: string; readonly tokens: ReturnType<typeof tokens> } | undefined
   const executionBoundary = input.executionBoundary ?? (() => Effect.void)
@@ -339,6 +343,9 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
     const assistantMessageID = yield* startAssistant()
     assistantActive = false
     assistantFailed = true
+    assistantFailureMessage = typeof (fault as { message?: unknown }).message === "string"
+      ? ((fault as { message?: string }).message ?? undefined)
+      : undefined
     yield* events.publish(SessionEvent.Step.Failed, {
       sessionID: input.sessionID,
       timestamp: yield* timestamp,
@@ -602,6 +609,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
      * every failed turn as a partial success and recorded nothing.
      */
     hasAssistantFailed: () => assistantFailed,
+    assistantFailureMessage: () => assistantFailureMessage,
     stepSettlement: () => stepSettlement,
     startAssistant,
     assistantMessageID: assistantMessageIDForTool,

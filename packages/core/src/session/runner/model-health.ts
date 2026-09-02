@@ -47,6 +47,27 @@ export const fresh = (failures: readonly number[], at: number): number[] =>
 
 const state = new Map<string, number[]>()
 
+/**
+ * Models the ENDPOINT has said it does not have.
+ *
+ * 🔴 A different kind of evidence from a failed turn, and it must not be counted like one. The
+ * threshold above exists because a transport failure is weak evidence: a local server restarting
+ * produces one, and demoting a colleague's model for it would be worse than waiting. A 404 saying
+ * *"The model `x` does not exist"* is not weak and is not transient — it is the endpoint telling us
+ * the catalog is WRONG, and the second turn will fail exactly like the first.
+ *
+ * Measured 2026-09-02 on a live instance: a chat pinned to `holo3.1` after the endpoint moved to
+ * another model failed every turn. The catalog still listed the model, so `usableFallback` saw
+ * nothing wrong; `healthyAlternative` needed two failures inside ten minutes; and this map is
+ * process-lifetime, so restarting the app forgot the two and started counting again.
+ *
+ * ⚠️ Kept SEPARATE from the failure counts rather than "recording two failures at once", which would
+ * have been the shorter change. A count that means "permanent" is a lie the next reader has to
+ * decode, `succeeded` would silently clear it, and the window would expire something that has not
+ * got better. This set is cleared only by a turn that actually WORKS on that model.
+ */
+const retiredModels = new Set<string>()
+
 /** Record a turn that failed on this model. */
 export const failed = (ref: Ref, at: number): void => {
   const id = key(ref)
@@ -63,14 +84,34 @@ export const failed = (ref: Ref, at: number): void => {
  */
 export const succeeded = (ref: Ref): void => {
   state.delete(key(ref))
+  // A turn that WORKED is the only thing that can un-retire a model: the endpoint served it, so
+  // whatever made it answer "does not exist" is over. Without this line a model that came back
+  // after a restart of the server would stay routed-around for the life of the process.
+  retiredModels.delete(key(ref))
+}
+
+/**
+ * Record an endpoint's own statement that it does not serve this model.
+ *
+ * Takes effect on the NEXT resolution with no threshold and no window — one such answer is all the
+ * evidence there is going to be.
+ */
+export const retired = (ref: Ref): void => {
+  retiredModels.add(key(ref))
 }
 
 /** Is this model currently failing badly enough to route around? */
-export const sick = (ref: Ref, at: number): boolean => isSick(state.get(key(ref)) ?? [], at)
+export const sick = (ref: Ref, at: number): boolean =>
+  retiredModels.has(key(ref)) || isSick(state.get(key(ref)) ?? [], at)
+
+/** Has the endpoint said outright that it does not serve this model? Exported so a test asserts the
+ * REASON and not only the verdict — "sick" and "not there" recover differently. */
+export const isRetired = (ref: Ref): boolean => retiredModels.has(key(ref))
 
 /** Test seam: forget everything. Never called in production — health is process-lifetime state. */
 export const reset = (): void => {
   state.clear()
+  retiredModels.clear()
 }
 
 /** How many failures are on record inside the window. Exported so a test asserts the count, not the verdict alone. */
