@@ -69,6 +69,37 @@ describe("AgentStatus", () => {
     }),
   )
 
+  it.effect("🔴 a retired colleague's line is REMOVABLE, so the next officer on that name inherits none", () =>
+    Effect.gen(function* () {
+      const status = yield* AgentStatus.Service
+      // Officer names come from a fixed pool, so `ghost` comes back. The line the last one left is a
+      // sentence a model derived from THEIR private transcript — the roster would describe a
+      // stranger by it, indefinitely, because retirement archives the old chats and `candidates()`
+      // excludes archived transcripts: the redrawn id has nothing to refresh FROM.
+      //
+      // This component had `set` and no delete path at all, which is why the retirement had nothing
+      // to call. A/B: drop `remove` from the retirement's cleaner list and the second assertion
+      // returns the retired officer's sentence.
+      yield* status.set({ agent: "ghost", task: "reviewing the P2P handshake", observed: 1_000 })
+      yield* status.set({ agent: "xenia", task: "drafting the migration", observed: 1_100 })
+
+      yield* status.remove("ghost")
+
+      expect(yield* status.get("ghost")).toBeUndefined()
+      // ⚠️ Deleted, not blanked: an empty `task` is still a row, and `candidates()` would hand it to
+      // the refresh pass as a colleague that already has a current label.
+      expect((yield* status.all()).map((info) => info.agent)).toEqual(["xenia"])
+      // CONTROL — a retirement clears the retired id and NOTHING else. A `delete` with a missing or
+      // mis-bound predicate would take the whole table with it and this test would still pass on the
+      // first assertion alone.
+      expect((yield* status.get("xenia"))?.task).toBe("drafting the migration")
+      // Removing a colleague that has no line is not an error: the two retirement doors both call
+      // this, and one of them may run after the other.
+      yield* status.remove("ghost")
+      expect(yield* status.all()).toHaveLength(1)
+    }),
+  )
+
   it.effect("a colleague with no line at all reads as undefined, not as an empty one", () =>
     Effect.gen(function* () {
       const status = yield* AgentStatus.Service

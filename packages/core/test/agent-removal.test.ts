@@ -35,10 +35,13 @@ describe("the registry between the config door and the retirement", () => {
   it.effect("a registered listener receives the id, and deregisters with its scope", () =>
     Effect.gen(function* () {
       const seen: string[] = []
+      // ⚠️ The count is asked of THIS graph. A process-wide one would answer the union across every
+      // instance in it, which is the question nobody has.
+      const { db } = yield* Database.Service
       yield* Effect.scoped(
         Effect.gen(function* () {
           yield* AgentRemoval.register((id) => Effect.sync(() => void seen.push(id)))
-          expect(AgentRemoval.registered()).toBeGreaterThan(0)
+          expect(AgentRemoval.registered(db)).toBeGreaterThan(0)
           yield* AgentRemoval.announce("theron")
         }),
       )

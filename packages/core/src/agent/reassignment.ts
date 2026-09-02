@@ -16,6 +16,7 @@ import { SessionEvent } from "../session/event"
 import { SessionMessage } from "../session/message"
 import { SessionSchema } from "../session/schema"
 import { AgentWorkspace } from "./workspace"
+import { GraphRegistry } from "./graph-registry"
 
 // TELLING a colleague its folder changed (owner, 2026-08-21: *"reassigning agent to another folder
 // should auto send a message to it, so it won't be thinking it still works on the old project"*).
@@ -46,29 +47,27 @@ export interface Move {
 
 type Listener = { readonly notify: (move: Move) => Effect.Effect<void> }
 
-const listeners = new Set<Listener>()
+/**
+ * ⚠️ **Per GRAPH, not per process** — see `agent/graph-registry.ts`. A module-level `Set` here
+ * delivered one instance's reassignment notice into ANOTHER instance's chat for the same colleague
+ * id, archiving a transcript nobody moved. Officer ids come from a fixed pool, so the same id
+ * existing in two instances is the normal case.
+ */
+const listeners = GraphRegistry.make<Listener>()
 
 /**
- * Register a delivery for the life of a scope.
+ * Register a delivery for the life of a scope, in the CALLING graph.
  *
  * The token is an object rather than the function itself, so two locations that somehow share a
  * `notify` reference still count as two — the same reasoning `registerReload` records.
  */
-export const register = (notify: (move: Move) => Effect.Effect<void>) =>
-  Effect.acquireRelease(
-    Effect.sync(() => {
-      const listener: Listener = { notify }
-      listeners.add(listener)
-      return listener
-    }),
-    (listener) =>
-      Effect.sync(() => {
-        listeners.delete(listener)
-      }),
-  ).pipe(Effect.asVoid)
+export const register = (notify: (move: Move) => Effect.Effect<void>) => listeners.register({ notify })
 
-/** How many deliveries are live. Exported so "the wiring exists" can be asserted, not reasoned about. */
-export const registered = (): number => listeners.size
+/**
+ * How many deliveries are live IN ONE GRAPH. Exported so "the wiring exists" can be asserted, not
+ * reasoned about — and a count that summed every graph in the process could not answer that.
+ */
+export const registered = (graph?: GraphRegistry.Graph): number => listeners.entries(graph).length
 
 /**
  * Announce a move to every listener.
@@ -83,9 +82,13 @@ export const registered = (): number => listeners.size
  * "best-effort" that only survives the failures you predicted is not best-effort.
  */
 export const announce = (move: Move): Effect.Effect<void> =>
-  Effect.forEach([...listeners], (listener) => listener.notify(move).pipe(Effect.catchCause(() => Effect.void)), {
-    discard: true,
-  })
+  // ⚠️ `listeners.visible`, not every listener in the process: a config write in one instance
+  // announces to that instance and to no other.
+  Effect.flatMap(listeners.visible, (live) =>
+    Effect.forEach(live, (listener) => listener.notify(move).pipe(Effect.catchCause(() => Effect.void)), {
+      discard: true,
+    }),
+  )
 
 /** The message a moved colleague receives. Re-exported here so a caller needs one import. */
 export const notice = AgentWorkspace.reassignmentNotice

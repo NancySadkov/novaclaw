@@ -398,6 +398,81 @@ describe("retention — one bound, enforced over the directory", () => {
     // log directory: a peer's gzip in flight must not be deleted out from under it.
     expect(fsSync.existsSync(inFlight)).toBe(true)
   })
+
+  test("🔴 a file the writer's grammar does not own is COUNTED in the ceiling and swept", async () => {
+    /**
+     * The ceiling claims to total the directory. It totalled the files matching this writer's own
+     * filename grammar, so anything else written into `<data>/log` was invisible to BOTH halves of
+     * retention — never deleted by age, never deleted by budget, and absent from the total the
+     * budget is compared against. The measured case is the auto heap snapshot, which lands here at
+     * RSS size (gigabytes) and holds every live string in the process, while the Settings row went
+     * on saying the directory was capped.
+     *
+     * ⚠️ The budget below is the whole point: 5000 leaves the three segments (3000) comfortably
+     * inside the ceiling, so ONLY counting the snapshot puts the directory over it. A sweep that
+     * still totals its own grammar sweeps nothing here and this fails on the first assertion.
+     */
+    await using dir = await tmpdir()
+    const file = path.join(dir.path, "novaclaw.log")
+    const now = Date.parse("2026-08-07T00:00:00.000Z")
+    const oldest = plant(dir.path, "novaclaw", now - 3 * DAY, 1000)
+    const middle = plant(dir.path, "novaclaw", now - 2 * DAY, 1000)
+    const newest = plant(dir.path, "novaclaw", now - 1 * DAY, 1000)
+    const snapshot = path.join(dir.path, "heap-1234-20260805T000000000Z.heapsnapshot")
+    fsSync.writeFileSync(snapshot, Buffer.alloc(4000, 0x61))
+    const stamped = new Date(now - 2 * DAY)
+    fsSync.utimesSync(snapshot, stamped, stamped)
+
+    const writer = LogFile.open({ file, totalBytes: 5000, maxAgeMs: 30 * DAY, now: () => new Date(now) })
+    writer.close()
+
+    expect(fsSync.existsSync(snapshot)).toBe(false)
+    // CONTROL — an ordinary log file is unaffected. Residue is evicted FIRST because the rotated
+    // segments are the record and a diagnostic artefact is scratch: one 4 GB snapshot must never
+    // evict a year of history on its way under the budget.
+    expect([oldest, middle, newest].map((segment) => fsSync.existsSync(segment))).toEqual([true, true, true])
+    expect(fsSync.existsSync(file)).toBe(true)
+  })
+
+  test("residue past the age limit goes; a peer's write in flight stays (both directions)", async () => {
+    await using dir = await tmpdir()
+    const file = path.join(dir.path, "novaclaw.log")
+    const now = Date.now()
+    const abandoned = path.join(dir.path, "heap-1-abandoned.heapsnapshot")
+    const inFlight = path.join(dir.path, "heap-2-inflight.heapsnapshot")
+    fsSync.writeFileSync(abandoned, Buffer.alloc(64, 0x61))
+    fsSync.writeFileSync(inFlight, Buffer.alloc(64, 0x61))
+    const stale = new Date(now - LogFile.TMP_GRACE_MS - 60_000)
+    fsSync.utimesSync(abandoned, stale, stale)
+
+    // Everything is over this budget, so the grace period is the ONLY thing standing between the
+    // sweep and the second file. Two instances can share one home and therefore one log directory;
+    // a peer writing a snapshot right now is not litter.
+    const writer = LogFile.open({ file, totalBytes: 10, maxAgeMs: 30 * DAY })
+    writer.sweep()
+    writer.close()
+
+    expect(fsSync.existsSync(abandoned)).toBe(false)
+    expect(fsSync.existsSync(inFlight)).toBe(true)
+  })
+
+  test("NEGATIVE CONTROL: residue inside both limits is counted and left alone", async () => {
+    await using dir = await tmpdir()
+    const file = path.join(dir.path, "novaclaw.log")
+    const now = Date.parse("2026-08-07T00:00:00.000Z")
+    const keep = path.join(dir.path, "heap-1234-20260806T000000000Z.heapsnapshot")
+    fsSync.writeFileSync(keep, Buffer.alloc(4000, 0x61))
+    const stamped = new Date(now - 2 * DAY)
+    fsSync.utimesSync(keep, stamped, stamped)
+
+    const writer = LogFile.open({ file, totalBytes: 1024 * 1024, maxAgeMs: 30 * DAY, now: () => new Date(now) })
+    expect(writer.sweep()).toBe(0)
+    writer.close()
+    // Counted without being deleted: bounding the directory is not the same as emptying it, and a
+    // sweep that took every foreign file on sight would delete a diagnostic the moment it was taken.
+    expect(fsSync.existsSync(keep)).toBe(true)
+    expect(LogFile.residueIn(dir.path, "novaclaw").map((entry) => entry.bytes)).toEqual([4000])
+  })
 })
 
 describe("logging never takes the instance down", () => {

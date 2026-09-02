@@ -6,6 +6,7 @@ import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } fr
 import { Download } from "../download"
 import { FSUtil } from "../fs-util"
 import { Global } from "../global"
+import { Hash } from "../util/hash"
 import { Log } from "@novaclaw/schema/log"
 import { makeGlobalNode } from "../effect/app-node"
 import { httpClient } from "../effect/app-node-platform"
@@ -34,6 +35,28 @@ const MAX_FILE_BYTES = 8 * 1024 * 1024
 const MAX_INDEX_BYTES = 1024 * 1024
 const MAX_SKILLS_PER_SOURCE = 500
 const MAX_FILES_PER_SKILL = 200
+
+/**
+ * The cache directory one URL skill source owns, named by a digest of its base.
+ *
+ * 🔴 **`Hash.fast`, not `Bun.hash`.** This is a plain global node in the shared graph, reached
+ * whenever a skill source has `type: "url"` — and the desktop server is an Electron
+ * `utilityProcess`, which is NODE. `Bun` is undefined there, so the bare global threw a
+ * `ReferenceError` out of `pull`; nothing catches it at the call site, so `SkillV2.load` died and
+ * `list()` failed for EVERY source, taking the whole skill index down rather than one source. The
+ * tree's other Bun globals are either guarded (`session/runner/task-constraint.ts`) or in drivers
+ * that declare themselves Bun-only; this one qualified itself as neither.
+ *
+ * ⚠️ `util/hash.ts` exists for exactly this and has no runtime dependency. Changing the digest
+ * relocates every existing source's cache directory ONCE — the next `pull` re-populates it, which is
+ * the same work a new source does, so it costs a download and nothing else.
+ *
+ * ⚠️ Exported so the no-Bun host can be EXERCISED rather than asserted about: a test that only reads
+ * the call site would pass against a digest that still needed a runtime this one does not have.
+ */
+export function sourceRootFor(cache: string, base: string): string {
+  return path.resolve(cache, "skills", Hash.fast(base).slice(0, 16))
+}
 
 function isSafeSegment(value: string) {
   return (
@@ -171,7 +194,7 @@ export const layer = Layer.effect(
           return []
         }
 
-        const sourceRoot = path.resolve(global.cache, "skills", Bun.hash(base).toString(16))
+        const sourceRoot = sourceRootFor(global.cache, base)
         /**
          * 🔴 Every rejection below used to be a bare `return []`, so a source that tried to escape
          * its own cache directory was refused in COMPLETE SILENCE. The containment held, but the

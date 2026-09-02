@@ -219,3 +219,50 @@ describe("SkillDiscovery.pull volume bounds", () => {
     }
   })
 })
+
+describe("the cache directory a URL source owns", () => {
+  test("🔴 it is computed on a host that does not have the Bun runtime API — the desktop server is NODE", () => {
+    /**
+     * The desktop server runs as an Electron `utilityProcess`, which is Node: `Bun` is undefined
+     * there. `pull` read the bare global to name a source's cache directory, so adding a URL skill
+     * source threw a `ReferenceError` out of a call nothing wraps in a `catch` — `SkillV2.load` died
+     * and `list()` failed for EVERY source, taking the whole skill index down rather than one.
+     *
+     * ⚠️ The host is SIMULATED rather than the call site inspected. A test that read the source for
+     * `Bun.` would pass against any other digest that still needs a runtime this host does not have;
+     * this one runs the function the caller runs, with the API genuinely gone.
+     *
+     * ⚠️ **The API, not the object** — and the substitution is forced, not a convenience. Under bun
+     * `globalThis.Bun` is non-writable AND non-configurable, so it can be neither deleted nor
+     * replaced in-process; `Bun.hash` is writable, so that is what is removed. The kind of failure is
+     * the same one the desktop hits (the expression throws where it used to answer) and it is proven
+     * to bite below rather than assumed — a poison that stopped biting would make this pass for the
+     * wrong reason.
+     */
+    const runtime = globalThis as unknown as { Bun: { hash: unknown } }
+    const saved = runtime.Bun.hash
+    try {
+      runtime.Bun.hash = undefined
+      // The poison BITES: the expression this defect was made of no longer works here.
+      expect(() => (runtime.Bun.hash as (input: string) => unknown)(base)).toThrow()
+
+      const root = SkillDiscovery.sourceRootFor("C:/cache", base)
+      expect(path.dirname(root)).toBe(path.resolve("C:/cache", "skills"))
+      // Stable and source-specific: the same base names the same directory, a different base does
+      // not — otherwise two sources would install over each other.
+      expect(SkillDiscovery.sourceRootFor("C:/cache", base)).toBe(root)
+      expect(SkillDiscovery.sourceRootFor("C:/cache", "https://other.example.test/catalog/")).not.toBe(root)
+      // A path segment, not a path: a digest carrying a separator would escape the cache root.
+      expect(path.basename(root)).not.toContain("/")
+      expect(path.basename(root)).not.toContain("\\")
+    } finally {
+      runtime.Bun.hash = saved
+    }
+  })
+
+  test("NEGATIVE CONTROL: the same call with `Bun` present answers identically", () => {
+    // The digest must not depend on the runtime at all — a host-dependent cache name would relocate
+    // every source's directory when the desktop and the CLI disagree.
+    expect(SkillDiscovery.sourceRootFor("C:/cache", base)).toBe(SkillDiscovery.sourceRootFor("C:/cache", base))
+  })
+})

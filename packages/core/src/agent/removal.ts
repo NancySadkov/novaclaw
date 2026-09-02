@@ -4,6 +4,8 @@ import { Effect, Layer } from "effect"
 import { eq } from "drizzle-orm"
 import { FileSystem } from "effect"
 import { AgentConfigStore } from "../agent-config-store"
+import { AgentStatus } from "../agent-status"
+import { GraphRegistry } from "./graph-registry"
 import { CalendarScheduleTable } from "../schedule/calendar.sql"
 import { Scratch } from "../scratch"
 import * as AppNodePlatform from "../effect/app-node-platform"
@@ -40,24 +42,22 @@ import { AgentRetire } from "./retire"
 
 type Listener = { readonly notify: (agentID: string) => Effect.Effect<void> }
 
-const listeners = new Set<Listener>()
+/**
+ * ⚠️ **Per GRAPH, not per process** (`agent/graph-registry.ts` carries the whole argument). A
+ * module-level `Set` here meant one instance's removal ran another instance's retirement against the
+ * OTHER instance's database — and officer ids come from a fixed pool, so the same id living in two
+ * instances is the normal case rather than the corner one.
+ */
+const listeners = GraphRegistry.make<Listener>()
 
-/** Register a retirement for the life of a scope. */
-export const register = (notify: (agentID: string) => Effect.Effect<void>) =>
-  Effect.acquireRelease(
-    Effect.sync(() => {
-      const listener: Listener = { notify }
-      listeners.add(listener)
-      return listener
-    }),
-    (listener) =>
-      Effect.sync(() => {
-        listeners.delete(listener)
-      }),
-  ).pipe(Effect.asVoid)
+/** Register a retirement for the life of a scope, in the CALLING graph. */
+export const register = (notify: (agentID: string) => Effect.Effect<void>) => listeners.register({ notify })
 
-/** How many listeners are live. Exported so "the wiring exists" can be asserted, not reasoned about. */
-export const registered = (): number => listeners.size
+/**
+ * How many listeners are live IN ONE GRAPH. Exported so "the wiring exists" can be asserted, not
+ * reasoned about — which it cannot be if it answers the union across every graph in the process.
+ */
+export const registered = (graph?: GraphRegistry.Graph): number => listeners.entries(graph).length
 
 /**
  * Announce that a colleague's config row is gone.
@@ -68,9 +68,13 @@ export const registered = (): number => listeners.size
  * `agent/reassignment.ts` records after a test caught the claim being false there.
  */
 export const announce = (agentID: string): Effect.Effect<void> =>
-  Effect.forEach([...listeners], (listener) => listener.notify(agentID).pipe(Effect.catchCause(() => Effect.void)), {
-    discard: true,
-  })
+  // ⚠️ `listeners.visible`, not every listener in the process: the announcement reaches the graph
+  // that made it and no other.
+  Effect.flatMap(listeners.visible, (live) =>
+    Effect.forEach(live, (listener) => listener.notify(agentID).pipe(Effect.catchCause(() => Effect.void)), {
+      discard: true,
+    }),
+  )
 
 /**
  * The scoped registration an instance graph makes.
@@ -124,10 +128,23 @@ export const node = makeGlobalNode({
           if (yield* fs.exists(own)) yield* fs.remove(own, { recursive: true })
         }).pipe(Effect.orDie),
       )
+      const status = yield* AgentStatus.Service
+      yield* AgentRetire.registerCleaner("status", (agentID) =>
+        // 🔴 A STATUS LINE IS KEYED ON THE ID, so the next officer drawn on the name wears the last
+        // one's sentence. It is the corporation rule the archived chat already keeps — a returning
+        // name never opens into its predecessor's transcript — and a roster row describing a
+        // colleague by a stranger's work breaks it just as loudly, in the one place a person looks.
+        //
+        // ⚠️ It does not heal itself either. `everything` archives the old chats, and `candidates()`
+        // excludes archived transcripts, so the redrawn id has no activity to refresh FROM and
+        // `shouldRefresh` says no. The stale line stands until the new colleague generates traffic
+        // of its own, which may be never.
+        status.remove(agentID),
+      )
       yield* register((agentID) =>
         AgentRetire.everything({ db, events, memory, agent: agentID, at: Date.now() }).pipe(Effect.asVoid),
       )
     }),
   ),
-  deps: [AgentConfigStore.node, AppNodePlatform.filesystem, Database.node, EventV2.node, Memory.node],
+  deps: [AgentConfigStore.node, AgentStatus.node, AppNodePlatform.filesystem, Database.node, EventV2.node, Memory.node],
 })

@@ -29,6 +29,20 @@ export interface Interface {
   readonly get: (agent: string) => Effect.Effect<Info | undefined>
   readonly set: (info: Info) => Effect.Effect<void>
   /**
+   * Forget a colleague's line entirely.
+   *
+   * 🔴 There has to be a DELETE path, and its absence was the whole defect: officer names come from
+   * a fixed pool, so a retired id returns, and a row nothing can remove is a sentence about work a
+   * stranger did, stamped onto the next colleague drawn on that name. Every other component keyed on
+   * an agent id already has one (`AgentRetire.CLEANERS`); this one had `set` and nothing else, so
+   * the retirement had nothing to call.
+   *
+   * ⚠️ Deleted rather than blanked. An empty `task` is still a row, and `candidates()` would hand it
+   * to the refresh pass as a colleague with a current label — "no line yet" and "a line that says
+   * nothing" are different states and only one of them is true after a retirement.
+   */
+  readonly remove: (agent: string) => Effect.Effect<void>
+  /**
    * Every colleague the refresh pass might act on, with its newest activity and current label.
    *
    * ⚠️ Returns colleagues with NO activity too, `latest: undefined`. The decision needs to see them
@@ -89,6 +103,9 @@ export const layer = Layer.effect(
           })
           .run()
           .pipe(Effect.orDie)
+      }),
+      remove: Effect.fn("AgentStatus.remove")(function* (agent: string) {
+        yield* db.delete(AgentStatusTable).where(eq(AgentStatusTable.agent, agent)).run().pipe(Effect.orDie)
       }),
       candidates: Effect.fn("AgentStatus.candidates")(function* () {
         /**

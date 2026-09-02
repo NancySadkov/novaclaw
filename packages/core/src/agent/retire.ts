@@ -10,6 +10,7 @@ import { SessionPatch } from "../session/patch"
 import { SessionSchema } from "../session/schema"
 import { KbTool } from "../tool/kb"
 import { AgentUsage } from "./usage"
+import { GraphRegistry } from "./graph-registry"
 
 // What it MEANS to retire a colleague — in one place, because there are two doors.
 //
@@ -84,27 +85,33 @@ export const cabinetOf = (agent: string): string | undefined => KbTool.agentScop
  * {@link everything} reports any that nothing registered: a cleaner that was never wired is a fact
  * about this instance, not a silence.
  */
-export const CLEANERS = ["schedules", "default-agent", "workspace"] as const
+export const CLEANERS = ["schedules", "default-agent", "workspace", "status"] as const
 
 export type CleanerName = (typeof CLEANERS)[number]
 
 type Cleaner = { readonly name: CleanerName; readonly clear: (agentID: string) => Effect.Effect<void> }
 
-const cleaners = new Set<Cleaner>()
+/**
+ * ⚠️ **Per GRAPH, not per process** — `agent/graph-registry.ts` carries the argument. A
+ * module-level `Set` here did two things at once: instance A's retirement ran instance B's cleaners
+ * against B's stores, and {@link registered} answered the UNION across graphs, so a graph that
+ * shipped a cleaner inert reported it wired as long as any other graph in the process had one. The
+ * second defeats this list's whole purpose on its own terms.
+ */
+const cleaners = GraphRegistry.make<Cleaner>()
 
-/** Register one subsystem's cleaner for the life of a scope. */
+/** Register one subsystem's cleaner for the life of a scope, in the CALLING graph. */
 export const registerCleaner = (name: CleanerName, clear: (agentID: string) => Effect.Effect<void>) =>
-  Effect.acquireRelease(
-    Effect.sync(() => {
-      const entry: Cleaner = { name, clear }
-      cleaners.add(entry)
-      return entry
-    }),
-    (entry) => Effect.sync(() => void cleaners.delete(entry)),
-  )
+  cleaners.register({ name, clear })
 
-/** Which declared cleaners are currently wired — the test seam for "did this ship inert?". */
-export const registered = (): ReadonlyArray<CleanerName> => [...cleaners].map((entry) => entry.name)
+/**
+ * Which declared cleaners are wired IN ONE GRAPH — the test seam for "did this ship inert?".
+ *
+ * ⚠️ The graph is named by its `Database` handle, the same object {@link everything} is handed, so
+ * the report and the run answer for the same instance.
+ */
+export const registered = (graph?: GraphRegistry.Graph): ReadonlyArray<CleanerName> =>
+  cleaners.entries(graph).map((entry) => entry.name)
 
 export const everything = (input: {
   readonly db: Database.Interface["db"]
@@ -150,8 +157,10 @@ export const everything = (input: {
     // failure is REPORTED, never fatal: a schedule that could not be cleared must not stop the
     // memory cabinet being set aside, and half a retirement with no account of which half is the
     // state an operator cannot clean up by hand.
-    const wired = new Set(registered())
-    for (const entry of [...cleaners])
+    // ⚠️ Keyed on THIS retirement's own `db`, so a second instance in the same process neither
+    // contributes a cleaner nor is reported as having wired one.
+    const wired = new Set(registered(input.db))
+    for (const entry of cleaners.entries(input.db))
       yield* entry.clear(input.agent).pipe(
         Effect.catchCause((cause) =>
           Log.event("agent.retire.cleaner.failed", {

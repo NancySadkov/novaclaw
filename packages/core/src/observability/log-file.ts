@@ -131,7 +131,6 @@ export interface Segment {
   readonly bytes: number
 }
 
-
 const sizeOf = (file: string): number => {
   try {
     return fsSync.statSync(file).size
@@ -165,6 +164,57 @@ export function segmentsIn(directory: string, name: string): Segment[] {
     segments.push({ file, stamp: match[1]!, time, compressed: match[2] !== undefined, bytes: sizeOf(file) })
   }
   return segments.sort((a, b) => a.stamp.localeCompare(b.stamp))
+}
+
+/** A file in the log directory that this writer's grammar does not own. */
+export interface Residue {
+  readonly file: string
+  /** Epoch millis, read from `mtime` — residue carries no stamp in its name to read instead. */
+  readonly time: number
+  readonly bytes: number
+}
+
+/**
+ * Everything in `directory` that is neither the active `<name>.log` nor one of its rotated segments,
+ * oldest first.
+ *
+ * 🔴 This is the OTHER half of the retention grammar, and it exists because the first half was a
+ * whitelist. `segmentsIn` answers "which files are mine"; a byte ceiling that claims to bound a
+ * DIRECTORY needs the complement too, or anything a second writer drops here is uncounted and
+ * unbounded forever. The measured case is the auto heap snapshot (`novaclaw/src/cli/heap.ts`), which
+ * lands in `Global.Path.log` at RSS size — gigabytes — and matched neither the segment pattern nor
+ * the `.gz.tmp` pattern, so retention neither deleted it nor added it to the total it enforces.
+ *
+ * ⚠️ By `mtime`, not by a stamp: residue by definition does not speak this module's filename
+ * grammar, so there is nothing in the name to read. That is weaker than a segment's stamp (a restore
+ * rewrites mtime) and it is the strongest signal available — and it is only ever used to decide
+ * eviction ORDER and expiry, never to date a log line.
+ *
+ * ⚠️ Never throws — an unreadable directory is an empty list, the same honest answer `segmentsIn`
+ * gives. Directories and anything unstattable are skipped rather than guessed at.
+ */
+export function residueIn(directory: string, name: string): Residue[] {
+  const segment = new RegExp(`^${escapeRegExp(name)}-\\d{8}T\\d{9}Z\\.log(\\.gz)?$`)
+  const active = `${name}.log`
+  let entries: string[]
+  try {
+    entries = fsSync.readdirSync(directory)
+  } catch {
+    return []
+  }
+  const residue: Residue[] = []
+  for (const entry of entries) {
+    if (entry === active || segment.test(entry)) continue
+    const file = path.join(directory, entry)
+    try {
+      const stat = fsSync.statSync(file)
+      if (!stat.isFile()) continue
+      residue.push({ file, time: stat.mtimeMs, bytes: stat.size })
+    } catch {
+      continue
+    }
+  }
+  return residue.sort((a, b) => a.time - b.time)
 }
 
 /**
@@ -319,9 +369,7 @@ export class Writer {
     this.totalBytes = options.totalBytes ?? TOTAL_BYTES
     const configuredMaxAge = options.maxAgeMs
     this.maxAgeMs =
-      typeof configuredMaxAge === "function"
-        ? configuredMaxAge
-        : () => configuredMaxAge ?? LogSettings.maxAgeMs()
+      typeof configuredMaxAge === "function" ? configuredMaxAge : () => configuredMaxAge ?? LogSettings.maxAgeMs()
     this.flushMs = options.flushMs ?? FLUSH_MS
     this.now = options.now ?? (() => new Date())
     this.open()
@@ -632,6 +680,24 @@ export class Writer {
    * Delete oldest-first past the byte budget AND past the age (§2d — both, because either alone
    * fails). The active segment is never a candidate.
    *
+   * 🔴 **The budget is over the DIRECTORY, not over this writer's own grammar.** `log-bounds.ts`
+   * says the ceiling "totals the whole directory", and until this pass existed it did not: it
+   * totalled the files matching `<name>-<stamp>.log(.gz)`. Anything else written into
+   * `<data>/log` — the auto heap snapshot is the measured case, an RSS-sized file holding every live
+   * string in the process — was invisible to BOTH halves of retention. Never deleted by age, never
+   * deleted by budget, and not counted in the total the ceiling is compared against, so a Settings
+   * row kept telling the user the log directory was capped at 256 MB beside gigabytes it did not
+   * know about.
+   *
+   * ⚠️ Fixed as a CLASS rather than by teaching the sweep one more filename: residue is *everything*
+   * that is not the active file and not a rotated segment, so the next writer that drops a file here
+   * is counted and bounded without anybody remembering to come back. Two consequences are
+   * deliberate: residue is evicted BEFORE segments (a diagnostic artefact is scratch; the rotated
+   * log is the record, and one 4 GB snapshot must not evict a year of history to get under budget),
+   * and nothing inside {@link TMP_GRACE_MS} of now is touched — the same grace, for the same reason,
+   * as the abandoned-gzip loop below: two instances can share one home and therefore one log
+   * directory, and a peer's write in flight is not litter.
+   *
    * Returns bytes freed. Never throws: a retention sweep that can fail a log write would be the
    * housekeeping-breaks-the-user's-operation shape `trash.ts` already refused.
    */
@@ -640,7 +706,25 @@ export class Writer {
     try {
       const cutoff = this.now().getTime() - this.maxAgeMs()
       const segments = segmentsIn(this.directory, this.name)
-      let total = segments.reduce((sum, segment) => sum + segment.bytes, 0) + sizeOf(this.file)
+      const residue = residueIn(this.directory, this.name)
+      let total =
+        segments.reduce((sum, segment) => sum + segment.bytes, 0) +
+        residue.reduce((sum, entry) => sum + entry.bytes, 0) +
+        sizeOf(this.file)
+      for (const entry of residue) {
+        const expired = entry.time < cutoff
+        const overBudget = total > this.totalBytes
+        if (!expired && !overBudget) break
+        // In flight, not litter — a peer instance may be writing it right now.
+        if (this.now().getTime() - entry.time < TMP_GRACE_MS) continue
+        try {
+          fsSync.rmSync(entry.file, { force: true })
+        } catch {
+          continue
+        }
+        total -= entry.bytes
+        freed += entry.bytes
+      }
       for (const segment of segments) {
         const expired = segment.time < cutoff
         const overBudget = total > this.totalBytes

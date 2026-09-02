@@ -33,7 +33,7 @@ describe("the declared cleaner list", () => {
   test("🔴 names every subsystem that keys rows on an agent id", () => {
     // The list is the checklist. Adding a subsystem that stores anything under an agent id means
     // adding it here, and then the missing-registration report names it until it is wired.
-    expect([...AgentRetire.CLEANERS]).toEqual(["schedules", "default-agent", "workspace"])
+    expect([...AgentRetire.CLEANERS]).toEqual(["schedules", "default-agent", "workspace", "status"])
   })
 
   test("a cleaner registers for the life of a scope, and unregisters after", async () => {
