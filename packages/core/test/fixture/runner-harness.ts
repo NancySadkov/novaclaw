@@ -23,6 +23,7 @@ import { SessionRunner } from "@novaclaw/core/session/runner"
 import * as SessionRunnerLLM from "@novaclaw/core/session/runner/llm"
 import { SessionMaintenance } from "@novaclaw/core/session/runner/maintenance"
 import { SessionRunnerModel } from "@novaclaw/core/session/runner/model"
+import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { ToolPolicy } from "@novaclaw/core/tool-policy"
 import { ToolPolicyGate } from "@novaclaw/core/tool-policy-gate"
@@ -434,11 +435,17 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
               (content.text ?? "").includes("<tool-output>"),
           ),
         )
+        // ⚠️ **HOISTED ABOVE the `parts.length === 0` gate, for the reason the compaction-summary note
+        // above already gives: the MESSAGE is the durable discriminator and the absence of a system
+        // prompt is an implementation detail of the caller.** The tool-output summarizer now runs
+        // through `ShortAnswer.generate`, so it carries a system prompt (its own, plus whatever
+        // `ReasoningBudget` prefixes) — under the old placement it stopped matching any marker and
+        // fell into the INTERACTIVE log, consuming the scripted turn meant for the next real turn.
+        if (isToolSummary) {
+          toolSummaryRequests.push(request)
+          return Stream.fromIterable(toolSummaryTurns.shift() ?? [])
+        }
         if (parts.length === 0 || isSummary) {
-          if (isToolSummary) {
-            toolSummaryRequests.push(request)
-            return Stream.fromIterable(toolSummaryTurns.shift() ?? [])
-          }
           if (!isSummary) {
             utilityRequests.push(request)
             return Stream.fromIterable(utilityTurns.shift() ?? [])
@@ -769,6 +776,11 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
       // to be tidied. Same node object, so the graph builds one store either way (`LayerNode` memoizes
       // on identity).
       Memory.node,
+      // Exposed for the same reason as `Memory.node` above and with the same effect: the runner
+      // already pulls it in transitively, and `LayerNode` memoizes on identity, so listing it builds
+      // one scheduler either way. A claim about WHEN the device slot is charged and released has to
+      // reach the service the runner is actually calling.
+      SessionScheduler.node,
       SessionMaintenance.node,
       SessionRunnerLLM.node,
       SessionExecution.node,

@@ -89,6 +89,7 @@ import { SessionDrive } from "./drive"
 import { FinishRecovery } from "./finish-recovery"
 import { UtilityCap } from "./utility-cap"
 import { UtilityPass } from "./utility-pass"
+import { ShortAnswer } from "./short-answer"
 import { PromptEstimate } from "./prompt-estimate"
 import { ModelRouteProfileStore } from "./model-route-profile-store"
 import { TruncationDetection } from "./truncation-detection"
@@ -628,53 +629,85 @@ export const layer = Layer.effect(
       return chunks.join("")
     })
 
+    const TOOL_SUMMARY_SYSTEM =
+      "You summarize tool output faithfully and briefly. Reply with the summary only — no preamble, no commentary."
+    /** Reasoning ceiling: the titler's number, and the pairing below is the titler's pairing. */
+    const TOOL_SUMMARY_REASONING_BUDGET = 128
+    /** Answer ceiling floor, kept well above the hard stop's measured landing point (~126 tokens). */
+    const TOOL_SUMMARY_ANSWER_TOKENS = 512
     /**
      * One bounded utility call for the map/reduce tool-output summarizer.
      *
-     * The tool call's device slot has already been released before settlement begins. This request
-     * therefore uses the selected model without holding the interactive generation admission, carries
-     * no tools, disables ordinary thinking, and has an explicit output ceiling. The caller applies
-     * one wall-clock deadline to the WHOLE finite map/reduce chain rather than multiplying that
-     * deadline by the number of chunks.
+     * The tool call's device slot has already been released before settlement begins, so this work
+     * never holds the interactive generation admission. It is still DECODE-shaped and still spends
+     * the same device bus, so it enters through the scheduler's maintenance tier rather than beside
+     * it. The caller applies one wall-clock deadline to the WHOLE finite map/reduce chain rather
+     * than multiplying that deadline by the number of chunks.
+     *
+     * 🔴 **Through `ShortAnswer.generate`, and the token cap is NOT how brevity is obtained here.**
+     * This used to be a bare `LLM.request` with `generation.maxTokens = input.maxTokens` (as low as
+     * 128 for a segment) plus the `NO_THINKING` overlay and nothing else — no `UtilityCap` ladder,
+     * no `ReasoningBudget`, one attempt. `enable_thinking:false` is a REQUEST and a growing class of
+     * models ignores it; such a model spends the whole cap inside `<think>` and returns NOTHING in
+     * either channel, because the reasoning parser only emits on the closing tag. `summarize` fails
+     * OPEN on an empty completion, so the whole semantic map/reduce was then permanently inert on
+     * that model — after spending up to `MAX_COMPLETION_CALLS` decode-shaped calls to produce
+     * nothing, with no log to say so. `ReasoningBudget` (inside `ShortAnswer`) is the mechanical
+     * half: it counts reasoning deltas live and its hard stop re-issues the turn with thinking
+     * structurally disabled.
+     *
+     * ⚠️ **The caller's `maxTokens` is a BYTE budget, and it is enforced downstream, not here.**
+     * `ToolOutputSummary.fitCompletion` trims an over-long summary to `maxBytes` (and re-asks once
+     * while the request still fits the window), so the request only needs an answer ceiling that
+     * clears `ReasoningBudget`'s hard stop — the titler's proven 512 against a 128 reasoning budget.
+     * Passing the byte budget straight through as `max_tokens` would put the ceiling AT the hard
+     * stop's landing point, which is the empty-completion trap wearing a smaller number.
      */
     const completeToolOutputSummary = Effect.fn("SessionRunner.toolOutputSummary")(function* (
       model: Parameters<typeof LLM.request>[0]["model"],
+      sessionID: SessionSchema.ID,
+      device: SessionRunnerModel.ScheduledDevice,
       input: ToolOutputSummary.CompletionInput,
     ) {
-      const chunks: string[] = []
-      let finish: FinishReason | undefined
-      let failed = false
-      yield* llm
-        .stream(
-          LLM.request({
-            model,
-            messages: [Message.user(input.prompt)],
-            tools: [],
-            generation: { maxTokens: input.maxTokens },
-            http: { body: UtilityPass.NO_THINKING },
-          }),
-        )
-        .pipe(
-          Stream.runForEach((event) => {
-            if (LLMEvent.is.providerError(event)) failed = true
-            if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
-            if (event.type === "finish" || event.type === "step-finish") finish = event.reason
-            return Effect.void
-          }),
-        )
-      return { text: failed ? "" : chunks.join(""), finish }
+      const text = yield* ShortAnswer.generate({
+        model,
+        llm,
+        system: TOOL_SUMMARY_SYSTEM,
+        text: input.prompt,
+        reasoningBudget: TOOL_SUMMARY_REASONING_BUDGET,
+        maxTokens: Math.max(input.maxTokens, TOOL_SUMMARY_ANSWER_TOKENS),
+        scheduler,
+        maintenance: {
+          ownerID: sessionID,
+          task: "tool-output-summary",
+          deviceKey: device.key,
+          ...(device.concurrency === undefined ? {} : { concurrency: device.concurrency }),
+          ...(device.locality === undefined ? {} : { locality: device.locality }),
+        },
+      })
+      // An EMPTY completion is a broken call, not "nothing to summarize" — `summarize` fails open on
+      // it, so without this line the pass can be dead for the life of a process and read as healthy.
+      // Named after `session.memory.extract.giveup`, which exists for exactly this confusion.
+      if (text.trim() === "")
+        yield* Log.event("session.tool.summary.empty", {
+          "session.id": sessionID,
+          "session.summary.cap": input.maxTokens,
+        })
+      return { text }
     })
 
     const summarizeToolSettlement = Effect.fn("SessionRunner.summarizeToolSettlement")(function* (
       settlement: ToolRegistry.Settlement,
       model: Parameters<typeof LLM.request>[0]["model"],
+      sessionID: SessionSchema.ID,
+      device: SessionRunnerModel.ScheduledDevice,
     ) {
       if (settlement.semanticSummarySource === undefined || settlement.output === undefined) return settlement
       const replacement = yield* ToolOutputSummary.summarize({
         source: settlement.semanticSummarySource,
         boundedOutput: settlement.output,
         contextTokens: model.route.defaults.limits?.context ?? 0,
-        complete: (input) => completeToolOutputSummary(model, input),
+        complete: (input) => completeToolOutputSummary(model, sessionID, device, input),
       }).pipe(
         Effect.catchTag("LLM.Error", () => Effect.succeed(undefined)),
         Effect.timeoutOrElse({
@@ -1157,12 +1190,69 @@ export const layer = Layer.effect(
       /** A pre-action policy returned `halt` for one of this turn's tool calls. See `tool-policy.ts`. */
       let policyHalted = false
       /**
-       * How many images this ASSISTANT TURN has been handed. Declared here so its lifetime IS the
-       * turn — the scope resets on the next provider turn without anyone remembering to clear it,
-       * which is the property the whole mechanism rests on: a fresh turn means the model has just
-       * spoken, so its budget genuinely starts again. See `tool/tool.ts` → `imageBudget`.
+       * The per-ASSISTANT-TURN image budget, as a RESERVATION rather than a snapshot.
+       *
+       * Declared here so its lifetime IS the turn — the scope resets on the next provider turn
+       * without anyone remembering to clear it, which is the property the whole mechanism rests on:
+       * a fresh turn means the model has just spoken, so its budget genuinely starts again. See
+       * `tool/tool.ts` → `imageBudget`.
+       *
+       * 🔴 **A COUNTER READ BY CONCURRENT CALLERS BEFORE ANY OF THEM INCREMENTS IT IS NOT A BUDGET,
+       * IT IS N BUDGETS.** This used to be a bare `let imagesHeldThisTurn = 0` read inside the
+       * forked settlement fiber and incremented only after that fiber resolved. Tool calls in one
+       * turn run CONCURRENTLY (`FiberSet.run(toolFibers)`), so every call in the turn observed
+       * `held: 0` and the per-turn cap was multiplied by the parallelism — with the default cap of
+       * ONE (`ModelV2.DEFAULT_IMAGE_LIMIT`), two parallel `read`s of images both got their pixels,
+       * `budgetImages` then elided one at lowering, and the model confabulated a picture it was
+       * shown and then had taken away. That confabulation is the exact failure the whole mechanism
+       * exists to prevent.
+       *
+       * So the counter is not readable at all: `reserve()` is the only way to obtain a `held`, and
+       * it claims this call's place in the same synchronous step that reports it. Dispatch is
+       * sequential (the stream's event handler), settlement is not — which is why the reservation
+       * has to be taken at DISPATCH and cannot be taken where the images are counted.
+       *
+       * ⚠️ **Deliberately conservative, and the direction is the point.** A dispatched call whose
+       * result is not yet known must be assumed to hand over pixels, because the runner cannot know
+       * which tools will (`read`, `computer`, `webfetch` and any MCP tool all can). So a `read` of
+       * an image dispatched behind an in-flight `bash` can be withheld with the budget still free.
+       * That path is a designed, graceful one — `read` returns a SENTENCE, the turn ends, the model
+       * describes what it holds, and it reads the file again next turn — whereas the other error
+       * direction is undescribed pixels and an invented answer. Removing the conservatism would mean
+       * making `tool.ts`'s `imageBudget` a claim CALLBACK the tool invokes at the moment it would
+       * hand over pixels; that is the impossible-rung fix and it spans three files.
        */
-      let imagesHeldThisTurn = 0
+      const imageBudget = (() => {
+        /** Images that SETTLED calls actually handed over. */
+        let handed = 0
+        /** Dispatched calls that have not settled yet; each may still hand one over. */
+        let inFlight = 0
+        return {
+          /** Claim this call's place. Returns what is already spoken for, NOT counting this call. */
+          reserve: () => {
+            const held = handed + inFlight
+            inFlight++
+            return held
+          },
+          /**
+           * Record what a settled call actually handed over. Counting the settled RESULT rather than
+           * the call is deliberate: a read that failed, was denied, or returned the withheld notice
+           * hands over no pixels and must not consume the budget.
+           */
+          handed: (images: number) => {
+            handed += images
+          },
+          /** Drop the reservation. Runs on EVERY exit of the fiber, including failure and interrupt. */
+          release: () => {
+            inFlight--
+          },
+        }
+      })()
+      /**
+       * Tokens already charged to this turn's fairness ledger, so the dispatch's own `report` charges
+       * only the REMAINDER. See the in-band release below for why anything is charged early at all.
+       */
+      let chargedTokens = 0
       // A promoted user message restarts the step allowance: what the agent is answering changed.
       let currentStep = prepared.promoted > 0 ? 1 : step
       /**
@@ -2093,7 +2183,33 @@ export const layer = Layer.effect(
             // No re-admit: a tool call ends the step, and the next step's dispatch admits again
             // (`step.ended → provider-attempt.started` in any session's events). Re-acquiring here
             // would mean blocking inside a finalizer.
+            //
+            // 🔴 **CHARGE THE FAIRNESS LEDGER BEFORE RELEASING — the ordering `provider-dispatch.ts`
+            // documents has to be honoured HERE, because this release is the one that happens.**
+            // That file charges `report` then calls `release` and says why: both address the same
+            // slot, and releasing first drains a waiter that then races the charge for this turn's
+            // cost (`scheduler.release` → `drain`). But this release is strictly earlier — first
+            // `tool-call` event, inside the stream — so on every tool-calling turn, which is every
+            // agent turn, the dispatch's release was already a no-op and its stated guarantee never
+            // held. A session that just spent a large turn was picked again by `drain()` against an
+            // uncharged ledger.
+            //
+            // ⚠️ The turn's OUTPUT tokens are not known yet — usage arrives with the step settlement,
+            // after the tool calls. What IS spent, provably, is the PROMPT: the model has produced a
+            // tool call from it. So the prompt estimate is charged here and `costTokens` below reports
+            // only the remainder, leaving the turn's total charge unchanged (`KernelEevdf.charge` is
+            // additive). It is an ESTIMATE, calibrated by `routeProfile.promptFactor`; charging a
+            // calibrated estimate a few hundred milliseconds early is the small error, and admitting
+            // the next waiter against a ledger missing the whole turn is the large one.
+            if (chargedTokens === 0 && outboundPromptTokens > 0) {
+              chargedTokens = outboundPromptTokens
+              yield* scheduler.report({ ...dispatchSlot, costTokens: chargedTokens })
+            }
             yield* scheduler.release(dispatchSlot)
+            // ⚠️ Taken HERE, at dispatch, and not inside the fiber below. See `imageBudget`'s own
+            // comment: the stream's event handler is sequential and the settlements are not, so this
+            // is the only point at which two calls in one turn can be told apart.
+            const reservedImages = imageBudget.reserve()
             yield* Effect.uninterruptibleMask((restore) =>
               restore(
                 toolMaterialization.settle({
@@ -2107,9 +2223,12 @@ export const layer = Layer.effect(
                   // undescribed and `budgetImages` would elide one to fit it. `read` returns a
                   // sentence instead, the turn ends, the model describes what it holds — and the
                   // descriptions are what survive when the pixels later go.
-                  ...(modelImageLimit === undefined
-                    ? {}
-                    : { imageBudget: { limit: modelImageLimit, held: imagesHeldThisTurn } }),
+                  // ⚠️ A DIRECT property, never a conditional spread. `resolveImageLimit` always
+                  // answers with a number, so the spread's `undefined` arm was dead — and a spread
+                  // is exempt from excess-property checking, which is exactly how this field spent
+                  // its whole life being sent to a parameter type that did not declare it and
+                  // dropped it. Written plainly, a name the receiver does not know is a type error.
+                  imageBudget: { limit: modelImageLimit, held: reservedImages },
                   timing: {
                     begin: (phase) =>
                       Effect.gen(function* () {
@@ -2128,18 +2247,27 @@ export const layer = Layer.effect(
                     // map/reduction happens here. A failed utility pass keeps the deterministic
                     // preview; a >4 MiB artifact never carries `semanticSummarySource` and therefore
                     // never reaches a model call at all.
-                    const modelSettlement = yield* summarizeToolSettlement(settlement, model)
+                    const modelSettlement = yield* summarizeToolSettlement(
+                      settlement,
+                      model,
+                      session.id,
+                      scheduledDevice,
+                    )
                     // A pre-action policy halted. The call did not run; the refusal is already the
                     // tool result the model sees, and this latch is the half a `deny` does not have —
                     // it ends the drain rather than letting the model route around the refusal.
                     if (modelSettlement.halted === true) policyHalted = true
-                    // Count the images this turn has actually been handed, so the NEXT call in the
-                    // same turn sees an accurate `held`. Counting the settled RESULT rather than the
-                    // call is deliberate: a read that failed, was denied, or returned the withheld
-                    // notice hands over no pixels and must not consume the budget.
+                    // Convert this call's RESERVATION into what it actually handed over, so a later
+                    // call in the same turn sees a true count rather than an assumption. Counting
+                    // the settled RESULT rather than the call is deliberate: a read that failed, was
+                    // denied, or returned the withheld notice hands over no pixels and must not
+                    // consume the budget. `release()` below then drops the reservation itself.
                     if (modelSettlement.result.type === "content")
-                      for (const entry of modelSettlement.result.value)
-                        if (entry.type === "file" && entry.mime.toLowerCase().startsWith("image/")) imagesHeldThisTurn++
+                      imageBudget.handed(
+                        modelSettlement.result.value.filter(
+                          (entry) => entry.type === "file" && entry.mime.toLowerCase().startsWith("image/"),
+                        ).length,
+                      )
                     // A missing file is authoritative negative evidence. If recalled memory led this
                     // exact step to that path, invalidate the claim before the next step recalls again.
                     // Re-stat instead of parsing the generic tool error: permission, binary, size, and
@@ -2189,7 +2317,11 @@ export const layer = Layer.effect(
                   }),
                 ),
               ),
-            ).pipe(FiberSet.run(toolFibers))
+            )
+              // ⚠️ On EVERY exit, including a failed or interrupted settlement. A reservation that is
+              // never dropped is a budget slot lost for the rest of the turn — conservative, but it
+              // would make a dead fiber quietly withhold the next call's images.
+              .pipe(Effect.ensuring(Effect.sync(imageBudget.release)), FiberSet.run(toolFibers))
           }),
       ).pipe(Effect.ensuring(withPublication(publisher.flush())))
 
@@ -2577,10 +2709,16 @@ export const layer = Layer.effect(
           slot: dispatchSlot,
           maxAttempts: maxProviderAttempts,
           hasOutput: publisher.hasAssistantStarted,
+          // The REMAINDER, not the total: a tool-calling turn already charged its prompt estimate at
+          // the in-band release above, where the ordering `provider-dispatch.ts` documents is decided.
+          // `KernelEevdf.charge` is additive and ignores a non-positive cost, so the turn's total is
+          // the same whether it was charged in one part or two.
           costTokens: () => {
             if (publisher.hasProviderError()) return undefined
             const settlement = publisher.stepSettlement()
-            return settlement === undefined ? undefined : settlement.tokens.input + settlement.tokens.output
+            if (settlement === undefined) return undefined
+            const remainder = settlement.tokens.input + settlement.tokens.output - chargedTokens
+            return remainder > 0 ? remainder : undefined
           },
           attempt: providerStream,
           timing: {

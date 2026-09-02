@@ -2659,6 +2659,16 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/session/runner/maintenance.ts",
   },
+  // The tool-output summarizer fails OPEN — an empty completion keeps the deterministic preview and
+  // reads exactly like "there was nothing to summarize". Same confusion `session.memory.extract.giveup`
+  // exists for: a pass that is permanently inert on a model must SAY so, or it is healthy by silence.
+  "session.tool.summary.empty": {
+    level: "warn",
+    message: "tool-output summary: model returned an empty completion",
+    attributes: { "session.id": "correlate", "session.summary.cap": "count" },
+    content: "correlated",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   "session.tool.textual.recovered": {
     level: "info",
     message: "textual tool-call recovery",

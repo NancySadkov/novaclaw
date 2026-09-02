@@ -89,6 +89,13 @@ describe("SessionRunnerLLM — application tools", () => {
       "agent",
       "assistantMessageID",
       "attachmentPaths",
+      // The assistant turn's remaining image allowance (`tool/tool.ts` → `imageBudget`), which
+      // `read` consults before handing over pixels the turn cannot describe. It argues for itself
+      // twice over: it carries no attribution, and it is here at all only because this ratchet's
+      // sibling problem had already happened — the runner sent this field through a conditional
+      // SPREAD, `ToolRegistry.ExecuteInput` never declared it, spreads are exempt from
+      // excess-property checking, and so the gate read `undefined` for the life of the feature.
+      "imageBudget",
       "sessionID",
       // The Working receipt's span handle (`Tool.Context.timing`): a tool opens a `capability-*`
       // phase so a long service call shows up in the turn receipt instead of reading as a stall.

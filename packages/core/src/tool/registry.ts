@@ -40,6 +40,16 @@ export type ExecuteInput = {
   readonly assistantMessageID: SessionMessage.ID
   /** Canonical paths of the user's attachments for this turn; forwarded to every tool's Context. */
   readonly attachmentPaths?: ReadonlySet<string>
+  /**
+   * The assistant turn's remaining image allowance; forwarded to every tool's Context.
+   *
+   * 🔴 **Declared here because it was NOT, and that silently disconnected the whole mechanism.** The
+   * runner has always sent this field, through a conditional SPREAD — and a spread is exempt from
+   * excess-property checking, so a field this type never declared typechecked at the call site and
+   * was dropped on the floor. `read`'s withholding gate (`tool/read.ts` → `imageBudget`) therefore
+   * read `undefined` every time and never fired, for the life of the feature, with every test green.
+   */
+  readonly imageBudget?: ToolContext["imageBudget"]
   readonly call: ToolCall
   readonly timing?: ToolContext["timing"]
 }
@@ -240,6 +250,7 @@ const registryLayer = Layer.effect(
           toolCallID: input.call.id,
           ...(input.timing === undefined ? {} : { timing: input.timing }),
           attachmentPaths: input.attachmentPaths ?? new Set(),
+          ...(input.imageBudget === undefined ? {} : { imageBudget: input.imageBudget }),
           ...(deferredTools.length === 0 ? {} : { deferredTools }),
           ...(invokeDeferred === undefined || !deferredDispatchers.has(registration.tool) ? {} : { invokeDeferred }),
         },
