@@ -8,13 +8,33 @@ import type { SuperviseStatus } from "@novaclaw/script/supervise"
 import type { FatalRendererError, ServerReadyData, TitlebarTheme } from "../preload/types"
 import { assertAttachmentBudget, createPickedFileAuthorizations } from "./attachment-picker"
 import { createSaveFileAuthorizations, parseSavePickerOptions } from "./save-picker"
-import { getStore } from "./store"
+import { getStore, isStoreName } from "./store"
 import { getPinchZoomEnabled, setPinchZoomEnabled, setTitlebar, updateTitlebar } from "./windows"
 import { createSubscriptions } from "./subscriptions"
 
 const pickerFilters = (ext?: string[]) => {
   if (!ext || ext.length === 0) return undefined
   return [{ name: "Files", extensions: ext }]
+}
+
+/**
+ * The renderer names the store, and that name IS the store's file path (see `store.ts`). Two
+ * separate things have to be true at this boundary, which is why the check is here and not only
+ * inside `getStore`:
+ *
+ *  1. the name is in the closed vocabulary — otherwise `path.resolve` takes an absolute name or a
+ *     `..` name straight out of `userData`;
+ *  2. the renderer actually SUPPLIED one. `getStore(name = SETTINGS_STORE)` cannot tell an omitted
+ *     argument from an explicit `undefined`, so a renderer that sends no name would otherwise be
+ *     handed `novaclaw.settings` — the main process's own store, holding the default server URL and
+ *     the WSL server list. The vocabulary check alone does not catch that; insisting on a string
+ *     does.
+ */
+const openStore = (name: unknown) => {
+  if (isStoreName(name)) return getStore(name)
+  // Described by type, not by value: IPC can carry a cyclic object, and `JSON.stringify` on one
+  // would throw a "circular structure" TypeError in place of the refusal that is the actual answer.
+  throw new Error(`Refused store name: ${typeof name === "string" ? JSON.stringify(name) : typeof name}`)
 }
 
 const pickedFiles = createPickedFileAuthorizations()
@@ -93,9 +113,13 @@ export function registerIpcHandlers(deps: Deps) {
     deps.recordFatalRendererError(error),
   )
   ipcMain.on("mark-boot-phase", (_event: IpcMainEvent, phase: string) => deps.markBootPhase(phase))
-  ipcMain.handle("store-get", (_event: IpcMainInvokeEvent, name: string, key: string) => {
+  ipcMain.handle("store-get", (_event: IpcMainInvokeEvent, name: unknown, key: string) => {
+    // ⚠️ `openStore` throws OUTSIDE the catch below on purpose. That catch tolerates an unreadable
+    // store file; a refused NAME is a different thing, and swallowing it would present a legitimate
+    // name that someone forgot to add to the vocabulary as an empty store — which the next write
+    // would then make permanent.
+    const store = openStore(name)
     try {
-      const store = getStore(name)
       const value = store.get(key)
       if (value === undefined || value === null) return null
       return typeof value === "string" ? value : JSON.stringify(value)
@@ -103,22 +127,20 @@ export function registerIpcHandlers(deps: Deps) {
       return null
     }
   })
-  ipcMain.handle("store-set", (_event: IpcMainInvokeEvent, name: string, key: string, value: string) => {
-    getStore(name).set(key, value)
+  ipcMain.handle("store-set", (_event: IpcMainInvokeEvent, name: unknown, key: string, value: string) => {
+    openStore(name).set(key, value)
   })
-  ipcMain.handle("store-delete", (_event: IpcMainInvokeEvent, name: string, key: string) => {
-    getStore(name).delete(key)
+  ipcMain.handle("store-delete", (_event: IpcMainInvokeEvent, name: unknown, key: string) => {
+    openStore(name).delete(key)
   })
-  ipcMain.handle("store-clear", (_event: IpcMainInvokeEvent, name: string) => {
-    getStore(name).clear()
+  ipcMain.handle("store-clear", (_event: IpcMainInvokeEvent, name: unknown) => {
+    openStore(name).clear()
   })
-  ipcMain.handle("store-keys", (_event: IpcMainInvokeEvent, name: string) => {
-    const store = getStore(name)
-    return Object.keys(store.store)
+  ipcMain.handle("store-keys", (_event: IpcMainInvokeEvent, name: unknown) => {
+    return Object.keys(openStore(name).store)
   })
-  ipcMain.handle("store-length", (_event: IpcMainInvokeEvent, name: string) => {
-    const store = getStore(name)
-    return Object.keys(store.store).length
+  ipcMain.handle("store-length", (_event: IpcMainInvokeEvent, name: unknown) => {
+    return Object.keys(openStore(name).store).length
   })
 
   ipcMain.handle(
