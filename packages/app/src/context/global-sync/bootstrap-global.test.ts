@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createStore } from "solid-js/store"
+import { createStore, type SetStoreFunction } from "solid-js/store"
 import { QueryClient } from "@tanstack/solid-query"
 import type { Config, NovaclawClient, Path } from "@novaclaw/sdk/v2/client"
 import type { NormalizedProviderListResponse } from "@novaclaw/session-ui/context"
@@ -43,9 +43,14 @@ function harness(sdk: NovaclawClient) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   let pending = true
 
-  const [store, setStore] = createStore<Fixture>({
+  // ⚠️ Hoisted and ANNOTATED. `ready` derives from `error`, so a getter naming `store` would make
+  // that binding's type circular through its own initializer (TS7022) — and an accessor may not
+  // declare a `this` parameter (TS2784), so neither shortcut is available. `createStore` proxies
+  // this very object, so reading `initial.error` reads what `setStore` wrote; the test asserts that
+  // by flipping `ready` on a failed boot rather than trusting it.
+  const initial: Fixture = {
     get ready() {
-      return globalReady({ pending, error: store.error })
+      return globalReady({ pending, error: initial.error })
     },
     get path() {
       return queryClient.getQueryData<Path>([...loadPathQuery(scope, null, sdk).queryKey]) ?? EMPTY_PATH
@@ -57,7 +62,8 @@ function harness(sdk: NovaclawClient) {
     get config() {
       return queryClient.getQueryData<Config>([...loadGlobalConfigQuery(scope, sdk).queryKey]) ?? {}
     },
-  })
+  }
+  const [store, setStore] = createStore<Fixture>(initial)
 
   return {
     store,
@@ -72,7 +78,15 @@ function harness(sdk: NovaclawClient) {
           requestFailedTitle: "Request failed",
           translate: (key) => key,
           formatMoreCount: (count) => ` (+${count} more)`,
-          setGlobalStore: setStore,
+          // ⚠️ `Fixture` is deliberately the SUBSET of GlobalStore that bootstrapGlobal touches —
+          // ready, error, path, provider, config — so the test cannot pass by leaning on a field
+          // production would not have populated. The cast states that; widening Fixture to the whole
+          // GlobalStore would import members (reload, and the rest) this case never exercises.
+          setGlobalStore: setStore as unknown as SetStoreFunction<Parameters<typeof bootstrapGlobal>[0] extends {
+            setGlobalStore: SetStoreFunction<infer S>
+          }
+            ? S
+            : never>,
           queryClient,
         })
       } finally {

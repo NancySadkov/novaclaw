@@ -118,14 +118,19 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     queries: [queryOptionsApi.globalConfig(), queryOptionsApi.providers(null), queryOptionsApi.path(null)],
   }))
 
-  const [globalStore, setGlobalStore] = createStore<GlobalStore>({
+  // ⚠️ Hoisted and ANNOTATED, not inlined into `createStore`. `ready` derives from `error`, so a
+  // getter naming `globalStore` makes that binding's type circular through its own initializer
+  // (TS7022) — and an accessor may not declare a `this` parameter (TS2784), so neither shortcut is
+  // available. `createStore` proxies this object, so `initial.error` reads what `setGlobalStore`
+  // wrote.
+  const initial: GlobalStore = {
     get ready() {
       // ⚠️ Not `!bootstrap.isPending` alone. Each getter below answers with a private EMPTY literal
       // whenever its query holds no data, so "the boot settled" and "the boot worked" render
       // identically — a half-started instance would report itself ready over a config, provider list
       // and path it never loaded. `bootstrapGlobal` writes `error` on failure and clears it on a
       // later success, and it is the only thing that tells the two apart.
-      return globalReady({ pending: bootstrap.isPending, error: globalStore.error })
+      return globalReady({ pending: bootstrap.isPending, error: initial.error })
     },
     get path() {
       const EMPTY = { state: "", config: "", data: "", roots: [], worktree: "", directory: "", home: "" }
@@ -144,7 +149,8 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     get reload() {
       return updateConfigMutation.isPending ? "pending" : undefined
     },
-  })
+  }
+  const [globalStore, setGlobalStore] = createStore<GlobalStore>(initial)
 
   const queryClient = useQueryClient()
 
