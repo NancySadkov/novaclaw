@@ -4,6 +4,7 @@ import { createHash } from "node:crypto"
 import { Effect, Queue, Stream } from "effect"
 import type { Messenger } from "@novaclaw/schema/messenger"
 import { MessengerFormat } from "../format"
+import { MessengerWire } from "../wire"
 import type { ChatSnapshot, Connection, ConnectContext, Driver, InboundEvent } from "../driver"
 import { ConnectError, SendError } from "../driver"
 
@@ -158,6 +159,27 @@ export const messageIDOf = (line: IrcLine, receivedAt: number): string => {
   return `irc-${digest.slice(0, 24)}`
 }
 
+/** A middle parameter: no line break (it would end the record), no space (it would start the NEXT
+ *  parameter), no leading colon (it would start the trailing). Deleted rather than replaced with a
+ *  space — a space is the very thing a middle param may not carry. */
+const middleParam = (value: string): string => MessengerWire.flatten(value, "").replaceAll(" ", "").replace(/^:+/, "")
+
+/**
+ * 🔴 **The one place an IRC line is produced.** RFC 2812 §2.3 — `<command> <middle>* [" :" trailing]`
+ * terminated by CRLF — so a CR, LF or NUL anywhere inside a value does not corrupt the line, it ENDS
+ * it, and the server reads the remainder as a *second command issued by our nick*: JOIN, PART, KICK,
+ * QUIT, `PRIVMSG NickServ`. A space inside a middle parameter is the same shape one level down: it
+ * starts a new parameter, so an unvalidated target can move the message to another channel.
+ *
+ * Neither is the caller's problem — the caller is precisely who forgets, because interpolating the
+ * value straight into the template is the shorter call and it works on every input anyone types by
+ * hand. `trailing` is the only field allowed to carry spaces: the ` :` marker runs it to end-of-line.
+ */
+export const formatCommand = (command: string, params: readonly string[], trailing?: string): string => {
+  const head = [middleParam(command), ...params.map(middleParam)].filter((part) => part.length > 0).join(" ")
+  return trailing === undefined ? head : `${head} :${MessengerWire.flatten(trailing)}`
+}
+
 /** The nick half of a `nick!user@host` prefix. */
 export const nickOf = (prefix: string | undefined): string => prefix?.split("!")[0] ?? "server"
 
@@ -246,16 +268,20 @@ export const make = (factory: IrcSocketFactory): Driver => ({
         }),
         (open) => Effect.promise(() => open.close().catch(() => undefined)),
       )
-      const sendLine = (line: string) =>
+      // ⚠️ Every write goes through `formatCommand` — a raw `socket.send` is the call this driver
+      // does not make, because a value reaching the wire unserialized is how a chat id or a
+      // password becomes an IRC command.
+      const sendCommand = (command: string, params: readonly string[], trailing?: string) =>
         Effect.tryPromise({
-          try: () => socket.send(line),
+          try: () => socket.send(formatCommand(command, params, trailing)),
           catch: (error) => new ConnectError({ reason: `IRC write failed: ${String(error)}` }),
         })
 
       // Registration: NICK + USER; the server's 001 welcome confirms. NickServ IDENTIFY + JOINs
       // ride after the welcome (sending them earlier is legal but widely dropped).
-      yield* sendLine(`NICK ${nick}`)
-      yield* sendLine(`USER ${nick.replaceAll(/[^A-Za-z0-9]/g, "").slice(0, 10) || "novaclaw"} 0 * :NovaClaw`)
+      yield* sendCommand("NICK", [nick])
+      const user = nick.replaceAll(/[^A-Za-z0-9]/g, "").slice(0, 10) || "novaclaw"
+      yield* sendCommand("USER", [user, "0", "*"], "NovaClaw")
 
       const queue = yield* Queue.unbounded<InboundEvent>()
       // The same-millisecond de-collider for `messageIDOf`'s derived arm (its doc comment carries
@@ -288,13 +314,13 @@ export const make = (factory: IrcSocketFactory): Driver => ({
             if (line === undefined) continue
             switch (line.command) {
               case "PING":
-                yield* sendLine(`PONG :${line.params[0] ?? ""}`)
+                yield* sendCommand("PONG", [], line.params[0] ?? "")
                 continue
               case "001": {
                 // Registered. Identify (secret = the NickServ password), then join the rooms.
                 if (ctx.secret !== undefined && ctx.secret.length > 0)
-                  yield* sendLine(`PRIVMSG NickServ :IDENTIFY ${ctx.secret}`)
-                for (const channel of channels) yield* sendLine(`JOIN ${channel}`)
+                  yield* sendCommand("PRIVMSG", ["NickServ"], `IDENTIFY ${ctx.secret}`)
+                for (const channel of channels) yield* sendCommand("JOIN", [channel])
                 continue
               }
               case "433":
@@ -336,15 +362,30 @@ export const make = (factory: IrcSocketFactory): Driver => ({
       const send = (chatID: string, message: { text?: string }) =>
         Effect.gen(function* () {
           if (message.text === undefined || message.text.length === 0) return { messageID: "0" }
+          // 🔴 A target is REFUSED, never repaired. `formatCommand` would strip the breaks and the
+          // spaces out of it, but the survivor names a DIFFERENT channel — and delivering a private
+          // reply to a channel nobody asked for is a worse outcome than not sending it. The value
+          // arrives from the `messenger` tool's `send` op, i.e. from a model, so "it can't happen"
+          // is not available; the reason quotes it so the break cannot ride into the log line.
+          if (chatID.trim().length === 0 || MessengerWire.breaksLine(chatID) || /[\s,]/.test(chatID))
+            return yield* Effect.fail(
+              new SendError({
+                reason: `${MessengerWire.quote(chatID)} is not an IRC target — a channel or a nick, no spaces.`,
+                retryable: false,
+              }),
+            )
           const chunks = MessengerFormat.chunk(MessengerFormat.downgrade(message.text, "plain"), {
             maxChars: LINE_TEXT_BYTES,
             maxBytes: LINE_TEXT_BYTES,
           })
           for (const chunk of chunks) {
-            // IRC is single-line: newlines inside a chunk become separate PRIVMSGs.
-            for (const line of chunk.split("\n")) {
+            // IRC is single-line: a line ending inside a chunk becomes a separate PRIVMSG. ⚠️ ANY
+            // line ending — a lone CR ends the record on the wire exactly like an LF does, so
+            // splitting on "\n" alone left the tail of a CR-carrying message to be read as a
+            // command from us.
+            for (const line of MessengerWire.lines(chunk)) {
               if (line.trim().length === 0) continue
-              yield* sendLine(`PRIVMSG ${chatID} :${line}`).pipe(
+              yield* sendCommand("PRIVMSG", [chatID], line).pipe(
                 Effect.mapError((error) => new SendError({ reason: error.reason, retryable: true })),
               )
             }
@@ -410,6 +451,12 @@ export const factory: IrcSocketFactory = async ({ host, port, tls }) => {
   })
   return {
     send: async (line) => {
+      // The last gate before the wire, and the one that catches the NEXT author rather than this
+      // one: `IrcSocket.send` takes a string, so nothing in the type stops a future call from
+      // building a line by hand. A line that already contains a terminator is two commands, and it
+      // must fail loudly here rather than reach the server as one of them.
+      if (MessengerWire.breaksLine(line))
+        throw new Error("IRC line carries an embedded terminator — build it with formatCommand")
       socket.write(`${line}\r\n`)
     },
     lines: () =>

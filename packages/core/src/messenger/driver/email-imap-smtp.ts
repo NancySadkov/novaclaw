@@ -1,5 +1,6 @@
 export * as EmailImapSmtp from "./email-imap-smtp"
 
+import { MessengerWire } from "../wire"
 import type { EmailClient, EmailClientFactory, EmailTransportConfig, OutboundEmail, RawEmail } from "./email"
 
 // The REAL raw-protocol IMAP+SMTP transport (messenger-plan §1.5, P9) — zero dependencies, just
@@ -202,23 +203,62 @@ export const assembleEmail = (input: {
   }
 }
 
+/** Fold at 78 columns (RFC 5322 §2.1.1's recommended line length; 998 is the hard limit). */
+const FOLD_AT = 78
+
+/**
+ * 🔴 **The one place an outbound header is produced.** A header value is ONE line: RFC 5322 ends it
+ * at the CRLF, so a value carrying its own break does not produce a malformed header, it produces
+ * the NEXT header — a `Bcc:`, a `Reply-To:`, a forged `From:`, or, past a blank line, a whole
+ * attacker-chosen body sent from the user's own mailbox.
+ *
+ * ⚠️ **The DECODE is what unlocks it, so the guard has to live after it.** `parseHeaders` unfolds
+ * and splits on newlines, so a value straight off the wire can never carry one — and that guard is
+ * correct, which is exactly why it reads as sufficient. But `decodeEncodedWords` turns
+ * `=?UTF-8?B?…?=` back into arbitrary bytes, CR and LF included, and the decoded Subject then flows
+ * (thread state → `Re: …`) into the message we send. A value is untrusted where it ENTERS a
+ * header, not where it entered the process.
+ *
+ * Folding happens only at a single space, so the receiver's unfold (`CRLF WSP` → one space) returns
+ * the value byte for byte; a token longer than the fold width is left long rather than split, since
+ * splitting inside a token would corrupt it on unfold.
+ */
+export const headerLine = (name: string, value: string): string => {
+  const flat = MessengerWire.flatten(value).replace(/[ \t]+/g, " ").trim()
+  let out = `${name}:`
+  let width = out.length
+  for (const word of flat.length === 0 ? [] : flat.split(" ")) {
+    if (width > name.length + 1 && width + 1 + word.length > FOLD_AT) {
+      out += `\r\n ${word}`
+      width = 1 + word.length
+    } else {
+      out += ` ${word}`
+      width += 1 + word.length
+    }
+  }
+  return out
+}
+
 /** Serialize an outbound reply to an RFC 5322 message (CRLF lines; the leading dot is stuffed by the
- *  SMTP writer, not here). A fresh Message-ID is minted so our sends thread + can be referenced. */
+ *  SMTP writer, not here). A fresh Message-ID is minted so our sends thread + can be referenced.
+ *  Every header goes through `headerLine` — one place, all six, rather than trusting each producer. */
 export const buildMime = (email: OutboundEmail, from: string, messageID: string): string => {
   const headers = [
-    `From: ${from}`,
-    `To: ${email.to}`,
-    `Subject: ${email.subject}`,
-    `Message-ID: <${messageID}>`,
-    ...(email.inReplyTo ? [`In-Reply-To: <${email.inReplyTo}>`] : []),
+    headerLine("From", from),
+    headerLine("To", email.to),
+    headerLine("Subject", email.subject),
+    headerLine("Message-ID", `<${messageID}>`),
+    ...(email.inReplyTo ? [headerLine("In-Reply-To", `<${email.inReplyTo}>`)] : []),
     ...(email.references && email.references.length > 0
-      ? [`References: ${email.references.map((ref) => `<${ref}>`).join(" ")}`]
+      ? [headerLine("References", email.references.map((ref) => `<${ref}>`).join(" "))]
       : []),
     "MIME-Version: 1.0",
     "Content-Type: text/plain; charset=utf-8",
     "Content-Transfer-Encoding: 8bit",
   ]
-  return `${headers.join("\r\n")}\r\n\r\n${email.text.replace(/\n/g, "\r\n")}`
+  // Every line ending in the body normalizes to CRLF — including a LONE CR, which the old
+  // `\n`-only rewrite left as a bare CR on the wire (and which `dotStuff` cannot repair).
+  return `${headers.join("\r\n")}\r\n\r\n${MessengerWire.lines(email.text).join("\r\n")}`
 }
 
 /** SMTP dot-stuffing + terminator for the DATA payload (a line that is just "." must be escaped). */
@@ -383,6 +423,16 @@ const imapConnect = async (
 // ── SMTP ──────────────────────────────────────────────────────────────────────────────────────
 
 const smtpSend = async (config: EmailTransportConfig, mime: string, to: string): Promise<void> => {
+  // The ENVELOPE is a line protocol too, and `to` is remote-derived (it is the correspondent's own
+  // `From:` address). `parseHeaders` means it cannot carry a break today — this refuses rather than
+  // relies on that, because the guard that makes it safe lives three files away and one parser
+  // change from here. Refused, not stripped: a repaired address is a message to the wrong person.
+  for (const [what, address] of [
+    ["sender", config.auth.user],
+    ["recipient", to],
+  ] as const)
+    if (MessengerWire.breaksLine(address) || /\s|[<>]/.test(address))
+      throw new Error(`SMTP ${what} address is not a single-line address: ${MessengerWire.quote(address)}`)
   const stream = await connectStream(config.smtpHost, config.smtpPort, false)
   const expect = async (prefix: string) => {
     let raw = await stream.line()

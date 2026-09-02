@@ -1,6 +1,7 @@
 export * as RedditDriver from "./reddit"
 
 import { Deferred, Duration, Effect, Queue, Stream } from "effect"
+import { Log } from "@novaclaw/schema/log"
 import { Messenger } from "@novaclaw/schema/messenger"
 import type {
   ChatSnapshot,
@@ -338,7 +339,12 @@ export const advanceCursor = (
   const seen = new Set(cursor.seen)
   const fresh = fullnames.filter((name) => !seen.has(name))
   if (fresh.length === 0) return { cursor: { seen: cursor.seen }, fresh: [] } // anchor dropped on purpose
-  const merged = [...cursor.seen, ...fresh].slice(-SEEN_CAPACITY)
+  // ⚠️ `fresh` is NEWEST-first, and the tail is what survives the capacity cut — so a burst larger
+  // than the capacity must be trimmed at its OLD end before the merge, or the set would remember
+  // the 301 oldest items of the burst and forget every recent one, which is the half that an
+  // anchor-drop refetch actually re-offers. Below the capacity nothing is trimmed and the merge is
+  // unchanged.
+  const merged = [...cursor.seen, ...fresh.slice(0, SEEN_CAPACITY)].slice(-SEEN_CAPACITY)
   return { cursor: { before: fullnames[0], seen: merged }, fresh }
 }
 
@@ -592,7 +598,20 @@ export const make = (
         return Array.isArray(list) ? (list.filter((item) => typeof item === "object" && item !== null) as Thing[]) : []
       }
 
-      /** One poll of one listing: newest-first from Reddit, emitted oldest-first. */
+      /**
+       * One poll of one listing: newest-first from Reddit, emitted oldest-first.
+       *
+       * 🔴 **A full page means the poll is BEHIND, not finished.** `before=<anchor>` returns the
+       * NEWEST items newer than the anchor, so when more than one page arrived between two polls,
+       * advancing the anchor to the newest of that page steps straight over everything in between —
+       * items no later poll asks for again, because the next request is for items newer still and
+       * the seen-set never held them. A moderated subreddit crossing 5 comments/second during a
+       * brigade is exactly when that traffic matters, and the loss was total and silent.
+       *
+       * So a full page is followed BACKWARDS with `after` until the page runs short or reaches
+       * something we already have, and only then does the anchor advance — over a window we
+       * actually fetched. Ordinary polls (a short first page) cost exactly one request, as before.
+       */
       const pollListing = (
         path: string,
         key: "posts" | "comments" | "modqueue",
@@ -600,19 +619,60 @@ export const make = (
       ) =>
         Effect.gen(function* () {
           const cursor = cursors[key]
-          const query = new URLSearchParams({
-            limit: "100",
-            ...(cursor.before === undefined ? {} : { before: cursor.before }),
-          })
-          const response = yield* api(`${path}?${query.toString()}`)
-          if (response.status === 429) return // budget exhausted; the next tick retries
-          if (response.status >= 400)
-            return yield* Effect.fail(new ConnectError({ reason: `Reddit ${path} failed (HTTP ${response.status})` }))
-          const rows = children(response.body)
+          const held = new Set(cursor.seen)
+          const rows: Thing[] = []
+          const taken = new Set<string>()
+          let after: string | undefined
+          // Ten pages of 100 IS Reddit's whole listing depth (~1000 items); a deeper walk is not
+          // served to anyone, so the loop can only end on a short page, on the anchor, or on an
+          // item we already hold. Catch-up is anchored work: with no anchor there is nothing to
+          // catch up TO, and paging would ingest the back-catalogue on first connect.
+          for (let page = 0; page < 10; page += 1) {
+            const query = new URLSearchParams({
+              limit: "100",
+              ...(after !== undefined ? { after } : cursor.before === undefined ? {} : { before: cursor.before }),
+            })
+            const response = yield* api(`${path}?${query.toString()}`)
+            // Budget exhausted. Nothing has been delivered and the cursor is untouched, so the next
+            // tick retries this whole window rather than half-advancing over it.
+            if (response.status === 429) return
+            if (response.status >= 400)
+              return yield* Effect.fail(new ConnectError({ reason: `Reddit ${path} failed (HTTP ${response.status})` }))
+            const batch = children(response.body)
+            // A listing SHIFTS under a walk — new items arrive at the top while we page down — so
+            // the same item can appear on two pages. Delivery iterates rows, not the fresh set, so
+            // an undeduped row would be offered twice from one poll.
+            for (const thing of batch) {
+              const name = str(thing.data["name"])
+              if (name !== undefined && taken.has(name)) continue
+              if (name !== undefined) taken.add(name)
+              rows.push(thing)
+            }
+            // The walk ends where this page meets what we already hold — the anchor, or anything
+            // the seen-set remembers. The page is kept WHOLE rather than trimmed there: below that
+            // point sit items we have already delivered (`advanceCursor` filters them out) and, on
+            // a listing that is not strictly newest-first, possibly ones we have not — and dropping
+            // a message we have never seen is the fault this whole change exists to end.
+            const met = batch.some((thing) => {
+              const name = str(thing.data["name"])
+              return name !== undefined && (name === cursor.before || held.has(name))
+            })
+            if (met || batch.length < 100 || cursor.before === undefined) break
+            after = str(batch[batch.length - 1]?.data["name"])
+            if (after === undefined) break
+            // The budget equals Reddit's own listing depth, so exhausting it means items exist that
+            // Reddit will not serve to anyone. The anchor advances regardless — there is nothing
+            // left to fetch them with — so this line is the only record that a gap exists.
+            if (page === 9)
+              yield* Log.event("messenger.reddit.listing.gap", {
+                "messenger.limit": rows.length,
+                "messenger.chat": subredditChatID(config.subreddit),
+              })
+          }
           const names = rows.map((thing) => str(thing.data["name"]) ?? "").filter((name) => name.length > 0)
           const advanced = advanceCursor(cursor, names)
+          // The IN-MEMORY cursor moves first, so an in-process retry cannot re-offer this page…
           cursors = { ...cursors, [key]: advanced.cursor }
-          yield* ctx.cursor.set(cursors).pipe(Effect.ignore)
           const freshSet = new Set(advanced.fresh)
           for (const thing of [...rows].reverse()) {
             const name = str(thing.data["name"])
@@ -620,6 +680,12 @@ export const make = (
             const event = toEvent(thing.data)
             if (event !== undefined) yield* Queue.offer(queue, event)
           }
+          // …and the DURABLE one only after the hand-over, because a durable "handled" written by a
+          // caller that cannot see whether the item reached anything is a record of work nobody did:
+          // a crash in between would step the anchor past a page that was never offered, and this
+          // listing is never asked for it again. At-least-once is the right side to fail on — the
+          // gateway dedups by message id. `email.ts` and `telegram.ts` order it the same way.
+          yield* ctx.cursor.set(cursors).pipe(Effect.ignore)
         })
 
       const pump = Effect.gen(function* () {

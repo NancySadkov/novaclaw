@@ -3,6 +3,7 @@ export * as EmailDriver from "./email"
 import { Effect, Queue, Stream } from "effect"
 import type { Messenger } from "@novaclaw/schema/messenger"
 import { MessengerFormat } from "../format"
+import { MessengerWire } from "../wire"
 import type {
   ChatSnapshot,
   Connection,
@@ -503,7 +504,11 @@ export const makeConnect =
                 senderID: mail.fromAddress,
                 senderName: mail.fromName?.trim() || mail.fromAddress,
                 outgoing: isSelf,
-                text: `${mail.subject ? `Subject: ${mail.subject}\n` : ""}${mail.text}`,
+                // The `Subject:` line is a line-oriented frame too — the one the MODEL reads. A
+                // decoded subject carrying its own newline writes whatever it likes on the line
+                // after it, so it is flattened here for the same reason it is flattened before it
+                // enters an outbound header.
+                text: `${mail.subject ? `Subject: ${MessengerWire.flatten(mail.subject)}\n` : ""}${mail.text}`,
                 at: mail.at,
               }
             }),

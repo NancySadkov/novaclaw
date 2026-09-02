@@ -1435,6 +1435,19 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/messenger/driver/discord.ts",
   },
+  /**
+   * A Reddit listing walk hit the page budget without catching up: more new items arrived than the
+   * listing's own depth can serve, so the oldest of that window are never delivered. The anchor
+   * still advances — there is nothing left to fetch them with — so this line is the only record
+   * that a gap exists.
+   */
+  "messenger.reddit.listing.gap": {
+    level: "warn",
+    message: "reddit: more new items than the listing can serve — the oldest of this window were not delivered",
+    attributes: { "messenger.limit": "count", "messenger.chat": "text" },
+    content: "user",
+    file: "packages/core/src/messenger/driver/reddit.ts",
+  },
   /** The explicitly opted-in WhatsApp/Baileys driver was loaded into the registry. */
   "messenger.driver.whatsapp.enabled": {
     level: "info",
