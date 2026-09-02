@@ -6,6 +6,7 @@ import { ConfigProjection } from "../config-projection"
 import { Database } from "../database/database"
 import { DbRegistry } from "../db-registry"
 import { makeLocationNode } from "../effect/app-node"
+import { PermissionV2 } from "../permission"
 import { SessionOrigin } from "../session/origin"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
@@ -35,6 +36,51 @@ import { Tools } from "./tools"
  * `configure` seam, so a raw `runtime_setting` row-write would let a model denied a privileged card
  * simply write the row instead. The one guard both writers share is the migration journal, because
  * corrupting it removes the instance's ability to boot and therefore to repair itself.
+ *
+ * ── a WRITE spends {@link WRITE_ACTION}; a read spends nothing ──────────────────────────────────
+ *
+ * 🔴 **A refusal list is not a price.** The refusals above close the *escalation* — an agent cannot
+ * rewrite the tiers `configure` enforces, nor the verdicts the evaluator reads. They said nothing
+ * about the other ~50 tables, so a raw agent write to `messenger_binding`, `community_contact`,
+ * `agent_status` or `credential` cost **zero consent** while the same repair through a typed tool
+ * would have been gated. That is ruling 4's *unclassified ⇒ privileged* read backwards: the widest
+ * surface in the instance was the only one nobody had to be granted.
+ *
+ * ⚠️ **A SEPARATE action, not the registered tool name, and the split is the same one `configure`
+ * draws.** `ToolRegistry.materialize` withdraws a tool when the last rule matching its REGISTERED
+ * name reads `resource: "*"` + `deny` (`registry.ts` → `whollyDisabled`), so `{action: "registry",
+ * effect: "deny"}` takes the whole surface off the horizon — reads included. That is a legitimate
+ * thing for an operator to want and it is not the same decision as *"browse freely, do not write"*.
+ * `registry_write` is the second one, exactly as `configure_privileged` is a second action so a rule
+ * can grant the cheap tier without the expensive one.
+ *
+ * ⚠️ **`resources: [table]` and `save: [table]`, never `["*"]`** — `configure.ts` argues it for a
+ * config key and the argument is unchanged here: `resources` doubles as the pattern a standing rule
+ * matches, so a wildcard turns one decision about `agent_status` into a standing grant over
+ * `credential`. A row's VALUES stay out of `resources` for the same reason they do there — a rule
+ * matching one exact payload is a dead rule — and ride `metadata`.
+ *
+ * ⚠️ **NOT SPENT on a table this tool already refuses**, which is the double-charge the obvious
+ * implementation makes. The kernel and config refusals are agent-specific verdicts with wording that
+ * tells the model where the capability actually lives (`configure`, or the chat); charging permission
+ * first would replace that with a generic denial and turn a settled refusal into something that
+ * *looks* grantable. So the gate runs after them, deny-fast, and it reads {@link
+ * DbRegistry.permissionKernelTables} / {@link DbRegistry.configBackedTables} rather than restating
+ * their membership — a second copy of those sets here is the hand-kept list that goes stale silently.
+ * The migration journal is deliberately NOT in that skip list: it is refused to BOTH writers, so it
+ * is not a question about this agent's privilege, and either verdict refuses the write.
+ *
+ * ⚠️ **The read path stays ungated**, matching `configure.ts`'s stated invariant — *"`read` is
+ * ungated precisely BECAUSE it is redacted"* — and the redaction below is what pays for it.
+ *
+ * ⚠️ **There is no consent card at the end of this.** `ask` was retired as an outcome (owner,
+ * 2026-08-20): `evaluateInput`'s last arm converts an `ask` verdict into an immediate refusal
+ * carrying {@link PermissionV2.GRANT_IN_ADVANCE}. Since `registry_write` is absent from
+ * `AMBIENT_SAFE_BASELINE`, from every `MODE_RULES` overlay (`bypass` included) and from the compiled
+ * agent floor, a default install refuses the write and names the standing rule that would allow it.
+ * That fall-through is asserted over the shipped constants in `tool-db-registry-permission.test.ts`,
+ * with the pre-B4c catch-all restored as the negative control — an inference from three constants is
+ * exactly the shape that goes stale when one of them moves.
  *
  * ── the READ path is redacted, and that is a SECOND guard, not the same one ─────────────────────
  *
@@ -140,6 +186,8 @@ export const description = [
   "schema-migration journal is read-only to everyone.",
   "Stored credentials come back redacted — passwords, API tokens, peer tokens and signing keys are",
   "replaced with a placeholder, so a value you read here is never one you can use.",
+  "Browsing is free; each insert/update/delete spends the `registry_write` permission for the one",
+  "table it names, so read first and write once.",
 ].join("\n")
 
 // ── redaction ─────────────────────────────────────────────────────────────────────────────────
@@ -387,9 +435,40 @@ export const run = Effect.fn("DbRegistryTool.run")(function* (input: typeof Inpu
   }
 })
 
+// ── the write gate ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The permission action a row write spends. See the header for why it is not the tool's registered
+ * name (`registry`), which the horizon filter reads and which therefore means *withdraw the whole
+ * surface* rather than *do not write*.
+ */
+export const WRITE_ACTION = "registry_write"
+
+/**
+ * The table one call must be granted before it may write, or `undefined` when the call spends
+ * nothing.
+ *
+ * Two shapes return `undefined` and they are different facts:
+ *  · a READ (`tables`, `rows`) — ungated by design, paid for by the redaction below;
+ *  · a table this tool already REFUSES to an agent — the refusal is the answer, and charging
+ *    permission ahead of it would both hide that answer behind a generic denial and imply the write
+ *    becomes possible once granted. It does not.
+ *
+ * Exported so the test drives the same predicate the executor does, rather than a copy of it.
+ */
+export const writeGate = (input: typeof Input.Type): string | undefined => {
+  if (input.op === "tables" || input.op === "rows") return undefined
+  // Read OFF the shared module's own sets. Restating them here is the hand-kept subset that goes
+  // stale the first time a table is added to either one.
+  if (DbRegistry.permissionKernelTables().has(input.table)) return undefined
+  if (DbRegistry.configBackedTables().has(input.table)) return undefined
+  return input.table
+}
+
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
+    const permission = yield* PermissionV2.Service
     // Acquired while the LAYER is constructed and captured by the executor — the house rule in
     // `tool/AGENTS.md`. Resolving it per call would make every op depend on the ambient graph.
     const database = yield* Database.Service
@@ -401,10 +480,39 @@ export const layer = Layer.effectDiscard(
             input: Input,
             output: Output,
             toModelOutput: ({ output }) => [{ type: "text", text: output.message }],
-            execute: (input) =>
-              run(input).pipe(
+            execute: (input, context) =>
+              Effect.gen(function* () {
+                const table = writeGate(input)
+                if (table !== undefined)
+                  yield* permission.assert({
+                    action: WRITE_ACTION,
+                    // The ONE table, never `*`. `resources` is what a user's own
+                    // `{action: "registry_write", resource: "credential"}` rule is matched against,
+                    // so a wildcard here would make every rule an all-or-nothing one.
+                    resources: [table],
+                    // ⚠️ `save` is INERT today — retiring `ask` removed the only caller of
+                    // `PermissionSaved.add`, so nothing a user can reach from a chat writes the
+                    // saved-grant table (`permission.ts` → GRANT_IN_ADVANCE). It is scoped rather
+                    // than omitted because the day it is live is not the day to remember why
+                    // `configure.ts` argues `save: [key]`, never `save: ["*"]`.
+                    save: [table],
+                    metadata: { op: input.op, table },
+                    sessionID: context.sessionID,
+                    agent: context.agent,
+                    source: {
+                      type: "tool" as const,
+                      messageID: context.assistantMessageID,
+                      callID: context.toolCallID,
+                    },
+                  })
+                return yield* run(input)
+              }).pipe(
                 Effect.provideService(Database.Service, database),
                 Effect.catchTag("DbRegistry.RegistryError", (error) => new ToolFailure({ message: error.message })),
+                // A refusal must arrive AS a refusal — the deny-fast paragraph with the
+                // grant-in-advance sentence, never a fallback line a model reads as transient and
+                // retries (`absorb-ledger.test.ts`).
+                Effect.mapError(Tool.absorb("Unable to reach the instance database")),
               ),
           }),
         ),
@@ -413,4 +521,8 @@ export const layer = Layer.effectDiscard(
   }),
 )
 
-export const node = makeLocationNode({ name: "tool/db-registry", layer, deps: [ToolRegistry.node, Database.node] })
+export const node = makeLocationNode({
+  name: "tool/db-registry",
+  layer,
+  deps: [ToolRegistry.node, Database.node, PermissionV2.node],
+})
