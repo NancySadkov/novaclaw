@@ -104,7 +104,12 @@ const env = (() => {
 })()
 
 const sources = [path.join(root, "src", process.platform === "win32" ? "watch_win32.cc" : "watch_linux.cc")]
-const target = path.join(out, process.platform === "win32" ? "host.dll" : "libhost.so")
+// ⚠️ The NAME is part of the contract, and it was WRONG on Linux. `host.bun.ts` resolves
+// `host.${suffix}` from `bun:ffi` — host.dll / host.so / host.dylib — so emitting `libhost.so` meant
+// the loader looked for a file this script never writes. `available()` then answers false with no
+// error anywhere: the watcher is simply absent, which is the silent-death shape the header of
+// `host.bun.ts` exists to warn about.
+const target = path.join(out, `host.${process.platform === "win32" ? "dll" : process.platform === "darwin" ? "dylib" : "so"}`)
 
 const argv = [
   cxx,

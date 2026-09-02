@@ -1,4 +1,4 @@
-import { onMount, splitProps, type ComponentProps, Show, mergeProps } from "solid-js"
+import { createSignal, onCleanup, onMount, splitProps, type ComponentProps, Show, mergeProps } from "solid-js"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { createStore } from "solid-js/store"
 import { useI18n } from "../context/i18n"
@@ -108,14 +108,47 @@ export function ScrollView(props: ScrollViewProps) {
     setState("thumbTop", boundedTop)
   }
 
+  /**
+   * WHAT THE THUMB IS MEASURED AGAINST — kept current, not sampled once.
+   *
+   * 🔴 This used to be `createResizeObserver([viewportRef, viewportRef.firstElementChild], …)`, and
+   * both halves of that line were wrong in the same direction. `firstElementChild` was read once,
+   * inside `onMount`, so the observer bound to whichever element the consumer happened to have
+   * rendered at that instant; and a plain array is not an accessor, so the primitive's effect
+   * tracked nothing and never re-read it. The viewport's OWN size does not change when its content
+   * grows, so a consumer whose child is replaced after mount — a `<Switch>` still in its loading arm
+   * when the file viewer mounts is the live one — got no thumb at all until the user produced a
+   * scroll event, which is the only other caller of `updateThumb`.
+   *
+   * ⚠️ The fix is not a wrapper element. `ScrollView` could render its own stable child and observe
+   * that, but the viewport is a flex container in at least one consumer's stylesheet
+   * (`session-ui/src/components/session-review.css`) and an inserted box would take the flex item's
+   * place — a layout regression in a component whose job is layout. Watching the child list instead
+   * keeps the DOM exactly as consumers wrote it.
+   *
+   * ⚠️ A `MutationObserver`, not another `ResizeObserver`: the event here is "the children were
+   * swapped", which has no size to report. It observes `childList` only, without `subtree` — a
+   * deeper change alters the direct child's height, and that direct child is under the resize
+   * observer already.
+   */
+  const [observed, setObserved] = createSignal<Element[]>([])
+  createResizeObserver(observed, updateThumb)
+
   onMount(() => {
     if (local.viewportRef) {
       local.viewportRef(viewportRef)
     }
 
-    createResizeObserver([viewportRef, viewportRef.firstElementChild], updateThumb)
+    const syncObserved = () => {
+      setObserved([viewportRef, ...Array.from(viewportRef.children)])
+      updateThumb()
+    }
 
-    updateThumb()
+    const children = new MutationObserver(syncObserved)
+    children.observe(viewportRef, { childList: true })
+    onCleanup(() => children.disconnect())
+
+    syncObserved()
   })
 
   const onThumbPointerDown = (e: PointerEvent) => {

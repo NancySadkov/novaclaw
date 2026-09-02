@@ -12793,7 +12793,7 @@
     },
     "/api/health": {
       "get": {
-        "tags": ["novaclaw HttpApi"],
+        "tags": ["health"],
         "operationId": "v2.health.get",
         "parameters": [],
         "security": [],
@@ -12849,7 +12849,7 @@
     },
     "/api/memory/erase": {
       "post": {
-        "tags": ["novaclaw HttpApi"],
+        "tags": ["memory lifecycle"],
         "operationId": "v2.memory.erase",
         "parameters": [],
         "security": [],
@@ -12924,7 +12924,7 @@
     },
     "/api/memory/export": {
       "post": {
-        "tags": ["novaclaw HttpApi"],
+        "tags": ["memory lifecycle"],
         "operationId": "v2.memory.export",
         "parameters": [],
         "security": [],
@@ -13142,7 +13142,7 @@
     },
     "/api/memory/claim/status": {
       "post": {
-        "tags": ["novaclaw HttpApi"],
+        "tags": ["memory lifecycle"],
         "operationId": "v2.memory.claim.status",
         "parameters": [],
         "security": [],
@@ -13218,7 +13218,7 @@
     },
     "/api/memory/claim": {
       "post": {
-        "tags": ["novaclaw HttpApi"],
+        "tags": ["memory lifecycle"],
         "operationId": "v2.memory.claim.add",
         "parameters": [],
         "security": [],
@@ -13401,7 +13401,7 @@
     },
     "/api/memory/usage/never-used": {
       "post": {
-        "tags": ["novaclaw HttpApi"],
+        "tags": ["memory lifecycle"],
         "operationId": "v2.memory.usage.neverUsed",
         "parameters": [],
         "security": [],
@@ -13846,7 +13846,7 @@
     },
     "/api/memory/usage/useful": {
       "post": {
-        "tags": ["novaclaw HttpApi"],
+        "tags": ["memory lifecycle"],
         "operationId": "v2.memory.usage.useful",
         "parameters": [],
         "security": [],
@@ -14242,7 +14242,7 @@
     },
     "/api/memory/usage/corrections": {
       "post": {
-        "tags": ["novaclaw HttpApi"],
+        "tags": ["memory lifecycle"],
         "operationId": "v2.memory.usage.corrections",
         "parameters": [],
         "security": [],
@@ -14746,7 +14746,7 @@
     },
     "/api/memory/usage/detail": {
       "post": {
-        "tags": ["novaclaw HttpApi"],
+        "tags": ["memory lifecycle"],
         "operationId": "v2.memory.usage.detail",
         "parameters": [],
         "security": [],
@@ -15146,7 +15146,7 @@
     },
     "/api/memory/feedback": {
       "post": {
-        "tags": ["novaclaw HttpApi"],
+        "tags": ["memory lifecycle"],
         "operationId": "v2.memory.feedback",
         "parameters": [],
         "security": [],
@@ -15221,7 +15221,7 @@
     },
     "/api/location": {
       "get": {
-        "tags": ["novaclaw HttpApi"],
+        "tags": ["location"],
         "operationId": "v2.location.get",
         "parameters": [
           {
@@ -15289,7 +15289,7 @@
     },
     "/api/agent": {
       "get": {
-        "tags": ["novaclaw HttpApi"],
+        "tags": ["agents"],
         "operationId": "v2.agent.list",
         "parameters": [
           {
@@ -15370,7 +15370,7 @@
     },
     "/api/agent/{agentID}/usage": {
       "get": {
-        "tags": ["novaclaw HttpApi"],
+        "tags": ["agents"],
         "operationId": "v2.agent.usage",
         "parameters": [
           {
@@ -15459,7 +15459,7 @@
     },
     "/api/agent/{agentID}": {
       "delete": {
-        "tags": ["novaclaw HttpApi"],
+        "tags": ["agents"],
         "operationId": "v2.agent.remove",
         "parameters": [
           {
@@ -16881,7 +16881,7 @@
     },
     "/api/session/{sessionID}/pending": {
       "get": {
-        "tags": ["sessions"],
+        "tags": ["session control"],
         "operationId": "v2.session.pending",
         "parameters": [
           {
@@ -16966,7 +16966,7 @@
     },
     "/api/session/{sessionID}/todo": {
       "get": {
-        "tags": ["sessions"],
+        "tags": ["session control"],
         "operationId": "v2.session.todo",
         "parameters": [
           {
@@ -17051,7 +17051,7 @@
     },
     "/api/session/{sessionID}/agent": {
       "post": {
-        "tags": ["sessions"],
+        "tags": ["session control"],
         "operationId": "v2.session.switchAgent",
         "parameters": [
           {
@@ -17146,7 +17146,7 @@
     },
     "/api/session/{sessionID}/model": {
       "post": {
-        "tags": ["sessions"],
+        "tags": ["session control"],
         "operationId": "v2.session.switchModel",
         "parameters": [
           {
@@ -17231,7 +17231,7 @@
     },
     "/api/session/{sessionID}/responder": {
       "post": {
-        "tags": ["sessions"],
+        "tags": ["session control"],
         "operationId": "v2.session.switchResponder",
         "parameters": [
           {
@@ -17317,7 +17317,7 @@
     },
     "/api/session/{sessionID}/folder": {
       "get": {
-        "tags": ["sessions"],
+        "tags": ["session control"],
         "operationId": "v2.session.folder",
         "parameters": [
           {
@@ -17407,7 +17407,7 @@
         ]
       },
       "post": {
-        "tags": ["sessions"],
+        "tags": ["session control"],
         "operationId": "v2.session.repointFolder",
         "parameters": [
           {
@@ -17502,7 +17502,7 @@
     },
     "/api/session/{sessionID}/mode": {
       "post": {
-        "tags": ["sessions"],
+        "tags": ["session control"],
         "operationId": "v2.session.switchMode",
         "parameters": [
           {
@@ -17588,7 +17588,7 @@
     },
     "/api/session/{sessionID}/strict": {
       "post": {
-        "tags": ["sessions"],
+        "tags": ["session control"],
         "operationId": "v2.session.switchStrict",
         "parameters": [
           {
@@ -17680,7 +17680,7 @@
     },
     "/api/session/{sessionID}/feature": {
       "post": {
-        "tags": ["sessions"],
+        "tags": ["session control"],
         "operationId": "v2.session.switchFeature",
         "parameters": [
           {
@@ -17787,7 +17787,7 @@
     },
     "/api/session/{sessionID}/type": {
       "post": {
-        "tags": ["sessions"],
+        "tags": ["session control"],
         "operationId": "v2.session.switchType",
         "parameters": [
           {
@@ -17873,7 +17873,7 @@
     },
     "/api/session/{sessionID}/prompt-override": {
       "post": {
-        "tags": ["sessions"],
+        "tags": ["session control"],
         "operationId": "v2.session.switchPromptOverride",
         "parameters": [
           {
@@ -17965,7 +17965,7 @@
     },
     "/api/session/{sessionID}/shell": {
       "post": {
-        "tags": ["sessions"],
+        "tags": ["session control"],
         "operationId": "v2.session.shell",
         "parameters": [
           {
@@ -18050,7 +18050,7 @@
     },
     "/api/session/{sessionID}/command": {
       "post": {
-        "tags": ["sessions"],
+        "tags": ["session control"],
         "operationId": "v2.session.command",
         "parameters": [
           {
@@ -18157,7 +18157,7 @@
     },
     "/api/session/{sessionID}/prompt": {
       "post": {
-        "tags": ["sessions"],
+        "tags": ["session runtime"],
         "operationId": "v2.session.prompt",
         "parameters": [
           {
@@ -18277,7 +18277,7 @@
     },
     "/api/session/{sessionID}/compact": {
       "post": {
-        "tags": ["sessions"],
+        "tags": ["session runtime"],
         "operationId": "v2.session.compact",
         "parameters": [
           {
@@ -18355,7 +18355,7 @@
     },
     "/api/session/{sessionID}/wait": {
       "post": {
-        "tags": ["sessions"],
+        "tags": ["session runtime"],
         "operationId": "v2.session.wait",
         "parameters": [
           {
@@ -18433,7 +18433,7 @@
     },
     "/api/session/{sessionID}/revert/stage": {
       "post": {
-        "tags": ["sessions"],
+        "tags": ["session runtime"],
         "operationId": "v2.session.revert.stage",
         "parameters": [
           {
@@ -18549,7 +18549,7 @@
     },
     "/api/session/{sessionID}/revert/clear": {
       "post": {
-        "tags": ["sessions"],
+        "tags": ["session runtime"],
         "operationId": "v2.session.revert.clear",
         "parameters": [
           {
@@ -18626,7 +18626,7 @@
     },
     "/api/session/{sessionID}/revert/commit": {
       "post": {
-        "tags": ["sessions"],
+        "tags": ["session runtime"],
         "operationId": "v2.session.revert.commit",
         "parameters": [
           {
@@ -18693,7 +18693,7 @@
     },
     "/api/session/{sessionID}/context": {
       "get": {
-        "tags": ["sessions"],
+        "tags": ["session observation"],
         "operationId": "v2.session.context",
         "parameters": [
           {
@@ -18788,7 +18788,7 @@
     },
     "/api/session/{sessionID}/history": {
       "get": {
-        "tags": ["sessions"],
+        "tags": ["session observation"],
         "operationId": "v2.session.history",
         "parameters": [
           {
@@ -18879,7 +18879,7 @@
     },
     "/api/session/{sessionID}/event": {
       "get": {
-        "tags": ["sessions"],
+        "tags": ["session observation"],
         "operationId": "v2.session.events",
         "parameters": [
           {
@@ -19043,7 +19043,7 @@
     },
     "/api/session/{sessionID}/interrupt": {
       "post": {
-        "tags": ["sessions"],
+        "tags": ["session observation"],
         "operationId": "v2.session.interrupt",
         "parameters": [
           {
@@ -19111,7 +19111,7 @@
     },
     "/api/session/{sessionID}/execution/retry": {
       "post": {
-        "tags": ["sessions"],
+        "tags": ["session observation"],
         "operationId": "v2.session.execution.retry",
         "parameters": [
           {
@@ -19179,7 +19179,7 @@
     },
     "/api/session/{sessionID}/message/{messageID}": {
       "get": {
-        "tags": ["sessions"],
+        "tags": ["session observation"],
         "operationId": "v2.session.message",
         "parameters": [
           {
@@ -22249,7 +22249,7 @@
     },
     "/api/credential/{credentialID}": {
       "patch": {
-        "tags": ["novaclaw HttpApi"],
+        "tags": ["credentials"],
         "operationId": "v2.credential.update",
         "parameters": [
           {
@@ -22333,7 +22333,7 @@
         ]
       },
       "delete": {
-        "tags": ["novaclaw HttpApi"],
+        "tags": ["credentials"],
         "operationId": "v2.credential.remove",
         "parameters": [
           {
@@ -22402,7 +22402,7 @@
     },
     "/api/credential/repair": {
       "get": {
-        "tags": ["novaclaw HttpApi"],
+        "tags": ["credentials"],
         "operationId": "v2.credential.repair.status",
         "parameters": [],
         "security": [],
@@ -24579,7 +24579,7 @@
     },
     "/api/app/{id}": {
       "delete": {
-        "tags": ["novaclaw HttpApi"],
+        "tags": ["home apps"],
         "operationId": "v2.app.remove",
         "parameters": [
           {
@@ -27095,7 +27095,7 @@
     },
     "/api/config/remove": {
       "post": {
-        "tags": ["config"],
+        "tags": ["config removal"],
         "operationId": "v2.config.remove",
         "parameters": [],
         "security": [],
@@ -27277,7 +27277,7 @@
     },
     "/api/telemetry/status": {
       "get": {
-        "tags": ["novaclaw HttpApi"],
+        "tags": ["telemetry"],
         "operationId": "v2.telemetry.status",
         "parameters": [],
         "security": [],
@@ -34015,167 +34015,6 @@
         "required": ["id", "type", "data"],
         "additionalProperties": false
       },
-      "session.status": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["session.status"]
-          },
-          "durable": {
-            "type": "object",
-            "properties": {
-              "aggregateID": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer"
-              },
-              "version": {
-                "type": "integer"
-              }
-            },
-            "required": ["aggregateID", "seq", "version"],
-            "additionalProperties": false
-          },
-          "location": {
-            "$ref": "#/components/schemas/LocationRef"
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "sessionID": {
-                "type": "string",
-                "pattern": "^ses"
-              },
-              "status": {
-                "$ref": "#/components/schemas/SessionStatus"
-              }
-            },
-            "required": ["sessionID", "status"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "data"],
-        "additionalProperties": false
-      },
-      "question.replied": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["question.replied"]
-          },
-          "durable": {
-            "type": "object",
-            "properties": {
-              "aggregateID": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer"
-              },
-              "version": {
-                "type": "integer"
-              }
-            },
-            "required": ["aggregateID", "seq", "version"],
-            "additionalProperties": false
-          },
-          "location": {
-            "$ref": "#/components/schemas/LocationRef"
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "sessionID": {
-                "type": "string",
-                "pattern": "^ses"
-              },
-              "requestID": {
-                "type": "string",
-                "pattern": "^que"
-              },
-              "answers": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/QuestionAnswer"
-                }
-              }
-            },
-            "required": ["sessionID", "requestID", "answers"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "data"],
-        "additionalProperties": false
-      },
-      "question.rejected": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["question.rejected"]
-          },
-          "durable": {
-            "type": "object",
-            "properties": {
-              "aggregateID": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer"
-              },
-              "version": {
-                "type": "integer"
-              }
-            },
-            "required": ["aggregateID", "seq", "version"],
-            "additionalProperties": false
-          },
-          "location": {
-            "$ref": "#/components/schemas/LocationRef"
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "sessionID": {
-                "type": "string",
-                "pattern": "^ses"
-              },
-              "requestID": {
-                "type": "string",
-                "pattern": "^que"
-              }
-            },
-            "required": ["sessionID", "requestID"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "data"],
-        "additionalProperties": false
-      },
       "V2Event": {
         "anyOf": [
           {
@@ -34347,15 +34186,6 @@
             "$ref": "#/components/schemas/SessionNextRevertCommitted"
           },
           {
-            "$ref": "#/components/schemas/SessionError"
-          },
-          {
-            "$ref": "#/components/schemas/InstallationUpdated"
-          },
-          {
-            "$ref": "#/components/schemas/InstallationUpdate-available"
-          },
-          {
             "$ref": "#/components/schemas/AppRegistered"
           },
           {
@@ -34425,55 +34255,7 @@
             "$ref": "#/components/schemas/SessionPresenceUpdated"
           },
           {
-            "$ref": "#/components/schemas/PermissionAsked"
-          },
-          {
-            "$ref": "#/components/schemas/PermissionReplied"
-          },
-          {
-            "$ref": "#/components/schemas/McpToolsChanged"
-          },
-          {
-            "$ref": "#/components/schemas/McpBrowserOpenFailed"
-          },
-          {
-            "$ref": "#/components/schemas/session.status"
-          },
-          {
-            "$ref": "#/components/schemas/QuestionAsked"
-          },
-          {
-            "$ref": "#/components/schemas/question.replied"
-          },
-          {
-            "$ref": "#/components/schemas/question.rejected"
-          },
-          {
-            "$ref": "#/components/schemas/SessionCompacted"
-          },
-          {
-            "$ref": "#/components/schemas/VcsBranchUpdated"
-          },
-          {
-            "$ref": "#/components/schemas/WorkspaceReady"
-          },
-          {
-            "$ref": "#/components/schemas/WorkspaceFailed"
-          },
-          {
-            "$ref": "#/components/schemas/WorkspaceStatus"
-          },
-          {
-            "$ref": "#/components/schemas/WorktreeReady"
-          },
-          {
-            "$ref": "#/components/schemas/WorktreeFailed"
-          },
-          {
-            "$ref": "#/components/schemas/ServerConnected"
-          },
-          {
-            "$ref": "#/components/schemas/GlobalDisposed"
+            "$ref": "#/components/schemas/V2EventServerConnected"
           }
         ]
       },
@@ -47180,27 +46962,7 @@
                 "enum": ["once"]
               },
               "at": {
-                "anyOf": [
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "string",
-                    "enum": ["NaN"]
-                  },
-                  {
-                    "type": "string",
-                    "enum": ["Infinity"]
-                  },
-                  {
-                    "type": "string",
-                    "enum": ["-Infinity"]
-                  },
-                  {
-                    "type": "string",
-                    "enum": ["Infinity", "-Infinity", "NaN"]
-                  }
-                ]
+                "type": "number"
               }
             },
             "required": ["kind", "at"],
@@ -47217,50 +46979,14 @@
                 "type": "object",
                 "properties": {
                   "hour": {
-                    "anyOf": [
-                      {
-                        "type": "number"
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["NaN"]
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["Infinity"]
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["-Infinity"]
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["Infinity", "-Infinity", "NaN"]
-                      }
-                    ]
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 23
                   },
                   "minute": {
-                    "anyOf": [
-                      {
-                        "type": "number"
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["NaN"]
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["Infinity"]
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["-Infinity"]
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["Infinity", "-Infinity", "NaN"]
-                      }
-                    ]
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 59
                   }
                 },
                 "required": ["hour", "minute"],
@@ -47281,50 +47007,14 @@
                 "type": "object",
                 "properties": {
                   "hour": {
-                    "anyOf": [
-                      {
-                        "type": "number"
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["NaN"]
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["Infinity"]
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["-Infinity"]
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["Infinity", "-Infinity", "NaN"]
-                      }
-                    ]
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 23
                   },
                   "minute": {
-                    "anyOf": [
-                      {
-                        "type": "number"
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["NaN"]
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["Infinity"]
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["-Infinity"]
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["Infinity", "-Infinity", "NaN"]
-                      }
-                    ]
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 59
                   }
                 },
                 "required": ["hour", "minute"],
@@ -47333,28 +47023,10 @@
               "weekdays": {
                 "type": "array",
                 "items": {
-                  "anyOf": [
-                    {
-                      "type": "number"
-                    },
-                    {
-                      "type": "string",
-                      "enum": ["NaN"]
-                    },
-                    {
-                      "type": "string",
-                      "enum": ["Infinity"]
-                    },
-                    {
-                      "type": "string",
-                      "enum": ["-Infinity"]
-                    },
-                    {
-                      "type": "string",
-                      "enum": ["Infinity", "-Infinity", "NaN"]
-                    }
-                  ]
-                }
+                  "type": "number",
+                  "enum": [0, 1, 2, 3, 4, 5, 6]
+                },
+                "minItems": 1
               }
             },
             "required": ["kind", "time", "weekdays"],
@@ -47371,77 +47043,23 @@
                 "type": "object",
                 "properties": {
                   "hour": {
-                    "anyOf": [
-                      {
-                        "type": "number"
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["NaN"]
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["Infinity"]
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["-Infinity"]
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["Infinity", "-Infinity", "NaN"]
-                      }
-                    ]
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 23
                   },
                   "minute": {
-                    "anyOf": [
-                      {
-                        "type": "number"
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["NaN"]
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["Infinity"]
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["-Infinity"]
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["Infinity", "-Infinity", "NaN"]
-                      }
-                    ]
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 59
                   }
                 },
                 "required": ["hour", "minute"],
                 "additionalProperties": false
               },
               "day": {
-                "anyOf": [
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "string",
-                    "enum": ["NaN"]
-                  },
-                  {
-                    "type": "string",
-                    "enum": ["Infinity"]
-                  },
-                  {
-                    "type": "string",
-                    "enum": ["-Infinity"]
-                  },
-                  {
-                    "type": "string",
-                    "enum": ["Infinity", "-Infinity", "NaN"]
-                  }
-                ]
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 31
               }
             },
             "required": ["kind", "time", "day"],
@@ -47458,100 +47076,28 @@
                 "type": "object",
                 "properties": {
                   "hour": {
-                    "anyOf": [
-                      {
-                        "type": "number"
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["NaN"]
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["Infinity"]
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["-Infinity"]
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["Infinity", "-Infinity", "NaN"]
-                      }
-                    ]
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 23
                   },
                   "minute": {
-                    "anyOf": [
-                      {
-                        "type": "number"
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["NaN"]
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["Infinity"]
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["-Infinity"]
-                      },
-                      {
-                        "type": "string",
-                        "enum": ["Infinity", "-Infinity", "NaN"]
-                      }
-                    ]
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 59
                   }
                 },
                 "required": ["hour", "minute"],
                 "additionalProperties": false
               },
               "month": {
-                "anyOf": [
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "string",
-                    "enum": ["NaN"]
-                  },
-                  {
-                    "type": "string",
-                    "enum": ["Infinity"]
-                  },
-                  {
-                    "type": "string",
-                    "enum": ["-Infinity"]
-                  },
-                  {
-                    "type": "string",
-                    "enum": ["Infinity", "-Infinity", "NaN"]
-                  }
-                ]
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 12
               },
               "day": {
-                "anyOf": [
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "string",
-                    "enum": ["NaN"]
-                  },
-                  {
-                    "type": "string",
-                    "enum": ["Infinity"]
-                  },
-                  {
-                    "type": "string",
-                    "enum": ["-Infinity"]
-                  },
-                  {
-                    "type": "string",
-                    "enum": ["Infinity", "-Infinity", "NaN"]
-                  }
-                ]
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 31
               }
             },
             "required": ["kind", "time", "month", "day"],
@@ -47572,27 +47118,9 @@
             "$ref": "#/components/schemas/CalendarRecurrence"
           },
           "tzOffsetMin": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string",
-                "enum": ["NaN"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["-Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity", "-Infinity", "NaN"]
-              }
-            ]
+            "type": "integer",
+            "minimum": -1440,
+            "maximum": 1440
           },
           "prompt": {
             "type": "string"
@@ -47630,7 +47158,8 @@
           "permissionMode": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
               },
               {
                 "type": "null"
@@ -47767,27 +47296,9 @@
             "$ref": "#/components/schemas/CalendarRecurrence"
           },
           "tzOffsetMin": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string",
-                "enum": ["NaN"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["-Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity", "-Infinity", "NaN"]
-              }
-            ]
+            "type": "integer",
+            "minimum": -1440,
+            "maximum": 1440
           },
           "prompt": {
             "type": "string"
@@ -47822,27 +47333,9 @@
             "$ref": "#/components/schemas/CalendarRecurrence"
           },
           "tzOffsetMin": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string",
-                "enum": ["NaN"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["-Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity", "-Infinity", "NaN"]
-              }
-            ]
+            "type": "integer",
+            "minimum": -1440,
+            "maximum": 1440
           },
           "prompt": {
             "type": "string"
@@ -48972,149 +48465,6 @@
               }
             },
             "required": ["timestamp", "sessionID", "messageID", "text"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "data"],
-        "additionalProperties": false
-      },
-      "SessionError": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["session.error"]
-          },
-          "durable": {
-            "type": "object",
-            "properties": {
-              "aggregateID": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer"
-              },
-              "version": {
-                "type": "integer"
-              }
-            },
-            "required": ["aggregateID", "seq", "version"],
-            "additionalProperties": false
-          },
-          "location": {
-            "$ref": "#/components/schemas/LocationRef"
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "sessionID": {
-                "type": "string",
-                "pattern": "^ses"
-              },
-              "error": {}
-            },
-            "required": ["error"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "data"],
-        "additionalProperties": false
-      },
-      "InstallationUpdated": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["installation.updated"]
-          },
-          "durable": {
-            "type": "object",
-            "properties": {
-              "aggregateID": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer"
-              },
-              "version": {
-                "type": "integer"
-              }
-            },
-            "required": ["aggregateID", "seq", "version"],
-            "additionalProperties": false
-          },
-          "location": {
-            "$ref": "#/components/schemas/LocationRef"
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "version": {
-                "type": "string"
-              }
-            },
-            "required": ["version"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "data"],
-        "additionalProperties": false
-      },
-      "InstallationUpdate-available": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["installation.update-available"]
-          },
-          "durable": {
-            "type": "object",
-            "properties": {
-              "aggregateID": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer"
-              },
-              "version": {
-                "type": "integer"
-              }
-            },
-            "required": ["aggregateID", "seq", "version"],
-            "additionalProperties": false
-          },
-          "location": {
-            "$ref": "#/components/schemas/LocationRef"
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "version": {
-                "type": "string"
-              }
-            },
-            "required": ["version"],
             "additionalProperties": false
           }
         },
@@ -50432,7 +49782,7 @@
         "required": ["id", "type", "data"],
         "additionalProperties": false
       },
-      "PermissionAsked": {
+      "V2EventServerConnected": {
         "type": "object",
         "properties": {
           "id": {
@@ -50441,10 +49791,6 @@
           },
           "metadata": {
             "type": "object"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["permission.asked"]
           },
           "durable": {
             "type": "object",
@@ -50464,692 +49810,10 @@
           },
           "location": {
             "$ref": "#/components/schemas/LocationRef"
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "pattern": "^per"
-              },
-              "sessionID": {
-                "type": "string",
-                "pattern": "^ses"
-              },
-              "permission": {
-                "type": "string"
-              },
-              "patterns": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "metadata": {
-                "type": "object"
-              },
-              "always": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "tool": {
-                "type": "object",
-                "properties": {
-                  "messageID": {
-                    "type": "string"
-                  },
-                  "callID": {
-                    "type": "string"
-                  }
-                },
-                "required": ["messageID", "callID"],
-                "additionalProperties": false
-              }
-            },
-            "required": ["id", "sessionID", "permission", "patterns", "metadata", "always"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "data"],
-        "additionalProperties": false
-      },
-      "PermissionReplied": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["permission.replied"]
-          },
-          "durable": {
-            "type": "object",
-            "properties": {
-              "aggregateID": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer"
-              },
-              "version": {
-                "type": "integer"
-              }
-            },
-            "required": ["aggregateID", "seq", "version"],
-            "additionalProperties": false
-          },
-          "location": {
-            "$ref": "#/components/schemas/LocationRef"
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "sessionID": {
-                "type": "string",
-                "pattern": "^ses"
-              },
-              "requestID": {
-                "type": "string",
-                "pattern": "^per"
-              },
-              "reply": {
-                "type": "string",
-                "enum": [
-                  "once",
-                  "always",
-                  "reject",
-                  "allow-once",
-                  "allow-file",
-                  "allow-always",
-                  "deny-once",
-                  "deny-file",
-                  "deny-always"
-                ]
-              }
-            },
-            "required": ["sessionID", "requestID", "reply"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "data"],
-        "additionalProperties": false
-      },
-      "McpToolsChanged": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["mcp.tools.changed"]
-          },
-          "durable": {
-            "type": "object",
-            "properties": {
-              "aggregateID": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer"
-              },
-              "version": {
-                "type": "integer"
-              }
-            },
-            "required": ["aggregateID", "seq", "version"],
-            "additionalProperties": false
-          },
-          "location": {
-            "$ref": "#/components/schemas/LocationRef"
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "server": {
-                "type": "string"
-              }
-            },
-            "required": ["server"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "data"],
-        "additionalProperties": false
-      },
-      "McpBrowserOpenFailed": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["mcp.browser.open.failed"]
-          },
-          "durable": {
-            "type": "object",
-            "properties": {
-              "aggregateID": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer"
-              },
-              "version": {
-                "type": "integer"
-              }
-            },
-            "required": ["aggregateID", "seq", "version"],
-            "additionalProperties": false
-          },
-          "location": {
-            "$ref": "#/components/schemas/LocationRef"
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "mcpName": {
-                "type": "string"
-              },
-              "url": {
-                "type": "string"
-              }
-            },
-            "required": ["mcpName", "url"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "data"],
-        "additionalProperties": false
-      },
-      "QuestionAsked": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["question.asked"]
-          },
-          "durable": {
-            "type": "object",
-            "properties": {
-              "aggregateID": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer"
-              },
-              "version": {
-                "type": "integer"
-              }
-            },
-            "required": ["aggregateID", "seq", "version"],
-            "additionalProperties": false
-          },
-          "location": {
-            "$ref": "#/components/schemas/LocationRef"
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "pattern": "^que"
-              },
-              "sessionID": {
-                "type": "string",
-                "pattern": "^ses"
-              },
-              "questions": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/QuestionInfo"
-                },
-                "description": "Questions to ask"
-              },
-              "tool": {
-                "$ref": "#/components/schemas/QuestionTool"
-              }
-            },
-            "required": ["id", "sessionID", "questions"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "data"],
-        "additionalProperties": false
-      },
-      "SessionCompacted": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["session.compacted"]
-          },
-          "durable": {
-            "type": "object",
-            "properties": {
-              "aggregateID": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer"
-              },
-              "version": {
-                "type": "integer"
-              }
-            },
-            "required": ["aggregateID", "seq", "version"],
-            "additionalProperties": false
-          },
-          "location": {
-            "$ref": "#/components/schemas/LocationRef"
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "sessionID": {
-                "type": "string",
-                "pattern": "^ses"
-              }
-            },
-            "required": ["sessionID"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "data"],
-        "additionalProperties": false
-      },
-      "VcsBranchUpdated": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["vcs.branch.updated"]
-          },
-          "durable": {
-            "type": "object",
-            "properties": {
-              "aggregateID": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer"
-              },
-              "version": {
-                "type": "integer"
-              }
-            },
-            "required": ["aggregateID", "seq", "version"],
-            "additionalProperties": false
-          },
-          "location": {
-            "$ref": "#/components/schemas/LocationRef"
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "branch": {
-                "type": "string"
-              }
-            },
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "data"],
-        "additionalProperties": false
-      },
-      "WorkspaceReady": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["workspace.ready"]
-          },
-          "durable": {
-            "type": "object",
-            "properties": {
-              "aggregateID": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer"
-              },
-              "version": {
-                "type": "integer"
-              }
-            },
-            "required": ["aggregateID", "seq", "version"],
-            "additionalProperties": false
-          },
-          "location": {
-            "$ref": "#/components/schemas/LocationRef"
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "name": {
-                "type": "string"
-              }
-            },
-            "required": ["name"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "data"],
-        "additionalProperties": false
-      },
-      "WorkspaceFailed": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["workspace.failed"]
-          },
-          "durable": {
-            "type": "object",
-            "properties": {
-              "aggregateID": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer"
-              },
-              "version": {
-                "type": "integer"
-              }
-            },
-            "required": ["aggregateID", "seq", "version"],
-            "additionalProperties": false
-          },
-          "location": {
-            "$ref": "#/components/schemas/LocationRef"
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "message": {
-                "type": "string"
-              }
-            },
-            "required": ["message"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "data"],
-        "additionalProperties": false
-      },
-      "WorkspaceStatus": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["workspace.status"]
-          },
-          "durable": {
-            "type": "object",
-            "properties": {
-              "aggregateID": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer"
-              },
-              "version": {
-                "type": "integer"
-              }
-            },
-            "required": ["aggregateID", "seq", "version"],
-            "additionalProperties": false
-          },
-          "location": {
-            "$ref": "#/components/schemas/LocationRef"
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "workspaceID": {
-                "type": "string",
-                "pattern": "^wrk"
-              },
-              "status": {
-                "type": "string",
-                "enum": ["connected", "connecting", "disconnected", "error"]
-              }
-            },
-            "required": ["workspaceID", "status"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "data"],
-        "additionalProperties": false
-      },
-      "WorktreeReady": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["worktree.ready"]
-          },
-          "durable": {
-            "type": "object",
-            "properties": {
-              "aggregateID": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer"
-              },
-              "version": {
-                "type": "integer"
-              }
-            },
-            "required": ["aggregateID", "seq", "version"],
-            "additionalProperties": false
-          },
-          "location": {
-            "$ref": "#/components/schemas/LocationRef"
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "name": {
-                "type": "string"
-              },
-              "branch": {
-                "type": "string"
-              }
-            },
-            "required": ["name"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "data"],
-        "additionalProperties": false
-      },
-      "WorktreeFailed": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["worktree.failed"]
-          },
-          "durable": {
-            "type": "object",
-            "properties": {
-              "aggregateID": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer"
-              },
-              "version": {
-                "type": "integer"
-              }
-            },
-            "required": ["aggregateID", "seq", "version"],
-            "additionalProperties": false
-          },
-          "location": {
-            "$ref": "#/components/schemas/LocationRef"
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "message": {
-                "type": "string"
-              }
-            },
-            "required": ["message"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "data"],
-        "additionalProperties": false
-      },
-      "ServerConnected": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "metadata": {
-            "type": "object"
           },
           "type": {
             "type": "string",
             "enum": ["server.connected"]
-          },
-          "durable": {
-            "type": "object",
-            "properties": {
-              "aggregateID": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer"
-              },
-              "version": {
-                "type": "integer"
-              }
-            },
-            "required": ["aggregateID", "seq", "version"],
-            "additionalProperties": false
-          },
-          "location": {
-            "$ref": "#/components/schemas/LocationRef"
-          },
-          "data": {
-            "type": "object",
-            "properties": {}
-          }
-        },
-        "required": ["id", "type", "data"],
-        "additionalProperties": false
-      },
-      "GlobalDisposed": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["global.disposed"]
-          },
-          "durable": {
-            "type": "object",
-            "properties": {
-              "aggregateID": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer"
-              },
-              "version": {
-                "type": "integer"
-              }
-            },
-            "required": ["aggregateID", "seq", "version"],
-            "additionalProperties": false
-          },
-          "location": {
-            "$ref": "#/components/schemas/LocationRef"
           },
           "data": {
             "type": "object",
@@ -55143,36 +53807,36 @@
       "description": "Experimental HttpApi sync routes."
     },
     {
-      "name": "novaclaw HttpApi",
-      "description": "Experimental HttpApi surface for selected instance routes."
+      "name": "health",
+      "description": "Liveness of the instance's API server — the one call that needs nothing else to be working."
     },
     {
-      "name": "novaclaw HttpApi",
-      "description": "Experimental HttpApi surface for selected instance routes."
+      "name": "memory lifecycle",
+      "description": "Governed claims and what the graph does with them: file a claim and see what it retired, read the noise views over how memories are actually used, vouch for one, and export or erase."
     },
     {
-      "name": "novaclaw HttpApi",
-      "description": "Experimental HttpApi surface for selected instance routes."
+      "name": "location",
+      "description": "The working folder a request is scoped to. Most routes take it as a `location` query parameter; this one resolves it."
     },
     {
-      "name": "novaclaw HttpApi",
-      "description": "Experimental HttpApi surface for selected instance routes."
-    },
-    {
-      "name": "sessions",
-      "description": "Experimental session routes."
+      "name": "agents",
+      "description": "The colleagues this instance can run a session as: the roster, each one's work, and removal."
     },
     {
       "name": "sessions",
-      "description": "Experimental session routes."
+      "description": "The session roster: create, list, read, retitle, tag, fork and remove a session, and see who is attached to one."
     },
     {
-      "name": "sessions",
-      "description": "Experimental session routes."
+      "name": "session control",
+      "description": "What a session runs WITH: switch its agent, model, responder, permission mode, folder, strictness, features and prompt override, and dispatch a shell or slash command."
     },
     {
-      "name": "sessions",
-      "description": "Experimental session routes."
+      "name": "session runtime",
+      "description": "Drive a session's turn: prompt it, wait for it to settle, compact it, and stage or commit a revert."
+    },
+    {
+      "name": "session observation",
+      "description": "Watch a session without changing it: its live context, its history, its event stream, one projected message — and the interrupt that stops a turn."
     },
     {
       "name": "messages",
@@ -55191,8 +53855,8 @@
       "description": "Integration discovery and authentication routes."
     },
     {
-      "name": "novaclaw HttpApi",
-      "description": "Experimental HttpApi surface for selected instance routes."
+      "name": "credentials",
+      "description": "Secrets an integration was given: relabel one, remove one, and check whether any have become unreadable."
     },
     {
       "name": "messenger",
@@ -55207,8 +53871,8 @@
       "description": "Recipes — prompts + assets an agent cooks."
     },
     {
-      "name": "novaclaw HttpApi",
-      "description": "Experimental HttpApi surface for selected instance routes."
+      "name": "home apps",
+      "description": "Launcher tiles an agent or a plugin contributed. Instance-global; built-in tiles are code."
     },
     {
       "name": "permissions",
@@ -55247,16 +53911,16 @@
       "description": "Location-scoped project references."
     },
     {
-      "name": "config",
-      "description": "Instance-wide configuration deletion."
+      "name": "config removal",
+      "description": "Delete instance-wide configuration keys by path — the one thing a settings write cannot express, applied in a single transaction and live without a restart."
     },
     {
       "name": "log",
       "description": "The instance's own activity log, read-only."
     },
     {
-      "name": "novaclaw HttpApi",
-      "description": "Experimental HttpApi surface for selected instance routes."
+      "name": "telemetry",
+      "description": "The maintenance plane, made inspectable: what crash reporting would send, what is stopping it, and what every field means."
     }
   ]
 }

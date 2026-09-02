@@ -552,8 +552,9 @@ export const dict = {
   // `packages/novaclaw/src/mcp/index.ts`. These render as a small label beside the server's name,
   // so they are lowercase fragments, and `needs a client ID` is shown above the server's own error
   // line explaining what to put in the config. ⚠️ `needs_client_registration` was MISSING until
-  // 2026-07-29 and the UI rendered the raw key `mcp.status.needs_client_registration` at the user;
-  // the app's translator is key-typed now, so a sixth status cannot ship without its label.
+  // 2026-07-29, so that status had no copy at all — a lookup with no entry resolves to nothing, not
+  // to the key itself (`i18n/resolve.ts` measures the library and states what actually happens). The
+  // app's translator is key-typed now, so a sixth status cannot ship without its label.
   "mcp.status.connected": "connected",
   "mcp.status.failed": "failed",
   "mcp.status.needs_auth": "needs auth",

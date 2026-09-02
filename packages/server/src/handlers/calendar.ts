@@ -112,8 +112,8 @@ export const CalendarHandler = handlerLayer(
             // No pin means the request's ambient location. A pin replaces it inside
             // `refuseUnrunnable`; the stored value itself remains the scheduler's authority.
             yield* refuseUnrunnable(ctx.payload, ctx.payload.location)
-            // The endpoint schema validated shape; narrow weekdays (number[] -> Weekday[]) at the boundary.
-            const input = ctx.payload as unknown as CalendarStore.CreateInput
+            // No narrowing left to do: the wire's recurrence IS the engine's, bounds and all.
+            const input: CalendarStore.CreateInput = ctx.payload
             return yield* CalendarStore.create(
               db,
               {
@@ -151,7 +151,7 @@ export const CalendarHandler = handlerLayer(
                 ctx.payload.location === undefined ? existing.location : ctx.payload.location,
               )
             }
-            const patch = ctx.payload as unknown as CalendarStore.UpdateInput
+            const patch: CalendarStore.UpdateInput = ctx.payload
             // A re-sent recurrence keeps the zone the schedule already had — the wire cannot carry one
             // yet, so reading it back off the stored rule is what stops a save from downgrading a
             // zone-correct schedule to a fixed offset.

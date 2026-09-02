@@ -1,4 +1,4 @@
-import { marked, type Tokens } from "marked"
+import { marked, Marked, type Tokens } from "marked"
 import markedShiki from "marked-shiki"
 import katex from "katex"
 import { bundledLanguages, type BundledLanguage } from "shiki/langs"
@@ -473,9 +473,45 @@ async function highlightCodeBlocks(html: string): Promise<string> {
   return result
 }
 
-/** Attribute-safe text. The path comes from a MODEL, so it is untrusted input in an HTML string. */
+/**
+ * Attribute-safe text. The path comes from a MODEL, so it is untrusted input in an HTML string.
+ *
+ * ⚠️ **`&` is escaped unconditionally, and the tempting refinement is refused on purpose.** An
+ * entity-aware escaper — one that leaves an existing `&amp;` alone — would render a markdown source
+ * that spells its query string `?a=1&amp;b=2` slightly better, and would also preserve
+ * `java&#115;cript:` intact for the browser to decode. The first is a rare authoring style
+ * (`marked@17` hands this function a raw `&` for the ordinary `?a=1&b=2`, measured), the second is a
+ * live obfuscation vector, and between a cosmetic loss and a decoded scheme the answer is not close.
+ */
 const escapeAttribute = (value: string): string =>
   value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+
+/**
+ * ONE attribute, quoted and escaped, emitted whole — leading space included.
+ *
+ * 🔴 **This exists so that no renderer below can write an attribute by hand.** The escaping used to
+ * be opt-in at each interpolation: every `name="${value}"` was a separate chance to forget, and two
+ * of them did. Emitting the whole attribute here removes the choice — there is nothing to remember,
+ * because `name="` is no longer something a renderer types. `marked-attribute-slots.test.ts` fails
+ * if an interpolation reappears inside a quoted attribute value anywhere in the renderers.
+ *
+ * ⚠️ **Absent OR empty means the attribute is not written at all.** `marked` hands `title` as `null`
+ * when the author wrote none, and an empty `title=""` is a tooltip that opens onto nothing.
+ * {@link flagAttr} is for the other kind, where presence is itself the meaning.
+ */
+const attr = (name: string, value: string | null | undefined): string =>
+  value === null || value === undefined || value === "" ? "" : ` ${name}="${escapeAttribute(value)}"`
+
+/**
+ * An attribute whose PRESENCE carries the meaning, so an empty value still writes it.
+ *
+ * `download=""` is not `download` omitted: the empty form still makes the click save the file (under
+ * the server-suggested name), while dropping the attribute makes the browser navigate to it instead.
+ * A link whose text is empty is rare, and it must not silently change from a download into a
+ * navigation because of that.
+ */
+const flagAttr = (name: string, value: string | null | undefined): string =>
+  ` ${name}="${escapeAttribute(value ?? "")}"`
 
 /**
  * The marked extension that renders maths — OUR detector, not `marked-katex-extension`.
@@ -558,36 +594,40 @@ export type HostFileResolver = (href: string) => { readonly url: string; readonl
 /**
  * The link and image renderers, lifted out of the context's `init` so they can be DRIVEN BY A TEST.
  *
- * 🔴 They build HTML strings by interpolation from MODEL output, which makes attribute escaping a
- * security property rather than a tidiness one — and it had already gone wrong once here: `image`
- * escaped its `title` while `link`, twenty-five lines above it in the same object, did not. A
- * property that is only correct while somebody remembers it is not a property. `marked.test.ts`
- * drives these through the real parser with a breakout payload.
+ * 🔴 **Every value these renderers receive arrives RAW, and that was measured, not assumed.** Driving
+ * `marked@17.0.1` with a spy renderer shows it hands `href`, `title` and `text` back exactly as the
+ * author wrote them — no entity escaping of any kind, on any of the three. So an attribute written
+ * as `name="${value}"` is an attribute the author of the markdown can close and continue, and this
+ * file believed the opposite of that in writing: a comment here stated that `href` was deliberately
+ * left unescaped because *"marked already closes the quote vector there"*. It does not.
+ * `[x](<https://e.com/" onmouseover="alert(1)>)` produced a live `onmouseover` on a real `<a>`, and
+ * `[x](<https://e.com/"><img src=x onerror=alert(1)>)` produced a whole injected element. The escape
+ * on the neighbouring `title` had already been added; the `href` two characters away had not.
+ *
+ * ⚠️ **What is a slot the renderer owns, and what is markdown's own business.** An attribute value is
+ * a slot THIS code opened with a quote, so this code must close it — that is the property below. The
+ * link's element content is not: markdown passes inline HTML through by design (`marked`'s own
+ * renderer does the same), and the sanitizer in `session-ui/src/components/markdown-cache.tsx` is the
+ * declared boundary for the whole document's raw HTML. Escaping `text` here would not add safety, it
+ * would change what markdown means.
+ *
+ * ⚠️ DOMPurify downstream strips `on*` handlers, so an escaped attribute is defence in depth rather
+ * than the only wall — but the sanitizer lives in another package, this subsystem already documents
+ * one deliberate bypass of it (`markdown-html-embed.ts`), and `markdown-cache.tsx` widens its
+ * `ADD_ATTR`. An HTML string built from model output should be correct where it is built.
+ *
+ * `marked-attributes.test.ts` drives these through the real parser with breakout payloads;
+ * `marked-attribute-slots.test.ts` reads this source and fails if a raw interpolation returns.
  */
 export const fileRenderer = (resolveFile?: HostFileResolver) => ({
   link({ href, title, text }: Tokens.Link): string {
-    // 🔴 `title` arrives RAW from marked — measured against marked@17, not assumed:
-    // `[x](https://e.com "a\" onmouseover=\"alert(1)")` hands this renderer the literal
-    // `a" onmouseover="alert(1)`, which unescaped closes the attribute and becomes a live
-    // event handler. The `image` renderer below already escapes its title; this one did not,
-    // and the two are twenty-five lines apart in the same object.
-    //
-    // ⚠️ DOMPurify downstream strips the handler, so this was defence-in-depth rather than a
-    // live hole — but the sanitizer lives in another package, and this subsystem already
-    // documents one deliberate bypass of it (`markdown-html-embed.ts`). An HTML string built
-    // from MODEL output should be correct where it is built.
-    //
-    // ⚠️ `href` is deliberately NOT passed through `escapeAttribute`: marked already closes
-    // the quote vector there, and escaping again would turn a `&` in a query string into
-    // `&amp;` on top of whatever marked emitted.
-    const titleAttr = title ? ` title="${escapeAttribute(title)}"` : ""
     // 🔴 A FILE THIS INSTANCE CAN SERVE — a colleague handing over what it made. `download`
     // makes the click save it rather than navigate, and the attribute carries the file's own
     // name so it does not land as the route's last segment.
     const local = resolveFile?.(href)
     if (local)
-      return `<a href="${escapeAttribute(local.url)}"${titleAttr} class="agent-file-link" download="${escapeAttribute(text || "")}" data-agent-file="true">${text}</a>`
-    return `<a href="${href}"${titleAttr} class="external-link" target="_blank" rel="noopener noreferrer">${text}</a>`
+      return `<a${attr("href", local.url)}${attr("title", title)} class="agent-file-link"${flagAttr("download", text)} data-agent-file="true">${text}</a>`
+    return `<a${attr("href", href)}${attr("title", title)} class="external-link" target="_blank" rel="noopener noreferrer">${text}</a>`
   },
   /**
    * `![alt](path.png)` from a colleague renders INLINE.
@@ -605,13 +645,27 @@ export const fileRenderer = (resolveFile?: HostFileResolver) => ({
    * about a correct `src` makes a browser fetch it.
    */
   image({ href, title, text }: Tokens.Image): string {
-    const titleAttr = title ? ` title="${escapeAttribute(title)}"` : ""
-    const alt = escapeAttribute(text || "")
     const local = resolveFile?.(href)
     const src = local?.image ? local.url : href
-    return `<img src="${escapeAttribute(src)}" alt="${alt}"${titleAttr} class="agent-file-image" />`
+    // `alt` stays present even when empty: an `<img>` with no `alt` at all is an accessibility
+    // fault, while `alt=""` is the declared "this image carries no information" form.
+    return `<img${attr("src", src)}${flagAttr("alt", text)}${attr("title", title)} class="agent-file-image" />`
   },
 })
+
+/**
+ * Parse markdown through these renderers and nothing else.
+ *
+ * ⚠️ **Exported so a test in another package can drive the real parser without importing `marked`
+ * itself.** `packages/ui` has no DOM, so the assertion that matters — that a payload produces no
+ * injected attribute and no injected element once the output is PARSED — has to run in
+ * `packages/app`'s browser harness; and `renderer-dependency-ledger.test.ts` correctly refuses an
+ * import of a package `packages/app` does not declare. One helper here is smaller than a dependency
+ * there, and it keeps the parser configuration in the file that owns it. This is the same reason
+ * `fileRenderer` is a factory rather than an object literal inside `init`.
+ */
+export const parseWithFileRenderer = (markdown: string, resolveFile?: HostFileResolver): string =>
+  new Marked({ renderer: fileRenderer(resolveFile) }).parse(markdown, { async: false }) as string
 
 export const { use: useMarked, provider: MarkedProvider } = createSimpleContext({
   name: "Marked",

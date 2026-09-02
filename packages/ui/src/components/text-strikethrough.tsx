@@ -1,5 +1,5 @@
 import type { JSX } from "solid-js"
-import { onMount } from "solid-js"
+import { createEffect, on, onMount } from "solid-js"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { createStore } from "solid-js/store"
 import { useSpring } from "./motion-spring"
@@ -35,6 +35,15 @@ export function TextStrikethrough(props: {
 
   onMount(measure)
   createResizeObserver(() => containerRef, measure)
+  // 🔴 THE TEXT IS AN INPUT TO THE MEASUREMENT, so it has to be one of its triggers. `measure` reads
+  // `baseRef.scrollWidth`, and the two triggers above between them cover "the component appeared"
+  // and "the container was resized" — neither of which happens when a row's `content` is rewritten
+  // by a later `todowrite`. The dock lays its rows out in a grid whose column width the dock owns,
+  // so the container does NOT resize when the string inside it changes length, and `textWidth` kept
+  // the previous string's width: the strike line stopped short of the new text or ran past it.
+  // `text-reveal.tsx` in this same directory already measures under `on(() => props.text, …)`; this
+  // is that trigger, not a new idea.
+  createEffect(on(() => props.text, measure, { defer: true }))
 
   // Revealed pixels from left = progress * textWidth
   const revealedPx = () => {

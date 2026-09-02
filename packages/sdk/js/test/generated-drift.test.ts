@@ -241,7 +241,16 @@ const GENERATE_TIMEOUT_MS = 60_000
 // ⚠️ The same warning still stands, and applies to this entry too: set-identity is what makes the
 // re-pin safe. A fingerprint change that ADDS, REMOVES or REPOINTS a `source -> emitted` pair is a
 // public API change and must be reviewed as one, not re-pinned by copying the received hash.
-const SCHEMA_NAME_FINGERPRINT = "5ee03a4c68e187f895d15cef410edbeed8bc59721967f5859c6ef8b4dd76b570"
+// ── 2026-09-02: the event narrowing finally reaches the artifacts — TWENTY removals, ONE addition ──
+//   − the 20 `Event.*` component names in `EventManifest.Latest \ ServerDefinitions`
+//     (`session.status`, `question.replied`, `question.rejected`, `permission.asked`,
+//     `permission.replied`, `mcp.*`, `workspace.*`, `worktree.*`, `installation.*`, `session.error`,
+//     `session.compacted`, `global.disposed`, `vcs.branch.updated`, `question.asked`, …) — the arms
+//     `handlers/event.ts` narrows away and a conforming client would have waited for forever.
+//   + `V2EventServerConnected` — the same `server.connected` arm, now emitted from the synthetic
+//     `V2Event.server.connected` identifier rather than the manifest's. A removal beside an addition
+//     is a rename and this one is it; measured, not eyeballed, against the two manifest sets.
+const SCHEMA_NAME_FINGERPRINT = "bb4f5b087ee28d84368365e83998f5dd8588922c423a65108e661be5e442dbc8"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

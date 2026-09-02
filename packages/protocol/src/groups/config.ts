@@ -72,9 +72,14 @@ export const ConfigGroup = HttpApiGroup.make("server.config")
       }),
     ),
   )
+  // ⚠️ Not the bare name `config`: the legacy `/config` group already answers to it, and two tag
+  // entries sharing a name is an invalid `tags` array, not a merged section — a renderer draws the
+  // navigation twice. This group is the deletion verb, so it says so; the plain name is what the
+  // legacy surface leaves behind when ruling 11 finishes retiring it.
   .annotateMerge(
     OpenApi.annotations({
-      title: "config",
-      description: "Instance-wide configuration deletion.",
+      title: "config removal",
+      description:
+        "Delete instance-wide configuration keys by path — the one thing a settings write cannot express, applied in a single transaction and live without a restart.",
     }),
   )

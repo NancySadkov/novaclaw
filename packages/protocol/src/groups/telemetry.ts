@@ -31,15 +31,23 @@ export const TelemetryStatus = Schema.Struct({
 
 export const TelemetryPaths = { status: "/api/telemetry/status" } as const
 
-export const TelemetryGroup = HttpApiGroup.make("server.telemetry").add(
-  HttpApiEndpoint.get("telemetry.status", TelemetryPaths.status, {
-    success: TelemetryStatus,
-  }).annotateMerge(
+export const TelemetryGroup = HttpApiGroup.make("server.telemetry")
+  .add(
+    HttpApiEndpoint.get("telemetry.status", TelemetryPaths.status, {
+      success: TelemetryStatus,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.telemetry.status",
+        summary: "Crash-reporting status",
+        description:
+          "Show every live refusal, the exact synthetic payload the sender would produce, and its generated field disclosure.",
+      }),
+    ),
+  )
+  .annotateMerge(
     OpenApi.annotations({
-      identifier: "v2.telemetry.status",
-      summary: "Crash-reporting status",
+      title: "telemetry",
       description:
-        "Show every live refusal, the exact synthetic payload the sender would produce, and its generated field disclosure.",
+        "The maintenance plane, made inspectable: what crash reporting would send, what is stopping it, and what every field means.",
     }),
-  ),
-)
+  )

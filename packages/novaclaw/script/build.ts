@@ -218,7 +218,7 @@ if (!skipInstall) {
  * alternative is a release whose file watching is silently dead while every test on the machine that
  * built it was green.
  */
-const hostLibrary = process.platform === "win32" ? "host.dll" : "libhost.so"
+const hostLibrary = `host.${process.platform === "win32" ? "dll" : process.platform === "darwin" ? "dylib" : "so"}`
 const hostBuilt = path.resolve(dir, "../host/build", hostLibrary)
 await $`bun ${path.resolve(dir, "../host/build.ts")}`.catch((error) => {
   console.warn(`WARNING: could not build the host module — ${error?.stderr?.toString().trim() || error}`)

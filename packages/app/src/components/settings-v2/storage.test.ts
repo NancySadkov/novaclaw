@@ -11,7 +11,7 @@ const dialogSource = fs.readFileSync(new URL("./dialog-settings-v2.tsx", import.
 // The Storage tab lists WHERE an instance keeps its files (owner ask 2026-07-27). Two things are easy to
 // get silently wrong and neither shows up as a crash, so they are asserted here rather than by driving
 // the settings dialog: the Normal-vs-Developer split, and a row whose label is a missing i18n key
-// (which renders as the raw key — visible nonsense, not an error).
+// (which renders as an EMPTY label, not the key id — see `i18n/resolve.ts`).
 
 describe("Storage tab entries", () => {
   test("the locations a user needs to back up or move an instance are visible at Normal", () => {

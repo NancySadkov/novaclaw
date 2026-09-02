@@ -423,8 +423,8 @@ export const dict = {
   "settings.general.row.theme.description": "NovaClaw'un temasını özelleştirin.",
   "settings.general.row.font.title": "Kod Yazı Tipi",
   "settings.general.row.font.description": "Kod bloklarında kullanılan yazı tipini özelleştirin",
-  "settings.general.row.terminalFont.title": "Terminal Font",
-  "settings.general.row.terminalFont.description": "Customise the font used in the terminal",
+  "settings.general.row.terminalFont.title": "Terminal Yazı Tipi",
+  "settings.general.row.terminalFont.description": "Terminalde kullanılan yazı tipini özelleştirin",
   "settings.general.row.uiFont.title": "Arayüz Yazı Tipi",
   "settings.general.row.uiFont.description": "Arayüz genelinde kullanılan yazı tipini özelleştirin",
 

@@ -426,8 +426,8 @@ export const dict = {
   "settings.general.row.theme.description": "Prilagodi temu NovaClaw-a.",
   "settings.general.row.font.title": "Font za kod",
   "settings.general.row.font.description": "Prilagodi font koji se koristi u blokovima koda",
-  "settings.general.row.terminalFont.title": "Terminal Font",
-  "settings.general.row.terminalFont.description": "Customise the font used in the terminal",
+  "settings.general.row.terminalFont.title": "Font terminala",
+  "settings.general.row.terminalFont.description": "Prilagodi font koji se koristi u terminalu",
   "settings.general.row.uiFont.title": "UI font",
   "settings.general.row.uiFont.description": "Prilagodi font koji se koristi u cijelom interfejsu",
 

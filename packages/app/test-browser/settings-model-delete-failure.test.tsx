@@ -13,6 +13,7 @@ import { SettingsProvider } from "@/context/settings"
 import { SettingsModelsV2 } from "@/components/settings-v2/models"
 import { ToastRegion } from "@/utils/toast"
 import { dict as en } from "@/i18n/en"
+import { languageStub } from "./language-stub"
 
 /**
  * **A refused delete must say so** (v0.2.0 ruling 2: a failed mutation never reports success, and a
@@ -29,14 +30,6 @@ import { dict as en } from "@/i18n/en"
  * the row would satisfy the control.
  */
 
-const languageStub = {
-  t: (key: string, params?: Record<string, string | number>) => {
-    const raw = (en as Record<string, string>)[key] ?? key
-    return params ? raw.replace(/\{\{(\w+)\}\}/g, (_, name: string) => String(params[name] ?? "")) : raw
-  },
-  locale: () => "en",
-  setLocale: () => {},
-}
 
 let dispose: (() => void) | undefined
 let host: HTMLDivElement | undefined

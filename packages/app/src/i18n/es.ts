@@ -424,8 +424,8 @@ export const dict = {
   "settings.general.row.theme.description": "Personaliza el tema de NovaClaw.",
   "settings.general.row.font.title": "Fuente de código",
   "settings.general.row.font.description": "Personaliza la fuente usada en bloques de código",
-  "settings.general.row.terminalFont.title": "Terminal Font",
-  "settings.general.row.terminalFont.description": "Customise the font used in the terminal",
+  "settings.general.row.terminalFont.title": "Fuente del terminal",
+  "settings.general.row.terminalFont.description": "Personaliza la fuente usada en el terminal",
   "settings.general.row.uiFont.title": "Fuente de la interfaz",
   "settings.general.row.uiFont.description": "Personaliza la fuente usada en toda la interfaz",
 

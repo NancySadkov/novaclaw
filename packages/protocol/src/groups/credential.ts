@@ -41,8 +41,7 @@ export const CredentialGroup = HttpApiGroup.make("server.credential")
       OpenApi.annotations({
         identifier: "v2.credential.repair.status",
         summary: "Check stored-secret readability",
-        description:
-          "Report stored secrets that cannot be decrypted, with a message naming the key file to restore.",
+        description: "Report stored secrets that cannot be decrypted, with a message naming the key file to restore.",
       }),
     ),
   )
@@ -60,4 +59,11 @@ export const CredentialGroup = HttpApiGroup.make("server.credential")
           description: "Remove a stored integration credential.",
         }),
       ),
+  )
+  .annotateMerge(
+    OpenApi.annotations({
+      title: "credentials",
+      description:
+        "Secrets an integration was given: relabel one, remove one, and check whether any have become unreadable.",
+    }),
   )

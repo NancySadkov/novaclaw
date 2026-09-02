@@ -2,6 +2,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { app, utilityProcess } from "electron"
 import type { Details } from "electron"
+import { pollUntilHealthy } from "./health-poll"
 import { getLogger } from "./logging"
 import { getUserShell, loadShellEnv } from "./shell-env"
 import { getStore } from "./store"
@@ -29,6 +30,17 @@ const SIDECAR_SERVICE_NAME = "novaclaw server"
 const SIDECAR_START_STALL_TIMEOUT = 60_000
 const SIDECAR_STOP_TIMEOUT = 6_000
 const SIDECAR_LIVENESS_INTERVAL = 2_000
+const SIDECAR_HEALTH_INTERVAL = 100
+/**
+ * How long a sidecar that is ALIVE and silent may keep the readiness poll running.
+ *
+ * ⚠️ Not a duplicate of `SIDECAR_START_STALL_TIMEOUT`: that one bounds the wait for the child's
+ * `ready` message and kills the child when it expires. This bounds the HTTP health gate that begins
+ * after `ready`, where the child is answering IPC and not answering requests, and it does not kill
+ * anything — the supervisor's liveness monitor owns that decision. The two are the same 60 s because
+ * they answer the same question about the same boot, from opposite sides of one message.
+ */
+const SIDECAR_HEALTH_TIMEOUT = 60_000
 
 type SpawnLocalServerOptions = {
   onStdout?: (message: string) => void
@@ -206,6 +218,14 @@ export async function spawnLocalServer(
     throw error
   })
 
+  // The readiness poll's cancellation latch, owned by the same closure that owns the child. Set by
+  // the child's exit and by either way a caller can end this sidecar — see `pollUntilHealthy`, whose
+  // whole reason for existing is that `Promise.race` does NOT cancel the promise that loses.
+  let pollAbandoned = false
+  const abandonPoll = () => {
+    pollAbandoned = true
+  }
+
   const wait = (async () => {
     const url = `http://${hostname}:${port}`
     let healthy = false
@@ -214,17 +234,20 @@ export async function spawnLocalServer(
       throw new Error(`Sidecar exited before health check passed with code ${code}`)
     })
 
-    const ready = async () => {
-      while (true) {
-        await new Promise((resolve) => setTimeout(resolve, 100))
-        if (await checkHealth(url, password)) {
-          healthy = true
-          return
-        }
-      }
-    }
+    const ready = pollUntilHealthy({
+      probe: async () => {
+        const ok = await checkHealth(url, password)
+        // Latched inside the probe so `gone` can still tell "exited after we were satisfied" from
+        // "exited before"; the poll itself only reports which way it ended.
+        if (ok) healthy = true
+        return ok
+      },
+      cancelled: () => exited || pollAbandoned,
+      intervalMs: SIDECAR_HEALTH_INTERVAL,
+      timeoutMs: SIDECAR_HEALTH_TIMEOUT,
+    }).then(() => undefined)
 
-    await Promise.race([ready(), gone])
+    await Promise.race([ready, gone])
   })()
 
   let stopping: Promise<void> | undefined
@@ -232,6 +255,7 @@ export async function spawnLocalServer(
   return {
     listener: {
       stop: () => {
+        abandonPoll()
         if (stopping) return stopping
         if (exited) return Promise.resolve()
         child.postMessage({ type: "stop" })
@@ -246,6 +270,7 @@ export async function spawnLocalServer(
       // Fault recovery, not a user shutdown: do not send an IPC stop request to a child whose event
       // loop has stopped answering. The supervisor observes the resulting exit and respawns it.
       terminate: () => {
+        abandonPoll()
         if (!exited) child.kill()
       },
     },

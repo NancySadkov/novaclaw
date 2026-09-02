@@ -9,6 +9,7 @@ import { SettingsProvider } from "@/context/settings"
 import { SettingsStrictV2 } from "@/components/settings-v2/strict"
 import { SettingsTunesV2 } from "@/components/settings-v2/tunes"
 import { dict as en } from "@/i18n/en"
+import { languageStub } from "./language-stub"
 
 /**
  * **A settings number box must let you TYPE the value it is asking for.**
@@ -31,14 +32,6 @@ import { dict as en } from "@/i18n/en"
  * commits are three writes, and that an in-range value raises no refusal.
  */
 
-const languageStub = {
-  t: (key: string, params?: Record<string, string | number>) => {
-    const raw = (en as Record<string, string>)[key] ?? key
-    return params ? raw.replace(/\{\{(\w+)\}\}/g, (_, name: string) => String(params[name] ?? "")) : raw
-  },
-  locale: () => "en",
-  setLocale: () => {},
-}
 
 let dispose: (() => void) | undefined
 let host: HTMLDivElement | undefined

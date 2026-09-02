@@ -126,7 +126,10 @@ state.dict = build(state.locale)
 const translate = i18n.translator(() => state.dict, i18n.resolveTemplate)
 
 export function t(key: keyof Dictionary, params?: Record<string, string | number>) {
-  return translate(key, params)
+  // `i18n.translator` returns the looked-up value — `undefined` on a miss — behind a signature that
+  // says `string`. Same closure as `packages/app/src/i18n/resolve.ts`: never `undefined`, never a key id.
+  const value: string | undefined = translate(key, params)
+  return value ?? ""
 }
 
 export function initI18n(): Promise<Locale> {

@@ -56,7 +56,8 @@ export type UiI18nParams = Record<string, string | number | boolean>
  * `packages/app/src/context/language.tsx` casts that away with `as Translator`. A miss is
  * mechanically impossible for a `HostI18nKey` (the ratchet above) and for this package's own
  * bundle, so the declaration is honest for every key a component may pass — but a call site that
- * renders a key it cannot prove exists should still `??` its own fallback rather than trust it.
+ * renders a key it cannot prove exists should test the result for BLANKNESS. Not `??`: the return
+ * is a `string`, so a nullish fallback beside it is dead code.
  */
 export type UiI18n = {
   locale: Accessor<string>
@@ -74,11 +75,12 @@ function resolveTemplate(text: string, params?: UiI18nParams) {
 
 const fallback: UiI18n = {
   locale: () => "en",
-  // No host dictionary exists outside a provider, so a `HostI18nKey` cannot be resolved here and
-  // the key itself comes back — the caller's `??` fallback is what keeps that off the screen.
+  // No host dictionary exists outside a provider, so a `HostI18nKey` cannot be resolved here. It
+  // resolves to `""`, never to the key: a key id on screen is what `packages/app/src/i18n/resolve.ts`
+  // was just closed against, and this fallback was the last path in the tree that could produce one.
   t: (key, params) => {
     const value = key in en ? en[key as keyof typeof en] : undefined
-    return resolveTemplate(value ?? String(key), params)
+    return value === undefined ? "" : resolveTemplate(value, params)
   },
 }
 

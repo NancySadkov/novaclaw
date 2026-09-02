@@ -10,6 +10,7 @@ export * as CalendarStore from "./store"
 import { and, desc, eq, lte } from "drizzle-orm"
 import { Effect } from "effect"
 import { ascending } from "@novaclaw/schema/identifier"
+import { PermissionMode } from "@novaclaw/schema/session-message"
 import type { Database } from "../database/database"
 import { nextFire, sameRecurrence, type EpochMillis, type Recurrence } from "./recurrence"
 import { CalendarFireTable, CalendarScheduleTable } from "./calendar.sql"
@@ -82,7 +83,7 @@ export interface Schedule {
   readonly agent: string | null
   readonly model: string | null
   readonly location: string | null
-  readonly permissionMode: string | null
+  readonly permissionMode: PermissionMode | null
   readonly enabled: boolean
   readonly nextFireAt: number | null
   readonly lastFiredAt: number | null
@@ -98,7 +99,7 @@ export interface CreateInput {
   readonly agent?: string | null
   readonly model?: string | null
   readonly location?: string | null
-  readonly permissionMode?: string | null
+  readonly permissionMode?: PermissionMode | null
   readonly enabled?: boolean
 }
 
@@ -110,7 +111,7 @@ export interface UpdateInput {
   readonly agent?: string | null
   readonly model?: string | null
   readonly location?: string | null
-  readonly permissionMode?: string | null
+  readonly permissionMode?: PermissionMode | null
   readonly enabled?: boolean
 }
 
@@ -122,6 +123,15 @@ export interface FireInput {
   readonly status: FireStatus
 }
 
+/**
+ * ⚠️ TOTAL on purpose. `permission_mode` is a `text` column that predates the contract narrowing the
+ * field, so a legacy row can hold a mode the runner does not implement. Reading it back as an
+ * arbitrary string is what put a bare `string` on the wire; turning it into a 500 on
+ * `GET /api/calendar/schedule` would be worse. Unrecognised degrades to "inherit the default".
+ */
+const isPermissionMode = (value: string | null): value is PermissionMode =>
+  value !== null && (PermissionMode.literals as readonly string[]).includes(value)
+
 const toSchedule = (row: typeof CalendarScheduleTable.$inferSelect): Schedule => ({
   id: row.id,
   title: row.title,
@@ -131,7 +141,7 @@ const toSchedule = (row: typeof CalendarScheduleTable.$inferSelect): Schedule =>
   agent: row.agent,
   model: row.model,
   location: row.location_json,
-  permissionMode: row.permission_mode,
+  permissionMode: isPermissionMode(row.permission_mode) ? row.permission_mode : null,
   enabled: row.enabled,
   nextFireAt: row.next_fire_at,
   lastFiredAt: row.last_fired_at,

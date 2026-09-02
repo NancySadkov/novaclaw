@@ -71,3 +71,9 @@ export const AgentGroup = HttpApiGroup.make("server.agent")
         }),
       ),
   )
+  .annotateMerge(
+    OpenApi.annotations({
+      title: "agents",
+      description: "The colleagues this instance can run a session as: the roster, each one's work, and removal.",
+    }),
+  )

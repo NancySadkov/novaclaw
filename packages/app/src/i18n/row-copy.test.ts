@@ -77,9 +77,14 @@ describe("settings row copy stays scannable", () => {
   })
 
   test("🔴 nothing on a settings screen renders as a RAW KEY", () => {
-    // `language.t` returns the key itself when it is missing, so a typo ships `some.raw.key` to the
-    // screen — the live bug that key-typing was introduced to catch, and the one this very change
-    // hit three times: `label` keys guessed as `.title` on rows whose title key is `.name`.
+    // A settings row whose title key is a typo has no copy at all — the live bug that key-typing was
+    // introduced to catch, and the one this very change hit three times: `label` keys guessed as
+    // `.title` on rows whose title key is `.name`.
+    //
+    // ⚠️ This comment used to say `language.t` returns the KEY when it is missing, and it never did.
+    // `@solid-primitives/i18n@2.2.1` returns the looked-up value, i.e. `undefined`; `i18n/resolve.ts`
+    // now falls back to English and then to `""`. So the miss reaches a user as a blank label, which
+    // is why this test looks the key up in `en` rather than rendering and eyeballing the result.
     const files = fs
       .readdirSync(SRC, { recursive: true, encoding: "utf8" })
       .filter((f) => typeof f === "string" && f.endsWith(".tsx"))

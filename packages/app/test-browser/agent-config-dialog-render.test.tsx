@@ -104,7 +104,14 @@ function mount(options: { agents?: unknown[]; models?: () => unknown[] }) {
   const modelsStub = { list: () => options.models?.() ?? MODELS, connected: () => true }
   // The translator returns the KEY, so an assertion names the key rather than English prose that a
   // copy edit would break.
-  const languageStub = { t: (key: string) => key, locale: () => "en", setLocale: () => {} }
+  // Deliberately echoes the KEY rather than resolving copy — this file asserts which key a row
+  // reaches for, not what it says. `plural` echoes the group for the same reason.
+  const languageStub = {
+    t: (key: string) => key,
+    plural: (group: string) => group,
+    locale: () => "en",
+    setLocale: () => {},
+  }
   /**
    * ⚠️ Added when Clear and Retire started CLOSING the cleared chat's tab (2026-08-28). The dialog
    * had reached no further than its own server before that, so a context it now depends on was

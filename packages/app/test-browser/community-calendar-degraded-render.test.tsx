@@ -13,6 +13,7 @@ import { SettingsProvider } from "@/context/settings"
 import { CommunityNetwork } from "@/pages/home-screen/community-network"
 import { CalendarPage } from "@/pages/calendar"
 import { dict as en } from "@/i18n/en"
+import { languageStub } from "./language-stub"
 
 /**
  * **A COMMUNITY THAT COULD NOT BE READ, PRESENTED AS AN EMPTY ONE YOU HAD JOINED — and a schedule
@@ -52,14 +53,7 @@ import { dict as en } from "@/i18n/en"
  * sentence a person reads rather than a key echoed back.
  */
 
-const interpolate = (text: string, params?: Record<string, unknown>) =>
-  params === undefined ? text : text.replace(/{{(\w+)}}/g, (whole, key) => String(params[key] ?? whole))
 
-const languageStub = {
-  t: (key: string, params?: Record<string, unknown>) => interpolate((en as Record<string, string>)[key] ?? key, params),
-  locale: () => "en",
-  setLocale: () => {},
-}
 
 const HOME = "/home/tester"
 const HTTP = { url: "http://localhost:4096" }

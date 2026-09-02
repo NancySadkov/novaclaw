@@ -415,8 +415,8 @@ export const dict = {
   "settings.general.row.theme.description": "ปรับแต่งวิธีการที่ NovaClaw มีธีม",
   "settings.general.row.font.title": "ฟอนต์โค้ด",
   "settings.general.row.font.description": "ปรับแต่งฟอนต์ที่ใช้ในบล็อกโค้ด",
-  "settings.general.row.terminalFont.title": "Terminal Font",
-  "settings.general.row.terminalFont.description": "Customise the font used in the terminal",
+  "settings.general.row.terminalFont.title": "ฟอนต์เทอร์มินัล",
+  "settings.general.row.terminalFont.description": "ปรับแต่งฟอนต์ที่ใช้ในเทอร์มินัล",
   "settings.general.row.uiFont.title": "ฟอนต์ UI",
   "settings.general.row.uiFont.description": "ปรับแต่งฟอนต์ที่ใช้ทั่วทั้งอินเทอร์เฟซ",
 

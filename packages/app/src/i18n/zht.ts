@@ -414,8 +414,8 @@ export const dict = {
   "settings.general.row.theme.description": "自訂 NovaClaw 的主題。",
   "settings.general.row.font.title": "程式碼字型",
   "settings.general.row.font.description": "自訂程式碼區塊使用的字型",
-  "settings.general.row.terminalFont.title": "Terminal Font",
-  "settings.general.row.terminalFont.description": "Customise the font used in the terminal",
+  "settings.general.row.terminalFont.title": "終端機字型",
+  "settings.general.row.terminalFont.description": "自訂終端機使用的字型",
   "settings.general.row.uiFont.title": "介面字型",
   "settings.general.row.uiFont.description": "自訂整個介面使用的字型",
 

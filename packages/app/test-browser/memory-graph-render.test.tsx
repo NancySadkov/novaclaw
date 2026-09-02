@@ -247,7 +247,14 @@ function mount(answers: (() => MemoryGraph)[]) {
     }),
   }
   const syncStub = () => ({ data: { path: { directory: "/tmp/p" } }, session: { data: { info: {} } } })
-  const languageStub = { t: (key: string) => key, locale: () => "en", setLocale: () => {} }
+  // Deliberately echoes the KEY rather than resolving copy — this file asserts which key a row
+  // reaches for, not what it says. `plural` echoes the group for the same reason.
+  const languageStub = {
+    t: (key: string) => key,
+    plural: (group: string) => group,
+    locale: () => "en",
+    setLocale: () => {},
+  }
 
   dispose = render(
     () => (

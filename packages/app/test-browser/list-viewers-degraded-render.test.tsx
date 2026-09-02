@@ -18,6 +18,7 @@ import { CalendarPage } from "@/pages/calendar"
 import { SkillsPage } from "@/pages/skills"
 import { RecipesPage } from "@/pages/recipes"
 import { dict as en } from "@/i18n/en"
+import { languageStub } from "./language-stub"
 
 /**
  * **SIX LIST VIEWERS, RENDERED AGAINST A SUBSYSTEM THAT WILL NOT ANSWER.**
@@ -42,15 +43,7 @@ import { dict as en } from "@/i18n/en"
  * `trash.loadFailed` printed into the page.
  */
 
-const interpolate = (text: string, params?: Record<string, unknown>) =>
-  params === undefined ? text : text.replace(/{{(\w+)}}/g, (whole, key) => String(params[key] ?? whole))
 
-const languageStub = {
-  t: (key: string, params?: Record<string, unknown>) =>
-    interpolate((en as Record<string, string>)[key] ?? key, params),
-  locale: () => "en",
-  setLocale: () => {},
-}
 
 const HOME = "/home/tester"
 const DIRECTORY = "/home/tester/workshop"

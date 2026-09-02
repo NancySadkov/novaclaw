@@ -287,9 +287,9 @@ export const DialogModelConfig: Component<{
   }
 
   // The explain node is passed in rather than derived from `field`: a template-literal `.desc.more`
-  // key would type-check for every field and render the RAW KEY for the ones that have no second
-  // half — the live bug `dynamicKey`'s doc warns about, and a `?` with nothing behind it is a dead
-  // control besides. Opt in per row instead.
+  // key would type-check for every field and render NOTHING for the ones that have no second half
+  // — a miss resolves to the fallback, never to the key id (`i18n/resolve.ts`) — and a `?` with
+  // nothing behind it is a dead control besides. Opt in per row instead.
   const paramRow = (field: FieldKey, more?: JSX.Element) => (
     <SettingsRowV2
       title={language.t(`settings.models.config.${field}.name`)}

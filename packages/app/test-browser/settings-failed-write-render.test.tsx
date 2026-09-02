@@ -16,6 +16,7 @@ import { InstancesAccess } from "@/components/settings-v2/instances-access"
 import { SettingsPoliciesSection } from "@/components/settings-v2/policies"
 import { SettingsToolsV2 } from "@/components/settings-v2/tools"
 import { dict as en } from "@/i18n/en"
+import { languageStub } from "./language-stub"
 
 /**
  * **A SAVE THAT DID NOT HAPPEN MUST NOT LOOK LIKE ONE — on three settings panels at once.**
@@ -41,14 +42,6 @@ import { dict as en } from "@/i18n/en"
 
 const t = (key: string) => (en as Record<string, string>)[key] ?? key
 
-const languageStub = {
-  t: (key: string, params?: Record<string, unknown>) => {
-    const raw = t(key)
-    return params ? raw.replaceAll(/\{\{(\w+)\}\}/g, (_, name: string) => String(params[name] ?? `{{${name}}}`)) : raw
-  },
-  locale: () => "en",
-  setLocale: () => {},
-}
 
 let dispose: (() => void) | undefined
 let host: HTMLDivElement | undefined

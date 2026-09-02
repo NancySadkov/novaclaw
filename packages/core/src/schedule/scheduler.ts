@@ -200,9 +200,7 @@ export const makeLaunch =
         // Per-schedule permission posture; absent = inherit the default. A scheduled run is unattended, so
         // "ask" would stall waiting for an approval nobody's there to give — the UI defaults to "bypass"
         // (act within its work folder; external-directory writes still gate).
-        ...(schedule.permissionMode
-          ? { permissionMode: schedule.permissionMode as "plan" | "ask" | "surgical" | "bypass" | "yolo" }
-          : {}),
+        ...(schedule.permissionMode ? { permissionMode: schedule.permissionMode } : {}),
         metadata: { calendarScheduleID: schedule.id, occurrenceMillis: input.occurrenceMillis },
       })
       if (!spawned.started) yield* Log.event("instance.scheduler.launch.unstarted", { "session.id": spawned.id })

@@ -3,6 +3,7 @@ import { createEffect, createMemo, createResource } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createSimpleContext } from "@novaclaw/ui/context"
 import { Persist, persisted } from "@/utils/persist"
+import { pluralKey, resolveTranslation } from "@/i18n/resolve"
 import { dict as en } from "@/i18n/en"
 import { dict as uiEn } from "@novaclaw/ui/i18n/en"
 // THE locale table + matcher, in the leaf package, because the desktop shell needs the same one
@@ -29,6 +30,29 @@ export type TranslationParams = Record<string, string | number | boolean>
  */
 export type Translator = (key: TranslationKey, params?: TranslationParams) => string
 
+/** The base of a key ending in `.<Suffix>`. A naked parameter, so the conditional distributes. */
+type BaseOf<K, Suffix extends string> = K extends `${infer B}.${Suffix}` ? B : never
+
+/**
+ * Every plural group the dictionaries declare — a base key carrying BOTH a `.one` and a `.other`
+ * form. Derived from `TranslationKey`, so it cannot drift from `en.ts`, and `context.breakdown.other`
+ * (no `.one`) is correctly not one.
+ */
+export type PluralGroup = Extract<BaseOf<TranslationKey, "one">, BaseOf<TranslationKey, "other">>
+
+/**
+ * Render a counted phrase in the grammar of the locale in force.
+ *
+ * ⚠️ Use this and never `t(n === 1 ? "x.one" : "x.other", { count: n })`. That ternary is the
+ * English/Germanic two-form rule written into a call site, where no translator can reach it: Slavic
+ * languages need one/few/many and Arabic needs six categories, so in ru/uk/pl/bs one of {2–4, 5+} is
+ * always grammatically wrong and cannot be fixed from a bundle. `i18n/plural-sites.test.ts` is a
+ * shrink-only ledger of the sites that still do it.
+ *
+ * `count` is interpolated as `{{count}}` and wins over a `count` in `params`.
+ */
+export type Pluralize = (group: PluralGroup, count: number, params?: TranslationParams) => string
+
 /**
  * The ONE escape hatch for a key that genuinely cannot be known at compile time.
  *
@@ -37,11 +61,15 @@ export type Translator = (key: TranslationKey, params?: TranslationParams) => st
  * union of suffixes still type-checks through template-literal types, and that is strictly better
  * than this, because this function checks nothing at all.
  *
- * ⚠️ A key passed through here is unverified. If it is missing, `@solid-primitives/i18n` returns
- * the key itself and the user sees `some.raw.key` in the UI — which is exactly the live bug
- * (`mcp.status.needs_client_registration`) that key-typing the translator found. So a call site that
- * uses this should either handle the miss (compare the result to the key) or be somewhere a raw key
- * is genuinely impossible.
+ * ⚠️ A key passed through here is unverified, and what a miss DOES is not what this comment used to
+ * say. `@solid-primitives/i18n@2.2.1` does not echo the key back — its `translator()` returns the
+ * looked-up value, i.e. `undefined`, which Solid renders as nothing. `i18n/resolve.ts` closes both
+ * outcomes: a miss falls back to English and then to `""`, so it can reach a user as a blank label
+ * but never as `some.raw.key`.
+ *
+ * ⚠️ So the mitigation this comment used to prescribe — *compare the result to the key* — is
+ * unreachable and always was; a guard built on it never fires. A call site that must notice a miss
+ * tests the result for BLANKNESS, the way `apps/app-label.ts` does.
  *
  * Every use is pinned by `src/i18n/key-typing.test.ts`, a SHRINK-ONLY ledger: adding a site fails
  * the suite by name. ⚠️ Read the count off `LEDGER` there, never from a sentence here — a
@@ -203,12 +231,27 @@ export const { use: useLanguage, provider: LanguageProvider, context: LanguageCo
     // `Record<string, string>` makes the index signature swallow the other's literal keys in the
     // `typeof en & typeof uiEn` intersection, `keyof Dictionary` collapses to `string`, and `t` is
     // silently never checked again. That has happened, and it shipped a raw key to a user.
-    // ⚠️ The cast itself remains because `@solid-primitives/i18n`'s `translator` types params
-    // per-key from the template string; we take one uniform param bag. Do NOT widen `key` back to
-    // `string` — that is the whole check, and `en.ts` is the only place to add a key.
-    // `src/i18n/key-typing.test.ts` asserts both declarations by exact text, because the bypass
-    // ratchet beside it would go green over a translator that checks nothing.
-    const t = i18n.translator(() => dict() ?? base, i18n.resolveTemplate) as Translator
+    // ⚠️ Do NOT widen `key` back to `string` — that is the whole check, and `en.ts` is the only
+    // place to add a key. `src/i18n/key-typing.test.ts` asserts both declarations by exact text,
+    // because the bypass ratchet beside it would go green over a translator that checks nothing.
+    //
+    // ⚠️ `i18n.translator` is deliberately NOT used here. Its `default:` arm returns `undefined` for
+    // a key the dictionary lacks, behind a signature that says `string` — so the `as Translator`
+    // that used to sit on this line was a cast standing over a lie, and every guard written against
+    // it compared the result to the key, which is a thing that never happens.
+    // `i18n/resolve.ts` owns the miss: English first, then `""`, never `undefined`, never a key id.
+    const active = () => dict() ?? base
+    const translate = (key: string, params?: TranslationParams) => resolveTranslation(active(), base, key, params)
+
+    // `translate` accepts any string, so it satisfies the narrower key-typed `Translator` — the
+    // assignment goes this way and only this way (parameters are contravariant).
+    const t: Translator = translate
+
+    // The key is built from a CLDR category, so it is not a literal the compiler can check; the
+    // GROUP is, and `pluralKey` only ever appends a category to it or falls back to `.other`. That
+    // is why this lives at the declaration rather than at a call site.
+    const plural: Pluralize = (group, count, params) =>
+      translate(pluralKey(active(), intl(), group, count), { ...params, count })
 
     const label = (value: Locale) => t(LABEL_KEY[value])
 
@@ -225,6 +268,7 @@ export const { use: useLanguage, provider: LanguageProvider, context: LanguageCo
       locales: LOCALES,
       label,
       t,
+      plural,
       setLocale(next: Locale) {
         setStore("locale", normalizeLocale(next))
       },

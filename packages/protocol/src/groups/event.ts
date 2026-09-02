@@ -46,9 +46,9 @@ const make = <const Definitions extends ReadonlyArray<Definition>>(definitions: 
   }
 }
 
-export const makeEventGroup = <const Definitions extends ReadonlyArray<Definition>>(definitions: Definitions) =>
-  make(definitions).group
-
+// ⚠️ There is no exported way to build this group from a DIFFERENT definition set. One existed, was
+// called by nothing, and its whole hazard was that the set it took was checked against nothing —
+// which is how the published `/api/event` union came to name twenty arms the handler drops.
 const event = make(EventManifest.ServerDefinitions)
 export const EventGroup = event.group
 export const NovaClawEvent = event.schema

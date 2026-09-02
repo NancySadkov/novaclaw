@@ -462,7 +462,7 @@ export const CommunityNetwork: Component = () => {
      * for a line that is always on screen. Saying what is actually known costs nothing.
      */
     if (state.kind === "online")
-      return language.t(state.peers === 1 ? "community.status.ready.one" : "community.status.ready.other", { count: state.peers })
+      return language.plural("community.status.ready", state.peers)
     if (state.kind === "connecting") return language.t("community.status.connecting")
     if (state.reason === "airgap") return language.t("community.status.airgap")
     // ⚠️ Three different sentences, because they are three different situations for the person
@@ -623,13 +623,13 @@ export const CommunityNetwork: Component = () => {
       }
       setFound(
         result.peers > 0
-          ? language.t(result.peers === 1 ? "community.find.reachable.one" : "community.find.reachable.other", { count: result.peers }) +
+          ? language.plural("community.find.reachable", result.peers) +
               (result.learned > 0 ? language.t("community.find.newlyDiscovered", { count: result.learned }) : "")
           : !result.seedsAsked
             ? language.t("community.find.noSeeds")
             : result.seedsFound === 0
               ? language.t("community.find.seedsEmpty")
-              : language.t(result.seedsFound === 1 ? "community.find.seedsTried.one" : "community.find.seedsTried.other", { count: result.seedsFound }),
+              : language.plural("community.find.seedsTried", result.seedsFound),
       )
       /**
        * ⚠️ PARTICIPATION too, and it was the missing one (review 1.15): a Find is the moment an
@@ -1619,7 +1619,7 @@ export const CommunityNetwork: Component = () => {
         </Show>
         <Show when={(history()?.hidden ?? 0) > 0}>
           <span class="text-[11px] leading-snug text-v2-text-text-muted">
-            {language.t((history()?.hidden ?? 0) === 1 ? "community.channels.hiddenByFilters.one" : "community.channels.hiddenByFilters.other", { count: history()?.hidden ?? 0 })}
+            {language.plural("community.channels.hiddenByFilters", history()?.hidden ?? 0)}
           </span>
         </Show>
         <div class="mt-2 flex flex-col gap-1 border-t border-white/5 pt-2">
@@ -1701,7 +1701,7 @@ export const CommunityNetwork: Component = () => {
               <For each={archived() ?? []}>
                 {(entry) => (
                   <ButtonV2 variant="ghost" size="small" onClick={() => void rejoin(entry.name)}>
-                    {language.t(entry.messages === 1 ? "community.channels.archivedEntry.one" : "community.channels.archivedEntry.other", { name: entry.name, count: entry.messages })}
+                    {language.plural("community.channels.archivedEntry", entry.messages, { name: entry.name })}
                   </ButtonV2>
                 )}
               </For>

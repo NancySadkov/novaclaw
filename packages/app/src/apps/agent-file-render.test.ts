@@ -33,7 +33,12 @@ describe("a colleague's file reaches the chat", () => {
     expect(link).toMatch(/resolveFile\?\.\(href\)/)
     // `download` is what makes the click SAVE rather than navigate. Without it the browser renders
     // the bytes in place and the user has a chart where their chat used to be.
-    expect(link).toContain("download=")
+    //
+    // ⚠️ Matched on the attribute NAME, not on the literal `download=`. The renderers no longer
+    // write `name="` at all — every attribute is emitted whole by the escaping helper, which is
+    // exactly what stops one of them being interpolated raw — so `download=` appears nowhere in the
+    // link renderer even though the attribute is very much still emitted.
+    expect(link).toMatch(/(flagAttr|attr)\("download",/)
   })
 
   test("3. the image renderer inlines a host image", () => {

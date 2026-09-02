@@ -376,3 +376,14 @@ export const MemoryGroup = HttpApiGroup.make("server.memory")
       }),
     ),
   )
+  // ⚠️ Not the bare name `memory`: the legacy `/memory/*` group already answers to it, and two tag
+  // entries with one name is an invalid `tags` array, not a merged section. This half is the claim
+  // LIFECYCLE and the ledger over it; that half is the graph viewer/editor. Ruling 11 retires the
+  // legacy surface, and the plain name is what it should leave behind.
+  .annotateMerge(
+    OpenApi.annotations({
+      title: "memory lifecycle",
+      description:
+        "Governed claims and what the graph does with them: file a claim and see what it retired, read the noise views over how memories are actually used, vouch for one, and export or erase.",
+    }),
+  )

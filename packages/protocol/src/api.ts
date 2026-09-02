@@ -9,8 +9,7 @@ import { makePermissionGroup } from "./groups/permission"
 import { FileSystemGroup } from "./groups/fs"
 import { CommandGroup } from "./groups/command"
 import { SkillGroup } from "./groups/skill"
-import { EventGroup, makeEventGroup } from "./groups/event"
-import type { Definition } from "@novaclaw/schema/event"
+import { EventGroup } from "./groups/event"
 import { AgentGroup } from "./groups/agent"
 import { HealthGroup } from "./groups/health"
 import { MemoryGroup } from "./groups/memory"
@@ -93,7 +92,14 @@ const makeApiFromGroup = <
       OpenApi.annotations({
         title: "novaclaw HttpApi",
         version: "0.0.1",
-        description: "Experimental HttpApi surface for selected instance routes.",
+        // ⚠️ **This description is a FALLBACK, and its job is to never be used.** `HttpApi.addHttpApi`
+        // merges an embedded API's annotations into each of its groups, so any group here that
+        // declares no `title`/`description` of its own is published under THESE — nineteen
+        // operations, the whole `/api/memory/*` surface among them, once carried the literal tag
+        // name "novaclaw HttpApi" and told a stranger the routes were experimental and partial.
+        // Every group now names itself, which `test/openapi-tags.test.ts` holds shut.
+        description:
+          "The instance's `/api/*` contract: sessions, agents, models, memory and the rest of the OS surface.",
       }),
     )
     .middleware(Authorization)
@@ -163,36 +169,16 @@ type ApiFromGroup<
   >
 >
 
-export function makeApi<
-  const Definitions extends ReadonlyArray<Definition>,
-  LocationId extends HttpApiMiddleware.AnyId,
-  LocationService,
-  SessionLocationId extends HttpApiMiddleware.AnyId,
-  SessionLocationService,
-  WorkspaceRoutingId extends HttpApiMiddleware.AnyId,
-  WorkspaceRoutingService,
->(options: {
-  readonly definitions: Definitions
-  readonly locationMiddleware: Context.Key<LocationId, LocationService>
-  readonly sessionLocationMiddleware: Context.Key<SessionLocationId, SessionLocationService>
-  readonly workspaceRoutingMiddleware: Context.Key<WorkspaceRoutingId, WorkspaceRoutingService>
-}): ApiFromGroup<
-  ReturnType<typeof makeEventGroup<Definitions>>,
-  LocationId,
-  LocationService,
-  SessionLocationId,
-  SessionLocationService,
-  WorkspaceRoutingId,
-  WorkspaceRoutingService
-> {
-  return makeApiFromGroup(
-    makeEventGroup(options.definitions),
-    options.locationMiddleware,
-    options.sessionLocationMiddleware,
-    options.workspaceRoutingMiddleware,
-  )
-}
-
+/**
+ * 🔴 **There is ONE build of this API, and that is the point.**
+ *
+ * A second entry point took a `definitions` array and built the event group from it, which let a
+ * caller publish a `GET /api/event` contract naming arms the served handler narrows away — the
+ * parameter was checked against nothing, so the spec and the route drifted in silence and a
+ * conforming client waited forever for a type that could never arrive. It was deleted once its last
+ * caller moved to `runtimeApi()`; the divergence is now not a bug you can reintroduce here but a
+ * statement that cannot be written. `git log -S makeEventGroup` has the shape if it is ever wanted.
+ */
 export function makeDefaultApi<
   LocationId extends HttpApiMiddleware.AnyId,
   LocationService,

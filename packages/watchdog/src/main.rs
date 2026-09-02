@@ -96,6 +96,23 @@ const INTENT_EXIT_CODE: i32 = 77;
 /// prevent. Capping the *rate* bounds the damage instead.
 const BACKOFF_MS: [u64; 6] = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000];
 
+/// The smallest gap between two starts, whatever asked for the second one.
+///
+/// 🔴 **The ladder above bounds the rate of CRASH restarts, and it used to be the only bound there
+/// was — so the two arms that do not consult it had no rate limit at all.** A child that boots,
+/// fails to apply a pending update, writes `{"kind":"restart"}` and exits 77 in 50 ms was respawned
+/// with no delay, forever: a 20 Hz process-spawn loop in the one binary whose value proposition is
+/// never misbehaving. A `dormant` whose `wakeAtMs` is already past (a clock jump, or a child
+/// computing its wake time from a stale base) does the same through a `sleep_until` that returns
+/// immediately.
+///
+/// ⚠️ So the floor is NOT a second check on those two paths. It is a precondition of the ONE place
+/// a child is ever started, which is what makes it impossible to route around: a decision arm added
+/// later gets it without knowing it exists, and so does the spawn-failure retry. `BACKOFF_MS[0]` is
+/// deliberately the same number as the ladder's first rung — a legitimate restart is not slower than
+/// a first crash restart, and it is not faster either.
+const MIN_RESTART_GAP_MS: u64 = BACKOFF_MS[0];
+
 /// How long a child must stay alive for its start to count as SUCCESSFUL, resetting the ladder.
 ///
 /// 🔴 Without this the ladder is decorative: a child that dies after ten minutes, twice a day, would
@@ -295,6 +312,22 @@ fn take_intent(path: &Path) -> Option<Intent> {
     parse_intent(&text)
 }
 
+/// How long the loop still owes before it may start a child again.
+///
+/// A pure function of (when the previous start began, now) so the floor can be reasoned about and
+/// tested without spawning anything. `None` is the first start of the process, which owes nothing.
+fn restart_gap_ms(previous_start_ms: Option<u128>, now: u128) -> u64 {
+    let previous = match previous_start_ms {
+        Some(value) => value,
+        // The first start of the process owes nothing.
+        None => return 0,
+    };
+    // `saturating_sub` on both halves: a clock that jumped BACKWARDS must read as "no time has
+    // passed", i.e. wait the full gap — never as a negative that wraps into a very long sleep.
+    let elapsed = now.saturating_sub(previous);
+    (MIN_RESTART_GAP_MS as u128).saturating_sub(elapsed) as u64
+}
+
 fn now_ms() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -379,12 +412,23 @@ fn main() -> ExitCode {
     let wake_now = args.state_dir.join("wake-now");
 
     let mut attempt = 0usize;
+    let mut last_start_ms: Option<u128> = None;
     loop {
+        // 🔴 THE RATE FLOOR, at the ONLY place a child is ever started — see MIN_RESTART_GAP_MS.
+        // Every route back here passes through it: a crash, an operator restart, a past-dated
+        // dormancy, a command that could not be spawned at all. A start that lasted longer than the
+        // gap pays nothing, so this costs a healthy instance exactly zero.
+        let owed = restart_gap_ms(last_start_ms, now_ms());
+        if owed > 0 {
+            std::thread::sleep(Duration::from_millis(owed));
+        }
+
         // 🔴 Clear BEFORE spawning. Together with consuming on read this is what makes an intent
         // single-use: a file that survived a hard kill cannot speak for the run about to start.
         let _ = fs::remove_file(&intent_path);
 
         let started = now_ms();
+        last_start_ms = Some(started);
         // 🔴 TELL THE CHILD IT IS SUPERVISED, and how to reach us.
         //
         // Without this the child cannot know whether anything is listening, and the only safe thing
@@ -429,16 +473,19 @@ fn main() -> ExitCode {
                 eprintln!("[watchdog] child asked to stay down — exiting");
                 return ExitCode::SUCCESS;
             }
+            // ⚠️ Neither of these arms resets `attempt`, and that is the fix rather than an
+            // omission. The reset rule is the one HEALTHY_AFTER_MS documents and the block above
+            // applies: the ladder clears when the last start ACHIEVED something. Clearing it here
+            // as well meant a child alternating a fast intent-restart with a crash never climbed
+            // the ladder at all — the counter was wiped on every other iteration.
             Decision::RestartNow => {
                 eprintln!("[watchdog] child asked for a restart");
-                attempt = 0;
             }
             Decision::RestartAt { wake_at_ms } => {
                 let now = now_ms();
                 let seconds = wake_at_ms.saturating_sub(now) / 1000;
                 eprintln!("[watchdog] child went dormant — waking in {seconds}s");
                 sleep_until(wake_at_ms, &wake_now);
-                attempt = 0;
             }
             Decision::RestartAfterCrash => {
                 let delay = BACKOFF_MS[attempt.min(BACKOFF_MS.len() - 1)];
@@ -619,6 +666,48 @@ mod tests {
             "the stale marker must be consumed before the new sleep begins"
         );
         let _ = fs::remove_dir_all(directory);
+    }
+
+    // 🔴 THE RATE FLOOR. The ladder is consulted by ONE decision arm; these assertions are about the
+    // bound that no arm can avoid, because it sits at the single place a child is started.
+    #[test]
+    fn an_operator_restart_still_pays_the_floor() {
+        // The concrete case: a child that boots, fails to apply an update, writes an intent and
+        // exits 77 in 50 ms. `RestartNow` consults no ladder, so without a floor this is a 20 Hz
+        // spawn loop. The floor is charged against the START, not against the exit, so a 50 ms life
+        // still owes almost the whole gap.
+        let started = 1_000_000u128;
+        assert_eq!(
+            restart_gap_ms(Some(started), started + 50),
+            MIN_RESTART_GAP_MS - 50
+        );
+    }
+
+    #[test]
+    fn a_past_dated_dormancy_still_pays_the_floor() {
+        // `sleep_until` returns immediately for a wake time already behind us — a clock jump, or a
+        // child computing its wake from a stale base — so the dormancy arm reaches the top of the
+        // loop with no delay of its own. Same floor, same reason.
+        let started = 42u128;
+        assert_eq!(restart_gap_ms(Some(started), started), MIN_RESTART_GAP_MS);
+    }
+
+    #[test]
+    fn the_floor_costs_a_healthy_instance_nothing() {
+        let started = 1_000u128;
+        let gap = MIN_RESTART_GAP_MS as u128;
+        assert_eq!(restart_gap_ms(Some(started), started + gap), 0);
+        assert_eq!(restart_gap_ms(Some(started), started + HEALTHY_AFTER_MS), 0);
+        // The first start of the process owes nothing at all.
+        assert_eq!(restart_gap_ms(None, 0), 0);
+    }
+
+    #[test]
+    fn a_backwards_clock_waits_rather_than_wrapping() {
+        // If "now" reads earlier than the start we recorded, the elapsed time must clamp to zero and
+        // the caller must wait the full gap — an unsigned wrap here would park the instance for
+        // millions of years, which is the failure mode `sleep_until`'s own tick guard exists for.
+        assert_eq!(restart_gap_ms(Some(5_000), 1_000), MIN_RESTART_GAP_MS);
     }
 
     // ⚠️ The ladder must CAP rather than run off the end of the array, and it must never stop

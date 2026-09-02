@@ -11,6 +11,7 @@ import { SettingsProvider } from "@/context/settings"
 import { NovaHealthBoard } from "@/components/settings-v2/nova-health"
 import { SettingsProjectSection } from "@/components/settings-v2/project"
 import { dict as en } from "@/i18n/en"
+import { languageStub } from "./language-stub"
 
 /**
  * **TWO SETTINGS PANELS, RENDERED AGAINST AN INSTANCE THAT WILL NOT ANSWER.**
@@ -43,12 +44,6 @@ import { dict as en } from "@/i18n/en"
 const interpolate = (text: string, params?: Record<string, unknown>) =>
   params === undefined ? text : text.replace(/{{(\w+)}}/g, (whole, key) => String(params[key] ?? whole))
 
-const languageStub = {
-  t: (key: string, params?: Record<string, unknown>) =>
-    interpolate((en as Record<string, string>)[key] ?? key, params),
-  locale: () => "en",
-  setLocale: () => {},
-}
 
 const DIRECTORY = "/tmp/workshop"
 const HOME = "/home/tester"

@@ -15,6 +15,7 @@ import { useExpertise } from "@/context/expertise"
 import { RegistryPage, REGISTRY_COPY } from "@/pages/registry"
 import { TerminalPage } from "@/pages/terminal"
 import { dict as en } from "@/i18n/en"
+import { languageStub } from "./language-stub"
 
 /**
  * **TWO DEVELOPER SURFACES THAT USED TO SAY NOTHING AT ALL WHEN A READ FAILED — plus the two forms
@@ -56,14 +57,7 @@ import { dict as en } from "@/i18n/en"
  * `terminal.unavailable.title` printed into the page.
  */
 
-const interpolate = (text: string, params?: Record<string, unknown>) =>
-  params === undefined ? text : text.replace(/{{(\w+)}}/g, (whole, key) => String(params[key] ?? whole))
 
-const languageStub = {
-  t: (key: string, params?: Record<string, unknown>) => interpolate((en as Record<string, string>)[key] ?? key, params),
-  locale: () => "en",
-  setLocale: () => {},
-}
 
 const HOME = "/home/tester"
 const DIRECTORY = "/home/tester/workshop"

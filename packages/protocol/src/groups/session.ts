@@ -619,7 +619,19 @@ export const makeSessionGroups = <
             }),
           ),
       )
-      .annotateMerge(OpenApi.annotations({ title: "sessions", description: "Experimental session routes." }))
+      // 🔴 **One tag per group, and each name distinct.** All four session groups used to declare
+      // the single name `sessions`, which put 41 operations in one undifferentiated heading AND
+      // pushed four identically-named entries into the document's `tags` array — names OpenAPI 3.1
+      // requires to be unique, and which renderers turn into four duplicate navigation sections.
+      // The split into four groups already exists for middleware reasons and it happens to be the
+      // honest taxonomy: the roster, what a session runs WITH, driving its turn, and watching it.
+      .annotateMerge(
+        OpenApi.annotations({
+          title: "sessions",
+          description:
+            "The session roster: create, list, read, retitle, tag, fork and remove a session, and see who is attached to one.",
+        }),
+      )
       .middleware(workspaceRoutingMiddleware),
     HttpApiGroup.make("server.session.control")
       .add(
@@ -904,7 +916,13 @@ export const makeSessionGroups = <
             }),
           ),
       )
-      .annotateMerge(OpenApi.annotations({ title: "sessions", description: "Experimental session routes." }))
+      .annotateMerge(
+        OpenApi.annotations({
+          title: "session control",
+          description:
+            "What a session runs WITH: switch its agent, model, responder, permission mode, folder, strictness, features and prompt override, and dispatch a shell or slash command.",
+        }),
+      )
       .middleware(workspaceRoutingMiddleware),
     HttpApiGroup.make("server.session.runtime")
       .add(
@@ -997,7 +1015,13 @@ export const makeSessionGroups = <
             OpenApi.annotations({ identifier: "v2.session.revert.commit", summary: "Commit staged revert" }),
           ),
       )
-      .annotateMerge(OpenApi.annotations({ title: "sessions", description: "Experimental session routes." }))
+      .annotateMerge(
+        OpenApi.annotations({
+          title: "session runtime",
+          description:
+            "Drive a session's turn: prompt it, wait for it to settle, compact it, and stage or commit a revert.",
+        }),
+      )
       .middleware(workspaceRoutingMiddleware),
     HttpApiGroup.make("server.session.observation")
       .add(
@@ -1099,8 +1123,9 @@ export const makeSessionGroups = <
       )
       .annotateMerge(
         OpenApi.annotations({
-          title: "sessions",
-          description: "Experimental session routes.",
+          title: "session observation",
+          description:
+            "Watch a session without changing it: its live context, its history, its event stream, one projected message — and the interrupt that stops a turn.",
         }),
       )
       // 🔴 **Workspace routing, at the GROUP level — the whole native session surface, not one endpoint.**

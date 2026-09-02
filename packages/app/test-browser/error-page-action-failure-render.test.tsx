@@ -4,6 +4,7 @@ import { LanguageContext } from "@/context/language"
 import { PlatformProvider } from "@/context/platform"
 import { ErrorPage } from "@/pages/error"
 import { dict as en } from "@/i18n/en"
+import { languageStub } from "./language-stub"
 
 /**
  * **THE ONE PAGE WHERE A RAW STACK TRACE MUST NOT BE THE BODY TEXT.**
@@ -30,14 +31,7 @@ import { dict as en } from "@/i18n/en"
  * user is TOLD, and the succeeding case must prove nothing is said.
  */
 
-const interpolate = (text: string, params?: Record<string, unknown>) =>
-  params === undefined ? text : text.replace(/{{(\w+)}}/g, (whole, key) => String(params[key] ?? whole))
 
-const languageStub = {
-  t: (key: string, params?: Record<string, unknown>) => interpolate((en as Record<string, string>)[key] ?? key, params),
-  locale: () => "en",
-  setLocale: () => {},
-}
 
 /** The frame text that must never appear in the body. Built, not caught, so it is exact. */
 const FRAME = "at ExportLogsInternals (novaclaw/desktop/logs.ts:412:9)"

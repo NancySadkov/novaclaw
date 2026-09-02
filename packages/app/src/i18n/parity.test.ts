@@ -17,6 +17,7 @@ import { dict as th } from "./th"
 import { dict as zh } from "./zh"
 import { dict as zht } from "./zht"
 import { dict as tr } from "./tr"
+import { EXTRA_PLURAL_CATEGORIES, pluralGroups } from "./resolve"
 import { dict as uiEn } from "@novaclaw/ui/i18n/en"
 import { dict as uiAr } from "@novaclaw/ui/i18n/ar"
 import { dict as uiBr } from "@novaclaw/ui/i18n/br"
@@ -58,6 +59,9 @@ import { dict as uiTr } from "@novaclaw/ui/i18n/tr"
 //   1. EXTRA  — a key in a locale that `en` does not have          → FAIL, by name.
 //      Nothing renders it (`t()` is typed to `en`'s keys) and nobody will ever find it to delete.
 //      This is the half `Partial<Record<Keys, string>>` catches.
+//      ⚠️ ONE exemption, added with the plural formatter: the extra CLDR plural categories a
+//      language has and English does not. See `baseKeyResolver` below for why the rule as written
+//      was what FORBADE a correct Slavic plural.
 //   2. MISSING — a key in `en` that a locale does not have         → COUNTED, never a failure.
 //      That is what `Partial` is FOR. A gate that fails on the first untranslated string makes
 //      translating impossible; the counts below are the translation backlog, printed, not enforced.
@@ -68,6 +72,9 @@ import { dict as uiTr } from "@novaclaw/ui/i18n/tr"
 //      Compared per SIBLING GROUP (the key minus its last dot-segment) and restricted to keys the
 //      locale actually has. Both restrictions are load-bearing, see below. `tsgo` cannot see this
 //      at all — it is pure string content.
+//   5. ENGLISH SENTENCES — a 3+-word value byte-identical to `en`  → FAIL, by name.
+//      Rule 2 makes absence legal, so pasting the English string in is never the honest answer: it
+//      renders the same words AND tells the coverage report the key is done.
 //
 // Why placeholders are compared per GROUP and not per KEY. `provider.connect.oauth.code.visit.*` is
 // a prefix/link/suffix triple rendered as one sentence with one param object, and `tr` correctly
@@ -153,6 +160,34 @@ function siblingGroup(key: string): string {
   return cut === -1 ? key : key.slice(0, cut)
 }
 
+/**
+ * Rule 1's one exemption: the CLDR plural categories a language has and English does not.
+ *
+ * `en` carries `.one` and `.other` for every plural group, because those are English's two
+ * categories. Russian, Ukrainian, Polish and Bosnian need `few` and `many`; Arabic needs all six.
+ * Without this, rule 1 — a key a locale has that `en` does not is an EXTRA and fails — is what
+ * FORBIDS a correct Slavic plural: the ratchet that keeps the bundles honest was blocking the fix.
+ *
+ * The exemption is narrow by construction. It applies only to a category name from the CLDR set, and
+ * only under a base `en` itself declares as a plural group (`.one` AND `.other`), so it cannot excuse
+ * an ordinary typo — `settings.storage.db.titel` is still an EXTRA and still fails by name.
+ *
+ * ⚠️ Such a key is NOT excluded from rule 4. It stands in for the group's `.other`, so its
+ * placeholders are compared against that, and a `{{count}}` dropped from a `few` form still fails.
+ */
+function baseKeyResolver(base: Dict): (key: string) => string | undefined {
+  const groups = pluralGroups(base)
+  return (key) => {
+    if (key in base) return key
+    const cut = key.lastIndexOf(".")
+    if (cut === -1) return undefined
+    const category = key.slice(cut + 1)
+    if (!(EXTRA_PLURAL_CATEGORIES as readonly string[]).includes(category)) return undefined
+    const group = key.slice(0, cut)
+    return groups.has(group) ? `${group}.other` : undefined
+  }
+}
+
 const sameSet = (a: ReadonlySet<string>, b: ReadonlySet<string>) => a.size === b.size && [...a].every((x) => b.has(x))
 const show = (set: ReadonlySet<string>) => (set.size === 0 ? "none" : [...set].sort().join(","))
 
@@ -171,16 +206,20 @@ function compare(base: Dict, locale: Dict): Report {
   const extra: string[] = []
   const shape: string[] = []
   const placeholder: string[] = []
+  // The `en` key a locale key answers to: itself, or — for an extra CLDR plural category — its
+  // group's `.other`. `undefined` means the locale has a key `en` does not, which is rule 1.
+  const baseKeyFor = baseKeyResolver(base)
 
   for (const key of localeKeys) {
-    if (!(key in base)) extra.push(key)
+    if (baseKeyFor(key) === undefined) extra.push(key)
     else if (typeof locale[key] !== "string") shape.push(`${key} is ${typeof locale[key]}, expected string`)
   }
 
   // Rule 4, over shared keys only, grouped by sibling prefix.
-  const shared = localeKeys.filter(
-    (key) => key in base && typeof locale[key] === "string" && typeof base[key] === "string",
-  )
+  const shared = localeKeys.filter((key) => {
+    const twin = baseKeyFor(key)
+    return twin !== undefined && typeof locale[key] === "string" && typeof base[twin] === "string"
+  })
   const groups = new Map<string, string[]>()
   for (const key of shared) {
     const group = siblingGroup(key)
@@ -193,12 +232,16 @@ function compare(base: Dict, locale: Dict): Report {
     const baseSet = new Set<string>()
     const localeSet = new Set<string>()
     for (const key of keys) {
-      for (const name of placeholders(base[key] as string)) baseSet.add(name)
+      for (const name of placeholders(base[baseKeyFor(key)!] as string)) baseSet.add(name)
       for (const name of placeholders(locale[key] as string)) localeSet.add(name)
     }
     if (!sameSet(baseSet, localeSet))
       placeholder.push(`${group}.* — en {{${show(baseSet)}}} vs locale {{${show(localeSet)}}}`)
-    else if (keys.some((key) => !sameSet(placeholders(base[key] as string), placeholders(locale[key] as string))))
+    else if (
+      keys.some(
+        (key) => !sameSet(placeholders(base[baseKeyFor(key)!] as string), placeholders(locale[key] as string)),
+      )
+    )
       moves++
   }
 
@@ -213,6 +256,33 @@ function compare(base: Dict, locale: Dict): Report {
 }
 
 describe("i18n parity", () => {
+  // Rule 1's exemption, asserted on synthetic dictionaries so it says exactly what it admits and
+  // exactly what it still refuses. Without the first half, `parity.test.ts` is what forbids a
+  // correct Slavic plural; without the second, "few" becomes a hole every typo can walk through.
+  describe("rule 1 — the plural-category exemption", () => {
+    const BASE = { "x.one": "{{count}} item", "x.other": "{{count}} items", "y.other": "Other" }
+
+    test("a locale may carry the CLDR categories its language has and en does not", () => {
+      const report = compare(BASE, { "x.one": "{{count}} штука", "x.few": "{{count}} штуки", "x.many": "{{count}} штук" })
+      expect({ extra: report.extra, placeholder: report.placeholder }).toEqual({ extra: [], placeholder: [] })
+    })
+
+    // An exempted key is NOT excluded from rule 4 — it stands in for the group's `.other`, so its
+    // placeholders are compared against that one. ⚠️ Rule 4 compares per sibling GROUP, so a drop in
+    // one form of a group whose other forms keep `{{count}}` reads as a MOVE, exactly as it does for
+    // the prefix/suffix idiom the grouping exists for. What is caught is a drop across the group.
+    test("an extra category is still subject to rule 4", () => {
+      expect(compare(BASE, { "x.few": "штуки" }).placeholder).not.toEqual([])
+      expect(compare(BASE, { "x.few": "{{count}} штуки" }).placeholder).toEqual([])
+    })
+
+    test("the exemption does not excuse a typo, or a category under a non-plural group", () => {
+      expect(compare(BASE, { "x.fwe": "oops" }).extra).toEqual(["x.fwe"])
+      // `y` has `.other` but no `.one`, so it is not a plural group and `y.few` is still an EXTRA.
+      expect(compare(BASE, { "y.few": "oops" }).extra).toEqual(["y.few"])
+    })
+  })
+
   for (const [family, base, locales] of FAMILIES) {
     describe(family, () => {
       test("`en` itself is a flat map of strings", () => {
@@ -247,6 +317,45 @@ describe("i18n parity", () => {
         })
         console.log(`\ni18n coverage — ${family} (${total} keys in en)\n${lines.join("\n")}`)
         expect(lines.length).toBe(locales.length)
+      })
+
+      // Rule 5 — an English SENTENCE pasted into a locale is not a translation.
+      //
+      // Rule 2 makes a MISSING key legal on purpose, and the runtime falls back to English, so the
+      // honest way to say "I cannot translate this" is to leave the key out. Copying the English
+      // string in instead is strictly worse: it renders exactly the same words while telling the
+      // coverage report above that the key is DONE. `parity.test.ts` already named this hazard for
+      // the session-fault keys — *an English string pasted into `de.ts` passes this check while
+      // LYING about the backlog* — and it had happened, once, in sixteen of the seventeen bundles:
+      // `settings.general.row.terminalFont.description`, while the `uiFont` row beside it was
+      // translated everywhere.
+      //
+      // ⚠️ IDENTICAL IS NOT THE TEST — a SENTENCE that is identical is. Measured across all 17
+      // bundles of both families: 69–131 values per locale are byte-identical to English, and at two
+      // words they are proper nouns and loanwords the parity header already defends ("Terminal" is
+      // "Terminal" in German, "VS Code" everywhere, `sound.option.bipbop01`). At **three or more
+      // whitespace-separated words** there was exactly ONE such value in the app family and ZERO in
+      // ui — a threshold with no false positives against the whole corpus, not a guess.
+      test("no locale passes an English sentence off as a translation", () => {
+        const isSentence = (value: string) => value.trim().split(/\s+/).length >= 3
+        const sentences = Object.entries(base).filter(
+          ([, value]) => typeof value === "string" && isSentence(value),
+        ).length
+        // Guards the guard: with no sentence-shaped copy in `en` this would pass by finding nothing.
+        expect(sentences, `no multi-word copy in ${family}/en — has the shape test rotted?`).toBeGreaterThan(20)
+
+        const offenders: string[] = []
+        for (const [name, dict] of locales) {
+          const values = Object.entries(dict).filter(([key, value]) => typeof value === "string" && key in base)
+          // A locale that has translated nothing is a stub, not a liar. Only a bundle whose
+          // neighbours ARE translated can be passing English off as work.
+          const translated = values.filter(([key, value]) => value !== base[key]).length
+          if (translated * 2 < values.length) continue
+          for (const [key, value] of values)
+            if (value === base[key] && isSentence(value as string))
+              offenders.push(`${name}.ts leaves ${key} in English: ${JSON.stringify(value)}`)
+        }
+        expect(offenders, "translate each line below, or delete the key so it counts as backlog").toEqual([])
       })
     })
   }

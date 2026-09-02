@@ -15,17 +15,24 @@ import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/un
 // Why it exists at all: registering a tile was reachable and removing one was not, so an agent could
 // add to a person's home screen and nothing in the product could take it back off.
 
-export const AppGroup = HttpApiGroup.make("server.app").add(
-  HttpApiEndpoint.delete("app.remove", "/api/app/:id", {
-    params: { id: Schema.String },
-    success: HttpApiSchema.NoContent,
-  }).annotateMerge(
+export const AppGroup = HttpApiGroup.make("server.app")
+  .add(
+    HttpApiEndpoint.delete("app.remove", "/api/app/:id", {
+      params: { id: Schema.String },
+      success: HttpApiSchema.NoContent,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.app.remove",
+        summary: "Remove a home app",
+        description:
+          "Delete a contributed home-app manifest by id. Built-in tiles are not manifests and are unaffected; " +
+          "deleting an id that does not exist succeeds, so the call is idempotent.",
+      }),
+    ),
+  )
+  .annotateMerge(
     OpenApi.annotations({
-      identifier: "v2.app.remove",
-      summary: "Remove a home app",
-      description:
-        "Delete a contributed home-app manifest by id. Built-in tiles are not manifests and are unaffected; " +
-        "deleting an id that does not exist succeeds, so the call is idempotent.",
+      title: "home apps",
+      description: "Launcher tiles an agent or a plugin contributed. Instance-global; built-in tiles are code.",
     }),
-  ),
-)
+  )

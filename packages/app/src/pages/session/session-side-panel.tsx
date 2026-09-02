@@ -436,9 +436,7 @@ export function SessionSidePanel(props: {
                         `width: 100%; height: 100%` inside the flex-1 wrapper. */}
                     <TabsV2.Trigger value="changes" class="flex-1">
                       {props.reviewCount()}{" "}
-                      {language.t(
-                        props.reviewCount() === 1 ? "session.review.change.one" : "session.review.change.other",
-                      )}
+                      {language.plural("session.review.change", props.reviewCount())}
                     </TabsV2.Trigger>
                     <TabsV2.Trigger value="all" class="flex-1">
                       {language.t("session.files.all")}

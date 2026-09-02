@@ -12,7 +12,7 @@ import { ServerSyncContext } from "@/context/server-sync"
 import { SettingsProvider } from "@/context/settings"
 import { SettingsAffectiveV2 } from "@/components/settings-v2/affective"
 import { SettingsWebSearchV2 } from "@/components/settings-v2/web-search"
-import { dict as en } from "@/i18n/en"
+import { languageStub } from "./language-stub"
 
 /**
  * **ONE GESTURE ON THE AFFECTIVE TAB MUST PRODUCE ONE WRITE.**
@@ -44,11 +44,6 @@ import { dict as en } from "@/i18n/en"
  * change that moves its count has broken the shared write path rather than this tab.
  */
 
-const languageStub = {
-  t: (key: string) => (en as Record<string, string>)[key] ?? key,
-  locale: () => "en",
-  setLocale: () => {},
-}
 
 let dispose: (() => void) | undefined
 let host: HTMLDivElement | undefined

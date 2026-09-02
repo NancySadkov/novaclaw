@@ -420,8 +420,8 @@ export const dict = {
   "settings.general.row.theme.description": "Tilpass hvordan NovaClaw er tematisert.",
   "settings.general.row.font.title": "Kodefont",
   "settings.general.row.font.description": "Tilpass skrifttypen som brukes i kodeblokker",
-  "settings.general.row.terminalFont.title": "Terminal Font",
-  "settings.general.row.terminalFont.description": "Customise the font used in the terminal",
+  "settings.general.row.terminalFont.title": "Terminalfont",
+  "settings.general.row.terminalFont.description": "Tilpass skrifttypen som brukes i terminalen",
   "settings.general.row.uiFont.title": "UI-skrift",
   "settings.general.row.uiFont.description": "Tilpass skrifttypen som brukes i hele grensesnittet",
 
