@@ -29,7 +29,17 @@ describe("SystemCompose — per-model pre-prompt composition", () => {
   const baseParts: Required<
     Omit<
       SystemCompose.SystemPromptParts,
-      "modelPrePrompt" | "projectScope" | "toolDiscovery" | "perception" | "memoryStance" | "workspace" | "delegation"
+      | "modelPrePrompt"
+      | "projectScope"
+      | "toolDiscovery"
+      | "perception"
+      | "memoryStance"
+      | "workspace"
+      | "delegation"
+      // Optional, and populated in exactly ONE posture: Fast Chat, where nothing else in the request
+      // carries the working folder. An ordinary chat leaves it absent — its horizon rides the
+      // grounding cadence — which is what keeps this file's byte-identity claim true.
+      | "workingFolder"
     >
   > = {
     persona: "Be pragmatic.",

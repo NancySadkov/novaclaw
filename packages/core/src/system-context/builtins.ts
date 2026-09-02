@@ -90,10 +90,19 @@ const builtIns = Layer.effectDiscard(
       Effect.map(([resourceLines, mcpLines, capabilityLines]) =>
         [
           "<env>",
-          // The working folder/project horizon is deliberately NOT frozen into this baseline.
-          // `runner/project-grounding.ts` projects it initially, after compaction, after each 64K
-          // context growth interval, and on a location change. Keeping it here as well repeated the
-          // cwd preamble in every provider payload and defeated that cadence.
+          // 🔴 The working folder/project horizon is deliberately NOT frozen into this baseline, and
+          // this block is NOT one of its owners in any posture. `runner/project-grounding.ts` holds
+          // the `Horizon` table that says who delivers it for a chat request — the cadence in an
+          // ordinary chat, a one-line system part in Fast Chat — and the jh step prompt carries its
+          // own on its own path. That table is total and has no "nobody" in it, which is the point:
+          // this comment used to name ONE owner that could be switched off, and when it was, two
+          // postures were left with no horizon at all (measured 2026-09-02).
+          //
+          // ⚠️ Do not "fix" a missing horizon by adding the cwd here. This baseline cannot see the
+          // session's mode, it repeats the preamble in every provider payload (which is what the
+          // cadence exists to avoid), and it does not render AT ALL in Fast Chat — the runner's
+          // context load short-circuits to `SystemContext.empty`, so there is no `<env>` block there
+          // for a folder line to be missing from.
           `  Platform: ${process.platform}`,
           `  Shell: ${Shell.agentDefault()}`,
           // The agent shell is bash almost everywhere, and the tool descriptions + the shipped recipes

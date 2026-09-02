@@ -34,12 +34,17 @@ import { HARNESS_SESSION, completeTurn, drive, isHarnessInjected, makeRunnerHarn
  * driven separately and their messages must name DIFFERENT folders — and each must enumerate the
  * file that only its own folder holds.
  *
- * ⚠️ **Three postures, three different answers, and only one of them is guessable from the source.**
- * The cadence's `enabled` line reads `!strictEnabled && !ShortChat.enabled(...)`, which invites the
- * conclusion that Strict and Fast Chat are both blind. Measured, they are not the same case at all:
- * Strict supplies its own, richer horizon (the step prompt inlines the folder's files), while Fast
- * Chat is told nothing anywhere in the request. The last two cases record that, each with the
- * control that makes it a measurement rather than a reading.
+ * ⚠️ **FOUR postures, and reading one `enabled` line gets three of them wrong.** That line used to
+ * read `!strictEnabled && !ShortChat.enabled(...)`, which invites the conclusion that Strict and Fast
+ * Chat are equally blind. Measured, all four differ: an ordinary chat gets the cadence; a Strict
+ * message routed to the step engine gets its own, richer horizon (the step prompt inlines the
+ * folder's files); **Fast Chat was told nothing anywhere in the request**; and **a Strict session
+ * whose message routes to CHAT falls through to the ordinary assembly and was told nothing either**.
+ * The last two for the same reason: `<env>` omitted the folder on the grounds that the cadence owned
+ * it, and the cadence had stood down. A chat request now always owns its horizon
+ * (`ProjectGrounding.HORIZON`, a total table with no "nobody" in it) and the step prompt owns its own
+ * path. The cases below measure that rather than read it — one per posture, plus the unassigned
+ * control that stops the fix from firing where no project was ever assigned.
  *
  * ⚠️ **What this file does NOT claim.** Whether the model then *behaves* correctly — reads and
  * writes in that folder rather than wandering to its scratch — needs a turn against the one Spark
@@ -97,6 +102,8 @@ const groundingFor = async (input: {
   readonly directory: string | undefined
   readonly shortChat?: boolean
   readonly strict?: boolean
+  /** What the user typed. Defaults to an ordinary opener; the Strict cases below vary it. */
+  readonly prompt?: string
 }) => {
   const harness = makeRunnerHarness({
     turns: [completeTurn("t1", "One")],
@@ -126,7 +133,11 @@ const groundingFor = async (input: {
         .run()
         .pipe(Effect.orDie)
       const session = yield* SessionV2.Service
-      yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "First" }), resume: false })
+      yield* session.prompt({
+        sessionID: HARNESS_SESSION,
+        prompt: Prompt.make({ text: input.prompt ?? "First" }),
+        resume: false,
+      })
       yield* session.resume(HARNESS_SESSION)
     }),
     `colleague folder — ${input.agentID}`,
@@ -182,36 +193,90 @@ describe("the folder a colleague was assigned is the folder its turn is grounded
     )
     expect(unassigned.text, "the unassigned colleague was grounded in the assigned project").not.toContain("ledger.md")
     expect(unassigned.text).not.toContain(ASSIGNED_PROJECT)
+
+    // 🔴 **AND IT STILL PAYS FOR THE HORIZON EXACTLY ONCE.** The Fast Chat fix below adds a second
+    // way to deliver the folder, and the cheap wrong version of it is one that fires in every
+    // posture — an ordinary chat would then carry the cadence AND a system line saying the same
+    // thing, which is a regression dressed as a fix. The ownership table is what forbids that, and
+    // this is where it is measured: the ordinary chat gets the cadence, and nothing else.
+    expect(
+      assigned.everything,
+      "an ordinary chat now carries the Fast Chat working-folder line as well as the grounding cadence — the horizon is being paid for twice",
+    ).not.toContain("this conversation belongs to")
+    expect(
+      unassigned.everything,
+      "an ordinary chat now carries the Fast Chat working-folder line as well as the grounding cadence",
+    ).not.toContain("this conversation belongs to")
   })
 
   /**
-   * 🔴 **FAST CHAT IS NEVER TOLD WHERE IT IS — AT ALL.** Measured over the whole request, not read
-   * off the `enabled` line.
+   * 🔴 **FAST CHAT IS TOLD WHERE IT IS — in one line, and only that line.**
    *
-   * `runner/llm.ts` builds the decision with `enabled: !strictEnabled && !ShortChat.enabled(...)`, so
-   * the cadence is off in Fast Chat. The question that decides whether that matters is whether
-   * anything ELSE supplies the horizon, and nothing does: `system-context/builtins.ts` leaves the
-   * working folder out of `<env>` **on purpose** — *"the working folder/project horizon is
-   * deliberately NOT frozen into this baseline"* — precisely because the grounding cadence was meant
-   * to own it. Two mechanisms each correctly deferring to the other is how a horizon goes missing.
+   * **What this case used to record.** Measured 2026-09-02, over every system part and every message
+   * of the turn: the assigned folder's path never appeared, its contents never appeared, and neither
+   * did the cadence message. The cadence read `!strictEnabled && !ShortChat.enabled(...)` and stood
+   * down; `system-context/builtins.ts` left the working folder out of `<env>` *"deliberately"*
+   * because the cadence was meant to own it — and stood down too. **A Fast Chat with a project
+   * assigned to it was a chat that had never been told about the project.** Nothing anywhere in the
+   * request could have told it: Fast Chat loads no system context at all, so there is not even an
+   * `<env>` block for a folder line to have been forgotten from.
    *
-   * So this is asserted over EVERY system part and EVERY message of the turn: the assigned folder's
-   * path does not appear, its contents do not appear, and neither does the cadence message. **A Fast
-   * Chat with a project assigned to it is a chat where that assignment is inert**, and a model asked
-   * to touch a file in it is guessing.
+   * **What it records now.** `ProjectGrounding.HORIZON` names an owner for every chat posture and has
+   * no "nobody" to return; Fast Chat's owner is a system line, `SystemCompose.workingFolderSection`.
    *
-   * ⚠️ A measurement with a control, not a preference: the same colleague and the same folder are
-   * grounded three ways in this file, and only this one is told nothing.
+   * ⚠️ **The line, and NOT the cadence — the cost decision, asserted rather than described.** Fast
+   * Chat exists to be cheap, so it gets the PATH and not the listing: the `readdir` and the
+   * re-delivered `user`-role message stay off, and the enumeration would be dead weight under a
+   * ruleset that denies every tool but `upgrade_chat` anyway. `ledger.md` staying absent is that
+   * decision; if a later change enumerates the folder here, this is the case that must be re-argued.
    */
-  test("🔴 Fast Chat is told NOTHING about the folder — not the path, not the contents, not the cadence", async () => {
+  test("🔴 Fast Chat names the assigned folder — the path in one system line, and no listing", async () => {
     const fast = await groundingFor({ agentID: ASSIGNED, directory: ASSIGNED_PROJECT, shortChat: true })
+    expect(fast.requests, "the Fast Chat turn never reached the provider — this case would prove nothing").toBe(1)
+
+    // THE FIX. Over the WHOLE request, the way the broken case was measured — not over one part.
+    expect(
+      fast.everything,
+      "a Fast Chat with an assigned project does not name it anywhere in the request — the assignment is inert again, which is the defect this case closes",
+    ).toContain(ASSIGNED_PROJECT)
+    expect(fast.everything, "the working-folder line is not the one the composer renders").toContain(
+      "this conversation belongs to",
+    )
+    // It must not promise reach this posture does not have: every tool but `upgrade_chat` is denied.
+    expect(fast.everything, "the folder line does not point at the one door Fast Chat can open").toContain(
+      "upgrade_chat",
+    )
+
+    // THE COST. A line, not the cadence: no listing, and no cadence message.
+    expect(
+      fast.everything,
+      "Fast Chat now enumerates the folder — that is a readdir and a listing on the mode whose whole point is being cheap, and it needs its own argument",
+    ).not.toContain("ledger.md")
+    expect(
+      fast.everything,
+      "Fast Chat now carries the grounding cadence itself — if that is intended, this case is the record of the change, not a failure",
+    ).not.toContain("Current working folder")
+  })
+
+  /**
+   * 🔴 **AND A FAST CHAT WITH NO PROJECT GAINS NOTHING.** The other half of the fix, and the half a
+   * line that simply always fires would get wrong.
+   *
+   * An unassigned colleague's chat already runs IN its own scratch workspace — `folderFor` says so —
+   * so announcing that folder as the project this conversation belongs to would be a misleading line
+   * where there had merely been a missing one. Same predicate `workspaceSection` uses, and shared
+   * with it so the two cannot come to disagree about whether a project was ever assigned.
+   */
+  test("🔴 a Fast Chat with no assigned project is told nothing — a missing line, never a misleading one", async () => {
+    const fast = await groundingFor({ agentID: UNASSIGNED, directory: undefined, shortChat: true })
     expect(fast.requests, "the Fast Chat turn never reached the provider — this case would prove nothing").toBe(1)
     expect(
       fast.everything,
-      "Fast Chat now carries the location cadence — if that is intended, this case is the record of the change, not a failure",
-    ).not.toContain("Current working folder")
-    expect(fast.everything, "Fast Chat now names the assigned folder somewhere").not.toContain(ASSIGNED_PROJECT)
-    expect(fast.everything, "Fast Chat now enumerates the assigned folder somewhere").not.toContain("ledger.md")
+      "an unassigned colleague's own scratch folder is now announced as the project this conversation belongs to",
+    ).not.toContain("this conversation belongs to")
+    expect(fast.everything, "the unassigned Fast Chat names its scratch workspace as a project folder").not.toContain(
+      UNASSIGNED_SCRATCH,
+    )
   })
 
   /**
@@ -226,6 +291,17 @@ describe("the folder a colleague was assigned is the folder its turn is grounded
    * is in the folder and never says where the folder is — a difference in kind from the ordinary turn
    * above, written down here rather than left to be discovered when a Strict run is asked for an
    * absolute path.
+   *
+   * ⚠️ **Deliberately still open, 2026-09-02.** It was weighed alongside the Fast Chat fix and left:
+   * that block is rendered by `jh/engine.ts`, whose `listFiles` dependency has no notion of a path at
+   * all, and the step prompt's shape is validated by measured conversion on the model floor — so
+   * changing it is a measurement, not an edit. It is a different defect from Fast Chat's in kind, not
+   * degree: Strict is told what is in the folder and merely not where, while Fast Chat was told
+   * nothing. `ProjectGrounding.HORIZON`'s comment carries the same note at the seam.
+   *
+   * ⚠️ **The step-engine path is UNCHANGED by the Fast Chat fix, and this is where that is
+   * enforced.** The last two assertions fail if either chat-side owner ever reaches a Strict message
+   * that went to the engine — the cadence, or the Fast Chat working-folder line.
    */
   test("🔴 Strict carries the assigned folder's CONTENTS instead of the cadence — and never its path", async () => {
     const strict = await groundingFor({ agentID: ASSIGNED, directory: ASSIGNED_PROJECT, strict: true })
@@ -246,5 +322,46 @@ describe("the folder a colleague was assigned is the folder its turn is grounded
       strict.everything,
       "Strict now states the working folder's absolute path — a welcome change, and this case is where it is recorded",
     ).not.toContain(ASSIGNED_PROJECT)
+    expect(
+      strict.everything,
+      "Strict now carries the Fast Chat working-folder line — the fix was supposed to leave the step engine's own horizon alone",
+    ).not.toContain("this conversation belongs to")
+  })
+
+  /**
+   * 🔴 **THE FOURTH POSTURE — a Strict session answering CONVERSATIONALLY, and the sibling the
+   * three-posture reading hides.**
+   *
+   * Turning Strict on does not send every message to the step engine. `strict-drain.ts` routes each
+   * one, and an explicit CHAT verdict — or, as here, a bare *"resume"* with nothing saved to resume —
+   * **returns `"chat"` and falls THROUGH to the ordinary chat loop**, with `strict.enabled` still
+   * true. That turn is assembled by exactly the code the Fast Chat defect lived in, and before this
+   * fix it hit exactly the same hole from the other direction: the cadence stood down because the
+   * session was Strict, the step prompt never ran because this message never reached the engine, and
+   * `<env>` omitted the folder because the cadence was supposed to own it. **Told by nobody, again.**
+   *
+   * ⚠️ **Why removing `!strictEnabled` from the cadence gate is safe, measured rather than argued.**
+   * Poisoning the ownership so that a Strict session resolves to the ORDINARY owner changed nothing
+   * observable in the case above — the step-engine path never reaches this assembly at all, so the
+   * flag was inert there. It was live in exactly one place: this fall-through. So the horizon owner
+   * is now a property of the REQUEST (a chat request always has one) rather than of the session's
+   * mode, and the step engine keeps its own horizon on its own path, untouched.
+   */
+  test("🔴 a Strict session that answers conversationally still gets the cadence — the fall-through nobody served", async () => {
+    const fallthrough = await groundingFor({
+      agentID: ASSIGNED,
+      directory: ASSIGNED_PROJECT,
+      strict: true,
+      // Routes to CHAT without asking the model: "resume" with nothing resumable is a conversation.
+      prompt: "resume",
+    })
+    expect(
+      fallthrough.everything,
+      "the Strict session sent this message to the step engine after all — it never reached the chat loop, so this case would prove nothing",
+    ).not.toContain("# Working directory")
+    expect(
+      fallthrough.everything,
+      "a conversational turn in a Strict session is told nothing about its working folder — the cadence stood down for Strict and the step prompt never ran, which is the Fast Chat defect from the other direction",
+    ).toContain(`Current working folder: ${ASSIGNED_PROJECT}`)
   })
 })

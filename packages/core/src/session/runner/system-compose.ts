@@ -133,6 +133,56 @@ export const projectScopeSection = (mode: PermissionMode): string | undefined =>
   mode === "yolo" ? undefined : PROJECT_SCOPE_INSTRUCTION
 
 /**
+ * Is this chat's working folder just the colleague's OWN scratch — i.e. was no project assigned?
+ *
+ * ⚠️ ONE predicate, because two sections now turn on it and a second copy is how they come to
+ * disagree about whether a folder was assigned at all (the `SystemAccounting.BLOCKS` lesson: two
+ * lists of one thing drift, and each looks right on its own).
+ */
+const isOwnScratch = (directory: string, scratch: string): boolean =>
+  directory.replaceAll("\\", "/").toLowerCase() === scratch.replaceAll("\\", "/").toLowerCase()
+
+/**
+ * 🔴 **WHERE this conversation is, for the posture that has no other way to learn it.**
+ *
+ * Fast Chat loads no system context at all (`loadSystemContext` short-circuits to
+ * `SystemContext.empty`, so there is no `<env>` block) and is excluded from the grounding cadence, so
+ * before this section a Fast Chat with a project assigned to it was measurably never told the
+ * project's path or contents anywhere in the request — see `project-grounding.ts`'s `Horizon` table
+ * for the whole ruling and for who delivers the horizon in every other posture.
+ *
+ * ⚠️ **One line, not the cadence.** Fast Chat exists to be cheap, and the cadence costs a `readdir`
+ * plus a re-delivered `user`-role message that lands in the durable transcript. This is a stable
+ * system part instead: it says WHERE, never WHAT IS IN THERE. The listing would be dead weight here
+ * anyway — `ShortChat.permissionRules` hard-denies every action but `upgrade_chat`, so the model
+ * could not open a single file it enumerated.
+ *
+ * ⚠️ **It must not promise reach it does not have.** `ShortChat.GUIDANCE` says this conversation is
+ * "without project access", and a line that named a folder while implying it were readable would be
+ * the false description ruling 2 forbids. So it names the folder, states plainly that it is out of
+ * reach from here, and points at the one door that IS open — which is what turns *"which project am
+ * I on?"* into an answer and *"look at that file"* into an `upgrade_chat`.
+ *
+ * ⚠️ **Absent when the working folder IS the colleague's own scratch**, for the same reason
+ * `workspaceSection` is: nobody assigned a project, and announcing the scratch folder as "where this
+ * conversation belongs" would be a misleading line rather than a missing one.
+ */
+export const workingFolderSection = (input: {
+  readonly directory: string | undefined
+  readonly scratch: string | undefined
+}): string | undefined => {
+  const directory = input.directory?.trim()
+  const scratch = input.scratch?.trim()
+  if (!directory) return undefined
+  if (scratch && isOwnScratch(directory, scratch)) return undefined
+  return (
+    `Working folder: this conversation belongs to ${directory}. You cannot read, run or change ` +
+    `anything there from this short conversation. If the user asks you to look at, edit or work on ` +
+    `anything in that folder, call upgrade_chat — do not guess at what it contains.`
+  )
+}
+
+/**
  * BOTH FOLDERS: the project this colleague is assigned to, and its own workspace.
  *
  * 🔴 Owner, 2026-08-22: *"the agent with an assigned folder has both scratch and the project
@@ -159,8 +209,7 @@ export const workspaceSection = (input: {
   const scratch = input.scratch?.trim()
   const directory = input.directory?.trim()
   if (!scratch || !directory) return undefined
-  const same = directory.replaceAll("\\", "/").toLowerCase() === scratch.replaceAll("\\", "/").toLowerCase()
-  if (same) return undefined
+  if (isOwnScratch(directory, scratch)) return undefined
   return (
     `Your own workspace: as well as this chat's working folder, you have a private workspace at ` +
     `${scratch}. You may read and write there freely — it needs no permission and it is not part of ` +
@@ -502,6 +551,11 @@ export interface SystemPromptParts {
   readonly memoryStance?: string
   /** Who else can do work — `spawn` for more hands, `colleague` for somebody else's job. */
   readonly delegation?: string
+  /**
+   * WHERE this conversation is, for the posture whose horizon nobody else delivers (Fast Chat).
+   * Absent in an ordinary chat — the grounding cadence owns it there — and in Strict.
+   */
+  readonly workingFolder?: string
   /** The colleague's own scratch workspace, when it also has a project folder. */
   readonly workspace?: string
   /** The immutable kernel base context (environment, tools, skills) — composed LAST. */
@@ -553,6 +607,10 @@ export const systemPartsInOrder = (parts: SystemPromptParts): ReadonlyArray<{ bl
   { block: "delegation", text: parts.delegation },
   { block: "memoryStance", text: parts.memoryStance },
   { block: "projectScope", text: parts.projectScope },
+  // Beside `workspace`, because the two are the same subject — which folder is which — and a reader
+  // (or a model) should meet them together. Populated only in the posture whose horizon nothing else
+  // delivers, so an ordinary chat's prompt is byte-identical to the pre-fix one.
+  { block: "workingFolder", text: parts.workingFolder },
   // AFTER `projectScope` on purpose: that section tells a session to keep scratch inside the
   // working folder, which is right until the colleague has a workspace of its own. The specific
   // instruction has to land last or a model is left reconciling two rules.
