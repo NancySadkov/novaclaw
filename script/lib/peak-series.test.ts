@@ -266,3 +266,33 @@ describe("regressionVerdict — armed, with the withholding branch", () => {
     expect(regressionVerdict(row({ hostCommitPct: null, foreignMb: null })).verdict).toBe("regressed")
   })
 })
+
+/**
+ * ─── the FOURTH null: a window that overlapped another run unit ────────────────────────────────
+ *
+ * Added with the concurrent runner (2026-09-02). Attribution is by process birth time, which is
+ * exact for one unit at a time and wrong by construction for two: a neighbour's `bun` is also born
+ * inside this unit's window. The danger is not the wrong number, it is where the wrong number goes —
+ * `peakMb` is what a reader promotes into `test-baseline.json`'s `peaks`, i.e. the input to the
+ * sharding ladder.
+ */
+describe("a concurrent window measures the POOL, not the unit", () => {
+  test("🔴 `overlapped` outranks `discarded` — a pool of two easily sums past the 32 GB ceiling", () => {
+    // Reporting that as `discarded` would dress a design decision up as a suspicious reading.
+    expect(classifyPeak(500, false, true, true)).toBe("concurrent")
+    expect(classifyPeak(500, true, false, true)).toBe("concurrent")
+    expect(classifyPeak(500, true, false, false)).toBe("measured")
+  })
+
+  test("🔴 a concurrent row withholds `peakMb`, so nothing here can be promoted into the profile", () => {
+    const row = buildRow(RUN, "full", unit({ peakMb: 21_000, sampledMb: 21_000, peakStatus: "concurrent" }), PROFILE)
+    expect(row.peakStatus).toBe("concurrent")
+    expect(row.peakMb).toBeNull()
+    // The reading is KEPT — it is the pool's cost, which is the number that validates the budget.
+    expect(row.sampledMb).toBe(21_000)
+    // …and with no peak there is no ratio, so the ratchet cannot fire on a neighbour's memory.
+    expect(row.ratio).toBeNull()
+    expect(row.regressed).toBeNull()
+    expect(regressionVerdict(row).verdict).toBe("clean")
+  })
+})

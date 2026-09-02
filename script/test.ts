@@ -20,6 +20,14 @@
  *   bun run test --only=core
  *   bun run test --only=typecheck   # just: does the tree compile (~52 s)
  *
+ *   NOVACLAW_TEST_CONCURRENCY=1 bun run test   # the SERIAL arm, for an A/B against the pool
+ *
+ * ─── PHASE 2 RUNS A POOL, PHASE 1 DOES NOT ────────────────────────────────────────────────────────
+ * Test units run several at a time, admitted against a memory budget measured while the pool was
+ * empty; typechecks stay strictly one at a time (`tsgo` on `packages/novaclaw` peaks ~3.8 GB and
+ * cannot be sharded). Why, how the budget is handed out, and what it costs the peak profile:
+ * `lib/run-schedule.ts` and `lib/peak-series.ts`'s `PeakStatus`.
+ *
  * ⚠️ novaclaw is `--full`: everything not promoted runs as ONE unit, plus a unit per file that cannot
  * share a process (`SOLO_TEST_FILES`). Why it is no longer one unit per subdir is recorded on
  * `subUnits` below, which is the code that decides it.
@@ -36,23 +44,26 @@
  *     `── skipped ──` ledger below is asserted against a committed baseline, so a newly-skipped suite
  *     is a visible diff instead of a silent hole.
  *
- * ⚠️ **Trade-off you will notice:** bun's test reporter writes to **stderr**, and `spawnSync` cannot tee.
- * Capturing stderr therefore means a run unit's output appears in one burst when that unit FINISHES
- * rather than streaming line-by-line. stdout stays inherited (a test's own `console.log` still streams),
- * and the `▶ <unit>` header still prints before the unit starts, so you always know what is running.
- * Losing per-line liveness inside one unit is worth an actionable failure report; losing the failure
- * report is not worth per-line liveness.
+ * ⚠️ **Trade-off you will notice:** a run unit's output appears in one burst when that unit FINISHES
+ * rather than streaming line-by-line. bun's test reporter writes to **stderr**, which has always been
+ * captured for the reason above; **stdout joined it when phase 2 became a pool**, because live output
+ * from four units interleaved on one terminal is not liveness, it is a transcript nobody can read. A
+ * `▶ <unit>` line still prints when a unit STARTS and each finished unit's output arrives under a
+ * banner naming it, so both "what is running" and "who said this" survive.
  */
-import { spawnSync } from "node:child_process"
+import { spawn, spawnSync, type ChildProcess } from "node:child_process"
 import { readFileSync } from "node:fs"
+import os from "node:os"
 import { join } from "node:path"
 
-import { enforce, hostCommitPct, memoryHeadroom, topConsumers } from "./lib/heavy-guard"
+import { check, hostCommitPct, memoryHeadroom, topConsumers, type MemoryHeadroom } from "./lib/heavy-guard"
 import * as LedgerDrift from "./lib/ledger-drift"
 import * as CommitPressure from "./lib/commit-pressure"
+import * as ChildExit from "./lib/child-exit"
 import * as MemoryPlan from "./lib/memory-plan"
 import * as PeakSampler from "./lib/peak-sampler"
 import * as PeakSeries from "./lib/peak-series"
+import * as RunSchedule from "./lib/run-schedule"
 import { readFailingNames, stripAnsi } from "./lib/test-output"
 import { isUpstreamWatcherCrash } from "./lib/upstream-crash"
 import { typecheckUnits } from "./lib/typecheck-units"
@@ -65,14 +76,40 @@ import { novaclawSubUnits, PACKAGES, PROMOTED_NOVACLAW_SUBDIRS } from "./lib/run
  *
  * The incident-derived 6 GB floor is replaced by the planner's measured one-runtime floor. This arm
  * remains absolute: below it no shard can start without sustained paging. Per-unit resident demand is
- * judged separately in `planUnit`; builds retain the conservative 6 GB default.
+ * judged separately in `planSolo`; builds retain the conservative 6 GB default.
+ *
+ * 🔴 **It uses `check` and `abort`, never `enforce`, and that is the pool's doing.** `enforce`
+ * prints and calls `process.exit(2)` — correct for a serial runner, which holds at most one child
+ * and only ever checks between units. Called from `admitNext` with three units in flight it would
+ * leave three `bun` processes with a dead parent: the multi-GB orphan AGENTS.md calls a death
+ * spiral, created by the very guard that exists to prevent it. `abort` kills the pool by tree first.
+ *
+ * ⚠️ `ownWorkInFlight` narrows this to the FOREIGN-job arm; see `heavy-guard.ts` for why the
+ * pressure arms measure us rather than the machine once the pool is holding it.
  */
-const enforceTestMemory = (label: string) =>
-  enforce(label, process.argv, {
+const enforceTestMemory = (label: string, ownWorkInFlight = false) => {
+  const verdict = check(process.argv, {
     allowOverride: false,
     requireMeasurement: true,
     minimumFreeBytes: MemoryPlan.MIN_VIABLE_BYTES,
+    ownWorkInFlight,
   })
+  if (verdict.ok) return
+  process.stderr.write(`\n\x1b[31mRefusing to start ${label}: ${verdict.reason}.\x1b[0m\n${verdict.detail ?? ""}\n\n`)
+  abort(2)
+}
+
+/**
+ * Every `bun` this process currently owns, so a refusal can take its own work down with it.
+ *
+ * ⚠️ Declared HERE, above the first `enforceTestMemory` call, rather than beside `spawnOnce` where
+ * it is filled: `abort` runs from the import-time guard too, and a `const` declared later would be
+ * in its temporal dead zone — a refusal that throws a `ReferenceError` instead of refusing.
+ */
+const liveChildren = new Set<ChildProcess>()
+/** Detached so `abort` can stop the sampler without referencing a `const` declared below it. */
+let stopSampler: () => void = () => {}
+
 enforceTestMemory("the test suite")
 
 const FULL = process.argv.includes("--full")
@@ -91,9 +128,10 @@ const ONLY = process.argv.find((a) => a.startsWith("--only="))?.slice("--only=".
 
 const PER_TEST_TIMEOUT_MS = 15_000
 const PACKAGE_WALLCLOCK_MS = 150_000 // a HANG backstop, not a normal budget
-// Captured stderr is held in memory. spawnSync KILLS the child on overflow and reports ENOBUFS, which
-// would read exactly like a real failure — so the ceiling is set far above any plausible run (core's
-// ~2k tests produce a few hundred KB) rather than at bun's 1 MB default.
+// Captured output is held in memory, per stream, per in-flight unit. `spawnSync` used to KILL the
+// child on overflow and report ENOBUFS, which read exactly like a real failure; the async collector
+// TRUNCATES and says so instead, so the ceiling now only bounds this process's own heap. It stays
+// far above any plausible run (core's ~2k tests produce a few hundred KB).
 const CAPTURE_MAX_BYTES = 64 * 1024 * 1024
 /**
  * Above this, a peak sample is not a reading about the unit — see `spawnOnce`.
@@ -133,9 +171,28 @@ type PeakStatus = PeakSeries.PeakStatus
  */
 type Kind = "test" | "typecheck"
 
+/** One thing to spawn: everything the scheduler needs before it decides whether there is room. */
+type Job = {
+  readonly name: string
+  readonly kind: Kind
+  readonly dir: string
+  readonly argv: string[]
+  readonly wallclockMs: number
+  /** Position in the planned order, carried onto the result so the summary can be stably sorted. */
+  readonly order: number
+}
+
 type Result = {
   name: string
   kind: Kind
+  /**
+   * Where this unit sat in the order the run PLANNED, not the order it finished in.
+   *
+   * ⚠️ Needed the moment phase 2 became a pool: results are pushed as units complete, so a summary
+   * printed in push order lists the fastest unit first and reshuffles itself between runs. Two
+   * summaries of the same tree have to be diffable, so the report sorts on this.
+   */
+  order: number
   ok: boolean
   ms: number
   note: string
@@ -332,29 +389,43 @@ const peakProfiles = readPeaks()
 const allUnitNames = () => PACKAGES.map((p) => p.name)
 
 /**
- * Decide the rung for one unit, or refuse with something the reader can act on.
+ * What a unit is expected to cost. Split out of `planUnit` because the POOL needs the demand without
+ * the plan: a reservation is `requiredBytes(demand)`, and the plan is only consulted when the unit
+ * is alone (the only state in which sharding or refusing is the right answer).
+ */
+function demandOf(name: string, kind: Kind): MemoryPlan.Demand {
+  // A typecheck is a different beast — `tsgo --noEmit` on `packages/novaclaw` peaks ~3.8 GB and
+  // cannot be sharded at all — so it keeps the conservative floor rather than this ladder.
+  return kind === "typecheck"
+    ? { commitPeakMb: 4096, residentPeakMb: 4096 }
+    : MemoryPlan.demandFor(peakProfiles.commit, peakProfiles.resident, name)
+}
+
+/** Fail closed, exactly as `requireMeasurement` does: an unmeasurable host is not a safe one. */
+function headroomOrRefuse(name: string, kind: Kind): MemoryHeadroom {
+  const headroom = memoryHeadroom()
+  if (headroom !== undefined) return headroom
+  process.stderr.write(
+    `\n\x1b[31mRefusing to start ${kind} unit ${name}: host memory could not be measured.\x1b[0m\n` +
+      `Neither free RAM nor Windows commit charge could be read, so the harness would only be\n` +
+      `guessing that this unit fits.\n\n`,
+  )
+  abort(2)
+}
+
+/**
+ * Decide the rung for one unit ALONE, or refuse with something the reader can act on.
  *
  * ⚠️ This REPLACES the flat 6 GB free-RAM floor for tests. The reasoning, and the measurements it
  * rests on, are in `lib/memory-plan.ts` and `notes/test-harness-memory.md`.
+ *
+ * ⚠️ **Only ever called with an EMPTY pool**, which is what keeps its arithmetic honest: `headroom`
+ * is then a live reading of a machine holding none of our work, i.e. the same measurement this
+ * function made when the runner was serial. Deciding a rung beside three in-flight units would read
+ * their memory as the machine's and shard everything.
  */
-function planUnit(name: string, kind: Kind): MemoryPlan.Plan {
-  // A typecheck is a different beast — `tsgo --noEmit` on `packages/novaclaw` peaks ~3.8 GB and
-  // cannot be sharded at all — so it keeps the conservative floor rather than this ladder.
-  const demand =
-    kind === "typecheck"
-      ? { commitPeakMb: 4096, residentPeakMb: 4096 }
-      : MemoryPlan.demandFor(peakProfiles.commit, peakProfiles.resident, name)
-  waitForCommitFloor(name, kind)
-  const headroom = memoryHeadroom()
-  if (headroom === undefined) {
-    // Fail closed, exactly as `requireMeasurement` does: an unmeasurable host is not a safe one.
-    process.stderr.write(
-      `\n\x1b[31mRefusing to start ${kind} unit ${name}: host memory could not be measured.\x1b[0m\n` +
-        `Neither free RAM nor Windows commit charge could be read, so the harness would only be\n` +
-        `guessing that this unit fits.\n\n`,
-    )
-    process.exit(2)
-  }
+function planSolo(name: string, kind: Kind, headroom: MemoryHeadroom): MemoryPlan.Plan {
+  const demand = demandOf(name, kind)
   const plan = MemoryPlan.planFor(demand, headroom)
   if (plan.mode !== "refuse") return plan
 
@@ -375,7 +446,7 @@ function planUnit(name: string, kind: Kind): MemoryPlan.Plan {
         : "") +
       `\n`,
   )
-  process.exit(2)
+  abort(2)
 }
 
 /**
@@ -383,6 +454,7 @@ function planUnit(name: string, kind: Kind): MemoryPlan.Plan {
  * per-unit sampling measured nothing for anything that finished in under a second.
  */
 const sampler = PeakSampler.start()
+stopSampler = sampler.stop
 
 /**
  * ONE stamp for the whole invocation, taken where the work starts.
@@ -394,29 +466,139 @@ const sampler = PeakSampler.start()
  */
 const RUN_STAMP = new Date().toISOString()
 
+/**
+ * Kill everything we own, by TREE, then leave. Used by EVERY refusal path in this file.
+ *
+ * ⚠️ **`spawnSync` used to make this unnecessary and the pool makes it load-bearing.** A synchronous
+ * runner holds exactly one child, and a memory refusal's `process.exit(2)` only ever happened
+ * between units. A pool can be holding three when the fourth is refused — and exiting there would
+ * leave three `bun` processes with a dead parent, which is precisely the multi-GB orphan AGENTS.md
+ * calls a death spiral. A guard that leaks what it was protecting the machine from is not a guard.
+ */
+function abort(code: number): never {
+  for (const child of liveChildren) {
+    killTree(child)
+    reapOrphans(child.pid, "shutdown")
+  }
+  stopSampler()
+  process.exit(code)
+}
+
+/**
+ * Kill a child AND everything it spawned.
+ *
+ * 🔴 **`child.kill()` is not enough here and the difference cost a 36-minute hang.** `bun test` is a
+ * parent+child pair sharing one command line, so a signal aimed at the one we spawned leaves the
+ * other alive — that is `reapOrphans`'s whole reason for existing. Reaping AFTERWARDS was adequate
+ * while the runner blocked on `spawnSync`; it is not adequate now, because the survivor inherits the
+ * pipe write ends and the wait for `close` never returns, so the code that would have reaped it is
+ * never reached. Killing the tree in one call removes the window instead of cleaning up after it.
+ */
+function killTree(child: ChildProcess) {
+  if (child.pid === undefined) return
+  if (process.platform === "win32")
+    spawnSync("taskkill", ["/T", "/F", "/PID", String(child.pid)], { stdio: "ignore", timeout: 20_000 })
+  else
+    try {
+      child.kill("SIGKILL")
+    } catch {
+      /* already gone */
+    }
+}
+
+/**
+ * How long a wall-clock kill may take before the runner stops waiting for it and moves on.
+ *
+ * ⚠️ **A hang backstop that can itself hang is worse than none**, and that is exactly what the first
+ * async runner shipped: the 600 s timer fired, killed `core`'s direct child, and then waited forever
+ * on a grandchild holding 14.6 GB. `awaitChildExit` closes the ordinary version of that hole;
+ * this closes the rest of it. Once we have decided to kill, we own a deadline, and no event from the
+ * child — or absence of one — may extend it.
+ */
+const KILL_DEADLINE_MS = 10_000
+
+/**
+ * Accumulate a child's output with a CEILING, and say so rather than dying at it.
+ *
+ * ⚠️ This replaces `spawnSync`'s `maxBuffer`, and the replacement is strictly better in the way that
+ * matters: `spawnSync` KILLS the child on overflow and reports `ENOBUFS`, which reads on the summary
+ * line exactly like a real failure. Truncating a log cannot fail a test; killing the test can.
+ */
+function collector(limit: number) {
+  const chunks: Buffer[] = []
+  let bytes = 0
+  let truncated = false
+  return {
+    push: (chunk: Buffer) => {
+      if (bytes >= limit) {
+        truncated = true
+        return
+      }
+      chunks.push(chunk)
+      bytes += chunk.length
+    },
+    get truncated() {
+      return truncated
+    },
+    text: () =>
+      Buffer.concat(chunks).toString("utf8") +
+      (truncated ? `\n  (output truncated at ${limit / 1024 / 1024} MB — the child was NOT killed)\n` : ""),
+  }
+}
+
 /** One spawn of one command, with its peak sampled. The unit-level orchestration is in `run`. */
-function spawnOnce(name: string, kind: Kind, dir: string, argv: string[], wallclockMs: number) {
+async function spawnOnce(name: string, kind: Kind, dir: string, argv: string[], wallclockMs: number) {
   const start = Date.now()
-  const proc = spawnSync("bun", argv, {
-    cwd: dir,
-    stdio: ["ignore", kind === "test" ? "inherit" : "pipe", "pipe"],
-    encoding: "utf8",
-    maxBuffer: CAPTURE_MAX_BYTES,
-    timeout: wallclockMs,
-    killSignal: "SIGKILL",
+  const out = collector(CAPTURE_MAX_BYTES)
+  const err = collector(CAPTURE_MAX_BYTES)
+  let timedOut = false
+  let spawnErrno: string | undefined
+  const child = spawn("bun", argv, { cwd: dir, stdio: ["ignore", "pipe", "pipe"], windowsHide: true })
+  liveChildren.add(child)
+  child.stdout?.on("data", out.push)
+  child.stderr?.on("data", err.push)
+  // Our own timer rather than spawn's `timeout` option: the kill has to be OURS anyway (it must be
+  // a TREE kill — a bun test parent/child pair survives a signal aimed at the parent), and an
+  // explicit timer is the one thing here that can be reasoned about without trusting node compat.
+  let abandon: (outcome: ChildExit.ChildOutcome) => void = () => {}
+  const abandoned = new Promise<ChildExit.ChildOutcome>((resolve) => {
+    abandon = resolve
   })
+  const timer = setTimeout(() => {
+    timedOut = true
+    killTree(child)
+    // ⚠️ The second timer is the part that was missing, not the kill. See `KILL_DEADLINE_MS`.
+    setTimeout(() => abandon({ status: null, drained: false }), KILL_DEADLINE_MS).unref?.()
+  }, wallclockMs)
+  // Why this is not `await new Promise(r => child.once("close", r))` — which is what it was, and
+  // which hung the gate for 36 minutes — is the whole subject of `lib/child-exit.ts`.
+  const exit = await Promise.race([ChildExit.awaitChildExit(child), abandoned])
+  clearTimeout(timer)
+  liveChildren.delete(child)
+  const status = exit.status
+  spawnErrno = exit.errno
+
   const ms = Date.now() - start
-  const captured = kind === "test" ? (proc.stderr ?? "") : `${proc.stdout ?? ""}${proc.stderr ?? ""}`
-  const errno = (proc.error as NodeJS.ErrnoException | undefined)?.code
-  const timedOut = proc.signal === "SIGKILL" || errno === "ETIMEDOUT"
-  const ok = !timedOut && errno === undefined && proc.status === 0
+  const stdoutText = out.text()
+  // ⚠️ The PARSED surface stays stderr-only for a test unit, exactly as it was when stdout was
+  // inherited. `readFailingNames` and `readSkipCount` scan this string, and folding a test's own
+  // `console.log` into it would let printed prose be read as bun's summary.
+  const captured = kind === "test" ? err.text() : `${stdoutText}${err.text()}`
+  const errno = spawnErrno
+  const ok = !timedOut && errno === undefined && status === 0
 
   // A killed or crashed child can leave its own child alive holding gigabytes. Reap before the next
   // unit starts, or the leak makes THAT unit slower and the failure cascades. See reapOrphans above.
-  if (!ok) reapOrphans(proc.pid, timedOut ? "wall-clock" : `exit ${proc.status}`)
+  if (!ok) reapOrphans(child.pid, timedOut ? "wall-clock" : `exit ${status}`)
 
-  if (!ok) process.stderr.write(`\n\x1b[31m── captured ${kind === "test" ? "stderr" : "output"} · ${name} ──\x1b[0m\n`)
-  if (captured) process.stderr.write(captured.endsWith("\n") ? captured : `${captured}\n`)
+  // ⚠️ **The banner is unconditional now, and that is the pool's doing.** With one unit at a time an
+  // output block could be read as belonging to the `▶ <unit>` line above it; with four in flight
+  // that adjacency is gone and an unlabelled block belongs to nobody.
+  const printed = kind === "test" ? `${stdoutText}${captured}` : captured
+  process.stderr.write(
+    `\n${ok ? "\x1b[2m" : "\x1b[31m"}── ${name} · ${(ms / 1000).toFixed(1)}s · ${ok ? "output" : "FAILED"} ──\x1b[0m\n`,
+  )
+  if (printed) process.stderr.write(printed.endsWith("\n") ? printed : `${printed}\n`)
   else if (!ok)
     process.stderr.write(
       `  (nothing was captured — bun BLOCK-BUFFERS redirected output, so a child killed mid-run usually\n` +
@@ -465,14 +647,25 @@ function spawnOnce(name: string, kind: Kind, dir: string, argv: string[], wallcl
           ? ` — host commit peaked only ${sample.hostCommitPct}%, so this is a genuine hang, not memory`
           : ""
     note = `WALL-CLOCK KILL at ${wallclockMs / 1000}s${pressure} (a SIGKILLed bun child often flushes no stderr)`
-  } else if (errno === "ENOBUFS") {
-    note = `output exceeded ${CAPTURE_MAX_BYTES / 1024 / 1024} MB — the child was killed by the CAPTURE, not by a test`
   } else if (errno) {
     note = `could not run bun: ${errno}`
   } else if (!ok) {
     const excerpt = failureExcerpt(captured)
-    note = `exit ${proc.status}${excerpt ? ` · ${excerpt}` : ""}`
+    note = `exit ${status}${excerpt ? ` · ${excerpt}` : ""}`
   }
+  // ⚠️ Truncation is a NOTE, never a failure, and it used to be the opposite: `spawnSync`'s
+  // `maxBuffer` killed the child and reported `ENOBUFS`, which was indistinguishable from a real
+  // red on the summary row. A green unit that printed too much stays green and says it printed too
+  // much.
+  if (out.truncated || err.truncated)
+    note = [note, `output truncated at ${CAPTURE_MAX_BYTES / 1024 / 1024} MB (the child ran to completion)`]
+      .filter(Boolean)
+      .join(" · ")
+  // ⚠️ A capture whose pipes never drained is SHORT, and saying so is the difference between a log
+  // and a claim: something outlived this child still holding the write end, so what was collected is
+  // whatever had arrived by the grace deadline. Never present that as a whole log.
+  if (!exit.drained)
+    note = [note, `a leaked child held the pipes open — this output may be INCOMPLETE`].filter(Boolean).join(" · ")
 
   // ⚠️ Discard a sample nothing on this machine could plausibly have produced.
   //
@@ -495,7 +688,7 @@ function spawnOnce(name: string, kind: Kind, dir: string, argv: string[], wallcl
     ms,
     note,
     captured,
-    upstreamCrash: kind === "test" && !ok && !timedOut && isUpstreamWatcherCrash(proc.status, captured),
+    upstreamCrash: kind === "test" && !ok && !timedOut && isUpstreamWatcherCrash(status, captured),
     peakStatus,
     ownTicks: sample.ownTicks,
     ticks: sample.ticks,
@@ -523,14 +716,14 @@ function spawnOnce(name: string, kind: Kind, dir: string, argv: string[], wallcl
  * ⚠️ Exactly one retry. If the crash is no longer intermittent the gate must go red and say so,
  * rather than looping until it gets the answer it wants.
  */
-function spawnWithUpstreamRetry(name: string, kind: Kind, dir: string, argv: string[], wallclockMs: number) {
-  const first = spawnOnce(name, kind, dir, argv, wallclockMs)
+async function spawnWithUpstreamRetry(name: string, kind: Kind, dir: string, argv: string[], wallclockMs: number) {
+  const first = await spawnOnce(name, kind, dir, argv, wallclockMs)
   if (!first.upstreamCrash) return first
   process.stderr.write(
     `\n\x1b[33m── ${name}: upstream Bun watcher segfault (exit 3, watcher.node, no failing assertions)\n` +
       `   — this is not your change; retrying ONCE. See todo.md's header.\x1b[0m\n`,
   )
-  const second = spawnOnce(name, kind, dir, argv, wallclockMs)
+  const second = await spawnOnce(name, kind, dir, argv, wallclockMs)
   return {
     ...second,
     note: second.ok
@@ -563,19 +756,27 @@ const COMMIT_FLOOR_WAIT_MS = 60_000
  * ⚠️ This is ADMISSION, not shedding — it cannot help a unit already holding memory, and
  * `todo/resource-pressure.md` is right that the missing level is enforcement against work in flight.
  * What it does buy is the compounding case, which is the one that took the laptop down on
- * 2026-07-20: a unit starting while the host is already at the floor. Mid-run enforcement is not
- * reachable from here — `spawnSync` blocks this process for the unit's whole life, so a kill would
- * have to come from the sampler subprocess, which is two platform implementations away.
+ * 2026-07-20: a unit starting while the host is already at the floor.
  *
  * ⚠️ It WAITS rather than refuses. A gate that stops running tests because the machine is busy has
  * turned a resource problem into an unmeasured suite, which is worse; after the wait it proceeds and
  * says so.
+ *
+ * ⚠️ **Only with an EMPTY pool.** Waiting is the right answer when nothing of ours is running,
+ * because time is all that can help. With units in flight the floor is a REFUSAL TO ADMIT instead
+ * (`admitNext`): the thing that will clear the pressure is a unit finishing, and the scheduler is
+ * already waiting for exactly that — a second wait inside it would just be a slower version of the
+ * same wait, taken with the queue head pinned.
  */
-function waitForCommitFloor(name: string, kind: Kind) {
-  // A forcing knob, because a line nobody has crossed is a line nobody has seen work. Set it to a
-  // number at or above the floor and the wait must engage — that is how this was verified at all.
+// A forcing knob, because a line nobody has crossed is a line nobody has seen work. Set it to a
+// number at or above the floor and the wait must engage — that is how this was verified at all.
+function readCommitPct(): number | undefined {
   const forced = Number(process.env.NOVACLAW_TEST_FORCE_COMMIT_PCT)
-  const read = () => (Number.isFinite(forced) && forced > 0 ? forced : hostCommitPct())
+  return Number.isFinite(forced) && forced > 0 ? forced : hostCommitPct()
+}
+
+async function waitForCommitFloor(name: string, kind: Kind) {
+  const read = readCommitPct
   const first = read()
   if (first === undefined || first < COMMIT_FLOOR_PCT) return
   const deadline = Date.now() + COMMIT_FLOOR_WAIT_MS
@@ -587,7 +788,10 @@ function waitForCommitFloor(name: string, kind: Kind) {
         .join(""),
   )
   while (Date.now() < deadline) {
-    Bun.sleepSync(2_000)
+    // ⚠️ `Bun.sleep`, not `Bun.sleepSync`. This function used to run with nothing else in flight, so
+    // blocking the loop cost only time; it now runs while a pool of units is streaming output into
+    // this process, and a synchronous sleep would stall their pipes for a minute.
+    await Bun.sleep(2_000)
     const now = read()
     if (now === undefined || now < COMMIT_FLOOR_PCT) {
       process.stderr.write(`  host commit fell to ${now ?? "unknown"}% — starting ${name}\n`)
@@ -610,21 +814,17 @@ function waitForCommitFloor(name: string, kind: Kind) {
  * eight green batches over `core` concealed a wedge that only exists when the unit runs whole. The
  * fallback exists so a memory-poor machine gets most of the signal, never so it can claim the gate.
  */
-function run(name: string, kind: Kind, dir: string, argv: string[], wallclockMs: number) {
-  // Re-check BETWEEN EVERY UNIT, not only once at suite startup. A passed test can still leak a child
-  // or retain several GB; letting the next unit start is the cascading false-failure shape observed on
-  // 2026-07-27. This also catches a local model or build started while the suite was in progress.
-  enforceTestMemory(`${kind} unit ${name}`)
-  const plan = planUnit(name, kind)
-  const sharded = plan.mode === "sharded" && kind === "test" ? plan.shards : undefined
-
-  process.stdout.write(
-    `\n\x1b[1m▶ ${name}\x1b[0m${sharded ? `  \x1b[33m(low memory: split into ${sharded} shards — DEGRADED)\x1b[0m` : ""}\n`,
-  )
-
-  const runs = sharded
-    ? Array.from({ length: sharded }, (_, i) =>
-        spawnWithUpstreamRetry(
+async function run(job: Job, sharded: number | undefined, overlapped: () => boolean) {
+  const { name, kind, dir, argv, wallclockMs } = job
+  // ⚠️ **Shards stay SEQUENTIAL, and that is not an oversight left over from `spawnSync`.** The
+  // sharded rung exists to lower a unit's memory demand; running its shards at once would restore
+  // exactly the demand it was reached for. Concurrency is between INDEPENDENT units, which is where
+  // the budget can actually account for it.
+  const runs: Awaited<ReturnType<typeof spawnWithUpstreamRetry>>[] = []
+  if (sharded)
+    for (let i = 0; i < sharded; i++)
+      runs.push(
+        await spawnWithUpstreamRetry(
           `${name} shard ${i + 1}/${sharded}`,
           kind,
           dir,
@@ -632,7 +832,7 @@ function run(name: string, kind: Kind, dir: string, argv: string[], wallclockMs:
           wallclockMs,
         ),
       )
-    : [spawnWithUpstreamRetry(name, kind, dir, argv, wallclockMs)]
+  else runs.push(await spawnWithUpstreamRetry(name, kind, dir, argv, wallclockMs))
 
   const captured = runs.map((r) => r.captured).join("\n")
   // A skip count is only meaningful if EVERY shard produced a summary — one unreadable shard makes the
@@ -658,6 +858,10 @@ function run(name: string, kind: Kind, dir: string, argv: string[], wallclockMs:
     ownTicks,
     peaks.length > 0,
     runs.some((r) => r.peakStatus === "discarded"),
+    // 🔴 Read AFTER the unit finished, and it must be: overlap is a fact about the whole window, and
+    // a unit admitted alone can have three neighbours join it two seconds later. Asking at admission
+    // time would answer for the instant of the question rather than for the measurement.
+    overlapped(),
   )
 
   // Only a bun test run has a skip count or a parseable failure list. Reading tsgo's output with either
@@ -665,6 +869,7 @@ function run(name: string, kind: Kind, dir: string, argv: string[], wallclockMs:
   results.push({
     name,
     kind,
+    order: job.order,
     ok: runs.every((r) => r.ok),
     ms: runs.reduce((a, r) => a + r.ms, 0),
     note: runs
@@ -681,10 +886,6 @@ function run(name: string, kind: Kind, dir: string, argv: string[], wallclockMs:
     ...(hostCommits.length ? { hostCommitPct: Math.max(...hostCommits) } : {}),
     ...(sharded ? { shards: sharded } : {}),
   })
-
-  // A last unit has no "next" preflight, so check after it as well. If it left the host unsafe, the
-  // suite must not print green and normalize the leak as an acceptable test side effect.
-  enforceTestMemory(`the host after ${kind} unit ${name}`)
 }
 
 // novaclaw's integration tests must run isolated (see header). Enumerate its test/ subdirs that hold
@@ -733,29 +934,239 @@ const promotedSubdirs = new Set<string>(PROMOTED_NOVACLAW_SUBDIRS)
  * cannot refuse THIS process: `enforce()` runs once, at import, before any of this.
  */
 const REPO_ROOT = join(import.meta.dir, "..")
-for (const unit of typecheckUnits(REPO_ROOT)) {
-  if (ONLY && !unit.name.includes(ONLY)) continue
-  run(unit.name, "typecheck", unit.dir, ["run", "typecheck"], PACKAGE_WALLCLOCK_MS)
+const WALL_START = Date.now()
+
+/**
+ * Start one unit ALONE: the full preflight, the rung, the header. Phase 1 is nothing but this.
+ *
+ * ⚠️ The preflight is the one the serial runner ran between every unit — a passed test can still
+ * leak a child or retain several GB, and letting the next unit start on top of that is the cascading
+ * false-failure shape of 2026-07-27. It also catches a local model or build started mid-run.
+ */
+async function runSolo(job: Job) {
+  enforceTestMemory(`${job.kind} unit ${job.name}`)
+  await waitForCommitFloor(job.name, job.kind)
+  const plan = planSolo(job.name, job.kind, headroomOrRefuse(job.name, job.kind))
+  const sharded = plan.mode === "sharded" && job.kind === "test" ? plan.shards : undefined
+  process.stdout.write(
+    `\n\x1b[1m▶ ${job.name}\x1b[0m${sharded ? `  \x1b[33m(low memory: split into ${sharded} shards — DEGRADED)\x1b[0m` : ""}\n`,
+  )
+  await run(job, sharded, () => false)
 }
 
-/** ─── phase 2: do the tests pass ──────────────────────────────────────────────────────────────── */
+let jobIndex = 0
+const nextJob = (name: string, kind: Kind, dir: string, argv: string[], wallclockMs: number): Job => ({
+  name,
+  kind,
+  dir,
+  argv,
+  wallclockMs,
+  order: jobIndex++,
+})
+
+for (const unit of typecheckUnits(REPO_ROOT)) {
+  if (ONLY && !unit.name.includes(ONLY)) continue
+  await runSolo(nextJob(unit.name, "typecheck", unit.dir, ["run", "typecheck"], PACKAGE_WALLCLOCK_MS))
+}
+
+/**
+ * ─── phase 2: do the tests pass ────────────────────────────────────────────────────────────────
+ *
+ * A POOL, not a loop. The scheduler, the budget it hands out and the order it hands it out in are
+ * `lib/run-schedule.ts`; what follows is the plumbing that turns that into processes.
+ */
+const testJobs: Job[] = []
 for (const pkg of PACKAGES) {
   if (pkg.fullOnly && !FULL) continue
   if (ONLY && !pkg.name.includes(ONLY)) continue
   const wallclock = pkg.wallclockMs ?? PACKAGE_WALLCLOCK_MS
   const perTest = pkg.timeoutMs ?? PER_TEST_TIMEOUT_MS
   const argv = (args: string[]) => ["test", ...args, `--timeout=${perTest}`]
-  if (pkg.perSubdir) {
+  if (pkg.perSubdir)
     for (const sub of novaclawSubUnits(pkg.dir, promotedSubdirs))
-      run(`${pkg.name} ${sub.unit}`, "test", pkg.dir, argv(sub.args), pkg.subdirWallclockMs?.[sub.unit] ?? wallclock)
-  } else {
-    run(pkg.name, "test", pkg.dir, argv(pkg.args), wallclock)
+      testJobs.push(
+        nextJob(
+          `${pkg.name} ${sub.unit}`,
+          "test",
+          pkg.dir,
+          argv(sub.args),
+          pkg.subdirWallclockMs?.[sub.unit] ?? wallclock,
+        ),
+      )
+  else testJobs.push(nextJob(pkg.name, "test", pkg.dir, argv(pkg.args), wallclock))
+}
+
+const CONCURRENCY = RunSchedule.concurrencyCap(os.cpus().length, process.env.NOVACLAW_TEST_CONCURRENCY)
+/** History for the longest-first order. A missing series is "no history", never a fault. */
+const seriesHistory = (() => {
+  try {
+    return readFileSync(PeakSeries.seriesPath(REPO_ROOT), "utf8")
+  } catch {
+    return ""
   }
+})()
+const queue = RunSchedule.orderByCost(testJobs, (job) => job.name, RunSchedule.observedCosts(seriesHistory))
+
+/** A unit currently running, and the budget it holds until it stops. */
+type Live = {
+  readonly job: Job
+  readonly reservation: RunSchedule.Reservation
+  /** Set the moment a second unit is in flight beside it — see `PeakSeries.PeakStatus`. */
+  overlapped: boolean
+  /** Resolves when the unit's result has been recorded and it has left the pool. */
+  settled: Promise<void>
+}
+const inFlight = new Map<string, Live>()
+/** The idle measurement every reservation is handed out of. Re-taken whenever the pool empties. */
+let budget: MemoryHeadroom | undefined
+let peakConcurrency = 0
+
+/** Everyone in flight has now seen a neighbour, and so has whoever just joined them. */
+function markOverlap() {
+  peakConcurrency = Math.max(peakConcurrency, inFlight.size)
+  if (inFlight.size < 2) return
+  for (const live of inFlight.values()) live.overlapped = true
+}
+
+/** What one unit promises to hold for its whole life, in both currencies. */
+const reservationFor = (job: Job): RunSchedule.Reservation => {
+  const demand = demandOf(job.name, job.kind)
+  return {
+    unit: job.name,
+    commitBytes: MemoryPlan.reservedBytes(demand.commitPeakMb),
+    residentBytes: MemoryPlan.reservedBytes(demand.residentPeakMb),
+    // ⚠️ BOTH walls, and read from the profile rather than from the demand: `demandOf` has already
+    // substituted `UNPROFILED_*_MB` for whatever was missing, so by then the guess is indistinguish-
+    // able from a measurement. This is the last place the difference is still visible.
+    profiled: peakProfiles.commit[job.name] !== undefined && peakProfiles.resident[job.name] !== undefined,
+  }
+}
+
+function start(job: Job, reservation: RunSchedule.Reservation, sharded: number | undefined) {
+  const live: Live = { job, reservation, overlapped: false, settled: Promise.resolve() }
+  // `settled` is assigned after the record exists so the callback below closes over `live` and reads
+  // `overlapped` at the END of the unit rather than capturing whatever it was at admission.
+  live.settled = run(job, sharded, () => live.overlapped)
+    .catch((error: unknown) => {
+      // A throw here is a bug in the runner, not a test failure, and it must not vanish into an
+      // unhandled rejection while the pool carries on reporting green.
+      process.stderr.write(`\n\x1b[31m${job.name}: the runner itself threw — ${String(error)}\x1b[0m\n`)
+      results.push({
+        name: job.name,
+        kind: job.kind,
+        order: job.order,
+        ok: false,
+        ms: 0,
+        note: `the runner threw: ${String(error)}`,
+        skipped: undefined,
+        failing: [],
+      })
+    })
+    .finally(() => {
+      inFlight.delete(job.name)
+    })
+  inFlight.set(job.name, live)
+  markOverlap()
+  process.stdout.write(
+    `\n\x1b[1m▶ ${job.name}\x1b[0m` +
+      (sharded ? `  \x1b[33m(low memory: split into ${sharded} shards — DEGRADED)\x1b[0m` : "") +
+      `  \x1b[2m(${inFlight.size} in flight)\x1b[0m\n`,
+  )
+}
+
+/**
+ * Admit the head of the queue, or explain why not.
+ *
+ * ⚠️ The order of the checks is the point: the CHEAP and PURE ones first, the two that spawn
+ * PowerShell last. `hostCommitPct()` and heavy-guard's `Win32_Process` scan cost hundreds of
+ * milliseconds each and this runs on every completion, so asking them before the arithmetic has
+ * agreed would spend a large slice of the time this whole change is meant to save.
+ */
+async function admitNext(): Promise<boolean> {
+  const job = queue[0]
+  if (job === undefined) return false
+
+  if (inFlight.size === 0) {
+    // The serial path, unchanged in substance: a live reading of a machine holding none of our work
+    // IS the idle budget, so the arithmetic below is identical to the old `planUnit`.
+    queue.shift()
+    enforceTestMemory(`${job.kind} unit ${job.name}`)
+    await waitForCommitFloor(job.name, job.kind)
+    const headroom = headroomOrRefuse(job.name, job.kind)
+    // The pool's budget is the idle headroom LESS the harness's own fixed slack, charged once — see
+    // `MemoryPlan.reservedBytes`. `planSolo` below still uses the full `requiredBytes`, because it
+    // is answering the other question: does this one unit fit on this machine at all.
+    budget = RunSchedule.poolBudget(headroom, MemoryPlan.SLACK_BYTES)
+    const plan = planSolo(job.name, job.kind, headroom)
+    start(job, reservationFor(job), plan.mode === "sharded" ? plan.shards : undefined)
+    return true
+  }
+
+  if (budget === undefined) return false
+  const candidate = reservationFor(job)
+  const verdict = RunSchedule.admits(
+    budget,
+    [...inFlight.values()].map((live) => live.reservation),
+    candidate,
+    CONCURRENCY,
+  )
+  if (!verdict.admit) return false
+
+  // The live brake, and the ONE reading that still has to be taken beside our own work: the budget
+  // accounts for what WE promised, and nothing at all for a neighbour that appeared since it was
+  // measured. 90% is the product's floor and has never been observed on this box (0 of 348 rows).
+  const pct = readCommitPct()
+  if (pct !== undefined && pct >= COMMIT_FLOOR_PCT) {
+    process.stdout.write(
+      `  \x1b[33mhost commit ${pct}% is at or above the ${COMMIT_FLOOR_PCT}% FLOOR — holding ${job.name} ` +
+        `until a unit finishes\x1b[0m\n`,
+    )
+    return false
+  }
+  // Foreign-job arm only: our own pool is holding this machine down on purpose. See `ownWorkInFlight`.
+  enforceTestMemory(`${job.kind} unit ${job.name}`, true)
+
+  queue.shift()
+  // ⚠️ Never SHARDED from here. The sharded rung is a memory mitigation whose own peak reads high,
+  // and a unit that does not fit beside its neighbours has a better option than degrading: wait for
+  // one of them to finish and run whole. Sharding stays for the machine that cannot fit it ALONE.
+  start(job, candidate, undefined)
+  return true
+}
+
+if (queue.length > 0) {
+  process.stdout.write(
+    `\n\x1b[1m── phase 2: ${queue.length} test unit(s), up to ${CONCURRENCY} at a time ──\x1b[0m\n` +
+      // ⚠️ PRINTED, because the order is derived from a gitignored log and therefore varies by
+      // machine and by history. An order nobody can see is an order nobody can reproduce a
+      // load-dependent red against.
+      `  \x1b[2mlongest-first from tmp/peak-series.jsonl: ${queue.map((job) => job.name).join(", ")}\x1b[0m\n`,
+  )
+}
+
+while (queue.length > 0 || inFlight.size > 0) {
+  while (await admitNext()) {
+    /* keep admitting while there is room */
+  }
+  if (inFlight.size === 0) {
+    // Unreachable: `admits` always admits into an empty pool, so an empty pool with a non-empty
+    // queue means the very first check refused. Say so rather than spinning forever — a scheduler
+    // that live-locks looks exactly like a hang, which is the one failure this file may not have.
+    process.stderr.write(`\n\x1b[31mthe scheduler admitted nothing and holds nothing — ${queue.length} left\x1b[0m\n`)
+    abort(2)
+  }
+  await Promise.race([...inFlight.values()].map((live) => live.settled))
 }
 
 sampler.stop()
 
+// The host may not be left unsafe by a green run, or the suite normalizes a leak as an acceptable
+// side effect. Once, at the end: the per-unit version of this check is `admitNext`'s preflight.
+enforceTestMemory("the host after the suite")
+
+const WALL_MS = Date.now() - WALL_START
 const totalMs = results.reduce((a, r) => a + r.ms, 0)
+results.sort((a, b) => a.order - b.order)
 
 /**
  * The committed ledger, read once. `units` = skip counts; `failing` = failures pinned by name.
@@ -946,7 +1357,16 @@ if (unmeasured.length) {
   process.stdout.write(`\n\x1b[1m── peak NOT recorded ──\x1b[0m\n`)
   for (const r of unmeasured)
     process.stdout.write(
-      r.peakStatus === "discarded"
+      // 🔴 The FOURTH null, and the one that is a DESIGN DECISION rather than an instrument problem.
+      // Attribution is by process birth time, so a neighbour's `bun` lands inside this unit's window
+      // too and the reading is the pool's. Withholding it is what keeps a neighbour's memory out of
+      // `test-baseline.json`'s `peaks`, which is the input to the sharding ladder.
+      r.peakStatus === "concurrent"
+        ? `  ${r.name.padEnd(30)} \x1b[33mCONCURRENT\x1b[0m  ${r.sampledMb ?? "?"} MB sampled across the POOL, not this unit —\n` +
+          `  ${" ".repeat(30)} another run unit was in flight, and birth-time attribution cannot separate\n` +
+          `  ${" ".repeat(30)} them. Re-measure a unit with \`--only=${r.name.split(" ")[0]}\` or\n` +
+          `  ${" ".repeat(30)} NOVACLAW_TEST_CONCURRENCY=1 before touching its "peaks" entry.\n`
+        : r.peakStatus === "discarded"
         ? `  ${r.name.padEnd(30)} \x1b[33mDISCARDED\x1b[0m  sampled ${r.sampledMb} MB, over the ` +
             `${IMPLAUSIBLE_PEAK_MB} MB ceiling` +
             `${peakProfiles.commit[r.name] === undefined ? "" : ` (profile ${peakProfiles.commit[r.name]})`}\n` +
@@ -1149,7 +1569,13 @@ if (matchedNothing)
 const shardedUnits = results.filter((r) => r.shards)
 process.stdout.write(
   `\n${[tally("test units green", testResults), tally("typechecks green", typecheckResults)].filter(Boolean).join("  ·  ")}` +
-    `  ·  ${(totalMs / 1000).toFixed(1)}s wall${FULL ? "  (--full)" : ""}` +
+    // 🔴 **`totalMs` was labelled "wall" and it never was.** It is the sum of the units' own times,
+    // which equalled the wall clock only because the runner was serial — the very fact that made
+    // this change worth doing (1080 s of unit time in 1142 s of wall clock). Now that they diverge
+    // on purpose, printing the sum under the wall clock's name would be the gate reporting a number
+    // that is not the thing it is called. Both, and the concurrency that explains the gap.
+    `  ·  ${(WALL_MS / 1000).toFixed(1)}s wall` +
+    `  ·  ${(totalMs / 1000).toFixed(1)}s of unit time at up to ${peakConcurrency}x${FULL ? "  (--full)" : ""}` +
     // On the headline, because a run that had to shard is a run whose green means less, and the one
     // place everybody reads is the last line.
     `${shardedUnits.length ? `  ·  \x1b[33m${shardedUnits.length} unit(s) SHARDED — degraded\x1b[0m` : ""}` +
@@ -1158,8 +1584,7 @@ process.stdout.write(
     `${ledgerDrift ? "  ·  \x1b[31mexpected-failure drift\x1b[0m" : ""}` +
     `${peakRegressions.length ? `  ·  \x1b[31m${peakRegressions.length} peak regression(s)\x1b[0m` : ""}\n`,
 )
-// `process.exitCode`, not `process.exit()`. spawnSync blocks the event loop for the whole run, so every
-// write queued while a unit was running only drains once the loop is free — and `process.exit()` would
-// truncate them whenever stdout/stderr is a pipe or a file rather than a TTY. Nothing here holds the
-// loop open, so setting the code and returning exits with the same status and keeps the output.
+// `process.exitCode`, not `process.exit()`: `process.exit()` truncates queued writes whenever
+// stdout/stderr is a pipe or a file rather than a TTY, and this report is mostly read from a log.
+// Nothing here holds the loop open, so setting the code and returning exits with the same status.
 process.exitCode = failed.length || skipDrift || ledgerDrift || matchedNothing || peakRegressions.length ? 1 : 0

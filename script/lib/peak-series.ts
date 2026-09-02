@@ -79,13 +79,41 @@ export interface Observation {
  * sampler saw nothing". It was `discarded`: 565 ticks, peak **16 758 MB** against a **1 007 MB**
  * profile. A null that means *nothing was observed* and a null that means *17 GB was observed and
  * rejected* are opposite facts, and the second is the finding.
+ *
+ * 🔴 **`concurrent` is the FOURTH null, added 2026-09-02 with the concurrent runner, and it is the
+ * honest answer to a question the sampler structurally cannot answer any more.** Attribution is by
+ * process BIRTH TIME against the unit's window (`peak-sampler.ts`): a `bun` born after the window
+ * opened is the unit's. That test is exact while one unit runs at a time and *wrong by construction*
+ * once two do — every process the neighbour spawns is also born inside this unit's window, so the
+ * reading is the POOL's cost wearing one unit's name. It would then feed `test-baseline.json`'s
+ * `peaks`, which is the input to the sharding ladder: a unit would be recorded at its neighbours'
+ * expense and shard forever afterwards. That is the exact loop the 2026-08-13 re-baseline closed,
+ * and re-opening it silently is worse than losing the reading.
+ *
+ * So a unit that overlapped another reports `concurrent`, keeps its raw `sampledMb` (which now means
+ * *the pool*, and is labelled as such wherever it prints), and withholds `peakMb`. ⚠️ **The profile
+ * is therefore refreshed by SOLO runs** — `--only=<unit>`, or `NOVACLAW_TEST_CONCURRENCY=1` — which
+ * is not a regression in what the gate knows so much as a relocation of where it learns it. Closing
+ * the gap properly needs a per-process PARENT column in the timeline so a pool can be un-mixed;
+ * that is a bigger change to an instrument with a long history of subtle bugs, and it wants its own
+ * measurement rather than a ride on this one.
  */
-export type PeakStatus = "measured" | "discarded" | "unsampled"
+export type PeakStatus = "measured" | "discarded" | "unsampled" | "concurrent"
 
 /** Fewer observations can only establish a lower bound, never the unit's peak. */
 export const MIN_RECORDED_OWN_TICKS = 3
 
-export function classifyPeak(ownTicks: number, hasMeasuredPeak: boolean, hasDiscardedSample: boolean): PeakStatus {
+export function classifyPeak(
+  ownTicks: number,
+  hasMeasuredPeak: boolean,
+  hasDiscardedSample: boolean,
+  /** Another run unit was in flight for part of this window — see {@link PeakStatus}. */
+  overlapped = false,
+): PeakStatus {
+  // FIRST, and ahead of `discarded`: a pool of two units easily sums past the 32 GB implausibility
+  // ceiling, and reporting that as `discarded` would describe a known-unattributable reading as a
+  // suspicious one — a finding invented out of a design decision.
+  if (overlapped) return "concurrent"
   if (hasDiscardedSample) return "discarded"
   if (ownTicks < MIN_RECORDED_OWN_TICKS) return "unsampled"
   return hasMeasuredPeak ? "measured" : "unsampled"
@@ -113,9 +141,15 @@ export interface Row {
   readonly shards: number
   /** Observed peak, or null when nothing believable was sampled. `peakStatus` says which. */
   readonly peakMb: number | null
-  /** `measured` | `discarded` | `unsampled` — never infer this from `peakMb === null`. */
+  /** `measured` | `discarded` | `unsampled` | `concurrent` — never infer this from `peakMb === null`. */
   readonly peakStatus: PeakStatus
-  /** The raw sampled figure, present even when it was rejected. Null when nothing was sampled. */
+  /**
+   * The raw sampled figure, present even when it was rejected. Null when nothing was sampled.
+   *
+   * ⚠️ On a `concurrent` row this is the POOL's cost, not the unit's — every neighbour's processes
+   * were born inside this unit's window too. Comparable across concurrent rows of the same run;
+   * never comparable with a solo row, and never promotable into `peaks`.
+   */
   readonly sampledMb: number | null
   /** Resident working-set peak for the same attributed process set. */
   readonly workingSetMb: number | null
@@ -177,7 +211,10 @@ export function buildRow(
   const observedPeakMb = Number.isFinite(observation.peakMb) ? (observation.peakMb as number) : null
   const ownTicks = Number.isFinite(observation.ownTicks) ? (observation.ownTicks as number) : null
   const thinSample = ownTicks !== null && ownTicks < MIN_RECORDED_OWN_TICKS && observation.peakStatus !== "discarded"
-  const peakMb = thinSample ? null : observedPeakMb
+  // An overlapped window measured the POOL, not the unit. It must never reach `peakMb`, because
+  // `peakMb` is what a reader promotes into the profile the sharding ladder plans from.
+  const concurrent = observation.peakStatus === "concurrent"
+  const peakMb = thinSample || concurrent ? null : observedPeakMb
   const fromProfile = profile[observation.name]
   // A zero or negative profile entry is not a baseline, it is a typo — treat it as absent rather than
   // dividing by it. `readPeaks()` already filters these out; this holds if that ever stops being true.
@@ -188,9 +225,11 @@ export function buildRow(
   // Derived, never guessed: a caller that predates the field still gets a row that is TRUE, because
   // "there is a peak" does imply it was measured. Only the two no-peak cases need telling apart, and
   // a caller who cannot tell them apart says `unsampled` — the weaker, non-alarming claim.
-  const peakStatus: PeakStatus = thinSample
-    ? "unsampled"
-    : (observation.peakStatus ?? (peakMb !== null ? "measured" : "unsampled"))
+  const peakStatus: PeakStatus = concurrent
+    ? "concurrent"
+    : thinSample
+      ? "unsampled"
+      : (observation.peakStatus ?? (peakMb !== null ? "measured" : "unsampled"))
   return {
     run,
     scope,

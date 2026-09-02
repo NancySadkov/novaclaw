@@ -162,14 +162,19 @@ const LEDGER = new Map<string, string>([
   ],
   [
     "script/test.ts",
-    "`reapOrphans` — the test harness's own orphan reaper, and the reason a wall-clock-killed unit no " +
-      "longer poisons the next one (a leaked bun child holding 4.89 GB, 2026-07-27). Three reasons it " +
-      "stays: (a) `script/` declares only dev dependencies (it became the `@novaclaw/repo-script` " +
-      "workspace on 2026-07-29 purely so it gets typechecked), so `@novaclaw/core` would be a new " +
-      "runtime edge from the harness into the kernel — which is reason (b) restated; (b) the " +
-      "harness must not import the code it tests — a broken `core` would then crash `bun run test` at " +
-      "import instead of reporting `core FAIL`; (c) it is synchronous throughout, inside a spawnSync " +
-      "loop. Breaking it would make every later verification in this program untrustworthy.",
+    "TWO sites now: `reapOrphans` (the harness's own orphan reaper, and the reason a wall-clock-killed " +
+      "unit no longer poisons the next one — a leaked bun child holding 4.89 GB, 2026-07-27) and " +
+      "`killTree` (added 2026-09-02 with the concurrent runner). Two reasons it stays, both structural: " +
+      "(a) `script/` declares only dev dependencies — it became the `@novaclaw/repo-script` workspace " +
+      "on 2026-07-29 purely so it gets typechecked — so `@novaclaw/core` would be a new runtime edge " +
+      "from the harness into the kernel; (b) the harness must not import the code it tests, or a broken " +
+      "`core` crashes `bun run test` at import instead of reporting `core FAIL`. " +
+      "⚠️ CORRECTED 2026-09-02: this reason used to carry a third leg — 'it is synchronous throughout, " +
+      "inside a spawnSync loop' — and that is now FALSE. Phase 2 is an async pool, so the harness's " +
+      "kills are async-capable and that leg no longer argues for anything. It is struck rather than " +
+      "quietly dropped because a ledger entry is read as the justification for the exemption, and an " +
+      "exemption resting on a premise that has expired is how a list like this rots. (a) and (b) are " +
+      "unaffected by the rewrite and are sufficient on their own.",
   ],
   [
     "packages/novaclaw/test/lib/cli-process.ts",

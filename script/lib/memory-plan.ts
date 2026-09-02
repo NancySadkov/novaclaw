@@ -159,6 +159,22 @@ export type Plan =
 export const requiredBytes = (peakMb: number): number => Math.round(peakMb * MB * WHOLE_HEADROOM_FACTOR) + SLACK_BYTES
 
 /**
+ * A unit's share of a POOL's budget — {@link requiredBytes} without the fixed slack.
+ *
+ * 🔴 **The difference is not a rounding preference; charging slack per unit is a category error once
+ * more than one unit runs.** {@link SLACK_BYTES} is *"the runner process, and room to not be at
+ * exactly zero"* — a cost of the harness, which does not multiply with the pool. Charged per
+ * reservation it dominates the cheap units and quietly caps concurrency at one: `session-ui` peaks
+ * at 122 MB resident and would reserve 671 MB, of which 512 is a second copy of the runner that does
+ * not exist. The pool subtracts the slack ONCE from the budget instead (`RunSchedule.poolBudget`)
+ * and hands out this figure.
+ *
+ * ⚠️ The 1.3× overshoot factor stays per unit, because that one IS per unit: it covers a unit
+ * exceeding its own observed maximum, and two units can each do that independently.
+ */
+export const reservedBytes = (peakMb: number): number => Math.round(peakMb * MB * WHOLE_HEADROOM_FACTOR)
+
+/**
  * Pick the rung.
  *
  * Both walls must clear independently. A machine can have free RAM and no commit left, or commit

@@ -45,6 +45,26 @@ export interface Options {
   readonly requireMeasurement?: boolean
   /** A measured stage-specific floor; omitted for the conservative full-suite default. */
   readonly minimumFreeBytes?: number
+  /**
+   * THIS runner already has units in flight, so only the foreign-job arm is meaningful.
+   *
+   * 🔴 **Without this the concurrent gate refuses itself.** The pressure arms below read the whole
+   * machine, and a pool of our own units is *supposed* to consume it: `core` alone runs at a median
+   * of 74 % commit, so a second unit beside it crosses the 75 % ceiling by design and the run would
+   * exit(2) in the middle of its own work. The two arms are not deleted — they are the wrong
+   * instrument once the runner is the thing holding the memory.
+   *
+   * ⚠️ **What replaces them is the ADMISSION side, not nothing.** `script/test.ts` hands out
+   * `MemoryPlan.requiredBytes` reservations from a budget measured while the pool was empty, and
+   * refuses to admit anything while host commit is at or above the 90 % floor. That is a stricter
+   * test of the same property, because a reservation covers memory a unit has not yet allocated
+   * while a live reading cannot.
+   *
+   * The foreign-job arm stays ARMED, and that is the point of having a flag rather than skipping the
+   * call: a release build or a local model started mid-gate is exactly the 2026-07-27 cascade, and
+   * no amount of budgeting on our side accounts for it.
+   */
+  readonly ownWorkInFlight?: boolean
 }
 
 export function bypassesGuard(
@@ -184,10 +204,30 @@ const HEAVY_PATTERNS: Array<{ label: string; match: RegExp }> = [
  */
 const HEAVY_EXECUTABLES = /^(bun|node|electron|app-builder|tsgo|tsgo-.*|llama-server)\.exe$/i
 
+/**
+ * A `bun test <paths>` spawn: one of the runner's own units, or someone running a file by hand.
+ *
+ * 🔴 **This exists because the gate refused ITSELF, and the mechanism is the same false positive
+ * `HEAVY_EXECUTABLES` was written for one level down.** The `desktop` run unit is spawned as
+ * `bun test src electron-builder.config.test.ts scripts` — so the pattern `/electron-builder/`
+ * matches a **test file name** and reports *"an electron-builder package step"*. Under the serial
+ * runner this was invisible: the guard only ever ran between units, when that `bun` was already
+ * gone. The pool put `desktop` in flight while the next unit was admitted, and the whole run exited
+ * 2 with a refusal naming a build that did not exist.
+ *
+ * ⚠️ **Nothing is lost by excluding these**, which is the test for whether an exclusion is honest.
+ * A bare `bun test packages/core` matches no pattern here today either — the arm that catches a
+ * rival suite matches `script/test.ts`, i.e. the RUNNER, and a runner is `bun script/test.ts`, not
+ * `bun test`. So this narrows the classifier onto exactly the string that was never a job.
+ */
+const isBunTestUnit = (name: string, commandLine: string): boolean =>
+  /^bun(\.exe)?$/i.test(name.trim()) && /^(?:"[^"]*"|\S+)\s+test(?:\s|$)/.test(commandLine.trim())
+
 /** Pure classifier kept public so adding a new inference/runtime process is pinned by a cheap test. */
 export function heavyJobLabels(name: string, commandLine: string): string[] {
   if (!HEAVY_EXECUTABLES.test(name.trim())) return []
   if (/heavy-guard|Get-CimInstance|Win32_Process/i.test(commandLine)) return []
+  if (isBunTestUnit(name, commandLine)) return []
   return HEAVY_PATTERNS.filter((entry) => entry.match.test(commandLine)).map((entry) => entry.label)
 }
 
@@ -231,6 +271,10 @@ export function check(argv: readonly string[] = process.argv, options: Options =
           `The test runner has no force override because a red test is better than an OOM.`,
       }
 
+    // Our own pool is holding the machine down on purpose — see `ownWorkInFlight`. The arms below
+    // measure the box, so from here they would be measuring US.
+    if (options.ownWorkInFlight) return { ok: true }
+
     const commit = windowsCommit()
     if (!commit && options.requireMeasurement)
       return {
@@ -272,6 +316,9 @@ export function check(argv: readonly string[] = process.argv, options: Options =
   }
 
   // Non-Windows: no commit-charge equivalent worth trusting, so use available RAM as a coarse floor.
+  // The same exemption applies — a pool of our own units eats free RAM by design, and there is no
+  // foreign-job arm on this platform to keep armed beside it.
+  if (options.ownWorkInFlight) return { ok: true }
   const freeFraction = os.freemem() / os.totalmem()
   if (freeFraction < 0.08)
     return {
