@@ -1212,8 +1212,9 @@ describe("MessengerGateway pipeline", () => {
       const fetched = yield* gateway.attachment({ accountID: account.id, chatID: "77", messageID: "msg-" + messageSeq })
       expect(fetched.ok).toBe(true)
       if (fetched.ok) {
-        expect(fetched.name).toBe("brief.pdf")
-        expect(new TextDecoder().decode(fetched.data)).toBe("attachment bytes")
+        expect(fetched.files.map((file) => file.name)).toEqual(["brief.pdf"])
+        expect(new TextDecoder().decode(fetched.files[0]!.data)).toBe("attachment bytes")
+        expect(fetched.failed).toEqual([])
       }
       const missing = yield* gateway.attachment({ accountID: account.id, chatID: "77", messageID: "nope" })
       expect(missing.ok).toBe(false)

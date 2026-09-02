@@ -129,10 +129,11 @@ const DownloadOp = Schema.Struct({
   op: Schema.Literal("download"),
   chat: Schema.String.annotate({ description: "Chat id the message with the attachment is in" }),
   message: Schema.String.annotate({
-    description: "Message id carrying the attachment (shown in message headers and history)",
+    description: "Message id carrying the attachment(s) (shown in message headers and history)",
   }),
   path: Schema.String.pipe(Schema.optional).annotate({
-    description: "Where to save it, relative to this session's folder (default: downloads/<original name>)",
+    description:
+      "Where to save, relative to this session's folder — a file name for a single attachment, a folder when the message carries several (default: downloads/)",
   }),
   account: Schema.String.pipe(Schema.optional).annotate({
     description: "Account id (msa_…) or label — omit when only one account exists",
@@ -611,7 +612,8 @@ export const layer = Layer.effectDiscard(
               "START — refused unless you pass initiate:true, which asks the user for permission and is " +
               "strictly capped per day, so prefer asking people to message first) · connect (bind THIS session " +
               "to a chat/thread — pick a trust tier) · " +
-              "disconnect · upload (send a workspace file, optional caption) · download (save an attachment) · " +
+              "disconnect · upload (send a workspace file, optional caption) · download (save every attachment on " +
+              "one message) · " +
               "moderate (delete a message, or ban/kick/mute/pin a member — for chats you moderate, where the " +
               "platform supports it). " +
               'To summarize a mailbox: {"op":"status"} → {"op":"chats","account":"<id or label>"} (recent ' +
@@ -953,24 +955,41 @@ export const layer = Layer.effectDiscard(
                       messageID: input.message.trim(),
                     })
                     if (!outcome.ok) return { outcome: "failed", message: outcome.reason } satisfies Output
-                    const relative = input.path?.trim().length
-                      ? input.path.trim()
-                      : path.join("downloads", outcome.name)
-                    // `readsContent: false` — a download WRITES; it never shows the model what was
-                    // already there. See `location-mutation.ts`'s `readsContent`.
-                    const saved = yield* containedPath(relative, {
-                      readsContent: false,
-                      outside: "That save path is outside this session's workspace — pick one inside it.",
-                    })
-                    if (!saved.ok) return { outcome: "failed", message: saved.message } satisfies Output
-                    const target = saved.path
-                    yield* Effect.tryPromise(async () => {
-                      await fs.mkdir(path.dirname(target), { recursive: true })
-                      await fs.writeFile(target, outcome.data)
-                    }).pipe(Effect.mapError(() => new ToolFailure({ message: `Could not write ${relative}.` })))
+                    // A message carries a LIST of attachments, so `path` names the destination file
+                    // when exactly one came back and the destination FOLDER when several did.
+                    // Forcing several files through one path would put two of them back where the
+                    // single-slot outcome used to leave them: nowhere, unmentioned.
+                    const explicit = input.path?.trim().length ? input.path.trim() : undefined
+                    const written: string[] = []
+                    for (const file of outcome.files) {
+                      const relative =
+                        explicit === undefined
+                          ? path.join("downloads", file.name)
+                          : outcome.files.length === 1
+                            ? explicit
+                            : path.join(explicit, file.name)
+                      // `readsContent: false` — a download WRITES; it never shows the model what was
+                      // already there. See `location-mutation.ts`'s `readsContent`.
+                      const saved = yield* containedPath(relative, {
+                        readsContent: false,
+                        outside: "That save path is outside this session's workspace — pick one inside it.",
+                      })
+                      if (!saved.ok) return { outcome: "failed", message: saved.message } satisfies Output
+                      const target = saved.path
+                      yield* Effect.tryPromise(async () => {
+                        await fs.mkdir(path.dirname(target), { recursive: true })
+                        await fs.writeFile(target, file.data)
+                      }).pipe(Effect.mapError(() => new ToolFailure({ message: `Could not write ${relative}.` })))
+                      written.push(
+                        `"${file.name}" (${file.mime}, ${Math.max(1, Math.round(file.data.byteLength / 1024))} KB) to ${relative}`,
+                      )
+                    }
+                    // What did NOT come back is stated in the same breath as what did — a partial
+                    // fetch reported as a plain success is the silent truncation this op used to be.
+                    const missed = outcome.failed.length === 0 ? "" : ` Not fetched: ${outcome.failed.join(" ")}`
                     return {
                       outcome: "ok",
-                      message: `Saved "${outcome.name}" (${outcome.mime}, ${Math.max(1, Math.round(outcome.data.byteLength / 1024))} KB) to ${relative}.`,
+                      message: `Saved ${written.join("; ")}.${missed}`,
                     } satisfies Output
                   }
                   case "disconnect": {

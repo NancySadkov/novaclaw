@@ -131,6 +131,42 @@ export type SendOutcome =
  */
 export type Invitation = "invited" | "cold" | "unknown"
 
+declare const FateBrand: unique symbol
+/**
+ * 🔴 **Proof that one inbound message's durable "delivered" mark has been ACCOUNTED FOR** — written,
+ * handed to whoever will write it, or deliberately withheld. Constructible only by the three
+ * producers below, so a delivery path cannot end without saying which of the three it is.
+ *
+ * **The bug this shape exists to make impossible.** The mark used to be written by the caller, the
+ * moment the delivery function returned — and that function returned `void`, which cannot tell
+ * *"a session has this message"* from *"this message is in an in-memory buffer waiting for a batch
+ * to fill"*. An audience-trust chat buffers up to `AUDIENCE_BATCH_SIZE` messages before it flushes,
+ * so a restart threw away as many as nineteen moderation messages **while the ledger recorded every
+ * one of them as routed** — and a row marked routed is never re-delivered by anything. That is the
+ * record of a success outliving the thing it recorded (`notes/reports/decisions-v0.2.0.md` ruling
+ * 2), with a durability twist: the lie survives the process that told it.
+ *
+ * ⚠️ **The fail-safe direction is deliberate.** A path that loses track of its mark leaves the row
+ * *unrouted*, so a replay re-delivers it — at-least-once for a message a human is waiting on, which
+ * `claimInbound` already deduplicates. The opposite default is the one that loses messages.
+ */
+type Fate = { readonly [FateBrand]: true }
+const FATE = {} as Fate
+/** This message's fate is decided HERE — discharge the durable mark now. */
+const settle = (mark: Effect.Effect<void>): Effect.Effect<Fate> => mark.pipe(Effect.map(() => FATE))
+/** The message reached only an in-memory buffer: its mark travels WITH it, and the flush writes it. */
+const deferMark = (marks: Effect.Effect<void>[], mark: Effect.Effect<void>): Fate => {
+  marks.push(mark)
+  return FATE
+}
+/** We could not find out what should happen to this message (an unreadable store): write NOTHING and
+ *  leave the row claimable — which is exactly the state `claimInbound`'s `recovering` describes. */
+const leaveClaimable = (): Fate => FATE
+/** What a delivery path answers, with its error and requirement channels left alone — see the pin
+ *  below `deliverInbound`. Naming those two channels in an annotation is how such a pin quietly
+ *  stops pinning, so this reads only the success type. */
+type Answered<T> = T extends Effect.Effect<infer A, infer _E, infer _R> ? A : never
+
 /** The ONE place the two tri-state reads collapse into an invitation, deliberately in one function
  *  rather than repeated at `send` and `sendFile` — two copies is how two call sites come to answer
  *  the same question differently (ruling 6). Pinned by a ledger in messenger-gateway.test.ts. */
@@ -238,8 +274,24 @@ export type HistoryOutcome =
   | { readonly ok: true; readonly messages: readonly MessengerDriverContract.HistoryEntry[] }
   | { readonly ok: false; readonly reason: string }
 
+/** One fetched attachment. `name` is already filesystem-safe and unique within its outcome. */
+export type AttachmentFile = { readonly name: string; readonly mime: string; readonly data: Uint8Array }
+
+/**
+ * What a `download` produced.
+ *
+ * 🔴 **Plural by construction.** A message carries a LIST of attachments, and this used to be one
+ * `{name, mime, data}` — a shape with exactly one slot, so a message with three files handed back
+ * the first and dropped the rest with nothing said anywhere. A container that cannot hold what the
+ * source holds is not a smaller answer, it is a wrong one; the list is what makes the truncation
+ * unwriteable rather than merely fixed today.
+ *
+ * ⚠️ `failed` rides ALONGSIDE `files` rather than folding into it, because *"two of three arrived"*
+ * and *"two arrived"* are different facts and only the first owes the operator a sentence. Every
+ * attachment the request did not return is named in exactly one of the two lists.
+ */
 export type AttachmentOutcome =
-  | { readonly ok: true; readonly name: string; readonly mime: string; readonly data: Uint8Array }
+  | { readonly ok: true; readonly files: readonly AttachmentFile[]; readonly failed: readonly string[] }
   | { readonly ok: false; readonly reason: string }
 
 export type ModerationOutcome = { readonly ok: true } | { readonly ok: false; readonly reason: string }
@@ -339,8 +391,9 @@ export interface Interface {
     readonly file: MessengerDriverContract.OutboundFile
     readonly caption?: string
   }) => Effect.Effect<SendOutcome>
-  /** Fetch an attachment by the message that carried it (the tool's `download` op) — served from
-   *  the recent-attachment ring the inbound pipeline maintains. */
+  /** Fetch EVERY attachment on one message (the tool's `download` op) — served from the recent-
+   *  attachment ring the inbound pipeline maintains. A message with three files answers with three;
+   *  anything the request could not return is named in `failed`, never dropped in silence. */
   readonly attachment: (input: {
     readonly accountID: Messenger.AccountID
     readonly chatID: string
@@ -461,7 +514,14 @@ const build = (options: Options) =>
     // Audience coalescing buffers, keyed by bindingID. `timer` is the pending flush fiber (on the
     // gateway FiberSet, so teardown interrupts it). Mutated only from the sequential inbound loop
     // and the timer's own flush — no yields between snapshot and reset keep it race-free.
-    type AudienceBuffer = { lines: string[]; files: FileAttachment[]; timer?: Fiber.Fiber<void, never> }
+    type AudienceBuffer = {
+      lines: string[]
+      files: FileAttachment[]
+      /** The durable "delivered" mark of every message in `lines`, discharged by the flush and by
+       *  nothing earlier — a buffered message has not been delivered to anything (see `Fate`). */
+      marks: Effect.Effect<void>[]
+      timer?: Fiber.Fiber<void, never>
+    }
     const audienceBuffers = new Map<string, AudienceBuffer>()
     // chatKeys already told, once, that we cannot read the database. An unreadable store must NOT
     // turn every inbound message into an outbound one: that is a burst across a whole account, and
@@ -610,6 +670,24 @@ const build = (options: Options) =>
     const safeFileName = (raw: string): string => {
       const cleaned = raw.replaceAll(/[^\w.\- ()]+/g, "_").trim()
       return (cleaned.length === 0 ? "file" : cleaned).slice(-96)
+    }
+    /** Make `name` distinct within `used`, inserting the counter BEFORE the extension so the file
+     *  keeps opening in the right application. Registers what it returns. */
+    const uniqueFileName = (name: string, used: Set<string>): string => {
+      if (!used.has(name)) {
+        used.add(name)
+        return name
+      }
+      const dot = name.lastIndexOf(".")
+      const stem = dot > 0 ? name.slice(0, dot) : name
+      const extension = dot > 0 ? name.slice(dot) : ""
+      for (let n = 2; ; n++) {
+        const candidate = `${stem}-${n}${extension}`
+        if (!used.has(candidate)) {
+          used.add(candidate)
+          return candidate
+        }
+      }
     }
     const materializeAttachments = (
       connection: Connection,
@@ -1108,6 +1186,11 @@ const build = (options: Options) =>
           undefined,
           buffer.files,
         )
+        // 🔴 **The durable "delivered" marks are discharged HERE and nowhere earlier** — this is the
+        // first instant at which any of these messages has been given to a session. Interrupt or
+        // crash before this line and every row stays claimable, which is the honest state and the
+        // only one a replay can act on. See `Fate`.
+        for (const mark of buffer.marks) yield* mark
       })
 
     /**
@@ -1156,13 +1239,17 @@ const build = (options: Options) =>
      *   is the drop case, and re-delivery is the only way anyone ever sees that message.
      * · `fresh` — never seen.
      *
-     * ⚠️ Marked routed only AFTER `deliverInbound` completes, and only if it does. A failure leaves the
-     * row unrouted, which is exactly the state `recovering` exists to describe — the message stays
-     * claimable rather than being silently consumed by the attempt that failed.
+     * 🔴 **This function does not write the mark, and must never learn how.** It cannot see what
+     * became of the message: `deliverInbound` hands some messages straight to a session and parks
+     * others in an in-memory batch buffer, and "routed" is true of only the first. So the write
+     * TRAVELS WITH THE MESSAGE — `deliverInbound` is handed it and must return a `Fate` saying what
+     * it did with it. The type is the enforcement; the ordering is not a thing a future edit can
+     * get wrong by forgetting.
      *
      * ⚠️ "Routed" covers the deliberate non-deliveries too (blocked contact, no trigger word). Those
      * are decisions ABOUT the message, and re-making them on every replay would be work with no
-     * outcome — and would leave a recovery sweep retrying them forever.
+     * outcome — and would leave a recovery sweep retrying them forever. It does NOT cover a lookup
+     * that never happened: an unreadable store leaves the row claimable (`leaveClaimable`).
      */
     const routeInbound = (account: Messenger.AccountInfo, connection: Connection, event: InboundEvent) =>
       Effect.gen(function* () {
@@ -1174,19 +1261,32 @@ const build = (options: Options) =>
           messageID: event.messageID,
         })
         if (claim === "delivered") return
-        yield* deliverInbound(account, connection, event)
-        yield* store.markInboundRouted({
-          accountID: account.id,
-          chatID: event.chat.chatID,
-          messageID: event.messageID,
-          at: yield* Clock.currentTimeMillis,
-        })
+        // The clock is read when the mark RUNS, not when it is built: `time_routed` means "when the
+        // session actually received it", and for a buffered message that instant is the flush.
+        yield* deliverInbound(
+          account,
+          connection,
+          event,
+          Effect.gen(function* () {
+            yield* store.markInboundRouted({
+              accountID: account.id,
+              chatID: event.chat.chatID,
+              messageID: event.messageID,
+              at: yield* Clock.currentTimeMillis,
+            })
+          }),
+        )
       })
 
-    const deliverInbound = (account: Messenger.AccountInfo, connection: Connection, event: InboundEvent) =>
+    /** `delivered` is this message's durable mark; every exit must account for it — see `Fate`. */
+    const deliverInbound = (
+      account: Messenger.AccountInfo,
+      connection: Connection,
+      event: Extract<InboundEvent, { kind: "message" }>,
+      delivered: Effect.Effect<void>,
+    ) =>
       Effect.gen(function* () {
-        if (event.kind !== "message") return
-        if (event.sender.isSelf) return // echo guard #1
+        if (event.sender.isSelf) return leaveClaimable() // echo guard #1; nothing was ever claimed
         yield* store.seenChat({
           accountID: account.id,
           chatID: event.chat.chatID,
@@ -1206,7 +1306,9 @@ const build = (options: Options) =>
           rememberAttachments(`${account.id}:${event.chat.chatID}:${event.messageID}`, event.attachments)
 
         const contact = yield* store.getContact(account.id, event.sender.id)
-        if (contact?.trust === "blocked") return // dropped before anything else sees it
+        // Dropped before anything else sees it — a decision ABOUT the message, so it is settled and
+        // no replay ever re-makes it.
+        if (contact?.trust === "blocked") return yield* settle(delivered)
         // §0.1.5 turnkey: on a `login` account the human owner IS the operator — born-paired, no
         // pairing ceremony. An explicit contact row still wins (it's how an owner could be narrowed).
         const trust = contact?.trust ?? (event.sender.owner === true ? ("operator" as const) : undefined)
@@ -1217,9 +1319,10 @@ const build = (options: Options) =>
           // the same one global "hand" as any other message, so a chat firing commands faster than
           // a human is dropped here exactly as plain text is below — this branch used to sit above
           // the gate and was the one path in the tree that could burst without limit.
-          if (!(yield* floodCleared(account, connection, event, trust !== undefined))) return
+          if (!(yield* floodCleared(account, connection, event, trust !== undefined)))
+            return yield* settle(delivered)
           yield* handleCommand(account, connection, event, command, trust)
-          return
+          return yield* settle(delivered)
         }
 
         // §0.1.5 — the self-chat is the shared operator console: operator and agent write with one
@@ -1235,7 +1338,9 @@ const build = (options: Options) =>
                   event.text,
                   account.settings["address"] ?? MessengerPipeline.DEFAULT_ADDRESS,
                 )
-          if (stripped === undefined) return
+          // Not addressed to the agent: an ordinary note in the operator's own chat. A decision,
+          // and one we must not re-make on a replay.
+          if (stripped === undefined) return yield* settle(delivered)
           promptText = stripped
         }
 
@@ -1265,7 +1370,11 @@ const build = (options: Options) =>
             toldUnreadable.add(chatKey)
             yield* reply(connection, event.chat.chatID, ROUTE_UNREADABLE)
           }
-          return
+          // 🔴 NOT settled. Every other exit below is a DECISION about this message; this one is the
+          // absence of a decision — we could not look. Marking it delivered would retire the row on
+          // the strength of a read that never happened, and the message would then be unreachable
+          // for good (ruling 2). Left claimable, a replay routes it once the store answers again.
+          return leaveClaimable()
         }
         toldUnreadable.delete(chatKey)
         const binding = route.binding
@@ -1276,17 +1385,17 @@ const build = (options: Options) =>
         if (binding === undefined) {
           if (trust === undefined) {
             // Unpaired stranger: silence by default (never a model turn — cost + injection surface).
-            return
+            return yield* settle(delivered)
           }
           yield* reply(connection, event.chat.chatID, "No session is linked here yet. /sessions then /use <n>.")
-          return
+          return yield* settle(delivered)
         }
         // Flood cap (§7.6): a chat firing faster than a human gets dropped past the cap, with a
         // single throttled slow-down reply. (Audience already coalesces, but a hard flood would
         // still flush size-batches back-to-back — the cap bounds that too.) `floodCleared` carries
         // the rule and the reason the command branch above shares this same bucket. `true`: this
         // site is past the stranger gate and holds a binding, so the chat is one we answer.
-        if (!(yield* floodCleared(account, connection, event, true))) return
+        if (!(yield* floodCleared(account, connection, event, true))) return yield* settle(delivered)
         // Files in (P5): materialize attachments into prompt files + note lines BEFORE framing,
         // so the notes ride inside the provenance body the model reads.
         const bound = yield* sessions.get(binding.sessionID as Session.ID).pipe(Effect.orElseSucceed(() => undefined))
@@ -1306,7 +1415,7 @@ const build = (options: Options) =>
         // origin so the child's first message shows it came from the operator's chat.
         if (event.chat.self === true) {
           yield* dispatch(account, connection, event, binding, promptText ?? "", body, origin, materialized.files)
-          return
+          return yield* settle(delivered)
         }
         const sessionID = binding.sessionID as Session.ID
         // Audience trust (§0.1): coalesce — a batch is inherently MULTI-SENDER, so it can't ride a
@@ -1317,7 +1426,7 @@ const build = (options: Options) =>
           const key = binding.id
           let buffer = audienceBuffers.get(key)
           if (buffer === undefined) {
-            buffer = { lines: [], files: [] }
+            buffer = { lines: [], files: [], marks: [] }
             audienceBuffers.set(key, buffer)
             // Arm the flush timer on the gateway FiberSet (teardown interrupts it).
             buffer.timer = fork(
@@ -1330,12 +1439,24 @@ const build = (options: Options) =>
           const line = SessionOrigin.headerLine(origin)
           buffer.lines.push(body.length === 0 ? line : `${line}\n${body}`)
           buffer.files.push(...materialized.files)
+          // 🔴 The message is now in RAM and nowhere else, so its durable mark goes with it rather
+          // than being written behind it. `deferMark` is the only exit that does not settle.
+          const fate = deferMark(buffer.marks, delivered)
           if (buffer.lines.length >= AUDIENCE_BATCH_SIZE)
             yield* flushAudience(connection, event.chat.chatID, sessionID, key, false)
-          return
+          return fate
         }
         yield* injectTurn(connection, event.chat.chatID, sessionID, body, origin, materialized.files)
+        return yield* settle(delivered)
       })
+
+    /**
+     * 🔴 **The pin: every exit from `deliverInbound` decides what becomes of the durable mark.**
+     * An exit that ends in a bare `return` widens that function's success type to `Fate | undefined`
+     * and fails on THIS line — one error, at the seam, naming the rule — instead of silently
+     * recording a message as delivered while it sits in a buffer nothing will replay.
+     */
+    void (undefined as unknown as Answered<ReturnType<typeof deliverInbound>> satisfies Fate)
 
     const consume = (account: Messenger.AccountInfo, connection: Connection) =>
       connection.inbound.pipe(Stream.runForEach((event) => routeInbound(account, connection, event)))
@@ -1892,8 +2013,7 @@ const build = (options: Options) =>
               reason: "That messenger account isn't connected right now.",
             } satisfies AttachmentOutcome
           const refs = attachments.get(`${input.accountID}:${input.chatID}:${input.messageID}`)
-          const ref = refs?.[0]
-          if (ref === undefined)
+          if (refs === undefined || refs.length === 0)
             return {
               ok: false,
               reason: "No attachment is on record for that message — only recently seen messages are indexed.",
@@ -1901,18 +2021,47 @@ const build = (options: Options) =>
           const download = entry.connection.downloadFile
           if (download === undefined)
             return { ok: false, reason: "This messenger can't download files." } satisfies AttachmentOutcome
-          return yield* download(ref).pipe(
-            Effect.map(
-              (data) =>
-                ({
-                  ok: true,
-                  name: safeFileName(ref.name ?? ref.id),
-                  mime: ref.mime ?? "application/octet-stream",
-                  data,
-                }) satisfies AttachmentOutcome,
-            ),
-            Effect.catch((error) => Effect.succeed({ ok: false, reason: error.reason } satisfies AttachmentOutcome)),
-          )
+          // The SAME per-message cap the inbound materializer applies, deliberately shared rather
+          // than re-chosen here — and stated out loud when it bites, because a cap nobody is told
+          // about is the truncation this outcome shape exists to end.
+          const taken = refs.slice(0, MAX_ATTACHMENTS_PER_MESSAGE)
+          const files: AttachmentFile[] = []
+          const failed: string[] = []
+          if (refs.length > taken.length)
+            failed.push(
+              `${refs.length - taken.length} further attachment(s) were not fetched — at most ${MAX_ATTACHMENTS_PER_MESSAGE} per message.`,
+            )
+          // Names collide (two "image.jpg" on one message), and a colliding name is one file
+          // overwriting another on disk — the same loss by a different route.
+          const used = new Set<string>()
+          for (const ref of taken) {
+            const name = uniqueFileName(safeFileName(ref.name ?? ref.id), used)
+            if (ref.size !== undefined && ref.size > FETCH_FILE_CAP_BYTES) {
+              failed.push(
+                `"${name}" skipped — ${Math.round(ref.size / 1_000_000)} MB is over the ${FETCH_FILE_CAP_BYTES / 1_000_000} MB fetch cap.`,
+              )
+              continue
+            }
+            const fetched = yield* download(ref).pipe(
+              Effect.map((data) => ({ data }) as { data: Uint8Array } | undefined),
+              Effect.catch((error) =>
+                Effect.sync(() => {
+                  failed.push(`"${name}" — ${error.reason}`)
+                  return undefined
+                }),
+              ),
+            )
+            if (fetched !== undefined)
+              files.push({ name, mime: ref.mime ?? "application/octet-stream", data: fetched.data })
+          }
+          // Nothing arrived: answer under the drivers' own words rather than reporting an empty
+          // success, which reads to the model as "that message had no files" (ruling 2).
+          if (files.length === 0)
+            return {
+              ok: false,
+              reason: `Could not fetch that message's attachment(s): ${failed.join(" ")}`,
+            } satisfies AttachmentOutcome
+          return { ok: true, files, failed } satisfies AttachmentOutcome
         }),
       moderate: (input) =>
         Effect.gen(function* () {
