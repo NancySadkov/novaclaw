@@ -336,7 +336,24 @@ export const RunCommand = effectCmd({
       // unref: the watchdog must never be the thing KEEPING the process alive.
       if (typeof watchdog === "object" && "unref" in watchdog) watchdog.unref()
 
-      let message = [...args.message, ...(args["--"] || [])]
+      /**
+       * 🔴 **THE PROMPT IS WHAT THE USER TYPED — byte for byte.**
+       *
+       * The shell already removed the quotes: `novaclaw run "write a haiku"` arrives as a yargs
+       * `array` positional holding ONE element, `write a haiku`. Re-adding `"` around any element
+       * containing a space (and backslash-escaping the quotes inside it) therefore did not preserve
+       * the user's text, it EDITED it — the model received `"write a haiku"`, quote characters and
+       * all, while a single-word prompt was delivered verbatim. One command, two encodings, decided
+       * by whether the text happens to contain a space.
+       *
+       * ⚠️ The quoting is not wrong everywhere, which is why it survived: `--command` hands its
+       * argument string to a slash command that RE-SPLITS it, so there the quoting is what keeps a
+       * multi-word argument together. It belongs on that path and only that path — hence two
+       * strings from one argv, and `commandArguments` is read at exactly one call site.
+       */
+      const words = [...args.message, ...(args["--"] || [])]
+      let message = words.join(" ")
+      let commandArguments = words
         .map((arg) => (arg.includes(" ") ? `"${arg.replace(/"/g, '\\"')}"` : arg))
         .join(" ")
 
@@ -442,6 +459,9 @@ export const RunCommand = effectCmd({
 
       const piped = await readPipedInput(message.trim().length > 0)
       message = resolveRunInput(message, piped) ?? ""
+      // Piped stdin joins BOTH strings the same way — it is the user's own bytes on either path,
+      // and appending it raw is what `--command` already did before the two were separated.
+      commandArguments = resolveRunInput(commandArguments, piped) ?? ""
 
       if (message.trim().length === 0 && !args.command) {
         UI.error("You must provide a message or a command")
@@ -601,7 +621,24 @@ export const RunCommand = effectCmd({
         process.exit(1)
       }
 
-      async function localAgent() {
+      /**
+       * 🔴 **AN UNRESOLVABLE `--agent` FAILS THE RUN.** Same rule, same reasoning as the refused
+       * switch further down (`"A run that silently did the work as the wrong agent is worse than
+       * one that did not run: its output looks authoritative."`) — it was written there and applied
+       * only there. A misspelled name, a name that turns out to be a SUBAGENT, or a remote whose
+       * agent list cannot be fetched used to print a warning into stderr traffic nobody reads, run
+       * the whole task as whoever owns the session — **without the named colleague's MCP grants or
+       * permissions** — and exit **0**. Every script and rig downstream reads that as a successful
+       * run by the agent it asked for.
+       *
+       * ⚠️ `undefined` still means *the user named nobody*, which is the ordinary case and stays a
+       * silent default. What may never be silent is a name that was given and could not be honoured.
+       *
+       * ⚠️ Both resolvers spell their return type out because their guards now END in
+       * `process.exit`: it is that annotation which lets a `never`-returning call narrow what
+       * follows it, the same reason `session()` above carries one.
+       */
+      async function localAgent(): Promise<string | undefined> {
         if (!args.agent) return undefined
         const name = args.agent
 
@@ -611,25 +648,17 @@ export const RunCommand = effectCmd({
           agentSvc.get(name).pipe(Effect.provideService(InstanceRef, localInstance), Effect.provide(captured)),
         )
         if (!entry) {
-          UI.println(
-            UI.Style.TEXT_WARNING_BOLD + "!",
-            UI.Style.TEXT_NORMAL,
-            `agent "${name}" not found. Falling back to default agent`,
-          )
-          return undefined
+          UI.error(`could not run as agent "${name}": no agent by that name`)
+          process.exit(1)
         }
         if (entry.mode === "subagent") {
-          UI.println(
-            UI.Style.TEXT_WARNING_BOLD + "!",
-            UI.Style.TEXT_NORMAL,
-            `agent "${name}" is a subagent, not a primary agent. Falling back to default agent`,
-          )
-          return undefined
+          UI.error(`could not run as agent "${name}": it is a subagent, not a primary agent`)
+          process.exit(1)
         }
         return name
       }
 
-      async function attachAgent(sdk: NovaclawClient) {
+      async function attachAgent(sdk: NovaclawClient): Promise<string | undefined> {
         if (!args.agent) return undefined
         const name = args.agent
 
@@ -638,32 +667,22 @@ export const RunCommand = effectCmd({
           .then((x) => x.data ?? [])
           .catch(() => undefined)
 
+        // ⚠️ A remote that cannot be asked is not a remote that answered "no such agent" — but it is
+        // equally not permission to run as somebody else. Report which of the two happened, and stop.
         if (!modes) {
-          UI.println(
-            UI.Style.TEXT_WARNING_BOLD + "!",
-            UI.Style.TEXT_NORMAL,
-            `failed to list agents from ${args.attach}. Falling back to default agent`,
-          )
-          return undefined
+          UI.error(`could not run as agent "${name}": failed to list agents from ${args.attach}`)
+          process.exit(1)
         }
 
         const agent = modes.find((a) => a.name === name)
         if (!agent) {
-          UI.println(
-            UI.Style.TEXT_WARNING_BOLD + "!",
-            UI.Style.TEXT_NORMAL,
-            `agent "${name}" not found. Falling back to default agent`,
-          )
-          return undefined
+          UI.error(`could not run as agent "${name}": no agent by that name`)
+          process.exit(1)
         }
 
         if (agent.mode === "subagent") {
-          UI.println(
-            UI.Style.TEXT_WARNING_BOLD + "!",
-            UI.Style.TEXT_NORMAL,
-            `agent "${name}" is a subagent, not a primary agent. Falling back to default agent`,
-          )
-          return undefined
+          UI.error(`could not run as agent "${name}": it is a subagent, not a primary agent`)
+          process.exit(1)
         }
 
         return name
@@ -681,9 +700,9 @@ export const RunCommand = effectCmd({
       /**
        * The requested colleague, resolved ONCE.
        *
-       * ⚠️ Memoised because it is now needed at two points — naming the owner when the session is
-       * created, and switching an existing one — and `pickAgent` PRINTS when it falls back. Called
-       * twice it would warn twice about one decision, which reads as two problems.
+       * ⚠️ Memoised because resolving it costs a round trip (a store read locally, an
+       * `/app/agents` call under `--attach`) and because it REFUSES the run when the named agent
+       * cannot be honoured — one decision must report itself once, not once per caller.
        */
       let agentChoice: Promise<string | undefined> | undefined
       const chosenAgent = (sdk: NovaclawClient) => (agentChoice ??= pickAgent(sdk))
@@ -981,7 +1000,8 @@ export const RunCommand = effectCmd({
             agent,
             model: args.model,
             command: args.command,
-            arguments: message,
+            // The one consumer of the quoted form — a slash command re-splits this string.
+            arguments: commandArguments,
             variant: args.variant,
           })
           if (result.error) {
