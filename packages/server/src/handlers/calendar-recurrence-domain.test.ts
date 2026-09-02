@@ -37,7 +37,11 @@ import { CalendarApi } from "../handler-api"
 
 const decode = <S extends Schema.Top>(schema: S, value: unknown): { ok: boolean; message: string } => {
   try {
-    Schema.decodeUnknownSync(schema)(value)
+    // The only cast in this file, and it is about REFLECTION, not about the domain: `HttpApi.reflect`
+    // hands back `Schema.Top`, while `decodeUnknownSync` asks for a `Decoder<unknown>` — a schema with
+    // no decoding requirements. Every served payload is one; the reflected type just cannot say so.
+    // The handoff to `Recurrence.nextFire` below stays cast-free, which is the join that matters.
+    Schema.decodeUnknownSync(schema as unknown as Schema.Decoder<unknown>)(value)
     return { ok: true, message: "" }
   } catch (error) {
     return { ok: false, message: String((error as Error).message).replace(/\s+/g, " ") }

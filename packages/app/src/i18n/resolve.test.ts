@@ -26,9 +26,13 @@ const ENGLISH = { greeting: "Hello {{name}}", "only.in.english": "Only here", bl
 
 describe("the library's own miss behaviour — the premise this module is built on", () => {
   test("`translator()` returns undefined for an absent key, and does NOT return the key", () => {
-    const t = i18n.translator(() => ({ present: "here" }), i18n.resolveTemplate)
-    expect(t("present" as never)).toBe("here")
-    const miss: unknown = t("absent.key" as never)
+    // Loosened deliberately: the point is what the LIBRARY returns for a key it does not hold, and
+    // its own key type makes an absent key unspellable — which is the very thing being measured.
+    const t = i18n.translator(() => ({ present: "here" }), i18n.resolveTemplate) as unknown as (
+      key: string,
+    ) => string | undefined
+    expect(t("present")).toBe("here")
+    const miss: unknown = t("absent.key")
     expect(miss).toBeUndefined()
     expect(miss).not.toBe("absent.key")
   })
@@ -94,8 +98,9 @@ describe("plural selection", () => {
     const seen = new Set<string>()
     for (const tag of ["en", "ru", "pl", "ar", "cy", "ja"])
       for (let n = 0; n <= 120; n++) seen.add(pluralCategory(tag, n))
-    expect([...seen].filter((category) => !PLURAL_CATEGORIES.includes(category))).toEqual([])
-    expect(EXTRA_PLURAL_CATEGORIES.every((category) => PLURAL_CATEGORIES.includes(category))).toBe(true)
+    const declared: readonly string[] = PLURAL_CATEGORIES
+    expect([...seen].filter((category) => !declared.includes(category))).toEqual([])
+    expect(EXTRA_PLURAL_CATEGORIES.every((category) => declared.includes(category))).toBe(true)
   })
 })
 
