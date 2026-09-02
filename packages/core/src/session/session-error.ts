@@ -78,6 +78,8 @@ export type SessionErrorLike = {
 export const SESSION_ERROR_TEXT = {
   "session.error.interrupted": "Interrupted",
   "session.error.invalidRequest": "The model rejected this request.",
+  "session.error.modelMissing":
+    "This chat is set to a model its provider no longer serves. Pick another model for this chat.",
   "session.error.noRoute": "No route is configured for this model.",
   "session.error.authentication": "The model provider rejected this model's credentials.",
   "session.error.rateLimit": "The model provider is rate-limiting this account — try again in a moment.",
@@ -182,6 +184,30 @@ const WITH_ENDPOINT = {
   Transport: "session.error.transportEndpoint",
   OfflineBlocked: "session.error.offlineBlockedEndpoint",
 } as const satisfies Record<string, SessionErrorKey>
+
+/**
+ * A model the endpoint does not serve is NOT a rejection, and the difference is the whole point.
+ *
+ * Measured 2026-09-02 on a live instance: a chat pinned to `holo3.1` kept asking for it after the
+ * endpoint moved to another model, and every turn came back as HTTP 404 *"The model `holo3.1` does
+ * not exist"* under the headline *"The model rejected this request."* Nothing rejected anything. That
+ * sentence sends a user to rewrite a prompt that was never the problem and hides the one move that
+ * fixes it.
+ *
+ * It keeps the `InvalidRequest` tag because the wire status is genuinely the same, so this is a
+ * display variant rather than a new fault class: no recovery behaviour changes, only the sentence.
+ */
+const WITH_MISSING_MODEL = {
+  InvalidRequest: "session.error.modelMissing",
+} as const satisfies Record<string, SessionErrorKey>
+
+// The provider's own words for "that model is not here", across the endpoints we speak to.
+//
+// ⚠️ The separator is `[^\n]`, NOT `[^.]`. The first cut excluded dots as a sentence boundary
+// and so could never span the very thing it matches — a model id like `holo3.1` contains one, so the
+// live 404 this exists for did not match its own regex. The test caught it; reading it did not.
+const MISSING_MODEL =
+  /\bmodel\b[^\n]{0,80}?\b(?:does not exist|not found|unknown|is not available)\b|\bno such model\b/i
 
 /** Last-resort headline when the fault carried nothing a person can use and no known class. */
 const GENERIC = "session.error.unknown"
@@ -474,6 +500,26 @@ export function sessionErrorDisplay(error: SessionErrorLike | undefined | null):
       ...(prose === undefined ? {} : { detail: prose }),
       retryable,
       canRetry,
+    }
+  }
+
+  // A missing model reads as an InvalidRequest on the wire, but "rejected" is the wrong word for it
+  // and the wrong instruction to a user. It sits ABOVE the recognised-class arm below, which would
+  // otherwise answer for every InvalidRequest first.
+  //
+  // The model id is NOT interpolated into the headline: the provider's own sentence already names it
+  // and rides along as `detail`, so a second copy would add a params shape to a closed key union for
+  // a fact already on screen.
+  if (tag === "InvalidRequest" && MISSING_MODEL.test(raw)) {
+    return {
+      kind: "fault",
+      key: WITH_MISSING_MODEL.InvalidRequest,
+      headline: sessionErrorEnglish(WITH_MISSING_MODEL.InvalidRequest),
+      ...(prose === undefined ? {} : { detail: prose }),
+      // The same turn against the same missing model fails the same way forever; offering Retry on
+      // it is a button that cannot work.
+      retryable: false,
+      canRetry: false,
     }
   }
 

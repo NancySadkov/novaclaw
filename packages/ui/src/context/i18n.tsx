@@ -25,6 +25,7 @@ import { dict as en } from "../i18n/en"
 export const HOST_I18N_KEYS = [
   "session.error.interrupted",
   "session.error.invalidRequest",
+  "session.error.modelMissing",
   "session.error.noRoute",
   "session.error.authentication",
   "session.error.rateLimit",

@@ -647,6 +647,7 @@ export const dict = {
   "session.error.offlineBlockedEndpoint":
     "El modo sin conexión bloqueó esta solicitud a {{endpoint}}, así que nunca salió de tu equipo.",
   "session.error.invalidRequest": "El modelo rechazó esta solicitud.",
+  "session.error.modelMissing": "Este chat está configurado con un modelo que su proveedor ya no ofrece. Elige otro modelo para este chat.",
   "session.error.noRoute": "No hay ninguna ruta configurada para este modelo.",
   "session.error.authentication": "El proveedor del modelo rechazó las credenciales de este modelo.",
   "session.error.rateLimit":

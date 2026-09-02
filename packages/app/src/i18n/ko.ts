@@ -577,6 +577,7 @@ export const dict = {
   "session.error.offlineBlockedEndpoint":
     "오프라인 모드가 {{endpoint}}(으)로 향하는 요셈을 차단했습니다. 요셈은 이 컴퓨턼를 떠나지 않았습니다.",
   "session.error.invalidRequest": "모델이 이 요청을 거부했습니다.",
+  "session.error.modelMissing": "이 대화는 제공자가 더 이상 제공하지 않는 모델로 설정되어 있습니다. 이 대화에 사용할 다른 모델을 선택하세요.",
   "session.error.noRoute": "이 모델에 대해 구성된 경로가 없습니다.",
   "session.error.authentication": "모델 공급자가 이 모델의 자격 증명을 거부했습니다.",
   "session.error.rateLimit": "모델 공급자가 이 계정의 요청 속도를 제한하고 있습니다. 잠시 후 다시 시도하세요.",

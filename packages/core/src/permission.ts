@@ -809,6 +809,32 @@ export const layer = Layer.effect(
           rules: [{ action: input.action, resource: pluginDoorHit, effect: "deny" as const }],
           reason: "plugin-door" as DenialReason | undefined,
         }
+
+      // ── THE CEO's FLOOR, immediately after it ─────────────────────────────────────────────────
+      //
+      // Owner, 2026-09-02: "Nova itself should have full permission for everything… i.e. it lacking
+      // permission is not an option." Authority narrows DOWNWARD from the CEO (AGENTS.md, the
+      // structural metaphor), so a rule that narrows the top has inverted the org chart.
+      //
+      // ABOVE every arm below it — configured rules, the resolved mode, the attendance chain, and
+      // the project file's NARROWING constraint — because each of those is something a rule or a
+      // repository can say, and this is the shape of the organization rather than a setting. A
+      // `novaclaw.json` in a folder somebody cloned five minutes ago may narrow any colleague; it
+      // does not get to narrow the instance's own CEO.
+      //
+      // ⚠️ BELOW the plugin door, and that ordering is deliberate rather than an oversight. That
+      // gate is not a permission tier: it is the single place in-process third-party code can enter,
+      // and `import()` runs module scope before anything validates it. No authority level was ever
+      // meant to open it, and a Nova carrying an injected instruction is precisely the case it
+      // exists for. Everything a colleague could be granted, Nova has; the one thing nobody is
+      // granted stays nobody's.
+      if (AgentV2.hasFullAuthority(input.agent))
+        return {
+          effect: "allow" as const,
+          rules: [] as Permission.Ruleset,
+          reason: undefined as DenialReason | undefined,
+          attachment: undefined,
+        }
       // 1K: the session's resolved permission MODE contributes a rule overlay. Appended after the
       // agent's configured rules (last-match-wins) so the user's explicit mode outranks agent
       // defaults. The early hard-deny check runs over the configured chain and the mode overlay

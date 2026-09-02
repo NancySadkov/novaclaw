@@ -586,6 +586,7 @@ export const dict = {
   "session.error.offlineBlockedEndpoint":
     "O modo offline bloqueou esta solicitação para {{endpoint}}, então ela nunca saiu do seu computador.",
   "session.error.invalidRequest": "O modelo rejeitou esta solicitação.",
+  "session.error.modelMissing": "Esta conversa está definida para um modelo que o provedor não oferece mais. Escolha outro modelo para esta conversa.",
   "session.error.noRoute": "Nenhuma rota está configurada para este modelo.",
   "session.error.authentication": "O provedor do modelo rejeitou as credenciais deste modelo.",
   "session.error.rateLimit": "O provedor do modelo está limitando a taxa desta conta — tente novamente em um instante.",

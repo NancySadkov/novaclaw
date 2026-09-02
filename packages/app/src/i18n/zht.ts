@@ -627,6 +627,7 @@ export const dict = {
   "session.error.offlineBlocked": "離線模式已封鎖此請求，它從未離開你的電腦。",
   "session.error.offlineBlockedEndpoint": "離線模式已封鎖發往 {{endpoint}} 的請求，它從未離開你的電腦。",
   "session.error.invalidRequest": "模型拒絕了此請求。",
+  "session.error.modelMissing": "此對話使用的模型其提供者已不再提供。請為此對話選擇其他模型。",
   "session.error.noRoute": "尚未為此模型設定任何路由。",
   "session.error.authentication": "模型提供者拒絕了此模型的憑證。",
   "session.error.rateLimit": "模型提供者正在限制此帳戶的速率，請稍後再試。",

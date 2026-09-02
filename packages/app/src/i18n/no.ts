@@ -641,6 +641,7 @@ export const dict = {
   "session.error.offlineBlockedEndpoint":
     "Frakoblet modus blokkerte denne forespørselen til {{endpoint}}, så den forlot aldri datamaskinen din.",
   "session.error.invalidRequest": "Modellen avviste denne forespørselen.",
+  "session.error.modelMissing": "Denne samtalen er satt til en modell som leverandøren ikke lenger tilbyr. Velg en annen modell for denne samtalen.",
   "session.error.noRoute": "Ingen rute er konfigurert for denne modellen.",
   "session.error.authentication": "Modelleverandøren avviste legitimasjonen for denne modellen.",
   "session.error.rateLimit":

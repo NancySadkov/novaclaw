@@ -850,6 +850,8 @@ export const dict = {
   "session.error.offlineBlockedEndpoint":
     "Offline mode blocked this request to {{endpoint}}, so it never left your computer.",
   "session.error.invalidRequest": "The model rejected this request.",
+  "session.error.modelMissing":
+    "This chat is set to a model its provider no longer serves. Pick another model for this chat.",
   "session.error.noRoute": "No route is configured for this model.",
   "session.error.authentication": "The model provider rejected this model's credentials.",
   "session.error.rateLimit": "The model provider is rate-limiting this account — try again in a moment.",

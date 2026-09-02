@@ -639,6 +639,7 @@ export const dict = {
   "session.error.offlineBlockedEndpoint":
     "Offlinetilstand blokerede denne anmodning til {{endpoint}}, så den forlod aldrig din computer.",
   "session.error.invalidRequest": "Modellen afviste denne anmodning.",
+  "session.error.modelMissing": "Denne chat er indstillet til en model, som udbyderen ikke længere leverer. Vælg en anden model til denne chat.",
   "session.error.noRoute": "Der er ikke konfigureret nogen rute for denne model.",
   "session.error.authentication": "Modeludbyderen afviste denne models legitimationsoplysninger.",
   "session.error.rateLimit":

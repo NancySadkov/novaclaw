@@ -574,6 +574,7 @@ export const dict = {
   "session.error.offlineBlockedEndpoint":
     "حجب وضع عدم الاتصال هذا الطلب الموجّه إلى {{endpoint}}، فلم يخرج من حاسوبك أبدًا.",
   "session.error.invalidRequest": "رفض النموذج هذا الطلب.",
+  "session.error.modelMissing": "هذه المحادثة مضبوطة على نموذج لم يعد مزوّدها يقدّمه. اختر نموذجًا آخر لهذه المحادثة.",
   "session.error.noRoute": "لا يوجد مسار مُهيّأ لهذا النموذج.",
   "session.error.authentication": "رفض موفر النموذج بيانات اعتماد هذا النموذج.",
   "session.error.rateLimit": "يفرض موفر النموذج حدًا لمعدل الطلبات على هذا الحساب — أعد المحاولة بعد لحظة.",

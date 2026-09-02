@@ -186,6 +186,13 @@ export const layer = Layer.effectDiscard(
                       // A capability REPORT must not fail a turn. An unanswerable question reads as
                       // "no", which is the direction that cannot mislead: the model tries, and the
                       // real call gives it the real answer.
+                      //
+                      // ⚠️ DEFECTS too, not only failures. In a session worker `permission.ask` is
+                      // `Effect.die("permission request inspection is host-only…")`, which sails
+                      // straight past `orElseSucceed` — so this guard read as present while the tool
+                      // crashed, and the internal sentence reached the model, which relayed it to the
+                      // user as its own refusal. Measured 2026-09-02 against a live instance.
+                      Effect.catchDefect(() => Effect.succeed(false)),
                       Effect.orElseSucceed(() => false),
                     ),
               }),

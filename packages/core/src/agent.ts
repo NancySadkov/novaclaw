@@ -100,6 +100,26 @@ export const isProtected = (id: string): boolean => PROTECTED_IDS.has(id)
 export const mayStaff = (agentID: string | undefined): boolean => agentID === NOVA_ID
 
 /**
+ * Does this agent hold the instance's full charter?
+ *
+ * Owner, 2026-09-02: *"Nova itself should have full permission for everything… i.e. it lacking
+ * permission is not an option."* Nova is the CEO in AGENTS.md's structural metaphor, and authority
+ * narrows DOWNWARD from it — so a rule that narrows the top has inverted the org chart. A CEO that
+ * has to ask its own instance for consent is not a CEO.
+ *
+ * ⚠️ Beside `mayStaff` and `isProtected` on purpose: these are the ORG CHART, enforced as well as by
+ * permission rules and not redundant with them. A rule is the operator's dial and can be widened or
+ * narrowed; this is the shape of the organization and is neither.
+ *
+ * ⚠️ It is an authority floor, NOT a bypass of every gate in the product. The plugin door
+ * (`permission.ts`) stays shut for Nova too, and deliberately: that gate is not a permission tier,
+ * it is the one place in-process third-party code can enter, and `import()` runs module scope before
+ * anything validates it. No authority level was ever meant to open it — a Nova carrying an injected
+ * instruction is exactly the case it exists for. Everything a colleague could be granted, Nova has.
+ */
+export const hasFullAuthority = (agentID: string | undefined): boolean => agentID === NOVA_ID
+
+/**
  * The POSTURE agents. `build` and `plan` are permission modes wearing an agent's shape (owner,
  * 2026-08-22), not people — and `build` is this instance's DEFAULT agent (see `defaultID` above), so
  * an ordinary chat that never named a colleague still carries `agent: "build"` on its row.

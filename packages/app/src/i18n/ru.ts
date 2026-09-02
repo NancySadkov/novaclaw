@@ -652,6 +652,7 @@ export const dict = {
   "session.error.offlineBlockedEndpoint":
     "Автономный режим заблокировал этот запрос к {{endpoint}} — он так и не покинул ваш компьютер.",
   "session.error.invalidRequest": "Модель отклонила этот запрос.",
+  "session.error.modelMissing": "Этот чат настроен на модель, которую её провайдер больше не предоставляет. Выберите для чата другую модель.",
   "session.error.noRoute": "Для этой модели не настроен маршрут.",
   "session.error.authentication": "Провайдер модели отклонил учётные данные этой модели.",
   "session.error.rateLimit":

@@ -550,3 +550,62 @@ describe("faultEvidence — the one place that decides what a fault is evidence 
     }
   })
 })
+
+/**
+ * A MODEL THAT IS GONE IS NOT A MODEL THAT REFUSED.
+ *
+ * Measured 2026-09-02 against a live instance: a chat pinned to `holo3.1` kept asking for it after
+ * the endpoint moved to another model, and every turn came back as
+ * `HTTP 404 {"message":"The model \`holo3.1\` does not exist."}` under the headline
+ * "The model rejected this request."
+ *
+ * Nothing rejected anything. That sentence sends the user to rewrite a prompt that was never the
+ * problem, and hides the one move that fixes it — choosing another model for the chat.
+ */
+describe("a model the provider no longer serves", () => {
+  const missing = (message: string) =>
+    sessionErrorDisplay({ type: "unknown", message, _tag: "InvalidRequest", retryable: false })
+
+  test("🔴 is not described as a rejection, and names the move that fixes it", () => {
+    const shown = missing(
+      'Provider request failed with HTTP 404: {"error":{"message":"The model `holo3.1` does not exist.","code":404}}',
+    )
+    expect(shown.headline).not.toContain("rejected")
+    expect(shown.headline).toContain("Pick another model")
+    // Not retryable: the same turn against the same missing model fails the same way forever, and
+    // offering Retry on it is a button that cannot work.
+    expect(shown.canRetry).toBe(false)
+  })
+
+  test("the provider's own words still ride along, so the user can see WHICH model", () => {
+    // The id is deliberately not interpolated into the headline — it is already here.
+    const shown = missing('HTTP 404: {"message":"The model `holo3.1` does not exist."}')
+    expect(shown.detail ?? "").toContain("holo3.1")
+  })
+
+  test("CONTROL — an ordinary invalid request keeps its own wording", () => {
+    // Without this the file would pass on a formatter that called every InvalidRequest a missing
+    // model, which is the same defect facing the other way.
+    const shown = sessionErrorDisplay({
+      type: "unknown",
+      message: "HTTP 400: temperature must be between 0 and 2",
+      _tag: "InvalidRequest",
+      retryable: false,
+    })
+    expect(shown.headline).toContain("rejected")
+    expect(shown.headline).not.toContain("Pick another model")
+  })
+
+  test("CONTROL — a missing TOOL or file is not a missing model", () => {
+    // The regex looks for the word `model` near the refusal, so a sentence about something else
+    // that happens to say "not found" must not be captured.
+    const shown = sessionErrorDisplay({
+      type: "unknown",
+      message: "HTTP 404: requested file was not found",
+      _tag: "InvalidRequest",
+      retryable: false,
+    })
+    expect(shown.headline).not.toContain("Pick another model")
+  })
+})
+

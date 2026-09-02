@@ -593,6 +593,7 @@ export const dict = {
   "session.error.offlineBlockedEndpoint":
     "Le mode hors ligne a bloqué cette requête vers {{endpoint}} : elle n'a jamais quitté votre ordinateur.",
   "session.error.invalidRequest": "Le modèle a rejeté cette requête.",
+  "session.error.modelMissing": "Cette conversation utilise un modèle que son fournisseur ne propose plus. Choisissez un autre modèle pour cette conversation.",
   "session.error.noRoute": "Aucune route n'est configurée pour ce modèle.",
   "session.error.authentication": "Le fournisseur du modèle a rejeté les identifiants de ce modèle.",
   "session.error.rateLimit": "Le fournisseur du modèle limite le débit de ce compte — réessayez dans un instant.",

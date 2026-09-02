@@ -641,6 +641,7 @@ export const dict = {
   "session.error.offlineBlockedEndpoint":
     "Çevrimdışı mod {{endpoint}} adresine giden bu isteği engelledi; istek bilgisayarınızdan hiç çıkmadı.",
   "session.error.invalidRequest": "Model bu isteği reddetti.",
+  "session.error.modelMissing": "Bu sohbet, sağlayıcısının artık sunmadığı bir modele ayarlı. Bu sohbet için başka bir model seçin.",
   "session.error.noRoute": "Bu model için yapılandırılmış bir rota yok.",
   "session.error.authentication": "Model sağlayıcısı bu modelin kimlik bilgilerini reddetti.",
   "session.error.rateLimit": "Model sağlayıcısı bu hesabın istek hızını sınırlıyor — birazdan tekrar deneyin.",

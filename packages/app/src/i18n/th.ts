@@ -633,6 +633,7 @@ export const dict = {
   "session.error.offlineBlockedEndpoint":
     "โหมดออฟไลน์บล็อกคำขอนี้ไปยัง {{endpoint}} จึงไม่มีอะไรออกจากคอมพิวเตอร์ของคุณ",
   "session.error.invalidRequest": "โมเดลปฏิเสธคำขอนี้",
+  "session.error.modelMissing": "แชทนี้ตั้งค่าไว้กับโมเดลที่ผู้ให้บริการไม่ได้ให้บริการแล้ว กรุณาเลือกโมเดลอื่นสำหรับแชทนี้",
   "session.error.noRoute": "ยังไม่ได้กำหนดเส้นทางสำหรับโมเดลนี้",
   "session.error.authentication": "ผู้ให้บริการโมเดลปฏิเสธข้อมูลรับรองของโมเดลนี้",
   "session.error.rateLimit": "ผู้ให้บริการโมเดลกำลังจำกัดอัตราคำขอของบัญชีนี้ — ลองใหม่อีกครั้งในอีกสักครู่",

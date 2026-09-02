@@ -584,6 +584,7 @@ export const dict = {
   "session.error.offlineBlockedEndpoint":
     "Tryb offline zablokował to żądanie do {{endpoint}} — nigdy nie opuściło Twojego komputera.",
   "session.error.invalidRequest": "Model odrzucił to żądanie.",
+  "session.error.modelMissing": "Ten czat jest ustawiony na model, którego dostawca już nie udostępnia. Wybierz inny model dla tego czatu.",
   "session.error.noRoute": "Dla tego modelu nie skonfigurowano żadnej trasy.",
   "session.error.authentication": "Dostawca modelu odrzucił poświadczenia tego modelu.",
   "session.error.rateLimit": "Dostawca modelu ogranicza liczbę żądań tego konta — spróbuj ponownie za chwilę.",

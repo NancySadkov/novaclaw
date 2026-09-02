@@ -582,6 +582,7 @@ export const dict = {
   "session.error.offlineBlockedEndpoint":
     "オフラインモードが {{endpoint}} へのリクエストをブロックしました。リクエストはこのコンピューターから外に出ていません。",
   "session.error.invalidRequest": "モデルがこのリクエストを拒否しました。",
+  "session.error.modelMissing": "このチャットは、プロバイダーが提供しなくなったモデルに設定されています。別のモデルを選んでください。",
   "session.error.noRoute": "このモデルにはルートが設定されていません。",
   "session.error.authentication": "モデルプロバイダーがこのモデルの認証情報を拒否しました。",
   "session.error.rateLimit":

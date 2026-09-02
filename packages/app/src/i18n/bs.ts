@@ -646,6 +646,7 @@ export const dict = {
   "session.error.offlineBlockedEndpoint":
     "Offline režim je blokirao ovaj zahtjev prema {{endpoint}}, tako da nikada nije napustio vaš računar.",
   "session.error.invalidRequest": "Model je odbio ovaj zahtjev.",
+  "session.error.modelMissing": "Ovaj razgovor koristi model koji njegov provajder više ne nudi. Odaberite drugi model za ovaj razgovor.",
   "session.error.noRoute": "Za ovaj model nije konfigurirana nijedna ruta.",
   "session.error.authentication": "Provajder modela je odbio vjerodajnice ovog modela.",
   "session.error.rateLimit": "Provajder modela ograničava broj zahtjeva za ovaj račun — pokušajte ponovo za trenutak.",

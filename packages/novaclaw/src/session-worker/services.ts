@@ -14,6 +14,7 @@ import { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
 import { SessionWorkerProtocol } from "@novaclaw/core/session/execution/worker-protocol"
 import { EventManifest } from "@novaclaw/schema/event-manifest"
 import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
+import { AgentV2 } from "@novaclaw/core/agent"
 import type { SessionWorkerCapabilities } from "./capabilities"
 import { makeGlobalNode, makeLocationNode } from "@novaclaw/core/effect/app-node"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
@@ -105,7 +106,20 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
     )
 
   const permission: PermissionV2.Interface = {
-    ask: () => Effect.die(unavailable("permission request inspection")),
+    /**
+     * ⚠️ `ask` INSPECTS without prompting, which is why it is not bridged to the host the way
+     * `assert` is: the host's answer costs a consent card when the rule says "ask", and a capability
+     * REPORT that prompts once per colleague is not a report.
+     *
+     * The CEO's floor needs no host at all — it is an org-chart fact, not a stored rule — so it is
+     * answered here and matches what `permission.ts` answers on the host side. Everyone else still
+     * gets the unavailable defect; callers are expected to degrade (see `tool/self.ts`, which treats
+     * an unanswerable question as "no" and now catches this).
+     */
+    ask: (input) =>
+      AgentV2.hasFullAuthority(input.agent)
+        ? Effect.succeed({ id: input.id ?? PermissionV2.ID.create(), effect: "allow" as const })
+        : Effect.die(unavailable("permission request inspection")),
     assert: assertPermission,
   }
 

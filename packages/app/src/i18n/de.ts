@@ -593,6 +593,7 @@ export const dict = {
   "session.error.offlineBlockedEndpoint":
     "Der Offline-Modus hat diese Anfrage an {{endpoint}} blockiert – sie hat Ihren Computer nie verlassen.",
   "session.error.invalidRequest": "Das Modell hat diese Anfrage abgelehnt.",
+  "session.error.modelMissing": "Dieser Chat ist auf ein Modell eingestellt, das sein Anbieter nicht mehr bereitstellt. Wähle ein anderes Modell für diesen Chat.",
   "session.error.noRoute": "Für dieses Modell ist keine Route konfiguriert.",
   "session.error.authentication": "Der Modellanbieter hat die Zugangsdaten dieses Modells abgelehnt.",
   "session.error.rateLimit": "Der Modellanbieter drosselt dieses Konto — versuchen Sie es gleich noch einmal.",
