@@ -7,6 +7,7 @@ import { FSUtil } from "@novaclaw/core/fs-util"
 import { Location } from "@novaclaw/core/location"
 import { AbsolutePath, RelativePath } from "@novaclaw/core/schema"
 import { Trash } from "@novaclaw/core/trash"
+import { Vcs } from "@/project/vcs"
 import { Effect, Layer, Option } from "effect"
 import fs from "fs/promises"
 import ignore from "ignore"
@@ -20,6 +21,7 @@ export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handl
   Effect.gen(function* () {
     const ripgrep = yield* Ripgrep.Service
     const locations = yield* LocationServiceMap.Service
+    const vcs = yield* Vcs.Service
 
     const filesystem = Effect.fnUntraced(function* <A, E, R>(effect: Effect.Effect<A, E, R>) {
       return yield* effect.pipe(
@@ -129,8 +131,36 @@ export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handl
       )
     })
 
+    /**
+     * 🔴 **This used to be `return []` — a stub answering "the working tree is clean" to a contract
+     * that publishes "the git status of all files in the project".**
+     *
+     * A caller reading `/doc` could not tell a clean tree from a route nobody wrote, which is the
+     * failure ruling 2 forbids one surface up from where it usually bites: a subsystem that cannot
+     * answer must name itself rather than render empty. There is no shape of "unimplemented" in the
+     * declared `File[]` success schema, so the only honest closes were to delete the route or to
+     * make it true. Deleting it needs the generated SDK regenerated in the same change
+     * (`packages/sdk/js/src/v2/gen/sdk.gen.ts` is tracked and carries this endpoint), so it is true.
+     *
+     * ⚠️ It DELEGATES rather than shelling out again. `GET /vcs/status` already serves this answer
+     * from `Vcs.Service`; a second implementation would be a second thing to be wrong, and two
+     * routes could then disagree about one working tree. The only difference kept is the field
+     * naming this group froze (`path`/`added`/`removed` against `file`/`additions`/`deletions`).
+     *
+     * ⚠️ Delegation also inherits `Vcs.status`'s own resolution behaviour — `git status … -- .` runs
+     * in the routed directory while `statUntracked` uses the worktree, so a request routed at a
+     * SUBDIRECTORY of a repository is scoped to that subtree and reports repository-root-relative
+     * paths, unlike `/file` and `/file/content`, whose paths are relative to the routed directory.
+     * That belongs to `Vcs`, is filed against it, and is deliberately not forked here: one site to
+     * fix, and both routes move together when it is fixed.
+     */
     const status = Effect.fn("FileHttpApi.status")(function* () {
-      return []
+      return (yield* vcs.status()).map((item) => ({
+        path: item.file,
+        added: item.additions,
+        removed: item.deletions,
+        status: item.status,
+      }))
     })
 
     const mutationError = (action: string, error: unknown) =>

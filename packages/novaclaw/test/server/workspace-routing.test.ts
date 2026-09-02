@@ -113,4 +113,15 @@ describe("workspaceProxyURL", () => {
     const result = workspaceProxyURL(target, new URL("http://localhost/users"))
     expect(result.toString()).toBe("http://remote:3000/api/users")
   })
+
+  test("🔴 does not forward this instance's credential to the target", () => {
+    const token = Buffer.from("novaclaw:secret").toString("base64")
+    const url = new URL(`http://localhost/session/abc?auth_token=${encodeURIComponent(token)}&keep=1`)
+    const result = workspaceProxyURL("http://remote:8080/base", url)
+    expect(result.searchParams.has("auth_token")).toBe(false)
+    // Asserted on the whole URL too: a value that survived re-encoding would still be a leak.
+    expect(result.toString()).not.toContain(token)
+    // Control: ordinary query the target DOES need still rides along.
+    expect(result.searchParams.get("keep")).toBe("1")
+  })
 })

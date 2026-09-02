@@ -43,11 +43,22 @@ export function getWorkspaceRouteSessionID(url: URL) {
   return SessionID.make(id)
 }
 
+/**
+ * Query parameters that must never leave this instance. `workspace` is routing state the target must
+ * not re-read; `auth_token` is THIS instance's password.
+ *
+ * 🔴 The whole search string is copied through, so anything not deleted here reaches a machine that
+ * is not ours — and a credential in a URL lands in the far end's access log, its Referer headers and
+ * its history, where no later care can take it back. `auth_token` is a credential only on the
+ * raw-router surface (see `httpapi/middleware/authorization.ts`), which is never proxied.
+ */
+const STRIPPED_PROXY_QUERY = ["workspace", "auth_token"]
+
 export function workspaceProxyURL(target: string | URL, requestURL: URL) {
   const proxyURL = new URL(target)
   proxyURL.pathname = `${proxyURL.pathname.replace(/\/$/, "")}${requestURL.pathname}`
   proxyURL.search = requestURL.search
   proxyURL.hash = requestURL.hash
-  proxyURL.searchParams.delete("workspace")
+  for (const key of STRIPPED_PROXY_QUERY) proxyURL.searchParams.delete(key)
   return proxyURL
 }

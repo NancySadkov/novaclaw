@@ -78,7 +78,32 @@ describe("file HttpApi", () => {
     expect(await content.json()).toMatchObject({ type: "text", content: "hello" })
 
     expect(status.status).toBe(200)
-    expect(await status.json()).toEqual([])
+    // `hello.txt` is untracked in the fixture repo, so the tree is NOT clean. This assertion read
+    // `toEqual([])` while the handler was `return []`, which pinned the stub rather than the route:
+    // it passed for a dirty tree, so it could never have told "clean" from "not implemented".
+    expect(await status.json()).toContainEqual(expect.objectContaining({ path: "hello.txt", status: "added" }))
+  })
+
+  test("distinguishes a clean working tree from a dirty one", async () => {
+    await using clean = await tmpdir({ git: true })
+    await using dirty = await tmpdir({ git: true })
+    await Bun.write(path.join(dirty.path, "untracked.txt"), "one\ntwo\n")
+
+    const [cleanStatus, dirtyStatus] = await Promise.all([
+      request(FilePaths.status, clean.path),
+      request(FilePaths.status, dirty.path),
+    ])
+
+    expect(cleanStatus.status).toBe(200)
+    expect(dirtyStatus.status).toBe(200)
+
+    // The pair is the whole point. `[]` only MEANS "clean" if a dirty tree cannot also produce it —
+    // the stub produced it for both, so a third-party client reading the published contract ("the
+    // git status of all files in the project") was told a wrong answer with no way to notice.
+    expect(await cleanStatus.json()).toEqual([])
+    expect(await dirtyStatus.json()).toContainEqual(
+      expect.objectContaining({ path: "untracked.txt", status: "added", added: 2, removed: 0 }),
+    )
   })
 
   test("serves search endpoints", async () => {

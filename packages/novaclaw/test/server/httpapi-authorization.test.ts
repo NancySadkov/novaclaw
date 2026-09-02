@@ -146,21 +146,28 @@ describe("HttpApi authorization middleware", () => {
     }),
   )
 
-  itSecret.live("accepts auth token query credentials", () =>
+  /**
+   * ⚠️ Three tests here used to assert that this surface ACCEPTS `?auth_token=`, and that the query
+   * form beats the `Authorization` header. Both are now false on purpose: the typed API is the
+   * surface `workspaceProxyURL` forwards to another machine, and it copies the request's query
+   * string into the outbound URL, so a credential there left the box on an ordinary proxied
+   * request. The URL form survives only on the raw-router surface a browser navigation lands on.
+   * The pair of invariants, with the navigation-side controls, lives in
+   * `httpapi-url-credential.test.ts`; what stays here is that a query token cannot authorize and
+   * cannot crash the decode path.
+   */
+  itSecret.live("ignores an auth token query parameter, well-formed or not", () =>
     Effect.gen(function* () {
-      const response = yield* HttpClient.get(`/probe?auth_token=${encodeURIComponent(token("novaclaw", "secret"))}`)
+      const [valid, malformed] = yield* Effect.all(
+        [
+          HttpClient.get(`/probe?auth_token=${encodeURIComponent(token("novaclaw", "secret"))}`),
+          HttpClient.get("/probe?auth_token=not-base64"),
+        ],
+        { concurrency: "unbounded" },
+      )
 
-      expect(response.status).toBe(200)
-    }),
-  )
-
-  itSecret.live("prefers auth token query credentials over basic auth", () =>
-    Effect.gen(function* () {
-      const response = yield* HttpClientRequest.get(
-        `/probe?auth_token=${encodeURIComponent(token("novaclaw", "secret"))}`,
-      ).pipe(HttpClientRequest.setHeader("authorization", basic("novaclaw", "wrong")), HttpClient.execute)
-
-      expect(response.status).toBe(200)
+      expect(valid.status).toBe(401)
+      expect(malformed.status).toBe(401)
     }),
   )
 
@@ -172,22 +179,6 @@ describe("HttpApi authorization middleware", () => {
       )
 
       expect(response.status).toBe(404)
-    }),
-  )
-
-  itSecret.live("preserves handler errors when auth token query succeeds", () =>
-    Effect.gen(function* () {
-      const response = yield* HttpClient.get(`/missing?auth_token=${encodeURIComponent(token("novaclaw", "secret"))}`)
-
-      expect(response.status).toBe(404)
-    }),
-  )
-
-  itSecret.live("rejects malformed auth token query credentials", () =>
-    Effect.gen(function* () {
-      const response = yield* HttpClient.get("/probe?auth_token=not-base64")
-
-      expect(response.status).toBe(401)
     }),
   )
 

@@ -2,7 +2,7 @@ import { ServerAuth } from "../auth"
 import { UnauthorizedError } from "@novaclaw/protocol/errors"
 import { Authorization } from "@novaclaw/protocol/middleware/authorization"
 export { Authorization } from "@novaclaw/protocol/middleware/authorization"
-import { hasPtyConnectTicketURL } from "@novaclaw/protocol/groups/pty"
+import { hasPtyConnectTicketURL, isPtyConnectURL } from "@novaclaw/protocol/groups/pty"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { Effect, Encoding, Layer, Redacted } from "effect"
 import { HttpEffect, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
@@ -29,8 +29,14 @@ function decodeCredential(input: string) {
 
 function credentialFromRequest(request: HttpServerRequest.HttpServerRequest) {
   const url = new URL(request.url, "http://localhost")
-  const token = url.searchParams.get(AUTH_TOKEN_QUERY)
-  if (token) return decodeCredential(token)
+  // 🔴 A URL is not a credential channel. A secret that travels in one stops being a credential and
+  // becomes data, so every component that forwards, logs or stores the URL does the same to the
+  // secret — and every other route on this surface IS proxied to another machine. The WebSocket
+  // upgrade is the one caller that structurally cannot set a header, so it is the one exception.
+  if (isPtyConnectURL(url)) {
+    const token = url.searchParams.get(AUTH_TOKEN_QUERY)
+    if (token) return decodeCredential(token)
+  }
   const match = /^Basic\s+(.+)$/i.exec(request.headers.authorization ?? "")
   if (match) return decodeCredential(match[1])
   return Effect.succeed(emptyCredential())

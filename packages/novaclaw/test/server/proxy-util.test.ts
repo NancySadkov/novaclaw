@@ -99,6 +99,21 @@ describe("ProxyUtil", () => {
       expect(result.get("x-foo")).toBe("bar")
     })
 
+    test("🔴 drops this instance's credential headers", () => {
+      const req = new Request("http://localhost/x", {
+        headers: {
+          authorization: "Basic bm92YWNsYXc6c2VjcmV0",
+          cookie: "session=1",
+          accept: "application/json",
+        },
+      })
+      const result = ProxyUtil.headers(req)
+      expect(result.get("authorization")).toBeNull()
+      expect(result.get("cookie")).toBeNull()
+      // Control: an ordinary header the target needs still rides along.
+      expect(result.get("accept")).toBe("application/json")
+    })
+
     test("accepts plain object (HeadersInit) as input", () => {
       const result = ProxyUtil.headers(
         { "content-type": "application/json", connection: "keep-alive", "x-custom": "val" },

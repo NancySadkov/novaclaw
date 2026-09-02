@@ -32,6 +32,16 @@ export const PtyPaths = {
   connect: "/api/pty/:ptyID/connect",
 } as const
 
+/**
+ * The one route on this surface that a client reaches WITHOUT being able to set a header: a
+ * WebSocket upgrade carries no `Authorization`. Every other `/api/**` route is proxied by
+ * `workspaceProxyURL`, which copies the query string to another machine — so a credential is
+ * admissible in the URL here and nowhere else.
+ */
+export function isPtyConnectURL(url: URL) {
+  return PTY_CONNECT_PATH.test(url.pathname)
+}
+
 // Authorization middleware skips credential checks when this matches; the PTY connect handler
 // is then responsible for consuming and validating the ticket.
 export function hasPtyConnectTicketURL(url: URL) {

@@ -16,6 +16,11 @@ function sanitize(out: Headers) {
   out.delete("accept-encoding")
   out.delete("x-novaclaw-directory")
   out.delete("x-novaclaw-workspace")
+  // 🔴 This instance's own credential, which the remote has no business seeing. `target.headers`
+  // OVERWRITES `authorization` on the http path, so dropping it changes nothing there — but the
+  // WebSocket path passes no extra headers at all, and `cookie` was never overwritten on either.
+  out.delete("authorization")
+  out.delete("cookie")
 }
 
 export function headers(input: Request | HeadersInit | Record<string, string>, extra?: HeadersInit) {

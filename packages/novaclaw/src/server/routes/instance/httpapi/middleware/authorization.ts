@@ -8,7 +8,7 @@ import { authorizationLayer as unconfiguredServerAuthorizationLayer } from "@nov
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 export { Authorization as ServerAuthorization } from "@novaclaw/server/middleware/authorization"
 
-const AUTH_TOKEN_QUERY = "auth_token"
+export const AUTH_TOKEN_QUERY = "auth_token"
 const UNAUTHORIZED = 401
 const WWW_AUTHENTICATE = 'Basic realm="Secure Area"'
 
@@ -74,12 +74,51 @@ function decodeCredential(input: string) {
   )
 }
 
-function credentialFromURL(url: URL, request: HttpServerRequest.HttpServerRequest) {
-  const token = url.searchParams.get(AUTH_TOKEN_QUERY)
-  if (token) return decodeCredential(token)
+/**
+ * 🔴 **A URL is not a credential channel, and this used to read `?auth_token=` on EVERY route.**
+ *
+ * A secret in a query string is indistinguishable from data to everything downstream of the check
+ * that consumed it: it is copied into proxy targets, written to access logs, sent as a `Referer`
+ * and kept in browser history. The sharpest consequence in this tree is the first of those —
+ * `workspaceProxyURL` (`server/shared/workspace-routing.ts`) copies `requestURL.search` wholesale
+ * into the target, so an ordinary request that merely PASSES THROUGH this instance carried this
+ * instance's password to a machine that is not ours. That is the data plane egressing, and the far
+ * end cannot un-see it.
+ *
+ * ⚠️ The query form cannot simply be deleted, because one caller structurally has no header to
+ * set: the desktop hands the web UI off by NAVIGATING a browser to `/?auth_token=…`, and a
+ * top-level navigation carries no `Authorization`. `packages/app/src/entry.tsx` strips the
+ * parameter from the address bar on first paint, and every request after it uses the header.
+ *
+ * ⚠️ So the query form is confined to the surface that has that excuse. Two readers, deliberately
+ * asymmetric:
+ *
+ * - `authorizationRouterMiddleware` — the UI document, `/doc` and the maintenance route. A browser
+ *   navigation lands here and cannot set a header. Nothing on this surface declares
+ *   `WorkspaceRoutingMiddleware`, so nothing it authorizes is ever proxied anywhere.
+ * - `Authorization` (the typed HttpApi surface) — reached only by clients that CAN set a header
+ *   (the SDK and the app both do), and the surface `workspaceProxyURL` forwards. Header only.
+ *
+ * ⚠️ This is a narrowing of the CHANNEL, not an identity check. HTTP here still cannot say who is
+ * asking — `handlers/registry.ts` records why, and this middleware is one of the reasons it cannot.
+ * "Which channel may carry a secret" is answerable without knowing the caller; "is this caller
+ * allowed to use it" is not, so this fix does not pretend to answer the second.
+ *
+ * ⚠️ On the navigation surface the query still WINS over a header, and that ordering is load
+ * bearing: once a browser has been prompted for Basic auth it replays the cached header on every
+ * later navigation, so a header-first rule would let a stale prompt answer beat the fresh token the
+ * desktop just minted.
+ */
+function credentialFromHeader(request: HttpServerRequest.HttpServerRequest) {
   const match = /^Basic\s+(.+)$/i.exec(request.headers.authorization ?? "")
   if (match) return decodeCredential(match[1])
   return Effect.succeed(emptyCredential())
+}
+
+function credentialFromNavigation(url: URL, request: HttpServerRequest.HttpServerRequest) {
+  const token = url.searchParams.get(AUTH_TOKEN_QUERY)
+  if (token) return decodeCredential(token)
+  return credentialFromHeader(request)
 }
 
 function validateRawCredential<A, E, R>(
@@ -111,7 +150,7 @@ export const authorizationRouterMiddleware = HttpRouter.middleware()(
         const request = yield* HttpServerRequest.HttpServerRequest
         const url = new URL(request.url, "http://localhost")
         if (isPublicUIPath(request.method, url.pathname)) return yield* effect
-        const credential = yield* credentialFromURL(url, request)
+        const credential = yield* credentialFromNavigation(url, request)
         if (acceptsLaunchDefaultProbe(request.method, url.pathname) && ServerAuth.authorized(credential, envConfig))
           return yield* effect
         return yield* validateRawCredential(effect, credential, config)
@@ -130,7 +169,7 @@ export const authorizationLayer = Layer.effect(
         if (!ServerAuth.required(config)) return yield* effect
         const request = yield* HttpServerRequest.HttpServerRequest
         const url = new URL(request.url, "http://localhost")
-        const credential = yield* credentialFromURL(url, request)
+        const credential = yield* credentialFromHeader(request)
         if (acceptsLaunchDefaultProbe(request.method, url.pathname) && ServerAuth.authorized(credential, envConfig))
           return yield* effect
         return yield* validateCredential(effect, credential, config)
