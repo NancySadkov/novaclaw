@@ -3,7 +3,7 @@ import { I18nProvider } from "@novaclaw/ui/context"
 import { DialogProvider } from "@novaclaw/ui/context/dialog"
 import { FileComponentProvider } from "@novaclaw/ui/context/file"
 import { MarkedProvider } from "@novaclaw/ui/context/marked"
-import { resolveAgentFile } from "@/apps/agent-file-link"
+import { agentFileResolver } from "@/apps/agent-file-link"
 import { File } from "@novaclaw/session-ui/file"
 import { Font } from "@novaclaw/ui/font"
 import { ThemeProvider } from "@novaclaw/ui/theme/context"
@@ -484,7 +484,7 @@ export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
               <QueryProvider>
                 <WslServersProvider>
                   <DialogProvider>
-                    <MarkedProvider resolveFile={resolveAgentFile}>
+                    <MarkedProvider resolveFile={agentFileResolver}>
                       <FileComponentProvider component={File}>{props.children}</FileComponentProvider>
                     </MarkedProvider>
                   </DialogProvider>

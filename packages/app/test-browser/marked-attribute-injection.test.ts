@@ -23,12 +23,12 @@ import { parseWithFileRenderer } from "@novaclaw/ui/context/marked"
  * pass in the unfixed tree, which is what makes the payload assertions discriminating.
  */
 
-const render = (source: string): string => parseWithFileRenderer(source)
+const render = (source: string): Promise<string> => parseWithFileRenderer(source)
 
 /** Parse the renderer's output the way the product does: as HTML, into real nodes. */
-function parse(source: string): HTMLElement {
+async function parse(source: string): Promise<HTMLElement> {
   const host = document.createElement("div")
-  host.innerHTML = render(source)
+  host.innerHTML = await render(source)
   return host
 }
 
@@ -45,8 +45,8 @@ afterEach(() => {
 })
 
 describe("a markdown link cannot add an attribute or an element the author never wrote", () => {
-  test("🔴 an href cannot close its own attribute and start a handler", () => {
-    const host = parse('[x](<https://e.com/" onmouseover="alert(1)>)')
+  test("🔴 an href cannot close its own attribute and start a handler", async () => {
+    const host = await parse('[x](<https://e.com/" onmouseover="alert(1)>)')
     const link = anchor(host)
 
     expect(link.getAttribute("onmouseover"), "the href broke out and became a live event handler").toBeNull()
@@ -57,35 +57,35 @@ describe("a markdown link cannot add an attribute or an element the author never
     expect(host.textContent?.trim()).toBe("x")
   })
 
-  test("🔴 an href cannot close the tag and open an element inside it", () => {
+  test("🔴 an href cannot close the tag and open an element inside it", async () => {
     // Not a hypothetical shape: `marked` tokenizes this as an ordinary inline link and hands the
     // renderer the whole `">` sequence, so the unescaped form ended the anchor's opening tag and
     // rendered the `<img>` as a sibling element the markdown never contained.
-    const host = parse('[x](https://e.com/"><img/src=x/onerror=alert(1)>)')
+    const host = await parse('[x](https://e.com/"><img/src=x/onerror=alert(1)>)')
 
     expect(host.querySelector("img"), "an element the markdown never contained was rendered").toBeNull()
     expect(anchor(host).getAttribute("href")).toBe('https://e.com/"><img/src=x/onerror=alert(1)>')
     expect(host.textContent?.trim()).toBe("x")
   })
 
-  test("🔴 a title cannot close its own attribute", () => {
-    const host = parse('[x](https://e.com "a\\" onmouseover=\\"alert(1)")')
+  test("🔴 a title cannot close its own attribute", async () => {
+    const host = await parse('[x](https://e.com "a\\" onmouseover=\\"alert(1)")')
     const link = anchor(host)
 
     expect(link.getAttribute("onmouseover")).toBeNull()
     expect(link.getAttribute("title")).toBe('a" onmouseover="alert(1)')
   })
 
-  test("🔴 a reference definition is the same door, and it is a separate code path in marked", () => {
-    const host = parse('[x][r]\n\n[r]: <https://e.com/" onmouseover="alert(1)>')
+  test("🔴 a reference definition is the same door, and it is a separate code path in marked", async () => {
+    const host = await parse('[x][r]\n\n[r]: <https://e.com/" onmouseover="alert(1)>')
     const link = anchor(host)
 
     expect(link.getAttribute("onmouseover")).toBeNull()
     expect(attributeNames(link)).toEqual(["class", "href", "rel", "target"])
   })
 
-  test("🔴 an image src and title cannot either", () => {
-    const host = parse('![alt](<https://e.com/i.png" onerror="alert(1)> "t\\" onload=\\"alert(2)")')
+  test("🔴 an image src and title cannot either", async () => {
+    const host = await parse('![alt](<https://e.com/i.png" onerror="alert(1)> "t\\" onload=\\"alert(2)")')
     const image = host.querySelector("img")
     if (!image) throw new Error(`no image was rendered from: ${host.innerHTML}`)
 
@@ -94,11 +94,11 @@ describe("a markdown link cannot add an attribute or an element the author never
     expect(attributeNames(image)).toEqual(["alt", "class", "src", "title"])
   })
 
-  test("🔴 a resolved host file is escaped too — the url this app builds is still a value in a string", () => {
-    const html = parseWithFileRenderer("[report](out.md)", () => ({
-      url: 'https://host/f?q=" onmouseover="alert(1)',
-      image: false,
-    }))
+  test("🔴 a resolved host file is escaped too — the url this app builds is still a value in a string", async () => {
+    const html = await parseWithFileRenderer("[report](out.md)", {
+      target: () => ({ url: 'https://host/f?q=" onmouseover="alert(1)', name: "out.md", image: false }),
+      inline: () => Promise.resolve({ ok: false, reason: "unreadable" as const }),
+    })
     const host = document.createElement("div")
     host.innerHTML = html
     const link = anchor(host)
@@ -109,8 +109,8 @@ describe("a markdown link cannot add an attribute or an element the author never
 
   // ⚠️ CONTROLS. Both pass in the unfixed tree; without them every assertion above is satisfied by a
   // renderer that emits nothing at all, or by one that escapes so eagerly that real links break.
-  test("an ordinary link keeps its real href, title and text", () => {
-    const link = anchor(parse('[ok](https://e.com/a/b?x=1&y=2 "a title")'))
+  test("an ordinary link keeps its real href, title and text", async () => {
+    const link = anchor(await parse('[ok](https://e.com/a/b?x=1&y=2 "a title")'))
 
     expect(link.getAttribute("href")).toBe("https://e.com/a/b?x=1&y=2")
     expect(link.getAttribute("title")).toBe("a title")
@@ -119,14 +119,14 @@ describe("a markdown link cannot add an attribute or an element the author never
     expect(link.textContent).toBe("ok")
   })
 
-  test("a query string is not double-encoded on the way through", () => {
+  test("a query string is not double-encoded on the way through", async () => {
     // `&amp;amp;` reaches the browser as a literal `&amp;` and the link stops working.
-    expect(render("[ok](https://e.com/?a=1&b=2)")).not.toContain("&amp;amp;")
-    expect(anchor(parse("[ok](https://e.com/?a=1&b=2)")).getAttribute("href")).toBe("https://e.com/?a=1&b=2")
+    expect(await render("[ok](https://e.com/?a=1&b=2)")).not.toContain("&amp;amp;")
+    expect(anchor(await parse("[ok](https://e.com/?a=1&b=2)")).getAttribute("href")).toBe("https://e.com/?a=1&b=2")
   })
 
-  test("an image with no title renders no title attribute at all", () => {
-    const image = parse("![alt](https://e.com/i.png)").querySelector("img")
+  test("an image with no title renders no title attribute at all", async () => {
+    const image = (await parse("![alt](https://e.com/i.png)")).querySelector("img")
     expect(image?.hasAttribute("title")).toBe(false)
     expect(image?.getAttribute("alt")).toBe("alt")
   })

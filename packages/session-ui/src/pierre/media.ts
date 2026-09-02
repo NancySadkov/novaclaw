@@ -80,6 +80,51 @@ export function dataUrlFromMediaValue(value: MediaValue, kind: MediaKind) {
   return `data:${mime};base64,${record.content}`
 }
 
+/**
+ * The most CHARACTERS an inline `data:` URL may occupy.
+ *
+ * 🔴 **The bound is on the produced URL, not on the file, because the URL is the thing that is
+ * KEPT.** A host image reaches the chat by having its bytes read through the authenticated client
+ * and pasted into the rendered HTML as a `data:` URL — and that HTML is held verbatim in the
+ * 200-entry markdown LRU (`components/markdown-cache.tsx`). So the file's own size is an estimate of
+ * the cost and the URL's length is the cost.
+ *
+ * **Why 768 Ki characters.** A JS string is UTF-16, so one maximal entry costs ~1.5 MB of heap; two
+ * hundred distinct maximal ones — the pathological case, not a likely one — bound the cache at
+ * ~300 MB instead of at nothing. Going the other way, base64 costs 4/3, so the limit admits a file
+ * of roughly 576 KiB: every SVG a colleague draws is single-digit KB and the great majority of PNG
+ * plots and screenshots fit with room to spare.
+ *
+ * ⚠️ **An oversized file must DEGRADE, never vanish.** The caller is expected to render something
+ * that still hands the file over; see `apps/agent-file-link.ts` and the image branch of
+ * `@novaclaw/ui/context/marked`.
+ */
+export const INLINE_MEDIA_LIMIT_CHARS = 768 * 1024
+
+export type InlineMedia =
+  | { readonly ok: true; readonly src: string }
+  | { readonly ok: false; readonly reason: "oversize" | "unreadable" }
+
+/**
+ * One file's content as a self-contained `data:` URL, or a NAMED refusal.
+ *
+ * ⚠️ The two failures are kept apart on purpose: "too big to inline" and "not an image we could
+ * decode" call for different words on screen, and folding them together is how a size limit becomes
+ * indistinguishable from a broken file.
+ */
+export function inlineMediaFromFile(
+  value: MediaValue,
+  path: string | undefined,
+  limit: number = INLINE_MEDIA_LIMIT_CHARS,
+): InlineMedia {
+  const kind = mediaKindFromPath(path)
+  if (kind !== "image" && kind !== "svg") return { ok: false, reason: "unreadable" }
+  const src = dataUrlFromMediaValue(value, kind)
+  if (!src) return { ok: false, reason: "unreadable" }
+  if (src.length > limit) return { ok: false, reason: "oversize" }
+  return { ok: true, src }
+}
+
 function decodeBase64Utf8(value: string) {
   if (typeof atob !== "function") return
 

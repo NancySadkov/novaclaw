@@ -1,4 +1,4 @@
-import { marked, Marked, type Tokens } from "marked"
+import { marked, Marked, type Token, type Tokens } from "marked"
 import markedShiki from "marked-shiki"
 import katex from "katex"
 import { bundledLanguages, type BundledLanguage } from "shiki/langs"
@@ -381,7 +381,7 @@ export const NovaClawTheme = {
 registerCustomTheme("NovaClaw", () => Promise.resolve(NovaClawTheme))
 
 /**
- * ONE math renderer for both parser paths — repair-then-VERIFY.
+ * KaTeX, as the VERIFIER in a repair-then-verify loop — the only thing this package hands it.
  *
  * 🔴 The detection, the repairs and the give-up rule live in `../util/math-latex`, PURE and tested
  * (`math-latex.test.ts`). Two things used to be wrong here and both were invisible to every test:
@@ -398,80 +398,8 @@ registerCustomTheme("NovaClaw", () => Promise.resolve(NovaClawTheme))
  * the parser is the VERIFIER: each repair candidate is offered to it in strict mode, and if none is
  * accepted the model's own text is shown as ordinary prose.
  */
-function renderMathInText(text: string): string {
-  const spans = findMathSpans(text)
-  if (spans.length === 0) return text
-  let out = ""
-  let cursor = 0
-  for (const span of spans) {
-    out += text.slice(cursor, span.start)
-    const result = renderMath(span.body, { display: span.display, katex: katexRender })
-    // ⚠️ The give-up branch re-emits the ORIGINAL slice, delimiters included, escaped as HTML. It
-    // must not re-emit the raw source: this function's output goes into an HTML string, and a
-    // formula containing `<` would otherwise open a tag.
-    out += result.ok ? result.html : escapeHtml(text.slice(span.start, span.end))
-    cursor = span.end
-  }
-  return out + text.slice(cursor)
-}
-
 const katexRender = (tex: string, options: { displayMode: boolean; throwOnError: boolean }): string =>
   katex.renderToString(tex, options)
-
-function renderMathExpressions(html: string): string {
-  // Split on code/pre/kbd tags to avoid processing their contents
-  const codeBlockPattern = /(<(?:pre|code|kbd)[^>]*>[\s\S]*?<\/(?:pre|code|kbd)>)/gi
-  const parts = html.split(codeBlockPattern)
-
-  return parts
-    .map((part, i) => {
-      // Odd indices are the captured code blocks - leave them alone
-      if (i % 2 === 1) return part
-      // Process math only in non-code parts
-      return renderMathInText(part)
-    })
-    .join("")
-}
-
-async function highlightCodeBlocks(html: string): Promise<string> {
-  const codeBlockRegex = /<pre><code(?:\s+class="language-([^"]*)")?>([\s\S]*?)<\/code><\/pre>/g
-  const matches = [...html.matchAll(codeBlockRegex)]
-  if (matches.length === 0) return html
-
-  const highlighter = await getSharedHighlighter({
-    themes: ["NovaClaw"],
-    langs: [],
-    preferredHighlighter: "shiki-wasm",
-  })
-
-  let result = html
-  for (const match of matches) {
-    const [fullMatch, lang, escapedCode] = match
-    const code = escapedCode
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&amp;/g, "&")
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-
-    let language = lang || "text"
-    if (!(language in bundledLanguages)) {
-      language = "text"
-    }
-    if (!highlighter.getLoadedLanguages().includes(language)) {
-      await highlighter.loadLanguage(language as BundledLanguage)
-    }
-
-    const highlighted = highlighter.codeToHtml(code, {
-      lang: language,
-      theme: "NovaClaw",
-      tabindex: false,
-    })
-    result = result.replace(fullMatch, () => highlighted)
-  }
-
-  return result
-}
 
 /**
  * Attribute-safe text. The path comes from a MODEL, so it is untrusted input in an HTML string.
@@ -576,10 +504,70 @@ export function markedMath() {
   }
 }
 
-export type NativeMarkdownParser = (markdown: string) => Promise<string>
+/**
+ * What the host offers for one markdown href that names a file on it.
+ *
+ * `undefined` from {@link HostFileResolver.target} means "not a local file" and the ordinary
+ * external-link rendering applies.
+ */
+export interface HostFileTarget {
+  /**
+   * The instance URL that serves this file to a DOWNLOAD anchor.
+   *
+   * ⚠️ **A download anchor only.** It is never an `<img src>`: a subresource carries no
+   * `Authorization` header, so on an instance with a server password this URL answers 401 — which
+   * is exactly the defect the inline path below exists to close.
+   */
+  readonly url: string
+  /** The file's own name. The label a degraded image falls back to when the alt text is empty. */
+  readonly name: string
+  /** Render inline as an image rather than offering it as a download. */
+  readonly image: boolean
+}
 
 /**
- * How the HOST decides whether a markdown href names a local file, and what URL serves it.
+ * One host image, ALREADY READ.
+ *
+ * 🔴 **There is no arm here that carries a URL, and that is the property this type exists for.**
+ * The image renderer can only ever emit what it is given, so it structurally cannot put an instance
+ * route into an `<img src>` again.
+ */
+export type HostImage =
+  | { readonly ok: true; readonly src: string }
+  | {
+      readonly ok: false
+      /** Why it is not inline — rendered as a `data-agent-file-inline` value, so a test can see it. */
+      readonly reason: "oversize" | "unreadable"
+      /** Already-translated copy for the reader. Absent when the host has no dictionary to hand. */
+      readonly note?: string
+    }
+
+/**
+ * Where {@link hostImagePrepass} leaves what it read, for {@link fileRenderer}'s image branch.
+ *
+ * ⚠️ `marked`'s renderers must return a `string`, so they cannot await anything. `walkTokens` is the
+ * one asynchronous seam the parser has, and it runs to completion BEFORE rendering starts — so the
+ * bytes are fetched there and stashed on the token itself.
+ */
+type HostImageSlot = { novaclawHostImage?: HostImage }
+
+/**
+ * The ONE place the slot is written, and the ONE place it is read.
+ *
+ * ⚠️ `marked` owns the token's type, so the slot is reached through an assertion rather than by
+ * widening the renderer's declared parameter — that would put an intersection in a position marked
+ * type-checks contravariantly, for no gain. Two functions, six lines, and no other file has to know
+ * the property's name.
+ */
+const stashHostImage = (token: Tokens.Image, image: HostImage): void => {
+  ;(token as Tokens.Image & HostImageSlot).novaclawHostImage = image
+}
+
+const stashedHostImage = (token: Tokens.Image): HostImage | undefined =>
+  (token as Tokens.Image & HostImageSlot).novaclawHostImage
+
+/**
+ * How the HOST decides whether a markdown href names a local file, and how it is served.
  *
  * 🔴 Injected rather than implemented here (owner, 2026-08-22: *"the agent can embed links to the
  * files on the host machine, which user can just click in the chat log to download, as well as link
@@ -587,9 +575,36 @@ export type NativeMarkdownParser = (markdown: string) => Promise<string>
  * connected and how to reach its filesystem, and a renderer that guessed would produce links to the
  * wrong machine the moment the user is driving a remote instance.
  *
- * `undefined` means "not a local file" and the ordinary external-link rendering applies.
+ * ⚠️ **Two members, because the two questions have different costs.** Whether an href IS a host file
+ * is a decision about the path and needs no I/O; producing an image's `src` means READING it through
+ * whatever authenticated channel the host holds, which is asynchronous by construction.
  */
-export type HostFileResolver = (href: string) => { readonly url: string; readonly image: boolean } | undefined
+export interface HostFileResolver {
+  readonly target: (href: string) => HostFileTarget | undefined
+  /**
+   * Read one host image and return it inline. The host owns the size limit and the memoisation;
+   * this pass calls it once per image token per parse.
+   */
+  readonly inline: (href: string) => Promise<HostImage>
+}
+
+/**
+ * The `walkTokens` pass that reads every host image before anything is rendered.
+ *
+ * ⚠️ The resolver is passed as an ACCESSOR, not a value: the provider's props are reactive and the
+ * connected instance can change mid-session, so the pass must read whoever is current when a parse
+ * actually runs rather than whoever was current when the parser was built.
+ */
+export const hostImagePrepass =
+  (resolveFile: () => HostFileResolver | undefined) =>
+  async (token: Token): Promise<void> => {
+    if (token.type !== "image") return
+    const resolver = resolveFile()
+    if (!resolver) return
+    const image = token as Tokens.Image
+    if (!resolver.target(image.href)?.image) return
+    stashHostImage(image, await resolver.inline(image.href))
+  }
 
 /**
  * The link and image renderers, lifted out of the context's `init` so they can be DRIVEN BY A TEST.
@@ -624,17 +639,30 @@ export const fileRenderer = (resolveFile?: HostFileResolver) => ({
     // 🔴 A FILE THIS INSTANCE CAN SERVE — a colleague handing over what it made. `download`
     // makes the click save it rather than navigate, and the attribute carries the file's own
     // name so it does not land as the route's last segment.
-    const local = resolveFile?.(href)
+    const local = resolveFile?.target(href)
     if (local)
       return `<a${attr("href", local.url)}${attr("title", title)} class="agent-file-link"${flagAttr("download", text)} data-agent-file="true">${text}</a>`
     return `<a${attr("href", href)}${attr("title", title)} class="external-link" target="_blank" rel="noopener noreferrer">${text}</a>`
   },
   /**
-   * `![alt](path.png)` from a colleague renders INLINE.
+   * `![alt](path.png)` from a colleague renders INLINE, from BYTES this app already fetched.
+   *
+   * 🔴 **The `src` of a host image is a `data:` URL and never an instance route.** A browser
+   * subresource carries no `Authorization` header, so a route here rendered broken on every
+   * instance that has a server password; the bytes are read by the code that HOLDS the
+   * credential — {@link hostImagePrepass}, through the host's authenticated client — and pasted
+   * in whole. That is also why it survives the markdown LRU: a `data:` URL has no lifetime and
+   * no second request, so replaying the cached HTML on a later mount renders the same picture.
+   * Measured: our `sanitizeMarkdown` config admits `data:` on an `<img src>` (and, correctly,
+   * refuses it on an `<a href>`) — `agent-file-inline-image.test.ts` pins both halves.
    *
    * ⚠️ Only for a host file this instance can serve. A remote image URL stays an ordinary
    * `<img>` with whatever the author wrote — rewriting those would make the chat fetch from
    * wherever a model happened to name, which is egress the user did not ask for.
+   *
+   * ⚠️ **A file too big to inline DEGRADES to the download link rather than to a broken image.**
+   * The bytes go inside a cached HTML string, so there is a size limit; what there must not be
+   * is a silent hole where a colleague's work was.
    *
    * ⚠️ **NO `loading="lazy"`, and this was measured.** The first version had it, and the
    * image never appeared: an `<img>` with no intrinsic size lays out 0×0, and a lazy image
@@ -644,12 +672,23 @@ export const fileRenderer = (resolveFile?: HostFileResolver) => ({
    * throughout, because they assert the resolver is called and the `src` is right; nothing
    * about a correct `src` makes a browser fetch it.
    */
-  image({ href, title, text }: Tokens.Image): string {
-    const local = resolveFile?.(href)
-    const src = local?.image ? local.url : href
+  image(token: Tokens.Image): string {
+    const { href, title, text } = token
+    const local = resolveFile?.target(href)
     // `alt` stays present even when empty: an `<img>` with no `alt` at all is an accessibility
     // fault, while `alt=""` is the declared "this image carries no information" form.
-    return `<img${attr("src", src)}${flagAttr("alt", text)}${attr("title", title)} class="agent-file-image" />`
+    if (!local?.image)
+      return `<img${attr("src", href)}${flagAttr("alt", text)}${attr("title", title)} class="agent-file-image" />`
+
+    const inlined = stashedHostImage(token)
+    if (inlined?.ok)
+      return `<img${attr("src", inlined.src)}${flagAttr("alt", text)}${attr("title", title)} class="agent-file-image" />`
+
+    // The alt text is the author's own inline markdown and stays raw, as everywhere else here; the
+    // file NAME is a path segment a model wrote, so it is escaped as ordinary text.
+    const label = text === "" ? escapeHtml(local.name) : text
+    const anchor = `<a${attr("href", local.url)}${attr("title", title)} class="agent-file-link"${flagAttr("download", local.name)} data-agent-file="true"${attr("data-agent-file-inline", inlined?.reason ?? "unreadable")}>${label}</a>`
+    return inlined?.note ? `${anchor}<span class="agent-file-note">${escapeHtml(inlined.note)}</span>` : anchor
   },
 })
 
@@ -664,15 +703,33 @@ export const fileRenderer = (resolveFile?: HostFileResolver) => ({
  * there, and it keeps the parser configuration in the file that owns it. This is the same reason
  * `fileRenderer` is a factory rather than an object literal inside `init`.
  */
-export const parseWithFileRenderer = (markdown: string, resolveFile?: HostFileResolver): string =>
-  new Marked({ renderer: fileRenderer(resolveFile) }).parse(markdown, { async: false }) as string
+export const parseWithFileRenderer = (markdown: string, resolveFile?: HostFileResolver): Promise<string> =>
+  Promise.resolve(
+    new Marked({
+      renderer: fileRenderer(resolveFile),
+      async: true,
+      walkTokens: hostImagePrepass(() => resolveFile),
+    }).parse(markdown),
+  )
 
 export const { use: useMarked, provider: MarkedProvider } = createSimpleContext({
   name: "Marked",
-  init: (props: { nativeParser?: NativeMarkdownParser; resolveFile?: HostFileResolver }) => {
+  init: (props: { resolveFile?: HostFileResolver }) => {
+    /**
+     * 🔴 **There is ONE parser, and `fileRenderer` is on it.** This used to return a second,
+     * host-supplied parser when a `nativeParser` prop was given — a path that applied neither the
+     * file renderer nor `markedMath`, so every agent file link and every formula would have
+     * silently vanished for whoever wired it. It had zero suppliers and had never run. The rung
+     * above "document the hazard" is to make it unreachable, so the branch and its prop are gone:
+     * a parser that skips the renderer no longer exists to be selected.
+     */
     const jsParser = marked.use(
       {
         renderer: fileRenderer(props.resolveFile),
+        // The bytes of every host image, fetched before rendering begins. `async` makes
+        // `parse` return a promise; both call sites in `session-ui` already await it.
+        async: true,
+        walkTokens: hostImagePrepass(() => props.resolveFile),
       },
       markedMath(),
       markedShiki({
@@ -696,17 +753,6 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
         },
       }),
     )
-
-    if (props.nativeParser) {
-      const nativeParser = props.nativeParser
-      return {
-        async parse(markdown: string): Promise<string> {
-          const html = await nativeParser(markdown)
-          const withMath = renderMathExpressions(html)
-          return highlightCodeBlocks(withMath)
-        },
-      }
-    }
 
     return jsParser
   },

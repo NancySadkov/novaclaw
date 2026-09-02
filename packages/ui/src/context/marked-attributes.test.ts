@@ -65,7 +65,12 @@ describe("link and image attributes are escaped at the point they are built", ()
 
   test("a resolved host file becomes a download link, with its url and name escaped", () => {
     const out = marked
-      .use({ renderer: fileRenderer(() => ({ url: 'https://host/f?q="x', image: false })) })
+      .use({
+        renderer: fileRenderer({
+          target: () => ({ url: 'https://host/f?q="x', name: "out.md", image: false }),
+          inline: () => Promise.resolve({ ok: false, reason: "unreadable" as const }),
+        }),
+      })
       .parse("[report](out.md)", { async: false }) as string
     expect(out).toContain('data-agent-file="true"')
     expect(out, "the resolved url was interpolated raw").not.toContain('?q="x')

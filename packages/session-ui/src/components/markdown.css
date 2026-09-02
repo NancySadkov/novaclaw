@@ -391,6 +391,16 @@
     object-fit: contain;
     object-position: left;
   }
+
+  /* The sentence that stands in for an image the chat could not put inline — too large for the
+     rendered-markdown cache to carry its bytes, or unreadable. It follows the download link that
+     replaces the picture, and it is an explanation of that link rather than part of the
+     colleague's own prose, so it reads quieter than the text around it. */
+  span.agent-file-note {
+    margin-left: 0.5em;
+    font-size: 0.9em;
+    opacity: 0.7;
+  }
 }
 
 body:not([data-new-layout]) [data-component="markdown"] {

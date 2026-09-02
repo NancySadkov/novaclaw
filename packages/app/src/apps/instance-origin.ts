@@ -16,12 +16,52 @@
 // ⚠️ It is read at RENDER time, never captured. The user may switch servers mid-session, and a link
 // rendered before the switch must still resolve against whoever is connected when it is clicked.
 
+import type { FileContent } from "@novaclaw/sdk/v2"
+
 let base = ""
 
 /** Point subsequent file links at this instance. `""` restores same-origin. */
 export const setInstanceBase = (url: string | undefined): void => {
   base = (url ?? "").trim().replace(/\/+$/, "")
 }
+
+/**
+ * Read one file from the connected instance THROUGH ITS AUTHENTICATED CLIENT.
+ *
+ * 🔴 **This is the credential the chat renderer cannot otherwise reach, and the reason it needs
+ * one.** A `<img src>` is a browser subresource: it carries no `Authorization` header, so an
+ * instance route in it answers 401 on every instance that has a server password. The bytes have to
+ * be fetched by code that holds the credential and handed to the browser inline, which is exactly
+ * what `components/file-media.tsx` already does for the diff viewer — the same
+ * `client.file.read({ directory, path })` call the Files browser uses to preview any absolute host
+ * path.
+ *
+ * ⚠️ `undefined` while nothing is connected. A caller must degrade, not throw.
+ */
+export type InstanceFileReader = (directory: string, name: string) => Promise<FileContent | undefined>
+
+let reader: InstanceFileReader | undefined
+
+export const setInstanceFileReader = (read: InstanceFileReader | undefined): void => {
+  reader = read
+}
+
+export const instanceFileReader = (): InstanceFileReader | undefined => reader
+
+let mediaNote = ""
+
+/**
+ * Already-translated copy for an image the chat could not put inline.
+ *
+ * ⚠️ **Mirrored rather than looked up**, for the same reason the base URL is: the renderer is a
+ * plain function configured above the provider that owns the dictionary. Empty until the mirror has
+ * run, and the renderer omits the note rather than printing a key.
+ */
+export const setInstanceMediaNote = (text: string): void => {
+  mediaNote = text
+}
+
+export const instanceMediaNote = (): string => mediaNote
 
 /**
  * The base every file URL is built on.

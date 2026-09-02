@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { fileDownloadHref, fileUrl, hostFile, resolveAgentFile } from "./agent-file-link"
+import { agentFileResolver, fileDownloadHref, fileUrl, hostFile } from "./agent-file-link"
 import { setInstanceBase } from "./instance-origin"
 
 // Which hrefs the chat treats as FILES ON THIS MACHINE, and which it leaves alone.
@@ -122,20 +122,21 @@ describe("the URL that serves it", () => {
 
 describe("the resolver the renderer is handed", () => {
   test("a host image resolves to a same-origin URL and says it is an image", () => {
-    expect(resolveAgentFile("/tmp/chart.svg")).toEqual({
+    expect(agentFileResolver.target("/tmp/chart.svg")).toEqual({
       url: "/api/fs/read/chart.svg?location%5Bdirectory%5D=%2Ftmp",
+      name: "chart.svg",
       image: true,
     })
   })
 
   test("a host file resolves, and is NOT an image", () => {
-    expect(resolveAgentFile("/tmp/report.pdf")?.image).toBe(false)
+    expect(agentFileResolver.target("/tmp/report.pdf")?.image).toBe(false)
   })
 
   test("🔴 a web URL resolves to nothing — the renderer must leave it alone", () => {
     // The safe direction. Rewriting a working external link is a regression the user sees; ignoring
     // a file link is a link that still reads as text.
-    expect(resolveAgentFile("https://novaclaw.app")).toBeUndefined()
+    expect(agentFileResolver.target("https://novaclaw.app")).toBeUndefined()
   })
 })
 
@@ -145,7 +146,7 @@ describe("the resolver the renderer is handed", () => {
 describe("addressing the instance the colleague runs on", () => {
   test("links point at the CONNECTED instance, not the page", () => {
     setInstanceBase("http://spark-0693.local:4096")
-    expect(resolveAgentFile("/data/reports/q3.pdf")?.url).toBe(
+    expect(agentFileResolver.target("/data/reports/q3.pdf")?.url).toBe(
       "http://spark-0693.local:4096/api/fs/read/q3.pdf?location%5Bdirectory%5D=%2Fdata%2Freports",
     )
     setInstanceBase("")
@@ -153,7 +154,7 @@ describe("addressing the instance the colleague runs on", () => {
 
   test("no connection yet is same-origin, which is the honest answer", () => {
     setInstanceBase(undefined)
-    expect(resolveAgentFile("/tmp/a.txt")?.url).toBe("/api/fs/read/a.txt?location%5Bdirectory%5D=%2Ftmp")
+    expect(agentFileResolver.target("/tmp/a.txt")?.url).toBe("/api/fs/read/a.txt?location%5Bdirectory%5D=%2Ftmp")
   })
 
   test("the files browser downloads through the SAME resolver", () => {
@@ -161,7 +162,7 @@ describe("addressing the instance the colleague runs on", () => {
     setInstanceBase("http://spark-0693.local:4096")
     // ⚠️ `toBe(string | undefined)` does not typecheck; the resolver's answer is asserted present
     // first, which is also the stronger claim — a resolver returning nothing here would be the bug.
-    const resolved = resolveAgentFile("/data/reports/q3.pdf")
+    const resolved = agentFileResolver.target("/data/reports/q3.pdf")
     expect(resolved).toBeDefined()
     expect(fileDownloadHref("/data/reports/q3.pdf")).toBe(resolved!.url)
     setInstanceBase("")
@@ -175,7 +176,7 @@ describe("addressing the instance the colleague runs on", () => {
     setInstanceBase("http://127.0.0.1:4096")
     // The one place the two surfaces are DELIBERATELY not the same question, and the asymmetry is the
     // point: one side's input is a row the user opened, the other side's is a string a model wrote.
-    expect(resolveAgentFile("//fileserver/team/q3.pdf")).toBeUndefined()
+    expect(agentFileResolver.target("//fileserver/team/q3.pdf")).toBeUndefined()
     expect(fileDownloadHref("//fileserver/team/q3.pdf")).toContain("%2F%2Ffileserver%2Fteam")
     setInstanceBase("")
   })

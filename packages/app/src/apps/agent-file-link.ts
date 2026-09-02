@@ -1,4 +1,6 @@
-import { instanceBase } from "./instance-origin"
+import type { HostFileResolver, HostImage } from "@novaclaw/ui/context/marked"
+import { inlineMediaFromFile } from "@novaclaw/session-ui/pierre/media"
+import { instanceBase, instanceFileReader, instanceMediaNote } from "./instance-origin"
 
 // FILES A COLLEAGUE MADE, reachable from the chat log (owner, 2026-08-22: *"the agent can embed
 // links to the files on the host machine, which user can just click in the chat log to download, as
@@ -127,7 +129,55 @@ export const fileUrl = (base: string, file: HostFile): string =>
   `${base.replace(/\/+$/, "")}/api/fs/read/${encodeURIComponent(file.name)}?location%5Bdirectory%5D=${encodeURIComponent(file.directory)}`
 
 /**
- * The resolver the markdown renderer is given: href in, renderable URL out.
+ * Most resolved images kept at once.
+ *
+ * ⚠️ This is a DEDUPLICATOR, not the cache. The rendered HTML is what is really kept (200 entries,
+ * `session-ui/src/components/markdown-cache.tsx`); this map only has to survive the burst of
+ * re-parses one streaming message produces, so it is deliberately small — sixteen maximal entries is
+ * already more memory than a chat screen has images.
+ */
+const MEMO_MAX = 16
+
+/** Keyed by `(base, directory, name)` — the three things that decide WHICH bytes are wanted. */
+const memo = new Map<string, Promise<HostImage>>()
+
+const memoKey = (base: string, file: HostFile): string => [base, file.directory, file.name].join("\n")
+
+/** Least-recently-used, and a hit RE-INSERTS so a repeatedly re-parsed image is never evicted. */
+const remember = (key: string, read: () => Promise<HostImage>): Promise<HostImage> => {
+  const existing = memo.get(key)
+  if (existing) {
+    memo.delete(key)
+    memo.set(key, existing)
+    return existing
+  }
+  // ⚠️ The PROMISE is stored, not its result. A streaming message re-parses the same block many
+  // times a second, and caching only on completion would let a dozen reads of one file be in flight
+  // at once — which is exactly the refetch storm this exists to prevent.
+  const pending = read()
+  memo.set(key, pending)
+  for (const oldest of memo.keys()) {
+    if (memo.size <= MEMO_MAX) break
+    memo.delete(oldest)
+  }
+  return pending
+}
+
+/** Test seam: forget every memoised read, so one test's fetch count cannot be another's. */
+export const forgetAgentFileImages = (): void => memo.clear()
+
+const readInline = async (file: HostFile): Promise<HostImage> => {
+  const read = instanceFileReader()
+  const note = instanceMediaNote()
+  if (!read) return { ok: false, reason: "unreadable", note: note || undefined }
+  const content = await read(file.directory, file.name).catch(() => undefined)
+  const inline = inlineMediaFromFile(content, file.name)
+  if (inline.ok) return { ok: true, src: inline.src }
+  return { ok: false, reason: inline.reason, note: note || undefined }
+}
+
+/**
+ * The resolver the markdown renderer is given.
  *
  * 🔴 **Built on the CONNECTED instance, not on the page's origin** (owner, 2026-08-22: *"when the
  * user and the agent are on different machines"*). A person driving the Spark from their laptop must
@@ -135,10 +185,28 @@ export const fileUrl = (base: string, file: HostFile): string =>
  * exists on somebody else's, and the remote colleague is precisely the one whose files they cannot
  * otherwise reach. `instanceBase()` is read at CALL time so switching servers mid-session re-points
  * links that were already rendered.
+ *
+ * 🔴 **`inline` reads the BYTES; `target` only ever builds a download URL.** An `<img src>` is a
+ * subresource and carries no credential, so a route there is broken on any instance with a server
+ * password. The class fix already shipped one component over — `session-ui/src/components/
+ * file-media.tsx` reads through the authenticated client and converts to a `data:` URL — and this is
+ * the same mechanism, not a second one: the same `client.file.read` call, the same
+ * `pierre/media.ts` conversion.
  */
-export const resolveAgentFile = (href: string): { readonly url: string; readonly image: boolean } | undefined => {
-  const file = hostFile(href)
-  return file === undefined ? undefined : { url: fileUrl(instanceBase(), file), image: file.image }
+export const agentFileResolver: HostFileResolver = {
+  target: (href) => {
+    const file = hostFile(href)
+    if (file === undefined) return undefined
+    return { url: fileUrl(instanceBase(), file), name: file.name, image: file.image }
+  },
+  inline: (href) => {
+    const file = hostFile(href)
+    // ⚠️ `hostFile` again, with the DEFAULT options — so `//host/share/x.png` is still refused here.
+    // Reading it would open an SMB connection to an attacker-named host from the machine holding the
+    // user's files; only the Files browser, where the user chose the path, may pass `remote: true`.
+    if (file === undefined || !file.image) return Promise.resolve<HostImage>({ ok: false, reason: "unreadable" })
+    return remember(memoKey(instanceBase(), file), () => readInline(file))
+  },
 }
 
 /**

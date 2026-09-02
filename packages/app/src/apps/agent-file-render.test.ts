@@ -21,16 +21,18 @@ const read = (...segments: string[]): string => {
   return raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1")
 }
 
+const IMAGE_RENDERER = "image(token: Tokens.Image"
+
 describe("a colleague's file reaches the chat", () => {
   test("1. the app hands the renderer a resolver", () => {
     const source = read("app", "src", "app.tsx")
-    expect(source).toMatch(/<MarkedProvider\s+resolveFile=\{resolveAgentFile\}/)
+    expect(source).toMatch(/<MarkedProvider\s+resolveFile=\{agentFileResolver\}/)
   })
 
   test("2. the link renderer asks it, and marks the result as a download", () => {
     const source = read("ui", "src", "context", "marked.tsx")
-    const link = source.slice(source.indexOf("link({ href"), source.indexOf("image({ href"))
-    expect(link).toMatch(/resolveFile\?\.\(href\)/)
+    const link = source.slice(source.indexOf("link({ href"), source.indexOf(IMAGE_RENDERER))
+    expect(link).toMatch(/resolveFile\?\.target\(href\)/)
     // `download` is what makes the click SAVE rather than navigate. Without it the browser renders
     // the bytes in place and the user has a chart where their chat used to be.
     //
@@ -41,18 +43,23 @@ describe("a colleague's file reaches the chat", () => {
     expect(link).toMatch(/(flagAttr|attr)\("download",/)
   })
 
-  test("3. the image renderer inlines a host image", () => {
+  test("3. the image renderer inlines a host image from the PRE-PASS, never from a url", () => {
     const source = read("ui", "src", "context", "marked.tsx")
-    const image = source.slice(source.indexOf("image({ href"))
-    expect(image).toMatch(/resolveFile\?\.\(href\)/)
+    const image = source.slice(source.indexOf(IMAGE_RENDERER))
+    expect(image).toMatch(/resolveFile\?\.target\(href\)/)
+    // 🔴 The src of a host image comes off the token the async pass stashed it on. `local.url` is a
+    // download route and must not reappear in an `<img>`: a subresource carries no credential, so a
+    // route there answers 401 on any instance with a server password.
+    expect(image).toMatch(/attr\("src", inlined\.src\)/)
+    expect(image.slice(0, image.indexOf("const anchor ="))).not.toContain('attr("src", local.url)')
   })
 
   test("🔴 a REMOTE image is left alone — no egress the user did not ask for", () => {
     // The resolver returns undefined for a web URL, and the image renderer must then keep the
     // author's own src. Rewriting it would make the chat fetch from wherever a model named.
     const source = read("ui", "src", "context", "marked.tsx")
-    const image = source.slice(source.indexOf("image({ href"))
-    expect(image).toMatch(/local\?\.image \? local\.url : href/)
+    const image = source.slice(source.indexOf(IMAGE_RENDERER))
+    expect(image).toMatch(/if \(!local\?\.image\)\s*\n?\s*return `<img\$\{attr\("src", href\)\}/)
   })
 
   test("the model's path is escaped before it becomes an attribute", () => {
@@ -104,6 +111,20 @@ describe("the file URL matches the endpoint it calls", () => {
  */
 test("the image renderer does not defer loading", () => {
   const source = read("ui", "src", "context", "marked.tsx")
-  const image = source.slice(source.indexOf("image({ href"))
+  const image = source.slice(source.indexOf(IMAGE_RENDERER))
   expect(image).not.toContain('loading="lazy"')
+})
+
+/**
+ * 🔴 NO SECOND PARSER, so there is no parser that skips `fileRenderer`.
+ *
+ * The context used to return a host-supplied `nativeParser` when one was passed — a path that
+ * applied neither the file renderer nor the maths extension, so a colleague's file links and every
+ * formula would have vanished for whoever wired it. It had zero suppliers and had never run, so the
+ * close is that it no longer exists rather than that it is documented.
+ */
+test("there is exactly one parser, and the file renderer is on it", () => {
+  const source = read("ui", "src", "context", "marked.tsx")
+  expect(source).not.toContain("nativeParser")
+  expect(source.match(/marked\.use\(|new Marked\(/g)?.length).toBe(2)
 })
