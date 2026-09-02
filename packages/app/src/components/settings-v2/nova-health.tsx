@@ -78,14 +78,48 @@ export const NovaHealthBoard: Component = () => {
   // `probe` is a SIGNAL, not an argument to the initial load: the board must open without
   // contacting anyone, and only a deliberate click may spend egress.
   const [probe, setProbe] = createSignal(false)
+  /**
+   * ⚠️ `.catch(() => undefined)`, exactly as the confinement read below does, and for the reason
+   * spelled out there: **an errored `createResource` THROWS the moment it is read**, so a fetcher
+   * with no catch hands the outage to the root ErrorBoundary and the whole application is replaced.
+   * On THIS board that was self-defeating — the "could not be reached" line twenty rows down could
+   * never render, because the signal list read the accessor first and took the app down with it.
+   * The tab a person opens *because* something is already wrong is the last one allowed to break in
+   * their hands.
+   *
+   * ⚠️ And the catch must NOT be the whole fix. Folding the failure into the same `undefined` that
+   * "not asked yet" produces would trade a crash for a lie — a silent, empty board on the one
+   * screen where an unexplained blank is the worst possible answer. `unreachable()` below keeps the
+   * two apart.
+   *
+   * ⚠️ The connection moved into the SOURCE (the shape the confinement read already uses). It was
+   * dereferenced inside the fetcher, and a fetcher that throws SYNCHRONOUSLY is not caught by a
+   * `.catch` on its result — it escapes through Solid's own computation, which is the same
+   * dead-end by a shorter route. An instance-less board is now "not asked", which is what it is.
+   */
   const [diagnosis, actions] = createResource(
-    () => ({ connection: connection(), probe: probe() }),
-    (input) => instanceDiagnosis(input.connection.http, { probe: input.probe }),
+    () => {
+      const conn = connection()
+      return conn ? { conn, probe: probe() } : undefined
+    },
+    (input) => instanceDiagnosis(input.conn.http, { probe: input.probe }).catch(() => undefined),
   )
 
-  // A failed fetch is itself a finding, and saying so beats an empty panel that reads as "nothing
-  // wrong". This is the screen where an unexplained blank is the worst possible answer.
-  const unreachable = createMemo(() => diagnosis.error !== undefined)
+  /**
+   * A failed fetch is itself a finding, and saying so beats an empty panel that reads as "nothing
+   * wrong". This is the screen where an unexplained blank is the worst possible answer.
+   *
+   * ⚠️ `state`, not `error` — the catch above means `error` is never set again, and a memo left
+   * reading it would report every outage as healthy. `"ready"` is what Solid calls a resource whose
+   * fetcher RESOLVED, so `ready` + `undefined` is precisely *we asked and got no answer*, while
+   * "no instance yet" stays `"unresolved"` and "still asking" stays `"pending"` — neither of which
+   * may be reported as a fault. `"errored"` stays as the honest reading of a resource that somehow
+   * rejected anyway, and `||` short-circuits, so this memo never reads the accessor in the one
+   * state where reading it would throw.
+   */
+  const unreachable = createMemo(
+    () => diagnosis.state === "errored" || (diagnosis.state === "ready" && diagnosis() === undefined),
+  )
 
   const confirm = useConfirm()
   const [erasing, setErasing] = createSignal(false)

@@ -70,7 +70,29 @@ export const SettingsProjectSection: Component<{
     const dir = directory()
     return http && dir ? { http, dir } : undefined
   })
-  const [state, { refetch }] = createResource(source, (value) => projectState(value.http, value.dir))
+  /**
+   * ⚠️ `.catch(() => undefined)` — the guard `savedRules` below already carries, now on the read the
+   * whole section hangs from. **An errored `createResource` THROWS when it is read**, and
+   * `<Show when={state()}>` is a read, so an instance that could not answer `GET /api/project`
+   * replaced the entire application with "Something went wrong" — from the DEFAULT Settings tab.
+   * The comment below records this consequence for the secondary read; the primary one was missed.
+   *
+   * ⚠️ The catch alone would be the other half of the same defect. `undefined` is also what "still
+   * loading" looks like, so swallowing a failure into it makes the section quietly vanish and claim
+   * by omission that there is nothing to say about this folder. `unavailable()` keeps the two apart
+   * and the render names the failure.
+   */
+  const [state, { refetch }] = createResource(source, (value) =>
+    projectState(value.http, value.dir).catch(() => undefined),
+  )
+  /**
+   * The fetch RAN and produced no answer — as distinct from "not asked yet" (`"unresolved"`: no
+   * connection or no directory) and "still asking" (`"pending"`). `||` short-circuits, so the
+   * accessor is never read in the one state where reading it would throw.
+   */
+  const unavailable = createMemo(
+    () => state.state === "errored" || (state.state === "ready" && state() === undefined),
+  )
   const http = createMemo(() => connection()?.http)
 
   /**
@@ -138,7 +160,31 @@ export const SettingsProjectSection: Component<{
   )
 
   return (
-    <Show when={state()}>
+    <Show
+      // ⚠️ `unavailable()` FIRST, and the accessor only in the other arm. A resource that rejected
+      // throws from its own accessor, so a `when` that reads it before asking whether the read is
+      // safe is the crash this guard exists to prevent, written one line higher up.
+      when={unavailable() ? undefined : state()}
+      fallback={
+        // An unavailable subsystem NAMES itself instead of rendering empty. Nothing below could be
+        // read, so the section says so under its own heading rather than disappearing — and rather
+        // than leaving the permission and exclusion editors up, which would offer to write rules
+        // against a state nobody actually has.
+        //
+        // ⚠️ The health board's sentence, deliberately, not a second one of our own: it is the same
+        // fault with the same remedy, and this file already shares `invalid*` with
+        // `project-summary.ts` for exactly that reason — surfaces that report one fault must not
+        // come to disagree about what it was.
+        <Show when={unavailable()}>
+          <div class="settings-v2-section" data-component="settings-project">
+            <h3 class="settings-v2-section-title">{language.t("settings.project.section")}</h3>
+            <p class="settings-v2-tab-description" data-slot="project-unavailable">
+              {language.t("settings.health.unreachable")}
+            </p>
+          </div>
+        </Show>
+      }
+    >
       {(resolved) => (
         <div class="settings-v2-section" data-component="settings-project">
           <h3 class="settings-v2-section-title">{language.t("settings.project.section")}</h3>
