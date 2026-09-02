@@ -2,6 +2,7 @@
 import { $ } from "bun"
 
 import { enforce } from "../../../script/lib/heavy-guard"
+import { MINIMUM_FREE_BYTES } from "./build-memory"
 import { sweepStrayServers } from "../../../script/lib/stray-servers"
 import { resolveChannel } from "./utils"
 import { prepareW64devkit } from "./prepare-w64devkit"
@@ -10,12 +11,11 @@ import { prepareRipgrep } from "./prepare-ripgrep"
 import { dhtBuildArguments } from "./dht-packaging"
 
 // The guard has to bite from BOTH sides. prebuild is the first lifecycle step of every desktop build,
-// so refusing here stops a build from piling onto a suite already running. The desktop floor is
-// measured rather than inherited from the much larger test suite: on a 16 GB Windows machine the
-// production Vite stage completes under a 1.25 GB V8 old-space cap and electron-builder stayed below
-// 1 GB, sequentially. The 2.5 GB admission floor therefore protects the host without excluding the
-// laptops we ship for; the independent commit-charge ceiling still catches broader system pressure.
-enforce("a desktop build", process.argv, { minimumFreeBytes: 2.5 * 1024 ** 3 })
+// so refusing here stops a build from piling onto a suite already running. The floor is DERIVED from
+// the measured peak in `build-memory.ts` rather than typed here, so the number and the measurement
+// that justifies it cannot drift apart. The independent commit-charge ceiling still catches broader
+// system pressure.
+enforce("a desktop build", process.argv, { minimumFreeBytes: MINIMUM_FREE_BYTES })
 
 /**
  * 🔴 **Idle backends are swept before the build touches a file** (owner, 2026-08-28: *"please ensure

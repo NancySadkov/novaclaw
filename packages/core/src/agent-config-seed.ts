@@ -32,17 +32,34 @@ const SEEDED_OFFICERS: ReadonlyArray<{
   readonly title: string
   readonly avatar: string
   readonly brief: string
+  /**
+   * The fast local Chat stance (`ConfigAgent.shortChat`): no project access, no memory, and one
+   * tool — `upgrade_chat`. Everything else is hard-denied by `ShortChat.permissionRules`.
+   */
+  readonly shortChat?: boolean
 }> = [
   {
     id: "xenia",
     name: "Xenia",
+    // 🔴 The COMPANION is a chat, not an agent (owner, 2026-09-02). This is the colleague a user
+    // opens to talk to the model itself — to see how it answers — so it must not spend that turn
+    // recalling a memory graph and reading files first. `shortChat` is exactly that stance and it
+    // already existed: no project access, no memory, one tool (`upgrade_chat`), everything else
+    // hard-denied by `ShortChat.permissionRules`. Seeding it here rather than building a second
+    // "simple agent" mechanism beside it.
+    //
+    // ⚠️ The brief is SHORT on purpose, and shorter than it was. It used to end by offering to hand
+    // work to the colleague who owns it — an instruction this stance cannot carry out, because the
+    // only move available is `upgrade_chat`, and `ShortChat.GUIDANCE` already states that in the
+    // words the tool needs. A persona telling the model to do something the permission floor denies
+    // is a prompt arguing with its own harness.
     title: "Companion",
     avatar: "💬",
+    shortChat: true,
     brief:
       "You are here to talk — questions, plans, decisions, or nothing in particular. " +
       "Speak plainly and warmly, like a well-read friend rather than a manual. Never assume technical " +
-      "knowledge, and never make somebody feel small for not having it. If a request really belongs to " +
-      "a colleague who owns that work, say so and offer to hand it over rather than doing it badly.",
+      "knowledge, and never make somebody feel small for not having it.",
   },
   {
     id: "daedalus",
@@ -128,8 +145,11 @@ export const seedFromDirectory = (globalConfigDir: string) =>
             avatar: officer.avatar,
             system: officer.brief,
             description: `${officer.name}, ${officer.title}.`,
-            memory: "own",
+            // A chat stance carries no memory: recall is the other half of what makes a companion
+            // turn slow, and `shortChat` already denies the tools that would use it.
+            memory: officer.shortChat ? "none" : "own",
             mode: "primary",
+            ...(officer.shortChat ? { shortChat: true } : {}),
           }),
         ])
 
