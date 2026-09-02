@@ -21,6 +21,7 @@ import {
 import { JsonObject, optionalArray, optionalNull, ProviderShared } from "./shared"
 import { classify } from "../provider-error"
 import { OpenAIOptions } from "./utils/openai-options"
+import { Halt } from "./utils/halt"
 import { Lifecycle } from "./utils/lifecycle"
 import { PromptedTools } from "./utils/prompted-tools"
 import { ToolSchemaProjection } from "./utils/tool-schema"
@@ -226,6 +227,16 @@ interface ParserState {
   readonly lifecycle: Lifecycle.State
   readonly reasoningItems: Readonly<Record<string, ReasoningStreamItem>>
   readonly store: boolean | undefined
+  /**
+   * Whether the wire has already SPOKEN about how this response ended — `response.completed` /
+   * `response.incomplete` (which settle the turn), or `response.failed` / `error` (which publish a
+   * provider error the layer above acts on). It is the one thing `onHalt` needs and the lifecycle
+   * cannot tell it: after a settle the lifecycle looks exactly like a turn that never started, and
+   * `terminal` ends the stream immediately after these events, so the halt runs on EVERY response —
+   * without this flag it would close a settled turn a second time and describe a named failure as a
+   * second, different ending.
+   */
+  readonly settled: boolean
 }
 
 type ReasoningSummaryStatus = "active" | "can-conclude" | "concluded"
@@ -868,8 +879,19 @@ const onOutputItemDone = Effect.fn("OpenAIResponses.onOutputItemDone")(function*
 
 const onResponseFinish = (state: ParserState, event: OpenAIResponsesEvent): StepResult => {
   const events: LLMEvent[] = []
-  const lifecycle = Lifecycle.finish(state.lifecycle, events, {
-    reason: mapFinishReason(event, state.hasFunctionCall),
+  // ⚠️ The grammar promises an `output_item.done` for every function call before the response
+  // settles, so this is normally empty. It is not free: a call still accumulating here would be
+  // dropped with its `tool-input-start` already published, and the turn would settle looking like
+  // the model chose to stop — the same silent loss the halt path below exists to prevent.
+  const pending = Halt.flushPendingToolCalls(state.tools)
+  let opened = state.lifecycle
+  if (pending.length > 0) {
+    opened = Lifecycle.stepStart(opened, events)
+    events.push(...pending)
+  }
+  const hasFunctionCall = pending.length > 0 || state.hasFunctionCall
+  const lifecycle = Lifecycle.finish(opened, events, {
+    reason: mapFinishReason(event, hasFunctionCall),
     usage: mapUsage(event.response?.usage),
     providerMetadata:
       event.response?.id || event.response?.service_tier
@@ -879,7 +901,7 @@ const onResponseFinish = (state: ParserState, event: OpenAIResponsesEvent): Step
           })
         : undefined,
   })
-  return [{ ...state, lifecycle }, events]
+  return [{ ...state, lifecycle, hasFunctionCall, tools: ToolStream.empty<string>(), settled: true }, events]
 }
 
 // Build a single human-readable message from whatever the provider supplied.
@@ -904,15 +926,41 @@ const providerError = (event: OpenAIResponsesEvent, fallback: string) => {
   })
 }
 
+// Settled on both arms: the fault is now NAMED on the event stream, and the halt below must not
+// follow it with a synthesized settlement that describes the same end a second time.
 const onResponseFailed = (state: ParserState, event: OpenAIResponsesEvent): StepResult => [
-  state,
+  { ...state, settled: true },
   [providerError(event, "OpenAI Responses response failed")],
 ]
 
 const onError = (state: ParserState, event: OpenAIResponsesEvent): StepResult => [
-  state,
+  { ...state, settled: true },
   [providerError(event, "OpenAI Responses stream error")],
 ]
+
+/**
+ * The flush that runs when the framed stream ends — for ANY reason, including one the wire never
+ * explained.
+ *
+ * 🔴 Until 2026-09-02 this protocol had NO `onHalt` at all. `Lifecycle.finish` is reached only from
+ * `response.completed` / `response.incomplete`, so a stream cut before one of those emitted nothing
+ * more: every `"active"` reasoning summary part stayed open (only `output_item.done` drains them),
+ * the function-call accumulator was discarded with its `tool-input-start` already published, and —
+ * because the stream *succeeded* — the layer above got no error either. See `utils/halt.ts` for the
+ * shared policy and why the guard is "did this turn produce anything" rather than "did the wire say
+ * why it stopped".
+ */
+const finishEvents = (state: ParserState): ReadonlyArray<LLMEvent> => {
+  if (state.settled) return []
+  const pending = Halt.flushPendingToolCalls(state.tools)
+  return Halt.haltEvents({
+    lifecycle: state.lifecycle,
+    toolCallEvents: pending,
+    // Calls finalized EARLIER by `output_item.done` are already on the wire; the close must still
+    // say "tool-calls" for them, or a cut turn whose only work was a completed call reads as a fault.
+    hasToolCalls: pending.length > 0 || state.hasFunctionCall,
+  })
+}
 
 const step = (state: ParserState, event: OpenAIResponsesEvent) => {
   if (event.type === "response.output_text.delta") return Effect.succeed(onOutputTextDelta(state, event))
@@ -967,9 +1015,11 @@ export const protocol = Protocol.make({
       lifecycle: Lifecycle.initial(),
       reasoningItems: {},
       store: OpenAIOptions.store(request),
+      settled: false,
     }),
     step,
     terminal: (event) => TERMINAL_TYPES.has(event.type),
+    onHalt: finishEvents,
   },
 })
 

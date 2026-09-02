@@ -225,6 +225,15 @@ const responseHttp = (input: {
     rateLimit: input.rateLimit,
   })
 
+/**
+ * Anchored to a FIELD, not to a bare word. `http.body` is up to 16 KB of whatever the endpoint
+ * echoed back, which on llama.cpp and several gateways INCLUDES the offending request — so a bare
+ * substring test reads "safety" out of a system prompt, a tool name, or a file the agent had just
+ * read, and calls an ordinary refusal a content-policy block.
+ */
+const CONTENT_POLICY =
+  /"(?:code|type|reason|finish_reason)"\s*:\s*"[^"]*(?:content[-_ ]?policy|content[-_ ]?filter|safety)[^"]*"/i
+
 const statusReason = (input: {
   readonly status: number
   readonly message: string
@@ -233,9 +242,6 @@ const statusReason = (input: {
   readonly http: HttpContext
 }) => {
   const body = input.http.body ?? ""
-  if (/content[-_\s]?policy|content_filter|safety/i.test(body)) {
-    return new ContentPolicyReason({ message: input.message, http: input.http })
-  }
   if (input.status === 401) {
     return new AuthenticationReason({ message: input.message, kind: "invalid", http: input.http })
   }
@@ -260,11 +266,21 @@ const statusReason = (input: {
     input.status === 413 ||
     input.status === 422
   ) {
-    return new InvalidRequestReason({
-      message: input.message,
-      classification: classify(body),
-      http: input.http,
-    })
+    const classification = classify(body)
+    // 🔴 ORDER. The refusal's own CLASSIFICATION wins over a content-policy reading of the same
+    // bytes, and the sniff runs INSIDE this arm rather than ahead of every status branch.
+    //
+    // Sniffed first, a context-overflow 400 whose echoed body merely CONTAINED the word "safety"
+    // became a `ContentPolicyReason` — which carries no `classification` field at all, so
+    // `isContextOverflowFailure` and the media-limit check both answer falsy and the runner's
+    // compaction and image-shedding never fire: the session is permanently unrunnable rather than
+    // recovering. Ahead of the other branches it was worse — a 429 whose body echoed the prompt
+    // lost `retryAfterMs` and its entire rate-limit path, and 401/403/5xx were reachable the same
+    // way. This is the argument `provider-error.ts:classify` already makes for media-before-
+    // overflow: the recovery that FITS the fault decides which reading wins.
+    if (classification === undefined && CONTENT_POLICY.test(body))
+      return new ContentPolicyReason({ message: input.message, http: input.http })
+    return new InvalidRequestReason({ message: input.message, classification, http: input.http })
   }
   if (input.status >= 500 || retryableStatus(input.status)) {
     return new ProviderInternalReason({

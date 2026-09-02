@@ -119,6 +119,67 @@ describe("RequestExecutor", () => {
     ),
   )
 
+  it.effect("🔴 a refusal whose ECHOED BODY merely mentions safety is classified by its own code", () =>
+    Effect.gen(function* () {
+      const executor = yield* RequestExecutor.Service
+      const error = yield* executor.execute(request).pipe(Effect.flip)
+
+      expectLLMError(error)
+      // The endpoint echoed the offending request, and the prompt happened to contain the word.
+      // Read as a content policy block this becomes a ContentPolicyReason, which carries NO
+      // classification — so the runner's compaction never fires and the session is permanently
+      // unrunnable instead of recovering from an overflow it knows how to handle.
+      expect(error.reason).toMatchObject({ _tag: "InvalidRequest", classification: "context-overflow" })
+    }).pipe(
+      Effect.provide(
+        responsesLayer([
+          new Response(
+            '{"error":{"code":"context_length_exceeded","message":"prompt too long"},' +
+              '"request":{"messages":[{"role":"system","content":"You review code for safety issues."}]}}',
+            { status: 400 },
+          ),
+        ]),
+      ),
+    ),
+  )
+
+  it.effect("a real content-policy refusal is still a content policy refusal", () =>
+    Effect.gen(function* () {
+      const executor = yield* RequestExecutor.Service
+      const error = yield* executor.execute(request).pipe(Effect.flip)
+
+      expectLLMError(error)
+      expect(error.reason).toMatchObject({ _tag: "ContentPolicy" })
+    }).pipe(
+      Effect.provide(
+        responsesLayer([
+          new Response('{"error":{"code":"content_filter","message":"blocked"}}', { status: 400 }),
+        ]),
+      ),
+    ),
+  )
+
+  it.effect("🔴 a 429 whose echoed body mentions safety keeps its rate-limit path", () =>
+    Effect.gen(function* () {
+      const executor = yield* RequestExecutor.Service
+      const error = yield* executor.execute(request).pipe(Effect.flip)
+
+      expectLLMError(error)
+      // Sniffing the body ahead of the status dispatch reached 429 too, and a ContentPolicyReason
+      // carries no retryAfterMs — so the whole rate-limit path was lost on a retryable refusal.
+      expect(error.reason).toMatchObject({ _tag: "RateLimit" })
+    }).pipe(
+      Effect.provide(
+        responsesLayer([
+          new Response('{"error":{"message":"slow down"},"echo":"you are a safety reviewer"}', {
+            status: 429,
+            headers: { "retry-after": "3" },
+          }),
+        ]),
+      ),
+    ),
+  )
+
   it.effect("does not classify generic HTTP 413 payload errors as context overflow", () =>
     Effect.gen(function* () {
       const executor = yield* RequestExecutor.Service

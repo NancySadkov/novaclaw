@@ -19,6 +19,7 @@ import {
 } from "../schema"
 import { isRecord, JsonObject, optionalArray, optionalNull, ProviderShared, stripSpecialTokens } from "./shared"
 import { OpenAIOptions } from "./utils/openai-options"
+import { Halt } from "./utils/halt"
 import { Lifecycle } from "./utils/lifecycle"
 import { ToolSchemaProjection } from "./utils/tool-schema"
 import { ToolStream } from "./utils/tool-stream"
@@ -253,6 +254,18 @@ export interface ParserState {
   // tool parser never sees it) while the visible text is only leaked mask-token debris.
   // Scavenged as the LAST resort — see finalToolCallEvents.
   readonly reasoning: string
+  /**
+   * Which reasoning SEGMENT of this turn is open, counted from 0.
+   *
+   * ⚠️ This wire gives a reasoning delta no id of its own, so the block id has to be synthesized —
+   * and a constant is the wrong synthesis. A model that thinks, speaks, and thinks again (or a
+   * backend that emits one stray `content` newline between two thinking segments) closes the block
+   * and re-opens it, and with a constant id the second open re-uses an id the consumer has already
+   * seen ended: whichever store keys on it keeps one of the two thought blocks and silently loses
+   * the other. The counter makes the id say which segment it is, the way the two protocols that
+   * have real ids on the wire already do (`reasoning-<index>`, `<item_id>:<summary_index>`).
+   */
+  readonly reasoningSegment: number
 }
 
 const invalid = ProviderShared.invalidRequest
@@ -634,16 +647,28 @@ const step = (state: ParserState, event: OpenAIChatEvent) =>
     let tools = state.tools
 
     let lifecycle = state.lifecycle
+    let reasoningSegment = state.reasoningSegment
+    // Close the open reasoning segment and move the id on, so a LATER reasoning delta opens a new
+    // block instead of re-opening one the consumer already saw end. The advance is conditional on
+    // the block actually having been open: `Lifecycle.reasoningEnd` is a no-op for an id it does not
+    // hold, and an unconditional bump would burn ids on every text delta of a non-thinking turn.
+    const endReasoning = () => {
+      const id = `reasoning-${reasoningSegment}`
+      if (!lifecycle.reasoning.has(id)) return
+      lifecycle = Lifecycle.reasoningEnd(lifecycle, events, id)
+      reasoningSegment += 1
+    }
 
     const reasoningDelta = delta?.reasoning_content ?? delta?.reasoning
-    if (reasoningDelta) lifecycle = Lifecycle.reasoningDelta(lifecycle, events, "reasoning-0", reasoningDelta)
+    if (reasoningDelta)
+      lifecycle = Lifecycle.reasoningDelta(lifecycle, events, `reasoning-${reasoningSegment}`, reasoningDelta)
 
     if (delta?.content) {
-      lifecycle = Lifecycle.reasoningEnd(lifecycle, events, "reasoning-0")
+      endReasoning()
       lifecycle = Lifecycle.textDelta(lifecycle, events, "text-0", delta.content)
     }
 
-    if (toolDeltas.length) lifecycle = Lifecycle.reasoningEnd(lifecycle, events, "reasoning-0")
+    if (toolDeltas.length) endReasoning()
 
     for (const tool of toolDeltas) {
       const result = ToolStream.appendOrStart(
@@ -683,6 +708,7 @@ const step = (state: ParserState, event: OpenAIChatEvent) =>
         ...(servedBy === undefined ? {} : { servedBy }),
         finishReason,
         lifecycle,
+        reasoningSegment,
         allowedToolNames: state.allowedToolNames,
         content: delta?.content ? state.content + delta.content : state.content,
         reasoning: reasoningDelta ? state.reasoning + reasoningDelta : state.reasoning,
@@ -690,17 +716,6 @@ const step = (state: ParserState, event: OpenAIChatEvent) =>
       events,
     ] as const
   })
-
-// Arguments recovered from text are already a valid JSON string; parse defensively
-// so a freak value can never throw inside the decoder.
-const safeParseArgs = (json: string): Record<string, unknown> => {
-  try {
-    const value = JSON.parse(json)
-    return isRecord(value) ? value : {}
-  } catch {
-    return {}
-  }
-}
 
 // True when the turn's visible text is nothing but whitespace and leaked special-token
 // debris (`<|mask_start|>`, stray `<think>` tags) — the model produced NO answer.
@@ -729,51 +744,9 @@ const finalToolCallEvents = (state: ParserState): ReadonlyArray<LLMEvent> => {
     return [
       LLMEvent.toolInputStart({ id, name: call.name }),
       LLMEvent.toolInputEnd({ id, name: call.name }),
-      LLMEvent.toolCall({ id, name: call.name, input: safeParseArgs(call.arguments) }),
+      LLMEvent.toolCall({ id, name: call.name, input: Halt.safeParseArgs(call.arguments) }),
     ]
   })
-}
-
-/**
- * The parse-error text carried by the recoverable sentinel when a call's arguments were still
- * streaming as the wire ended. It names the real cause where the output-limit case names its own;
- * ⚠️ the settle path's prescription is the SAME either way ("build the file in chunks"), because a
- * half-streamed large write has the same fix whether the ceiling or the socket ended it — this text
- * is what stops the transcript describing the second fault as the first.
- */
-const CUT_STREAM_ARGS = "the model stream ended before the tool call's arguments were complete"
-
-/**
- * Finalize every tool call still accumulating when the stream ended.
- *
- * Mirrors `ToolStream.finishAllRecoverable`'s policy — complete arguments parse normally, arguments
- * the wire cut mid-object ride the recoverable sentinel — in a SYNCHRONOUS form, because
- * `ProtocolStream.onHalt` is a pure `(state) => events` by contract and cannot run an Effect.
- * `repairToolJson` is total (it answers `"{}"` when nothing is recoverable) and `safeParseArgs`
- * cannot throw, so this flush has no failure arm to drop a call into.
- */
-const flushPendingToolCalls = (tools: ParserState["tools"]): ReadonlyArray<LLMEvent> => {
-  const events: LLMEvent[] = []
-  // Cast rather than `Object.values<T>`: the state is keyed by the wire's numeric `tool_calls[].index`,
-  // and a numeric-keyed record does not match the string-index overload — it would silently widen to
-  // `any[]` and take the field reads below with it.
-  const pending = Object.values(tools) as ReadonlyArray<ToolStream.PendingTool | undefined>
-  for (const tool of pending) {
-    if (tool === undefined) continue
-    events.push(
-      LLMEvent.toolInputEnd({ id: tool.id, name: tool.name, providerMetadata: tool.providerMetadata }),
-      LLMEvent.toolCall({
-        id: tool.id,
-        name: tool.name,
-        input: ProviderShared.isTruncatedToolArgs(tool.input)
-          ? truncatedArgsInput(CUT_STREAM_ARGS)
-          : safeParseArgs(ProviderShared.repairToolJson(tool.input)),
-        providerExecuted: tool.providerExecuted ? true : undefined,
-        providerMetadata: tool.providerMetadata,
-      }),
-    )
-  }
-  return events
 }
 
 /**
@@ -793,47 +766,27 @@ const flushPendingToolCalls = (tools: ParserState["tools"]): ReadonlyArray<LLMEv
  * INACTIVITY, and a stream that ends cleanly and early is never inactive. `generate` surfaces the
  * same wire as a decode failure; only `stream` — the production path — was silent.
  *
- * So the flush is unconditional in `reason`, and the reason it synthesizes says which of the two
- * things happened: `"tool-calls"` when the halt recovered work to do (the loop continues, the same
- * call the truncated-args path already makes), `"error"` when it recovered nothing (the turn closes
- * naming a fault rather than a completion).
- *
- * ⚠️ **The one halt this must NOT speak for is a stream that produced nothing at all.** An empty
- * body is already answered one layer up — the runner publishes a named, retryable
- * `InvalidProviderOutput` for a successful stream that started no assistant — and synthesizing a
- * settlement here would mint an empty assistant message alongside it. The guard is therefore "did
- * this turn produce anything", never "did the wire say why it stopped".
+ * The reason synthesis, the "did this turn produce anything" guard and the synchronous tool flush
+ * are `utils/halt.ts` — the policy is a property of the SEAM, not of this wire, and all four
+ * protocols now answer it the same way. What stays here is the one thing that IS wire-specific:
+ * this protocol's text-and-reasoning recovery of a call a small model never put in the structured
+ * channel.
  */
 const finishEvents = (state: ParserState): ReadonlyArray<LLMEvent> => {
-  const events: LLMEvent[] = []
   // Structured calls still open because the terminal event that would have finalized them never
   // arrived. They take precedence over text recovery and compose with anything already finalized.
-  const pending = flushPendingToolCalls(state.tools)
-  const toolCallEvents = pending.length > 0 ? [...state.toolCallEvents, ...pending] : finalToolCallEvents(state)
-  const hasToolCalls = toolCallEvents.length > 0
-  // A model that emits a tool call but reports finish="stop", or dumps the call into
-  // text, must still continue the loop instead of halting — synthesize "tool-calls".
-  const reason: FinishReason =
-    state.finishReason === undefined
-      ? hasToolCalls
-        ? "tool-calls"
-        : "error"
-      : state.finishReason === "stop" && hasToolCalls
-        ? "tool-calls"
-        : state.finishReason
-  const lifecycle = hasToolCalls ? Lifecycle.stepStart(state.lifecycle, events) : state.lifecycle
-  events.push(...toolCallEvents)
-  if (state.finishReason !== undefined || hasToolCalls || state.lifecycle.stepStarted)
-    Lifecycle.finish(lifecycle, events, {
-      reason,
-      usage: state.usage,
-      // WHICH serving process answered, on the channel that already exists for provider facts we do
-      // not normalise. Not a normalised field of its own: only some wires report it, and inventing a
-      // top-level one would make every other protocol look like it had answered "unknown" when it
-      // was never asked.
-      ...(state.servedBy === undefined ? {} : { providerMetadata: { openai: { system_fingerprint: state.servedBy } } }),
-    })
-  return events
+  const pending = Halt.flushPendingToolCalls(state.tools)
+  return Halt.haltEvents({
+    lifecycle: state.lifecycle,
+    toolCallEvents: pending.length > 0 ? [...state.toolCallEvents, ...pending] : finalToolCallEvents(state),
+    finishReason: state.finishReason,
+    usage: state.usage,
+    // WHICH serving process answered, on the channel that already exists for provider facts we do
+    // not normalise. Not a normalised field of its own: only some wires report it, and inventing a
+    // top-level one would make every other protocol look like it had answered "unknown" when it
+    // was never asked.
+    ...(state.servedBy === undefined ? {} : { providerMetadata: { openai: { system_fingerprint: state.servedBy } } }),
+  })
 }
 
 // =============================================================================
@@ -861,6 +814,7 @@ export const protocol = Protocol.make({
       tools: ToolStream.empty<number>(),
       toolCallEvents: [],
       lifecycle: Lifecycle.initial(),
+      reasoningSegment: 0,
       // Discovered tools are described by append-only tool results, never reinserted into the wire
       // `tools` array. They still belong to the decoder's recovery whitelist: qwen occasionally
       // prints a valid call as text, and losing that call solely because its schema arrived through

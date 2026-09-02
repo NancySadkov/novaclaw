@@ -22,6 +22,7 @@ import {
 import { JsonObject, optionalArray, optionalNull, ProviderShared } from "./shared"
 import { classify } from "../provider-error"
 import * as Cache from "./utils/cache"
+import { Halt } from "./utils/halt"
 import { Lifecycle } from "./utils/lifecycle"
 import { PromptedTools } from "./utils/prompted-tools"
 import { ToolSchemaProjection } from "./utils/tool-schema"
@@ -226,6 +227,22 @@ interface ParserState {
   readonly tools: ToolStream.State<number>
   readonly usage?: Usage
   readonly lifecycle: Lifecycle.State
+  /**
+   * Whether this turn has delivered ANY tool call, including one already finalized by
+   * `content_block_stop`. The accumulator is drained by that event, so at the halt `tools` is empty
+   * and the recovered-call count cannot answer the question: without this flag a turn whose only
+   * work was a COMPLETE call would close as `"error"` — "nothing was delivered" — and the loop would
+   * continue a reply that was in fact a finished tool request.
+   */
+  readonly hasToolCalls: boolean
+  /**
+   * Whether the wire has already SPOKEN about how this message ended — `message_delta` (which
+   * settles the turn) or an `error` event (which publishes a provider error the layer above acts
+   * on). It is the one thing `onHalt` needs and the lifecycle cannot tell it: after a settle the
+   * lifecycle looks exactly like a turn that never started, so without this flag the halt could not
+   * distinguish "already closed" from "nothing happened" and would close the turn twice.
+   */
+  readonly settled: boolean
 }
 
 const invalid = ProviderShared.invalidRequest
@@ -783,6 +800,7 @@ const onContentBlockStop = Effect.fn("AnthropicMessages.onContentBlockStop")(fun
   const result = yield* ToolStream.finish(ADAPTER, state.tools, event.index)
   const events: LLMEvent[] = []
   const resultEvents = result.events ?? []
+  const hasToolCalls = resultEvents.some(LLMEvent.is.toolCall) || state.hasToolCalls
   const lifecycle = resultEvents.length
     ? Lifecycle.stepStart(state.lifecycle, events)
     : Lifecycle.reasoningEnd(
@@ -791,20 +809,40 @@ const onContentBlockStop = Effect.fn("AnthropicMessages.onContentBlockStop")(fun
         `reasoning-${event.index}`,
       )
   events.push(...resultEvents)
-  return [{ ...state, lifecycle, tools: result.tools }, events] satisfies StepResult
+  return [{ ...state, lifecycle, hasToolCalls, tools: result.tools }, events] satisfies StepResult
 })
 
 const onMessageDelta = (state: ParserState, event: AnthropicEvent): StepResult => {
   const usage = mergeUsage(state.usage, mapUsage(event.usage))
   const events: LLMEvent[] = []
-  const lifecycle = Lifecycle.finish(state.lifecycle, events, {
+  // ⚠️ The grammar promises a `content_block_stop` for every block before `message_delta`, so this
+  // is normally empty. It is not free: a call still accumulating here would be dropped with its
+  // `tool-input-start` already published, and the turn would settle looking like the model chose to
+  // stop — the same silent loss the halt path below exists to prevent, one event earlier.
+  const pending = Halt.flushPendingToolCalls(state.tools)
+  let lifecycle = state.lifecycle
+  if (pending.length > 0) {
+    lifecycle = Lifecycle.stepStart(lifecycle, events)
+    events.push(...pending)
+  }
+  lifecycle = Lifecycle.finish(lifecycle, events, {
     reason: mapFinishReason(event.delta?.stop_reason),
     usage,
     providerMetadata: event.delta?.stop_sequence
       ? anthropicMetadata({ stopSequence: event.delta.stop_sequence })
       : undefined,
   })
-  return [{ ...state, lifecycle, usage }, events]
+  return [
+    {
+      ...state,
+      lifecycle,
+      usage,
+      hasToolCalls: pending.length > 0 || state.hasToolCalls,
+      tools: ToolStream.empty<number>(),
+      settled: true,
+    },
+    events,
+  ]
 }
 
 // Prefix `error.type` so overloads, rate limits, and quota errors are visible
@@ -817,7 +855,9 @@ const providerErrorMessage = (event: AnthropicEvent): string => {
 }
 
 const onError = (state: ParserState, event: AnthropicEvent): StepResult => [
-  state,
+  // Settled: the fault is now NAMED on the event stream, and the halt below must not follow it with
+  // a synthesized settlement that describes the same end a second time.
+  { ...state, settled: true },
   [
     LLMEvent.providerError({
       message: providerErrorMessage(event),
@@ -825,6 +865,31 @@ const onError = (state: ParserState, event: AnthropicEvent): StepResult => [
     }),
   ],
 ]
+
+/**
+ * The flush that runs when the framed stream ends — for ANY reason, including one the wire never
+ * explained.
+ *
+ * 🔴 Until 2026-09-02 this protocol had NO `onHalt` at all. `Lifecycle.finish` is reached only from
+ * `message_delta`, so a stream cut inside a `thinking` or `tool_use` block emitted nothing more: the
+ * consumer kept an open `reasoning-<index>` fragment with no end, the `tool_use` accumulator was
+ * discarded with its `tool-input-start` already published, and — because the stream *succeeded* —
+ * the layer above got no error either. See `utils/halt.ts` for the shared policy and why the guard
+ * is "did this turn produce anything" rather than "did the wire say why it stopped".
+ */
+const finishEvents = (state: ParserState): ReadonlyArray<LLMEvent> => {
+  if (state.settled) return []
+  const pending = Halt.flushPendingToolCalls(state.tools)
+  return Halt.haltEvents({
+    lifecycle: state.lifecycle,
+    toolCallEvents: pending,
+    // Calls finalized EARLIER by `content_block_stop` are already on the wire; the close must still
+    // say "tool-calls" for them, or a cut turn whose only work was a completed call reads as a fault
+    // and the loop continues a request that was in fact already made.
+    hasToolCalls: pending.length > 0 || state.hasToolCalls,
+    usage: state.usage,
+  })
+}
 
 const step = (state: ParserState, event: AnthropicEvent) => {
   if (event.type === "message_start") return Effect.succeed(onMessageStart(state, event))
@@ -855,8 +920,14 @@ export const protocol = Protocol.make({
   },
   stream: {
     event: Protocol.jsonEvent(AnthropicEvent),
-    initial: () => ({ tools: ToolStream.empty<number>(), lifecycle: Lifecycle.initial() }),
+    initial: () => ({
+      tools: ToolStream.empty<number>(),
+      lifecycle: Lifecycle.initial(),
+      hasToolCalls: false,
+      settled: false,
+    }),
     step,
+    onHalt: finishEvents,
   },
 })
 

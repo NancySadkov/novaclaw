@@ -19,6 +19,7 @@ import {
 } from "../schema"
 import { JsonObject, optionalArray, ProviderShared } from "./shared"
 import { GeminiToolSchema } from "./utils/gemini-tool-schema"
+import { Halt } from "./utils/halt"
 import { Lifecycle } from "./utils/lifecycle"
 import { PromptedTools } from "./utils/prompted-tools"
 import { ToolSchemaProjection } from "./utils/tool-schema"
@@ -143,6 +144,17 @@ interface ParserState {
   readonly usage?: Usage
   readonly lifecycle: Lifecycle.State
   readonly reasoningSignature?: string
+  /**
+   * Which reasoning SEGMENT of this turn is open, counted from 0.
+   *
+   * ⚠️ A `{thought:true}` part carries no id of its own, so the block id has to be synthesized — and
+   * a constant is the wrong synthesis. A model that thinks, answers, and thinks again closes the
+   * block and re-opens it, and with a constant id the second open re-uses an id the consumer has
+   * already seen ended: whichever store keys on it keeps one of the two thought blocks and silently
+   * loses the other. The counter makes the id say which segment it is, the way the two protocols
+   * with real ids on the wire already do (`reasoning-<index>`, `<item_id>:<summary_index>`).
+   */
+  readonly reasoningSegment: number
 }
 
 // =============================================================================
@@ -385,25 +397,46 @@ const mapFinishReason = (finishReason: string | undefined, hasToolCalls: boolean
   return "unknown"
 }
 
-const finish = (state: ParserState): ReadonlyArray<LLMEvent> =>
-  state.finishReason || state.usage
-    ? (() => {
-        const events: LLMEvent[] = []
-        const lifecycle = state.reasoningSignature
-          ? Lifecycle.reasoningEnd(
-              state.lifecycle,
-              events,
-              "reasoning-0",
-              googleMetadata({ thoughtSignature: state.reasoningSignature }),
-            )
-          : state.lifecycle
-        Lifecycle.finish(lifecycle, events, {
-          reason: mapFinishReason(state.finishReason, state.hasToolCalls),
-          usage: state.usage,
-        })
-        return events
-      })()
-    : []
+/**
+ * The flush that runs when the framed stream ends — for ANY reason, including one the wire never
+ * explained.
+ *
+ * 🔴 Until 2026-09-02 this was gated on `state.finishReason || state.usage`, so a stream cut before
+ * its final chunk emitted NOTHING: no `step-finish`, no `finish`, and every open reasoning/text
+ * block left unclosed. This wire delivers each `functionCall` complete inside one part, so unlike
+ * the two OpenAI wires nothing was DROPPED — but the turn still never closed, and a successful
+ * stream that closed no turn reads to every layer above as a turn that had nothing to say. The
+ * shared reasoning is in `utils/halt.ts`; only the two Gemini-specific parts are here.
+ */
+const finish = (state: ParserState): ReadonlyArray<LLMEvent> => {
+  const events: LLMEvent[] = []
+  // The thought signature belongs on the END of the reasoning block, and only this wire has one.
+  const lifecycle = state.reasoningSignature
+    ? Lifecycle.reasoningEnd(
+        state.lifecycle,
+        events,
+        `reasoning-${state.reasoningSegment}`,
+        googleMetadata({ thoughtSignature: state.reasoningSignature }),
+      )
+    : state.lifecycle
+  return [
+    ...events,
+    ...Halt.haltEvents({
+      lifecycle,
+      // Calls are emitted complete during `step`, so there is no accumulator to flush — but the turn
+      // still delivered them, and the close must say "tool-calls" rather than "nothing happened".
+      hasToolCalls: state.hasToolCalls,
+      finishReason:
+        state.finishReason === undefined ? undefined : mapFinishReason(state.finishReason, state.hasToolCalls),
+      usage: state.usage,
+      // ⚠️ This wire can end with an accounting-only tail — a `usageMetadata` chunk carrying no
+      // candidate at all. `generate` folds the stream and REQUIRES a terminal event to answer with,
+      // so a usage-only tail must still close, or the usage the server did report is lost behind
+      // "Provider stream ended without a terminal finish event".
+      close: state.usage !== undefined,
+    }),
+  ]
+}
 
 const step = (state: ParserState, event: GeminiEvent) => {
   const nextState = {
@@ -422,6 +455,22 @@ const step = (state: ParserState, event: GeminiEvent) => {
   let lifecycle = nextState.lifecycle
   let nextToolCallId = nextState.nextToolCallId
   let reasoningSignature = nextState.reasoningSignature
+  let reasoningSegment = nextState.reasoningSegment
+  // Close the open reasoning segment and move the id on, so a LATER thought part opens a new block
+  // instead of re-opening one the consumer already saw end. Conditional on the block actually having
+  // been open: `Lifecycle.reasoningEnd` is a no-op for an id it does not hold, and an unconditional
+  // bump would burn ids on every text part of a non-thinking turn.
+  const endReasoning = () => {
+    const id = `reasoning-${reasoningSegment}`
+    if (!lifecycle.reasoning.has(id)) return
+    lifecycle = Lifecycle.reasoningEnd(
+      lifecycle,
+      events,
+      id,
+      reasoningSignature ? googleMetadata({ thoughtSignature: reasoningSignature }) : undefined,
+    )
+    reasoningSegment += 1
+  }
 
   for (const part of candidate.content.parts) {
     if ("thoughtSignature" in part && part.thoughtSignature && "thought" in part && part.thought)
@@ -431,18 +480,13 @@ const step = (state: ParserState, event: GeminiEvent) => {
         lifecycle = Lifecycle.reasoningDelta(
           lifecycle,
           events,
-          "reasoning-0",
+          `reasoning-${reasoningSegment}`,
           part.text,
           part.thoughtSignature ? googleMetadata({ thoughtSignature: part.thoughtSignature }) : undefined,
         )
         continue
       }
-      lifecycle = Lifecycle.reasoningEnd(
-        lifecycle,
-        events,
-        "reasoning-0",
-        reasoningSignature ? googleMetadata({ thoughtSignature: reasoningSignature }) : undefined,
-      )
+      endReasoning()
       lifecycle = Lifecycle.textDelta(lifecycle, events, "text-0", part.text)
       continue
     }
@@ -450,12 +494,7 @@ const step = (state: ParserState, event: GeminiEvent) => {
     if ("functionCall" in part) {
       const input = part.functionCall.args
       const id = `tool_${nextToolCallId++}`
-      lifecycle = Lifecycle.reasoningEnd(
-        lifecycle,
-        events,
-        "reasoning-0",
-        reasoningSignature ? googleMetadata({ thoughtSignature: reasoningSignature }) : undefined,
-      )
+      endReasoning()
       lifecycle = Lifecycle.stepStart(lifecycle, events)
       events.push(
         LLMEvent.toolCall({
@@ -478,6 +517,7 @@ const step = (state: ParserState, event: GeminiEvent) => {
       lifecycle,
       nextToolCallId,
       reasoningSignature,
+      reasoningSegment,
       finishReason: candidate.finishReason ?? nextState.finishReason,
     },
     events,
@@ -503,7 +543,7 @@ export const protocol = Protocol.make({
   },
   stream: {
     event: Protocol.jsonEvent(GeminiEvent),
-    initial: () => ({ hasToolCalls: false, nextToolCallId: 0, lifecycle: Lifecycle.initial() }),
+    initial: () => ({ hasToolCalls: false, nextToolCallId: 0, lifecycle: Lifecycle.initial(), reasoningSegment: 0 }),
     step,
     onHalt: finish,
   },

@@ -67,6 +67,8 @@ const fakeProtocol = Protocol.make<FakeBody, FakeEvent, FakeEvent, void>({
     event: FakeEvent,
     initial: () => undefined,
     step: (state, event) => Effect.succeed([state, [raiseEvent(event)]] as const),
+    // This fake raises every frame as it arrives and holds no state, so there is nothing to flush.
+    onHalt: () => [],
   },
 })
 

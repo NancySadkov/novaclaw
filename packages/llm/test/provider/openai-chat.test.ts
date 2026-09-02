@@ -702,7 +702,13 @@ describe("OpenAI Chat route", () => {
     }),
   )
 
-  it.effect("does not finalize streamed tool calls without a finish reason", () =>
+  // ⚠️ This case used to assert the OPPOSITE — that a stream cut before its terminal event emits
+  // no tool call and no close, and that `generate` fails with "Provider stream ended without a
+  // terminal finish event". That was the defect, pinned: the structured call sat in the parser's
+  // accumulator and was dropped, and on `stream` (the production path, which the session runner
+  // uses) there was no error either. `bfffc7f8f` fixed the decoder and left this expectation
+  // behind. What the halt owes is stated here instead: the call is delivered and the turn closes.
+  it.effect("finalizes streamed tool calls when the stream ends without a finish reason", () =>
     Effect.gen(function* () {
       const body = sseEvents(
         deltaChunk({
@@ -717,16 +723,30 @@ describe("OpenAI Chat route", () => {
       const events = Array.from(
         yield* LLMClient.stream(input).pipe(Stream.runCollect, Effect.provide(fixedResponse(body))),
       )
-      const error = yield* LLMClient.generate(input).pipe(Effect.provide(fixedResponse(body)), Effect.flip)
+      const response = yield* LLMClient.generate(input).pipe(Effect.provide(fixedResponse(body)))
 
-      expect(events).toEqual([
-        { type: "step-start", index: 0 },
-        { type: "tool-input-start", id: "call_1", name: "lookup", providerMetadata: undefined },
-        { type: "tool-input-delta", id: "call_1", name: "lookup", text: '{"query"' },
-        { type: "tool-input-delta", id: "call_1", name: "lookup", text: ':"weather"}' },
+      expect(events.map((event) => event.type)).toEqual([
+        "step-start",
+        "tool-input-start",
+        "tool-input-delta",
+        "tool-input-delta",
+        "tool-input-end",
+        "tool-call",
+        "step-finish",
+        "finish",
       ])
-      expect(events.filter(LLMEvent.is.toolCall)).toEqual([])
-      expect(error.message).toContain("Provider stream ended without a terminal finish event")
+      expect(events.filter(LLMEvent.is.toolCall)).toEqual([
+        {
+          type: "tool-call",
+          id: "call_1",
+          name: "lookup",
+          input: { query: "weather" },
+          providerExecuted: undefined,
+          providerMetadata: undefined,
+        },
+      ])
+      // The turn closes as work to do, so the loop continues instead of ending on a dropped call.
+      expect(response.finishReason).toBe("tool-calls")
     }),
   )
 

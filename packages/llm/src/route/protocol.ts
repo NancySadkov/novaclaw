@@ -87,8 +87,18 @@ export interface ProtocolStream<Frame, Event, State> {
   readonly step: (state: State, event: Event) => Effect.Effect<readonly [State, ReadonlyArray<LLMEvent>], LLMError>
   /** Optional request-completion signal for transports that do not end naturally. */
   readonly terminal?: (event: Event) => boolean
-  /** Optional flush emitted when the framed stream ends. */
-  readonly onHalt?: (state: State) => ReadonlyArray<LLMEvent>
+  /**
+   * The flush emitted when the framed stream ends — for ANY reason, including one the wire never
+   * explained.
+   *
+   * ⚠️ **REQUIRED on purpose**, for the same reason `body.conversation` is: a protocol added without
+   * answering *"what do I owe the consumer when the stream stops before my terminal event?"* must
+   * not compile. It was optional, and two of the four wires silently declined — leaving reasoning
+   * and text blocks permanently open and dropping pending tool calls on a stream that SUCCEEDED, so
+   * no layer above had an error to react to. A wire with genuinely nothing to flush writes
+   * `() => []` and has thereby stated it.
+   */
+  readonly onHalt: (state: State) => ReadonlyArray<LLMEvent>
 }
 
 /**

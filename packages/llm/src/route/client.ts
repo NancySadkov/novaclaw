@@ -296,7 +296,7 @@ function makeFromTransport<Body, Prepared, Frame, Event, State>(
           Stream.mapAccumEffect(
             () => protocol.stream.initial(request),
             protocol.stream.step,
-            protocol.stream.onHalt ? { onHalt: protocol.stream.onHalt } : undefined,
+            { onHalt: protocol.stream.onHalt },
           ),
           Stream.catchCause((cause) => Stream.fail(streamError(route, `Failed to read ${route} stream`, cause))),
         )
