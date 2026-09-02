@@ -734,16 +734,96 @@ const finalToolCallEvents = (state: ParserState): ReadonlyArray<LLMEvent> => {
   })
 }
 
+/**
+ * The parse-error text carried by the recoverable sentinel when a call's arguments were still
+ * streaming as the wire ended. It names the real cause where the output-limit case names its own;
+ * ⚠️ the settle path's prescription is the SAME either way ("build the file in chunks"), because a
+ * half-streamed large write has the same fix whether the ceiling or the socket ended it — this text
+ * is what stops the transcript describing the second fault as the first.
+ */
+const CUT_STREAM_ARGS = "the model stream ended before the tool call's arguments were complete"
+
+/**
+ * Finalize every tool call still accumulating when the stream ended.
+ *
+ * Mirrors `ToolStream.finishAllRecoverable`'s policy — complete arguments parse normally, arguments
+ * the wire cut mid-object ride the recoverable sentinel — in a SYNCHRONOUS form, because
+ * `ProtocolStream.onHalt` is a pure `(state) => events` by contract and cannot run an Effect.
+ * `repairToolJson` is total (it answers `"{}"` when nothing is recoverable) and `safeParseArgs`
+ * cannot throw, so this flush has no failure arm to drop a call into.
+ */
+const flushPendingToolCalls = (tools: ParserState["tools"]): ReadonlyArray<LLMEvent> => {
+  const events: LLMEvent[] = []
+  // Cast rather than `Object.values<T>`: the state is keyed by the wire's numeric `tool_calls[].index`,
+  // and a numeric-keyed record does not match the string-index overload — it would silently widen to
+  // `any[]` and take the field reads below with it.
+  const pending = Object.values(tools) as ReadonlyArray<ToolStream.PendingTool | undefined>
+  for (const tool of pending) {
+    if (tool === undefined) continue
+    events.push(
+      LLMEvent.toolInputEnd({ id: tool.id, name: tool.name, providerMetadata: tool.providerMetadata }),
+      LLMEvent.toolCall({
+        id: tool.id,
+        name: tool.name,
+        input: ProviderShared.isTruncatedToolArgs(tool.input)
+          ? truncatedArgsInput(CUT_STREAM_ARGS)
+          : safeParseArgs(ProviderShared.repairToolJson(tool.input)),
+        providerExecuted: tool.providerExecuted ? true : undefined,
+        providerMetadata: tool.providerMetadata,
+      }),
+    )
+  }
+  return events
+}
+
+/**
+ * The flush that runs when the framed stream ends — for ANY reason, including one the wire never
+ * explained.
+ *
+ * 🔴 **A stream can end before its terminal event, and that end is not always an error.** An
+ * OpenAI-compatible server that closes the response body after its last content chunk — no
+ * `finish_reason`, no `[DONE]`, no transport fault — halts this parser with `state.finishReason`
+ * still `undefined` and tool calls still accumulating in `state.tools`. Until 2026-09-02 that case
+ * emitted NOTHING: the pending calls were dropped, no `step-finish` closed the turn, and because the
+ * stream succeeded the runner had no error to react to either. The turn simply stopped, and every
+ * layer above read it as a turn that had nothing to say — ruling 2's *a failed mutation never reports
+ * success* and *a fault is never described falsely*, broken at the protocol seam.
+ *
+ * ⚠️ **The liveness guard does not cover this**, and that is why it looked covered: it bounds
+ * INACTIVITY, and a stream that ends cleanly and early is never inactive. `generate` surfaces the
+ * same wire as a decode failure; only `stream` — the production path — was silent.
+ *
+ * So the flush is unconditional in `reason`, and the reason it synthesizes says which of the two
+ * things happened: `"tool-calls"` when the halt recovered work to do (the loop continues, the same
+ * call the truncated-args path already makes), `"error"` when it recovered nothing (the turn closes
+ * naming a fault rather than a completion).
+ *
+ * ⚠️ **The one halt this must NOT speak for is a stream that produced nothing at all.** An empty
+ * body is already answered one layer up — the runner publishes a named, retryable
+ * `InvalidProviderOutput` for a successful stream that started no assistant — and synthesizing a
+ * settlement here would mint an empty assistant message alongside it. The guard is therefore "did
+ * this turn produce anything", never "did the wire say why it stopped".
+ */
 const finishEvents = (state: ParserState): ReadonlyArray<LLMEvent> => {
   const events: LLMEvent[] = []
-  const toolCallEvents = finalToolCallEvents(state)
+  // Structured calls still open because the terminal event that would have finalized them never
+  // arrived. They take precedence over text recovery and compose with anything already finalized.
+  const pending = flushPendingToolCalls(state.tools)
+  const toolCallEvents = pending.length > 0 ? [...state.toolCallEvents, ...pending] : finalToolCallEvents(state)
   const hasToolCalls = toolCallEvents.length > 0
   // A model that emits a tool call but reports finish="stop", or dumps the call into
   // text, must still continue the loop instead of halting — synthesize "tool-calls".
-  const reason = state.finishReason === "stop" && hasToolCalls ? "tool-calls" : state.finishReason
+  const reason: FinishReason =
+    state.finishReason === undefined
+      ? hasToolCalls
+        ? "tool-calls"
+        : "error"
+      : state.finishReason === "stop" && hasToolCalls
+        ? "tool-calls"
+        : state.finishReason
   const lifecycle = hasToolCalls ? Lifecycle.stepStart(state.lifecycle, events) : state.lifecycle
   events.push(...toolCallEvents)
-  if (reason)
+  if (state.finishReason !== undefined || hasToolCalls || state.lifecycle.stepStarted)
     Lifecycle.finish(lifecycle, events, {
       reason,
       usage: state.usage,
