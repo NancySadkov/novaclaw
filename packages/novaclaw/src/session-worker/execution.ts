@@ -43,12 +43,53 @@ import { SessionLocationRecovery } from "@novaclaw/core/session/location-recover
 import { SessionWorkerLocation } from "./location"
 import { WorkerRegistry } from "@/storage/worker-registry"
 
-const failure = (outcome: SessionWorkerSupervisor.Outcome) =>
-  outcome.type === "failed"
-    ? `${outcome.classification}${outcome.detail ? `: ${outcome.detail}` : ""}`
-    : outcome.type === "memory-limit"
-      ? `session worker exceeded its memory limit (${Math.ceil(outcome.rssBytes / MIB)} MiB used; ${Math.ceil(outcome.limitBytes / MIB)} MiB allowed)`
-      : `session worker ${outcome.type}${"detail" in outcome ? `: ${outcome.detail}` : ""}`
+/**
+ * Render ONE worker outcome as the sentence a person reads under *"Technical detail:"*.
+ *
+ * 🔴 **Exhaustive over `Outcome` on purpose — the catch-all arm is what threw the evidence away.**
+ * This used to end in `` `session worker ${outcome.type}${"detail" in outcome ? … }` ``, which is a
+ * default arm wearing a renderer's clothes: `exited` carries a `code` and `signaled` carries a
+ * `signal`, neither of them under the key `detail`, so both variants were captured by the supervisor
+ * off the child's real `exit` event and then dropped here. Every crash — an uncaught throw, a module
+ * missing from a packaged build, an OS OOM kill — reached the transcript as the same five words, and
+ * a fault described identically to every other fault is a fault described falsely (ruling 2).
+ *
+ * ⚠️ **`satisfies never` in the default arm is the door this closes**, not a stylistic preference. A
+ * catch-all renders a variant nobody has written a sentence for, silently and forever; this makes a
+ * new `Outcome` member a COMPILE error until someone says what it should say. That is the same device
+ * `memory-bridge.ts` uses over `MEMORY_OPS`, and it is the only rung above "we remembered".
+ */
+export const failureDetail = (outcome: SessionWorkerSupervisor.Outcome): string => {
+  switch (outcome.type) {
+    case "failed":
+      return `${outcome.classification}${outcome.detail ? `: ${outcome.detail}` : ""}`
+    case "memory-limit":
+      return `session worker exceeded its memory limit (${Math.ceil(outcome.rssBytes / MIB)} MiB used; ${Math.ceil(outcome.limitBytes / MIB)} MiB allowed)`
+    case "protocol-error":
+      return `session worker protocol error: ${outcome.detail}`
+    // The two the supervisor learns from the child's own `exit` event. Naming the code or the signal
+    // is the whole point: it is what separates "it threw" from "the OS killed it" in a bug report.
+    case "exited":
+      return `session worker exited with code ${outcome.code}`
+    case "signaled":
+      return `session worker was killed by signal ${outcome.signal}`
+    case "start-timeout":
+      return "session worker did not report ready before its startup deadline"
+    case "heartbeat-timeout":
+      return "session worker stopped sending heartbeats"
+    case "stale-message":
+      return "session worker sent a message for a superseded execution"
+    // Neither of these two reaches a failure notice — the caller returns on both before rendering —
+    // but a total renderer has to answer for them, and answering with the bare tag is the habit that
+    // lost the code and the signal in the first place.
+    case "interrupted":
+      return "session worker was interrupted"
+    case "settled":
+      return "session worker finished its drain"
+    default:
+      return `session worker ${outcome satisfies never}`
+  }
+}
 
 const MIB = 1024 * 1024
 const GIB = 1024 * MIB
@@ -365,7 +406,7 @@ export const layer = Layer.effect(
                 return
               }
 
-              const detail = failure(outcome)
+              const detail = failureDetail(outcome)
               const decision = yield* attempts.recoverFailure(lease, {
                 classification: outcome.type === "failed" ? outcome.classification : outcome.type,
                 detail,

@@ -163,8 +163,14 @@ export const layer = Layer.effect(
           Effect.flatMap((response) =>
             response.text.pipe(
               Effect.flatMap((body) =>
-                body.length > MAX_INDEX_BYTES
-                  ? Effect.fail(new Error(`index is ${body.length} bytes, over the ${MAX_INDEX_BYTES} byte limit`))
+                // ⚠️ BYTES, not `String.length`: this bounds a REMOTE index, and the message below
+                // reported the code-unit count as a byte count — a false number in its own refusal.
+                Buffer.byteLength(body, "utf8") > MAX_INDEX_BYTES
+                  ? Effect.fail(
+                      new Error(
+                        `index is ${Buffer.byteLength(body, "utf8")} bytes, over the ${MAX_INDEX_BYTES} byte limit`,
+                      ),
+                    )
                   : Effect.try({
                       try: () => JSON.parse(body) as unknown,
                       catch: (error) => new Error(`index is not JSON: ${String(error).slice(0, 120)}`),

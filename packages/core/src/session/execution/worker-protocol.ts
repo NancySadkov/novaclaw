@@ -609,7 +609,16 @@ export type DecodeResult<A> =
   | { readonly ok: true; readonly message: A }
   | { readonly ok: false; readonly error: string }
 
-const byteLength = (value: string) => new TextEncoder().encode(value).byteLength
+/**
+ * THE line size, in the unit `decodeLine` enforces.
+ *
+ * 🔴 Exported because every guard whose job is to keep an oversized line away from that decoder must
+ * compute THIS number. A guard using `String.length` — UTF-16 code units — against a byte budget is
+ * up to 3x too permissive (2x for Cyrillic or astral emoji, 3x for CJK), which is how a non-ASCII
+ * memory result killed a session worker instead of failing one call. Keeping the measure private
+ * meant every caller re-derived it, and one re-derived it wrong.
+ */
+export const byteLength = (value: string) => new TextEncoder().encode(value).byteLength
 
 const decodeLine = <A>(decode: (input: unknown) => A, line: string): DecodeResult<A> => {
   if (byteLength(line) > MAX_LINE_BYTES) return { ok: false, error: "worker message exceeds the 1 MiB limit" }

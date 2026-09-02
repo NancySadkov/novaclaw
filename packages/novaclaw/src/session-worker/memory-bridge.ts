@@ -100,15 +100,26 @@ export const handle = Effect.fn("SessionWorkerMemoryBridge.handle")(function* (i
   // that — `search` is `k` rows, `byIds` is a handful — but "none of them today" is not a bound, and
   // a graph slice of a real document would be. So it is answered as an ordinary memory failure, which
   // every caller already degrades on, instead of killing the turn.
+  //
+  // 🔴 **The guard is measured in BYTES, because that is the unit the far side enforces.** It used to
+  // read `encodeLine(reply).length`, i.e. UTF-16 code units, against a budget named `MAX_LINE_BYTES`,
+  // so the guard was TOO PERMISSIVE by exactly the string's bytes-per-unit ratio — 2 for Cyrillic or
+  // an astral-plane emoji, 3 for CJK. A ~400 KB Cyrillic passage set counts ~400 000 units (passes)
+  // and ~1.2 MB (the decoder fails the whole worker). A guard whose whole job is to keep a decoder
+  // from killing the worker must therefore compute the decoder's own number and nothing else — see
+  // `decodeLine` in `core/session/execution/worker-protocol.ts`, which is where the answer is
+  // adjudicated. `supervisor.ts`'s two line bounds already measure it this way.
+  const withinTransportBound = (line: string) =>
+    new TextEncoder().encode(line).byteLength <= SessionWorkerProtocol.MAX_LINE_BYTES
   const run = (effect: Effect.Effect<unknown, MemoryClient.MemoryError>) =>
     effect.pipe(
       Effect.match({
         onFailure: (error: MemoryClient.MemoryError) => failed(message, error.reason),
         onSuccess: (value: unknown) => {
           const reply = ok(message, value)
-          return SessionWorkerProtocol.encodeLine(reply).length > SessionWorkerProtocol.MAX_LINE_BYTES
-            ? failed(message, `memory ${message.op} result is too large for the worker transport`)
-            : reply
+          return withinTransportBound(SessionWorkerProtocol.encodeLine(reply))
+            ? reply
+            : failed(message, `memory ${message.op} result is too large for the worker transport`)
         },
       }),
     )

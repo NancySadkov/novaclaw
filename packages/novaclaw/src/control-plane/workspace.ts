@@ -455,8 +455,17 @@ export const layer = Layer.effect(
       }
     })
 
+    /**
+     * 🔴 **Whether the sync loop runs at all — the ONE reader of the switch.**
+     *
+     * `startSync` is a no-op when experimental workspaces are off, which means nothing publishes a
+     * `Status` event for a workspace. Anything that WAITS for such an event has to consult the same
+     * answer, or it waits for a message no sender exists for. Both readers below go through this.
+     */
+    const syncEnabled = () => flags.experimentalWorkspaces
+
     const startSync = Effect.fn("Workspace.startSync")(function* (space: Info) {
-      if (!flags.experimentalWorkspaces) return
+      if (!syncEnabled()) return
 
       const target = yield* WorkspaceAdapterRuntime.target(space).pipe(
         Effect.catch((error) =>
@@ -498,6 +507,46 @@ export const layer = Layer.effect(
             }),
           ),
         ),
+      )
+    })
+
+    /**
+     * Start a NEW workspace's sync loop and return once it has reported `connected` or `error`.
+     *
+     * 🔴 **The wait and the publisher are ONE decision, and this is the only place that pairs them.**
+     * `create` used to run `Effect.all([waitEvent(Status), startSync(info)])` unconditionally. With
+     * experimental workspaces off `startSync` returns on its first line, so no `setStatus` ever ran,
+     * no `Status` event was ever emitted, and the wait ran its full {@link TIMEOUT} and then FAILED —
+     * failing the whole `Effect.all`, and with it a `create` whose database row and on-disk worktree
+     * had both already been written. The caller waited 5 s to be told a workspace that exists does
+     * not. That is ruling 2 inverted: not an unreported failure but a reported non-failure, which is
+     * worse, because the operator's next act is to create it again.
+     *
+     * ⚠️ **A timeout is not the fix here.** Shortening or swallowing the deadline would still make
+     * every flag-off creation pay a wait for a thing that cannot happen; the defect is that the wait
+     * is ARMED, not how long it runs. When sync is off there is no status to converge on, so the
+     * honest answer is the immediate one.
+     *
+     * The deadline still applies with sync ON — there a publisher exists, and a wait that never
+     * expires would be the other failure.
+     */
+    const startSyncAwaitingStatus = Effect.fn("Workspace.startSyncAwaitingStatus")(function* (space: Info) {
+      if (!syncEnabled()) return
+      yield* Effect.all(
+        [
+          waitEvent({
+            timeout: TIMEOUT,
+            fn(event) {
+              if (event.workspace === space.id && event.payload.type === Event.Status.type) {
+                const { status } = event.payload.properties
+                return status === "error" || status === "connected"
+              }
+              return false
+            },
+          }),
+          startSync(space),
+        ],
+        { concurrency: 2, discard: true },
       )
     })
 
@@ -550,22 +599,7 @@ export const layer = Layer.effect(
       }
 
       yield* WorkspaceAdapterRuntime.create(adapter, config, env)
-      yield* Effect.all(
-        [
-          waitEvent({
-            timeout: TIMEOUT,
-            fn(event) {
-              if (event.workspace === info.id && event.payload.type === Event.Status.type) {
-                const { status } = event.payload.properties
-                return status === "error" || status === "connected"
-              }
-              return false
-            },
-          }),
-          startSync(info),
-        ],
-        { concurrency: 2, discard: true },
-      )
+      yield* startSyncAwaitingStatus(info)
 
       return info
     })

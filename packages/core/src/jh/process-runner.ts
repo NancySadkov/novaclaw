@@ -107,8 +107,14 @@ function runOnce(
     const append = (buf: Buffer) => {
       if (capped) return
       const s = buf.toString("utf8")
-      if (output.length + s.length > maxBytes) {
-        output += s.slice(0, Math.max(0, maxBytes - output.length)) + "…[truncated]"
+      // ⚠️ BYTES on both sides. Measuring in UTF-16 code units let the cap be exceeded ~3x, and the
+      // slice below is a code-unit slice, so the truncation has to be measured the same way.
+      const held = Buffer.byteLength(output, "utf8")
+      if (held + Buffer.byteLength(s, "utf8") > maxBytes) {
+        let room = Math.max(0, maxBytes - held)
+        let cut = s
+        while (cut.length > 0 && Buffer.byteLength(cut, "utf8") > room) cut = cut.slice(0, -1)
+        output += cut + "…[truncated]"
         capped = true
       } else {
         output += s

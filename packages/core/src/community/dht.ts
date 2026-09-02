@@ -171,7 +171,9 @@ export const readLines = (state: { buffer: string }, chunk: string): ReadonlyArr
    * ⚠️ Checked AFTER draining, so a legitimate burst of many COMPLETE lines is never mistaken for
    * an overrun. What matters is how much UNTERMINATED text is being held.
    */
-  if (state.buffer.length > MAX_REPLY_BYTES) return undefined
+  // ⚠️ BYTES, not `String.length`. A peer chooses this text, and UTF-16 code units under-count a
+  // byte budget by up to 3x — so a 64 KiB anti-overrun ceiling was reachable at 192 KiB with CJK.
+  if (Buffer.byteLength(state.buffer, "utf8") > MAX_REPLY_BYTES) return undefined
   return lines
 }
 

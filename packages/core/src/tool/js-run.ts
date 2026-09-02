@@ -471,7 +471,8 @@ export async function runJs(code: string, opts?: JsRunOptions): Promise<JsRun> {
 
     child.stdout?.on("data", (chunk: Buffer | string) => {
       stdout += String(chunk)
-      if (stdout.length > MAX_CHILD_OUTPUT_BYTES) kill()
+      // ⚠️ BYTES, not `String.length` — the budget is named in bytes and code units under-count it.
+      if (Buffer.byteLength(stdout, "utf8") > MAX_CHILD_OUTPUT_BYTES) kill()
     })
     child.stderr?.on("data", (chunk: Buffer | string) => {
       if (stderr.length < 4096) stderr += String(chunk)
