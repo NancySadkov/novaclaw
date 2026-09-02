@@ -1,7 +1,8 @@
 import { createQuery } from "@tanstack/solid-query"
 import { applyOptimistic } from "./optimistic-write"
 import { useSearchParams } from "@solidjs/router"
-import { type Accessor, createMemo, createResource, onCleanup, onMount } from "solid-js"
+import { type Accessor, createMemo, onCleanup, onMount } from "solid-js"
+import { createSettledResource } from "@/utils/settled-resource"
 import type { PromptInputControls } from "@/components/prompt-input"
 import type { ComposerMakeDefaultState, ComposerRemoteChatState } from "@/components/composer"
 import * as ConfigProvenance from "./config-provenance"
@@ -276,12 +277,15 @@ export function createPromptInputController(input: {
   // returning a fresh `{directory, http}` each read changes identity every time, which is a refetch
   // on every reactive pass — a poll nobody asked for against a route that walks ancestor directories.
   // The connection is read inside the fetcher instead, where it costs nothing.
-  const [projectDiscovered] = createResource(
+  // ⚠️ No `.catch` in the fetcher, deliberately: `createSettledResource` owns the rejection, and a
+  // fetcher that swallows its own failure hides it from `failed` and puts the lie back. The read
+  // still degrades to `undefined`, which is the contract this comment already promised.
+  const [projectDiscovered] = createSettledResource(
     () => (input.sessionID() === undefined ? sessionView.directory() : undefined),
     (directory: string) => {
       const conn = server.current
       if (!conn) return undefined
-      return projectState(conn.http, directory).catch(() => undefined)
+      return projectState(conn.http, directory)
     },
   )
 
@@ -304,7 +308,7 @@ export function createPromptInputController(input: {
     return typeof value === "string" && value !== "" ? value : undefined
   }
 
-  const [resolvedConfig, resolvedConfigRes] = createResource(
+  const [resolvedConfig, resolvedConfigRes] = createSettledResource(
     () => input.sessionID(),
     async (sessionID: string) => {
       const response = await sdk().client.v2.session.config({ sessionID })
@@ -331,19 +335,19 @@ export function createPromptInputController(input: {
   const isDraft = () => input.sessionID() === undefined
   const featureOrigins = createMemo(() =>
     isDraft()
-      ? ConfigProvenance.draftOrigins(projectDiscovered.latest)
-      : ConfigProvenance.featureOrigins(resolvedConfig.latest),
+      ? ConfigProvenance.draftOrigins(projectDiscovered())
+      : ConfigProvenance.featureOrigins(resolvedConfig()),
   )
   const projectLayer = createMemo(() =>
     isDraft()
-      ? ConfigProvenance.draftProjectLayer(projectDiscovered.latest)
-      : ConfigProvenance.projectLayer(resolvedConfig.latest),
+      ? ConfigProvenance.draftProjectLayer(projectDiscovered())
+      : ConfigProvenance.projectLayer(resolvedConfig()),
   )
   /** The kernel's stance per switch — the session's resolution, or the folder's fold for a draft. */
   const kernelStances = () =>
     isDraft()
-      ? ConfigProvenance.draftStances(projectDiscovered.latest)
-      : ConfigProvenance.resolvedStances(resolvedConfig.latest)
+      ? ConfigProvenance.draftStances(projectDiscovered())
+      : ConfigProvenance.resolvedStances(resolvedConfig())
 
   /**
    * "Make Default for this Folder" — write this chat's declared stance into the folder's own
@@ -367,7 +371,7 @@ export function createPromptInputController(input: {
       // and the panel used to fall through to "this folder has no project file yet". That sentence
       // was measured FALSE in folders that had one. This directory-keyed answer is what a draft can
       // honestly know; `inForceState` keeps "no answer yet" distinct from "answered: none".
-      discovered: projectDiscovered.latest,
+      discovered: projectDiscovered(),
       write: async (features) => {
         try {
           const result = await projectWrite(conn.http, directory, { tune: { features } })
@@ -395,13 +399,15 @@ export function createPromptInputController(input: {
     }
   })
 
-  const [remoteDrivers] = createResource(() => messengerServer(), messengerDrivers, { initialValue: [] })
-  const [remoteAccounts, remoteAccountsRes] = createResource(() => messengerServer(), messengerAccounts, {
-    initialValue: [],
-  })
-  const [remoteBindings, remoteBindingsRes] = createResource(() => messengerServer(), messengerBindings, {
-    initialValue: [],
-  })
+  // 🔴 All three carried `initialValue: []`, which is what made a refused `/api/messenger/account`
+  // replace the whole application: `initialValue` sets `resolved`, and `.latest`'s getter re-throws
+  // the fetcher's error on the `resolved` branch — so the spelling that READ like the fallback was
+  // the one that threw, from an eager memo outside the transcript's ErrorBoundary. It also erased
+  // the distinction this section needs most: an empty account list and an unanswered question are
+  // different facts, and only one of them may be rendered as "No messenger accounts yet".
+  const [remoteDrivers] = createSettledResource(() => messengerServer(), messengerDrivers)
+  const [remoteAccounts, remoteAccountsRes] = createSettledResource(() => messengerServer(), messengerAccounts)
+  const [remoteBindings, remoteBindingsRes] = createSettledResource(() => messengerServer(), messengerBindings)
   onMount(() => {
     const unsub = serverSDK().event.listen((e) => {
       if ((e.details.type as string).startsWith("messenger.")) {
@@ -411,21 +417,40 @@ export function createPromptInputController(input: {
     })
     onCleanup(unsub)
   })
-  const remoteDriverName = (driverID: string) => remoteDrivers.latest.find((d) => d.id === driverID)?.name ?? driverID
+  const remoteDriverName = (driverID: string) =>
+    (remoteDrivers() ?? []).find((d) => d.id === driverID)?.name ?? driverID
   const remoteFail = (error: unknown) =>
     showToast({
       variant: "error",
       title: language.t("prompt.remote.toast.failed"),
       description: error instanceof Error ? error.message : String(error),
     })
-  const remoteCurrent = (): ComposerRemoteChatState => {
+  /**
+   * Whether the messenger lists could be READ at all.
+   *
+   * ⚠️ This exists so the section's empty state and its outage stay two different facts. The panel
+   * renders `accounts.length === 0` as *"No messenger accounts yet — add one in Settings"*, which is
+   * a false sentence when the request never landed — and the same is true of an absent `binding`,
+   * which would claim this chat drives nothing when we simply could not ask.
+   *
+   * `remoteDrivers` is deliberately NOT counted: a missing driver list costs a display NAME, and
+   * `remoteDriverName` already falls back to the id, so its failure is a degradation and not a lie.
+   */
+  const remoteAvailability = (): "ready" | "loading" | "failed" => {
+    if (remoteAccounts.failed || remoteBindings.failed) return "failed"
+    if (remoteAccounts.loading || remoteBindings.loading) return "loading"
+    return "ready"
+  }
+  const remoteCurrent = (): ComposerRemoteChatState & { readonly availability: "ready" | "loading" | "failed" } => {
     const id = input.sessionID()
-    const row = id === undefined ? undefined : remoteBindings.latest.find((entry) => entry.binding.sessionID === id)
-    const account =
-      row === undefined ? undefined : remoteAccounts.latest.find((a) => a.account.id === row.binding.accountID)
+    const accountRows = remoteAccounts() ?? []
+    const bindingRows = remoteBindings() ?? []
+    const row = id === undefined ? undefined : bindingRows.find((entry) => entry.binding.sessionID === id)
+    const account = row === undefined ? undefined : accountRows.find((a) => a.account.id === row.binding.accountID)
     return {
+      availability: remoteAvailability(),
       bindable: id !== undefined,
-      accounts: remoteAccounts.latest
+      accounts: accountRows
         .filter((entry) => entry.account.enabled)
         .map((entry) => ({
           id: entry.account.id,
@@ -470,7 +495,9 @@ export function createPromptInputController(input: {
       disconnect: async () => {
         const current = input.sessionID()
         const bound =
-          current === undefined ? undefined : remoteBindings.latest.find((entry) => entry.binding.sessionID === current)
+          current === undefined
+            ? undefined
+            : (remoteBindings() ?? []).find((entry) => entry.binding.sessionID === current)
         if (bound === undefined) return
         try {
           await messengerRemoveBinding(messengerServer(), bound.binding.id)
